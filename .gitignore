@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Builds
+dist/
+.vite/
+coverage/
+
+# Local env files (never commit secrets)
+.env*
+!.env.example
+
+# Logs & misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+.idea/
+.vscode/
+*.local
+*.swp
