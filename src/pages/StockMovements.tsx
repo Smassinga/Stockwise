@@ -56,9 +56,10 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 
 export default function StockMovements() {
   const { t } = useI18n()
+  // fallback-aware translator
   const tt = (key: string, fallback: string) => {
-    const val = t(key as any)
-    return val === key ? fallback : val
+    const v = t(key as any)
+    return v === key ? fallback : v
   }
 
   // master data
@@ -87,17 +88,17 @@ export default function StockMovements() {
   const [itemId, setItemId] = useState<string>('')
   const [movementUomId, setMovementUomId] = useState<string>('')
   const [qtyEntered, setQtyEntered] = useState<string>('')
-  const [unitCost, setUnitCost] = useState<string>('') // used in receive/adjust increases
+  const [unitCost, setUnitCost] = useState<string>('') // used in receive / adjust increase
   const [notes, setNotes] = useState<string>('')
 
   // reference tagging (for COGS / audit)
   const [refType, setRefType] = useState<RefType>(DEFAULT_REF_BY_MOVE[movementType])
-  const [refId, setRefId] = useState<string>('')       // optional external/reference id
+  const [refId, setRefId] = useState<string>('')       // external ref id (optional)
   const [refLineId, setRefLineId] = useState<string>('')
 
-  // cash-sale (Issue + SO) fields
+  // cash-sale (Issue + SO)
   const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional
-  const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to baseCode when ready
+  const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
 
@@ -105,7 +106,7 @@ export default function StockMovements() {
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
   const currentItem = useMemo(() => items.find(i => i.id === itemId) || null, [itemId, items])
 
-  // load master & conversions
+  // load masters
   useEffect(() => {
     (async () => {
       try {
@@ -134,25 +135,17 @@ export default function StockMovements() {
         setSaleCurrency(base || 'MZN')
 
         const { data: convRows, error: convErr } = await supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
-        if (convErr) {
-          console.warn('uom_conversions select failed:', convErr)
-          toast.error(tt('movements.uomLoadFailed', 'Failed to load UoM conversions'))
-          setConvGraph(null)
-        } else {
-          setConvGraph(buildConvGraph((convRows || []) as ConvRow[]))
-        }
+        setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))
 
-        const custs = await supabase
-          .from('customers')
-          .select('id,code,name')
-          .order('name', { ascending: true })
+        const custs = await supabase.from('customers').select('id,code,name').order('name', { ascending: true })
         if (!custs.error) setCustomers((custs.data || []) as Customer[])
       } catch (e: any) {
         console.error(e)
         toast.error(tt('movements.loadFailed', 'Failed to load stock movements'))
       }
     })()
-  }, [t])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // helpers
   const mapSL = (r: DBStockLevelRow): StockLevel => ({
@@ -189,7 +182,7 @@ export default function StockMovements() {
         if (movementType === 'issue') { setItemId(''); setQtyEntered(''); setMovementUomId('') }
       } catch (e: any) { console.error(e); toast.error(tt('movements.loadFailedSourceWh', 'Failed to load source warehouse')) }
     })()
-  }, [warehouseFromId, movementType])
+  }, [warehouseFromId, movementType]) // eslint-disable-line
 
   useEffect(() => {
     (async () => {
@@ -199,7 +192,7 @@ export default function StockMovements() {
         if (movementType !== 'issue') { setItemId(''); setQtyEntered(''); setMovementUomId(''); setUnitCost('') }
       } catch (e: any) { console.error(e); toast.error(tt('movements.loadFailedDestWh', 'Failed to load destination warehouse')) }
     })()
-  }, [warehouseToId, movementType])
+  }, [warehouseToId, movementType]) // eslint-disable-line
 
   // UoM helpers
   const uomIdFromIdOrCode = (v?: string | null): string => {
@@ -232,7 +225,7 @@ export default function StockMovements() {
     ensureUomPresent(raw)
     setMovementUomId(uomIdFromIdOrCode(raw || ''))
     setQtyEntered('')
-  }, [itemId])
+  }, [itemId]) // eslint-disable-line
 
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
   const idsOrCodesEqual = (aId?: string, bId?: string) => {
@@ -330,8 +323,7 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // ---- CASH SALE helpers (auto-create SO + line) ----------------------------
-
+  // CASH SALE: auto-create SO header+line if needed
   async function createCashSaleSOIfNeeded(args: {
     currency: string
     fxToBase: number
@@ -344,7 +336,7 @@ export default function StockMovements() {
     // If user typed a refId, assume it’s an existing SO id
     if (refId) return { soId: refId, soLineId: refLineId || null }
 
-    // Optional: fetch customer to copy bill_to fields
+    // pull customer fields for bill_to
     let bill: any = {}
     if (args.customerId) {
       const { data: cust } = await supabase
@@ -366,12 +358,11 @@ export default function StockMovements() {
     }
 
     const lineTotal = args.qty * args.unitPrice
-    // Create header (let DB assign the order number in your usual way)
     const insSO = await supabase
       .from('sales_orders')
       .insert({
         customer_id: args.customerId || null,
-        status: 'confirmed',
+        status: 'confirmed', // ready to ship immediately
         currency_code: args.currency,
         fx_to_base: args.fxToBase,
         expected_ship_date: null,
@@ -384,7 +375,6 @@ export default function StockMovements() {
     if (insSO.error) throw insSO.error
     const soId = insSO.data.id as string
 
-    // Create a single line
     const insLine = await supabase
       .from('sales_order_lines')
       .insert({
@@ -404,8 +394,7 @@ export default function StockMovements() {
     return { soId, soLineId: insLine.data.id as string }
   }
 
-  // ---- submit handlers ------------------------------------------------------
-
+  // SUBMIT handlers
   async function submitReceive() {
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
     if (!toBin) return toast.error(tt('orders.selectBin', 'Select bin'))
@@ -456,16 +445,17 @@ export default function StockMovements() {
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
-    // If this "issue" is a SALE, gather the sale details and (if needed) create a real SO + line
     let soRefId: string | null = null
     let soRefLineId: string | null = null
     const rt = normalizeRefForSubmit('issue', refType)
 
+    // Cash Sale path (Issue + SO)
     if (rt === 'SO') {
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
       const cur = saleCurrency || baseCode
       const fx = num(saleFx, NaN); if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.enterFx', 'Enter a valid FX to base'))
+
       try {
         const created = await createCashSaleSOIfNeeded({
           currency: cur,
@@ -484,7 +474,7 @@ export default function StockMovements() {
       }
     }
 
-    // Deduct stock (COGS will use avgCost)
+    // Deduct stock (COGS from avgCost)
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
 
     await supabase.from('stock_movements').insert({
@@ -500,7 +490,7 @@ export default function StockMovements() {
       notes,
       created_by: 'system',
       ref_type: rt || 'ADJUST',
-      // Only SO-tagged issues count toward COGS on the dashboard
+      // Only SO-tagged issues count toward revenue/COGS on your dashboard
       ref_id: rt === 'SO' ? (soRefId || refId || null) : null,
       ref_line_id: rt === 'SO' ? (soRefLineId || refLineId || null) : null,
     })
@@ -513,7 +503,6 @@ export default function StockMovements() {
 
     setQtyEntered('')
     setRefId(''); setRefLineId(''); setNotes('')
-    // Clear sale fields only if it was a sale
     if (rt === 'SO') { setSaleUnitPrice(''); setSaleCustomerId('') }
     toast.success(tt('movements.issued', 'Issued'))
   }
@@ -647,6 +636,7 @@ export default function StockMovements() {
   const uomsList = useMemo(() => uoms, [uoms])
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
+  const showSaleBlock = movementType === 'issue' && refType === 'SO'
 
   const itemsInSelectedBin = useMemo(() => {
     const selectedBin = fromBin || toBin
@@ -669,16 +659,13 @@ export default function StockMovements() {
     return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
   }, [fromBin, toBin, stockFrom, stockTo, items, binsFrom])
 
-  // UI ------------------------------------------------------------------------
-
-  const showSaleBlock = movementType === 'issue' && refType === 'SO'
-
+  // UI
   return (
     <div className="space-y-6">
       {/* Movement type + warehouses */}
       <div className="grid grid-cols-12 gap-3 items-end">
         <div className={`col-span-12 ${showFromWH && showToWH ? 'md:col-span-3' : 'md:col-span-4'}`}>
-          <Label>{t('movements.movementType')}</Label>
+          <Label>{tt('movements.movementType', 'Movement Type')}</Label>
           <Select value={movementType} onValueChange={(v: MovementType) => {
             setMovementType(v)
             setFromBin(''); setToBin(''); setItemId(''); setQtyEntered(''); setUnitCost(''); setNotes('')
@@ -686,19 +673,19 @@ export default function StockMovements() {
           }}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="receive">{t('movement.receive')}</SelectItem>
-              <SelectItem value="issue">{t('movement.issue')}</SelectItem>
-              <SelectItem value="transfer">{t('movement.transfer')}</SelectItem>
-              <SelectItem value="adjust">{t('movement.adjust')}</SelectItem>
+              <SelectItem value="receive">{tt('movement.receive', 'receive')}</SelectItem>
+              <SelectItem value="issue">{tt('movement.issue', 'issue')}</SelectItem>
+              <SelectItem value="transfer">{tt('movement.transfer', 'transfer')}</SelectItem>
+              <SelectItem value="adjust">{tt('movement.adjust', 'adjust')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {showFromWH && (
           <div className="col-span-12 md:col-span-4">
-            <Label>{t('orders.fromWarehouse')}</Label>
+            <Label>{tt('orders.fromWarehouse', 'From Warehouse')}</Label>
             <Select value={warehouseFromId} onValueChange={setWarehouseFromId}>
-              <SelectTrigger><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={tt('orders.selectSourceWh', 'Select source warehouse')} /></SelectTrigger>
               <SelectContent>
                 {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
               </SelectContent>
@@ -708,9 +695,9 @@ export default function StockMovements() {
 
         {showToWH && (
           <div className="col-span-12 md:col-span-4">
-            <Label>{t('orders.toWarehouse')}</Label>
+            <Label>{tt('orders.toWarehouse', 'To Warehouse')}</Label>
             <Select value={warehouseToId} onValueChange={setWarehouseToId}>
-              <SelectTrigger><SelectValue placeholder={t('orders.selectDestWh')} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={tt('orders.selectDestWh', 'Select destination warehouse')} /></SelectTrigger>
               <SelectContent>
                 {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
               </SelectContent>
@@ -722,14 +709,14 @@ export default function StockMovements() {
       <div className="grid grid-cols-12 gap-4">
         {/* Bins */}
         <Card className="col-span-12 md:col-span-4">
-          <CardHeader><CardTitle>{t('movements.title.bins')}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{tt('movements.title.bins', 'Bins')}</CardTitle></CardHeader>
           <CardContent className="space-y-2 max-h-[60vh] overflow-auto">
             {showFromWH && (
               <>
                 <div className="text-xs text-muted-foreground mb-1">
-                  {t('movements.bins.from', { name: warehouses.find(w=>w.id===warehouseFromId)?.name || '' })}
+                  {tt('movements.bins.from', 'From')}{' '}{warehouses.find(w=>w.id===warehouseFromId)?.name || ''}
                 </div>
-                {(binsFrom || []).length === 0 && <div className="text-sm text-muted-foreground">{t('movements.noBins')}</div>}
+                {(binsFrom || []).length === 0 && <div className="text-sm text-muted-foreground">{tt('movements.noBins', 'No bins')}</div>}
                 <div className="space-y-1">
                   {binsFrom.map(b => (
                     <Button key={b.id} variant={fromBin===b.id?'default':'outline'} className="w-full justify-start" onClick={() => setFromBin(b.id)}>
@@ -742,9 +729,9 @@ export default function StockMovements() {
             {showToWH && (
               <>
                 <div className="text-xs text-muted-foreground mt-2">
-                  {t('movements.bins.to', { name: warehouses.find(w=>w.id===warehouseToId)?.name || '' })}
+                  {tt('movements.bins.to', 'To')}{' '}{warehouses.find(w=>w.id===warehouseToId)?.name || ''}
                 </div>
-                {(binsTo || []).length === 0 && <div className="text-sm text-muted-foreground">{t('movements.noBins')}</div>}
+                {(binsTo || []).length === 0 && <div className="text-sm text-muted-foreground">{tt('movements.noBins', 'No bins')}</div>}
                 <div className="space-y-1">
                   {binsTo.map(b => (
                     <Button key={b.id} variant={toBin===b.id?'default':'outline'} className="w-full justify-start" onClick={() => setToBin(b.id)}>
@@ -759,23 +746,23 @@ export default function StockMovements() {
 
         {/* Bin contents */}
         <Card className="col-span-12 md:col-span-8">
-          <CardHeader><CardTitle>{t('movements.title.binContents')}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{tt('movements.title.binContents', 'Bin Contents')}</CardTitle></CardHeader>
           <CardContent className="overflow-x-auto">
             {!(fromBin || toBin) ? (
-              <div className="text-sm text-muted-foreground">{t('movements.pickBinToSee')}</div>
+              <div className="text-sm text-muted-foreground">{tt('movements.pickBinToSee', 'Pick a bin to see contents')}</div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left border-b">
-                    <th className="py-2 pr-2">{t('table.item')}</th>
-                    <th className="py-2 pr-2">{t('table.sku')}</th>
-                    <th className="py-2 pr-2">{t('movements.onHandBase')}</th>
-                    <th className="py-2 pr-2">{t('movements.avgCost')}</th>
+                    <th className="py-2 pr-2">{tt('table.item', 'Item')}</th>
+                    <th className="py-2 pr-2">{tt('table.sku', 'SKU')}</th>
+                    <th className="py-2 pr-2">{tt('movements.onHandBase', 'On Hand (base)')}</th>
+                    <th className="py-2 pr-2">{tt('movements.avgCost', 'Avg Cost')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {itemsInSelectedBin.length === 0 && (
-                    <tr><td colSpan={4} className="py-4 text-muted-foreground">{t('movements.emptyBin')}</td></tr>
+                    <tr><td colSpan={4} className="py-4 text-muted-foreground">{tt('movements.emptyBin', 'Empty bin')}</td></tr>
                   )}
                   {itemsInSelectedBin.map(row => (
                     <tr key={row.item.id} className="border-b">
@@ -795,18 +782,18 @@ export default function StockMovements() {
       {/* Movement form */}
       <Card>
         <CardHeader><CardTitle>
-          {movementType === 'receive' && t('movements.card.receive')}
-          {movementType === 'issue' && t('movements.card.issue')}
-          {movementType === 'transfer' && t('movements.card.transfer')}
-          {movementType === 'adjust' && t('movements.card.adjust')}
+          {movementType === 'receive' && tt('movements.card.receive', 'Receive into Bin')}
+          {movementType === 'issue' && tt('movements.card.issue', 'Issue from Bin')}
+          {movementType === 'transfer' && tt('movements.card.transfer', 'Transfer between Bins')}
+          {movementType === 'adjust' && tt('movements.card.adjust', 'Adjust On-hand')}
         </CardTitle></CardHeader>
         <CardContent className="grid gap-3">
           <div className="grid md:grid-cols-6 gap-3">
             {movementType !== 'receive' && movementType !== 'adjust' && (
               <div>
-                <Label>{t('orders.fromBin')}</Label>
+                <Label>{tt('orders.fromBin', 'From Bin')}</Label>
                 <Select value={fromBin} onValueChange={(v) => { setFromBin(v); setItemId(''); setQtyEntered(''); }}>
-                  <SelectTrigger><SelectValue placeholder={t('orders.selectBin')} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
                   </SelectContent>
@@ -816,9 +803,9 @@ export default function StockMovements() {
 
             {movementType !== 'issue' && (
               <div>
-                <Label>{t('orders.toBin')}</Label>
+                <Label>{tt('orders.toBin', 'To Bin')}</Label>
                 <Select value={toBin} onValueChange={setToBin}>
-                  <SelectTrigger><SelectValue placeholder={t('orders.selectBin')} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
                   </SelectContent>
@@ -827,7 +814,7 @@ export default function StockMovements() {
             )}
 
             <div>
-              <Label>{t('orders.item')}</Label>
+              <Label>{tt('orders.item', 'Item')}</Label>
               <Select
                 value={itemId}
                 onValueChange={onChangeItem}
@@ -835,8 +822,8 @@ export default function StockMovements() {
               >
                 <SelectTrigger><SelectValue placeholder={
                   movementType === 'issue'
-                    ? (fromBin ? t('movements.selectItem') : t('movements.pickFromBinFirst'))
-                    : (toBin ? t('movements.selectItem') : t('movements.pickToBinFirst'))
+                    ? (fromBin ? tt('movements.selectItem', 'Select item') : tt('movements.pickFromBinFirst', 'Pick a source bin first'))
+                    : (toBin ? tt('movements.selectItem', 'Select item') : tt('movements.pickToBinFirst', 'Pick a destination bin first'))
                 } /></SelectTrigger>
                 <SelectContent>
                   {(movementType === 'issue' || (movementType === 'transfer' && fromBin))
@@ -847,7 +834,7 @@ export default function StockMovements() {
             </div>
 
             <div>
-              <Label>{movementType === 'adjust' ? t('movements.newOnHand') : t('movements.quantity')}</Label>
+              <Label>{movementType === 'adjust' ? tt('movements.newOnHand', 'New On-hand') : tt('movements.quantity', 'Quantity')}</Label>
               <Input type="number" min="0" step="0.0001" value={qtyEntered} onChange={e => setQtyEntered(e.target.value)} placeholder="0" />
               {!!currentItem && preview && (
                 <div className={`text-xs mt-1 ${preview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
@@ -860,9 +847,9 @@ export default function StockMovements() {
             </div>
 
             <div>
-              <Label>{t('movements.movementUom')}</Label>
+              <Label>{tt('movements.movementUom', 'Movement UoM')}</Label>
               <Select value={selectedUomValue} onValueChange={onChangeUom} disabled={!currentItem}>
-                <SelectTrigger><SelectValue placeholder={currentItem ? t('movements.selectUom') : t('movements.pickItemFirst')} /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={currentItem ? tt('movements.selectUom', 'Select UoM') : tt('movements.pickItemFirst', 'Pick item first')} /></SelectTrigger>
                 <SelectContent>
                   {uomsList.map(u => {
                     const convertible = currentItem ? canConvert(u.id, itemBaseUomId) : false
@@ -875,7 +862,7 @@ export default function StockMovements() {
             {(movementType === 'receive' || movementType === 'adjust') && (
               <div>
                 <Label>
-                  {t('movements.unitCost')}
+                  {tt('movements.unitCost', 'Unit Cost')}
                   {movementType === 'adjust' ? ` ${tt('movements.unitCost.requiredIfIncreasing', '(required if increasing)')}` : ''}
                 </Label>
                 <Input type="number" min="0" step="0.0001" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00" />
@@ -886,7 +873,7 @@ export default function StockMovements() {
           {/* Reference (SO/PO/Adjust/etc.) */}
           <div className="grid md:grid-cols-6 gap-3">
             <div>
-              <Label>{t('movements.refType')}</Label>
+              <Label>{tt('movements.refType', 'Ref Type')}</Label>
               <Select value={refType} onValueChange={(v: RefType) => setRefType(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -900,11 +887,11 @@ export default function StockMovements() {
               </Select>
             </div>
             <div>
-              <Label>{t('movements.refId')}</Label>
+              <Label>{tt('movements.refId', 'Ref Id')}</Label>
               <Input value={refId} onChange={e => setRefId(e.target.value)} placeholder={tt('movements.refId.placeholder', 'Existing Ref (optional)')} />
             </div>
             <div>
-              <Label>{t('movements.refLineId')}</Label>
+              <Label>{tt('movements.refLineId', 'Ref Line Id')}</Label>
               <Input value={refLineId} onChange={e => setRefLineId(e.target.value)} placeholder={tt('movements.refLineId.placeholder', 'Ref line (optional)')} />
             </div>
 
@@ -942,16 +929,16 @@ export default function StockMovements() {
           </div>
 
           <div>
-            <Label>{t('orders.notes')}</Label>
+            <Label>{tt('orders.notes', 'Notes')}</Label>
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder={tt('movements.notes.placeholder', 'Optional notes')} />
           </div>
 
           <div className="flex justify-end">
             <Button onClick={submit}>
-              {movementType === 'receive' && t('movements.btn.receive')}
-              {movementType === 'issue' && t('movements.btn.issue')}
+              {movementType === 'receive'  && tt('movements.btn.receive',  'Receive')}
+              {movementType === 'issue'    && tt('movements.btn.issue',    'Issue')}
               {movementType === 'transfer' && tt('movements.btn.transfer', 'Transfer')}
-              {movementType === 'adjust' && t('movements.btn.adjust')}
+              {movementType === 'adjust'   && tt('movements.btn.adjust',   'Adjust')}
             </Button>
           </div>
         </CardContent>
