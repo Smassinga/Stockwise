@@ -9,11 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import toast from 'react-hot-toast'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
+import { getBaseCurrencyCode } from '../lib/currency'
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string; family?: string }
+type Currency = { code: string; name: string }
 
 type DBStockLevelRow = {
   id: string
@@ -38,7 +40,8 @@ type StockLevel = {
 }
 
 type MovementType = 'receive' | 'issue' | 'transfer' | 'adjust'
-type RefType = 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
+// Added 'SALE' for cash-sale flow
+type RefType = 'SO' | 'PO' | 'SALE' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
 
 const nowISO = () => new Date().toISOString()
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -51,12 +54,81 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
   adjust: 'ADJUST',
 }
 
+// Tiny printable “cash sale” (single-line)
+function printCashSale(opts: {
+  soId: string
+  itemName: string
+  sku?: string
+  qty: number
+  uomCode: string
+  unitPrice: number
+  discountPct: number
+  currency: string
+  fx: number
+  baseCode: string
+}) {
+  const lineTotal = opts.qty * opts.unitPrice * (1 - opts.discountPct / 100)
+  const fmt = (v: number) =>
+    Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const html = `
+    <h1>Cash Sale ${opts.soId}</h1>
+    <div class="meta">Status: <b>completed</b> · Currency: <b>${opts.currency}</b> · FX→${opts.baseCode}: <b>${fmt(opts.fx)}</b></div>
+    <table>
+      <thead>
+        <tr><th>Item</th><th>SKU</th><th class="r">Qty</th><th>UoM</th><th class="r">Unit Price</th><th class="r">Disc %</th><th class="r">Line Total (${opts.currency})</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${opts.itemName}</td>
+          <td>${opts.sku || ''}</td>
+          <td class="r">${fmt(opts.qty)}</td>
+          <td>${opts.uomCode}</td>
+          <td class="r">${fmt(opts.unitPrice)}</td>
+          <td class="r">${fmt(opts.discountPct)}</td>
+          <td class="r">${fmt(lineTotal)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="totals">
+      <div><span>Subtotal (${opts.currency})</span><span>${fmt(lineTotal)}</span></div>
+      <div class="muted"><span>FX to ${opts.baseCode}</span><span>${fmt(opts.fx)}</span></div>
+      <div><span>Total (${opts.baseCode})</span><span>${fmt(lineTotal * opts.fx)}</span></div>
+    </div>
+  `
+  const w = window.open('', '_blank')
+  if (!w) return
+  w.document.write(`
+    <html>
+    <head>
+      <title>Cash Sale ${opts.soId}</title>
+      <meta charset="utf-8"/>
+      <style>
+        body{font-family:ui-sans-serif; padding:24px}
+        table{width:100%;border-collapse:collapse;font-size:12px}
+        th,td{border-bottom:1px solid #ddd;padding:8px 6px;text-align:left}
+        .r{text-align:right}
+        .meta{font-size:12px;color:#444;margin:8px 0 16px}
+        .totals{margin-top:12px;width:320px;margin-left:auto;display:flex;flex-direction:column;gap:4px}
+        .totals > div{display:flex;justify-content:space-between}
+        .muted{color:#666}
+      </style>
+    </head>
+    <body>${html}</body>
+    </html>
+  `)
+  w.document.close(); w.focus(); w.print()
+}
+
 export default function StockMovements() {
   const { t } = useI18n()
 
-  // Tiny helper: if a key is missing and the lib echoes the key, show a human fallback.
-  const tt = (key: string, fallback: string) => {
-    const val = t(key as any)
+  // Helper with optional vars (fixes TS “Expected 2 args, got 3”)
+  const tt = (
+    key: string,
+    fallback: string,
+    vars?: Record<string, string | number>
+  ) => {
+    const val = t(key as any, vars as any)
     return val === key ? fallback : val
   }
 
@@ -64,6 +136,9 @@ export default function StockMovements() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [baseCode, setBaseCode] = useState<string>('')
+
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
 
   // movement selections
@@ -83,13 +158,18 @@ export default function StockMovements() {
   const [itemId, setItemId] = useState<string>('')
   const [movementUomId, setMovementUomId] = useState<string>('')
   const [qtyEntered, setQtyEntered] = useState<string>('')
-  const [unitCost, setUnitCost] = useState<string>('')
-  const [notes, setNotes] = useState<string>('')
+  const [unitCost, setUnitCost] = useState<string>('') // receive/adjust
 
   // reference tagging (for COGS / audit)
   const [refType, setRefType] = useState<RefType>(DEFAULT_REF_BY_MOVE[movementType])
-  const [refId, setRefId] = useState<string>('')
+  const [refId, setRefId] = useState<string>('')       // SO/PO id, or free text
   const [refLineId, setRefLineId] = useState<string>('')
+
+  // cash sale (issue) extras
+  const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')   // currency unit price
+  const [saleDiscountPct, setSaleDiscountPct] = useState<string>('0')
+  const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base when loaded
+  const [saleFx, setSaleFx] = useState<string>('1')
 
   // maps
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
@@ -124,6 +204,13 @@ export default function StockMovements() {
         } else {
           setConvGraph(buildConvGraph((convRows || []) as ConvRow[]))
         }
+
+        const cur = await supabase.from('currencies').select('code,name').order('code', { ascending: true })
+        if (!cur.error) setCurrencies((cur.data || []) as Currency[])
+
+        const b = await getBaseCurrencyCode()
+        setBaseCode(b || 'BASE')
+        setSaleCurrency(b || 'BASE')
       } catch (e: any) {
         console.error(e)
         toast.error(t('movements.loadFailed'))
@@ -302,10 +389,12 @@ export default function StockMovements() {
   // validate reference coherence
   function normalizeRefForSubmit(mt: MovementType, rt: RefType): RefType {
     if (mt === 'transfer') return 'TRANSFER'
-    if (mt === 'receive' && rt === 'SO') return 'ADJUST'
+    if (mt === 'receive' && (rt === 'SO' || rt === 'SALE')) return 'ADJUST'
     if (mt === 'issue' && rt === 'PO') return 'ADJUST'
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
+
+  // ---- SUBMIT FLOWS ---------------------------------------------------------
 
   async function submitReceive() {
     if (!warehouseToId) return toast.error(t('orders.selectDestWh'))
@@ -341,9 +430,12 @@ export default function StockMovements() {
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
-    setQtyEntered(''); setUnitCost(''); setRefId(''); setRefLineId('')
+    setQtyEntered(''); setUnitCost(''); setRefId(''); setRefLineId(''); setNotes('')
     toast.success(t('movements.received'))
   }
+
+  // Notes
+  const [notes, setNotes] = useState<string>('')
 
   async function submitIssue() {
     if (!warehouseFromId) return toast.error(t('orders.selectSourceWh'))
@@ -357,9 +449,62 @@ export default function StockMovements() {
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(t('orders.insufficientStock'))
 
+    // Prepare refType (SALE uses a synthetic SO)
+    const rt = normalizeRefForSubmit('issue', refType)
+
+    // If SALE, validate sale header inputs and create mini SO + line
+    let createdSale: { soId: string, unitPrice: number, discountPct: number, fx: number } | null = null
+    let soLineIdForRef: string | null = null
+
+    if (rt === 'SALE') {
+      const price = num(saleUnitPrice, NaN)
+      const disc = num(saleDiscountPct, 0)
+      const fx = num(saleFx, NaN)
+      if (!saleCurrency) return toast.error(tt('movements.sale.currencyRequired', 'Pick a currency'))
+      if (!Number.isFinite(price) || price < 0) return toast.error(tt('movements.sale.priceRequired', 'Unit price must be ≥ 0'))
+      if (disc < 0 || disc > 100) return toast.error(tt('movements.sale.discRange', 'Discount % must be 0–100'))
+      if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.sale.fxRequired', 'FX must be > 0'))
+      const lineTotal = qty * price * (1 - disc / 100)
+
+      // Create SO header
+      const soIns = await supabase.from('sales_orders').insert({
+        customer_id: null,
+        status: 'completed',
+        currency_code: saleCurrency,
+        fx_to_base: fx,
+        expected_ship_date: null,
+        notes: `Cash sale via Movements${notes ? ` | ${notes}` : ''}`,
+        payment_terms: null,
+        bill_to_name: null, bill_to_email: null, bill_to_phone: null,
+        bill_to_tax_id: null, bill_to_billing_address: null, bill_to_shipping_address: null,
+        total_amount: lineTotal,
+      }).select('id').single()
+      if (soIns.error) throw soIns.error
+      const soId = soIns.data.id as string
+
+      // Create SO line (store given UoM/qty/price/discount)
+      const lineIns = await supabase.from('sales_order_lines').insert({
+        so_id: soId,
+        item_id: currentItem.id,
+        uom_id: uomId,
+        line_no: 1,
+        qty,
+        unit_price: price,
+        discount_pct: disc,
+        line_total: lineTotal
+      }).select('id').single()
+      if (!lineIns.error) soLineIdForRef = (lineIns.data as any)?.id ?? null
+
+      createdSale = { soId, unitPrice: price, discountPct: disc, fx }
+      // Set refId so the issue movement links to the synthetic SO
+      // (this ensures COGS shows up on the dashboard exactly like normal SO shipping)
+      setRefId(soId)
+    }
+
+    // Decrease stock first (transactionally would be ideal, but we do sequentially here)
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
 
-    const rt = normalizeRefForSubmit('issue', refType)
+    // Post the issue movement
     await supabase.from('stock_movements').insert({
       type: 'issue',
       item_id: currentItem.id,
@@ -372,19 +517,41 @@ export default function StockMovements() {
       bin_from_id: fromBin,
       notes,
       created_by: 'system',
-      ref_type: rt || 'ADJUST',
-      // Only SO-tagged issues count toward COGS on the dashboard
-      ref_id: rt === 'SO' ? (refId || null) : null,
-      ref_line_id: rt === 'SO' ? (refLineId || null) : null,
+      ref_type: rt === 'SALE' ? 'SO' : (rt || 'ADJUST'), // SALE is stored as SO for COGS
+      ref_id: rt === 'SALE' ? (refId || createdSale?.soId || null) : (rt === 'SO' ? (refId || null) : null),
+      ref_line_id: rt === 'SALE' ? (soLineIdForRef || null) : (rt === 'SO' ? (refLineId || null) : null),
     })
 
+    // Refresh from-warehouse view
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
       .eq('warehouse_id', warehouseFromId)
     setStockFrom((fresh || []).map(mapSL))
-    setQtyEntered(''); setRefId(''); setRefLineId('')
-    toast.success(t('movements.issued'))
+
+    // Reset form bits
+    setQtyEntered(''); setRefLineId('')
+    if (rt !== 'SALE') setRefId('')
+    setNotes('')
+
+    toast.success(rt === 'SALE' ? tt('movements.sale.completed', 'Cash sale recorded') : t('movements.issued'))
+
+    // Print quick cash sale receipt
+    if (rt === 'SALE' && createdSale) {
+      const uomCode = (uomById.get(uomIdFromIdOrCode(movementUomId || itemBaseUomId))?.code || 'UOM').toUpperCase()
+      printCashSale({
+        soId: createdSale.soId,
+        itemName: currentItem.name,
+        sku: currentItem.sku,
+        qty,
+        uomCode,
+        unitPrice: createdSale.unitPrice,
+        discountPct: createdSale.discountPct,
+        currency: saleCurrency || baseCode || '',
+        fx: createdSale.fx,
+        baseCode: baseCode || ''
+      })
+    }
   }
 
   async function submitTransfer() {
@@ -514,6 +681,10 @@ export default function StockMovements() {
   useEffect(() => {
     setRefType(DEFAULT_REF_BY_MOVE[movementType])
     setRefId(''); setRefLineId('')
+    // reset sale fields when leaving SALE
+    if (movementType !== 'issue') {
+      setSaleUnitPrice(''); setSaleDiscountPct('0'); setSaleFx('1')
+    }
   }, [movementType])
 
   const selectedUomValue = currentItem ? (movementUomId || itemBaseUomId || '') : ''
@@ -521,7 +692,7 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
 
-  // Bin contents table (unchanged but localized)
+  // Bin contents table
   const itemsInSelectedBin = useMemo(() => {
     const selectedBin = fromBin || toBin
     if (!selectedBin) return []
@@ -761,6 +932,7 @@ export default function StockMovements() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {movementType === 'issue' && <SelectItem value="SO">{t('movements.refType.SO')}</SelectItem>}
+                  {movementType === 'issue' && <SelectItem value="SALE">{tt('movements.refType.SALE', 'SALE (cash)')}</SelectItem>}
                   {movementType === 'receive' && <SelectItem value="PO">{t('movements.refType.PO')}</SelectItem>}
                   <SelectItem value="ADJUST">ADJUST</SelectItem>
                   <SelectItem value="TRANSFER">TRANSFER</SelectItem>
@@ -779,6 +951,33 @@ export default function StockMovements() {
             </div>
           </div>
 
+          {/* Cash Sale details (only when Issue + SALE) */}
+          {movementType === 'issue' && refType === 'SALE' && (
+            <div className="grid md:grid-cols-6 gap-3">
+              <div>
+                <Label>{tt('orders.unitPrice', 'Unit Price')}</Label>
+                <Input type="number" min="0" step="0.0001" value={saleUnitPrice} onChange={e => setSaleUnitPrice(e.target.value)} placeholder="0.00" />
+              </div>
+              <div>
+                <Label>{tt('orders.discountPct', 'Disc %')}</Label>
+                <Input type="number" min="0" max="100" step="0.01" value={saleDiscountPct} onChange={e => setSaleDiscountPct(e.target.value)} placeholder="0" />
+              </div>
+              <div>
+                <Label>{tt('orders.currency', 'Currency')}</Label>
+                <Select value={saleCurrency} onValueChange={setSaleCurrency}>
+                  <SelectTrigger><SelectValue placeholder={tt('orders.selectCurrency', 'Select currency')} /></SelectTrigger>
+                  <SelectContent>
+                    {currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode || 'BASE' })}</Label>
+                <Input type="number" min="0" step="0.000001" value={saleFx} onChange={e => setSaleFx(e.target.value)} />
+              </div>
+            </div>
+          )}
+
           <div>
             <Label>{t('orders.notes')}</Label>
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('movements.notes.placeholder')} />
@@ -788,7 +987,6 @@ export default function StockMovements() {
             <Button onClick={submit}>
               {movementType === 'receive' && t('movements.btn.receive')}
               {movementType === 'issue' && t('movements.btn.issue')}
-              {/* FIX: if key is missing, show plain 'Transfer' instead of 'movements.btn.transfer' */}
               {movementType === 'transfer' && tt('movements.btn.transfer', 'Transfer')}
               {movementType === 'adjust' && t('movements.btn.adjust')}
             </Button>
