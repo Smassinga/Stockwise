@@ -16,6 +16,7 @@ type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string; family?: string }
 type Currency = { code: string; name: string }
+type Customer = { id: string; code?: string; name: string }
 
 type DBStockLevelRow = {
   id: string
@@ -40,8 +41,7 @@ type StockLevel = {
 }
 
 type MovementType = 'receive' | 'issue' | 'transfer' | 'adjust'
-// Added 'SALE' for cash-sale flow
-type RefType = 'SO' | 'PO' | 'SALE' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
+type RefType = 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
 
 const nowISO = () => new Date().toISOString()
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -54,81 +54,10 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
   adjust: 'ADJUST',
 }
 
-// Tiny printable “cash sale” (single-line)
-function printCashSale(opts: {
-  soId: string
-  itemName: string
-  sku?: string
-  qty: number
-  uomCode: string
-  unitPrice: number
-  discountPct: number
-  currency: string
-  fx: number
-  baseCode: string
-}) {
-  const lineTotal = opts.qty * opts.unitPrice * (1 - opts.discountPct / 100)
-  const fmt = (v: number) =>
-    Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const html = `
-    <h1>Cash Sale ${opts.soId}</h1>
-    <div class="meta">Status: <b>completed</b> · Currency: <b>${opts.currency}</b> · FX→${opts.baseCode}: <b>${fmt(opts.fx)}</b></div>
-    <table>
-      <thead>
-        <tr><th>Item</th><th>SKU</th><th class="r">Qty</th><th>UoM</th><th class="r">Unit Price</th><th class="r">Disc %</th><th class="r">Line Total (${opts.currency})</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>${opts.itemName}</td>
-          <td>${opts.sku || ''}</td>
-          <td class="r">${fmt(opts.qty)}</td>
-          <td>${opts.uomCode}</td>
-          <td class="r">${fmt(opts.unitPrice)}</td>
-          <td class="r">${fmt(opts.discountPct)}</td>
-          <td class="r">${fmt(lineTotal)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="totals">
-      <div><span>Subtotal (${opts.currency})</span><span>${fmt(lineTotal)}</span></div>
-      <div class="muted"><span>FX to ${opts.baseCode}</span><span>${fmt(opts.fx)}</span></div>
-      <div><span>Total (${opts.baseCode})</span><span>${fmt(lineTotal * opts.fx)}</span></div>
-    </div>
-  `
-  const w = window.open('', '_blank')
-  if (!w) return
-  w.document.write(`
-    <html>
-    <head>
-      <title>Cash Sale ${opts.soId}</title>
-      <meta charset="utf-8"/>
-      <style>
-        body{font-family:ui-sans-serif; padding:24px}
-        table{width:100%;border-collapse:collapse;font-size:12px}
-        th,td{border-bottom:1px solid #ddd;padding:8px 6px;text-align:left}
-        .r{text-align:right}
-        .meta{font-size:12px;color:#444;margin:8px 0 16px}
-        .totals{margin-top:12px;width:320px;margin-left:auto;display:flex;flex-direction:column;gap:4px}
-        .totals > div{display:flex;justify-content:space-between}
-        .muted{color:#666}
-      </style>
-    </head>
-    <body>${html}</body>
-    </html>
-  `)
-  w.document.close(); w.focus(); w.print()
-}
-
 export default function StockMovements() {
   const { t } = useI18n()
-
-  // Helper with optional vars (fixes TS “Expected 2 args, got 3”)
-  const tt = (
-    key: string,
-    fallback: string,
-    vars?: Record<string, string | number>
-  ) => {
-    const val = t(key as any, vars as any)
+  const tt = (key: string, fallback: string) => {
+    const val = t(key as any)
     return val === key ? fallback : val
   }
 
@@ -137,8 +66,8 @@ export default function StockMovements() {
   const [items, setItems] = useState<Item[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [baseCode, setBaseCode] = useState<string>('')
-
+  const [baseCode, setBaseCode] = useState<string>('MZN')
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
 
   // movement selections
@@ -158,24 +87,25 @@ export default function StockMovements() {
   const [itemId, setItemId] = useState<string>('')
   const [movementUomId, setMovementUomId] = useState<string>('')
   const [qtyEntered, setQtyEntered] = useState<string>('')
-  const [unitCost, setUnitCost] = useState<string>('') // receive/adjust
+  const [unitCost, setUnitCost] = useState<string>('') // used in receive/adjust increases
+  const [notes, setNotes] = useState<string>('')
 
   // reference tagging (for COGS / audit)
   const [refType, setRefType] = useState<RefType>(DEFAULT_REF_BY_MOVE[movementType])
-  const [refId, setRefId] = useState<string>('')       // SO/PO id, or free text
+  const [refId, setRefId] = useState<string>('')       // optional external/reference id
   const [refLineId, setRefLineId] = useState<string>('')
 
-  // cash sale (issue) extras
-  const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')   // currency unit price
-  const [saleDiscountPct, setSaleDiscountPct] = useState<string>('0')
-  const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base when loaded
+  // cash-sale (Issue + SO) fields
+  const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional
+  const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to baseCode when ready
   const [saleFx, setSaleFx] = useState<string>('1')
+  const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
 
   // maps
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
   const currentItem = useMemo(() => items.find(i => i.id === itemId) || null, [itemId, items])
 
-  // load master & conversions (entity/tenant scoping is handled by RLS + warehouse filters)
+  // load master & conversions
   useEffect(() => {
     (async () => {
       try {
@@ -192,28 +122,34 @@ export default function StockMovements() {
           setWarehouseToId(whRes[0].id)
         }
 
-        const uRes = await supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true })
+        const [uRes, cRes, base] = await Promise.all([
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
+          supabase.from('currencies').select('code,name').order('code', { ascending: true }),
+          getBaseCurrencyCode().catch(() => 'MZN'),
+        ])
         if (uRes.error) throw uRes.error
         setUoms((uRes.data || []).map((u: any) => ({ ...u, code: String(u.code || '').toUpperCase() })))
+        setCurrencies(((cRes.data || []) as Currency[]) || [])
+        setBaseCode(base || 'MZN')
+        setSaleCurrency(base || 'MZN')
 
         const { data: convRows, error: convErr } = await supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
         if (convErr) {
           console.warn('uom_conversions select failed:', convErr)
-          toast.error(t('movements.uomLoadFailed'))
+          toast.error(tt('movements.uomLoadFailed', 'Failed to load UoM conversions'))
           setConvGraph(null)
         } else {
           setConvGraph(buildConvGraph((convRows || []) as ConvRow[]))
         }
 
-        const cur = await supabase.from('currencies').select('code,name').order('code', { ascending: true })
-        if (!cur.error) setCurrencies((cur.data || []) as Currency[])
-
-        const b = await getBaseCurrencyCode()
-        setBaseCode(b || 'BASE')
-        setSaleCurrency(b || 'BASE')
+        const custs = await supabase
+          .from('customers')
+          .select('id,code,name')
+          .order('name', { ascending: true })
+        if (!custs.error) setCustomers((custs.data || []) as Customer[])
       } catch (e: any) {
         console.error(e)
-        toast.error(t('movements.loadFailed'))
+        toast.error(tt('movements.loadFailed', 'Failed to load stock movements'))
       }
     })()
   }, [t])
@@ -251,9 +187,9 @@ export default function StockMovements() {
         await loadWH(warehouseFromId, 'from')
         setFromBin('')
         if (movementType === 'issue') { setItemId(''); setQtyEntered(''); setMovementUomId('') }
-      } catch (e: any) { console.error(e); toast.error(t('movements.loadFailedSourceWh')) }
+      } catch (e: any) { console.error(e); toast.error(tt('movements.loadFailedSourceWh', 'Failed to load source warehouse')) }
     })()
-  }, [warehouseFromId, movementType, t])
+  }, [warehouseFromId, movementType])
 
   useEffect(() => {
     (async () => {
@@ -261,9 +197,9 @@ export default function StockMovements() {
         await loadWH(warehouseToId, 'to')
         setToBin('')
         if (movementType !== 'issue') { setItemId(''); setQtyEntered(''); setMovementUomId(''); setUnitCost('') }
-      } catch (e: any) { console.error(e); toast.error(t('movements.loadFailedDestWh')) }
+      } catch (e: any) { console.error(e); toast.error(tt('movements.loadFailedDestWh', 'Failed to load destination warehouse')) }
     })()
-  }, [warehouseToId, movementType, t])
+  }, [warehouseToId, movementType])
 
   // UoM helpers
   const uomIdFromIdOrCode = (v?: string | null): string => {
@@ -363,7 +299,7 @@ export default function StockMovements() {
     const unitCost = num(opts?.unitCost, 0)
 
     if (!found?.length) {
-      if (deltaQtyBase < 0) throw new Error(t('orders.insufficientStock'))
+      if (deltaQtyBase < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock'))
       const { error: insErr } = await supabase.from('stock_levels').insert({
         warehouse_id: whId, bin_id: bin, item_id: itId, qty: deltaQtyBase, allocated_qty: 0, avg_cost: unitCost, updated_at: nowISO(),
       })
@@ -374,7 +310,7 @@ export default function StockMovements() {
     const row = found[0] as { id: string; qty: number | null; avg_cost: number | null }
     const oldQty = num(row.qty, 0), oldAvg = num(row.avg_cost, 0)
     const newQty = oldQty + deltaQtyBase
-    if (newQty < 0) throw new Error(t('orders.insufficientStock'))
+    if (newQty < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock'))
 
     let newAvg = oldAvg
     if (deltaQtyBase > 0) newAvg = newQty > 0 ? ((oldQty * oldAvg) + (deltaQtyBase * unitCost)) / newQty : unitCost
@@ -386,24 +322,98 @@ export default function StockMovements() {
     if (updErr) throw updErr
   }
 
-  // validate reference coherence
+  // validate / normalize reference
   function normalizeRefForSubmit(mt: MovementType, rt: RefType): RefType {
     if (mt === 'transfer') return 'TRANSFER'
-    if (mt === 'receive' && (rt === 'SO' || rt === 'SALE')) return 'ADJUST'
+    if (mt === 'receive' && rt === 'SO') return 'ADJUST'
     if (mt === 'issue' && rt === 'PO') return 'ADJUST'
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // ---- SUBMIT FLOWS ---------------------------------------------------------
+  // ---- CASH SALE helpers (auto-create SO + line) ----------------------------
+
+  async function createCashSaleSOIfNeeded(args: {
+    currency: string
+    fxToBase: number
+    customerId?: string
+    itemId: string
+    uomId: string
+    qty: number
+    unitPrice: number
+  }): Promise<{ soId: string, soLineId: string | null }> {
+    // If user typed a refId, assume it’s an existing SO id
+    if (refId) return { soId: refId, soLineId: refLineId || null }
+
+    // Optional: fetch customer to copy bill_to fields
+    let bill: any = {}
+    if (args.customerId) {
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('name,email,phone,tax_id,billing_address,shipping_address,payment_terms')
+        .eq('id', args.customerId)
+        .maybeSingle()
+      if (cust) {
+        bill = {
+          bill_to_name: cust.name ?? null,
+          bill_to_email: cust.email ?? null,
+          bill_to_phone: cust.phone ?? null,
+          bill_to_tax_id: cust.tax_id ?? null,
+          bill_to_billing_address: cust.billing_address ?? null,
+          bill_to_shipping_address: cust.shipping_address ?? null,
+          payment_terms: cust.payment_terms ?? null,
+        }
+      }
+    }
+
+    const lineTotal = args.qty * args.unitPrice
+    // Create header (let DB assign the order number in your usual way)
+    const insSO = await supabase
+      .from('sales_orders')
+      .insert({
+        customer_id: args.customerId || null,
+        status: 'confirmed',
+        currency_code: args.currency,
+        fx_to_base: args.fxToBase,
+        expected_ship_date: null,
+        notes: 'Cash sale via Stock Movements',
+        total_amount: lineTotal,
+        ...bill,
+      })
+      .select('id')
+      .single()
+    if (insSO.error) throw insSO.error
+    const soId = insSO.data.id as string
+
+    // Create a single line
+    const insLine = await supabase
+      .from('sales_order_lines')
+      .insert({
+        so_id: soId,
+        item_id: args.itemId,
+        uom_id: args.uomId,
+        line_no: 1,
+        qty: args.qty,
+        unit_price: args.unitPrice,
+        discount_pct: 0,
+        line_total: lineTotal,
+      })
+      .select('id')
+      .single()
+    if (insLine.error) throw insLine.error
+
+    return { soId, soLineId: insLine.data.id as string }
+  }
+
+  // ---- submit handlers ------------------------------------------------------
 
   async function submitReceive() {
-    if (!warehouseToId) return toast.error(t('orders.selectDestWh'))
-    if (!toBin) return toast.error(t('orders.selectDestBin'))
-    if (!currentItem) return toast.error(t('movements.selectItemRequired'))
-    const qty = num(qtyEntered); if (qty <= 0) return toast.error(t('movements.qtyGtZero'))
+    if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
+    if (!toBin) return toast.error(tt('orders.selectBin', 'Select bin'))
+    if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
+    const qty = num(qtyEntered); if (qty <= 0) return toast.error(tt('movements.qtyGtZero', 'Quantity must be > 0'))
     const uomId = movementUomId || itemBaseUomId
-    const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(t('movements.unitCostGteZero'))
-    const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(t('movements.noConversionToBase'))
+    const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ≥ 0'))
+    const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: unitCostNum })
 
@@ -431,80 +441,52 @@ export default function StockMovements() {
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
     setQtyEntered(''); setUnitCost(''); setRefId(''); setRefLineId(''); setNotes('')
-    toast.success(t('movements.received'))
+    toast.success(tt('movements.received', 'Received'))
   }
 
-  // Notes
-  const [notes, setNotes] = useState<string>('')
-
   async function submitIssue() {
-    if (!warehouseFromId) return toast.error(t('orders.selectSourceWh'))
-    if (!fromBin) return toast.error(t('orders.selectSourceBin'))
-    if (!currentItem) return toast.error(t('movements.selectItemRequired'))
-    const qty = num(qtyEntered); if (qty <= 0) return toast.error(t('movements.qtyGtZero'))
+    if (!warehouseFromId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
+    if (!fromBin) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
+    if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
+    const qty = num(qtyEntered); if (qty <= 0) return toast.error(tt('movements.qtyGtZero', 'Quantity must be > 0'))
 
     const uomId = movementUomId || itemBaseUomId
-    const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(t('movements.noConversionToBase'))
+    const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
-    if (onHand < qtyBase) return toast.error(t('orders.insufficientStock'))
+    if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
-    // Prepare refType (SALE uses a synthetic SO)
+    // If this "issue" is a SALE, gather the sale details and (if needed) create a real SO + line
+    let soRefId: string | null = null
+    let soRefLineId: string | null = null
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // If SALE, validate sale header inputs and create mini SO + line
-    let createdSale: { soId: string, unitPrice: number, discountPct: number, fx: number } | null = null
-    let soLineIdForRef: string | null = null
-
-    if (rt === 'SALE') {
-      const price = num(saleUnitPrice, NaN)
-      const disc = num(saleDiscountPct, 0)
-      const fx = num(saleFx, NaN)
-      if (!saleCurrency) return toast.error(tt('movements.sale.currencyRequired', 'Pick a currency'))
-      if (!Number.isFinite(price) || price < 0) return toast.error(tt('movements.sale.priceRequired', 'Unit price must be ≥ 0'))
-      if (disc < 0 || disc > 100) return toast.error(tt('movements.sale.discRange', 'Discount % must be 0–100'))
-      if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.sale.fxRequired', 'FX must be > 0'))
-      const lineTotal = qty * price * (1 - disc / 100)
-
-      // Create SO header
-      const soIns = await supabase.from('sales_orders').insert({
-        customer_id: null,
-        status: 'completed',
-        currency_code: saleCurrency,
-        fx_to_base: fx,
-        expected_ship_date: null,
-        notes: `Cash sale via Movements${notes ? ` | ${notes}` : ''}`,
-        payment_terms: null,
-        bill_to_name: null, bill_to_email: null, bill_to_phone: null,
-        bill_to_tax_id: null, bill_to_billing_address: null, bill_to_shipping_address: null,
-        total_amount: lineTotal,
-      }).select('id').single()
-      if (soIns.error) throw soIns.error
-      const soId = soIns.data.id as string
-
-      // Create SO line (store given UoM/qty/price/discount)
-      const lineIns = await supabase.from('sales_order_lines').insert({
-        so_id: soId,
-        item_id: currentItem.id,
-        uom_id: uomId,
-        line_no: 1,
-        qty,
-        unit_price: price,
-        discount_pct: disc,
-        line_total: lineTotal
-      }).select('id').single()
-      if (!lineIns.error) soLineIdForRef = (lineIns.data as any)?.id ?? null
-
-      createdSale = { soId, unitPrice: price, discountPct: disc, fx }
-      // Set refId so the issue movement links to the synthetic SO
-      // (this ensures COGS shows up on the dashboard exactly like normal SO shipping)
-      setRefId(soId)
+    if (rt === 'SO') {
+      const unitSellPrice = num(saleUnitPrice, NaN)
+      if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
+      const cur = saleCurrency || baseCode
+      const fx = num(saleFx, NaN); if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.enterFx', 'Enter a valid FX to base'))
+      try {
+        const created = await createCashSaleSOIfNeeded({
+          currency: cur,
+          fxToBase: fx,
+          customerId: saleCustomerId || undefined,
+          itemId: currentItem.id,
+          uomId,
+          qty,
+          unitPrice: unitSellPrice,
+        })
+        soRefId = created.soId
+        soRefLineId = created.soLineId
+      } catch (e: any) {
+        console.error(e)
+        return toast.error(tt('movements.failedCreateSO', 'Failed to create the Sales Order'))
+      }
     }
 
-    // Decrease stock first (transactionally would be ideal, but we do sequentially here)
+    // Deduct stock (COGS will use avgCost)
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
 
-    // Post the issue movement
     await supabase.from('stock_movements').insert({
       type: 'issue',
       item_id: currentItem.id,
@@ -517,55 +499,37 @@ export default function StockMovements() {
       bin_from_id: fromBin,
       notes,
       created_by: 'system',
-      ref_type: rt === 'SALE' ? 'SO' : (rt || 'ADJUST'), // SALE is stored as SO for COGS
-      ref_id: rt === 'SALE' ? (refId || createdSale?.soId || null) : (rt === 'SO' ? (refId || null) : null),
-      ref_line_id: rt === 'SALE' ? (soLineIdForRef || null) : (rt === 'SO' ? (refLineId || null) : null),
+      ref_type: rt || 'ADJUST',
+      // Only SO-tagged issues count toward COGS on the dashboard
+      ref_id: rt === 'SO' ? (soRefId || refId || null) : null,
+      ref_line_id: rt === 'SO' ? (soRefLineId || refLineId || null) : null,
     })
 
-    // Refresh from-warehouse view
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
       .eq('warehouse_id', warehouseFromId)
     setStockFrom((fresh || []).map(mapSL))
 
-    // Reset form bits
-    setQtyEntered(''); setRefLineId('')
-    if (rt !== 'SALE') setRefId('')
-    setNotes('')
-
-    toast.success(rt === 'SALE' ? tt('movements.sale.completed', 'Cash sale recorded') : t('movements.issued'))
-
-    // Print quick cash sale receipt
-    if (rt === 'SALE' && createdSale) {
-      const uomCode = (uomById.get(uomIdFromIdOrCode(movementUomId || itemBaseUomId))?.code || 'UOM').toUpperCase()
-      printCashSale({
-        soId: createdSale.soId,
-        itemName: currentItem.name,
-        sku: currentItem.sku,
-        qty,
-        uomCode,
-        unitPrice: createdSale.unitPrice,
-        discountPct: createdSale.discountPct,
-        currency: saleCurrency || baseCode || '',
-        fx: createdSale.fx,
-        baseCode: baseCode || ''
-      })
-    }
+    setQtyEntered('')
+    setRefId(''); setRefLineId(''); setNotes('')
+    // Clear sale fields only if it was a sale
+    if (rt === 'SO') { setSaleUnitPrice(''); setSaleCustomerId('') }
+    toast.success(tt('movements.issued', 'Issued'))
   }
 
   async function submitTransfer() {
-    if (!warehouseFromId || !warehouseToId) return toast.error(t('movements.pickBothWh'))
-    if (!fromBin || !toBin) return toast.error(t('movements.pickBothBins'))
-    if (warehouseFromId === warehouseToId && fromBin === toBin) return toast.error(t('movements.sameSourceDest'))
-    if (!currentItem) return toast.error(t('movements.selectItemRequired'))
+    if (!warehouseFromId || !warehouseToId) return toast.error(tt('movements.pickBothWh', 'Pick both warehouses'))
+    if (!fromBin || !toBin) return toast.error(tt('movements.pickBothBins', 'Pick both bins'))
+    if (warehouseFromId === warehouseToId && fromBin === toBin) return toast.error(tt('movements.sameSourceDest', 'Source and destination are the same'))
+    if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
 
-    const qty = num(qtyEntered); if (qty <= 0) return toast.error(t('movements.qtyGtZero'))
+    const qty = num(qtyEntered); if (qty <= 0) return toast.error(tt('movements.qtyGtZero', 'Quantity must be > 0'))
     const uomId = movementUomId || itemBaseUomId
-    const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(t('movements.noConversionToBase'))
+    const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
-    if (onHand < qtyBase) return toast.error(t('orders.insufficientStock'))
+    if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: avgCost })
@@ -582,7 +546,7 @@ export default function StockMovements() {
       warehouse_to_id: warehouseToId,
       bin_from_id: fromBin,
       bin_to_id: toBin,
-      notes: `${t('movements.note.transferPrefix')}: ${warehouseFromId}/${fromBin} -> ${warehouseToId}/${toBin}${notes ? ` | ${notes}` : ''}`,
+      notes: `${tt('movements.note.transferPrefix', 'Transfer')}: ${warehouseFromId}/${fromBin} -> ${warehouseToId}/${toBin}${notes ? ` | ${notes}` : ''}`,
       created_by: 'system',
       ref_type: 'TRANSFER',
       ref_id: null,
@@ -596,39 +560,35 @@ export default function StockMovements() {
     setStockFrom((freshFrom.data || []).map(mapSL))
     setStockTo((freshTo.data || []).map(mapSL))
     setQtyEntered('')
-    toast.success(t('movements.transferCompleted'))
+    toast.success(tt('movements.transferCompleted', 'Transfer completed'))
   }
 
   async function submitAdjust() {
-    if (!warehouseToId) return toast.error(t('movements.selectWhToAdjust'))
-    if (!toBin) return toast.error(t('movements.selectBinToAdjust'))
-    if (!currentItem) return toast.error(t('movements.selectItemRequired'))
+    if (!warehouseToId) return toast.error(tt('movements.selectWhToAdjust', 'Select a warehouse to adjust'))
+    if (!toBin) return toast.error(tt('movements.selectBinToAdjust', 'Select a bin to adjust'))
+    if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
 
     const targetQtyEntered = num(qtyEntered)
-    if (targetQtyEntered < 0) return toast.error(t('movements.onHandCannotBeNegative'))
+    if (targetQtyEntered < 0) return toast.error(tt('movements.onHandCannotBeNegative', 'On-hand cannot be negative'))
 
     const uomId = movementUomId || itemBaseUomId
     const targetBase = safeConvert(targetQtyEntered, uomId, itemBaseUomId)
-    if (targetBase == null) return toast.error(t('movements.noConversionToBase'))
+    if (targetBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
     const { qty: currentBase, avgCost: currentAvg } = onHandIn(stockTo, toBin, currentItem.id)
     const delta = targetBase - currentBase
-    if (delta === 0) return toast(t('movements.noChange'))
+    if (delta === 0) return toast(tt('movements.noChange', 'No change'))
 
     let useUnitCost = currentAvg
     if (delta > 0) {
       const unitCostNum = num(unitCost, NaN)
-      if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(t('movements.unitCostRequiredForIncrease'))
+      if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostRequiredForIncrease', 'Unit cost required when increasing on-hand'))
       useUnitCost = unitCostNum
     }
 
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, delta, { unitCost: useUnitCost })
 
-    const adjNote = t('movements.note.adjust', {
-      target: targetQtyEntered,
-      uom: (uomById.get(uomId)?.code || uomId).toString().toUpperCase(),
-      current: currentBase
-    })
+    const adjNote = `${tt('movements.note.adjust', 'Adjust to')} ${targetQtyEntered} ${(uomById.get(uomId)?.code || uomId).toString().toUpperCase()} (${tt('movements.current', 'current')}: ${currentBase})`
 
     await supabase.from('stock_movements').insert({
       type: 'adjust',
@@ -653,7 +613,7 @@ export default function StockMovements() {
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
     setQtyEntered(''); setUnitCost('')
-    toast.success(t('movements.adjusted'))
+    toast.success(tt('movements.adjusted', 'Adjusted'))
   }
 
   async function submit() {
@@ -664,7 +624,7 @@ export default function StockMovements() {
       if (movementType === 'adjust') return await submitAdjust()
     } catch (e: any) {
       console.error(e)
-      toast.error(t('movements.failed'))
+      toast.error(tt('movements.failed', 'Action failed'))
     }
   }
 
@@ -673,7 +633,7 @@ export default function StockMovements() {
     const baseId = itemBaseUomId
     if (!currentItem || !baseId) { setMovementUomId(''); return }
     if (idsOrCodesEqual(uomId, baseId)) { setMovementUomId(uomId); return }
-    if (!canConvert(uomId, baseId)) { toast.error(t('movements.selectedUomNotConvertible')); setMovementUomId(baseId); return }
+    if (!canConvert(uomId, baseId)) { toast.error(tt('movements.selectedUomNotConvertible', 'Selected UoM cannot convert to base')); setMovementUomId(baseId); return }
     setMovementUomId(uomId)
   }
 
@@ -681,10 +641,6 @@ export default function StockMovements() {
   useEffect(() => {
     setRefType(DEFAULT_REF_BY_MOVE[movementType])
     setRefId(''); setRefLineId('')
-    // reset sale fields when leaving SALE
-    if (movementType !== 'issue') {
-      setSaleUnitPrice(''); setSaleDiscountPct('0'); setSaleFx('1')
-    }
   }, [movementType])
 
   const selectedUomValue = currentItem ? (movementUomId || itemBaseUomId || '') : ''
@@ -692,7 +648,6 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
 
-  // Bin contents table
   const itemsInSelectedBin = useMemo(() => {
     const selectedBin = fromBin || toBin
     if (!selectedBin) return []
@@ -713,6 +668,10 @@ export default function StockMovements() {
     }
     return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
   }, [fromBin, toBin, stockFrom, stockTo, items, binsFrom])
+
+  // UI ------------------------------------------------------------------------
+
+  const showSaleBlock = movementType === 'issue' && refType === 'SO'
 
   return (
     <div className="space-y-6">
@@ -892,10 +851,10 @@ export default function StockMovements() {
               <Input type="number" min="0" step="0.0001" value={qtyEntered} onChange={e => setQtyEntered(e.target.value)} placeholder="0" />
               {!!currentItem && preview && (
                 <div className={`text-xs mt-1 ${preview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
-                  {(movementType === 'adjust' ? t('movements.preview.target') : t('movements.preview.entered'))}
+                  {(movementType === 'adjust' ? tt('movements.preview.target', 'Target') : tt('movements.preview.entered', 'Entered'))}
                   {' '}{fmtAcct(preview.entered)} {(uomById.get(preview.uomEntered)?.code || '').toUpperCase()}
                   {' '}→ {fmtAcct(preview.base)} {(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}
-                  {preview.invalid && t('movements.preview.noPath')}
+                  {preview.invalid && tt('movements.preview.noPath', ' (no conversion path)')}
                 </div>
               )}
             </div>
@@ -907,7 +866,7 @@ export default function StockMovements() {
                 <SelectContent>
                   {uomsList.map(u => {
                     const convertible = currentItem ? canConvert(u.id, itemBaseUomId) : false
-                    return <SelectItem key={u.id} value={u.id}>{u.code} — {u.name}{currentItem && !convertible ? t('movements.notConvertibleSuffix') : ''}</SelectItem>
+                    return <SelectItem key={u.id} value={u.id}>{u.code} — {u.name}{currentItem && !convertible ? tt('movements.notConvertibleSuffix', ' (no path)') : ''}</SelectItem>
                   })}
                 </SelectContent>
               </Select>
@@ -917,7 +876,7 @@ export default function StockMovements() {
               <div>
                 <Label>
                   {t('movements.unitCost')}
-                  {movementType === 'adjust' ? ` ${t('movements.unitCost.requiredIfIncreasing')}` : ''}
+                  {movementType === 'adjust' ? ` ${tt('movements.unitCost.requiredIfIncreasing', '(required if increasing)')}` : ''}
                 </Label>
                 <Input type="number" min="0" step="0.0001" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00" />
               </div>
@@ -931,9 +890,8 @@ export default function StockMovements() {
               <Select value={refType} onValueChange={(v: RefType) => setRefType(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {movementType === 'issue' && <SelectItem value="SO">{t('movements.refType.SO')}</SelectItem>}
-                  {movementType === 'issue' && <SelectItem value="SALE">{tt('movements.refType.SALE', 'SALE (cash)')}</SelectItem>}
-                  {movementType === 'receive' && <SelectItem value="PO">{t('movements.refType.PO')}</SelectItem>}
+                  {movementType === 'issue' && <SelectItem value="SO">{tt('movements.refType.SO', 'SO (Sale)')}</SelectItem>}
+                  {movementType === 'receive' && <SelectItem value="PO">{tt('movements.refType.PO', 'PO (Purchase)')}</SelectItem>}
                   <SelectItem value="ADJUST">ADJUST</SelectItem>
                   <SelectItem value="TRANSFER">TRANSFER</SelectItem>
                   <SelectItem value="WRITE_OFF">WRITE_OFF</SelectItem>
@@ -943,44 +901,49 @@ export default function StockMovements() {
             </div>
             <div>
               <Label>{t('movements.refId')}</Label>
-              <Input value={refId} onChange={e => setRefId(e.target.value)} placeholder={t('movements.refId.placeholder')} />
+              <Input value={refId} onChange={e => setRefId(e.target.value)} placeholder={tt('movements.refId.placeholder', 'Existing Ref (optional)')} />
             </div>
             <div>
               <Label>{t('movements.refLineId')}</Label>
-              <Input value={refLineId} onChange={e => setRefLineId(e.target.value)} placeholder={t('movements.refLineId.placeholder')} />
+              <Input value={refLineId} onChange={e => setRefLineId(e.target.value)} placeholder={tt('movements.refLineId.placeholder', 'Ref line (optional)')} />
             </div>
-          </div>
 
-          {/* Cash Sale details (only when Issue + SALE) */}
-          {movementType === 'issue' && refType === 'SALE' && (
-            <div className="grid md:grid-cols-6 gap-3">
-              <div>
-                <Label>{tt('orders.unitPrice', 'Unit Price')}</Label>
-                <Input type="number" min="0" step="0.0001" value={saleUnitPrice} onChange={e => setSaleUnitPrice(e.target.value)} placeholder="0.00" />
-              </div>
-              <div>
-                <Label>{tt('orders.discountPct', 'Disc %')}</Label>
-                <Input type="number" min="0" max="100" step="0.01" value={saleDiscountPct} onChange={e => setSaleDiscountPct(e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <Label>{tt('orders.currency', 'Currency')}</Label>
-                <Select value={saleCurrency} onValueChange={setSaleCurrency}>
-                  <SelectTrigger><SelectValue placeholder={tt('orders.selectCurrency', 'Select currency')} /></SelectTrigger>
-                  <SelectContent>
-                    {currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode || 'BASE' })}</Label>
-                <Input type="number" min="0" step="0.000001" value={saleFx} onChange={e => setSaleFx(e.target.value)} />
-              </div>
-            </div>
-          )}
+            {/* CASH SALE FIELDS (Issue + SO) */}
+            {showSaleBlock && (
+              <>
+                <div>
+                  <Label>{tt('orders.customer', 'Customer')} {tt('common.optional', '(optional)')}</Label>
+                  <Select value={saleCustomerId} onValueChange={setSaleCustomerId}>
+                    <SelectTrigger><SelectValue placeholder={tt('orders.selectCustomer', 'Select customer')} /></SelectTrigger>
+                    <SelectContent className="max-h-64 overflow-auto">
+                      {customers.map(c => <SelectItem key={c.id} value={c.id}>{(c.code ? c.code + ' — ' : '') + c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{tt('orders.currency', 'Currency')}</Label>
+                  <Select value={saleCurrency || baseCode} onValueChange={setSaleCurrency}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="max-h-64 overflow-auto">
+                      {currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label>
+                  <Input type="number" min="0" step="0.000001" value={saleFx} onChange={e => setSaleFx(e.target.value)} />
+                </div>
+                <div>
+                  <Label>{tt('movements.sellUnitPrice', 'Unit Sell Price')}</Label>
+                  <Input type="number" min="0" step="0.0001" value={saleUnitPrice} onChange={e => setSaleUnitPrice(e.target.value)} placeholder="0.00" />
+                </div>
+              </>
+            )}
+          </div>
 
           <div>
             <Label>{t('orders.notes')}</Label>
-            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('movements.notes.placeholder')} />
+            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder={tt('movements.notes.placeholder', 'Optional notes')} />
           </div>
 
           <div className="flex justify-end">
