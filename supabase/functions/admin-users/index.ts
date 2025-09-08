@@ -21,12 +21,27 @@ const SERVICE_ROLE_KEY =
   Deno.env.get("SERVICE_ROLE_KEY");
 const ANON_KEY = Deno.env.get("SB_ANON_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
 
+// Public site (where auth should return)
+const PUBLIC_SITE_URL = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/+$/, "");
+
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) {
   throw new Error("Missing one of SB_URL / SB_SERVICE_ROLE_KEY / SB_ANON_KEY (or SUPABASE_* fallbacks)");
 }
 
-// ---- Hard-coded redirect for dev (same machine) ----
-const REDIRECT_TO = "http://localhost:3000/auth/callback";
+// Build the correct redirectTo for invites / magic links.
+function makeRedirectTo(req: Request) {
+  if (PUBLIC_SITE_URL) return `${PUBLIC_SITE_URL}/auth/callback`;
+
+  const origin = req.headers.get("origin");
+  if (origin) return `${origin.replace(/\/+$/, "")}/auth/callback`;
+
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  if (host) return `${proto}://${host}/auth/callback`;
+
+  // Final fallback (dev)
+  return "http://localhost:3000/auth/callback";
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -47,6 +62,7 @@ serve(async (req) => {
     const anon = createClient(SUPABASE_URL, ANON_KEY);
     const { data: userData, error: userErr } = await anon.auth.getUser(jwt);
     if (userErr || !userData?.user) return json({ error: "invalid token" }, 401);
+
     const userId = userData.user.id;
     const userEmail = userData.user.email ?? "";
 
@@ -137,15 +153,58 @@ serve(async (req) => {
       }, { onConflict: "company_id,email" });
       if (upErr) return json({ error: upErr.message }, 400);
 
-      // send Auth invite email -> ALWAYS redirect to /auth/callback on localhost
+      // send Auth invite email with correct redirect
+      const redirectTo = makeRedirectTo(req);
       try {
-        await admin.auth.admin.inviteUserByEmail(String(email).toLowerCase(), {
-          redirectTo: REDIRECT_TO,
-        });
-        return json({ ok: true });
+        await admin.auth.admin.inviteUserByEmail(String(email).toLowerCase(), { redirectTo });
+        return json({ ok: true, redirectTo });
       } catch (_e) {
-        return json({ ok: true, warning: "invite_email_failed" });
+        // Keep the row; email can be resent later
+        return json({ ok: true, warning: "invite_email_failed", redirectTo });
       }
+    }
+
+    // ---------- POST /invite-link (upsert + return a shareable action_link) ----------
+    if (req.method === "POST" && pathname.endsWith("/invite-link")) {
+      const body = await req.json().catch(() => ({}));
+      const { company_id, email, role } = body as { company_id?: string; email?: string; role?: Role };
+      if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
+
+      const guard = await assertPrivileged(company_id);
+      if (guard) return json({ error: "forbidden" }, 403);
+
+      const lower = String(email).toLowerCase();
+
+      // Ensure an invited row exists
+      const { error: upErr } = await admin.from("company_members").upsert({
+        company_id,
+        email: lower,
+        role: (role ?? "VIEWER") as Role,
+        status: "invited" as Status,
+        invited_by: userId,
+      }, { onConflict: "company_id,email" });
+      if (upErr) return json({ error: upErr.message }, 400);
+
+      const redirectTo = makeRedirectTo(req);
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: "invite",
+        email: lower,
+        options: { redirectTo }
+      });
+      if (linkErr) return json({ error: linkErr.message }, 400);
+
+      interface LinkData {
+        properties?: { action_link?: string };
+        action_link?: string;
+      }
+      const ld = linkData as LinkData | null;
+      const action_link =
+        ld?.properties?.action_link ||
+        ld?.action_link ||
+        null;
+      if (!action_link) return json({ error: "failed to generate link" }, 400);
+
+      return json({ ok: true, link: action_link, redirectTo });
     }
 
     // ---------- POST /reinvite ----------
@@ -157,13 +216,12 @@ serve(async (req) => {
       const guard = await assertPrivileged(company_id);
       if (guard) return json({ error: "forbidden" }, 403);
 
+      const redirectTo = makeRedirectTo(req);
       try {
-        await admin.auth.admin.inviteUserByEmail(String(email).toLowerCase(), {
-          redirectTo: REDIRECT_TO,
-        });
-        return json({ ok: true });
+        await admin.auth.admin.inviteUserByEmail(String(email).toLowerCase(), { redirectTo });
+        return json({ ok: true, redirectTo });
       } catch (_e) {
-        return json({ error: "invite email failed" }, 400);
+        return json({ error: "invite email failed", redirectTo }, 400);
       }
     }
 
@@ -215,14 +273,27 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
-    // ---------- POST /sync (link invites to current user) ----------
+    // ---------- POST /sync (link invites + activate them) ----------
     if (req.method === "POST" && pathname.endsWith("/sync")) {
       const { data, error } = await admin.rpc("link_invites_to_user", {
         p_user_id: userId,
         p_email: userEmail,
       });
       if (error) return json({ error: error.message }, 400);
-      return json({ ok: true, linked: data ?? 0 });
+
+      // flip any linked invites from "invited" -> "active"
+      const { error: actErr, count: activatedCount } = await admin
+        .from("company_members")
+        .update({ status: "active" as Status })
+        .eq("user_id", userId)
+        .eq("status", "invited" as Status)
+        .select("*", { count: "exact", head: true });
+
+      if (actErr) {
+        return json({ ok: true, linked: data ?? 0, activated: 0, warning: actErr.message });
+      }
+
+      return json({ ok: true, linked: data ?? 0, activated: activatedCount ?? 0 });
     }
 
     return json({ error: "not found" }, 404);
