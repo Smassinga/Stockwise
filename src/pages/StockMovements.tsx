@@ -56,7 +56,6 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 
 export default function StockMovements() {
   const { t } = useI18n()
-  // fallback-aware translator
   const tt = (key: string, fallback: string) => {
     const v = t(key as any)
     return v === key ? fallback : v
@@ -315,7 +314,6 @@ export default function StockMovements() {
     if (updErr) throw updErr
   }
 
-  // validate / normalize reference
   function normalizeRefForSubmit(mt: MovementType, rt: RefType): RefType {
     if (mt === 'transfer') return 'TRANSFER'
     if (mt === 'receive' && rt === 'SO') return 'ADJUST'
@@ -636,7 +634,9 @@ export default function StockMovements() {
   const uomsList = useMemo(() => uoms, [uoms])
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
-  const showSaleBlock = movementType === 'issue' && refType === 'SO'
+
+  // IMPORTANT: make the sale UI appear even if the Select feeds a label like "SO (sales)"
+  const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
 
   const itemsInSelectedBin = useMemo(() => {
     const selectedBin = fromBin || toBin
