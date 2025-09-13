@@ -10,7 +10,7 @@ import toast from 'react-hot-toast'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
-import { finalizeCashSaleSO } from '../lib/sales' // <— use shared lib
+import { finalizeCashSaleSO } from '../lib/sales' // shared lib: creates SO with shipped/completed status
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
@@ -91,18 +91,18 @@ export default function StockMovements() {
   const [unitCost, setUnitCost] = useState<string>('') // used in receive / adjust increase
   const [notes, setNotes] = useState<string>('')
 
-  // reference tagging (for COGS / audit)
+  // reference tagging
   const [refType, setRefType] = useState<RefType>(DEFAULT_REF_BY_MOVE[movementType])
-  const [refId, setRefId] = useState<string>('')       // external ref id (optional)
+  const [refId, setRefId] = useState<string>('')       // optional external ref id to link
   const [refLineId, setRefLineId] = useState<string>('')
 
   // cash-sale (Issue + SO)
-  const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional (will fall back to CASH)
+  const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional (defaults to CASH in lib if omitted)
   const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
 
-  // If you have a way to know company id, put it here; otherwise leave undefined and lib will fall back.
+  // If you have a company id, populate it here. Otherwise leave undefined.
   const companyId: string | undefined = undefined
 
   // maps
@@ -137,7 +137,8 @@ export default function StockMovements() {
         setBaseCode(base || 'MZN')
         setSaleCurrency(base || 'MZN')
 
-        const { data: convRows, error: convErr } = await supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
+        const { data: convRows, error: convErr } = await supabase
+          .from('uom_conversions').select('from_uom_id,to_uom_id,factor')
         setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))
 
         const custs = await supabase.from('customers').select('id,code,name').order('name', { ascending: true })
@@ -397,7 +398,7 @@ export default function StockMovements() {
           currencyCode: cur,
           fxToBase: fx,
           fulfilWarehouseId: warehouseFromId,
-          status: 'completed', // make revenue visible on Dashboard
+          status: 'completed', // shipped/completed so it won’t require shipping again
         })
         soRefIdLocal = created.soId
         soRefLineIdLocal = created.soLineId
@@ -407,7 +408,7 @@ export default function StockMovements() {
       }
     }
 
-    // 1) Record movement (COGS comes from this)
+    // 1) Record movement (COGS)
     const ins = await supabase.from('stock_movements').insert({
       type: 'issue',
       item_id: currentItem.id,
@@ -576,7 +577,7 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
 
-  // IMPORTANT: make the sale UI appear even if the Select feeds a label like "SO (sales)"
+  // Show the sale fields for Issue+SO
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
 
   const itemsInSelectedBin = useMemo(() => {
