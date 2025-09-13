@@ -11,7 +11,7 @@ import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 
-type Warehouse = { id: string; name: string; code?: string }
+type Warehouse = { id: string; name: string; code?: string; companyId?: string; company_id?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string; family?: string }
@@ -113,7 +113,8 @@ export default function StockMovements() {
           db.warehouses.list({ orderBy: { name: 'asc' } }),
           supabase.from('items_view').select('id,name,sku,baseUomId').order('name', { ascending: true }),
         ])
-        setWarehouses(whRes || [])
+        // keep companyId/company_id if db wrapper returns it
+        setWarehouses((whRes || []) as any)
         if (itRes.error) throw itRes.error
         setItems((itRes.data || []) as Item[])
 
@@ -321,7 +322,30 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // CASH SALE: auto-create SO header+line if needed
+  // Get the active company id (prefer from selected warehouse; fallback to any warehouse)
+  async function getActiveCompanyId(): Promise<string> {
+    // Try from state (db wrapper may camelCase it)
+    const pick = warehouses.find(w => w.id === (warehouseFromId || warehouseToId)) || warehouses[0]
+    const fromState = (pick as any)?.companyId ?? (pick as any)?.company_id
+    if (fromState) return String(fromState)
+
+    // Fallback: query the selected warehouse
+    const targetWh = warehouseFromId || warehouseToId
+    if (targetWh) {
+      const { data } = await supabase.from('warehouses').select('company_id').eq('id', targetWh).maybeSingle()
+      if (data?.company_id) return data.company_id as string
+    }
+
+    // Last resort: query the first warehouse we can find
+    if (warehouses[0]?.id) {
+      const { data } = await supabase.from('warehouses').select('company_id').eq('id', warehouses[0].id).maybeSingle()
+      if (data?.company_id) return data.company_id as string
+    }
+
+    throw new Error('Unable to determine company id for cash customer')
+  }
+
+  // CASH SALE: auto-create SO header+line with a guaranteed customer_id
   async function createCashSaleSOIfNeeded(args: {
     currency: string
     fxToBase: number
@@ -331,10 +355,19 @@ export default function StockMovements() {
     qty: number
     unitPrice: number
   }): Promise<{ soId: string, soLineId: string | null }> {
-    // If user typed a refId, assume it’s an existing SO id
+    // If user typed a Ref Id, assume it’s an existing SO id & line
     if (refId) return { soId: refId, soLineId: refLineId || null }
 
-    // pull customer fields for bill_to
+    // get/ensure a non-null customer_id
+    let customerId = args.customerId
+    if (!customerId) {
+      const companyId = await getActiveCompanyId()
+      const { data, error } = await supabase.rpc('ensure_cash_customer', { p_company_id: companyId })
+      if (error || !data) throw error || new Error('ensure_cash_customer returned null')
+      customerId = String(data)
+    }
+
+    // optional "bill to" enrichment when customer is explicit selection
     let bill: any = {}
     if (args.customerId) {
       const { data: cust } = await supabase
@@ -359,8 +392,8 @@ export default function StockMovements() {
     const insSO = await supabase
       .from('sales_orders')
       .insert({
-        customer_id: args.customerId || null,
-        status: 'confirmed', // ready to ship immediately
+        customer_id: customerId,          // ✅ guaranteed non-null
+        status: 'confirmed',              // ready to ship immediately
         currency_code: args.currency,
         fx_to_base: args.fxToBase,
         expected_ship_date: null,
@@ -376,7 +409,7 @@ export default function StockMovements() {
     const insLine = await supabase
       .from('sales_order_lines')
       .insert({
-        so_id: soId,
+        so_id: soId,                      // ✅ your schema uses so_id
         item_id: args.itemId,
         uom_id: args.uomId,
         line_no: 1,
@@ -635,7 +668,7 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
 
-  // IMPORTANT: make the sale UI appear even if the Select feeds a label like "SO (sales)"
+  // IMPORTANT: show cash-sale block when refType SO
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
 
   const itemsInSelectedBin = useMemo(() => {
