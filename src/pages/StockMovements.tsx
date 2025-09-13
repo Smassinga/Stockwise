@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
+import { finalizeCashSaleSO } from '../lib/sales' // <— use shared lib
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
@@ -100,6 +101,9 @@ export default function StockMovements() {
   const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
+
+  // If you have a way to know company id, put it here; otherwise leave undefined and lib will fall back.
+  const companyId: string | undefined = undefined
 
   // maps
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
@@ -242,7 +246,7 @@ export default function StockMovements() {
       const visited = new Set<string>([fromId]); const q: string[] = [fromId]
       while (q.length) {
         const id = q.shift()!
-        const edges = convGraph.get(id) || []
+        const edges = (convGraph.get(id) || [])
         for (const e of edges) {
           if (idsOrCodesEqual(e.to, toId) || e.to === toId) return true
           if (!visited.has(e.to)) { visited.add(e.to); q.push(e.to) }
@@ -321,84 +325,6 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // --- CASH CUSTOMER HELPERS -------------------------------------------------
-
-  async function getDefaultCashCustomerId(): Promise<string> {
-    // 1) Check app_settings.data.sales.defaultCashCustomerId
-    const app = await supabase.from('app_settings').select('data').eq('id','app').maybeSingle()
-    const pre = (app.data?.data as any)?.sales?.defaultCashCustomerId as string | undefined
-    if (pre) return pre
-
-    // 2) Try find existing CASH
-    const found = await supabase
-      .from('customers')
-      .select('id')
-      .or('code.ilike.CASH%,name.ilike.Cash%')
-      .order('name',{ascending:true})
-      .limit(1)
-      .maybeSingle()
-    if (found.data?.id) return found.data.id
-
-    // 3) Create a simple CASH customer
-    const created = await supabase
-      .from('customers')
-      .insert({ code: 'CASH', name: 'Cash Customer' })
-      .select('id')
-      .single()
-    if (created.error) throw created.error
-    return created.data.id as string
-  }
-
-  // CASH SALE: auto-create SO header+line if needed (defaults to CASH when no customer selected)
-  async function createCashSaleSOIfNeeded(args: {
-    currency: string
-    fxToBase: number
-    customerId?: string
-    itemId: string
-    uomId: string
-    qty: number
-    unitPrice: number
-  }): Promise<{ soId: string, soLineId: string | null }> {
-    if (refId) return { soId: refId, soLineId: refLineId || null }
-
-    const cid = args.customerId || await getDefaultCashCustomerId()
-
-    const lineTotal = args.qty * args.unitPrice
-    const insSO = await supabase
-      .from('sales_orders')
-      .insert({
-        customer_id: cid,
-        status: 'confirmed',
-        currency_code: args.currency,
-        fx_to_base: args.fxToBase,
-        expected_ship_date: null,
-        notes: 'Cash sale via Stock Movements',
-        total_amount: lineTotal,
-      })
-      .select('id')
-      .single()
-    if (insSO.error) throw insSO.error
-    const soId = insSO.data.id as string
-
-    const insLine = await supabase
-      .from('sales_order_lines')
-      .insert({
-        so_id: soId,
-        item_id: args.itemId,
-        uom_id: args.uomId,
-        line_no: 1,
-        qty: args.qty,
-        unit_price: args.unitPrice,
-        discount_pct: 0,
-        line_total: lineTotal,
-      })
-      .select('id')
-      .single()
-    if (insLine.error) throw insLine.error
-
-    return { soId, soLineId: insLine.data.id as string }
-  }
-
   // SUBMIT handlers
   async function submitReceive() {
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
@@ -409,7 +335,6 @@ export default function StockMovements() {
     const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ≥ 0'))
     const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
-    // Update stock first (no trigger involved)
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: unitCostNum })
 
     const rt = normalizeRefForSubmit('receive', refType)
@@ -451,11 +376,11 @@ export default function StockMovements() {
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
-    let soRefId: string | null = null
-    let soRefLineId: string | null = null
+    let soRefIdLocal: string | null = null
+    let soRefLineIdLocal: string | null = null
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // Cash Sale path (Issue + SO) — will default to CASH if no customer selected
+    // Cash Sale path (Issue + SO) — defaults to CASH if no customer selected
     if (rt === 'SO') {
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
@@ -463,24 +388,26 @@ export default function StockMovements() {
       const fx = num(saleFx, NaN); if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.enterFx', 'Enter a valid FX to base'))
 
       try {
-        const created = await createCashSaleSOIfNeeded({
-          currency: cur,
-          fxToBase: fx,
-          customerId: saleCustomerId || undefined, // function will fallback to CASH
+        const created = await finalizeCashSaleSO({
+          companyId, // optional
           itemId: currentItem.id,
-          uomId,
           qty,
+          uomId,
           unitPrice: unitSellPrice,
+          currencyCode: cur,
+          fxToBase: fx,
+          fulfilWarehouseId: warehouseFromId,
+          status: 'completed', // make revenue visible on Dashboard
         })
-        soRefId = created.soId
-        soRefLineId = created.soLineId
+        soRefIdLocal = created.soId
+        soRefLineIdLocal = created.soLineId
       } catch (e: any) {
         console.error(e)
         return toast.error(tt('movements.failedCreateSO', 'Failed to create the Sales Order'))
       }
     }
 
-    // 1) Insert movement FIRST (so trigger can record revenue; if it fails, we do NOT touch stock)
+    // 1) Record movement (COGS comes from this)
     const ins = await supabase.from('stock_movements').insert({
       type: 'issue',
       item_id: currentItem.id,
@@ -494,8 +421,8 @@ export default function StockMovements() {
       notes,
       created_by: 'system',
       ref_type: rt || 'ADJUST',
-      ref_id: rt === 'SO' ? (soRefId || refId || null) : null,
-      ref_line_id: rt === 'SO' ? (soRefLineId || refLineId || null) : null,
+      ref_id: rt === 'SO' ? (soRefIdLocal || refId || null) : null,
+      ref_line_id: rt === 'SO' ? (soRefLineIdLocal || refLineId || null) : null,
     }).select('id').single()
 
     if (ins.error) {
@@ -503,7 +430,7 @@ export default function StockMovements() {
       return toast.error(tt('movements.failed', 'Action failed'))
     }
 
-    // 2) Only now deduct stock (COGS tracked by movement; avg cost already computed)
+    // 2) Deduct stock
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
 
     // refresh view
@@ -532,7 +459,6 @@ export default function StockMovements() {
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
-    // Move stock first (no revenue here)
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: avgCost })
 
