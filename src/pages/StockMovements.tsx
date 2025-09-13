@@ -11,7 +11,7 @@ import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 
-type Warehouse = { id: string; name: string; code?: string; companyId?: string; company_id?: string }
+type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string; family?: string }
@@ -96,7 +96,7 @@ export default function StockMovements() {
   const [refLineId, setRefLineId] = useState<string>('')
 
   // cash-sale (Issue + SO)
-  const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional
+  const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional (will fall back to CASH)
   const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
@@ -113,8 +113,7 @@ export default function StockMovements() {
           db.warehouses.list({ orderBy: { name: 'asc' } }),
           supabase.from('items_view').select('id,name,sku,baseUomId').order('name', { ascending: true }),
         ])
-        // keep companyId/company_id if db wrapper returns it
-        setWarehouses((whRes || []) as any)
+        setWarehouses(whRes || [])
         if (itRes.error) throw itRes.error
         setItems((itRes.data || []) as Item[])
 
@@ -322,30 +321,35 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // Get the active company id (prefer from selected warehouse; fallback to any warehouse)
-  async function getActiveCompanyId(): Promise<string> {
-    // Try from state (db wrapper may camelCase it)
-    const pick = warehouses.find(w => w.id === (warehouseFromId || warehouseToId)) || warehouses[0]
-    const fromState = (pick as any)?.companyId ?? (pick as any)?.company_id
-    if (fromState) return String(fromState)
+  // --- CASH CUSTOMER HELPERS -------------------------------------------------
 
-    // Fallback: query the selected warehouse
-    const targetWh = warehouseFromId || warehouseToId
-    if (targetWh) {
-      const { data } = await supabase.from('warehouses').select('company_id').eq('id', targetWh).maybeSingle()
-      if (data?.company_id) return data.company_id as string
-    }
+  async function getDefaultCashCustomerId(): Promise<string> {
+    // 1) Check app_settings.data.sales.defaultCashCustomerId
+    const app = await supabase.from('app_settings').select('data').eq('id','app').maybeSingle()
+    const pre = (app.data?.data as any)?.sales?.defaultCashCustomerId as string | undefined
+    if (pre) return pre
 
-    // Last resort: query the first warehouse we can find
-    if (warehouses[0]?.id) {
-      const { data } = await supabase.from('warehouses').select('company_id').eq('id', warehouses[0].id).maybeSingle()
-      if (data?.company_id) return data.company_id as string
-    }
+    // 2) Try find existing CASH
+    const found = await supabase
+      .from('customers')
+      .select('id')
+      .or('code.ilike.CASH%,name.ilike.Cash%')
+      .order('name',{ascending:true})
+      .limit(1)
+      .maybeSingle()
+    if (found.data?.id) return found.data.id
 
-    throw new Error('Unable to determine company id for cash customer')
+    // 3) Create a simple CASH customer
+    const created = await supabase
+      .from('customers')
+      .insert({ code: 'CASH', name: 'Cash Customer' })
+      .select('id')
+      .single()
+    if (created.error) throw created.error
+    return created.data.id as string
   }
 
-  // CASH SALE: auto-create SO header+line with a guaranteed customer_id
+  // CASH SALE: auto-create SO header+line if needed (defaults to CASH when no customer selected)
   async function createCashSaleSOIfNeeded(args: {
     currency: string
     fxToBase: number
@@ -355,51 +359,21 @@ export default function StockMovements() {
     qty: number
     unitPrice: number
   }): Promise<{ soId: string, soLineId: string | null }> {
-    // If user typed a Ref Id, assume it’s an existing SO id & line
     if (refId) return { soId: refId, soLineId: refLineId || null }
 
-    // get/ensure a non-null customer_id
-    let customerId = args.customerId
-    if (!customerId) {
-      const companyId = await getActiveCompanyId()
-      const { data, error } = await supabase.rpc('ensure_cash_customer', { p_company_id: companyId })
-      if (error || !data) throw error || new Error('ensure_cash_customer returned null')
-      customerId = String(data)
-    }
-
-    // optional "bill to" enrichment when customer is explicit selection
-    let bill: any = {}
-    if (args.customerId) {
-      const { data: cust } = await supabase
-        .from('customers')
-        .select('name,email,phone,tax_id,billing_address,shipping_address,payment_terms')
-        .eq('id', args.customerId)
-        .maybeSingle()
-      if (cust) {
-        bill = {
-          bill_to_name: cust.name ?? null,
-          bill_to_email: cust.email ?? null,
-          bill_to_phone: cust.phone ?? null,
-          bill_to_tax_id: cust.tax_id ?? null,
-          bill_to_billing_address: cust.billing_address ?? null,
-          bill_to_shipping_address: cust.shipping_address ?? null,
-          payment_terms: cust.payment_terms ?? null,
-        }
-      }
-    }
+    const cid = args.customerId || await getDefaultCashCustomerId()
 
     const lineTotal = args.qty * args.unitPrice
     const insSO = await supabase
       .from('sales_orders')
       .insert({
-        customer_id: customerId,          // ✅ guaranteed non-null
-        status: 'confirmed',              // ready to ship immediately
+        customer_id: cid,
+        status: 'confirmed',
         currency_code: args.currency,
         fx_to_base: args.fxToBase,
         expected_ship_date: null,
         notes: 'Cash sale via Stock Movements',
         total_amount: lineTotal,
-        ...bill,
       })
       .select('id')
       .single()
@@ -409,7 +383,7 @@ export default function StockMovements() {
     const insLine = await supabase
       .from('sales_order_lines')
       .insert({
-        so_id: soId,                      // ✅ your schema uses so_id
+        so_id: soId,
         item_id: args.itemId,
         uom_id: args.uomId,
         line_no: 1,
@@ -435,6 +409,7 @@ export default function StockMovements() {
     const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ≥ 0'))
     const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
+    // Update stock first (no trigger involved)
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: unitCostNum })
 
     const rt = normalizeRefForSubmit('receive', refType)
@@ -480,7 +455,7 @@ export default function StockMovements() {
     let soRefLineId: string | null = null
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // Cash Sale path (Issue + SO)
+    // Cash Sale path (Issue + SO) — will default to CASH if no customer selected
     if (rt === 'SO') {
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
@@ -491,7 +466,7 @@ export default function StockMovements() {
         const created = await createCashSaleSOIfNeeded({
           currency: cur,
           fxToBase: fx,
-          customerId: saleCustomerId || undefined,
+          customerId: saleCustomerId || undefined, // function will fallback to CASH
           itemId: currentItem.id,
           uomId,
           qty,
@@ -505,10 +480,8 @@ export default function StockMovements() {
       }
     }
 
-    // Deduct stock (COGS from avgCost)
-    await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
-
-    await supabase.from('stock_movements').insert({
+    // 1) Insert movement FIRST (so trigger can record revenue; if it fails, we do NOT touch stock)
+    const ins = await supabase.from('stock_movements').insert({
       type: 'issue',
       item_id: currentItem.id,
       uom_id: uomId,
@@ -521,11 +494,19 @@ export default function StockMovements() {
       notes,
       created_by: 'system',
       ref_type: rt || 'ADJUST',
-      // Only SO-tagged issues count toward revenue/COGS on your dashboard
       ref_id: rt === 'SO' ? (soRefId || refId || null) : null,
       ref_line_id: rt === 'SO' ? (soRefLineId || refLineId || null) : null,
-    })
+    }).select('id').single()
 
+    if (ins.error) {
+      console.error(ins.error)
+      return toast.error(tt('movements.failed', 'Action failed'))
+    }
+
+    // 2) Only now deduct stock (COGS tracked by movement; avg cost already computed)
+    await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
+
+    // refresh view
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
@@ -551,6 +532,7 @@ export default function StockMovements() {
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
+    // Move stock first (no revenue here)
     await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
     await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: avgCost })
 
@@ -668,7 +650,7 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
 
-  // IMPORTANT: show cash-sale block when refType SO
+  // IMPORTANT: make the sale UI appear even if the Select feeds a label like "SO (sales)"
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
 
   const itemsInSelectedBin = useMemo(() => {
@@ -932,7 +914,7 @@ export default function StockMovements() {
             {showSaleBlock && (
               <>
                 <div>
-                  <Label>{tt('orders.customer', 'Customer')} {tt('common.optional', '(optional)')}</Label>
+                  <Label>{tt('orders.customer', 'Customer')} {tt('common.optional', '(optional: defaults to CASH)')}</Label>
                   <Select value={saleCustomerId} onValueChange={setSaleCustomerId}>
                     <SelectTrigger><SelectValue placeholder={tt('orders.selectCustomer', 'Select customer')} /></SelectTrigger>
                     <SelectContent className="max-h-64 overflow-auto">
