@@ -10,7 +10,7 @@ import toast from 'react-hot-toast'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
-import { finalizeCashSaleSO } from '../lib/sales' // shared lib: creates SO with shipped/completed status
+import { finalizeCashSaleSO } from '../lib/sales' // creates SO with shipped status by default
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
@@ -101,9 +101,6 @@ export default function StockMovements() {
   const [saleCurrency, setSaleCurrency] = useState<string>('')     // defaults to base
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
-
-  // If you have a company id, populate it here. Otherwise leave undefined.
-  const companyId: string | undefined = undefined
 
   // maps
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
@@ -390,15 +387,14 @@ export default function StockMovements() {
 
       try {
         const created = await finalizeCashSaleSO({
-          companyId, // optional
           itemId: currentItem.id,
           qty,
           uomId,
           unitPrice: unitSellPrice,
+          customerId: saleCustomerId || undefined,
           currencyCode: cur,
           fxToBase: fx,
-          fulfilWarehouseId: warehouseFromId,
-          status: 'completed', // shipped/completed so it won’t require shipping again
+          status: 'shipped', // valid so_status; avoids needing to ship again
         })
         soRefIdLocal = created.soId
         soRefLineIdLocal = created.soLineId
