@@ -102,6 +102,18 @@ const lastNDays = (days: number) => {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
 }
 
+/* ---------- normalize stock_levels rows (snake → camel) ---------- */
+function normalizeStockLevel(row: any): StockLevel {
+  return {
+    id: String(row.id),
+    itemId: row.itemId ?? row.item_id,
+    warehouseId: row.warehouseId ?? row.warehouse_id,
+    binId: (row.binId ?? row.bin_id) ?? null,
+    onHandQty: n(row.onHandQty ?? row.on_hand_qty, 0),
+    avgCost: n(row.avgCost ?? row.avg_cost, 0),
+  }
+}
+
 /* -------------------- context shape -------------------- */
 type ReportsContextType = {
   // filters & fx
@@ -249,7 +261,9 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         ])
 
         setWarehouses(wh || []); setBins(bb || []); setItems(it || [])
-        setLevels(sl || []); setMoves(mv || []); setCurrencies(cs || [])
+        // *** normalize stock_levels here ***
+        setLevels(Array.isArray(sl) ? sl.map(normalizeStockLevel) : [])
+        setMoves(mv || []); setCurrencies(cs || [])
         if ((custs as any)?.data) setCustomers((custs as any).data as Customer[])
 
         const baseCur = pickString(
@@ -576,7 +590,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       sold: number; beginUnits: number; endUnits: number; avgUnits: number
       turns: number; avgDaysToSell: number | null; cogs?: number
     }> = []
-    const allIds = new Set<string>([...beginUnitsByItem.begin.keys(), ...beginUnitsByItem.end.keys(), ...unitsByItem.sold.keys()])
+    const allIds = new Set<string>([...beginUnitsByItem.begin.keys(), ...beginUnitsByItem.end.keys(), ...unitsByItem.sold.keys() ])
     for (const id of allIds) {
       const it = itemById.get(id); if (!it) continue
       const sold = unitsByItem.sold.get(id) || 0
