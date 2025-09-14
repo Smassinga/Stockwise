@@ -1,4 +1,3 @@
-// src/pages/Settings.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -21,10 +20,12 @@ import {
   Globe,
   Bell,
   FileText,
+  DollarSign,
 } from 'lucide-react'
 
 type Warehouse = { id: string; name: string }
 
+// -------- Settings shape (server stores this inside company_settings.data) --------
 type SettingsData = {
   locale: { language: 'en' | 'pt' }
   dashboard: { defaultWindowDays: number; defaultWarehouseId: string; hideZeros: boolean }
@@ -36,7 +37,38 @@ type SettingsData = {
     defaultFulfilWarehouseId: string
   }
   documents: { brand: { name: string; logoUrl: string }; packingSlipShowsPrices: boolean }
-  notifications: { dailyDigest: boolean; lowStock: { channel: 'email' | 'slack' | 'whatsapp' | 'none' } }
+
+  // NEW: where Reports/Dashboard should read revenue from
+  revenueSources: {
+    // Orders/Invoices table or view (Reports.tsx already supports this name)
+    ordersSource?: string
+    // Cash/POS source with column mapping so we can join later by customer
+    cashSales?: {
+      source?: string
+      dateCol?: string // e.g. created_at
+      customerCol?: string // e.g. customer_id or customerId
+      amountCol?: string // e.g. amount or total
+      currencyCol?: string // optional; if absent, assumed base currency
+    }
+  }
+
+  // Expanded notifications for daily digest + low stock
+  notifications: {
+    dailyDigest: boolean
+    dailyDigestTime?: string        // "08:00" 24h local time
+    timezone?: string               // e.g. "Africa/Maputo"
+    dailyDigestChannels?: {
+      email: boolean
+      sms: boolean
+      whatsapp: boolean
+    }
+    recipients?: {
+      emails: string[]              // comma-separated in UI
+      phones: string[]              // MSISDN, e.g. +25884xxxxxxx
+      whatsapp: string[]            // MSISDN for WhatsApp
+    }
+    lowStock: { channel: 'email' | 'slack' | 'whatsapp' | 'none' }
+  }
 }
 
 const DEFAULTS: SettingsData = {
@@ -50,7 +82,26 @@ const DEFAULTS: SettingsData = {
     defaultFulfilWarehouseId: '',
   },
   documents: { brand: { name: '', logoUrl: '' }, packingSlipShowsPrices: false },
-  notifications: { dailyDigest: false, lowStock: { channel: 'email' } },
+
+  revenueSources: {
+    ordersSource: '', // e.g. "sales_orders" or "orders_view"
+    cashSales: {
+      source: '',
+      dateCol: 'created_at',
+      customerCol: 'customer_id',
+      amountCol: 'amount',
+      currencyCol: 'currency_code',
+    },
+  },
+
+  notifications: {
+    dailyDigest: false,
+    dailyDigestTime: '08:00',
+    timezone: 'Africa/Maputo',
+    dailyDigestChannels: { email: true, sms: false, whatsapp: false },
+    recipients: { emails: [], phones: [], whatsapp: [] },
+    lowStock: { channel: 'email' },
+  },
 }
 
 function deepMerge<T extends Record<string, any>>(a: T, b: Partial<T>): T {
@@ -63,6 +114,14 @@ function deepMerge<T extends Record<string, any>>(a: T, b: Partial<T>): T {
 const clone = <T,>(v: T): T =>
   typeof structuredClone === 'function' ? structuredClone(v) : (JSON.parse(JSON.stringify(v)) as T)
 
+function listToCSV(list: string[]) { return (list || []).join(', ') }
+function csvToList(s: string) {
+  return (s || '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean)
+}
+
 function Settings() {
   const { t, setLang } = useI18n()
   const { companyId, myRole } = useOrg()
@@ -73,11 +132,10 @@ function Settings() {
   const [data, setData] = useState<SettingsData>(DEFAULTS)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
 
-    // AFTER
-    const roleUpper = useMemo(() => String(myRole || '').toUpperCase(), [myRole])
-    const canEditAll = useMemo(() => ['OWNER', 'ADMIN'].includes(roleUpper), [roleUpper])
-    const canEditOps = useMemo(() => canEditAll || roleUpper === 'MANAGER', [canEditAll, roleUpper])
-
+  // AFTER
+  const roleUpper = useMemo(() => String(myRole || '').toUpperCase(), [myRole])
+  const canEditAll = useMemo(() => ['OWNER', 'ADMIN'].includes(roleUpper), [roleUpper])
+  const canEditOps = useMemo(() => canEditAll || roleUpper === 'MANAGER', [canEditAll, roleUpper])
 
   useEffect(() => {
     let cancelled = false
@@ -168,17 +226,42 @@ function Settings() {
 
     try {
       setSaving(true)
+
+      // 1) Save to company_settings via RPC (server will sanitize)
       const { data: updated, error } = await supabase.rpc('update_company_settings', {
         p_company_id: companyId,
-        p_patch: data, // RPC will sanitize based on your role
+        p_patch: data,
       })
       if (error) throw error
+
+      // 2) Mirror Orders/Cash sources into legacy global "settings" (id='app')
+      //    so current Reports.tsx can read ordersSource immediately.
+      try {
+        const ordersSource = data.revenueSources?.ordersSource?.trim() || null
+        const cashSource = data.revenueSources?.cashSales?.source?.trim() || null
+
+        await supabase
+          .from('settings')
+          .upsert([
+            {
+              id: 'app',
+              // camelCase and snake_case for compatibility
+              ordersSource: ordersSource || null,
+              orders_source: ordersSource || null,
+              cashSalesSource: cashSource || null,
+              cash_sales_source: cashSource || null,
+              // keep any other existing fields untouched on RLS side
+            } as any,
+          ], { onConflict: 'id' })
+      } catch (mirrorErr) {
+        console.warn('[settings mirror] warning:', mirrorErr)
+      }
 
       // Merge result (server is source of truth)
       const merged = deepMerge(DEFAULTS, (updated as Partial<SettingsData>) ?? {})
       setData(merged)
       setLang(merged.locale.language)
-      toast.success(t('actions.save'))
+      toast.success('Settings saved')
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Save failed')
@@ -416,16 +499,92 @@ function Settings() {
         </CardContent>
       </Card>
 
+      {/* NEW: Revenue Sources */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5" /> Revenue Sources
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <Label>Orders / Invoices source (table or view name)</Label>
+            <Input
+              placeholder='e.g. "sales_orders" or "orders_view"'
+              value={data.revenueSources.ordersSource || ''}
+              onChange={(e) => setField('revenueSources.ordersSource', e.target.value)}
+              disabled={!canEditOps}
+            />
+            <div className="text-xs text-muted-foreground mt-1">
+              Reports → Revenue already reads this name. Table/view should include: <code>id</code>, <code>customerId</code>, <code>status</code>,
+              <code>currencyCode</code>, <code>total/grandTotal/netTotal</code>, and a date column <code>createdAt</code> or <code>created_at</code>.
+            </div>
+          </div>
+
+          <div className="md:col-span-2 pt-2">
+            <Label>Cash / POS sales source (table or view)</Label>
+            <Input
+              placeholder='e.g. "cash_sales_view"'
+              value={data.revenueSources.cashSales?.source || ''}
+              onChange={(e) => setField('revenueSources.cashSales.source', e.target.value)}
+              disabled={!canEditOps}
+            />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-2">
+              <div>
+                <Label>Date column</Label>
+                <Input
+                  placeholder="created_at"
+                  value={data.revenueSources.cashSales?.dateCol || ''}
+                  onChange={(e) => setField('revenueSources.cashSales.dateCol', e.target.value)}
+                  disabled={!canEditOps}
+                />
+              </div>
+              <div>
+                <Label>Customer column</Label>
+                <Input
+                  placeholder="customer_id"
+                  value={data.revenueSources.cashSales?.customerCol || ''}
+                  onChange={(e) => setField('revenueSources.cashSales.customerCol', e.target.value)}
+                  disabled={!canEditOps}
+                />
+              </div>
+              <div>
+                <Label>Amount column</Label>
+                <Input
+                  placeholder="amount"
+                  value={data.revenueSources.cashSales?.amountCol || ''}
+                  onChange={(e) => setField('revenueSources.cashSales.amountCol', e.target.value)}
+                  disabled={!canEditOps}
+                />
+              </div>
+              <div>
+                <Label>Currency column (optional)</Label>
+                <Input
+                  placeholder="currency_code"
+                  value={data.revenueSources.cashSales?.currencyCol || ''}
+                  onChange={(e) => setField('revenueSources.cashSales.currencyCol', e.target.value)}
+                  disabled={!canEditOps}
+                />
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              We’ll use this mapping to include walk-in/cash sales in Reports → Revenue and in the Daily Digest.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Notifications */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" /> {t('sections.notifications.title')}
+            <Bell className="w-5 h-5" /> Notifications
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
+          {/* Low stock (existing) */}
           <div>
-            <Label>{t('fields.lowStockChannel')}</Label>
+            <Label>Low stock channel</Label>
             <Select
               value={data.notifications.lowStock.channel}
               onValueChange={(v) => setField('notifications.lowStock.channel', v)}
@@ -441,13 +600,95 @@ function Settings() {
             </Select>
           </div>
 
+          {/* Daily digest master switch */}
           <div className="flex items-center gap-3">
             <Switch
               checked={data.notifications.dailyDigest}
               onCheckedChange={(v) => setField('notifications.dailyDigest', v)}
               disabled={!canEditOps}
             />
-            <Label>{t('fields.dailyDigest')}</Label>
+            <Label>Daily digest (Revenue & COGS by product)</Label>
+          </div>
+
+          {/* Daily digest options */}
+          <div>
+            <Label>Digest time (local)</Label>
+            <Input
+              type="time"
+              value={data.notifications.dailyDigestTime || '08:00'}
+              onChange={(e) => setField('notifications.dailyDigestTime', e.target.value)}
+              disabled={!canEditOps}
+            />
+            <div className="text-xs text-muted-foreground mt-1">
+              24-hour format. We’ll use your timezone below.
+            </div>
+          </div>
+
+          <div>
+            <Label>Timezone</Label>
+            <Input
+              placeholder="Africa/Maputo"
+              value={data.notifications.timezone || 'Africa/Maputo'}
+              onChange={(e) => setField('notifications.timezone', e.target.value)}
+              disabled={!canEditOps}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={!!data.notifications.dailyDigestChannels?.email}
+                onCheckedChange={(v) => setField('notifications.dailyDigestChannels.email', v)}
+                disabled={!canEditOps}
+              />
+              <Label>Email</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={!!data.notifications.dailyDigestChannels?.sms}
+                onCheckedChange={(v) => setField('notifications.dailyDigestChannels.sms', v)}
+                disabled={!canEditOps}
+              />
+              <Label>SMS</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={!!data.notifications.dailyDigestChannels?.whatsapp}
+                onCheckedChange={(v) => setField('notifications.dailyDigestChannels.whatsapp', v)}
+                disabled={!canEditOps}
+              />
+              <Label>WhatsApp</Label>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <Label>Recipient emails (comma separated)</Label>
+              <Input
+                placeholder="owner@company.com, manager@company.com"
+                value={listToCSV(data.notifications.recipients?.emails || [])}
+                onChange={(e) => setField('notifications.recipients.emails', csvToList(e.target.value))}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div>
+              <Label>Recipient phones for SMS (comma separated)</Label>
+              <Input
+                placeholder="+25884xxxxxxx, +25886xxxxxxx"
+                value={listToCSV(data.notifications.recipients?.phones || [])}
+                onChange={(e) => setField('notifications.recipients.phones', csvToList(e.target.value))}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div>
+              <Label>Recipient WhatsApp numbers (comma separated)</Label>
+              <Input
+                placeholder="+25884xxxxxxx"
+                value={listToCSV(data.notifications.recipients?.whatsapp || [])}
+                onChange={(e) => setField('notifications.recipients.whatsapp', csvToList(e.target.value))}
+                disabled={!canEditOps}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
