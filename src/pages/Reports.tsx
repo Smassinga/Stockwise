@@ -32,7 +32,8 @@ type Currency = { code: string; name: string; symbol?: string | null; decimals?:
 type Customer = { id: string; name: string; code?: string | null }
 type OrderLite = {
   id: string
-  customerId: string | null
+  customerId?: string | null
+  customer_id?: string | null
   createdAt?: string | null
   created_at?: string | null
   status?: string | null
@@ -41,6 +42,27 @@ type OrderLite = {
   total?: number | null
   grandTotal?: number | null
   netTotal?: number | null
+  total_amount?: number | null
+  grand_total?: number | null
+  net_total?: number | null
+}
+
+// Cash/POS sales (may live in a separate table)
+type CashSaleLite = {
+  id: string
+  customerId?: string | null
+  customer_id?: string | null
+  createdAt?: string | null
+  created_at?: string | null
+  status?: string | null
+  currencyCode?: string | null
+  currency_code?: string | null
+  total?: number | null
+  grandTotal?: number | null
+  netTotal?: number | null
+  total_amount?: number | null
+  grand_total?: number | null
+  net_total?: number | null
 }
 
 type StockLevel = {
@@ -141,11 +163,15 @@ export default function Reports() {
   const [levels, setLevels] = useState<StockLevel[]>([])
   const [moves, setMoves] = useState<Movement[]>([])
   const [orders, setOrders] = useState<OrderLite[]>([])
+  const [cashSales, setCashSales] = useState<CashSaleLite[]>([])
 
-  // revenue config + guard
+  // revenue config + guards
   const [ordersSource, setOrdersSource] = useState<string>('') // table or view name for orders
-  const [revenueUnavailable, setRevenueUnavailable] = useState<boolean>(false)
+  const [cashSource, setCashSource] = useState<string>('')     // table or view name for cash/POS sales
+  const [ordersUnavailable, setOrdersUnavailable] = useState<boolean>(false)
+  const [cashUnavailable, setCashUnavailable] = useState<boolean>(false)
   const ordersFetchKeyRef = useRef<string>('') // suppress duplicate fetch in Strict Mode dev
+  const cashFetchKeyRef = useRef<string>('')
 
   // UI
   const [tab, setTab] = useState<TabKey>('summary')
@@ -216,9 +242,10 @@ export default function Reports() {
         setCurrencies(cs || [])
         if ((custs as any)?.data) setCustomers((custs as any).data as Customer[])
 
-        // Normalize app-level settings for base currency & orders source
+        // Normalize app-level settings for base currency & sources
         const baseCur = setting?.baseCurrencyCode ?? setting?.base_currency_code
         const ordersSrc = setting?.ordersSource ?? setting?.orders_source
+        const cashSrc = setting?.cashSalesSource ?? setting?.cash_sales_source ?? setting?.posSource ?? setting?.pos_source
 
         if (baseCur) {
           setBaseCurrency(baseCur)
@@ -228,9 +255,8 @@ export default function Reports() {
           setDisplayCurrency(prev => prev || 'MZN')
         }
 
-        if (typeof ordersSrc === 'string' && ordersSrc.trim()) {
-          setOrdersSource(ordersSrc.trim())
-        }
+        if (typeof ordersSrc === 'string' && ordersSrc.trim()) setOrdersSource(ordersSrc.trim())
+        if (typeof cashSrc === 'string' && cashSrc.trim()) setCashSource(cashSrc.trim())
       } catch (err: any) {
         console.error(err)
         toast.error(err?.message || 'Failed to load reports data')
@@ -248,10 +274,10 @@ export default function Reports() {
 
       // reset
       setOrders([])
-      setRevenueUnavailable(false)
+      setOrdersUnavailable(false)
 
       if (!ordersSource) {
-        setRevenueUnavailable(true)
+        setOrdersUnavailable(true)
         return
       }
 
@@ -259,38 +285,89 @@ export default function Reports() {
       const run = (dateCol: DateCol) =>
         supabase
           .from(ordersSource)
-          .select(`id,customerId,status,currencyCode,currency_code,total,grandTotal,netTotal,${dateCol}`)
+          .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${dateCol}`)
           .gte(dateCol, startDate)
           .lte(dateCol, endDate)
           .order(dateCol, { ascending: true })
 
       try {
-        // Try camelCase first, fall back to snake_case ONLY if the first fails due to bad column.
+        // Try camelCase first, fall back to snake_case ONLY if first fails with bad column.
         let resp = await run('createdAt')
         if (resp.error) {
           const msg = (resp.error?.message || '').toLowerCase()
           if (msg.includes('not found') || msg.includes('does not exist') || msg.includes('relation')) {
-            setRevenueUnavailable(true)
+            setOrdersUnavailable(true)
             return
           }
           if (msg.includes('column') && msg.includes('does not exist')) {
             const resp2 = await run('created_at')
             if (resp2.error) {
-              setRevenueUnavailable(true)
+              setOrdersUnavailable(true)
               return
             }
             setOrders((resp2.data || []) as OrderLite[])
             return
           }
-          setRevenueUnavailable(true)
+          setOrdersUnavailable(true)
           return
         }
         setOrders((resp.data || []) as OrderLite[])
       } catch {
-        setRevenueUnavailable(true)
+        setOrdersUnavailable(true)
       }
     })()
   }, [ordersSource, startDate, endDate])
+
+  // Load cash/POS sales (optional) with same date window
+  useEffect(() => {
+    ;(async () => {
+      const key = `${cashSource}|${startDate}|${endDate}`
+      if (cashFetchKeyRef.current === key) return
+      cashFetchKeyRef.current = key
+
+      setCashSales([])
+      setCashUnavailable(false)
+
+      if (!cashSource) {
+        setCashUnavailable(true)
+        return
+      }
+
+      type DateCol = 'createdAt' | 'created_at'
+      const run = (dateCol: DateCol) =>
+        supabase
+          .from(cashSource)
+          .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${dateCol}`)
+          .gte(dateCol, startDate)
+          .lte(dateCol, endDate)
+          .order(dateCol, { ascending: true })
+
+      try {
+        let resp = await run('createdAt')
+        if (resp.error) {
+          const msg = (resp.error?.message || '').toLowerCase()
+          if (msg.includes('not found') || msg.includes('does not exist') || msg.includes('relation')) {
+            setCashUnavailable(true)
+            return
+          }
+          if (msg.includes('column') && msg.includes('does not exist')) {
+            const resp2 = await run('created_at')
+            if (resp2.error) {
+              setCashUnavailable(true)
+              return
+            }
+            setCashSales((resp2.data || []) as CashSaleLite[])
+            return
+          }
+          setCashUnavailable(true)
+          return
+        }
+        setCashSales((resp.data || []) as CashSaleLite[])
+      } catch {
+        setCashUnavailable(true)
+      }
+    })()
+  }, [cashSource, startDate, endDate])
 
   // auto FX: fetch latest rate on/before end date (base -> display)
   useEffect(() => {
@@ -372,7 +449,53 @@ export default function Reports() {
     return { startMs, endMs, inRange }
   }, [moves, startDate, endDate])
 
-  /** ----------------- Cost engine (FIFO / WA) by wh|item ----------------- */
+  /** ----------------- Revenue by Customer (Orders + Cash/POS) ----------------- */
+  const revenueByCustomer = useMemo(() => {
+    // Exclude obviously non-revenue states
+    const BAD_STATUSES = new Set(['cancelled', 'canceled', 'void', 'draft', 'rejected', 'refunded'])
+
+    const agg = new Map<string, number>()
+    let grand = 0
+
+    // helper to pull amount robustly
+    const getAmount = (o: any) => {
+      const a = o?.grandTotal ?? o?.total ?? o?.netTotal ?? o?.total_amount ?? o?.grand_total ?? o?.net_total
+      const v = Number(a)
+      return Number.isFinite(v) ? v : 0
+    }
+    const getStatus = (o: any) => String(o?.status || '').toLowerCase()
+    const getCustomer = (o: any) => (o?.customerId ?? o?.customer_id ?? null) as (string | null)
+
+    const addRow = (o: any) => {
+      const status = getStatus(o)
+      if (status && BAD_STATUSES.has(status)) return
+      const amount = getAmount(o)
+      const custId = getCustomer(o) || 'unknown'
+      agg.set(custId, (agg.get(custId) || 0) + amount)
+      grand += amount
+    }
+
+    for (const o of orders) addRow(o)
+    for (const c of cashSales) addRow(c)
+
+    const rows = Array.from(agg.entries()).map(([customerId, baseAmount]) => {
+      const c = customerById.get(customerId)
+      return {
+        customerId,
+        customerName: c?.name || (customerId === 'unknown' ? '(no customer)' : customerId),
+        baseAmount,
+      }
+    })
+
+    rows.sort((a, b) => b.baseAmount - a.baseAmount)
+
+    return {
+      rows,
+      grandTotalBase: grand,
+    }
+  }, [orders, cashSales, customerById])
+
+    /** ----------------- Cost engine (FIFO / WA) by wh|item ----------------- */
   type Key = string // `${whId}|${itemId}`
   type Layer = { qty: number; cost: number }
   type WAState = { qty: number; avgCost: number }
@@ -668,6 +791,7 @@ export default function Reports() {
     }
     return { begin, end: endUnits }
   }, [levels, unitsByItem])
+
   /** ----------------- Turnover & Avg Days ----------------- */
   const turnoverPerItem = useMemo(() => {
     const days = Math.max(1, Math.round((period.endMs - period.startMs) / (1000 * 60 * 60 * 24)) + 1)
@@ -807,97 +931,7 @@ export default function Reports() {
     return { buckets: buckets.map(b => b.key), rowsWH, rowsBin }
   }, [levels, moves, whById, binById])
 
-  /** ----------------- Revenue by Customer ----------------- */
-  const revenueByCustomer = useMemo(() => {
-    // Exclude obviously non-revenue states
-    const BAD_STATUSES = new Set(['cancelled', 'canceled', 'void', 'draft', 'rejected'])
-
-    const agg = new Map<string, number>()
-    let grand = 0
-
-    for (const o of orders) {
-      const status = (o.status || '').toLowerCase()
-      if (status && BAD_STATUSES.has(status)) continue
-
-      const total = n(o.grandTotal, NaN) ?? n(o.total, NaN) ?? n(o.netTotal, NaN)
-      const amount = Number.isFinite(total) ? Number(total) : 0
-
-      const custId = o.customerId || 'unknown'
-      agg.set(custId, (agg.get(custId) || 0) + amount)
-      grand += amount
-    }
-
-    const rows = Array.from(agg.entries()).map(([customerId, baseAmount]) => {
-      const c = customerById.get(customerId)
-      return {
-        customerId,
-        customerName: c?.name || (customerId === 'unknown' ? '(no customer)' : customerId),
-        baseAmount,
-      }
-    })
-
-    rows.sort((a, b) => b.baseAmount - a.baseAmount)
-
-    return {
-      rows,
-      grandTotalBase: grand,
-    }
-  }, [orders, customerById])
-
-  /** ========================== EXPORTS ========================== */
-  const buildHeaderRows = (title: string): (string | number)[][] => ([
-    [companyName],
-    [title],
-    [`Period: ${startDate} → ${endDate}`],
-    [`Currency: ${displayCurrency}${fxRate !== 1 ? `  (FX ${fxRate.toFixed(6)} per ${baseCurrency})` : ''}`],
-    [fxNote ? fxNote : ''],
-    [''],
-  ])
-
-  const formatRowsForCSV = (rows: (string | number)[][], moneyCols: number[] = [], qtyCols: number[] = []) => {
-    return rows.map((r, i) => {
-      if (i === 0) return r
-      return r.map((cell, ci) => {
-        if (typeof cell === 'number') {
-          if (moneyCols.includes(ci)) return `${displayCurrency} ${fmtAccounting(cell, 2)}`
-          if (qtyCols.includes(ci)) return fmt(cell, 2)
-          return fmt(cell, 2)
-        }
-        return String(cell ?? '')
-      })
-    })
-  }
-
-  const downloadCSV = (filename: string, rows: (string | number)[][]) => {
-    const csv = rows.map(r =>
-      r.map(cell => {
-        const s = String(cell ?? '')
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-      }).join(',')
-    ).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    saveAs(blob, filename)
-  }
-
-  function formatSheetNumbers(ws: XLSX.WorkSheet, dataStartRow: number, moneyCols: number[] = [], qtyCols: number[] = []) {
-    if (!ws['!ref']) return
-    const range = XLSX.utils.decode_range(ws['!ref'])
-    const moneyFmt = '#,##0.00;(#,##0.00)'
-    const qtyFmt = '#,##0.00;[Red]-#,##0.00'
-    for (let R = dataStartRow; R <= range.e.r; R++) {
-      for (const C of moneyCols) {
-        const address = XLSX.utils.encode_cell({ r: R, c: C })
-        const cell = ws[address]
-        if (cell && typeof cell.v === 'number') cell.z = moneyFmt
-      }
-      for (const C of qtyCols) {
-        const address = XLSX.utils.encode_cell({ r: R, c: C })
-        const cell = ws[address]
-        if (cell && typeof cell.v === 'number') cell.z = qtyFmt
-      }
-    }
-  }
-
+  /** ========================== EXPORT ROWS (for CSV/XLSX/PDF) ========================== */
   // ---------- valuation totals ----------
   const valuationByWHRows = useMemo<(string | number)[][]>(() => {
     const rows: (string | number)[][] = [['Warehouse', `Value (${displayCurrency})`]]
@@ -1015,7 +1049,61 @@ export default function Reports() {
     return rows
   }, [revenueByCustomer, fxRate, displayCurrency])
 
-  // ---------- export triggers ----------
+    /** ========================== EXPORT HELPERS ========================== */
+  const buildHeaderRows = (title: string): (string | number)[][] => ([
+    [companyName],
+    [title],
+    [`Period: ${startDate} → ${endDate}`],
+    [`Currency: ${displayCurrency}${fxRate !== 1 ? `  (FX ${fxRate.toFixed(6)} per ${baseCurrency})` : ''}`],
+    [fxNote ? fxNote : ''],
+    [''],
+  ])
+
+  const formatRowsForCSV = (rows: (string | number)[][], moneyCols: number[] = [], qtyCols: number[] = []) => {
+    return rows.map((r, i) => {
+      if (i === 0) return r
+      return r.map((cell, ci) => {
+        if (typeof cell === 'number') {
+          if (moneyCols.includes(ci)) return `${displayCurrency} ${fmtAccounting(cell, 2)}`
+          if (qtyCols.includes(ci)) return fmt(cell, 2)
+          return fmt(cell, 2)
+        }
+        return String(cell ?? '')
+      })
+    })
+  }
+
+  const downloadCSV = (filename: string, rows: (string | number)[][]) => {
+    const csv = rows.map(r =>
+      r.map(cell => {
+        const s = String(cell ?? '')
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }).join(',')
+    ).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    saveAs(blob, filename)
+  }
+
+  function formatSheetNumbers(ws: XLSX.WorkSheet, dataStartRow: number, moneyCols: number[] = [], qtyCols: number[] = []) {
+    if (!ws['!ref']) return
+    const range = XLSX.utils.decode_range(ws['!ref'])
+    const moneyFmt = '#,##0.00;(#,##0.00)'
+    const qtyFmt = '#,##0.00;[Red]-#,##0.00'
+    for (let R = dataStartRow; R <= range.e.r; R++) {
+      for (const C of moneyCols) {
+        const address = XLSX.utils.encode_cell({ r: R, c: C })
+        const cell = ws[address]
+        if (cell && typeof cell.v === 'number') cell.z = moneyFmt
+      }
+      for (const C of qtyCols) {
+        const address = XLSX.utils.encode_cell({ r: R, c: C })
+        const cell = ws[address]
+        if (cell && typeof cell.v === 'number') cell.z = qtyFmt
+      }
+    }
+  }
+
+  /** ========================== EXPORT TRIGGERS ========================== */
   const handleExportCSV = () => {
     const stamp = endDate.replace(/-/g, '')
 
@@ -1129,6 +1217,7 @@ export default function Reports() {
 
     toast('Nothing to export on Summary (try Valuation/Turnover/Aging/Revenue)', { icon: 'ℹ️' })
   }
+
   const handleExportPDF = () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
     const stamp = endDate.replace(/-/g, '')
@@ -1281,7 +1370,15 @@ export default function Reports() {
       : tab === 'aging'
       ? 'Inventory Aging'
       : tab === 'revenue'
-      ? `Revenue by Customer${revenueUnavailable ? ' (source not connected)' : ''}`
+      ? (
+          ordersUnavailable && cashUnavailable
+            ? 'Revenue by Customer (no sources connected)'
+            : ordersUnavailable
+            ? 'Revenue by Customer (orders source not connected; showing Cash/POS only)'
+            : cashUnavailable
+            ? 'Revenue by Customer (cash/POS source not connected; showing Orders only)'
+            : 'Revenue by Customer'
+        )
       : 'Inventory Reports'
 
   const currencyOptions = useMemo(() => {
@@ -1502,6 +1599,7 @@ export default function Reports() {
           </CardContent>
         </Card>
       )}
+
       {tab === 'valuation' && (
         <Card>
           <CardHeader><CardTitle>Stock Valuation</CardTitle></CardHeader>
@@ -1732,6 +1830,13 @@ export default function Reports() {
         <Card>
           <CardHeader><CardTitle>Revenue by Customer</CardTitle></CardHeader>
           <CardContent className="overflow-x-auto">
+            {(ordersUnavailable || cashUnavailable) && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-3">
+                {ordersUnavailable && cashUnavailable && 'No revenue sources are connected. Configure order/cash sources in Settings.'}
+                {ordersUnavailable && !cashUnavailable && 'Orders source not connected — showing only Cash/POS sales.'}
+                {!ordersUnavailable && cashUnavailable && 'Cash/POS source not connected — showing only Orders.'}
+              </div>
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
@@ -1742,7 +1847,7 @@ export default function Reports() {
               <tbody>
                 {revenueByCustomer.rows.length === 0 && (
                   <tr>
-                    <td colSpan={2} className="py-4 text-muted-foreground">No orders in the selected period.</td>
+                    <td colSpan={2} className="py-4 text-muted-foreground">No revenue in the selected period.</td>
                   </tr>
                 )}
                 {revenueByCustomer.rows.map(r => (
