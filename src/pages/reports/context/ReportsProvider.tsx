@@ -27,7 +27,6 @@ type OrderLite = {
   grand_total?: number | null
   net_total?: number | null
 }
-
 type CashSaleLite = OrderLite
 
 type StockLevel = {
@@ -37,6 +36,7 @@ type StockLevel = {
   binId?: string | null
   onHandQty: number
   avgCost?: number
+  updatedAt?: string | null
 }
 
 type Movement = {
@@ -80,37 +80,28 @@ const resolveWarehouse = (m: Movement, dir: 'IN' | 'OUT') => {
   if (dir === 'IN') return (m.warehouseToId || m.warehouseFromId || '') || ''
   return (m.warehouseFromId || m.warehouseToId || '') || ''
 }
-const pickString = (...cs: any[]) => {
-  for (const c of cs) if (typeof c === 'string' && c.trim()) return c.trim()
-  return undefined
-}
-const at = (obj: any, path: string): any => {
-  try { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj) } catch { return undefined }
-}
-const fmtPositive = (x: number, d = 2) => {
-  const fixed = (Math.abs(x) || 0).toFixed(d)
-  const [i, dec] = fixed.split('.')
-  const withCommas = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return dec != null ? `${withCommas}.${dec}` : withCommas
-}
+const pickString = (...cs: any[]) => { for (const c of cs) if (typeof c === 'string' && c.trim()) return c.trim(); return undefined }
+const at = (obj: any, path: string): any => { try { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj) } catch { return undefined } }
+const fmtPositive = (x: number, d = 2) => { const fixed = (Math.abs(x) || 0).toFixed(d); const [i, dec] = fixed.split('.'); const withCommas = i.replace(/\B(?=(\d{3})+(?!\d))/g, ','); return dec != null ? `${withCommas}.${dec}` : withCommas }
 const fmt = (x: number, d = 2) => (x < 0 ? '-' : '') + fmtPositive(x, d)
 const fmtAccounting = (x: number, d = 2) => (x < 0 ? `(${fmtPositive(x, d)})` : fmtPositive(x, d))
-const lastNDays = (days: number) => {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(end.getDate() - days)
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
-}
+const lastNDays = (days: number) => { const end = new Date(); const start = new Date(); start.setDate(end.getDate() - days); return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) } }
 
-/* ---------- normalize stock_levels rows (snake → camel) ---------- */
+/* ---------- normalize stock_levels rows (snake → camel; robust) ---------- */
 function normalizeStockLevel(row: any): StockLevel {
   return {
-    id: String(row.id),
-    itemId: row.itemId ?? row.item_id,
-    warehouseId: row.warehouseId ?? row.warehouse_id,
-    binId: (row.binId ?? row.bin_id) ?? null,
-    onHandQty: n(row.onHandQty ?? row.on_hand_qty, 0),
-    avgCost: n(row.avgCost ?? row.avg_cost, 0),
+    id: String(row.id ?? row.uuid ?? row.pk ?? ''),
+    itemId:
+      row.itemId ?? row.item_id ?? row.itemID ?? row.itemid,
+    warehouseId:
+      row.warehouseId ?? row.warehouse_id ?? row.warehouseID ?? row.warehouseid,
+    binId:
+      row.binId ?? row.bin_id ?? null,
+    onHandQty:
+      n(row.onHandQty ?? row.on_hand_qty ?? row.qty ?? row.qtyOnHand ?? row.qty_on_hand ?? row.quantity_on_hand ?? row.onhandqty, 0),
+    avgCost:
+      n(row.avgCost ?? row.avg_cost ?? row.averageCost ?? row.average_cost ?? row.avg_unit_cost ?? row.average_unit_cost ?? row.unit_cost_avg, 0),
+    updatedAt: row.updatedAt ?? row.updated_at ?? null,
   }
 }
 
@@ -136,8 +127,10 @@ type ReportsContextType = {
   // indexes & helpers
   itemById: Map<string, Item>
   whById: Map<string, Warehouse>
+  whByCode: Map<string, Warehouse>
   binById: Map<string, Bin>
   customerById: Map<string, Customer>
+  whName: (idOrCode?: string | null) => string
   moneyText: (x: number) => string
   fmt: typeof fmt
   fmtAccounting: typeof fmtAccounting
@@ -261,7 +254,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         ])
 
         setWarehouses(wh || []); setBins(bb || []); setItems(it || [])
-        // *** normalize stock_levels here ***
+        // normalize stock_levels
         setLevels(Array.isArray(sl) ? sl.map(normalizeStockLevel) : [])
         setMoves(mv || []); setCurrencies(cs || [])
         if ((custs as any)?.data) setCustomers((custs as any).data as Customer[])
@@ -404,11 +397,16 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     })()
   }, [autoFx, endDate, displayCurrency, baseCurrency])
 
-  /* ---------- indexes ---------- */
-  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
-  const whById = useMemo(() => new Map(warehouses.map(w => [w.id, w])), [warehouses])
-  const binById = useMemo(() => new Map(bins.map(b => [b.id, b])), [bins])
+  /* ---------- indexes & name resolver ---------- */
+  const itemById   = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
+  const whById     = useMemo(() => new Map(warehouses.map(w => [w.id, w])), [warehouses])
+  const whByCode   = useMemo(() => new Map(warehouses.filter(w => w.code).map(w => [w.code!, w])), [warehouses])
+  const binById    = useMemo(() => new Map(bins.map(b => [b.id, b])), [bins])
   const customerById = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
+  const whName = (idOrCode?: string | null) => {
+    if (!idOrCode) return '—'
+    return whById.get(idOrCode)?.name || whByCode.get(idOrCode)?.name || idOrCode
+  }
 
   /* ---------- period ---------- */
   const period = useMemo(() => {
@@ -485,53 +483,115 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     const sorted = [...moves].sort((a, b) => getTime(a) - getTime(b))
     const getWA = (k: Key) => wa.get(k) || { qty: 0, avgCost: 0 }
     const getFIFO = (k: Key) => fifo.get(k) || []
+
     for (const m of sorted) {
-      const t = getTime(m); const qty = Math.abs(n(m.qtyBase ?? m.qty, 0)); if (qty <= 0) continue
-      const nt = normalizeType(m.type, m.qtyBase ?? m.qty); const unitCost = n(m.unitCost, 0)
+      const t = getTime(m)
+      if (t > end) break; // ►► Only consider moves up to END for as-of-end valuation
+
+      const qtySigned = n(m.qtyBase ?? m.qty, 0)
+      const qty = Math.abs(qtySigned)
+      if (qty <= 0) continue
+
+      const nt = normalizeType(m.type, qtySigned)
+      const unitCost = n(m.unitCost, 0)
+
       if (nt === 'TRANSFER') {
-        const srcWh = resolveWarehouse(m, 'OUT'); const dstWh = resolveWarehouse(m, 'IN')
+        const srcWh = resolveWarehouse(m, 'OUT')
+        const dstWh = resolveWarehouse(m, 'IN')
         if (!srcWh || !dstWh) continue
-        const kSrc = keyOf(srcWh, m.itemId); const kDst = keyOf(dstWh, m.itemId)
+        const kSrc = keyOf(srcWh, m.itemId)
+        const kDst = keyOf(dstWh, m.itemId)
+
         if (costMethod === 'FIFO') {
-          const srcLayers = getFIFO(kSrc); const { taken } = takeFromFIFO(srcLayers, qty); fifo.set(kSrc, srcLayers)
-          const dstLayers = getFIFO(kDst); taken.forEach(l => dstLayers.push({ qty: l.qty, cost: l.cost })); fifo.set(kDst, dstLayers)
+          const srcLayers = getFIFO(kSrc)
+          const { taken } = takeFromFIFO(srcLayers, qty)
+          fifo.set(kSrc, srcLayers)
+          const dstLayers = getFIFO(kDst)
+          taken.forEach(l => dstLayers.push({ qty: l.qty, cost: l.cost }))
+          fifo.set(kDst, dstLayers)
         } else {
-          const s = getWA(kSrc); const moveCost = s.avgCost; s.qty = Math.max(0, s.qty - qty); wa.set(kSrc, s)
-          const d = getWA(kDst); const totalVal = d.avgCost * d.qty + moveCost * qty; d.qty += qty; d.avgCost = d.qty > 0 ? totalVal / d.qty : d.avgCost; wa.set(kDst, d)
+          const s = getWA(kSrc)
+          const moveCost = s.avgCost
+          s.qty = Math.max(0, s.qty - qty)
+          wa.set(kSrc, s)
+          const d = getWA(kDst)
+          const totalVal = d.avgCost * d.qty + moveCost * qty
+          d.qty += qty
+          d.avgCost = d.qty > 0 ? totalVal / d.qty : d.avgCost
+          wa.set(kDst, d)
         }
         continue
       }
-      let dir: 'IN' | 'OUT'
-      if (nt === 'ADJ') dir = (n(m.qtyBase ?? m.qty, 0) >= 0) ? 'IN' : 'OUT'
-      else dir = (nt === 'IN') ? 'IN' : 'OUT'
+
+      // Direction (robust for ADJUST without sign):
+        let dir: 'IN' | 'OUT'
+        if (nt === 'ADJ') {
+        const v = n(m.totalValue, 0)
+        if (v !== 0) dir = v < 0 ? 'OUT' : 'IN'
+        else {
+            const sign = Math.sign(qtySigned)
+            dir = sign >= 0 ? 'IN' : 'OUT'
+        }
+        } else {
+        dir = (nt === 'IN') ? 'IN' : 'OUT'
+        }
+
       const wh = resolveWarehouse(m, dir); if (!wh) continue
       const k = keyOf(wh, m.itemId)
+
       if (dir === 'IN') {
         if (costMethod === 'FIFO') {
-          const layers = getFIFO(k); const c = unitCost || (n(m.totalValue, 0) / Math.max(1, qty)); layers.push({ qty, cost: c }); fifo.set(k, layers)
+          const layers = getFIFO(k)
+          const c = unitCost || (n(m.totalValue, 0) / Math.max(1, qty))
+          layers.push({ qty, cost: c })
+          fifo.set(k, layers)
         } else {
-          const s = getWA(k); const c = unitCost || s.avgCost || (n(m.totalValue, 0) / Math.max(1, qty))
-          const totalVal = s.avgCost * s.qty + c * qty; s.qty += qty; s.avgCost = s.qty > 0 ? totalVal / s.qty : s.avgCost; wa.set(k, s)
+          const s = getWA(k)
+          const c = unitCost || s.avgCost || (n(m.totalValue, 0) / Math.max(1, qty))
+          const totalVal = s.avgCost * s.qty + c * qty
+          s.qty += qty
+          s.avgCost = s.qty > 0 ? totalVal / s.qty : s.avgCost
+          wa.set(k, s)
         }
-      } else {
+      } else { // OUT
         if (costMethod === 'FIFO') {
-          const layers = getFIFO(k); const { cogs } = takeFromFIFO(layers, qty); fifo.set(k, layers)
-          if (t >= start && t <= end) { cogsByItemInPeriod.set(m.itemId, (cogsByItemInPeriod.get(m.itemId) || 0) + cogs); soldUnitsByItemInPeriod.set(m.itemId, (soldUnitsByItemInPeriod.get(m.itemId) || 0) + qty) }
+          const layers = getFIFO(k)
+          const { cogs } = takeFromFIFO(layers, qty)
+          fifo.set(k, layers)
+          if (t >= start && t <= end) {
+            cogsByItemInPeriod.set(m.itemId, (cogsByItemInPeriod.get(m.itemId) || 0) + cogs)
+            soldUnitsByItemInPeriod.set(m.itemId, (soldUnitsByItemInPeriod.get(m.itemId) || 0) + qty)
+          }
         } else {
-          const s = getWA(k); const cogs = qty * s.avgCost; s.qty = Math.max(0, s.qty - qty); wa.set(k, s)
-          if (t >= start && t <= end) { cogsByItemInPeriod.set(m.itemId, (cogsByItemInPeriod.get(m.itemId) || 0) + cogs); soldUnitsByItemInPeriod.set(m.itemId, (soldUnitsByItemInPeriod.get(m.itemId) || 0) + qty) }
+          const s = getWA(k)
+          const cogs = qty * s.avgCost
+          s.qty = Math.max(0, s.qty - qty)
+          wa.set(k, s)
+          if (t >= start && t <= end) {
+            cogsByItemInPeriod.set(m.itemId, (cogsByItemInPeriod.get(m.itemId) || 0) + cogs)
+            soldUnitsByItemInPeriod.set(m.itemId, (soldUnitsByItemInPeriod.get(m.itemId) || 0) + qty)
+          }
         }
       }
     }
+
     const keys = new Set<string>([...wa.keys(), ...fifo.keys()])
     for (const k of keys) {
       const [whId] = k.split('|'); let qty = 0; let avgCostForDisplay = 0; let val = 0
       if (costMethod === 'FIFO') {
-        const layers = fifo.get(k) || []; qty = layers.reduce((s, l) => s + l.qty, 0); const totalVal = layers.reduce((s, l) => s + l.qty * l.cost, 0); val = totalVal; avgCostForDisplay = qty > 0 ? totalVal / qty : 0
+        const layers = fifo.get(k) || []
+        qty = layers.reduce((s, l) => s + l.qty, 0)
+        const totalVal = layers.reduce((s, l) => s + l.qty * l.cost, 0)
+        val = totalVal
+        avgCostForDisplay = qty > 0 ? totalVal / qty : 0
       } else {
-        const s = wa.get(k) || { qty: 0, avgCost: 0 }; qty = s.qty; avgCostForDisplay = s.avgCost; val = s.qty * s.avgCost
+        const s = wa.get(k) || { qty: 0, avgCost: 0 }
+        qty = s.qty
+        avgCostForDisplay = s.avgCost
+        val = s.qty * s.avgCost
       }
-      asOfEndQtyByKey.set(k, qty); asOfEndAvgCostByKey.set(k, avgCostForDisplay)
+      asOfEndQtyByKey.set(k, qty)
+      asOfEndAvgCostByKey.set(k, avgCostForDisplay)
       valuationByWH_AsOfEnd.set(whId, (valuationByWH_AsOfEnd.get(whId) || 0) + val)
     }
     return { valuationByWH_AsOfEnd, asOfEndQtyByKey, asOfEndAvgCostByKey, cogsByItemInPeriod, soldUnitsByItemInPeriod }
@@ -563,8 +623,9 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       if (nt === 'OUT') sold.set(m.itemId, (sold.get(m.itemId) || 0) + qty)
       if (nt === 'IN') received.set(m.itemId, (received.get(m.itemId) || 0) + qty)
       if (nt === 'ADJ') {
-        if (n(m.qtyBase ?? m.qty, 0) > 0) received.set(m.itemId, (received.get(m.itemId) || 0) + qty)
-        else sold.set(m.itemId, (sold.get(m.itemId) || 0) + qty)
+        const sign = n(m.qtyBase ?? m.qty, 0)
+        if (sign > 0) received.set(m.itemId, (received.get(m.itemId) || 0) + qty)
+        else if (sign < 0 || n(m.totalValue, 0) < 0) sold.set(m.itemId, (sold.get(m.itemId) || 0) + qty)
       }
     }
     return { sold, received }
@@ -590,7 +651,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       sold: number; beginUnits: number; endUnits: number; avgUnits: number
       turns: number; avgDaysToSell: number | null; cogs?: number
     }> = []
-    const allIds = new Set<string>([...beginUnitsByItem.begin.keys(), ...beginUnitsByItem.end.keys(), ...unitsByItem.sold.keys() ])
+    const allIds = new Set<string>([...beginUnitsByItem.begin.keys(), ...beginUnitsByItem.end.keys(), ...unitsByItem.sold.keys()])
     for (const id of allIds) {
       const it = itemById.get(id); if (!it) continue
       const sold = unitsByItem.sold.get(id) || 0
@@ -670,7 +731,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     }
     const rowsWH = Array.from(byWH.entries()).map(([id, r]) => ({ warehouseId: id, warehouseName: whById.get(id)?.name || id, ...r }))
     const rowsBin = Array.from(byBin.entries()).map(([key, r]) => {
-      const [wid, bid] = key.split('|'); const whName = whById.get(wid)?.name || wid
+      const [wid, bid] = key.split('|'); const wh = whById.get(wid); const whName = wh?.name || wid
       const b = bid ? (binById.get(bid)?.code || bid) : '(no bin)'
       return { warehouseId: wid, binId: bid || null, warehouseName: whName, binCode: b, ...r }
     })
@@ -690,9 +751,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
   const moneyText = (x: number) => `${displayCurrency} ${fmtAccounting(x * fxRate, 2)}`
 
   /* ---------- subtitle (reactive) ---------- */
-  useEffect(() => {
-    setUi(s => ({ ...s, costMethod }))
-  }, [costMethod])
+  useEffect(() => { setUi(s => ({ ...s, costMethod })) }, [costMethod])
   const subtitle = useMemo(() => 'Inventory Reports', [])
   useEffect(() => { setUi(s => ({ ...s, subtitle, fxNote })) }, [subtitle, fxNote])
 
@@ -709,8 +768,8 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     warehouses, bins, items, currencies, customers, levels, moves, orders, cashSales,
     ordersUnavailable, cashUnavailable,
 
-    // indexes
-    itemById, whById, binById, customerById, moneyText, fmt, fmtAccounting,
+    // indexes & helpers
+    itemById, whById, whByCode, binById, customerById, whName, moneyText, fmt, fmtAccounting,
 
     // period
     period,
