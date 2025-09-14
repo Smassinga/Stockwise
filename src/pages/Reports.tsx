@@ -346,13 +346,17 @@ export default function Reports() {
         return
       }
 
+      const startIso = `${startDate}T00:00:00Z`
+      const endIso   = `${endDate}T23:59:59.999Z`
+
       type DateCol = 'createdAt' | 'created_at'
       const run = (dateCol: DateCol) =>
+        
         supabase
           .from(ordersSource)
           .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${dateCol}`)
-          .gte(dateCol, startDate)
-          .lte(dateCol, endDate)
+          .gte(dateCol, startIso)
+          .lte(dateCol, endIso)
           .order(dateCol, { ascending: true })
 
       try {
@@ -398,13 +402,16 @@ export default function Reports() {
         return
       }
 
+      const startIso = `${startDate}T00:00:00Z`
+      const endIso   = `${endDate}T23:59:59.999Z`
+      
       type DateCol = 'createdAt' | 'created_at'
       const run = (dateCol: DateCol) =>
         supabase
           .from(cashSource)
           .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${dateCol}`)
-          .gte(dateCol, startDate)
-          .lte(dateCol, endDate)
+          .gte(dateCol, startIso)
+          .lte(dateCol, endIso)
           .order(dateCol, { ascending: true })
 
       try {
