@@ -2,18 +2,78 @@
 import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui/card'
 import { useReports } from '../context/ReportsProvider'
 import KPI from '../KPI'
+import ExportButtons from '../components/ExportButtons'
+import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
 
 export default function SummaryTab() {
   const {
     turnoverPerItem, turnoverSummary, bestWorst,
     valuationAsOfEnd, ui, valuationEngine, valuationCurrent,
     whById, period, itemById, moneyText, fmt,
+    displayCurrency, fxRate, baseCurrency, fxNote, startDate, endDate,
   } = useReports()
 
-  // Local numeric helper (replaces the old `n`)
-  const num = (v: any, d = 0) => {
-    const x = Number(v)
-    return Number.isFinite(x) ? x : d
+  const ctx = {
+    companyName: ui.companyName,
+    startDate, endDate,
+    displayCurrency, baseCurrency, fxRate, fxNote,
+  }
+
+  const stamp = endDate.replace(/-/g, '')
+
+  // ----- build export rows -----
+  const kpiRows: Row[] = [
+    ['Metric', 'Value'],
+    ['Days in period', Number(turnoverPerItem.daysInPeriod)],
+    ['Units sold', Number(turnoverSummary.totalSold)],
+    ['Avg inventory (units)', Number(turnoverSummary.avgInv)],
+    ['Turns (units)', Number(turnoverSummary.turns)],
+    ['Avg days to sell', turnoverSummary.avgDaysToSell != null ? Number(turnoverSummary.avgDaysToSell) : ''],
+    ['COGS (period)', Number(turnoverSummary.totalCOGS)],
+    ['Valuation total', Number(valuationAsOfEnd
+      ? Array.from(valuationEngine.valuationByWH_AsOfEnd.values()).reduce((s, v) => s + v, 0)
+      : valuationCurrent.total)],
+  ]
+
+  const movementsRows: Row[] = [
+    ['Time', 'Type', 'Item', 'Qty', 'Unit Cost', 'Warehouse From', 'Warehouse To'],
+    ...period.inRange.map(m => {
+      const created = m?.createdAt ?? m?.created_at ?? m?.createdat
+      const t = created ? new Date(created).toLocaleString() : ''
+      const it = itemById.get(m.itemId)
+      const qty = Math.abs(Number(m.qtyBase ?? m.qty) || 0)
+      const wFrom = m.warehouseFromId || ''
+      const wTo = m.warehouseToId || m.warehouseId || ''
+      return [t, (m.type || '').toUpperCase(), it?.name || m.itemId, qty, Number(m.unitCost || 0), wFrom || '—', wTo || '—'] as Row
+    }),
+  ]
+
+  // ----- handlers -----
+  const onCSV = () => {
+    downloadCSV(`summary_kpis_${stamp}.csv`, [
+      ...headerRows(ctx, 'Summary — KPIs'),
+      ...formatRowsForCSV(kpiRows, ctx, [1], []),
+    ])
+    downloadCSV(`summary_movements_${stamp}.csv`, [
+      ...headerRows(ctx, 'Summary — Movements (audit)'),
+      ...formatRowsForCSV(movementsRows, ctx, [4], [3]),
+    ])
+  }
+
+  const onXLSX = () => {
+    saveXLSX(`summary_${stamp}.xlsx`, ctx, [
+      { title: 'KPIs', headerTitle: 'Summary — KPIs', body: kpiRows, moneyCols: [1] },
+      { title: 'Movements', headerTitle: 'Summary — Movements (audit)', body: movementsRows, moneyCols: [4], qtyCols: [3] },
+    ])
+  }
+
+  const onPDF = () => {
+    const doc = startPDF(ctx, 'Summary — KPIs')
+    pdfTable(doc, ['Metric', 'Value'], kpiRows.slice(1), [1], ctx, 110)
+    doc.addPage()
+    pdfTable(doc, ['Time','Type','Item','Qty','Unit Cost','Warehouse From','Warehouse To'],
+      movementsRows.slice(1), [4], ctx, 110)
+    doc.save(`summary_${stamp}.pdf`)
   }
 
   return (
@@ -22,15 +82,14 @@ export default function SummaryTab() {
         <CardTitle>Summary</CardTitle>
       </CardHeader>
       <CardContent>
+        <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} />
+
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <KPI label="Days in period" value={fmt(turnoverPerItem.daysInPeriod, 0)} />
           <KPI label="Units sold" value={fmt(turnoverSummary.totalSold, 2)} />
           <KPI label="Avg inventory (units)" value={fmt(turnoverSummary.avgInv, 2)} />
           <KPI label="Turns (units)" value={fmt(turnoverSummary.turns, 2)} />
-          <KPI
-            label="Avg days to sell"
-            value={turnoverSummary.avgDaysToSell != null ? fmt(turnoverSummary.avgDaysToSell, 1) : '—'}
-          />
+          <KPI label="Avg days to sell" value={turnoverSummary.avgDaysToSell != null ? fmt(turnoverSummary.avgDaysToSell, 1) : '—'} />
           <KPI label="COGS (period)" value={moneyText(turnoverSummary.totalCOGS)} />
         </div>
 
@@ -120,20 +179,19 @@ export default function SummaryTab() {
                     <tr><td colSpan={7} className="py-4 text-muted-foreground">No movements in the selected period.</td></tr>
                   )}
                   {period.inRange.map(m => {
-                    const created =
-                      m?.createdAt ?? m?.created_at ?? m?.createdat
+                    const created = m?.createdAt ?? m?.created_at ?? m?.createdat
                     const t = created ? new Date(created).toLocaleString() : ''
                     const it = itemById.get(m.itemId)
                     const wFrom = m.warehouseFromId || ''
                     const wTo = m.warehouseToId || m.warehouseId || ''
-                    const qty = Math.abs(num(m.qtyBase ?? m.qty, 0))
+                    const qty = Math.abs(Number(m.qtyBase ?? m.qty) || 0)
                     return (
                       <tr key={m.id} className="border-b">
                         <td className="py-2 pr-2">{t}</td>
                         <td className="py-2 pr-2">{(m.type || '').toUpperCase()}</td>
                         <td className="py-2 pr-2">{it?.name || m.itemId}</td>
                         <td className="py-2 pr-2">{fmt(qty, 2)}</td>
-                        <td className="py-2 pr-2">{moneyText(num(m.unitCost, 0))}</td>
+                        <td className="py-2 pr-2">{moneyText(Number(m.unitCost || 0))}</td>
                         <td className="py-2 pr-2">{wFrom || '—'}</td>
                         <td className="py-2 pr-2">{wTo || '—'}</td>
                       </tr>
