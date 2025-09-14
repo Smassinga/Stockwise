@@ -24,7 +24,7 @@ type MovementRow = {
   total_value: number | null
   warehouse_from_id?: string | null
   warehouse_to_id?: string | null
-  ref_type?: 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | null
+  ref_type?: 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | 'CASH_SALE' | 'POS' | 'CASH' | null
   ref_id?: string | null
   ref_line_id?: string | null
 }
@@ -44,6 +44,10 @@ const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const withinWindow = (iso: string | null | undefined, sinceMs: number) => !!iso && new Date(iso).getTime() >= sinceMs
 const shippedLike = (s: string) => ['shipped', 'completed', 'delivered', 'closed'].includes(String(s).toLowerCase())
 
+// Consideramos estes ref_type como "vendas" para COGS (inclui cash sales/POS se existirem)
+// Mesmo que o teu schema use só 'SO', isto não quebra nada; apenas passa a aceitar mais tipos.
+const SALES_REF_TYPES = new Set(['SO', 'CASH_SALE', 'POS', 'CASH'])
+
 export default function Dashboard() {
   const { t, lang } = useI18n()
 
@@ -52,10 +56,15 @@ export default function Dashboard() {
 
   const [baseCode, setBaseCode] = useState<string>('MZN')
 
-  // filters
+  // filters (KPIs/top products continuam por janela em dias)
   const [windowDays, setWindowDays] = useState<number>(30)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [warehouseId, setWarehouseId] = useState<string>('ALL')
+
+  // Daily sheet controls (New): selected month/year for the daily grid
+  const nowDate = new Date()
+  const [dailyYear, setDailyYear] = useState<number>(nowDate.getFullYear())
+  const [dailyMonth, setDailyMonth] = useState<number>(nowDate.getMonth()) // 0-11
 
   // sheet
   const [dailyOpen, setDailyOpen] = useState(false)
@@ -169,11 +178,11 @@ export default function Dashboard() {
     return sum
   }, [shippedInWindow, revenueBaseBySO])
 
-  // COGS in window — issues tied to SO
+  // COGS em janela — agora inclui cash sales/POS (issues com ref_type reconhecido)
   const cogsWindow = useMemo(() => {
     let sum = 0
     for (const m of moves) {
-      if (m.type !== 'issue' || m.ref_type !== 'SO') continue
+      if (m.type !== 'issue' || !SALES_REF_TYPES.has(String(m.ref_type || ''))) continue
       if (!withinWindow(m.created_at, since)) continue
       const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
       sum += val
@@ -196,9 +205,8 @@ export default function Dashboard() {
       .slice(0, 5)
   }, [items, stockFiltered])
 
-  // ---------- Top Products by GM (order-total-first rule with smart attribution) ----------
+  // ---------- Top Products by GM (igual, já robusto) ----------
   const topGM = useMemo(() => {
-    // 1) Revenue from lines per SO->item (base)
     const lineRevBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> rev)
     const linesRevSO = new Map<string, number>()                    // soId -> rev sum
     for (const l of sol) {
@@ -211,11 +219,11 @@ export default function Dashboard() {
       linesRevSO.set(l.so_id, (linesRevSO.get(l.so_id) || 0) + r)
     }
 
-    // 2) Cost (COGS) shares from movements per SO->item (base)
+    // COGS por item (issues de venda em janela)
     const costBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> cost)
     const costSumBySO = new Map<string, number>()
     for (const mv of moves) {
-      if (mv.type !== 'issue' || mv.ref_type !== 'SO') continue
+      if (mv.type !== 'issue' || !SALES_REF_TYPES.has(String(mv.ref_type || ''))) continue
       const soId = mv.ref_id || ''
       if (!shippedInWindow.has(soId)) continue
       if (!withinWindow(mv.created_at, since)) continue
@@ -226,7 +234,6 @@ export default function Dashboard() {
       costSumBySO.set(soId, (costSumBySO.get(soId) || 0) + val)
     }
 
-    // 3) Final per-item revenue map
     const perItemRevenue = new Map<string, number>()
     for (const soId of shippedInWindow) {
       const orderRev = revenueBaseBySO.get(soId) || 0
@@ -236,11 +243,9 @@ export default function Dashboard() {
       const linesSum = linesRevSO.get(soId) || 0
 
       if (byItem && linesSum > 0) {
-        // add existing line revenue
         for (const [itemId, r] of byItem.entries()) {
           perItemRevenue.set(itemId, (perItemRevenue.get(itemId) || 0) + r)
         }
-        // allocate any difference
         const diff = orderRev - linesSum
         if (Math.abs(diff) > 1e-6) {
           for (const [itemId, r] of byItem.entries()) {
@@ -249,7 +254,6 @@ export default function Dashboard() {
           }
         }
       } else {
-        // No lines captured — allocate by COGS shares if available
         const costMap = costBySOItem.get(soId)
         const costSum = costSumBySO.get(soId) || 0
         if (costMap && costSum > 0) {
@@ -261,16 +265,14 @@ export default function Dashboard() {
       }
     }
 
-    // 4) COGS per item (issues in window)
     const cogsByItem = new Map<string, number>()
     for (const mv of moves) {
-      if (mv.type !== 'issue' || mv.ref_type !== 'SO') continue
+      if (mv.type !== 'issue' || !SALES_REF_TYPES.has(String(mv.ref_type || ''))) continue
       if (!withinWindow(mv.created_at, since)) continue
       const val = Number.isFinite(mv.total_value) ? num(mv.total_value) : num(mv.unit_cost) * num(mv.qty_base)
       cogsByItem.set(mv.item_id, (cogsByItem.get(mv.item_id) || 0) + val)
     }
 
-    // 5) Build rows
     const itemIds = new Set<string>([...perItemRevenue.keys(), ...cogsByItem.keys()])
     const rows = Array.from(itemIds).map(itemId => {
       const revenue = perItemRevenue.get(itemId) || 0
@@ -284,35 +286,66 @@ export default function Dashboard() {
     return rows.slice(0, 10)
   }, [sos, sol, fxBySO, moves, items, since, shippedInWindow, revenueBaseBySO])
 
-  // Daily series for sheet
-  const dailyRows = useMemo(() => {
-    const days: string[] = []
-    const today = new Date()
-    for (let i = windowDays - 1; i >= 0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
-      days.push(d.toISOString().slice(0, 10))
+  // ----- Years disponíveis nos dados (para selector) -----
+  const availableYears = useMemo(() => {
+    const set = new Set<number>()
+    for (const s of sos) {
+      const d = s.updated_at || s.created_at
+      if (!d) continue
+      const y = new Date(d).getFullYear()
+      if (!Number.isNaN(y)) set.add(y)
     }
+    for (const m of moves) {
+      const y = new Date(m.created_at).getFullYear()
+      if (!Number.isNaN(y)) set.add(y)
+    }
+    const arr = Array.from(set).sort((a, b) => a - b)
+    return arr.length ? arr : [nowDate.getFullYear()]
+  }, [sos, moves])
+
+  // ----- Days of the selected month for the daily sheet -----
+  const monthDaysISO = useMemo(() => {
+    const lastDay = new Date(dailyYear, dailyMonth + 1, 0).getDate()
+    const arr: string[] = []
+    for (let d = 1; d <= lastDay; d++) {
+      const iso = new Date(dailyYear, dailyMonth, d).toISOString().slice(0, 10)
+      arr.push(iso)
+    }
+    return arr
+  }, [dailyYear, dailyMonth])
+
+  // Série diária (RECEITA via SOs; COGS via movements issue de vendas, incluindo cash/POS)
+  const dailyRows = useMemo(() => {
     const revByDate = new Map<string, number>()
     const cogsByDate = new Map<string, number>()
 
+    // Receita por dia (ordens expedidas/fechadas nesse dia)
     for (const s of sos) {
       if (!shippedLike(s.status)) continue
-      const d = (s.updated_at || s.created_at || '').slice(0, 10)
-      if (!d || !days.includes(d)) continue
+      const iso = (s.updated_at || s.created_at || '').slice(0, 10)
+      if (!iso) continue
+      const d = new Date(iso)
+      if (d.getFullYear() !== dailyYear || d.getMonth() !== dailyMonth) continue
       const rev = revenueBaseBySO.get(s.id) || 0
-      revByDate.set(d, (revByDate.get(d) || 0) + rev)
+      revByDate.set(iso, (revByDate.get(iso) || 0) + rev)
     }
 
+    // COGS por dia (issues de venda, abrangendo cash sales/POS)
     for (const m of moves) {
-      if (m.type !== 'issue' || m.ref_type !== 'SO') continue
-      const d = m.created_at.slice(0, 10)
-      if (!days.includes(d)) continue
+      if (m.type !== 'issue' || !SALES_REF_TYPES.has(String(m.ref_type || ''))) continue
+      const iso = m.created_at.slice(0, 10)
+      const d = new Date(iso)
+      if (d.getFullYear() !== dailyYear || d.getMonth() !== dailyMonth) continue
       const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
-      cogsByDate.set(d, (cogsByDate.get(d) || 0) + val)
+      cogsByDate.set(iso, (cogsByDate.get(iso) || 0) + val)
     }
 
-    return days.map(d => ({ date: d, revenue: revByDate.get(d) || 0, cogs: cogsByDate.get(d) || 0 }))
-  }, [sos, revenueBaseBySO, moves, windowDays])
+    return monthDaysISO.map(d => ({
+      date: d,
+      revenue: revByDate.get(d) || 0,
+      cogs: cogsByDate.get(d) || 0,
+    }))
+  }, [sos, revenueBaseBySO, moves, dailyYear, dailyMonth, monthDaysISO])
 
   const recentMoves = useMemo(() => moves.slice(0, 10), [moves])
 
@@ -346,13 +379,16 @@ export default function Dashboard() {
     }
   }
 
+  // nomes de meses para o selector (locale-aware)
+  const monthName = (m: number) => new Date(2000, m, 1).toLocaleString(lang, { month: 'long' })
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-3xl font-bold">{t('dashboard.title')}</h1>
 
         <div className="flex gap-2">
-          {/* Date window */}
+          {/* Date window (para KPIs/top products) */}
           <div className="w-40">
             <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))}>
               <SelectTrigger><SelectValue placeholder={t('filters.window.label')} /></SelectTrigger>
@@ -388,7 +424,44 @@ export default function Dashboard() {
                 <SheetTitle>{t('daily.title')}</SheetTitle>
                 <SheetDescription className="sr-only">{t('daily.desc')}</SheetDescription>
               </SheetHeader>
-              <div className="mt-4 overflow-x-auto">
+
+              {/* Date controls (New) */}
+              <div className="px-4 md:px-0 mt-2 mb-4 flex flex-wrap items-center gap-2">
+                <div className="w-48">
+                  <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
+                    <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <SelectItem key={i} value={String(i)} className="capitalize">
+                          {monthName(i)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-32">
+                  <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
+                    <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
+                    <SelectContent>
+                      {availableYears.map(y => (
+                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const d = new Date()
+                    setDailyYear(d.getFullYear())
+                    setDailyMonth(d.getMonth())
+                  }}
+                >
+                  {t('common.thisMonth') ?? 'This month '}
+                </Button>
+              </div>
+
+              <div className="mt-2 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b">
