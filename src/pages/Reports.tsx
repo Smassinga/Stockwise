@@ -1,4 +1,4 @@
-// src/pages/Reports.tsx
+// src/pages/Reports.tsx  — PART 1/3
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { db, supabase } from '../lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -143,6 +143,24 @@ function resolveWarehouse(m: Movement, dir: 'IN' | 'OUT'): string {
   return (m.warehouseFromId || m.warehouseToId || '') || ''
 }
 
+/** -----------------------------------------------------------
+ * Settings helpers (ONLY CHANGE introduced; everything else unchanged)
+ * Robustly read possibly-renamed keys coming from settings.tsx.
+ * ----------------------------------------------------------- */
+function pickString(...candidates: Array<any>): string | undefined {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim()
+  }
+  return undefined
+}
+function at(obj: any, path: string): any {
+  try {
+    return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj)
+  } catch {
+    return undefined
+  }
+}
+
 /** ----------------- component ----------------- */
 export default function Reports() {
   const { user } = useAuth()
@@ -203,7 +221,7 @@ export default function Reports() {
         .eq('company_id', companyId)
         .limit(1) // array mode avoids 406 when row is missing
       if (!cancelled) {
-        const row = Array.isArray(res.data) && res.data.length ? res.data[0] as any : null
+        const row = Array.isArray(res.data) && res.data.length ? (res.data[0] as any) : null
         const name = row?.data?.documents?.brand?.name
         setBrandName(typeof name === 'string' && name.trim() ? name.trim() : null)
       }
@@ -222,7 +240,7 @@ export default function Reports() {
           .eq('id', 'app')
           .limit(1) // array mode, avoids 406
         if (settingsErr) console.warn('[settings] fetch warning:', settingsErr?.message)
-        const setting = Array.isArray(settingsRows) && settingsRows.length > 0 ? settingsRows[0] as any : null
+        const setting = Array.isArray(settingsRows) && settingsRows.length > 0 ? (settingsRows[0] as any) : null
 
         const [wh, bb, it, sl, mv, cs, custs] = await Promise.all([
           db.warehouses.list({ orderBy: { name: 'asc' } }),
@@ -242,10 +260,57 @@ export default function Reports() {
         setCurrencies(cs || [])
         if ((custs as any)?.data) setCustomers((custs as any).data as Customer[])
 
-        // Normalize app-level settings for base currency & sources
-        const baseCur = setting?.baseCurrencyCode ?? setting?.base_currency_code
-        const ordersSrc = setting?.ordersSource ?? setting?.orders_source
-        const cashSrc = setting?.cashSalesSource ?? setting?.cash_sales_source ?? setting?.posSource ?? setting?.pos_source
+        /** 
+         * -------------- THE ONLY LOGIC CHANGE --------------
+         * Wire up to possible new keys coming from settings.tsx,
+         * while remaining 100% backward-compatible with the old keys.
+         */
+        const baseCur = pickString(
+          // old
+          setting?.baseCurrencyCode,
+          setting?.base_currency_code,
+          // possible new shapes from settings.tsx
+          at(setting, 'documents.finance.baseCurrency'),
+          at(setting, 'documents.finance.base_currency'),
+          at(setting, 'documents.reports.baseCurrency'),
+          at(setting, 'documents.reports.base_currency'),
+          at(setting, 'finance.baseCurrency'),
+          at(setting, 'finance.base_currency'),
+        )
+
+        const ordersSrc = pickString(
+          // old
+          setting?.ordersSource,
+          setting?.orders_source,
+          // also used historically:
+          setting?.ordersView,
+          setting?.orders_table,
+          // possible new shapes from settings.tsx
+          at(setting, 'documents.revenue.ordersSource'),
+          at(setting, 'documents.revenue.orders_source'),
+          at(setting, 'reports.revenue.ordersSource'),
+          at(setting, 'reports.revenue.orders_source')
+        )
+
+        const cashSrc = pickString(
+          // old
+          setting?.cashSalesSource,
+          setting?.cash_sales_source,
+          setting?.posSource,
+          setting?.pos_source,
+          // possible new names
+          setting?.cashSalesView,
+          setting?.cash_sales_view,
+          // possible new shapes from settings.tsx
+          at(setting, 'documents.revenue.cashSalesSource'),
+          at(setting, 'documents.revenue.cash_sales_source'),
+          at(setting, 'documents.revenue.posSource'),
+          at(setting, 'documents.revenue.pos_source'),
+          at(setting, 'reports.revenue.cashSalesSource'),
+          at(setting, 'reports.revenue.cash_sales_source'),
+          at(setting, 'reports.revenue.posSource'),
+          at(setting, 'reports.revenue.pos_source')
+        )
 
         if (baseCur) {
           setBaseCurrency(baseCur)
@@ -255,8 +320,8 @@ export default function Reports() {
           setDisplayCurrency(prev => prev || 'MZN')
         }
 
-        if (typeof ordersSrc === 'string' && ordersSrc.trim()) setOrdersSource(ordersSrc.trim())
-        if (typeof cashSrc === 'string' && cashSrc.trim()) setCashSource(cashSrc.trim())
+        if (ordersSrc) setOrdersSource(ordersSrc)
+        if (cashSrc) setCashSource(cashSrc)
       } catch (err: any) {
         console.error(err)
         toast.error(err?.message || 'Failed to load reports data')
@@ -495,7 +560,7 @@ export default function Reports() {
     }
   }, [orders, cashSales, customerById])
 
-    /** ----------------- Cost engine (FIFO / WA) by wh|item ----------------- */
+  /** ----------------- Cost engine (FIFO / WA) by wh|item ----------------- */
   type Key = string // `${whId}|${itemId}`
   type Layer = { qty: number; cost: number }
   type WAState = { qty: number; avgCost: number }
@@ -791,7 +856,6 @@ export default function Reports() {
     }
     return { begin, end: endUnits }
   }, [levels, unitsByItem])
-
   /** ----------------- Turnover & Avg Days ----------------- */
   const turnoverPerItem = useMemo(() => {
     const days = Math.max(1, Math.round((period.endMs - period.startMs) / (1000 * 60 * 60 * 24)) + 1)
@@ -1049,7 +1113,7 @@ export default function Reports() {
     return rows
   }, [revenueByCustomer, fxRate, displayCurrency])
 
-    /** ========================== EXPORT HELPERS ========================== */
+  /** ========================== EXPORT HELPERS ========================== */
   const buildHeaderRows = (title: string): (string | number)[][] => ([
     [companyName],
     [title],
@@ -1360,7 +1424,6 @@ export default function Reports() {
 
     toast('Nothing to export on Summary (try Valuation/Turnover/Aging/Revenue)', { icon: 'ℹ️' })
   }
-
   /** ----------------- UI ----------------- */
   const subtitle =
     tab === 'valuation'
