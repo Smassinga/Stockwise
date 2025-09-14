@@ -9,8 +9,9 @@ export default function SummaryTab() {
   const {
     turnoverPerItem, turnoverSummary, bestWorst,
     valuationAsOfEnd, ui, valuationEngine, valuationCurrent,
-    whById, period, itemById, moneyText, fmt,
+    period, itemById, moneyText, fmt,
     displayCurrency, fxRate, baseCurrency, fxNote, startDate, endDate,
+    whName, // ← name resolver (works for id or code)
   } = useReports()
 
   const ctx = {
@@ -42,8 +43,8 @@ export default function SummaryTab() {
       const t = created ? new Date(created).toLocaleString() : ''
       const it = itemById.get(m.itemId)
       const qty = Math.abs(Number(m.qtyBase ?? m.qty) || 0)
-      const wFrom = m.warehouseFromId || ''
-      const wTo = m.warehouseToId || m.warehouseId || ''
+      const wFrom = whName(m.warehouseFromId)
+      const wTo = m.warehouseToId ? whName(m.warehouseToId) : whName(m.warehouseId)
       return [t, (m.type || '').toUpperCase(), it?.name || m.itemId, qty, Number(m.unitCost || 0), wFrom || '—', wTo || '—'] as Row
     }),
   ]
@@ -75,6 +76,15 @@ export default function SummaryTab() {
       movementsRows.slice(1), [4], ctx, 110)
     doc.save(`summary_${stamp}.pdf`)
   }
+
+  // pick valuation map based on toggle
+  const whVals = valuationAsOfEnd
+    ? Array.from(valuationEngine.valuationByWH_AsOfEnd.entries())
+    : Array.from(valuationCurrent.byWH.entries())
+
+  const whTotal = valuationAsOfEnd
+    ? Array.from(valuationEngine.valuationByWH_AsOfEnd.values()).reduce((s, v) => s + v, 0)
+    : valuationCurrent.total
 
   return (
     <Card>
@@ -135,22 +145,15 @@ export default function SummaryTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(valuationAsOfEnd
-                    ? Array.from(valuationEngine.valuationByWH_AsOfEnd.entries())
-                    : Array.from(valuationCurrent.byWH.entries())
-                  ).sort((a, b) => b[1] - a[1]).map(([wid, val]) => (
+                  {whVals.sort((a, b) => b[1] - a[1]).map(([wid, val]) => (
                     <tr key={wid} className="border-b">
-                      <td className="py-2 pr-2">{whById.get(wid)?.name || wid}</td>
+                      <td className="py-2 pr-2">{whName(wid)}</td>
                       <td className="py-2 pr-2">{moneyText(val)}</td>
                     </tr>
                   ))}
                   <tr>
                     <td className="py-2 pr-2 font-medium">Total</td>
-                    <td className="py-2 pr-2 font-medium">
-                      {moneyText(valuationAsOfEnd
-                        ? Array.from(valuationEngine.valuationByWH_AsOfEnd.values()).reduce((s, v) => s + v, 0)
-                        : valuationCurrent.total)}
-                    </td>
+                    <td className="py-2 pr-2 font-medium">{moneyText(whTotal)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -182,9 +185,9 @@ export default function SummaryTab() {
                     const created = m?.createdAt ?? m?.created_at ?? m?.createdat
                     const t = created ? new Date(created).toLocaleString() : ''
                     const it = itemById.get(m.itemId)
-                    const wFrom = m.warehouseFromId || ''
-                    const wTo = m.warehouseToId || m.warehouseId || ''
                     const qty = Math.abs(Number(m.qtyBase ?? m.qty) || 0)
+                    const wFrom = whName(m.warehouseFromId)
+                    const wTo = m.warehouseToId ? whName(m.warehouseToId) : whName(m.warehouseId)
                     return (
                       <tr key={m.id} className="border-b">
                         <td className="py-2 pr-2">{t}</td>
