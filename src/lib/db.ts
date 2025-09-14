@@ -31,29 +31,27 @@ function applyQuery(table: string, opts?: ListOpts) {
   let q = supabase.from(table).select('*')
 
   if (opts?.where) {
-    Object.entries(opts.where).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries(opts.where)) {
       if (v === null) q = q.is(k, null)
       else q = q.eq(k, v)
-    })
+    }
   }
 
   if (opts?.orderBy) {
-    const [col, dir] = Object.entries(opts.orderBy)[0]
-    q = q.order(col, { ascending: dir === 'asc' })
+    for (const [k, dir] of Object.entries(opts.orderBy)) {
+      q = q.order(k, { ascending: dir === 'asc' })
+    }
   }
 
   if (opts?.limit) q = q.limit(opts.limit)
   return q
 }
 
-function escapeLike(term: string) {
-  return term.replace(/[%_]/g, s => '\\' + s)
-}
-
 function coll(table: string) {
   return {
     async list(opts?: ListOpts) {
-      const { data, error } = await applyQuery(table, opts)
+      const q = applyQuery(table, opts)
+      const { data, error } = await q
       if (error) throw error
       return data ?? []
     },
@@ -85,63 +83,35 @@ function coll(table: string) {
       if (error) throw error
       return Array.isArray(data) && data.length > 0 ? data[0] : payload
     },
-    async update(id: string, patch: any) {
+    async update(id: string, payload: any) {
       const { data, error } = await supabase
         .from(table)
-        .update(patch)
+        .update(payload)
         .eq('id', id)
-        .select()
-        .limit(1)
-
-      if (error) throw error
-      const row = Array.isArray(data) && data.length > 0 ? data[0] : null
-      if (!row) {
-        const e: any = new Error(`${table}(${id}) not found for update`)
-        e.code = 'NOT_FOUND'
-        throw e
-      }
-      return row
-    },
-    async delete(id: string) {
-      const { error } = await supabase.from(table).delete().eq('id', id)
-      if (error) throw error
-      return { success: true }
-    },
-    async upsert(payload: any) {
-      const { data, error } = await supabase
-        .from(table)
-        .upsert(payload)
         .select()
         .limit(1)
 
       if (error) throw error
       return Array.isArray(data) && data.length > 0 ? data[0] : payload
     },
-    async search(term: string, columns: string[], limit = 10) {
-      let q = supabase.from(table).select('*').limit(limit)
-      const t = (term ?? '').trim()
-      if (t) {
-        const like = escapeLike(t)
-        const ors = columns.map(c => `${c}.ilike.%${like}%`).join(',')
-        q = q.or(ors)
-      }
-      const { data, error } = await q
+    async remove(id: string) {
+      const { error } = await supabase.from(table).delete().eq('id', id)
       if (error) throw error
-      return data ?? []
+      return true
     },
   }
 }
 
 // --- specialized movements with better list() ---
-const baseMovements = coll('movements')
+const baseMovements = coll('stock_movements')
 
 function mapOrderCol(col: string) {
   if (col === 'createdAt') return 'created_at'
   if (col === 'warehouseFromId') return 'warehouse_from_id'
   if (col === 'warehouseToId') return 'warehouse_to_id'
   if (col === 'warehouseId') return 'warehouse_id'
-  if (col === 'itemId') return 'item_id'
-  if (col === 'unitCost') return 'unit_cost'
+  if (col === 'binFromId') return 'bin_from_id'
+  if (col === 'binToId') return 'bin_to_id'
   if (col === 'totalValue') return 'total_value'
   return col
 }
@@ -160,7 +130,7 @@ export const db = {
 
     // list with date range, ordering, and snake_case ➜ camelCase mapping
     async list(opts?: MovementsListOpts) {
-      let q = supabase.from('movements').select('*')
+      let q = supabase.from('stock_movements').select('*')
 
       if (opts?.where) {
         for (const [k, v] of Object.entries(opts.where)) {
@@ -170,11 +140,12 @@ export const db = {
       }
 
       if (opts?.fromDate) q = q.gte('created_at', `${opts.fromDate}T00:00:00Z`)
-      if (opts?.toDate)   q = q.lte('created_at', `${opts.toDate}T23:59:59Z`)
+      if (opts?.toDate)   q = q.lte('created_at', `${opts.toDate}T23:59:59.999Z`)
 
       if (opts?.orderBy) {
-        const [col, dir] = Object.entries(opts.orderBy)[0]
-        q = q.order(mapOrderCol(col), { ascending: dir === 'asc', nullsFirst: true })
+        for (const [k, dir] of Object.entries(opts.orderBy)) {
+          q = q.order(mapOrderCol(k), { ascending: dir === 'asc' })
+        }
       }
 
       if (opts?.limit) q = q.limit(opts.limit)
@@ -183,7 +154,7 @@ export const db = {
       if (error) throw error
 
       return (data ?? []).map((r: MovementRow) => ({
-        // camelCase expected by Reports.tsx:
+        // camelCase expected by reports engine:
         id: r.id,
         type: r.type,
         itemId: r.item_id,
