@@ -1,108 +1,104 @@
-import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Alert, AlertDescription } from '../components/ui/alert';
-import { Package, Eye, EyeOff } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { useAuth } from '../hooks/useAuth';
-import { supabase } from '../lib/db'; // ⬅️ added
+import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Alert, AlertDescription } from '../components/ui/alert'
+import { Package, Eye, EyeOff } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useAuth } from '../hooks/useAuth'
+import { supabase } from '../lib/db'
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    company: '', // used to bootstrap a company after sign-up
-  });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isLogin, setIsLogin] = useState(true)
+  const [showPassword, setShowPassword] = useState(false)
+  const [formData, setFormData] = useState({ name: '', email: '', password: '' })
+  const [error, setError] = useState('')
+  const [info, setInfo] = useState('') // <-- for “check your email” message
+  const [loading, setLoading] = useState(false)
 
-  const navigate = useNavigate();
-  const { login, register, requestPasswordReset } = useAuth();
+  const navigate = useNavigate()
+  const { login, requestPasswordReset } = useAuth()
+
+  // If the user is already signed in, push them forward
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) navigate('/dashboard')
+    })
+  }, [navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+    e.preventDefault()
+    setError('')
+    setInfo('')
+    setLoading(true)
 
     try {
       if (isLogin) {
         // ---- SIGN IN ----
-        const res = await login(formData.email, formData.password);
+        const res = await login(formData.email, formData.password)
         if (!res.success) {
-          setError(res.error || 'Login failed');
-          return;
+          setError(res.error || 'Login failed')
+          return
         }
-        // If user has no membership, your App routing (EnsureCompany) will redirect to /onboarding
-        navigate('/dashboard');
-        return;
+        navigate('/dashboard')
+        return
       }
 
-      // ---- SIGN UP ----
-      // Only save name in user_metadata; roles/membership handled via company_members
-      const reg = await register(formData.name, formData.email, formData.password);
-      if (!reg.success) {
-        setError(reg.error || 'Registration failed');
-        return;
+      // ---- SIGN UP ---- (NO immediate sign-in; respect email confirmation)
+      const redirect = `${window.location.origin}/auth/callback`
+      const { data, error: signErr } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          emailRedirectTo: redirect,
+          data: { name: formData.name?.trim() || null },
+        },
+      })
+
+      if (signErr) {
+        setError(signErr.message || 'Registration failed')
+        return
       }
 
-      // Try immediate sign-in (if email confirmations disabled)
-      const trySignIn = await login(formData.email, formData.password);
-
-      if (trySignIn.success) {
-        // Bootstrap: create company + make this user OWNER
-        const companyName = (formData.company || 'My Company').trim();
-        const { data: boot, error: bootErr } = await supabase.rpc(
-          'create_company_and_bootstrap',
-          { p_name: companyName }
-        );
-
-        if (bootErr) {
-          // If already a member you'll get a friendly error; surface message to help testing
-          toast.error(bootErr.message);
-        } else {
-          await supabase.auth.refreshSession();
-          toast.success(
-            `Created ${boot?.[0]?.company_name ?? companyName} and set you as OWNER`
-          );
-        }
-
-        navigate('/dashboard');
-        return;
+      // If your project does NOT require email confirmations, Supabase returns a session.
+      // In that case, push the user to onboarding right away.
+      if (data.session) {
+        navigate('/onboarding')
+        return
       }
 
-      // Otherwise, ask the user to verify and then sign in
-      toast.success('Account created. Check your email to verify, then sign in.');
-      setIsLogin(true);
+      // Otherwise we tell the user to check their email; after they click the link
+      // the callback page will establish the session and send them to onboarding.
+      setInfo('Account created. Check your email for a confirmation link, then continue.')
+      setIsLogin(true)
+      toast.success('Verification email sent!')
     } catch (err) {
-      console.error(err);
-      setError('An unexpected error occurred');
+      console.error(err)
+      setError('An unexpected error occurred')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (error) setError('');
-  };
+    setFormData(prev => ({ ...prev, [field]: value }))
+    if (error) setError('')
+    if (info) setInfo('')
+  }
 
   const handleResetPassword = async () => {
     if (!formData.email) {
-      setError('Enter your email above first');
-      return;
+      setError('Enter your email above first')
+      return
     }
-    setLoading(true);
-    const res = await requestPasswordReset(formData.email);
-    setLoading(false);
-    if (!res.success) setError(res.error || 'Failed to request password reset');
-    else toast.success('Password reset email sent!');
-  };
+    setLoading(true)
+    const res = await requestPasswordReset(formData.email)
+    setLoading(false)
+    if (!res.success) setError(res.error || 'Failed to request password reset')
+    else toast.success('Password reset email sent!')
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -126,30 +122,17 @@ export default function Auth() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {!isLogin && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name</Label>
-                    <Input
-                      id="name"
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      placeholder="Enter your full name"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="company">Company (optional)</Label>
-                    <Input
-                      id="company"
-                      type="text"
-                      value={formData.company}
-                      onChange={(e) => handleInputChange('company', e.target.value)}
-                      placeholder="Your company name"
-                    />
-                  </div>
-                </>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    placeholder="Enter your full name"
+                    required
+                  />
+                </div>
               )}
 
               <div className="space-y-2">
@@ -196,6 +179,12 @@ export default function Auth() {
                 </Alert>
               )}
 
+              {!error && info && (
+                <Alert>
+                  <AlertDescription>{info}</AlertDescription>
+                </Alert>
+              )}
+
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
               </Button>
@@ -213,9 +202,10 @@ export default function Auth() {
               <Button
                 variant="link"
                 onClick={() => {
-                  setIsLogin(!isLogin);
-                  setError('');
-                  setFormData({ name: '', email: '', password: '', company: '' });
+                  setIsLogin(!isLogin)
+                  setError('')
+                  setInfo('')
+                  setFormData({ name: '', email: '', password: '' })
                 }}
                 className="text-sm"
               >
@@ -226,5 +216,5 @@ export default function Auth() {
         </Card>
       </div>
     </div>
-  );
+  )
 }
