@@ -296,6 +296,13 @@ export default function PurchaseOrders() {
   // receive ALL: obey per-line plan; do not force PO status to "received"
   async function doReceivePO(po: PO) {
     try {
+      // 🚧 Guard: require approval first
+      const status = String(po.status || '').toLowerCase()
+      if (status === 'draft') {
+        toast.error(tt('orders.approveBeforeReceive', 'Approve the PO before receiving'))
+        return
+      }
+
       const lines = polines.filter(l => l.po_id === po.id)
       if (!lines.length) return toast.error(tt('orders.noLinesToReceive', 'No lines to receive'))
 
@@ -364,7 +371,7 @@ export default function PurchaseOrders() {
   }
 
   const poOutstanding = useMemo(
-    () => pos.filter(p => ['draft', 'open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
+    () => pos.filter(p => ['draft', 'approved','open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
     [pos]
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
@@ -495,7 +502,7 @@ export default function PurchaseOrders() {
       <Card className="border-dashed">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>{tt('orders.outstandingPOs', 'Outstanding Purchase Orders')}</CardTitle>
+            <CardTitle>{tt('orders.outstandingPOs', 'Open & Approved Purchase Orders')}</CardTitle>
 
             <Sheet open={poOpen} onOpenChange={setPoOpen}>
               <SheetTrigger asChild>
@@ -754,7 +761,12 @@ export default function PurchaseOrders() {
                 <div className="flex gap-2 justify-end">
                   <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
                   <Button variant="secondary" onClick={applyDefaultsToAll}>{tt('orders.applyToAll', 'Apply to all lines')}</Button>
-                  <Button onClick={() => doReceivePO(selectedPO)}>{tt('orders.receiveAll', 'Receive')}</Button>
+                  <Button
+                    onClick={() => doReceivePO(selectedPO)}
+                    disabled={String(selectedPO.status).toLowerCase() === 'draft'}
+                  >
+                    {tt('orders.receiveAll', 'Receive')}
+                  </Button>
                 </div>
               </div>
 
