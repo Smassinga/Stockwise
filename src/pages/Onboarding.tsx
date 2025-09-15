@@ -1,3 +1,4 @@
+// src/pages/Onboarding.tsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -6,6 +7,26 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
+
+async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const uid = session?.user?.id
+    if (!uid) return null
+    const { data } = await supabase
+      .from('company_members')
+      .select('company_id')
+      .eq('user_id', uid)
+      .eq('status', 'active')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (data?.company_id) return data.company_id
+    await new Promise(r => setTimeout(r, stepMs))
+  }
+  return null
+}
 
 export default function Onboarding() {
   const nav = useNavigate()
@@ -21,10 +42,10 @@ export default function Onboarding() {
         const user = session?.user
         if (!user) { nav('/auth', { replace: true }); return }
 
-        // best-effort invite sync
+        // Best-effort invite sync
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
-        // already a member?
+        // Already a member?
         const active = await supabase
           .from('company_members')
           .select('company_id')
@@ -34,10 +55,7 @@ export default function Onboarding() {
           .limit(1)
           .maybeSingle()
 
-        if (active.data?.company_id) {
-          nav('/dashboard', { replace: true }); return
-        }
-
+        if (active.data?.company_id) { nav('/dashboard', { replace: true }); return }
         setLoading(false)
       } catch (e: any) {
         console.error(e)
@@ -54,17 +72,24 @@ export default function Onboarding() {
 
     try {
       setCreating(true)
-      const { error, data } = await supabase.rpc('create_company_and_bootstrap', { p_name: name })
-      if (error) {
-        // Idempotent server should rarely error; if it does, show message
-        toast.error(error.message)
-        return
+
+      const { error } = await supabase.rpc('create_company_and_bootstrap', { p_name: name })
+      if (error) { toast.error(error.message); return }
+
+      // Ensure the token is fresh for RLS, then wait until membership is readable.
+      await supabase.auth.refreshSession()
+      setLoading(true) // show "Checking…" immediately
+
+      const cid = await waitForMembership(8000, 400)
+      if (!cid) {
+        // Fallback: go anyway; route guard will pass as soon as RLS sees the row.
+        console.warn('Membership not visible yet; navigating anyway.')
       }
-      toast.success(`Company ready: ${data?.[0]?.company_name ?? name}`)
       nav('/dashboard', { replace: true })
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Could not create company')
+      setLoading(false)
     } finally {
       setCreating(false)
     }
@@ -81,9 +106,7 @@ export default function Onboarding() {
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
-        <CardHeader>
-          <CardTitle>Create your company</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Create your company</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Looks like you’re not part of a company yet. Create one to get started.
