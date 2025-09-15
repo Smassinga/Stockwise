@@ -364,7 +364,7 @@ export default function PurchaseOrders() {
   }
 
   const poOutstanding = useMemo(
-    () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
+    () => pos.filter(p => ['draft', 'open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
     [pos]
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
