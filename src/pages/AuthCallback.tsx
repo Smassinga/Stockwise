@@ -20,8 +20,7 @@ export default function AuthCallback() {
   useEffect(() => {
     const run = async () => {
       try {
-        const href = window.location.href
-        const url = new URL(href)
+        const url = new URL(window.location.href)
         const code = url.searchParams.get('code')
         const errQuery = url.searchParams.get('error_description') || url.searchParams.get('error')
         const { access_token, refresh_token, error_description: errHash, error: errHash2 } = parseHash()
@@ -34,13 +33,13 @@ export default function AuthCallback() {
         // Complete auth
         let authed = false
 
-        // A) PKCE
+        // A) PKCE / magic link (?code=…)
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(href)
+          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
           if (!error) authed = true
         }
 
-        // B) Hash tokens (email link without PKCE)
+        // B) Hash tokens (#access_token=…&refresh_token=…)
         if (!authed && access_token && refresh_token) {
           const { error } = await supabase.auth.setSession({ access_token, refresh_token })
           if (!error) authed = true
@@ -53,20 +52,13 @@ export default function AuthCallback() {
           return
         }
 
-        // Link + auto-activate any pending invites
-        try {
-          await supabase.functions.invoke('admin-users/sync', { body: {} })
-        } catch {
-          // best-effort only
-        }
+        // Best-effort: link + auto-activate any pending invites (if you have this Edge Function)
+        try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
-        // Decide destination right now (avoid flicker)
+        // Decide destination
         const { data: { session } } = await supabase.auth.getSession()
         const userId = session?.user?.id
-        if (!userId) {
-          setMsg('Signed in, but no session found. Please try again.')
-          return
-        }
+        if (!userId) { setMsg('Signed in, but no session found. Please try again.'); return }
 
         const { data: membership, error: memErr } = await supabase
           .from('company_members')
@@ -77,18 +69,12 @@ export default function AuthCallback() {
           .limit(1)
           .maybeSingle()
 
-        if (memErr) {
-          // If this check fails, let the app’s route guards figure it out
-          nav('/', { replace: true })
-          return
-        }
-
         setMsg('Signed in. Redirecting…')
-        if (membership?.company_id) {
-          // Invited user now active in inviter’s company
+        if (memErr) {
+          nav('/', { replace: true })
+        } else if (membership?.company_id) {
           nav('/dashboard', { replace: true })
         } else {
-          // No membership yet → onboarding flow
           nav('/onboarding', { replace: true })
         }
       } catch (e: any) {
