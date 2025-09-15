@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -8,72 +8,42 @@ import { Alert, AlertDescription } from '../components/ui/alert'
 import { Package, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
-import { supabase } from '../lib/db'
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '' })
   const [error, setError] = useState('')
-  const [info, setInfo] = useState('') // <-- for “check your email” message
   const [loading, setLoading] = useState(false)
 
   const navigate = useNavigate()
-  const { login, requestPasswordReset } = useAuth()
-
-  // If the user is already signed in, push them forward
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate('/dashboard')
-    })
-  }, [navigate])
+  const { login, register, requestPasswordReset } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setInfo('')
     setLoading(true)
 
     try {
       if (isLogin) {
-        // ---- SIGN IN ----
         const res = await login(formData.email, formData.password)
         if (!res.success) {
           setError(res.error || 'Login failed')
           return
         }
-        navigate('/dashboard')
+        navigate('/dashboard') // route guards will push to /onboarding if no company
         return
       }
 
-      // ---- SIGN UP ---- (NO immediate sign-in; respect email confirmation)
-      const redirect = `${window.location.origin}/auth/callback`
-      const { data, error: signErr } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: redirect,
-          data: { name: formData.name?.trim() || null },
-        },
-      })
-
-      if (signErr) {
-        setError(signErr.message || 'Registration failed')
+      // SIGN UP (email confirm flow)
+      const reg = await register(formData.name, formData.email, formData.password)
+      if (!reg.success) {
+        setError(reg.error || 'Registration failed')
         return
       }
 
-      // If your project does NOT require email confirmations, Supabase returns a session.
-      // In that case, push the user to onboarding right away.
-      if (data.session) {
-        navigate('/onboarding')
-        return
-      }
-
-      // Otherwise we tell the user to check their email; after they click the link
-      // the callback page will establish the session and send them to onboarding.
-      setInfo('Account created. Check your email for a confirmation link, then continue.')
+      toast.success('Account created. Check your email to verify, then sign in.')
       setIsLogin(true)
-      toast.success('Verification email sent!')
     } catch (err) {
       console.error(err)
       setError('An unexpected error occurred')
@@ -85,7 +55,6 @@ export default function Auth() {
   const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     if (error) setError('')
-    if (info) setInfo('')
   }
 
   const handleResetPassword = async () => {
@@ -103,7 +72,6 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center space-x-2 mb-4">
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
@@ -114,7 +82,6 @@ export default function Auth() {
           <p className="text-muted-foreground">Advanced Inventory Management System</p>
         </div>
 
-        {/* Card */}
         <Card>
           <CardHeader>
             <CardTitle className="text-center">{isLogin ? 'Sign In' : 'Create Account'}</CardTitle>
@@ -179,14 +146,8 @@ export default function Auth() {
                 </Alert>
               )}
 
-              {!error && info && (
-                <Alert>
-                  <AlertDescription>{info}</AlertDescription>
-                </Alert>
-              )}
-
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+                {loading ? 'Please wait…' : (isLogin ? 'Sign In' : 'Create Account')}
               </Button>
             </form>
 
@@ -204,7 +165,6 @@ export default function Auth() {
                 onClick={() => {
                   setIsLogin(!isLogin)
                   setError('')
-                  setInfo('')
                   setFormData({ name: '', email: '', password: '' })
                 }}
                 className="text-sm"

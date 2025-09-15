@@ -1,4 +1,3 @@
-// src/pages/Onboarding.tsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -18,18 +17,14 @@ export default function Onboarding() {
     (async () => {
       try {
         setLoading(true)
-
-        // Ensure session
         const { data: { session } } = await supabase.auth.getSession()
         const user = session?.user
         if (!user) { nav('/auth', { replace: true }); return }
 
-        const myEmail = (user.email || '').toLowerCase()
-
-        // Best-effort: activate invites
+        // best-effort invite sync
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
-        // Already a member?
+        // already a member?
         const active = await supabase
           .from('company_members')
           .select('company_id')
@@ -39,31 +34,10 @@ export default function Onboarding() {
           .limit(1)
           .maybeSingle()
 
-        if (active.data?.company_id) { nav('/dashboard', { replace: true }); return }
-
-        // Invite row by email? Try to attach once more.
-        const invited = await supabase
-          .from('company_members')
-          .select('company_id, status, user_id')
-          .eq('email', myEmail)
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle()
-
-        if (invited.data) {
-          try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
-          const recheck = await supabase
-            .from('company_members')
-            .select('company_id')
-            .eq('user_id', user.id)
-            .eq('status', 'active')
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle()
-          if (recheck.data?.company_id) { nav('/dashboard', { replace: true }); return }
+        if (active.data?.company_id) {
+          nav('/dashboard', { replace: true }); return
         }
 
-        // Show create form
         setLoading(false)
       } catch (e: any) {
         console.error(e)
@@ -80,15 +54,18 @@ export default function Onboarding() {
 
     try {
       setCreating(true)
-      // Use the SECURITY DEFINER RPC so RLS never blocks this bootstrap
-      const { error } = await supabase.rpc('create_company_and_bootstrap', { p_name: name })
-      if (error) { toast.error(error.message); setCreating(false); return }
-
-      toast.success('Company created')
+      const { error, data } = await supabase.rpc('create_company_and_bootstrap', { p_name: name })
+      if (error) {
+        // Idempotent server should rarely error; if it does, show message
+        toast.error(error.message)
+        return
+      }
+      toast.success(`Company ready: ${data?.[0]?.company_name ?? name}`)
       nav('/dashboard', { replace: true })
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Could not create company')
+    } finally {
       setCreating(false)
     }
   }
@@ -121,9 +98,11 @@ export default function Onboarding() {
                 onChange={(e) => setCompanyName(e.target.value)}
               />
             </div>
-            <Button onClick={createCompany} disabled={creating}>
-              {creating ? 'Creating…' : 'Create company'}
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={createCompany} disabled={creating}>
+                {creating ? 'Creating…' : 'Create company'}
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             If you were invited by someone, you’ll be routed straight to their company after signing in.
