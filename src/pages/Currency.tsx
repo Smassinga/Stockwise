@@ -1,4 +1,3 @@
-// src/pages/Currency.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/db'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
@@ -25,7 +24,6 @@ export default function CurrencyPage() {
   const [allowed, setAllowed] = useState<Currency[]>([])
   const [base, setBase] = useState<string>('MZN')
 
-  // FX UI (uses global table but restricts pickers to allowed codes)
   const [fx, setFx] = useState<FxRate[]>([])
   const [fxDate, setFxDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [from, setFrom] = useState<string>('USD')
@@ -37,91 +35,65 @@ export default function CurrencyPage() {
   useEffect(() => {
     (async () => {
       try {
-        // 1) Ensure global reference list has basic currencies (global reference is OK)
+        // seed master codes (idempotent)
         await supabase.from('currencies').upsert(DEFAULT_CURRENCIES)
 
-        // 2) Load global reference list
-        {
-          const { data, error } = await supabase
-            .from('currencies')
-            .select('code,name,symbol,decimals')
-            .order('code', { ascending: true })
-          if (error) throw error
-          setAllCurrencies((data || []) as Currency[])
-        }
+        const { data: all } = await supabase
+          .from('currencies').select('code,name,symbol,decimals').order('code', { ascending: true })
+        setAllCurrencies((all || []) as Currency[])
 
-        // 3) Load per-company allowed list (scoped view)
-        {
-          const { data, error } = await supabase
+        // this company only
+        const { data: ac } = await supabase
+          .from('company_currencies_view')
+          .select('code,name,symbol,decimals')
+          .order('code', { ascending: true })
+        const allowedList = (ac || []) as Currency[]
+
+        if (!allowedList.length) {
+          // first-time: enable defaults for this company (trigger stamps company_id)
+          await supabase.from('company_currencies').upsert(DEFAULT_CURRENCIES.map(c => ({ currency_code: c.code })))
+          const { data: seeded } = await supabase
             .from('company_currencies_view')
             .select('code,name,symbol,decimals')
             .order('code', { ascending: true })
-          if (error) throw error
-          const allowedList = (data || []) as Currency[]
-
-          // Seed company allowed list if empty
-          if (!allowedList.length) {
-            const toInsert = DEFAULT_CURRENCIES.map(c => ({ currency_code: c.code }))
-            const { error: insErr } = await supabase.from('company_currencies').upsert(toInsert)
-            if (insErr) throw insErr
-
-            const { data: seeded, error: rErr } = await supabase
-              .from('company_currencies_view')
-              .select('code,name,symbol,decimals')
-              .order('code', { ascending: true })
-            if (rErr) throw rErr
-            setAllowed((seeded || []) as Currency[])
-          } else {
-            setAllowed(allowedList)
-          }
+          setAllowed((seeded || []) as Currency[])
+        } else {
+          setAllowed(allowedList)
         }
 
-        // 4) Load per-company base currency
-        {
-          const { data, error } = await supabase
-            .from('company_settings_view')
-            .select('base_currency_code')
-            .limit(1)
-            .maybeSingle()
-          if (error) throw error
-          const currentBase = data?.base_currency_code || 'MZN'
-          setBase(currentBase)
-          // Keep the in-memory helper in sync for other pages that read it
-          setBaseCurrencyCode(currentBase)
-        }
+        // base currency (company-scoped)
+        const { data: s } = await supabase
+          .from('company_settings_view')
+          .select('base_currency_code').limit(1).maybeSingle()
+        const currentBase = s?.base_currency_code || 'MZN'
+        setBase(currentBase)
+        setBaseCurrencyCode(currentBase)
 
-        // 5) FX list (global table), just for display
-        {
-          const { data, error } = await supabase
-            .from('fx_rates')
-            .select('id,date,from_code,to_code,rate')
-            .order('date', { ascending: false })
-            .limit(200)
-          if (error) throw error
-          setFx((data || []) as FxRate[])
-        }
+        // FX for this company only
+        const { data: fxRows, error: fxErr } = await supabase
+          .from('fx_rates_view')
+          .select('id,date,from_code,to_code,rate,fromCode,toCode')
+          .order('date', { ascending: false })
+          .limit(200)
+        if (fxErr) throw fxErr
+        setFx((fxRows || []) as FxRate[])
 
-        // 6) Make sure pickers are valid members of allowed codes
-        {
-          const allowedArr = Array.from(allowedCodes)
-          const fallback = (allowedArr[0] || 'MZN')
-          if (!allowedCodes.has(from)) setFrom(allowedCodes.size ? fallback : 'MZN')
-          if (!allowedCodes.has(to)) setTo(allowedCodes.size ? fallback : 'MZN')
-        }
+        // keep selectors valid
+        const allowedArr = Array.from(allowedCodes)
+        const fallback = (allowedArr[0] || 'MZN')
+        if (!allowedCodes.has(from)) setFrom(allowedCodes.size ? fallback : 'MZN')
+        if (!allowedCodes.has(to)) setTo(allowedCodes.size ? fallback : 'MZN')
       } catch (e: any) {
         console.error(e)
         toast.error(e?.message || 'Failed to load currency data')
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // run once
+  }, [])
 
   async function saveBase() {
     try {
-      if (!allowedCodes.has(base)) {
-        toast.error('Base currency must be one of the company-allowed currencies')
-        return
-      }
+      if (!allowedCodes.has(base)) return toast.error('Base currency must be enabled for this company')
       const { error } = await supabase.rpc('set_base_currency_for_current_company', { p_code: base })
       if (error) throw error
       setBaseCurrencyCode(base)
@@ -134,17 +106,13 @@ export default function CurrencyPage() {
 
   async function addAllowed(code: string) {
     try {
-      // insert into table (RLS + default company_id will scope it correctly)
       const { error } = await supabase.from('company_currencies').insert({ currency_code: code })
       if (error) throw error
-      const { data, error: rErr } = await supabase
+      const { data } = await supabase
         .from('company_currencies_view')
         .select('code,name,symbol,decimals')
         .order('code', { ascending: true })
-      if (rErr) throw rErr
       setAllowed((data || []) as Currency[])
-      // If base not in allowed anymore (edge case), set base to this newly added code for convenience
-      if (!allowedCodes.has(base)) setBase(code)
       toast.success(`Enabled ${code} for this company`)
     } catch (e: any) {
       console.error(e)
@@ -154,18 +122,13 @@ export default function CurrencyPage() {
 
   async function removeAllowed(code: string) {
     try {
-      // Cannot remove the current base
-      if (code === base) {
-        toast.error('You cannot remove the current base currency')
-        return
-      }
+      if (code === base) return toast.error('You cannot remove the current base currency')
       const { error } = await supabase.from('company_currencies').delete().eq('currency_code', code)
       if (error) throw error
-      const { data, error: rErr } = await supabase
+      const { data } = await supabase
         .from('company_currencies_view')
         .select('code,name,symbol,decimals')
         .order('code', { ascending: true })
-      if (rErr) throw rErr
       setAllowed((data || []) as Currency[])
       toast.success(`Disabled ${code} for this company`)
     } catch (e: any) {
@@ -185,15 +148,18 @@ export default function CurrencyPage() {
         toast.error('Both currencies must be enabled for this company')
         return
       }
-      const id = `fx_${fxDate}_${from}_${to}`
-      const payload = { id, date: fxDate, from_code: from, to_code: to, rate: r }
-      const { error } = await supabase.from('fx_rates').upsert(payload)
+      // DB trigger stamps company_id + id; conflict key is per-company
+      const payload = { date: fxDate, from_code: from, to_code: to, rate: r }
+      const { error } = await supabase
+        .from('fx_rates')
+        .upsert(payload, { onConflict: 'company_id,date,from_code,to_code' })
       if (error) throw error
 
       toast.success('FX rate saved')
+
       const { data, error: rErr } = await supabase
-        .from('fx_rates')
-        .select('id,date,from_code,to_code,rate')
+        .from('fx_rates_view')
+        .select('id,date,from_code,to_code,rate,fromCode,toCode')
         .order('date', { ascending: false })
         .limit(200)
       if (rErr) throw rErr
@@ -209,7 +175,6 @@ export default function CurrencyPage() {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Currency &amp; FX</h1>
 
-      {/* Allowed currencies */}
       <Card>
         <CardHeader><CardTitle>Allowed Currencies (this company)</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
@@ -235,7 +200,6 @@ export default function CurrencyPage() {
         </CardContent>
       </Card>
 
-      {/* Base currency */}
       <Card>
         <CardHeader><CardTitle>Base Currency (this company)</CardTitle></CardHeader>
         <CardContent className="flex items-end gap-3">
@@ -256,7 +220,6 @@ export default function CurrencyPage() {
         </CardContent>
       </Card>
 
-      {/* FX rates (global list; pickers restricted to allowed) */}
       <Card>
         <CardHeader><CardTitle>Add / Update FX Rate</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-5">
