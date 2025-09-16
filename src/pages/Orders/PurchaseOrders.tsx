@@ -27,8 +27,6 @@ type PO = {
   fx_to_base?: number
   expected_date?: string|null
   notes?: string|null
-
-  // denormalized supplier fields
   supplier?: string
   supplier_id?: string
   supplier_name?: string|null
@@ -36,8 +34,6 @@ type PO = {
   supplier_phone?: string|null
   supplier_tax_id?: string|null
   payment_terms?: string|null
-
-  // totals
   subtotal?: number|null
   tax_total?: number|null
   total?: number|null
@@ -57,6 +53,7 @@ type POL = {
 
 const nowISO = () => new Date().toISOString()
 const n = (v: string | number | null | undefined, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 const fmtAcct = (v: number) => { const neg = v < 0; const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return neg ? `(${s})` : s }
 const ts = (row: any) => row?.createdAt ?? row?.created_at ?? row?.createdat ?? row?.updatedAt ?? row?.updated_at ?? row?.updatedat ?? 0
 
@@ -95,16 +92,17 @@ export default function PurchaseOrders() {
     { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }
   ])
 
-  // view+receive
+  // view + receive
   const [poViewOpen, setPoViewOpen] = useState(false)
   const [selectedPO, setSelectedPO] = useState<PO | null>(null)
 
-  // default receive target (can be applied to all)
+  // defaults for receiving
   const [defaultReceiveWhId, setDefaultReceiveWhId] = useState<string>('')
   const [defaultReceiveBinId, setDefaultReceiveBinId] = useState<string>('')
 
-  // per-line receive plan
+  // per-line plan and receipts map
   const [receivePlan, setReceivePlan] = useState<Record<string, { qty: string; whId: string; binId: string }>>({})
+  const [receivedMap, setReceivedMap] = useState<Record<string, number>>({}) // key: line id -> sum(received qty in line UOM)
 
   // helpers
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
@@ -130,7 +128,7 @@ export default function PurchaseOrders() {
     p.supplier_name ?? p.supplier ?? (p.supplier_id ? (suppliers.find(s => s.id === p.supplier_id)?.name ?? p.supplier_id) : tt('none', '(none)'))
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
 
-  // load
+  // load masters and lists
   useEffect(() => {
     (async () => {
       try {
@@ -179,6 +177,26 @@ export default function PurchaseOrders() {
       }
     })()
   }, [])
+
+  // helper: fetch receipts for a PO and build map ref_line_id -> received qty
+  async function loadReceiptsMap(poId: string) {
+    const { data, error } = await supabase
+      .from('stock_movements')
+      .select('ref_line_id, qty, type, ref_type, ref_id')
+      .eq('ref_type', 'PO')
+      .eq('ref_id', poId)
+    if (error) throw error
+
+    const m: Record<string, number> = {}
+    for (const r of (data || [])) {
+      if (!r.ref_line_id) continue
+      const q = n((r as any).qty, 0)
+      // Only counting receives; if you ever support returns for PO, subtract 'issue'
+      m[String(r.ref_line_id)] = (m[String(r.ref_line_id)] || 0) + q
+    }
+    setReceivedMap(m)
+    return m
+  }
 
   // stock helpers
   const num = (v: any, d=0) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -229,7 +247,6 @@ export default function PurchaseOrders() {
       const fx = n(poFx, 1)
       const supp = suppliers.find(s => s.id === poSupplierId)
 
-      // compute totals (in PO currency)
       const subtotal = cleanLines.reduce((s, l) => s + l.qty * l.unitPrice * (1 - l.discountPct/100), 0)
       const tax_total = subtotal * (n(poTaxPct, 0) / 100)
       const total = subtotal + tax_total
@@ -241,18 +258,12 @@ export default function PurchaseOrders() {
         fx_to_base: fx,
         expected_date: poDate || null,
         notes: null,
-
-        // denormalized supplier fields
         payment_terms: supp?.payment_terms ?? null,
         supplier_name: supp?.name ?? null,
         supplier_email: supp?.email ?? null,
         supplier_phone: supp?.phone ?? null,
         supplier_tax_id: supp?.tax_id ?? null,
-
-        // totals
-        subtotal,
-        tax_total,
-        total,
+        subtotal, tax_total, total,
       } as any)
       const poId: string = Array.isArray(inserted) ? inserted[0]?.id : inserted?.id
       if (!poId) throw new Error('PO insert did not return an id')
@@ -293,10 +304,9 @@ export default function PurchaseOrders() {
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCancelFailed', 'Failed to cancel PO')) }
   }
 
-  // receive ALL: obey per-line plan; do not force PO status to "received"
+  // receive ALL: per-line plan; block when draft; clamp to remaining; auto-close when fully received
   async function doReceivePO(po: PO) {
     try {
-      // 🚧 Guard: require approval first
       const status = String(po.status || '').toLowerCase()
       if (status === 'draft') {
         toast.error(tt('orders.approveBeforeReceive', 'Approve the PO before receiving'))
@@ -306,45 +316,52 @@ export default function PurchaseOrders() {
       const lines = polines.filter(l => l.po_id === po.id)
       if (!lines.length) return toast.error(tt('orders.noLinesToReceive', 'No lines to receive'))
 
-      const plan = receivePlan
+      // fresh receipts map
+      const currentMap = await loadReceiptsMap(po.id)
       const fxToBase = n(po.fx_to_base ?? (po as any).fxToBase, 1)
 
       for (const l of lines) {
+        const lineId = String(l.id || '')
+        if (!lineId) continue // safety
+
+        const ordered = n(l.qty)
+        const already = n(currentMap[lineId] || 0)
+        const remaining = Math.max(0, ordered - already)
+
         const key = String(l.id ?? `${l.po_id}-${l.line_no}`)
-        const p = plan[key]
-        const qtyToReceive = n(p?.qty ?? 0)
-        if (!p || qtyToReceive <= 0) continue
+        const p = receivePlan[key]
+        const qtyRequested = n(p?.qty ?? 0)
+        if (!p || qtyRequested <= 0) continue
+
+        if (qtyRequested > remaining) {
+          throw new Error(tt('orders.overReceiveNotAllowed', 'Receive qty cannot exceed remaining for a line'))
+        }
 
         const whId = p.whId
         const binId = p.binId
         if (!whId || !binId) throw new Error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
 
-        // Basic over-receive guard (no running receipt tracking yet)
-        if (qtyToReceive > n(l.qty)) {
-          throw new Error(tt('orders.overReceiveNotAllowed', 'Receive qty cannot exceed ordered qty for a line'))
-        }
-
         const it = itemById.get(l.item_id); if (!it) throw new Error(`Item not found for line ${l.item_id}`)
         const baseUom = it.baseUomId
-        const qtyBase = safeConvert(qtyToReceive, l.uom_id, baseUom)
+        const qtyBase = safeConvert(qtyRequested, l.uom_id, baseUom)
         if (qtyBase == null) {
           const fromCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
           throw new Error(tt('orders.noConversion', 'No conversion from {from} to base for {sku}').replace('{from}', String(fromCode)).replace('{sku}', String(it.sku)))
         }
 
         const disc = n(l.discount_pct, 0)
-        const totalBase = n(l.unit_price) * qtyToReceive * (1 - disc/100) * fxToBase
+        const totalBase = n(l.unit_price) * qtyRequested * (1 - disc/100) * fxToBase
         const unitCostBase = qtyBase > 0 ? totalBase / qtyBase : 0
 
         // Stock +
         await upsertStockLevel(whId, binId, it.id, qtyBase, unitCostBase)
 
-        // Movement
+        // Movement (qty in line UOM)
         await supabase.from('stock_movements').insert({
           type: 'receive',
           item_id: it.id,
           uom_id: uomIdFromIdOrCode(l.uom_id) || l.uom_id,
-          qty: qtyToReceive,
+          qty: qtyRequested,
           qty_base: qtyBase,
           unit_cost: unitCostBase,
           total_value: totalBase,
@@ -358,9 +375,15 @@ export default function PurchaseOrders() {
         } as any)
       }
 
-      // No invalid status update here. If you later add logic for full vs partial receipt,
-      // update to a valid enum like "closed" or "partially_received".
+      // reload receipts for this PO
+      const nextMap = await loadReceiptsMap(po.id)
+      const linesForPO = polines.filter(l => l.po_id === po.id)
+      const allDone = linesForPO.every(l => (n(nextMap[String(l.id || '')] || 0) >= n(l.qty)))
+      if (allDone) {
+        await tryUpdateStatus(po.id, ['closed', 'completed', 'received'])
+      }
 
+      // refresh lists
       const [freshPO, freshPOL] = await Promise.all([ db.purchaseOrders.list(), db.purchaseOrderLines.list() ])
       setPOs((freshPO || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
       setPOLines(freshPOL || [])
@@ -370,27 +393,38 @@ export default function PurchaseOrders() {
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.receiveFailed', 'Failed to receive PO')) }
   }
 
+  // outstanding = open/draft/approved/etc. (not closed/canceled)
   const poOutstanding = useMemo(
-    () => pos.filter(p => ['draft', 'approved','open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
+    () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
     [pos]
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const poTax = poSubtotal * (n(poTaxPct, 0) / 100)
 
-  // initialize per-line plan when a PO is selected
+  // when PO is selected, load receipts and seed per-line plan with REMAINING qty and default bin/wh
   useEffect(() => {
-    if (!selectedPO) return
-    const lines = polines.filter(l => l.po_id === selectedPO.id)
-    const next: Record<string, { qty: string; whId: string; binId: string }> = {}
-    for (const l of lines) {
-      const key = String(l.id ?? `${l.po_id}-${l.line_no}`)
-      // default: full ordered qty, default WH/Bin
-      const whId = defaultReceiveWhId || warehouses[0]?.id || ''
-      const binId = whId ? (binsForWH(whId)[0]?.id || '') : ''
-      next[key] = { qty: String(n(l.qty)), whId, binId }
-    }
-    setReceivePlan(next)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    (async () => {
+      if (!selectedPO) return
+      try {
+        await loadReceiptsMap(selectedPO.id)
+        const lines = polines.filter(l => l.po_id === selectedPO.id)
+        const next: Record<string, { qty: string; whId: string; binId: string }> = {}
+        for (const l of lines) {
+          const lineId = String(l.id || '')
+          const ordered = n(l.qty)
+          const already = n(receivedMap[lineId] || 0)
+          const remaining = Math.max(0, ordered - already)
+          const key = lineId || `${l.po_id}-${l.line_no}`
+          const whId = defaultReceiveWhId || warehouses[0]?.id || ''
+          const binId = whId ? (binsForWH(whId)[0]?.id || '') : ''
+          next[key] = { qty: String(remaining), whId, binId }
+        }
+        setReceivePlan(next)
+      } catch (e) {
+        console.error(e)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPO])
 
   function applyDefaultsToAll() {
@@ -402,8 +436,11 @@ export default function PurchaseOrders() {
         const key = String(l.id ?? `${l.po_id}-${l.line_no}`)
         const whId = defaultReceiveWhId
         const binId = defaultReceiveBinId
-        if (!next[key]) next[key] = { qty: String(n(l.qty)), whId, binId }
-        else next[key] = { ...next[key], whId, binId }
+        const ordered = n(l.qty)
+        const already = n(receivedMap[String(l.id || '')] || 0)
+        const remaining = Math.max(0, ordered - already)
+        if (!next[key]) next[key] = { qty: String(remaining), whId, binId }
+        else next[key] = { ...next[key], whId, binId, qty: String(clamp(n(next[key].qty, 0), 0, remaining)) }
       }
       return next
     })
@@ -475,7 +512,6 @@ export default function PurchaseOrders() {
         <div class="grand"><span>Total (${baseCode})</span><span>${fmtAcct(total * fx)}</span></div>
       </div>
     `
-
     const css = `
       body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#111}
       .cap{text-transform:capitalize}
@@ -715,7 +751,7 @@ export default function PurchaseOrders() {
       </Card>
 
       {/* View/Receive Sheet */}
-      <Sheet open={poViewOpen} onOpenChange={(o) => { if (!o) { setSelectedPO(null); setReceivePlan({}) } setPoViewOpen(o) }}>
+      <Sheet open={poViewOpen} onOpenChange={(o) => { if (!o) { setSelectedPO(null); setReceivePlan({}); setReceivedMap({}) } setPoViewOpen(o) }}>
         <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
           <SheetHeader>
             <SheetTitle>{tt('orders.poDetails', 'PO Details')}</SheetTitle>
@@ -778,6 +814,8 @@ export default function PurchaseOrders() {
                       <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
                       <th className="py-2 px-3">{tt('table.sku', 'SKU')}</th>
                       <th className="py-2 px-3">{tt('orders.ordered', 'Ordered')}</th>
+                      <th className="py-2 px-3">{tt('orders.received', 'Received')}</th>
+                      <th className="py-2 px-3">{tt('orders.remaining', 'Remaining')}</th>
                       <th className="py-2 px-3">{tt('orders.receiveQty', 'Receive Qty')}</th>
                       <th className="py-2 px-3">{tt('orders.toWarehouse', 'To Warehouse')}</th>
                       <th className="py-2 px-3">{tt('orders.toBin', 'To Bin')}</th>
@@ -788,26 +826,40 @@ export default function PurchaseOrders() {
                     {polines.filter(l => l.po_id === selectedPO.id).map(l => {
                       const it = itemById.get(l.item_id)
                       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
-                      const key = String(l.id ?? `${l.po_id}-${l.line_no}`)
-                      const plan = receivePlan[key] || { qty: '0', whId: defaultReceiveWhId, binId: defaultReceiveBinId }
+                      const lineId = String(l.id || '')
+                      const ordered = n(l.qty)
+                      const received = n(receivedMap[lineId] || 0)
+                      const remaining = Math.max(0, ordered - received)
+                      const key = lineId || `${l.po_id}-${l.line_no}`
+                      const plan = receivePlan[key] || { qty: String(remaining), whId: defaultReceiveWhId, binId: defaultReceiveBinId }
+                      const qtyPlan = clamp(n(plan.qty, 0), 0, remaining)
                       const disc = n(l.discount_pct, 0)
-                      const qtyPlan = n(plan.qty, 0)
                       const valueBase = n(l.unit_price) * qtyPlan * (1 - disc/100) * fxPO(selectedPO)
 
                       return (
                         <tr key={key} className="border-t">
                           <td className="py-2 px-3">{it?.name || l.item_id}</td>
                           <td className="py-2 px-3">{it?.sku || '—'}</td>
-                          <td className="py-2 px-3">{fmtAcct(n(l.qty))} {uomCode}</td>
+                          <td className="py-2 px-3">{fmtAcct(ordered)} {uomCode}</td>
+                          <td className="py-2 px-3">{fmtAcct(received)} {uomCode}</td>
+                          <td className="py-2 px-3">{fmtAcct(remaining)} {uomCode}</td>
 
                           <td className="py-2 px-3">
                             <Input
                               inputMode="decimal"
                               type="number"
                               min="0"
+                              max={remaining}
                               step="0.0001"
                               value={plan.qty}
-                              onChange={(e) => setReceivePlan(prev => ({ ...prev, [key]: { ...(prev[key] || { whId: defaultReceiveWhId, binId: defaultReceiveBinId }), qty: e.target.value } }))}
+                              onChange={(e) => {
+                                const raw = Number(e.target.value)
+                                const clamped = Number.isFinite(raw) ? clamp(raw, 0, remaining) : 0
+                                setReceivePlan(prev => ({
+                                  ...prev,
+                                  [key]: { ...(prev[key] || { whId: defaultReceiveWhId, binId: defaultReceiveBinId }), qty: String(clamped) }
+                                }))
+                              }}
                             />
                           </td>
 
