@@ -12,6 +12,7 @@ import toast from 'react-hot-toast'
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type FxRate = { id: string; date: string; fromCode: string; toCode: string; rate: number }
 
+// Global reference defaults (we seed the reference table if missing)
 const DEFAULT_CURRENCIES: Currency[] = [
   { code: 'MZN', name: 'Mozambican Metical', symbol: 'MT', decimals: 2 },
   { code: 'USD', name: 'US Dollar', symbol: '$', decimals: 2 },
@@ -21,9 +22,9 @@ const DEFAULT_CURRENCIES: Currency[] = [
 ]
 
 export default function CurrencyPage() {
-  const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [base, setBase] = useState<string>('MZN')
-  const [fx, setFx] = useState<FxRate[]>([])
+  const [currencies, setCurrencies] = useState<Currency[]>([])          // list shown in dropdowns (company-allowed)
+  const [base, setBase] = useState<string>('MZN')                       // company base currency (from view)
+  const [fx, setFx] = useState<FxRate[]>([])                            // recent FX rows
 
   // new fx form
   const [fxDate, setFxDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
@@ -34,35 +35,43 @@ export default function CurrencyPage() {
   useEffect(() => {
     (async () => {
       try {
-        // 1) Load currencies, settings (base), and recent fx
-        const [cs, setting, rates] = await Promise.all([
-          db.currencies.list({ orderBy: { code: 'asc' } }),
-          db.settings.get('app').catch(() => null),
-          db.fxRates.list({ orderBy: { date: 'desc' }, limit: 200 }),
+        // 1) Load global reference currencies (for seeding only), and recent fx
+        const [csRef, fxRates] = await Promise.all([
+          db.currencies.list({ orderBy: { code: 'asc' } }).catch(() => [] as Currency[]),
+          db.fxRates.list({ orderBy: { date: 'desc' }, limit: 200 }).catch(() => [] as FxRate[]),
         ])
 
-        // 2) Ensure defaults exist
-        const existing = cs || []
-        const need = DEFAULT_CURRENCIES.filter(d => !existing.find(c => c.code === d.code))
+        // 2) Ensure global reference defaults exist (idempotent; safe to re-run)
+        const need = DEFAULT_CURRENCIES.filter(d => !(csRef || []).find(c => c.code === d.code))
         if (need.length) {
-          await supabase.from('currencies').upsert(need) // idempotent
+          const { error } = await supabase.from('currencies').upsert(need)
+          if (error) throw error
         }
 
-        // 3) Refresh currencies list after seeding
-        const fresh = await db.currencies.list({ orderBy: { code: 'asc' } })
-        setCurrencies(fresh || [])
+        // 3) Load company-scoped: base and allowed currencies
+        const [{ data: baseRow, error: baseErr }, { data: allowed, error: allowErr }] = await Promise.all([
+          supabase.from('company_settings_view').select('base_currency_code').limit(1).maybeSingle(),
+          supabase.from('company_currencies_view').select('code,name,symbol,decimals').order('code', { ascending: true }),
+        ])
+        if (baseErr) throw baseErr
+        if (allowErr) throw allowErr
 
-        // 4) Load base from settings (if present)
-        if (setting?.baseCurrencyCode) setBase(setting.baseCurrencyCode)
+        // 4) Apply company base (fallback to MZN if not set)
+        if (baseRow?.base_currency_code) setBase(baseRow.base_currency_code)
 
-        // 5) FX rates table
-        setFx(rates || [])
+        // 5) Choose the list for dropdowns:
+        //    Prefer company-allowed; if empty (unlikely after seeding), fall back to global reference list.
+        const list = (allowed && allowed.length ? allowed : (csRef || [])) as Currency[]
+        setCurrencies(list)
 
-        // 6) Make sure selectors have valid codes
-        const all = fresh || existing
-        if (all?.length) {
-          if (!all.find(c => c.code === from)) setFrom(all[0].code)
-          if (!all.find(c => c.code === to)) setTo(all[0].code)
+        // 6) FX table
+        setFx(fxRates || [])
+
+        // 7) Make sure selectors have valid codes (constrained by "list")
+        if (list.length) {
+          if (!list.find(c => c.code === from)) setFrom(list[0].code)
+          if (!list.find(c => c.code === to)) setTo(list[0].code)
+          if (!list.find(c => c.code === base)) setBase(list[0].code)
         }
       } catch (e: any) {
         console.error(e)
@@ -71,13 +80,12 @@ export default function CurrencyPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Company-scoped save: writes ONLY to your company via RPC with RLS
   async function saveBase() {
     try {
-      // Write snake_case to avoid generated-column issues
-      const payload = { id: 'app', base_currency_code: base }
-      const { error } = await supabase.from('settings').upsert(payload)
+      const { error } = await supabase.rpc('set_base_currency_for_current_company', { p_code: base })
       if (error) throw error
-      setBaseCurrencyCode(base)
+      setBaseCurrencyCode(base) // keep local cache for client helpers
       toast.success('Base currency saved')
     } catch (e: any) {
       console.error(e)
@@ -94,7 +102,7 @@ export default function CurrencyPage() {
       }
       const id = `fx_${fxDate}_${from}_${to}`
 
-      // IMPORTANT: use snake_case fields; do NOT send fromCode/toCode (they are generated)
+      // IMPORTANT: use snake_case fields; do NOT send fromCode/toCode (they’re generated)
       const payload = {
         id,
         date: fxDate,

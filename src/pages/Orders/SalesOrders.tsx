@@ -23,7 +23,7 @@ type AppSettings = {
 
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string }
-type Currency = { code: string; name: string }
+type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type Customer = {
   id: string
   code?: string
@@ -67,6 +67,9 @@ type SOL = {
   unit_price: number
   discount_pct?: number | null
   line_total: number
+  is_shipped?: boolean
+  shipped_at?: string | null
+  shipped_qty?: number
 }
 
 const nowISO = () => new Date().toISOString()
@@ -74,20 +77,11 @@ const n = (v: string | number | null | undefined, d = 0) =>
   Number.isFinite(Number(v)) ? Number(v) : d
 const fmtAcct = (v: number) => {
   const neg = v < 0
-  const s = Math.abs(v).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })
+  const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return neg ? `(${s})` : s
 }
 const ts = (row: any) =>
-  row?.createdAt ??
-  row?.created_at ??
-  row?.createdat ??
-  row?.updatedAt ??
-  row?.updated_at ??
-  row?.updatedat ??
-  0
+  row?.createdAt ?? row?.created_at ?? row?.createdat ?? row?.updatedAt ?? row?.updated_at ?? row?.updatedat ?? 0
 
 export default function SalesOrders() {
   const { t } = useI18n()
@@ -132,7 +126,7 @@ export default function SalesOrders() {
   const [shipWhId, setShipWhId] = useState<string>('')
   const [shipBinId, setShipBinId] = useState<string>('')
 
-  // live bin previews (like your original unified file)
+  // live bin previews
   const [soBinsPreview, setSoBinsPreview] = useState<
     Record<string, Array<{ binId: string | null; code: string; qty: number }>>
   >({})
@@ -161,11 +155,7 @@ export default function SalesOrders() {
     if (!from || !to) return null
     if (idsOrCodesEqual(from, to)) return qty
     if (!convGraph) return null
-    try {
-      return Number(convertQty(qty, from, to, convGraph))
-    } catch {
-      return null
-    }
+    try { return Number(convertQty(qty, from, to, convGraph)) } catch { return null }
   }
 
   const soNo = (s: any) => s?.orderNo ?? s?.order_no ?? s?.id
@@ -182,7 +172,7 @@ export default function SalesOrders() {
         const [it, uu, cs, appRes] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
           supabase.from('uoms').select('id,code,name').order('code', { ascending: true }),
-          supabase.from('currencies').select('code,name').order('code', { ascending: true }),
+          supabase.from('company_currencies_view').select('code,name,symbol,decimals').order('code', { ascending: true }),
           supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])
         setApp((appRes.data as any)?.data ?? {})
@@ -190,7 +180,9 @@ export default function SalesOrders() {
         setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
         if (uu.error) throw uu.error
         setUoms(((uu.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
+
         setCurrencies((cs.data || []) as Currency[])
+
         setBaseCode(await getBaseCurrencyCode())
 
         const { data: convRows, error: convErr } = await supabase
@@ -209,8 +201,14 @@ export default function SalesOrders() {
           db.salesOrders.list(),
           db.salesOrderLines.list()
         ])
+        const withFlags = (sol || []).map((l: any) => ({
+          ...l,
+          is_shipped: l.is_shipped ?? false,
+          shipped_at: l.shipped_at ?? null,
+          shipped_qty: Number.isFinite(Number(l.shipped_qty)) ? Number(l.shipped_qty) : 0,
+        })) as SOL[]
         setSOs((so || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-        setSOLines(sol || [])
+        setSOLines(withFlags)
 
         const [whRes, binRes] = await Promise.all([
           db.warehouses.list({ orderBy: { name: 'asc' } }),
@@ -219,12 +217,9 @@ export default function SalesOrders() {
         setWarehouses(whRes || [])
         setBins(binRes || [])
 
-        // defaults (prefer app.settings.sales.defaultFulfilWarehouseId if present)
         if (whRes && whRes.length) {
           const fromSettings = (appRes.data as any)?.data?.sales?.defaultFulfilWarehouseId
-          const preferred =
-            whRes.find(w => w.id === fromSettings) ??
-            whRes[0]
+          const preferred = whRes.find(w => w.id === fromSettings) ?? whRes[0]
           setShipWhId(preferred.id)
           const firstBin = (binRes || []).find(b => b.warehouseId === preferred.id)?.id || ''
           setShipBinId(firstBin)
@@ -236,11 +231,21 @@ export default function SalesOrders() {
     })()
   }, [])
 
+  useEffect(() => {
+    setSoCurrency((prev) => prev && prev !== 'MZN' ? prev : baseCode)
+  }, [baseCode])
+
+  useEffect(() => {
+    if (currencies.length === 0) return
+    const exists = currencies.some(c => c.code === soCurrency)
+    if (!exists) setSoCurrency(currencies[0].code)
+  }, [currencies])
+
   // live "top bins" preview across the selected warehouse
   useEffect(() => {
     async function run() {
       if (!soViewOpen || !selectedSO || !shipWhId) { setSoBinsPreview({}); return }
-      const lines = solines.filter(l => l.so_id === selectedSO.id)
+      const lines = solines.filter(l => l.so_id === selectedSO.id && !(l.is_shipped || 0) && (n(l.qty) - n(l.shipped_qty)) > 0)
       const itemIds = Array.from(new Set(lines.map(l => l.item_id)))
       if (itemIds.length === 0) { setSoBinsPreview({}); return }
       try {
@@ -268,11 +273,11 @@ export default function SalesOrders() {
     run()
   }, [soViewOpen, selectedSO, shipWhId, bins, solines])
 
-  // on-hand for the currently selected bin
+  // on-hand for the selected bin
   useEffect(() => {
     async function run() {
       if (!soViewOpen || !selectedSO || !shipWhId || !shipBinId) { setSoBinOnHand({}); return }
-      const lines = solines.filter(l => l.so_id === selectedSO.id)
+      const lines = solines.filter(l => l.so_id === selectedSO.id && !(l.is_shipped || 0) && (n(l.qty) - n(l.shipped_qty)) > 0)
       const itemIds = Array.from(new Set(lines.map(l => l.item_id)))
       if (itemIds.length === 0) { setSoBinOnHand({}); return }
       try {
@@ -372,6 +377,11 @@ export default function SalesOrders() {
         .filter(l => l.itemId && l.uomId && l.qty > 0 && l.unitPrice >= 0 && l.discountPct >= 0 && l.discountPct <= 100)
       if (!cleanLines.length) return toast.error(tt('orders.addOneLine', 'Add at least one valid line'))
 
+      const allowed = currencies.map(c => c.code)
+      const chosenCurrency = allowed.length === 0
+        ? baseCode
+        : (allowed.includes(soCurrency) ? soCurrency : allowed[0])
+
       const fx = n(soFx, 1)
       const cust = customers.find(c => c.id === soCustomerId)
       const headerSubtotal = calcFormSubtotal(soLinesForm)
@@ -381,7 +391,7 @@ export default function SalesOrders() {
         .insert({
           customer_id: soCustomerId,
           status: 'draft',
-          currency_code: soCurrency,
+          currency_code: chosenCurrency,
           fx_to_base: fx,
           expected_ship_date: soDate || null,
           notes: null,
@@ -410,7 +420,10 @@ export default function SalesOrders() {
           qty: l.qty,
           unit_price: l.unitPrice,
           discount_pct: l.discountPct,
-          line_total: lineTotal
+          line_total: lineTotal,
+          is_shipped: false,
+          shipped_at: null,
+          shipped_qty: 0,
         } as any)
       }
 
@@ -423,8 +436,14 @@ export default function SalesOrders() {
       setSoOpen(false)
 
       const [so, sol] = await Promise.all([ db.salesOrders.list(), db.salesOrderLines.list() ])
+      const withFlags = (sol || []).map((l: any) => ({
+        ...l,
+        is_shipped: l.is_shipped ?? false,
+        shipped_at: l.shipped_at ?? null,
+        shipped_qty: Number.isFinite(Number(l.shipped_qty)) ? Number(l.shipped_qty) : 0,
+      })) as SOL[]
       setSOs((so || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-      setSOLines(sol || [])
+      setSOLines(withFlags)
     } catch (err: any) {
       console.error(err)
       toast.error(err?.message || tt('orders.soCreateFailed', 'Failed to create SO'))
@@ -466,36 +485,47 @@ export default function SalesOrders() {
     return await tryUpdateStatus(soId, candidates)
   }
 
+  // Ship a line: ship the outstanding (qty - shipped_qty)
   async function doShipLineSO(so: SO, line: SOL) {
     try {
       if (!shipWhId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
       if (!shipBinId) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
 
+      const total = n(line.qty)
+      const already = n(line.shipped_qty)
+      const outstanding = Math.max(total - already, 0)
+      if (outstanding <= 0) {
+        toast.success(tt('orders.lineAlreadyShipped', 'Line already shipped'))
+        return
+      }
+
       const it = itemById.get(line.item_id)
       if (!it) throw new Error(`Item not found for line ${line.item_id}`)
       const baseUom = it.baseUomId
-      const qtyBase = safeConvert(n(line.qty), line.uom_id, baseUom)
-      if (qtyBase == null) {
+
+      const qtyBaseOutstanding = safeConvert(outstanding, line.uom_id, baseUom)
+      if (qtyBaseOutstanding == null) {
         const fromCode = uomById.get(uomIdFromIdOrCode(line.uom_id))?.code || line.uom_id
         throw new Error(tt('orders.noConversion', 'No conversion from {from} to base for {sku}')
-          .replace('{from}', String(fromCode))
-          .replace('{sku}', String(it.sku)))
+          .replace('{from}', String(fromCode)).replace('{sku}', String(it.sku)))
       }
 
       const { onHand, avgCost } = await avgCostAt(shipWhId, shipBinId, it.id)
-      if (onHand < qtyBase) throw new Error(tt('orders.insufficientStockBin', 'Insufficient stock in bin for item {sku}')
+      if (onHand < qtyBaseOutstanding) throw new Error(tt('orders.insufficientStockBin', 'Insufficient stock in bin for item {sku}')
         .replace('{sku}', String(it?.sku || '')))
 
-      await upsertStockLevel(shipWhId, shipBinId, it.id, -qtyBase)
+      // Deduct stock
+      await upsertStockLevel(shipWhId, shipBinId, it.id, -qtyBaseOutstanding)
 
+      // Movement record
       await supabase.from('stock_movements').insert({
         type: 'issue',
         item_id: it.id,
         uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
-        qty: n(line.qty),
-        qty_base: qtyBase,
+        qty: outstanding,
+        qty_base: qtyBaseOutstanding,
         unit_cost: avgCost,
-        total_value: avgCost * qtyBase,
+        total_value: avgCost * qtyBaseOutstanding,
         warehouse_from_id: shipWhId,
         bin_from_id: shipBinId,
         notes: `SO ${soNo(so)}`,
@@ -505,10 +535,33 @@ export default function SalesOrders() {
         ref_line_id: line.id ?? null,
       } as any)
 
-      if (line.id) await supabase.from('sales_order_lines').delete().eq('id', line.id)
-      setSOLines(prev => prev.filter(l => l.id !== line.id))
+      // Mark shipped_qty and possibly is_shipped
+      const newShipped = already + outstanding
+      const fully = newShipped >= total - 1e-9
 
-      const remaining = solines.filter(l => l.so_id === so.id && l.id !== line.id).length
+      if (line.id) {
+        const { error: updErr } = await supabase
+          .from('sales_order_lines')
+          .update({
+            shipped_qty: newShipped,
+            is_shipped: fully,
+            shipped_at: fully ? nowISO() : (line.shipped_at ?? null),
+          })
+          .eq('id', line.id)
+        if (updErr) throw updErr
+      }
+
+      setSOLines(prev => prev.map(l => l.id === line.id
+        ? { ...l, shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : l.shipped_at }
+        : l))
+
+      // If all lines fully shipped, close order
+      const remaining = solines.filter(l =>
+        l.so_id === so.id &&
+        (n(l.qty) - n(l.shipped_qty)) > 0 &&
+        l.id !== line.id
+      ).length
+
       if (remaining === 0) {
         const final = await setSOFinalStatus(so.id)
         if (final) setSOs(prev => prev.map(s => (s.id === so.id ? { ...s, status: final } : s)))
@@ -528,10 +581,11 @@ export default function SalesOrders() {
       if (!shipWhId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
       if (!shipBinId) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
 
-      const lines = solines.filter(l => l.so_id === so.id)
+      const lines = solines.filter(l => l.so_id === so.id && (n(l.qty) - n(l.shipped_qty)) > 0)
       if (!lines.length) return toast.error(tt('orders.noLinesToShip', 'No lines to ship'))
 
       for (const l of lines) {
+        // eslint-disable-next-line no-await-in-loop
         await doShipLineSO(so, l)
       }
     } catch (err: any) {
@@ -547,9 +601,8 @@ export default function SalesOrders() {
   )
   const soSubtotal = soLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const soTax = soSubtotal * (n(soTaxPct, 0) / 100)
-  const allowLineShip = app?.sales?.allowLineShip !== false // default true
+  
 
-  // header subtotal helper (uses header total_amount if present, else sums lines)
   function soHeaderSubtotal(so: SO): number {
     const header = n((so as any).total_amount, NaN)
     if (Number.isFinite(header)) return header
@@ -560,13 +613,14 @@ export default function SalesOrders() {
     const currency = curSO(so) || '—'
     const fx = fxSO(so) || 1
     const lines = solines.filter(l => l.so_id === so.id)
-
     const rows = lines.map(l => {
       const it = itemById.get(l.item_id)
       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
       const disc = n(l.discount_pct, 0)
       const lineTotal = n(l.qty) * n(l.unit_price) * (1 - disc/100)
-      return `<tr><td>${it?.name || l.item_id}</td><td>${it?.sku || ''}</td><td class="right">${fmtAcct(n(l.qty))}</td><td>${uomCode}</td><td class="right">${fmtAcct(n(l.unit_price))}</td><td class="right">${fmtAcct(disc)}</td><td class="right">${fmtAcct(lineTotal)}</td></tr>`
+      const shippedBadge = (n(l.shipped_qty) >= n(l.qty)) || l.is_shipped
+        ? ' <span style="color:#16a34a;font-weight:600">(shipped)</span>' : ''
+      return `<tr><td>${it?.name || l.item_id}${shippedBadge}</td><td>${it?.sku || ''}</td><td class="right">${fmtAcct(n(l.qty))}</td><td>${uomCode}</td><td class="right">${fmtAcct(n(l.unit_price))}</td><td class="right">${fmtAcct(disc)}</td><td class="right">${fmtAcct(lineTotal)}</td></tr>`
     }).join('')
 
     const subtotal = soHeaderSubtotal(so)
@@ -626,7 +680,9 @@ export default function SalesOrders() {
                     <Select value={soCurrency} onValueChange={setSoCurrency}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
+                        {(currencies.length ? currencies : [{ code: baseCode, name: baseCode }]).map(c =>
+                          <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -864,7 +920,7 @@ export default function SalesOrders() {
                   <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
                   {String(selectedSO.status).toLowerCase() === 'confirmed' && (
                     <Button onClick={() => doShipSO(selectedSO)}>
-                      {allowLineShip ? tt('orders.shipAll', 'Ship All') : tt('orders.shipOrder', 'Ship Order')}
+                      {tt('orders.shipAll', 'Ship All Outstanding')}
                     </Button>
                   )}
                 </div>
@@ -885,10 +941,11 @@ export default function SalesOrders() {
                     </tr>
                   </thead>
                   <tbody>
-                    {solines.filter(l => l.so_id === selectedSO.id).map(l => {
+                    {solines.filter(l => l.so_id === selectedSO.id && (n(l.qty) - n(l.shipped_qty)) > 0).map(l => {
                       const it = itemById.get(l.item_id)
                       const baseU = it?.baseUomId || ''
-                      const qtyBase = it ? safeConvert(n(l.qty), l.uom_id, baseU) : null
+                      const outstanding = Math.max(n(l.qty) - n(l.shipped_qty), 0)
+                      const qtyBase = it ? safeConvert(outstanding, l.uom_id, baseU) : null
                       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
                       const baseUomCode =
                         it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
@@ -914,15 +971,16 @@ export default function SalesOrders() {
                           </td>
                           <td className="py-2 px-3">{hint}</td>
                           <td className="py-2 px-3 text-right">
-                            {allowLineShip && (
-                              <Button size="sm" disabled={!enough || String(selectedSO.status).toLowerCase() !== 'confirmed'} onClick={() => doShipLineSO(selectedSO, l)}>
-                                {tt('orders.ship', 'Ship')}
-                              </Button>
-                            )}
+                            <Button size="sm" disabled={!enough || String(selectedSO.status).toLowerCase() !== 'confirmed'} onClick={() => doShipLineSO(selectedSO, l)}>
+                              {tt('orders.ship', 'Ship Outstanding')}
+                            </Button>
                           </td>
                         </tr>
                       )
                     })}
+                    {solines.filter(l => l.so_id === selectedSO.id && (n(l.qty) - n(l.shipped_qty)) > 0).length === 0 && (
+                      <tr><td colSpan={8} className="py-3 text-muted-foreground">{tt('orders.allLinesShipped', 'All lines shipped.')}</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
