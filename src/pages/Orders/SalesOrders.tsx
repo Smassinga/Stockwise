@@ -164,6 +164,7 @@ export default function SalesOrders() {
   const soCustomerLabel = (s: SO) =>
     s.customer ?? (s.customer_id ? (customers.find(c => c.id === s.customer_id)?.name ?? s.customer_id) : tt('none', '(none)'))
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
+  const remaining = (l: SOL) => Math.max(n(l.qty) - n(l.shipped_qty), 0)
 
   // load masters, conversions, settings, lists, defaults
   useEffect(() => {
@@ -180,9 +181,7 @@ export default function SalesOrders() {
         setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
         if (uu.error) throw uu.error
         setUoms(((uu.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
-
         setCurrencies((cs.data || []) as Currency[])
-
         setBaseCode(await getBaseCurrencyCode())
 
         const { data: convRows, error: convErr } = await supabase
@@ -231,10 +230,8 @@ export default function SalesOrders() {
     })()
   }, [])
 
-  useEffect(() => {
-    setSoCurrency((prev) => prev && prev !== 'MZN' ? prev : baseCode)
-  }, [baseCode])
-
+  // default chosen currency = baseCode (if previous was placeholder)
+  useEffect(() => { setSoCurrency((prev) => prev && prev !== 'MZN' ? prev : baseCode) }, [baseCode])
   useEffect(() => {
     if (currencies.length === 0) return
     const exists = currencies.some(c => c.code === soCurrency)
@@ -245,7 +242,7 @@ export default function SalesOrders() {
   useEffect(() => {
     async function run() {
       if (!soViewOpen || !selectedSO || !shipWhId) { setSoBinsPreview({}); return }
-      const lines = solines.filter(l => l.so_id === selectedSO.id && !(l.is_shipped || 0) && (n(l.qty) - n(l.shipped_qty)) > 0)
+      const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
       const itemIds = Array.from(new Set(lines.map(l => l.item_id)))
       if (itemIds.length === 0) { setSoBinsPreview({}); return }
       try {
@@ -277,7 +274,7 @@ export default function SalesOrders() {
   useEffect(() => {
     async function run() {
       if (!soViewOpen || !selectedSO || !shipWhId || !shipBinId) { setSoBinOnHand({}); return }
-      const lines = solines.filter(l => l.so_id === selectedSO.id && !(l.is_shipped || 0) && (n(l.qty) - n(l.shipped_qty)) > 0)
+      const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
       const itemIds = Array.from(new Set(lines.map(l => l.item_id)))
       if (itemIds.length === 0) { setSoBinOnHand({}); return }
       try {
@@ -375,12 +372,11 @@ export default function SalesOrders() {
       const cleanLines = soLinesForm
         .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct) }))
         .filter(l => l.itemId && l.uomId && l.qty > 0 && l.unitPrice >= 0 && l.discountPct >= 0 && l.discountPct <= 100)
+
       if (!cleanLines.length) return toast.error(tt('orders.addOneLine', 'Add at least one valid line'))
 
       const allowed = currencies.map(c => c.code)
-      const chosenCurrency = allowed.length === 0
-        ? baseCode
-        : (allowed.includes(soCurrency) ? soCurrency : allowed[0])
+      const chosenCurrency = allowed.length === 0 ? baseCode : (allowed.includes(soCurrency) ? soCurrency : allowed[0])
 
       const fx = n(soFx, 1)
       const cust = customers.find(c => c.id === soCustomerId)
@@ -514,11 +510,11 @@ export default function SalesOrders() {
       if (onHand < qtyBaseOutstanding) throw new Error(tt('orders.insufficientStockBin', 'Insufficient stock in bin for item {sku}')
         .replace('{sku}', String(it?.sku || '')))
 
-      // Deduct stock
+      // 1) Deduct stock
       await upsertStockLevel(shipWhId, shipBinId, it.id, -qtyBaseOutstanding)
 
-      // Movement record
-      await supabase.from('stock_movements').insert({
+      // 2) Movement record (capture id)
+      const mv = await supabase.from('stock_movements').insert({
         type: 'issue',
         item_id: it.id,
         uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
@@ -533,36 +529,48 @@ export default function SalesOrders() {
         ref_type: 'SO',
         ref_id: (so as any).id,
         ref_line_id: line.id ?? null,
-      } as any)
+      } as any).select('id').single()
+      if (mv.error) throw mv.error
+      const movementId = (mv.data as any).id
 
-      // Mark shipped_qty and possibly is_shipped
+      // 3) Sales shipment (for revenue reporting)
+      const disc = n(line.discount_pct, 0)
+      const revenue = outstanding * n(line.unit_price) * (1 - disc / 100)
+      const fx = fxSO(so); const code = curSO(so) || 'MZN'
+      const shipIns = await supabase.from('sales_shipments').insert({
+        movement_id: movementId,
+        so_id: (so as any).id,
+        so_line_id: line.id ?? null,
+        item_id: it.id,
+        qty: outstanding,
+        qty_base: qtyBaseOutstanding,
+        unit_price: n(line.unit_price),
+        discount_pct: disc,
+        revenue_amount: revenue,
+        currency_code: code,
+        fx_to_base: fx,
+        revenue_base_amount: revenue * fx,
+        company_id: (so as any).company_id ?? null
+      } as any)
+      if (shipIns.error) throw shipIns.error
+
+      // 4) Mark shipped progress (no delete!)
       const newShipped = already + outstanding
       const fully = newShipped >= total - 1e-9
-
       if (line.id) {
         const { error: updErr } = await supabase
           .from('sales_order_lines')
-          .update({
-            shipped_qty: newShipped,
-            is_shipped: fully,
-            shipped_at: fully ? nowISO() : (line.shipped_at ?? null),
-          })
+          .update({ shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : (line.shipped_at ?? null) })
           .eq('id', line.id)
         if (updErr) throw updErr
       }
-
       setSOLines(prev => prev.map(l => l.id === line.id
         ? { ...l, shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : l.shipped_at }
         : l))
 
-      // If all lines fully shipped, close order
-      const remaining = solines.filter(l =>
-        l.so_id === so.id &&
-        (n(l.qty) - n(l.shipped_qty)) > 0 &&
-        l.id !== line.id
-      ).length
-
-      if (remaining === 0) {
+      // 5) If everything is shipped, close order
+      const outstandingLeft = solines.filter(l => l.so_id === so.id && remaining(l) > 0 && l.id !== line.id).length
+      if (outstandingLeft === 0) {
         const final = await setSOFinalStatus(so.id)
         if (final) setSOs(prev => prev.map(s => (s.id === so.id ? { ...s, status: final } : s)))
         setSoViewOpen(false)
@@ -581,10 +589,11 @@ export default function SalesOrders() {
       if (!shipWhId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
       if (!shipBinId) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
 
-      const lines = solines.filter(l => l.so_id === so.id && (n(l.qty) - n(l.shipped_qty)) > 0)
+      const lines = solines.filter(l => l.so_id === so.id && remaining(l) > 0)
       if (!lines.length) return toast.error(tt('orders.noLinesToShip', 'No lines to ship'))
 
       for (const l of lines) {
+        // ship sequentially
         // eslint-disable-next-line no-await-in-loop
         await doShipLineSO(so, l)
       }
@@ -601,7 +610,6 @@ export default function SalesOrders() {
   )
   const soSubtotal = soLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const soTax = soSubtotal * (n(soTaxPct, 0) / 100)
-  
 
   function soHeaderSubtotal(so: SO): number {
     const header = n((so as any).total_amount, NaN)
@@ -941,10 +949,10 @@ export default function SalesOrders() {
                     </tr>
                   </thead>
                   <tbody>
-                    {solines.filter(l => l.so_id === selectedSO.id && (n(l.qty) - n(l.shipped_qty)) > 0).map(l => {
+                    {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).map(l => {
                       const it = itemById.get(l.item_id)
                       const baseU = it?.baseUomId || ''
-                      const outstanding = Math.max(n(l.qty) - n(l.shipped_qty), 0)
+                      const outstanding = remaining(l)
                       const qtyBase = it ? safeConvert(outstanding, l.uom_id, baseU) : null
                       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
                       const baseUomCode =
@@ -978,7 +986,7 @@ export default function SalesOrders() {
                         </tr>
                       )
                     })}
-                    {solines.filter(l => l.so_id === selectedSO.id && (n(l.qty) - n(l.shipped_qty)) > 0).length === 0 && (
+                    {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).length === 0 && (
                       <tr><td colSpan={8} className="py-3 text-muted-foreground">{tt('orders.allLinesShipped', 'All lines shipped.')}</td></tr>
                     )}
                   </tbody>
