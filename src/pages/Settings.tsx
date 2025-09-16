@@ -38,26 +38,20 @@ type SettingsData = {
     defaultFulfilWarehouseId: string
   }
   documents: { brand: { name: string; logoUrl: string }; packingSlipShowsPrices: boolean }
-
-  // Where Reports/Dashboard should read revenue from
   revenueSources: {
-    // Orders/Invoices table or view
     ordersSource?: string
-    // Cash/POS source with column mapping (optional)
     cashSales?: {
       source?: string
-      dateCol?: string // e.g. created_at
-      customerCol?: string // e.g. customer_id or customerId
-      amountCol?: string // e.g. amount or total
-      currencyCol?: string // optional
+      dateCol?: string
+      customerCol?: string
+      amountCol?: string
+      currencyCol?: string
     }
   }
-
-  // Notifications (daily digest + low stock)
   notifications: {
     dailyDigest: boolean
-    dailyDigestTime?: string        // "08:00"
-    timezone?: string               // e.g. "Africa/Maputo"
+    dailyDigestTime?: string
+    timezone?: string
     dailyDigestChannels?: { email: boolean; sms: boolean; whatsapp: boolean }
     recipients?: { emails: string[]; phones: string[]; whatsapp: string[] }
     lowStock: { channel: 'email' | 'slack' | 'whatsapp' | 'none' }
@@ -75,9 +69,8 @@ const DEFAULTS: SettingsData = {
     defaultFulfilWarehouseId: '',
   },
   documents: { brand: { name: '', logoUrl: '' }, packingSlipShowsPrices: false },
-
   revenueSources: {
-    ordersSource: '', // e.g. "sales_orders"
+    ordersSource: '',
     cashSales: {
       source: '',
       dateCol: 'created_at',
@@ -86,7 +79,6 @@ const DEFAULTS: SettingsData = {
       currencyCol: 'currency_code',
     },
   },
-
   notifications: {
     dailyDigest: false,
     dailyDigestTime: '08:00',
@@ -115,6 +107,17 @@ function csvToList(s: string) {
     .filter(Boolean)
 }
 
+// ----- per-company language cache helpers -----
+const langKey = (companyId?: string | null) => (companyId ? `ui:lang:${companyId}` : 'ui:lang')
+function readCachedLang(companyId?: string | null): 'en' | 'pt' | null {
+  const c = companyId ? localStorage.getItem(langKey(companyId)) : null
+  return c === 'en' || c === 'pt' ? c : null
+}
+function writeCachedLang(companyId: string | null | undefined, lang: 'en' | 'pt') {
+  if (!companyId) return
+  localStorage.setItem(langKey(companyId), lang)
+}
+
 function Settings() {
   const { t, setLang } = useI18n()
   const { companyId, myRole } = useOrg()
@@ -133,6 +136,11 @@ function Settings() {
     let cancelled = false
     ;(async () => {
       if (!companyId) { setLoading(false); return }
+
+      // PRE-APPLY per-company cached language to avoid cross-org flicker
+      const cachedLang = readCachedLang(companyId)
+      if (cachedLang) setLang(cachedLang)
+
       try {
         setLoading(true)
         setMissingRow(false)
@@ -159,11 +167,13 @@ function Settings() {
               const merged = deepMerge(DEFAULTS, (rpc.data as Partial<SettingsData>) ?? {})
               setData(merged)
               setLang(merged.locale.language)
+              writeCachedLang(companyId, merged.locale.language)
             }
           } else {
             if (!cancelled) {
               setData(DEFAULTS)
               setLang(DEFAULTS.locale.language)
+              writeCachedLang(companyId, DEFAULTS.locale.language)
             }
           }
         } else {
@@ -171,6 +181,7 @@ function Settings() {
           if (!cancelled) {
             setData(merged)
             setLang(merged.locale.language)
+            writeCachedLang(companyId, merged.locale.language)
           }
         }
 
@@ -223,6 +234,7 @@ function Settings() {
       const merged = deepMerge(DEFAULTS, (updated as Partial<SettingsData>) ?? {})
       setData(merged)
       setLang(merged.locale.language)
+      writeCachedLang(companyId, merged.locale.language)
       toast.success('Settings saved')
     } catch (e: any) {
       console.error(e)
@@ -322,6 +334,7 @@ function Settings() {
               onValueChange={(v) => {
                 setField('locale.language', v)
                 setLang(v as 'en' | 'pt')
+                writeCachedLang(companyId, v as 'en' | 'pt')
               }}
               disabled={!canEditOps}
             >
