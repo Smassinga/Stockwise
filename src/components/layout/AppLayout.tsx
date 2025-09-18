@@ -1,4 +1,3 @@
-// src/components/layout/AppLayout.tsx
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
@@ -16,6 +15,7 @@ import {
   Bell,
   Menu,
   LogOut,
+  Layers, // <-- added for BOM
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -35,6 +35,7 @@ type NavItem = {
 const BASE_NAV: NavItem[] = [
   { label: 'Dashboard',  to: '/dashboard',  icon: LayoutGrid },
   { label: 'Items',      to: '/items',      icon: Package },
+  { label: 'BOM',        to: '/bom',        icon: Layers },          // <-- added
   { label: 'Movements',  to: '/movements',  icon: ArrowLeftRight },
   { label: 'Orders',     to: '/orders',     icon: ShoppingCart },
   { label: 'Reports',    to: '/reports',    icon: BarChart3 },
@@ -70,7 +71,7 @@ export function AppLayout({ user, children }: Props) {
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const { logout } = useAuth() as any
-  const { orgName, myRole } = useOrg()   // <-- use orgName (not companyName)
+  const { companyName, myRole } = useOrg()   // <-- FIX: was orgName
 
   // filter nav (Users = MANAGER+)
   const nav = useMemo(() => {
@@ -120,7 +121,7 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
         <div className="border-t p-3">
-          {orgName && <div className="text-xs text-muted-foreground truncate">{orgName}</div>}
+          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>} {/* <-- FIX */}
           <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
           <Button
@@ -135,7 +136,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [user, location.pathname, logout, nav, orgName, myRole]
+    [user, location.pathname, logout, nav, companyName, myRole] // <-- FIX: companyName
   )
 
   // Header user menu
@@ -184,7 +185,7 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
         <div className="mt-auto border-t p-3">
-          {orgName && <div className="text-xs text-muted-foreground truncate">{orgName}</div>}
+          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>} {/* <-- FIX */}
           <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
           <Button
@@ -215,7 +216,7 @@ export function AppLayout({ user, children }: Props) {
             </Button>
 
             <div className="hidden text-right md:block">
-              {orgName && <div className="text-xs text-muted-foreground truncate">{orgName}</div>}
+              {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>} {/* <-- FIX */}
               <div className="text-sm font-semibold leading-tight">{user.name || user.email}</div>
               <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
             </div>
@@ -224,7 +225,7 @@ export function AppLayout({ user, children }: Props) {
             <div className="relative ml-2 hidden md:block" ref={menuRef}>
               <button
                 className="h-9 w-9 rounded-full bg-primary/10 text-sm font-semibold flex items-center justify-center hover:bg-primary/20 transition"
-                onClick={() => setMenuOpen(v => !v)}   // <-- fixed: toggle menu, not sidebar
+                onClick={() => setMenuOpen(v => !v)}
                 aria-label="User menu"
               >
                 {initial}
