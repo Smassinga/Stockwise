@@ -1,4 +1,3 @@
-// src/components/layout/Sidebar.tsx
 import { Link } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -15,6 +14,7 @@ import {
   Coins,
   Users,         // for Customers
   Building2,     // for Suppliers
+  Layers,        // for BOM
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -47,6 +47,7 @@ type NavItem = {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Items', href: '/items', icon: Package },
+  { name: 'BOM', href: '/bom', icon: Layers },            // <-- added
   { name: 'Movements', href: '/movements', icon: ArrowUpDown },
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Warehouses', href: '/warehouses', icon: Warehouse },
@@ -101,7 +102,7 @@ export function Sidebar({
     >
       {/* Header */}
       <div className="border-b flex-shrink-0 p-6">
-        <div className="flex items<center justify-between">
+        <div className="flex items-center justify-between">{/* fixed typo: items-center */}
           {(!isCollapsed || isMobile) && (
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
