@@ -28,7 +28,7 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) {
   throw new Error("Missing one of SB_URL / SB_SERVICE_ROLE_KEY / SB_ANON_KEY (or SUPABASE_* fallbacks)");
 }
 
-// Build the correct redirectTo for invites / magic links.
+// Build the correct redirectTo for invites / magic links
 function makeRedirectTo(req: Request) {
   if (PUBLIC_SITE_URL) return `${PUBLIC_SITE_URL}/auth/callback`;
 
@@ -59,32 +59,40 @@ serve(async (req) => {
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
     if (!jwt) return json({ error: "missing bearer token" }, 401);
 
-    const anon = createClient(SUPABASE_URL, ANON_KEY);
+    // NB: use anon client to parse the JWT without service role
+    const anon = createClient(SUPABASE_URL!, ANON_KEY!);
     const { data: userData, error: userErr } = await anon.auth.getUser(jwt);
     if (userErr || !userData?.user) return json({ error: "invalid token" }, 401);
 
     const userId = userData.user.id;
-    const userEmail = userData.user.email ?? "";
+    const userEmail = (userData.user.email ?? "").toLowerCase();
 
-    // service role client (bypasses RLS)
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    // Service-role client (bypasses RLS for admin ops inside this function)
+    const admin = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!);
 
     const url = new URL(req.url);
     const pathname = url.pathname;
     const companyId = url.searchParams.get("company_id");
 
-    // Helper: only allow OWNER/ADMIN/MANAGER & active
+    // Helper: only allow OWNER/ADMIN/MANAGER & status=active
     async function assertPrivileged(company_id: string) {
+      // Accept either a bound user_id membership OR an email-invite membership
       const { data: me, error: meErr } = await admin
         .from("company_members")
-        .select("role,status")
+        .select("role,status,email,user_id")
         .eq("company_id", company_id)
-        .eq("user_id", userId)
+        .or(
+          // PostgREST OR syntax: or=(A,B)
+          // allow: (user_id == caller) OR (email is not null AND email ilike callerEmail)
+          `user_id.eq.${userId},and(email.not.is.null,email.ilike.${userEmail})`
+        )
         .maybeSingle();
+
       if (meErr) return `db: ${meErr.message}`;
       if (!me) return "not_member";
+      // invited users can exist, but are NOT privileged
       if (me.status !== "active") return "inactive";
-      if (!["OWNER", "ADMIN", "MANAGER"].includes(me.role as Role)) return "not_privileged";
+      if (!["OWNER", "ADMIN", "MANAGER"].includes((me.role as Role) ?? "VIEWER")) return "not_privileged";
       return null;
     }
 
@@ -93,7 +101,7 @@ serve(async (req) => {
       if (!companyId) return json({ error: "company_id is required" }, 400);
 
       const guard = await assertPrivileged(companyId);
-      if (guard) return json({ error: "forbidden" }, 403);
+      if (guard) return json({ error: guard }, 403);
 
       const { data: rows, error: rowsErr } = await admin
         .from("company_members")
@@ -103,19 +111,14 @@ serve(async (req) => {
 
       if (rowsErr) return json({ error: rowsErr.message }, 400);
 
-      // enrich with auth meta
-      const userIds = rows.map((r) => r.user_id).filter(Boolean) as string[];
+      // Enrich with auth meta (last sign-in, email confirmation)
+      const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const meta = new Map<string, { last_sign_in_at: string | null; email_confirmed_at: string | null }>();
-      if (userIds.length) {
-        const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-        for (const u of list?.users ?? []) {
-          if (userIds.includes(u.id)) {
-            meta.set(u.id, {
-              last_sign_in_at: u.last_sign_in_at ?? null,
-              email_confirmed_at: u.email_confirmed_at ?? null,
-            });
-          }
-        }
+      for (const u of list?.users ?? []) {
+        meta.set(u.id, {
+          last_sign_in_at: u.last_sign_in_at ?? null,
+          email_confirmed_at: u.email_confirmed_at ?? null,
+        });
       }
 
       const users = rows.map((r) => ({
@@ -141,25 +144,27 @@ serve(async (req) => {
       if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
 
       const guard = await assertPrivileged(company_id);
-      if (guard) return json({ error: "forbidden" }, 403);
+      if (guard) return json({ error: guard }, 403);
 
-      // create / update invitation row
+      const lower = String(email).toLowerCase();
+
+      // NOTE: Upsert relies on a UNIQUE constraint on (company_id, email)
       const { error: upErr } = await admin.from("company_members").upsert({
         company_id,
-        email: String(email).toLowerCase(),
+        email: lower,
         role: (role ?? "VIEWER") as Role,
         status: "invited" as Status,
         invited_by: userId,
       }, { onConflict: "company_id,email" });
       if (upErr) return json({ error: upErr.message }, 400);
 
-      // send Auth invite email with correct redirect
+      // Send Auth invite
       const redirectTo = makeRedirectTo(req);
       try {
-        await admin.auth.admin.inviteUserByEmail(String(email).toLowerCase(), { redirectTo });
+        await admin.auth.admin.inviteUserByEmail(lower, { redirectTo });
         return json({ ok: true, redirectTo });
       } catch (_e) {
-        // Keep the row; email can be resent later
+        // Keep the row; invite can be resent later
         return json({ ok: true, warning: "invite_email_failed", redirectTo });
       }
     }
@@ -171,11 +176,10 @@ serve(async (req) => {
       if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
 
       const guard = await assertPrivileged(company_id);
-      if (guard) return json({ error: "forbidden" }, 403);
+      if (guard) return json({ error: guard }, 403);
 
       const lower = String(email).toLowerCase();
 
-      // Ensure an invited row exists
       const { error: upErr } = await admin.from("company_members").upsert({
         company_id,
         email: lower,
@@ -214,7 +218,7 @@ serve(async (req) => {
       if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
 
       const guard = await assertPrivileged(company_id);
-      if (guard) return json({ error: "forbidden" }, 403);
+      if (guard) return json({ error: guard }, 403);
 
       const redirectTo = makeRedirectTo(req);
       try {
@@ -234,7 +238,7 @@ serve(async (req) => {
       if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
 
       const guard = await assertPrivileged(company_id);
-      if (guard) return json({ error: "forbidden" }, 403);
+      if (guard) return json({ error: guard }, 403);
 
       const updates: Record<string, unknown> = {};
       if (role) updates.role = role;
@@ -257,7 +261,7 @@ serve(async (req) => {
       if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
 
       const guard = await assertPrivileged(company_id);
-      if (guard) return json({ error: "forbidden" }, 403);
+      if (guard) return json({ error: guard }, 403);
 
       if (String(email).toLowerCase() === userEmail.toLowerCase()) {
         return json({ error: "cannot remove yourself" }, 400);
@@ -275,6 +279,7 @@ serve(async (req) => {
 
     // ---------- POST /sync (link invites + activate them) ----------
     if (req.method === "POST" && pathname.endsWith("/sync")) {
+      // NOTE: your DB should have an RPC 'link_invites_to_user'. If not, see SQL in section 2 below.
       const { data, error } = await admin.rpc("link_invites_to_user", {
         p_user_id: userId,
         p_email: userEmail,
