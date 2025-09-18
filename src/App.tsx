@@ -14,6 +14,7 @@ import Orders from './pages/Orders';
 import CurrencyPage from './pages/Currency';
 import CustomersPage from './pages/Customers';
 import SuppliersPage from './pages/Suppliers';
+import BOMPage from './pages/BOM'
 import Auth from './pages/Auth';
 import UomSettings from './pages/UomSettings';
 import AuthCallback from './pages/AuthCallback';
@@ -123,6 +124,7 @@ export default function App() {
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/uoms" element={<UomSettings />} />
+              <Route path="/bom" element={<BOMPage />} />
             </Route>
           </Route>
         </Route>
