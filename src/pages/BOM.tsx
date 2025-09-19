@@ -1,4 +1,3 @@
-// src/pages/BOM.tsx
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
@@ -8,7 +7,16 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
-type Item = { id: string; name: string; sku?: string | null; base_uom_id?: string | null }
+// UoM conversion helpers (same ones used by StockMovements)
+import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
+
+type Item = {
+  id: string
+  name: string
+  sku?: string | null
+  base_uom_id?: string | null
+}
+type Uom = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Bom = { id: string; product_id: string; name: string | null; version: number; is_active: boolean }
@@ -32,12 +40,19 @@ export default function BOMPage() {
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string>('')
 
+  // Masters
   const [items, setItems] = useState<Item[]>([])
+  const [uoms, setUoms] = useState<Uom[]>([])
+  const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
+
+  // BOMs
   const [boms, setBoms] = useState<Bom[]>([])
   const [selectedBomId, setSelectedBomId] = useState<string>('')
 
+  // Components
   const [components, setComponents] = useState<ComponentRow[]>([])
 
+  // Warehouses/Bins for build
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [binsFrom, setBinsFrom] = useState<Bin[]>([])
   const [binsTo, setBinsTo] = useState<Bin[]>([])
@@ -46,22 +61,54 @@ export default function BOMPage() {
   const [binFromId, setBinFromId] = useState<string>('')
   const [binToId, setBinToId] = useState<string>('')
 
-  // create BOM controls
+  // Create BOM
   const [newBomProductId, setNewBomProductId] = useState<string>('')
   const [newBomName, setNewBomName] = useState<string>('')
 
-  // add component controls
+  // Add component
   const [compItemId, setCompItemId] = useState<string>('')
   const [compQtyPer, setCompQtyPer] = useState<string>('1')
   const [compScrap, setCompScrap] = useState<string>('0')
+  const [compUomId, setCompUomId] = useState<string>('') // UoM used for entry; we convert it to the component's base_uom
 
-  // build controls
+  // Build
   const [buildQty, setBuildQty] = useState<string>('1')
 
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
+  const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
   const selectedBom = useMemo(() => boms.find(b => b.id === selectedBomId) || null, [selectedBomId, boms])
 
-  // initial load
+  // Conversion helpers
+  function idsOrCodesEqual(aId?: string | null, bId?: string | null) {
+    if (!aId || !bId) return false
+    if (aId === bId) return true
+    const ac = (uomById.get(String(aId))?.code || '').toUpperCase()
+    const bc = (uomById.get(String(bId))?.code || '').toUpperCase()
+    return !!(ac && bc && ac === bc)
+  }
+  function canConvert(fromId?: string | null, toId?: string | null) {
+    if (!fromId || !toId) return false
+    if (idsOrCodesEqual(fromId, toId)) return true
+    if (!convGraph) return false
+    const visited = new Set<string>([fromId])
+    const q: string[] = [fromId]
+    while (q.length) {
+      const id = q.shift()!
+      const edges = convGraph.get(id) || []
+      for (const e of edges) {
+        if (idsOrCodesEqual(e.to, toId) || e.to === toId) return true
+        if (!visited.has(e.to)) { visited.add(e.to); q.push(e.to) }
+      }
+    }
+    return false
+  }
+  function safeConvert(qty: number, fromId: string, toId: string): number | null {
+    if (idsOrCodesEqual(fromId, toId)) return qty
+    if (!convGraph) return null
+    try { return Number(convertQty(qty, fromId, toId, convGraph)) } catch { return null }
+  }
+
+  // Initial load
   useEffect(() => {
     ;(async () => {
       try {
@@ -69,7 +116,7 @@ export default function BOMPage() {
         const cid = await getCurrentCompanyId()
         setCompanyId(cid)
 
-        // Items
+        // Items (need base_uom_id)
         const it = await supabase
           .from('items')
           .select('id,name,sku,base_uom_id')
@@ -77,6 +124,20 @@ export default function BOMPage() {
           .order('name', { ascending: true })
         if (it.error) throw it.error
         setItems((it.data || []) as Item[])
+
+        // UoMs + conversions
+        const [uRes, cRes] = await Promise.all([
+          supabase.from('uoms').select('id,code,name').order('code', { ascending: true }),
+          supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor'),
+        ])
+        if (uRes.error) throw uRes.error
+        setUoms(((uRes.data || []) as any[]).map((u: any) => ({
+          id: String(u.id),
+          code: String(u.code || '').toUpperCase(),
+          name: String(u.name || ''),
+        })))
+        const convRows = (cRes.data || []) as ConvRow[]
+        setConvGraph(buildConvGraph(convRows))
 
         // BOMs
         const bm = await supabase
@@ -108,7 +169,7 @@ export default function BOMPage() {
     })()
   }, [])
 
-  // load bins per warehouse
+  // Bins per warehouse
   useEffect(() => {
     ;(async () => {
       if (!warehouseFromId) { setBinsFrom([]); return }
@@ -133,7 +194,7 @@ export default function BOMPage() {
     })()
   }, [warehouseToId])
 
-  // load components when picking a BOM
+  // Components for selected BOM
   useEffect(() => {
     ;(async () => {
       if (!selectedBomId) { setComponents([]); return }
@@ -147,7 +208,14 @@ export default function BOMPage() {
     })()
   }, [selectedBomId])
 
-  // create a new BOM for a product
+  // When user picks a component item, default the entry UoM to that item's base UoM
+  useEffect(() => {
+    if (!compItemId) { setCompUomId(''); return }
+    const base = itemById.get(compItemId)?.base_uom_id || ''
+    setCompUomId(base || '')
+  }, [compItemId]) // eslint-disable-line
+
+  // Create BOM
   async function createBomForProduct() {
     if (!companyId) return
     if (!newBomProductId) return toast.error('Select a finished product')
@@ -168,28 +236,44 @@ export default function BOMPage() {
     }
   }
 
-  // add a component line to current BOM
+  // Add component (converts to component's base UoM before saving)
   async function addComponentLine() {
     if (!selectedBomId) return toast.error('Pick a BOM first')
     if (!compItemId) return toast.error('Select a component item')
-    const qty_per = num(compQtyPer, 0)
-    if (!(qty_per > 0)) return toast.error('Qty per must be > 0')
+
+    const qtyEntered = num(compQtyPer, 0)
+    if (!(qtyEntered > 0)) return toast.error('Qty must be > 0')
+
     const scrap = Number(compScrap)
     if (!Number.isFinite(scrap) || scrap < 0 || scrap > 1) return toast.error('Scrap must be between 0 and 1')
+
+    const baseUom = itemById.get(compItemId)?.base_uom_id || ''
+    const uomEntered = compUomId || baseUom
+
+    // convert if needed
+    let qtyBase = qtyEntered
+    if (!idsOrCodesEqual(uomEntered, baseUom)) {
+      if (!canConvert(uomEntered, baseUom)) {
+        return toast.error('Selected UoM cannot convert to the item’s base UoM')
+      }
+      const conv = safeConvert(qtyEntered, uomEntered, baseUom)
+      if (conv == null) return toast.error('No conversion path')
+      qtyBase = conv
+    }
 
     const sort_order = (components[components.length - 1]?.sort_order ?? 0) + 1
     const ins = await supabase
       .from('bom_components')
-      .insert([{ bom_id: selectedBomId, component_item_id: compItemId, qty_per, scrap_pct: scrap, sort_order }])
+      .insert([{ bom_id: selectedBomId, component_item_id: compItemId, qty_per: qtyBase, scrap_pct: scrap, sort_order }])
       .select('id,component_item_id,qty_per,scrap_pct,sort_order')
       .single()
     if (ins.error) return toast.error(ins.error.message)
+
     setComponents(prev => [...prev, ins.data as ComponentRow])
-    setCompItemId(''); setCompQtyPer('1'); setCompScrap('0')
+    setCompItemId(''); setCompQtyPer('1'); setCompScrap('0'); setCompUomId('')
     toast.success('Component added')
   }
 
-  // remove a component
   async function deleteComponent(id: string) {
     const del = await supabase.from('bom_components').delete().eq('id', id)
     if (del.error) return toast.error(del.error.message)
@@ -197,7 +281,7 @@ export default function BOMPage() {
     toast.success('Component removed')
   }
 
-  // run a build
+  // Build
   async function runBuild() {
     if (!selectedBomId) return toast.error('Pick a BOM first')
     const qty = num(buildQty, 0)
@@ -217,7 +301,25 @@ export default function BOMPage() {
     toast.success(`Build created: ${data}`)
   }
 
+  // Live preview for entry UoM → base UoM
+  const addPreview = useMemo(() => {
+    if (!compItemId) return null
+    const entered = num(compQtyPer, 0)
+    const baseId = itemById.get(compItemId)?.base_uom_id || ''
+    const enteredId = compUomId || baseId
+    if (!entered || !baseId || !enteredId) return { entered, base: entered, invalid: false, baseId, enteredId }
+    if (idsOrCodesEqual(enteredId, baseId)) return { entered, base: entered, invalid: false, baseId, enteredId }
+    const conv = safeConvert(entered, enteredId, baseId)
+    return { entered, base: conv ?? entered, invalid: conv == null, baseId, enteredId }
+  }, [compItemId, compQtyPer, compUomId, items, convGraph]) // eslint-disable-line
+
   if (loading) return <div className="p-6">Loading…</div>
+
+  const uomLabel = (id?: string | null) => {
+    if (!id) return ''
+    const u = uomById.get(String(id))
+    return u ? `${u.code} — ${u.name}` : String(id)
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -286,50 +388,91 @@ export default function BOMPage() {
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-2">Component</th>
-                  <th className="py-2 pr-2">Qty per</th>
+                  <th className="py-2 pr-2">Qty per (base UoM)</th>
+                  <th className="py-2 pr-2">Base UoM</th>
                   <th className="py-2 pr-2">Scrap (0..1)</th>
                   <th className="py-2 pr-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {components.length === 0 && (
-                  <tr><td colSpan={4} className="py-4 text-muted-foreground">No components yet.</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-muted-foreground">No components yet.</td></tr>
                 )}
-                {components.map(c => (
-                  <tr key={c.id} className="border-b">
-                    <td className="py-2 pr-2">{itemById.get(c.component_item_id)?.name ?? c.component_item_id}</td>
-                    <td className="py-2 pr-2">{c.qty_per}</td>
-                    <td className="py-2 pr-2">{c.scrap_pct ?? 0}</td>
-                    <td className="py-2 pr-2">
-                      <Button variant="destructive" onClick={() => deleteComponent(c.id)}>Delete</Button>
-                    </td>
-                  </tr>
-                ))}
+                {components.map(c => {
+                  const it = itemById.get(c.component_item_id)
+                  return (
+                    <tr key={c.id} className="border-b">
+                      <td className="py-2 pr-2">{it?.name ?? c.component_item_id}</td>
+                      <td className="py-2 pr-2">{c.qty_per}</td>
+                      <td className="py-2 pr-2">{uomLabel(it?.base_uom_id)}</td>
+                      <td className="py-2 pr-2">{c.scrap_pct ?? 0}</td>
+                      <td className="py-2 pr-2">
+                        <Button variant="destructive" onClick={() => deleteComponent(c.id)}>Delete</Button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
 
-            {/* Add component row (controlled, no DOM querying) */}
-            <div className="grid md:grid-cols-4 gap-3">
+            {/* Add component row */}
+            <div className="grid md:grid-cols-6 gap-3">
               <div className="md:col-span-2">
                 <Label>Component Item</Label>
-                <Select value={compItemId} onValueChange={setCompItemId}>
+                <Select value={compItemId} onValueChange={(v) => { setCompItemId(v); setCompQtyPer('1') }}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent className="max-h-64 overflow-auto">
                     {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
+
               <div>
-                <Label>Qty per</Label>
+                <Label>Qty</Label>
                 <Input type="number" min="0.0001" step="0.0001" value={compQtyPer} onChange={e => setCompQtyPer(e.target.value)} placeholder="1" />
               </div>
+
+              <div>
+                <Label>Qty UoM</Label>
+                <Select
+                  value={compUomId}
+                  onValueChange={(uomId) => {
+                    // enforce convertibility to the component's base
+                    const base = itemById.get(compItemId)?.base_uom_id || ''
+                    if (!base) { setCompUomId(uomId); return }
+                    if (idsOrCodesEqual(uomId, base)) { setCompUomId(uomId); return }
+                    if (!canConvert(uomId, base)) {
+                      toast.error('Selected UoM cannot convert to the item’s base UoM')
+                      setCompUomId(base)
+                      return
+                    }
+                    setCompUomId(uomId)
+                  }}
+                  disabled={!compItemId}
+                >
+                  <SelectTrigger><SelectValue placeholder={compItemId ? 'Select UoM' : 'Pick item first'} /></SelectTrigger>
+                  <SelectContent className="max-h-64 overflow-auto">
+                    {uoms.map(u => <SelectItem key={u.id} value={u.id}>{u.code} — {u.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div>
                 <Label>Scrap (0..1)</Label>
                 <Input type="number" min="0" max="1" step="0.01" value={compScrap} onChange={e => setCompScrap(e.target.value)} placeholder="0" />
               </div>
-              <div className="md:col-span-4 flex justify-end">
+
+              <div className="md:col-span-2 flex items-end">
                 <Button onClick={addComponentLine} disabled={!compItemId}>Add Component</Button>
               </div>
+
+              {/* Preview */}
+              {compItemId && addPreview && (
+                <div className={`md:col-span-6 text-xs ${addPreview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
+                  {`Entered: ${addPreview.entered} ${(uomById.get(addPreview.enteredId)?.code || '').toUpperCase()} → Base: ${addPreview.base} ${(uomById.get(addPreview.baseId)?.code || '').toUpperCase()}`}
+                  {addPreview.invalid ? ' (no conversion path)' : ''}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
