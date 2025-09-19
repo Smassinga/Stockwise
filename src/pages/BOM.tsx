@@ -18,7 +18,10 @@ type Item = {
 }
 type Uom = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
-type Bin = { id: string; code: string; name: string; warehouseId: string }
+
+// CHANGED: Bin now uses snake_case warehouse_id (via bins_v)
+type Bin = { id: string; code: string; name: string; warehouse_id: string }
+
 type Bom = { id: string; product_id: string; name: string | null; version: number; is_active: boolean }
 type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; sort_order: number | null }
 
@@ -169,14 +172,14 @@ export default function BOMPage() {
     })()
   }, [])
 
-  // Bins per warehouse
+  // Bins per warehouse (CHANGED: query bins_v; filter on warehouse_id)
   useEffect(() => {
     ;(async () => {
       if (!warehouseFromId) { setBinsFrom([]); return }
       const { data, error } = await supabase
-        .from('bins')
-        .select('id,code,name,warehouseId')
-        .eq('warehouseId', warehouseFromId)
+        .from('bins_v')
+        .select('id,code,name,warehouse_id')
+        .eq('warehouse_id', warehouseFromId)
         .order('code', { ascending: true })
       if (!error) setBinsFrom((data || []) as Bin[])
     })()
@@ -186,9 +189,9 @@ export default function BOMPage() {
     ;(async () => {
       if (!warehouseToId) { setBinsTo([]); return }
       const { data, error } = await supabase
-        .from('bins')
-        .select('id,code,name,warehouseId')
-        .eq('warehouseId', warehouseToId)
+        .from('bins_v')
+        .select('id,code,name,warehouse_id')
+        .eq('warehouse_id', warehouseToId)
         .order('code', { ascending: true })
       if (!error) setBinsTo((data || []) as Bin[])
     })()
@@ -299,6 +302,7 @@ export default function BOMPage() {
     })
     if (error) { console.error(error); return toast.error(error.message) }
     toast.success(`Build created: ${data}`)
+    // Optional: you could refresh components or show a small “movement posted” hint here.
   }
 
   // Live preview for entry UoM → base UoM
