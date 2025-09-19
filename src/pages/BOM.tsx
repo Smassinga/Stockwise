@@ -7,7 +7,6 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
-// UoM conversion helpers (same ones used by StockMovements)
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 
 type Item = {
@@ -18,12 +17,10 @@ type Item = {
 }
 type Uom = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
-
-// CHANGED: Bin now uses snake_case warehouse_id (via bins_v)
 type Bin = { id: string; code: string; name: string; warehouse_id: string }
 
-type Bom = { id: string; product_id: string; name: string | null; version: number; is_active: boolean }
-type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; sort_order: number | null }
+type Bom = { id: string; product_id: string; name: string | null; version: string | number; is_active: boolean }
+type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; created_at: string | null }
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 
@@ -172,7 +169,7 @@ export default function BOMPage() {
     })()
   }, [])
 
-  // Bins per warehouse (CHANGED: query bins_v; filter on warehouse_id)
+  // Bins per warehouse (via bins_v with snake_case warehouse_id)
   useEffect(() => {
     ;(async () => {
       if (!warehouseFromId) { setBinsFrom([]); return }
@@ -181,7 +178,11 @@ export default function BOMPage() {
         .select('id,code,name,warehouse_id')
         .eq('warehouse_id', warehouseFromId)
         .order('code', { ascending: true })
-      if (!error) setBinsFrom((data || []) as Bin[])
+      if (error) {
+        console.error(error)
+        return toast.error(error.message)
+      }
+      setBinsFrom((data || []) as Bin[])
     })()
   }, [warehouseFromId])
 
@@ -193,7 +194,11 @@ export default function BOMPage() {
         .select('id,code,name,warehouse_id')
         .eq('warehouse_id', warehouseToId)
         .order('code', { ascending: true })
-      if (!error) setBinsTo((data || []) as Bin[])
+      if (error) {
+        console.error(error)
+        return toast.error(error.message)
+      }
+      setBinsTo((data || []) as Bin[])
     })()
   }, [warehouseToId])
 
@@ -203,15 +208,15 @@ export default function BOMPage() {
       if (!selectedBomId) { setComponents([]); return }
       const { data, error } = await supabase
         .from('bom_components')
-        .select('id,component_item_id,qty_per,scrap_pct,sort_order')
+        .select('id,component_item_id,qty_per,scrap_pct,created_at')
         .eq('bom_id', selectedBomId)
-        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
       if (error) { console.error(error); toast.error(error.message); return }
       setComponents((data || []) as ComponentRow[])
     })()
   }, [selectedBomId])
 
-  // When user picks a component item, default the entry UoM to that item's base UoM
+  // Default entry UoM to component base
   useEffect(() => {
     if (!compItemId) { setCompUomId(''); return }
     const base = itemById.get(compItemId)?.base_uom_id || ''
@@ -239,7 +244,7 @@ export default function BOMPage() {
     }
   }
 
-  // Add component (converts to component's base UoM before saving)
+  // Add component (convert to base UoM before saving)
   async function addComponentLine() {
     if (!selectedBomId) return toast.error('Pick a BOM first')
     if (!compItemId) return toast.error('Select a component item')
@@ -253,22 +258,18 @@ export default function BOMPage() {
     const baseUom = itemById.get(compItemId)?.base_uom_id || ''
     const uomEntered = compUomId || baseUom
 
-    // convert if needed
     let qtyBase = qtyEntered
     if (!idsOrCodesEqual(uomEntered, baseUom)) {
-      if (!canConvert(uomEntered, baseUom)) {
-        return toast.error('Selected UoM cannot convert to the item’s base UoM')
-      }
+      if (!canConvert(uomEntered, baseUom)) return toast.error('Selected UoM cannot convert to the item’s base UoM')
       const conv = safeConvert(qtyEntered, uomEntered, baseUom)
       if (conv == null) return toast.error('No conversion path')
       qtyBase = conv
     }
 
-    const sort_order = (components[components.length - 1]?.sort_order ?? 0) + 1
     const ins = await supabase
       .from('bom_components')
-      .insert([{ bom_id: selectedBomId, component_item_id: compItemId, qty_per: qtyBase, scrap_pct: scrap, sort_order }])
-      .select('id,component_item_id,qty_per,scrap_pct,sort_order')
+      .insert([{ bom_id: selectedBomId, component_item_id: compItemId, qty_per: qtyBase, scrap_pct: scrap }])
+      .select('id,component_item_id,qty_per,scrap_pct,created_at')
       .single()
     if (ins.error) return toast.error(ins.error.message)
 
@@ -302,10 +303,8 @@ export default function BOMPage() {
     })
     if (error) { console.error(error); return toast.error(error.message) }
     toast.success(`Build created: ${data}`)
-    // Optional: you could refresh components or show a small “movement posted” hint here.
   }
 
-  // Live preview for entry UoM → base UoM
   const addPreview = useMemo(() => {
     if (!compItemId) return null
     const entered = num(compQtyPer, 0)
@@ -441,7 +440,6 @@ export default function BOMPage() {
                 <Select
                   value={compUomId}
                   onValueChange={(uomId) => {
-                    // enforce convertibility to the component's base
                     const base = itemById.get(compItemId)?.base_uom_id || ''
                     if (!base) { setCompUomId(uomId); return }
                     if (idsOrCodesEqual(uomId, base)) { setCompUomId(uomId); return }
@@ -470,7 +468,6 @@ export default function BOMPage() {
                 <Button onClick={addComponentLine} disabled={!compItemId}>Add Component</Button>
               </div>
 
-              {/* Preview */}
               {compItemId && addPreview && (
                 <div className={`md:col-span-6 text-xs ${addPreview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
                   {`Entered: ${addPreview.entered} ${(uomById.get(addPreview.enteredId)?.code || '').toUpperCase()} → Base: ${addPreview.base} ${(uomById.get(addPreview.baseId)?.code || '').toUpperCase()}`}
