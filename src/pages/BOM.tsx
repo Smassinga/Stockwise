@@ -19,7 +19,7 @@ type Uom = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouse_id: string }
 
-type Bom = { id: string; product_id: string; name: string | null; version: string | number; is_active: boolean }
+type Bom = { id: string; product_id: string; name: string; version: string; is_active: boolean }
 type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; created_at: string | null }
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -69,7 +69,7 @@ export default function BOMPage() {
   const [compItemId, setCompItemId] = useState<string>('')
   const [compQtyPer, setCompQtyPer] = useState<string>('1')
   const [compScrap, setCompScrap] = useState<string>('0')
-  const [compUomId, setCompUomId] = useState<string>('') // UoM used for entry; we convert it to the component's base_uom
+  const [compUomId, setCompUomId] = useState<string>('') // entry UoM; converted to component base before insert
 
   // Build
   const [buildQty, setBuildQty] = useState<string>('1')
@@ -146,7 +146,8 @@ export default function BOMPage() {
           .eq('company_id', cid)
           .order('created_at', { ascending: true })
         if (bm.error) throw bm.error
-        setBoms((bm.data || []) as Bom[])
+        // Ensure version is a string for rendering
+        setBoms(((bm.data || []) as any[]).map(b => ({ ...b, version: String(b.version ?? 'v1') })))
 
         // Warehouses
         const wh = await supabase
@@ -216,7 +217,7 @@ export default function BOMPage() {
     })()
   }, [selectedBomId])
 
-  // Default entry UoM to component base
+  // Default the entry UoM to the component's base UoM when item changes
   useEffect(() => {
     if (!compItemId) { setCompUomId(''); return }
     const base = itemById.get(compItemId)?.base_uom_id || ''
@@ -227,15 +228,20 @@ export default function BOMPage() {
   async function createBomForProduct() {
     if (!companyId) return
     if (!newBomProductId) return toast.error('Select a finished product')
+    const nameTrim = (newBomName || '').trim()
+    if (!nameTrim) return toast.error('Name is required (e.g., Cake v1)')
+
     try {
       const ins = await supabase
         .from('boms')
-        .insert([{ company_id: companyId, product_id: newBomProductId, name: newBomName || null }])
+        .insert([{ company_id: companyId, product_id: newBomProductId, name: nameTrim }])
         .select('id,product_id,name,version,is_active')
         .single()
       if (ins.error) throw ins.error
-      setBoms(prev => [...prev, ins.data as Bom])
-      setSelectedBomId(ins.data.id as string)
+
+      const inserted = { ...ins.data, version: String((ins.data as any).version ?? 'v1') } as Bom
+      setBoms(prev => [...prev, inserted])
+      setSelectedBomId(inserted.id)
       setNewBomProductId(''); setNewBomName('')
       toast.success('BOM created')
     } catch (e: any) {
@@ -342,11 +348,21 @@ export default function BOMPage() {
             </Select>
           </div>
           <div>
-            <Label>Name (optional)</Label>
-            <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder="e.g., Cake v1" />
+            <Label>Name</Label>
+            <Input
+              value={newBomName}
+              onChange={e => setNewBomName(e.target.value)}
+              placeholder="e.g., Cake v1"
+            />
           </div>
           <div className="md:col-span-1 flex items-end">
-            <Button onClick={createBomForProduct} disabled={!newBomProductId}>Create</Button>
+            <Button
+              onClick={createBomForProduct}
+              disabled={!newBomProductId || !newBomName.trim()}
+              title={!newBomName.trim() ? 'Enter a name like "Cake v1"' : 'Create BOM'}
+            >
+              Create
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -362,7 +378,11 @@ export default function BOMPage() {
               <SelectContent className="max-h-64 overflow-auto">
                 {boms.map(b => {
                   const pname = itemById.get(b.product_id)?.name ?? b.product_id
-                  return <SelectItem key={b.id} value={b.id}>{pname} — v{b.version}{b.is_active ? '' : ' (inactive)'}</SelectItem>
+                  return (
+                    <SelectItem key={b.id} value={b.id}>
+                      {pname} — {b.name}{b.is_active ? '' : ' (inactive)'}
+                    </SelectItem>
+                  )
                 })}
               </SelectContent>
             </Select>
