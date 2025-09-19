@@ -134,7 +134,7 @@ export default function PurchaseOrders() {
       try {
         const [it, uu, cs] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
-          supabase.from('uoms').select('id,code,name').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
         ])
 

@@ -172,7 +172,7 @@ export default function SalesOrders() {
       try {
         const [it, uu, cs, appRes] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
-          supabase.from('uoms').select('id,code,name').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('company_currencies_view').select('code,name,symbol,decimals').order('code', { ascending: true }),
           supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])

@@ -127,7 +127,7 @@ export default function BOMPage() {
 
         // UoMs + conversions
         const [uRes, cRes] = await Promise.all([
-          supabase.from('uoms').select('id,code,name').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name, family').order('code', { ascending: true }),
           supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor'),
         ])
         if (uRes.error) throw uRes.error
