@@ -45,7 +45,10 @@ type MovementType = 'receive' | 'issue' | 'transfer' | 'adjust'
 type RefType = 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
-const fmtAcct = (v: number) => { const n = Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); return v<0?`(${n})`:n }
+const fmtAcct = (v: number) => {
+  const n = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return v < 0 ? `(${n})` : n
+}
 
 const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
   receive: 'ADJUST',
@@ -58,7 +61,7 @@ export default function StockMovements() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
 
-  // master data
+  // Master data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
@@ -67,18 +70,18 @@ export default function StockMovements() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
 
-  // movement selections
+  // Movement selections
   const [movementType, setMovementType] = useState<MovementType>('transfer')
   const [warehouseFromId, setWarehouseFromId] = useState<string>('')
   const [warehouseToId, setWarehouseToId] = useState<string>('')
 
-  // bins & stock per warehouse
+  // Bins & stock per warehouse
   const [binsFrom, setBinsFrom] = useState<Bin[]>([])
   const [binsTo, setBinsTo] = useState<Bin[]>([])
   const [stockFrom, setStockFrom] = useState<StockLevel[]>([])
   const [stockTo, setStockTo] = useState<StockLevel[]>([])
 
-  // movement form
+  // Movement form
   const [fromBin, setFromBin] = useState<string>('') // mutually exclusive with toBin
   const [toBin, setToBin] = useState<string>('')     // mutually exclusive with fromBin
   const [itemId, setItemId] = useState<string>('')
@@ -87,22 +90,22 @@ export default function StockMovements() {
   const [unitCost, setUnitCost] = useState<string>('') // used in receive / adjust increase
   const [notes, setNotes] = useState<string>('')
 
-  // reference tagging
+  // Reference tagging
   const [refType, setRefType] = useState<RefType>(DEFAULT_REF_BY_MOVE[movementType])
   const [refId, setRefId] = useState<string>('')
   const [refLineId, setRefLineId] = useState<string>('')
 
-  // cash-sale (Issue + SO)
+  // Cash-sale (Issue + SO)
   const [saleCustomerId, setSaleCustomerId] = useState<string>('') // optional (defaults to CASH)
   const [saleCurrency, setSaleCurrency] = useState<string>('')
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
 
-  // maps
+  // Maps
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
   const currentItem = useMemo(() => items.find(i => i.id === itemId) || null, [itemId, items])
 
-  // load masters
+  // Load masters
   useEffect(() => {
     (async () => {
       try {
@@ -150,7 +153,7 @@ export default function StockMovements() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // helpers
+  // Helpers
   const mapSL = (r: DBStockLevelRow): StockLevel => ({
     id: r.id,
     itemId: r.item_id,
@@ -268,10 +271,13 @@ export default function StockMovements() {
     return { id, name: '(Unknown Item)', sku: null, baseUomId: null }
   }
 
-  const itemsInSelectedBin = useMemo(() => {
+  // Flatten bin contents
+  type BinItemRow = { item: Item; onHandQty: number; avgCost: number }
+
+  const itemsInSelectedBin: BinItemRow[] = useMemo(() => {
     if (fromBin) {
       const rows = stockFrom.filter(s => (s.binId || null) === fromBin && num(s.onHandQty) > 0)
-      const byItem = new Map<string, { item: Item; onHandQty: number; avgCost: number }>()
+      const byItem = new Map<string, BinItemRow>()
       for (const s of rows) {
         const it = ensureItemObject(s.itemId)
         const qty = num(s.onHandQty, 0), avg = num(s.avgCost, 0)
@@ -284,10 +290,10 @@ export default function StockMovements() {
           byItem.set(s.itemId, { item: it, onHandQty: qty, avgCost: avg })
         }
       }
-      return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
+      return Array.from(byItem.values()).sort((a, b) => a.item.name.localeCompare(b.item.name))
     } else if (toBin) {
       const rows = stockTo.filter(s => (s.binId || null) === toBin && num(s.onHandQty) > 0)
-      const byItem = new Map<string, { item: Item; onHandQty: number; avgCost: number }>()
+      const byItem = new Map<string, BinItemRow>()
       for (const s of rows) {
         const it = ensureItemObject(s.itemId)
         const qty = num(s.onHandQty, 0), avg = num(s.avgCost, 0)
@@ -300,18 +306,21 @@ export default function StockMovements() {
           byItem.set(s.itemId, { item: it, onHandQty: qty, avgCost: avg })
         }
       }
-      return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
+      return Array.from(byItem.values()).sort((a, b) => a.item.name.localeCompare(b.item.name))
     }
     return []
   }, [fromBin, toBin, stockFrom, stockTo, items])
 
+  // Fetch on-hand for a specific bin+item
   const onHandIn = (levels: StockLevel[], bin: string | null, itId: string) => {
     const row = levels.find(s => (s.binId || null) === (bin || null) && s.itemId === itId)
     return { qty: num(row?.onHandQty, 0), avgCost: num(row?.avgCost, 0) }
   }
 
+  // Item base UoM id (normalized to an id)
   const itemBaseUomId = useMemo(() => uomIdFromIdOrCode(currentItem?.baseUomId || ''), [currentItem, uoms])
 
+  // Live quantity preview (entered → base)
   const preview = useMemo(() => {
     const q = num(qtyEntered, 0)
     if (!q || !currentItem) return null
@@ -328,6 +337,7 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
+  // Submit handlers
   async function submitReceive() {
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
     if (!toBin) return toast.error(tt('orders.selectBin', 'Select bin'))
@@ -380,7 +390,7 @@ export default function StockMovements() {
 
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // SO path: create SO (revenue) + COGS via RPC; don't insert movement here again
+    // SO path: create SO (revenue) + COGS via RPC; do not insert a separate movement here
     if (rt === 'SO') {
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
@@ -390,7 +400,7 @@ export default function StockMovements() {
       try {
         await finalizeCashSaleSOWithCOGS({
           itemId: currentItem.id,
-          qty,                 // pricing qty
+          qty,                 // pricing qty (may be non-base)
           qtyBase,             // stock qty (base)
           uomId,
           unitPrice: unitSellPrice,
@@ -519,7 +529,7 @@ export default function StockMovements() {
         type: 'adjust',
         item_id: currentItem.id,
         uom_id: uomId,
-        qty: targetQtyEntered,   // human readable target
+        qty: targetQtyEntered,   // human-friendly target
         qty_base: delta,         // delta applied by trigger
         unit_cost: unitCostNum,
         total_value: delta * unitCostNum,
@@ -574,11 +584,77 @@ export default function StockMovements() {
     }
   }
 
-  const uomsList = useMemo(() => uoms, [uoms])
+  // ---------------------- Visual grouping helpers ----------------------------
+
+  // Friendly label for UoM family
+  const familyLabel = (fam?: string) => {
+    const key = String(fam || 'unspecified').toLowerCase()
+    const map: Record<string, string> = {
+      mass: 'Mass',
+      volume: 'Volume',
+      length: 'Length',
+      area: 'Area',
+      count: 'Count',
+      time: 'Time',
+      other: 'Other',
+      unspecified: 'Unspecified',
+    }
+    return map[key] || (fam ? fam : 'Unspecified')
+  }
+
+  // Base family of the currently selected item's base UoM (to pin its group first)
+  const baseFamily: string | undefined = useMemo(() => {
+    if (!currentItem) return undefined
+    const base = uomById.get(itemBaseUomId)
+    return base?.family || undefined
+  }, [currentItem, itemBaseUomId, uomById])
+
+  // Group UoMs by family for the Select, base family first
+  const groupedUoms = useMemo(() => {
+    const groups = new Map<string, Uom[]>()
+    for (const u of uoms) {
+      const fam = (u.family && u.family.trim()) ? u.family : 'unspecified'
+      if (!groups.has(fam)) groups.set(fam, [])
+      groups.get(fam)!.push(u)
+    }
+    for (const  arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    const families = Array.from(groups.keys())
+    families.sort((a, b) => {
+      if (baseFamily && a === baseFamily && b !== baseFamily) return -1
+      if (baseFamily && b === baseFamily && a !== baseFamily) return 1
+      return familyLabel(a).localeCompare(familyLabel(b))
+    })
+    return { groups, families }
+  }, [uoms, baseFamily])
+
+  // Group "Bin Contents" by the family of each item's base UoM, with totals
+  const binContentGroups = useMemo(() => {
+    const g: Array<{ key: string; label: string; totalQty: number; rows: BinItemRow[] }> = []
+    const map = new Map<string, { key: string; label: string; totalQty: number; rows: BinItemRow[] }>()
+    for (const row of itemsInSelectedBin) {
+      const baseId = uomIdFromIdOrCode(row.item.baseUomId || '')
+      const famKey = (uomById.get(baseId)?.family || 'unspecified') as string
+      if (!map.has(famKey)) {
+        map.set(famKey, { key: famKey, label: familyLabel(famKey), totalQty: 0, rows: [] })
+      }
+      const bucket = map.get(famKey)!
+      bucket.rows.push(row)
+      bucket.totalQty += num(row.onHandQty, 0)
+    }
+    for (const v of map.values()) {
+      v.rows.sort((a, b) => a.item.name.localeCompare(b.item.name))
+      g.push(v)
+    }
+    g.sort((a, b) => a.label.localeCompare(b.label))
+    return g
+  }, [itemsInSelectedBin, uomById, uoms])
+
+
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
 
+  // ------------------------------- UI ----------------------------------------
   return (
     <div className="space-y-6">
       {/* Movement type + warehouses */}
@@ -633,14 +709,14 @@ export default function StockMovements() {
             {showFromWH && (
               <>
                 <div className="text-xs text-muted-foreground mb-1">
-                  {tt('movements.bins.from', 'From')}{' '}{warehouses.find(w=>w.id===warehouseFromId)?.name || ''}
+                  {tt('movements.bins.from', 'From')}{' '}{warehouses.find(w => w.id === warehouseFromId)?.name || ''}
                 </div>
                 {(binsFrom || []).length === 0 && <div className="text-sm text-muted-foreground">{tt('movements.noBins', 'No bins')}</div>}
                 <div className="space-y-1">
                   {binsFrom.map(b => (
                     <Button
                       key={b.id}
-                      variant={fromBin===b.id?'default':'outline'}
+                      variant={fromBin === b.id ? 'default' : 'outline'}
                       className="w-full justify-start"
                       onClick={() => { setFromBin(b.id); setToBin('') }}
                     >
@@ -653,14 +729,14 @@ export default function StockMovements() {
             {showToWH && (
               <>
                 <div className="text-xs text-muted-foreground mt-2">
-                  {tt('movements.bins.to', 'To')}{' '}{warehouses.find(w=>w.id===warehouseToId)?.name || ''}
+                  {tt('movements.bins.to', 'To')}{' '}{warehouses.find(w => w.id === warehouseToId)?.name || ''}
                 </div>
                 {(binsTo || []).length === 0 && <div className="text-sm text-muted-foreground">{tt('movements.noBins', 'No bins')}</div>}
                 <div className="space-y-1">
                   {binsTo.map(b => (
                     <Button
                       key={b.id}
-                      variant={toBin===b.id?'default':'outline'}
+                      variant={toBin === b.id ? 'default' : 'outline'}
                       className="w-full justify-start"
                       onClick={() => { setToBin(b.id); setFromBin('') }}
                     >
@@ -673,7 +749,7 @@ export default function StockMovements() {
           </CardContent>
         </Card>
 
-        {/* Bin contents */}
+        {/* Bin contents (grouped by item base UoM family) */}
         <Card className="col-span-12 md:col-span-8">
           <CardHeader><CardTitle>{tt('movements.title.binContents', 'Bin Contents')}</CardTitle></CardHeader>
           <CardContent className="overflow-x-auto">
@@ -690,16 +766,26 @@ export default function StockMovements() {
                   </tr>
                 </thead>
                 <tbody>
-                  {itemsInSelectedBin.length === 0 && (
+                  {binContentGroups.length === 0 && (
                     <tr><td colSpan={4} className="py-4 text-muted-foreground">{tt('movements.emptyBin', 'Empty bin')}</td></tr>
                   )}
-                  {itemsInSelectedBin.map(row => (
-                    <tr key={row.item.id} className="border-b">
-                      <td className="py-2 pr-2">{row.item.name}</td>
-                      <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
-                      <td className="py-2 pr-2">{fmtAcct(row.onHandQty)}</td>
-                      <td className="py-2 pr-2">{fmtAcct(num(row.avgCost, 0))}</td>
-                    </tr>
+
+                  {binContentGroups.map(group => (
+                    <tbody key={group.key}>
+                      <tr className="bg-muted/40">
+                        <td colSpan={4} className="py-1 px-2 text-[11px] font-semibold uppercase">
+                          {group.label} — {tt('movements.total', 'Total')}: {fmtAcct(group.totalQty)}
+                        </td>
+                      </tr>
+                      {group.rows.map(row => (
+                        <tr key={row.item.id} className="border-b">
+                          <td className="py-2 pr-2">{row.item.name}</td>
+                          <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
+                          <td className="py-2 pr-2">{fmtAcct(row.onHandQty)}</td>
+                          <td className="py-2 pr-2">{fmtAcct(num(row.avgCost, 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
                   ))}
                 </tbody>
               </table>
@@ -746,7 +832,7 @@ export default function StockMovements() {
               <Label>{tt('orders.item', 'Item')}</Label>
               <Select
                 value={itemId}
-                onValueChange={(v)=>{ setItemId(v); setQtyEntered('') }}
+                onValueChange={(v) => { setItemId(v); setQtyEntered('') }}
                 disabled={(movementType === 'issue' && !fromBin) || (movementType !== 'issue' && !toBin)}
               >
                 <SelectTrigger><SelectValue placeholder={
@@ -759,7 +845,7 @@ export default function StockMovements() {
                     ? stockFrom
                         .filter(s => (s.binId || null) === fromBin && num(s.onHandQty) > 0)
                         .map(s => ensureItemObject(s.itemId))
-                        .sort((a,b)=>a.name.localeCompare(b.name))
+                        .sort((a, b) => a.name.localeCompare(b.name))
                         .map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))
                     : items.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))}
                 </SelectContent>
@@ -783,14 +869,31 @@ export default function StockMovements() {
               <Label>{tt('movements.movementUom', 'Movement UoM')}</Label>
               <Select
                 value={currentItem ? (movementUomId || itemBaseUomId || '') : ''}
-                onValueChange={(v)=>setMovementUomId(v)}
+                onValueChange={(v) => setMovementUomId(v)}
                 disabled={!currentItem}
               >
                 <SelectTrigger><SelectValue placeholder={currentItem ? tt('movements.selectUom', 'Select UoM') : tt('movements.pickItemFirst', 'Pick item first')} /></SelectTrigger>
-                <SelectContent>
-                  {uomsList.map(u => {
-                    const convertible = currentItem ? canConvert(u.id, itemBaseUomId) : false
-                    return <SelectItem key={u.id} value={u.id}>{u.code} — {u.name}{currentItem && !convertible ? tt('movements.notConvertibleSuffix', ' (no path)') : ''}</SelectItem>
+
+                {/* Grouped by family */}
+                <SelectContent className="max-h-64 overflow-auto">
+                  {groupedUoms.families.map(fam => {
+                    const list = groupedUoms.groups.get(fam) || []
+                    return (
+                      <div key={fam}>
+                        <div className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground sticky top-0 bg-popover">
+                          {familyLabel(fam)}
+                        </div>
+                        {list.map(u => {
+                          const convertible = currentItem ? canConvert(u.id, itemBaseUomId) : false
+                          return (
+                            <SelectItem key={u.id} value={u.id}>
+                              {u.code} — {u.name}{currentItem && !convertible ? tt('movements.notConvertibleSuffix', ' (no path)') : ''}
+                            </SelectItem>
+                          )
+                        })}
+                        <div className="h-1" />
+                      </div>
+                    )
                   })}
                 </SelectContent>
               </Select>
