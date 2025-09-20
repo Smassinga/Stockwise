@@ -15,7 +15,7 @@ type Uom = {
   id: string
   code: string
   name: string
-  family: string // normalized: 'mass', 'volume', 'length', 'count', 'area', 'time', 'other', 'unspecified', etc.
+  family: string // 'mass' | 'volume' | 'length' | 'count' | 'area' | 'time' | 'other' | 'unspecified' | etc.
 }
 
 type Item = {
@@ -73,9 +73,7 @@ const Items: React.FC = () => {
       if (!groups.has(fam)) groups.set(fam, [])
       groups.get(fam)!.push(u)
     }
-    // sort within each family by code
     for (const arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
-    // sort families by friendly label
     const families = Array.from(groups.keys()).sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
     return { groups, families }
   }, [uoms])
@@ -85,7 +83,7 @@ const Items: React.FC = () => {
       try {
         setLoading(true)
 
-        // ---- UOMs: robust fetch across schemas (uom or uoms) with graceful fallback if 'family' doesn't exist
+        // ---- UOMs: sequential probing to avoid noisy 400s and only fall back when needed
         const normalize = (rows: any[]): Uom[] =>
           (rows ?? []).map((r: any) => ({
             id: String(r.id),
@@ -94,40 +92,47 @@ const Items: React.FC = () => {
             family: String(r.family ?? '').trim() || 'unspecified',
           }))
 
-        const tryFetch = async (table: 'uom' | 'uoms', cols: string) => {
-          const res: any = await supabase.from(table).select(cols).order('code', { ascending: true })
-          if (res.error) return { ok: false, rows: [] as any[], err: res.error }
-          return { ok: true, rows: (res.data ?? []) as any[], err: null }
+        const safeSelect = async (table: 'uoms' | 'uom', fields: string) => {
+          const res: any = await supabase.from(table).select(fields).order('code', { ascending: true })
+          return res
         }
 
-        // Try both tables with family
-        let a = await tryFetch('uom', 'id, code, name, family')
-        let b = await tryFetch('uoms', 'id, code, name, family')
+        let uomRows: any[] = []
 
-        // If both errored (e.g., family col missing), fallback without family and patch it as 'unspecified'
-        if ((!a.ok || a.rows.length === 0) && (!b.ok || b.rows.length === 0)) {
-          const a2 = await tryFetch('uom', 'id, code, name')
-          const b2 = await tryFetch('uoms', 'id, code, name')
-          // Merge/dedupe by id
-          const map = new Map<string, any>()
-          for (const r of [...(a2.ok ? a2.rows : []), ...(b2.ok ? b2.rows : [])]) {
-            map.set(String(r.id), { ...r, family: 'unspecified' })
+        // 1) Prefer 'uoms' with family
+        let res = await safeSelect('uoms', 'id, code, name, family')
+        if (res?.data?.length) {
+          uomRows = res.data
+        } else if (res?.error && res.error.status === 400) {
+          // Family likely missing; retry without family on 'uoms'
+          const resNoFam = await safeSelect('uoms', 'id, code, name')
+          if (resNoFam?.data?.length) {
+            uomRows = resNoFam.data.map((r: any) => ({ ...r, family: 'unspecified' }))
           }
-          setUoms(normalize(Array.from(map.values())))
-        } else {
-          // Merge/dedupe by id (prefer rows that came with family)
-          const map = new Map<string, any>()
-          for (const r of [...(a.ok ? a.rows : []), ...(b.ok ? b.rows : [])]) map.set(String(r.id), r)
-          setUoms(normalize(Array.from(map.values())))
         }
+
+        // 2) If still empty, try 'uom' with family, then fallback without family
+        if (!uomRows.length) {
+          res = await safeSelect('uom', 'id, code, name, family')
+          if (res?.data?.length) {
+            uomRows = res.data
+          } else if (res?.error && res.error.status === 400) {
+            const resNoFam = await safeSelect('uom', 'id, code, name')
+            if (resNoFam?.data?.length) {
+              uomRows = resNoFam.data.map((r: any) => ({ ...r, family: 'unspecified' }))
+            }
+          }
+        }
+
+        setUoms(normalize(uomRows || []))
 
         // ---- Items via camelCase view
-        const res = await supabase
+        const itemsRes = await supabase
           .from('items_view')
           .select('id,sku,name,baseUomId,unitPrice,minStock,createdAt,updatedAt')
           .order('name', { ascending: true })
-        if (res.error) throw res.error
-        setItems(sortByName(res.data || []))
+        if (itemsRes.error) throw itemsRes.error
+        setItems(sortByName(itemsRes.data || []))
       } catch (e: any) {
         console.error(e)
         toast.error(e?.message || 'Failed to load Items')
