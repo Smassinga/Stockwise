@@ -85,8 +85,8 @@ export default function StockMovements() {
   const [stockTo, setStockTo] = useState<StockLevel[]>([])
 
   // movement form
-  const [fromBin, setFromBin] = useState<string>('')
-  const [toBin, setToBin] = useState<string>('')
+  const [fromBin, setFromBin] = useState<string>('') // mutually exclusive with toBin
+  const [toBin, setToBin] = useState<string>('')     // mutually exclusive with fromBin
   const [itemId, setItemId] = useState<string>('')
   const [movementUomId, setMovementUomId] = useState<string>('') // selected UoM for entry
   const [qtyEntered, setQtyEntered] = useState<string>('')
@@ -276,13 +276,43 @@ export default function StockMovements() {
     return { id, name: '(Unknown Item)', sku: null, baseUomId: null }
   }
 
-  const fromBinItems = useMemo(() => {
-    if (!fromBin) return []
-    const rows = stockFrom.filter(s => (s.binId || null) === fromBin && num(s.onHandQty) > 0)
-    const ids = Array.from(new Set(rows.map(r => r.itemId)))
-    const list = ids.map(id => ensureItemObject(id))
-    return list.sort((a, b) => a.name.localeCompare(b.name))
-  }, [fromBin, stockFrom, items])
+  // IMPORTANT: choose levels by the side the user actually selected
+  const itemsInSelectedBin = useMemo(() => {
+    if (fromBin) {
+      const rows = stockFrom.filter(s => (s.binId || null) === fromBin && num(s.onHandQty) > 0)
+      const byItem = new Map<string, { item: Item; onHandQty: number; avgCost: number }>()
+      for (const s of rows) {
+        const it = ensureItemObject(s.itemId)
+        const qty = num(s.onHandQty, 0), avg = num(s.avgCost, 0)
+        const prev = byItem.get(s.itemId)
+        if (prev) {
+          const totalQty = prev.onHandQty + qty
+          const mergedAvg = totalQty > 0 ? ((prev.onHandQty * prev.avgCost) + (qty * avg)) / totalQty : prev.avgCost
+          byItem.set(s.itemId, { item: it, onHandQty: totalQty, avgCost: mergedAvg })
+        } else {
+          byItem.set(s.itemId, { item: it, onHandQty: qty, avgCost: avg })
+        }
+      }
+      return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
+    } else if (toBin) {
+      const rows = stockTo.filter(s => (s.binId || null) === toBin && num(s.onHandQty) > 0)
+      const byItem = new Map<string, { item: Item; onHandQty: number; avgCost: number }>()
+      for (const s of rows) {
+        const it = ensureItemObject(s.itemId)
+        const qty = num(s.onHandQty, 0), avg = num(s.avgCost, 0)
+        const prev = byItem.get(s.itemId)
+        if (prev) {
+          const totalQty = prev.onHandQty + qty
+          const mergedAvg = totalQty > 0 ? ((prev.onHandQty * prev.avgCost) + (qty * avg)) / totalQty : prev.avgCost
+          byItem.set(s.itemId, { item: it, onHandQty: totalQty, avgCost: mergedAvg })
+        } else {
+          byItem.set(s.itemId, { item: it, onHandQty: qty, avgCost: avg })
+        }
+      }
+      return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
+    }
+    return []
+  }, [fromBin, toBin, stockFrom, stockTo, items])
 
   const onHandIn = (levels: StockLevel[], bin: string | null, itId: string) => {
     const row = levels.find(s => (s.binId || null) === (bin || null) && s.itemId === itId)
@@ -568,27 +598,6 @@ export default function StockMovements() {
   // Show the sale fields for Issue+SO
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
 
-  const itemsInSelectedBin = useMemo(() => {
-    const selectedBin = fromBin || toBin
-    if (!selectedBin) return []
-    const levels = binsFrom.some(b => b.id === selectedBin) ? stockFrom : stockTo
-    const rows = levels.filter(s => (s.binId || null) === selectedBin && num(s.onHandQty) > 0)
-    const byItem = new Map<string, { item: Item; onHandQty: number; avgCost: number }>()
-    for (const s of rows) {
-      const it = ensureItemObject(s.itemId)
-      const qty = num(s.onHandQty, 0), avg = num(s.avgCost, 0)
-      const prev = byItem.get(s.itemId)
-      if (prev) {
-        const totalQty = prev.onHandQty + qty
-        const mergedAvg = totalQty > 0 ? ((prev.onHandQty * prev.avgCost) + (qty * avg)) / totalQty : prev.avgCost
-        byItem.set(s.itemId, { item: it, onHandQty: totalQty, avgCost: mergedAvg })
-      } else {
-        byItem.set(s.itemId, { item: it, onHandQty: qty, avgCost: avg })
-      }
-    }
-    return Array.from(byItem.values()).sort((a,b)=>a.item.name.localeCompare(b.item.name))
-  }, [fromBin, toBin, stockFrom, stockTo, items, binsFrom])
-
   // UI
   return (
     <div className="space-y-6">
@@ -649,7 +658,12 @@ export default function StockMovements() {
                 {(binsFrom || []).length === 0 && <div className="text-sm text-muted-foreground">{tt('movements.noBins', 'No bins')}</div>}
                 <div className="space-y-1">
                   {binsFrom.map(b => (
-                    <Button key={b.id} variant={fromBin===b.id?'default':'outline'} className="w-full justify-start" onClick={() => setFromBin(b.id)}>
+                    <Button
+                      key={b.id}
+                      variant={fromBin===b.id?'default':'outline'}
+                      className="w-full justify-start"
+                      onClick={() => { setFromBin(b.id); setToBin('') }} // mutually exclusive
+                    >
                       {b.code} — {b.name}
                     </Button>
                   ))}
@@ -664,7 +678,12 @@ export default function StockMovements() {
                 {(binsTo || []).length === 0 && <div className="text-sm text-muted-foreground">{tt('movements.noBins', 'No bins')}</div>}
                 <div className="space-y-1">
                   {binsTo.map(b => (
-                    <Button key={b.id} variant={toBin===b.id?'default':'outline'} className="w-full justify-start" onClick={() => setToBin(b.id)}>
+                    <Button
+                      key={b.id}
+                      variant={toBin===b.id?'default':'outline'}
+                      className="w-full justify-start"
+                      onClick={() => { setToBin(b.id); setFromBin('') }} // mutually exclusive
+                    >
                       {b.code} — {b.name}
                     </Button>
                   ))}
@@ -722,7 +741,7 @@ export default function StockMovements() {
             {movementType !== 'receive' && movementType !== 'adjust' && (
               <div>
                 <Label>{tt('orders.fromBin', 'From Bin')}</Label>
-                <Select value={fromBin} onValueChange={(v) => { setFromBin(v); setItemId(''); setQtyEntered(''); }}>
+                <Select value={fromBin} onValueChange={(v) => { setFromBin(v); setToBin(''); setItemId(''); setQtyEntered(''); }}>
                   <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
@@ -734,7 +753,7 @@ export default function StockMovements() {
             {movementType !== 'issue' && (
               <div>
                 <Label>{tt('orders.toBin', 'To Bin')}</Label>
-                <Select value={toBin} onValueChange={setToBin}>
+                <Select value={toBin} onValueChange={(v) => { setToBin(v); setFromBin('') }}>
                   <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
@@ -757,7 +776,11 @@ export default function StockMovements() {
                 } /></SelectTrigger>
                 <SelectContent>
                   {(movementType === 'issue' || (movementType === 'transfer' && fromBin))
-                    ? fromBinItems.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))
+                    ? stockFrom
+                        .filter(s => (s.binId || null) === fromBin && num(s.onHandQty) > 0)
+                        .map(s => ensureItemObject(s.itemId))
+                        .sort((a,b)=>a.name.localeCompare(b.name))
+                        .map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))
                     : items.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))}
                 </SelectContent>
               </Select>
