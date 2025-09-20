@@ -14,8 +14,11 @@ import { finalizeCashSaleSO } from '../lib/sales' // creates SO with shipped sta
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
-type Item = { id: string; name: string; sku: string; baseUomId: string }
-type Uom = { id: string; code: string; name: string; family?: string }
+
+// NOTE: load from items (snake_case -> camelCase)
+type Item = { id: string; name: string; sku: string | null; baseUomId: string | null }
+
+type Uom = { id: string; code: string; name: string; Family?: string }
 type Currency = { code: string; name: string }
 type Customer = { id: string; code?: string; name: string }
 
@@ -44,7 +47,6 @@ type StockLevel = {
 type MovementType = 'receive' | 'issue' | 'transfer' | 'adjust'
 type RefType = 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
 
-const nowISO = () => new Date().toISOString()
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const fmtAcct = (v: number) => { const n = Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); return v<0?`(${n})`:n }
 
@@ -86,7 +88,7 @@ export default function StockMovements() {
   const [fromBin, setFromBin] = useState<string>('')
   const [toBin, setToBin] = useState<string>('')
   const [itemId, setItemId] = useState<string>('')
-  const [movementUomId, setMovementUomId] = useState<string>('')
+  const [movementUomId, setMovementUomId] = useState<string>('') // selected UoM for entry
   const [qtyEntered, setQtyEntered] = useState<string>('')
   const [unitCost, setUnitCost] = useState<string>('') // used in receive / adjust increase
   const [notes, setNotes] = useState<string>('')
@@ -110,13 +112,20 @@ export default function StockMovements() {
   useEffect(() => {
     (async () => {
       try {
-        const [whRes, itRes] = await Promise.all([
+        const [whRes, itResRaw] = await Promise.all([
           db.warehouses.list({ orderBy: { name: 'asc' } }),
-          supabase.from('items_view').select('id,name,sku,baseUomId').order('name', { ascending: true }),
+          // IMPORTANT: load from "items" and map base_uom_id -> baseUomId
+          supabase.from('items').select('id,name,sku,base_uom_id').order('name', { ascending: true }),
         ])
         setWarehouses(whRes || [])
-        if (itRes.error) throw itRes.error
-        setItems((itRes.data || []) as Item[])
+
+        if (itResRaw.error) throw itResRaw.error
+        setItems(((itResRaw.data || []) as any[]).map(x => ({
+          id: x.id,
+          name: x.name,
+          sku: x.sku ?? null,
+          baseUomId: x.base_uom_id ?? null,
+        })))
 
         if (whRes && whRes.length) {
           setWarehouseFromId(whRes[0].id)
@@ -124,7 +133,7 @@ export default function StockMovements() {
         }
 
         const [uRes, cRes, base] = await Promise.all([
-          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name,Family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
           getBaseCurrencyCode().catch(() => 'MZN'),
         ])
@@ -212,10 +221,10 @@ export default function StockMovements() {
     if (existsByCode) return
 
     let fetched: Uom | null = null
-    let res = await supabase.from('uoms').select('id,code,name,family').eq('id', idOrCode).limit(1)
+    let res = await supabase.from('uoms').select('id,code,name,Family').eq('id', idOrCode).limit(1)
     if (!res.error && res.data?.length) fetched = { ...res.data[0], code: String(res.data[0].code || '').toUpperCase() }
     else {
-      res = await supabase.from('uoms').select('id,code,name,family').eq('code', byCode).limit(1)
+      res = await supabase.from('uoms').select('id,code,name,Family').eq('code', byCode).limit(1)
       if (!res.error && res.data?.length) fetched = { ...res.data[0], code: String(res.data[0].code || '').toUpperCase() }
     }
     if (fetched) setUoms(prev => (prev.some(u => u.id === fetched!.id) ? prev : [...prev, fetched!]))
@@ -260,11 +269,18 @@ export default function StockMovements() {
     try { return Number(convertQty(qty, fromUomId, toUomId, convGraph)) } catch { return null }
   }
 
+  // If an item exists in stock_levels but is missing from items[], still show it
+  const ensureItemObject = (id: string): Item => {
+    const it = items.find(x => x.id === id)
+    if (it) return it
+    return { id, name: '(Unknown Item)', sku: null, baseUomId: null }
+  }
+
   const fromBinItems = useMemo(() => {
     if (!fromBin) return []
     const rows = stockFrom.filter(s => (s.binId || null) === fromBin && num(s.onHandQty) > 0)
     const ids = Array.from(new Set(rows.map(r => r.itemId)))
-    const list = ids.map(id => items.find(it => it.id === id)).filter(Boolean) as Item[]
+    const list = ids.map(id => ensureItemObject(id))
     return list.sort((a, b) => a.name.localeCompare(b.name))
   }, [fromBin, stockFrom, items])
 
@@ -284,38 +300,6 @@ export default function StockMovements() {
     return { entered: q, base, uomEntered: enteredUom, baseUom: itemBaseUomId, invalid: false }
   }, [qtyEntered, movementUomId, currentItem, itemBaseUomId])
 
-  async function upsertStockLevel(whId: string, bin: string | null, itId: string, deltaQtyBase: number, opts?: { unitCost?: number }) {
-    let q = supabase.from('stock_levels').select('id,qty,avg_cost').eq('warehouse_id', whId).eq('item_id', itId).limit(1)
-    q = bin ? q.eq('bin_id', bin) : q.is('bin_id', null)
-    const { data: found, error: selErr } = await q
-    if (selErr) throw selErr
-
-    const unitCost = num(opts?.unitCost, 0)
-
-    if (!found?.length) {
-      if (deltaQtyBase < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock'))
-      const { error: insErr } = await supabase.from('stock_levels').insert({
-        warehouse_id: whId, bin_id: bin, item_id: itId, qty: deltaQtyBase, allocated_qty: 0, avg_cost: unitCost, updated_at: nowISO(),
-      })
-      if (insErr) throw insErr
-      return
-    }
-
-    const row = found[0] as { id: string; qty: number | null; avg_cost: number | null }
-    const oldQty = num(row.qty, 0), oldAvg = num(row.avg_cost, 0)
-    const newQty = oldQty + deltaQtyBase
-    if (newQty < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock'))
-
-    let newAvg = oldAvg
-    if (deltaQtyBase > 0) newAvg = newQty > 0 ? ((oldQty * oldAvg) + (deltaQtyBase * unitCost)) / newQty : unitCost
-
-    const { error: updErr } = await supabase
-      .from('stock_levels')
-      .update({ qty: newQty, avg_cost: newAvg, updated_at: nowISO() })
-      .eq('id', row.id)
-    if (updErr) throw updErr
-  }
-
   function normalizeRefForSubmit(mt: MovementType, rt: RefType): RefType {
     if (mt === 'transfer') return 'TRANSFER'
     if (mt === 'receive' && rt === 'SO') return 'ADJUST'
@@ -323,7 +307,7 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // SUBMIT handlers
+  // SUBMIT handlers — write ONLY to stock_movements; DB trigger updates stock_levels
   async function submitReceive() {
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
     if (!toBin) return toast.error(tt('orders.selectBin', 'Select bin'))
@@ -333,10 +317,8 @@ export default function StockMovements() {
     const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ≥ 0'))
     const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
-    await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: unitCostNum })
-
     const rt = normalizeRefForSubmit('receive', refType)
-    await supabase.from('stock_movements').insert({
+    const ins = await supabase.from('stock_movements').insert({
       type: 'receive',
       item_id: currentItem.id,
       uom_id: uomId,
@@ -351,7 +333,9 @@ export default function StockMovements() {
       ref_type: rt || 'ADJUST',
       ref_id: rt === 'PO' ? (refId || null) : null,
       ref_line_id: rt === 'PO' ? (refLineId || null) : null,
-    })
+    }).select('id').single()
+
+    if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
 
     const { data: fresh } = await supabase
       .from('stock_levels')
@@ -378,7 +362,7 @@ export default function StockMovements() {
     let soRefLineIdLocal: string | null = null
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // Cash Sale path (Issue + SO) — defaults to CASH if no customer selected
+    // Cash Sale path (Issue + SO)
     if (rt === 'SO') {
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
@@ -394,7 +378,7 @@ export default function StockMovements() {
           customerId: saleCustomerId || undefined,
           currencyCode: cur,
           fxToBase: fx,
-          status: 'shipped', // valid so_status; avoids needing to ship again
+          status: 'shipped',
         })
         soRefIdLocal = created.soId
         soRefLineIdLocal = created.soLineId
@@ -404,7 +388,6 @@ export default function StockMovements() {
       }
     }
 
-    // 1) Record movement (COGS)
     const ins = await supabase.from('stock_movements').insert({
       type: 'issue',
       item_id: currentItem.id,
@@ -422,15 +405,8 @@ export default function StockMovements() {
       ref_line_id: rt === 'SO' ? (soRefLineIdLocal || refLineId || null) : null,
     }).select('id').single()
 
-    if (ins.error) {
-      console.error(ins.error)
-      return toast.error(tt('movements.failed', 'Action failed'))
-    }
+    if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
 
-    // 2) Deduct stock
-    await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
-
-    // refresh view
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
@@ -456,10 +432,7 @@ export default function StockMovements() {
     const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
-    await upsertStockLevel(warehouseFromId, fromBin, currentItem.id, -qtyBase)
-    await upsertStockLevel(warehouseToId, toBin, currentItem.id, qtyBase, { unitCost: avgCost })
-
-    await supabase.from('stock_movements').insert({
+    const ins = await supabase.from('stock_movements').insert({
       type: 'transfer',
       item_id: currentItem.id,
       uom_id: uomId,
@@ -476,7 +449,9 @@ export default function StockMovements() {
       ref_type: 'TRANSFER',
       ref_id: null,
       ref_line_id: null,
-    })
+    }).select('id').single()
+
+    if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
 
     const [freshFrom, freshTo] = await Promise.all([
       supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at').eq('warehouse_id', warehouseFromId),
@@ -488,6 +463,7 @@ export default function StockMovements() {
     toast.success(tt('movements.transferCompleted', 'Transfer completed'))
   }
 
+  // Adjust sets a TARGET; we log delta (positive = adjust in, negative = issue out)
   async function submitAdjust() {
     if (!warehouseToId) return toast.error(tt('movements.selectWhToAdjust', 'Select a warehouse to adjust'))
     if (!toBin) return toast.error(tt('movements.selectBinToAdjust', 'Select a bin to adjust'))
@@ -504,33 +480,49 @@ export default function StockMovements() {
     const delta = targetBase - currentBase
     if (delta === 0) return toast(tt('movements.noChange', 'No change'))
 
-    let useUnitCost = currentAvg
+    const adjNote = `${tt('movements.note.adjust', 'Adjust to')} ${targetQtyEntered} ${(uomById.get(uomId)?.code || uomId).toString().toUpperCase()} (${tt('movements.current', 'current')}: ${currentBase})`
+
     if (delta > 0) {
       const unitCostNum = num(unitCost, NaN)
       if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostRequiredForIncrease', 'Unit cost required when increasing on-hand'))
-      useUnitCost = unitCostNum
+
+      const ins = await supabase.from('stock_movements').insert({
+        type: 'adjust',
+        item_id: currentItem.id,
+        uom_id: uomId,
+        qty: targetQtyEntered,   // human readable target
+        qty_base: delta,         // IMPORTANT: delta applied by trigger
+        unit_cost: unitCostNum,
+        total_value: delta * unitCostNum,
+        warehouse_to_id: warehouseToId,
+        bin_to_id: toBin,
+        notes: `${adjNote}${notes ? ` | ${notes}` : ''}`,
+        created_by: 'system',
+        ref_type: 'ADJUST',
+        ref_id: null,
+        ref_line_id: null,
+      }).select('id').single()
+      if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    } else {
+      const qtyBase = Math.abs(delta)
+      const ins = await supabase.from('stock_movements').insert({
+        type: 'issue',
+        item_id: currentItem.id,
+        uom_id: uomId,
+        qty: Math.abs(targetQtyEntered - currentBase), // cosmetic
+        qty_base: qtyBase,
+        unit_cost: currentAvg,
+        total_value: currentAvg * qtyBase,
+        warehouse_from_id: warehouseToId,
+        bin_from_id: toBin,
+        notes: `${adjNote}${notes ? ` | ${notes}` : ''}`,
+        created_by: 'system',
+        ref_type: 'ADJUST',
+        ref_id: null,
+        ref_line_id: null,
+      }).select('id').single()
+      if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
     }
-
-    await upsertStockLevel(warehouseToId, toBin, currentItem.id, delta, { unitCost: useUnitCost })
-
-    const adjNote = `${tt('movements.note.adjust', 'Adjust to')} ${targetQtyEntered} ${(uomById.get(uomId)?.code || uomId).toString().toUpperCase()} (${tt('movements.current', 'current')}: ${currentBase})`
-
-    await supabase.from('stock_movements').insert({
-      type: 'adjust',
-      item_id: currentItem.id,
-      uom_id: uomId,
-      qty: targetQtyEntered,
-      qty_base: targetBase,
-      unit_cost: useUnitCost,
-      total_value: Math.abs(delta) * useUnitCost,
-      warehouse_to_id: warehouseToId,
-      bin_to_id: toBin,
-      notes: `${adjNote}${notes ? ` | ${notes}` : ''}`,
-      created_by: 'system',
-      ref_type: 'ADJUST',
-      ref_id: null,
-      ref_line_id: null,
-    })
 
     const { data: fresh } = await supabase
       .from('stock_levels')
@@ -583,7 +575,7 @@ export default function StockMovements() {
     const rows = levels.filter(s => (s.binId || null) === selectedBin && num(s.onHandQty) > 0)
     const byItem = new Map<string, { item: Item; onHandQty: number; avgCost: number }>()
     for (const s of rows) {
-      const it = items.find(x => x.id === s.itemId); if (!it) continue
+      const it = ensureItemObject(s.itemId)
       const qty = num(s.onHandQty, 0), avg = num(s.avgCost, 0)
       const prev = byItem.get(s.itemId)
       if (prev) {
@@ -705,7 +697,7 @@ export default function StockMovements() {
                   {itemsInSelectedBin.map(row => (
                     <tr key={row.item.id} className="border-b">
                       <td className="py-2 pr-2">{row.item.name}</td>
-                      <td className="py-2 pr-2">{row.item.sku}</td>
+                      <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
                       <td className="py-2 pr-2">{fmtAcct(row.onHandQty)}</td>
                       <td className="py-2 pr-2">{fmtAcct(num(row.avgCost, 0))}</td>
                     </tr>
@@ -765,8 +757,8 @@ export default function StockMovements() {
                 } /></SelectTrigger>
                 <SelectContent>
                   {(movementType === 'issue' || (movementType === 'transfer' && fromBin))
-                    ? fromBinItems.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>))
-                    : items.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>))}
+                    ? fromBinItems.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))
+                    : items.map(it => (<SelectItem key={it.id} value={it.id}>{it.name} ({it.sku ?? ''})</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>

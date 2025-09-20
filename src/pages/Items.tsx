@@ -11,7 +11,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
-type Uom = { id: string; code: string; name: string; family: 'mass' | 'volume' | 'length' | 'count' | string }
+type Uom = { id: string; code: string; name: string; Family: 'mass' | 'volume' | 'length' | 'count' | string }
 type Item = {
   id: string
   sku: string
@@ -55,7 +55,7 @@ const Items: React.FC = () => {
             id: String(r.id),
             code: String(r.code ?? ''),
             name: String(r.name ?? ''),
-            family: 'other',
+            Family: 'other',
           }))
 
         const fetchFrom = async (table: 'uom' | 'uoms') => {
