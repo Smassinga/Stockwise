@@ -40,6 +40,7 @@ export type CreateSOParams = {
   totalAmount?: number
 }
 
+/** Create a minimal SO and return its id */
 export async function createSalesOrder(params: CreateSOParams): Promise<string> {
   const {
     customerId,
@@ -84,6 +85,7 @@ export type CreateSOLineParams = {
   discountPct?: number
 }
 
+/** Create one SO line */
 export async function createSalesOrderLine(params: CreateSOLineParams): Promise<string> {
   const { soId, itemId, qty, uomId, unitPrice, discountPct = 0 } = params
   const lineTotal = qty * unitPrice * (1 - discountPct / 100)
@@ -158,12 +160,14 @@ export type CashSaleWithCogsArgs = {
   currencyCode?: string
   fxToBase?: number
   status?: string       // defaults to 'shipped'
-  binId: string
-  cogsUnitCost: number  // avg cost at time of sale (per base qty)
+  binId: string         // source bin for the issue
+  cogsUnitCost?: number // optional; will fallback to current avg_cost
 }
 
 /**
- * Creates SO (revenue) and records a single COGS stock "issue" via RPC.
+ * Creates SO (revenue) and records a single COGS stock "issue" by inserting
+ * into stock_movements (DB triggers update stock_levels + COGS).
+ * NOTE: We derive the warehouseId from the chosen bin.
  */
 export async function finalizeCashSaleSOWithCOGS(args: CashSaleWithCogsArgs) {
   const {
@@ -172,25 +176,64 @@ export async function finalizeCashSaleSOWithCOGS(args: CashSaleWithCogsArgs) {
     binId, cogsUnitCost,
   } = args
 
-  // 1) Create the SO + line (revenue)
-  const created = await finalizeCashSaleSO({
+  // 1) Create SO + one line (revenue)
+  const { soId, soLineId } = await finalizeCashSaleSO({
     itemId, qty, uomId, unitPrice,
     customerId, currencyCode, fxToBase, status,
   })
 
-  // 2) Record COGS as a single “issue” from the selected bin
-  const { error } = await supabase.rpc('apply_stock_delta', {
-    p_item_id: itemId,
-    p_action: 'issue',
-    p_bin_id: binId,
-    p_qty_base: qtyBase,
-    p_unit_cost: cogsUnitCost ?? 0,
-  })
-  if (error) {
-    console.error('apply_stock_delta failed:', error)
-    toast.error('Failed to record COGS movement.')
-    throw error
+  // 2) Derive warehouse from the bin (column is "warehouseId" in your schema)
+  const bin = await supabase.from('bins').select('warehouseId').eq('id', binId).maybeSingle()
+  if (bin.error || !bin.data?.warehouseId) {
+    console.error('Could not resolve warehouse from bin:', bin.error || bin.data)
+    toast.error('Could not resolve bin’s warehouse for COGS.')
+    throw bin.error || new Error('Missing warehouseId on bin')
+  }
+  const warehouseId = bin.data.warehouseId as string
+
+  // 3) Use provided unit cost or fall back to current avg_cost snapshot
+  let unitCost = Number(cogsUnitCost ?? 0)
+  if (!Number.isFinite(unitCost) || unitCost <= 0) {
+    const costSnap = await supabase
+      .from('stock_levels')
+      .select('avg_cost')
+      .eq('warehouse_id', warehouseId)
+      .eq('bin_id', binId)
+      .eq('item_id', itemId)
+      .maybeSingle()
+    if (!costSnap.error && costSnap.data?.avg_cost != null) {
+      unitCost = Number(costSnap.data.avg_cost) || 0
+    }
   }
 
-  return created
+  // 4) Record the COGS as an ISSUE. Triggers will update stock_levels.
+  const ins = await supabase
+    .from('stock_movements')
+    .insert({
+      type: 'issue',
+      item_id: itemId,
+      uom_id: uomId,
+      qty,                          // for audit
+      qty_base: qtyBase,            // used by triggers
+      unit_cost: unitCost,
+      total_value: unitCost * qtyBase,
+      warehouse_from_id: warehouseId,
+      bin_from_id: binId,
+      notes: 'Cash sale (auto)',
+      created_by: 'so_ship',        // dashboards count this for COGS
+      ref_type: 'SO',
+      ref_id: soId,                 // text/uuid accepted by Supabase based on your schema
+      ref_line_id: soLineId,
+    })
+    .select('id')
+    .single()
+
+  if (ins.error) {
+    console.error('Insert stock_movements (COGS) failed:', ins.error)
+    toast.error('Recorded the sale, but failed to record COGS movement.')
+    throw ins.error
+  }
+
+  toast.success('COGS movement recorded.')
+  return { soId, soLineId, movementId: ins.data.id as string }
 }
