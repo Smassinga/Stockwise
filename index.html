@@ -1,17 +1,44 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Canonical -->
     <link rel="canonical" href="https://stockwiseapp.com/" />
     <meta property="og:url" content="https://stockwiseapp.com/" />
+
+    <!-- Basic meta -->
     <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>StockWise</title>
-    <meta name="description" content="StockWise — Advanced Inventory Management System" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stockwise — Inventory & Sales Insights</title>
+    <meta
+      name="description"
+      content="Stockwise helps you track stock, shipments, revenue, and COGS in real time."
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#4f46e5" />
+
+    <!-- Social sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Stockwise — Inventory & Sales Insights" />
+    <meta property="og:description" content="Track stock, shipments, revenue, and COGS in real time." />
+    <meta property="og:image" content="/og-cover.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Stockwise — Inventory & Sales Insights" />
+    <meta name="twitter:description" content="Track stock, shipments, revenue, and COGS in real time." />
+    <meta name="twitter:image" content="/og-cover.png" />
+
+    <!-- Icons / PWA (put the files in /public) -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- (optional) preload your main font or hero image here -->
+    <!-- <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin> -->
+
+    <!-- Vite entry -->
+    <script type="module" src="/src/main.tsx"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

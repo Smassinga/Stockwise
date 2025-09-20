@@ -7,7 +7,8 @@ import { AuthProvider } from './hooks/useAuth'
 import { Toaster } from 'react-hot-toast'
 import './index.css' // Tailwind + theme
 import { I18nProvider } from './lib/i18n'
-import { supabase } from './lib/supabase'  // <-- import supabase
+import { supabase } from './lib/supabase'
+import { SEOProvider } from './lib/seo'   // <-- add
 
 // Expose supabase in dev for quick JWT debugging in the browser console
 if (import.meta.env.DEV) {
@@ -17,12 +18,17 @@ if (import.meta.env.DEV) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <I18nProvider>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-          <Toaster position="top-right" />
-        </AuthProvider>
-      </BrowserRouter>
+      <SEOProvider
+        siteName="Stockwise"
+        baseUrl={import.meta.env.VITE_SITE_URL || 'https://stockwiseapp.com'}
+      >
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+            <Toaster position="top-right" />
+          </AuthProvider>
+        </BrowserRouter>
+      </SEOProvider>
     </I18nProvider>
   </React.StrictMode>
 )
