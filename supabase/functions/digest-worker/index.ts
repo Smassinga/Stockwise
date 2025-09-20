@@ -1,11 +1,5 @@
 // supabase/functions/digest-worker/index.ts
-// Processes ONE pending digest_queue job and emails the digest via SendGrid Web API.
-// Env vars required:
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (injected by Supabase)
-//   SENDGRID_API_KEY  (SendGrid: Settings → API Keys)
-//   FROM_EMAIL        (verified sender or domain on SendGrid, e.g. "bot@yourdomain.com")
-//   BRAND_NAME        (optional, e.g. "Stockwise")
-//   DRY_RUN           ("true" = skip sending; still marks job done for pipeline tests)
+// Sends one Daily Digest via SendGrid. Uses SERVICE_ROLE_KEY (not SUPABASE_*) to bypass RLS.
 
 import { serve } from "https://deno.land/std/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -35,6 +29,16 @@ const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "no-reply@example.com";
 const BRAND_NAME = Deno.env.get("BRAND_NAME") ?? "Stockwise";
 const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
+
+// IMPORTANT: use SERVICE_ROLE_KEY (allowed name). Fallback to SUPABASE_SERVICE_ROLE_KEY if present.
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY =
+  Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+function supa() {
+  if (!SERVICE_ROLE_KEY) throw new Error("SERVICE_ROLE_KEY not set");
+  return createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+}
 
 function currency(n: number): string {
   return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -107,7 +111,7 @@ async function sendViaSendGrid(to: string[], subject: string, html: string) {
 }
 
 serve(async () => {
-  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const supabase = supa();
 
   // 1) Oldest pending job
   const { data: jobs, error: qErr } = await supabase
