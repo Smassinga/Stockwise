@@ -5,7 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  SelectGroup, SelectLabel
+} from '../../components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
@@ -22,7 +25,7 @@ type AppSettings = {
 } & Record<string, any>
 
 type Item = { id: string; name: string; sku: string; baseUomId: string }
-type Uom = { id: string; code: string; name: string }
+type Uom = { id: string; code: string; name: string; family?: string }
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type Customer = {
   id: string
@@ -156,6 +159,35 @@ export default function SalesOrders() {
     if (idsOrCodesEqual(from, to)) return qty
     if (!convGraph) return null
     try { return Number(convertQty(qty, from, to, convGraph)) } catch { return null }
+  }
+
+  // Group UoMs by family
+  const groupedUoms = useMemo(() => {
+    const map = new Map<string, Uom[]>()
+    for (const u of uoms) {
+      const fam = (u.family || 'Other').toString()
+      if (!map.has(fam)) map.set(fam, [])
+      map.get(fam)!.push(u)
+    }
+    for (const arr of map.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    return map
+  }, [uoms])
+
+  // Grouped + convertible UoMs for a given item
+  function convertibleGroupedUomsForItem(itemId?: string) {
+    if (!itemId) return groupedUoms
+    const it = itemById.get(itemId)
+    if (!it) return groupedUoms
+    const base = uomIdFromIdOrCode(it.baseUomId)
+    if (!base) return groupedUoms
+    if (!convGraph) return groupedUoms // until conversions arrive, show all
+
+    const out = new Map<string, Uom[]>()
+    groupedUoms.forEach((arr, fam) => {
+      const filtered = arr.filter(u => idsOrCodesEqual(u.id, base) || safeConvert(1, u.id, base) != null)
+      if (filtered.length) out.set(fam, filtered)
+    })
+    return out
   }
 
   const soNo = (s: any) => s?.orderNo ?? s?.order_no ?? s?.id
@@ -554,7 +586,7 @@ export default function SalesOrders() {
       } as any)
       if (shipIns.error) throw shipIns.error
 
-      // 4) Mark shipped progress (no delete!)
+      // 4) Mark shipped progress
       const newShipped = already + outstanding
       const fully = newShipped >= total - 1e-9
       if (line.id) {
@@ -722,7 +754,15 @@ export default function SalesOrders() {
                       </thead>
                       <tbody>
                         {soLinesForm.map((ln, idx) => {
+                          const it = itemById.get(ln.itemId)
+                          const baseUomId = it?.baseUomId || ''
+                          const baseUomCode =
+                            it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
+                          const qtyPreviewBase = it ? safeConvert(n(ln.qty), ln.uomId || baseUomId, baseUomId) : null
+                          const previewInvalid = it ? (qtyPreviewBase == null && n(ln.qty) > 0) : false
+
                           const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
+
                           return (
                             <tr key={idx} className="border-t">
                               <td className="py-2 px-3">
@@ -740,22 +780,65 @@ export default function SalesOrders() {
                                   </SelectContent>
                                 </Select>
                               </td>
+
                               <td className="py-2 px-3">
-                                <Select value={ln.uomId} onValueChange={(v) => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}>
+                                <Select
+                                  value={ln.uomId}
+                                  onValueChange={(v) => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}
+                                  disabled={!ln.itemId}
+                                >
                                   <SelectTrigger><SelectValue placeholder={tt('orders.uom', 'UoM')} /></SelectTrigger>
                                   <SelectContent className="max-h-64 overflow-auto">
-                                    {uoms.map((u) => <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>)}
+                                    {Array.from(convertibleGroupedUomsForItem(ln.itemId).entries()).map(([fam, arr]) => (
+                                      <SelectGroup key={fam}>
+                                        <SelectLabel>{fam}</SelectLabel>
+                                        {arr.map(u => (
+                                          <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               </td>
+
                               <td className="py-2 px-3">
-                                <Input inputMode="decimal" type="number" min="0" step="0.0001" value={ln.qty} onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
+                                <Input
+                                  inputMode="decimal"
+                                  type="number"
+                                  min="0"
+                                  step="0.0001"
+                                  value={ln.qty}
+                                  onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))}
+                                />
+                                {/* qty -> base preview */}
+                                {!!ln.itemId && (
+                                  <div className={`text-xs mt-1 ${previewInvalid ? 'text-red-600' : 'text-muted-foreground'}`}>
+                                    {qtyPreviewBase == null
+                                      ? tt('orders.previewNoPath', 'No conversion path to base')
+                                      : `→ ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
+                                  </div>
+                                )}
+                              </td>
+
+                              <td className="py-2 px-3">
+                                <Input
+                                  inputMode="decimal"
+                                  type="number"
+                                  min="0"
+                                  step="0.0001"
+                                  value={ln.unitPrice}
+                                  onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, unitPrice: e.target.value } : x))}
+                                />
                               </td>
                               <td className="py-2 px-3">
-                                <Input inputMode="decimal" type="number" min="0" step="0.0001" value={ln.unitPrice} onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, unitPrice: e.target.value } : x))} />
-                              </td>
-                              <td className="py-2 px-3">
-                                <Input type="number" min="0" max="100" step="0.01" value={ln.discountPct} onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))} />
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  value={ln.discountPct}
+                                  onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))}
+                                />
                               </td>
                               <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
                               <td className="py-2 px-3 text-right">
