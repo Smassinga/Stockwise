@@ -1,0 +1,173 @@
+// supabase/functions/digest-worker/index.ts
+// Processes ONE pending digest_queue job and emails the digest via SendGrid Web API.
+// Env vars required:
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (injected by Supabase)
+//   SENDGRID_API_KEY  (SendGrid: Settings → API Keys)
+//   FROM_EMAIL        (verified sender or domain on SendGrid, e.g. "bot@yourdomain.com")
+//   BRAND_NAME        (optional, e.g. "Stockwise")
+//   DRY_RUN           ("true" = skip sending; still marks job done for pipeline tests)
+
+import { serve } from "https://deno.land/std/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+type DigestQueueRow = {
+  id: number;
+  company_id: string;
+  run_for_local_date: string;
+  timezone: string;
+  payload: {
+    channels?: { email?: boolean; sms?: boolean; whatsapp?: boolean };
+    recipients?: { emails?: string[]; phones?: string[]; whatsapp?: string[] };
+  };
+  status: "pending" | "processing" | "done" | "failed";
+  created_at: string;
+};
+
+type DigestPayload = {
+  window: { local_day: string; timezone: string; start_utc: string; end_utc: string };
+  totals: { revenue: number; cogs: number; gross_profit: number; gross_margin_pct: number };
+  by_product: Array<{
+    item_id: string; qty: number; revenue: number; cogs: number; gross_profit: number; gross_margin_pct: number;
+  }>;
+};
+
+const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "no-reply@example.com";
+const BRAND_NAME = Deno.env.get("BRAND_NAME") ?? "Stockwise";
+const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
+
+function currency(n: number): string {
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
+function htmlEmail(d: DigestPayload): string {
+  const rows = d.by_product.map((p) => `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${p.item_id}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${p.qty}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${currency(p.revenue)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${currency(p.cogs)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${currency(p.gross_profit)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${p.gross_margin_pct}%</td>
+    </tr>
+  `).join("");
+
+  return `
+  <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:720px;padding:16px;">
+    <h2 style="margin:0 0 8px 0;">${BRAND_NAME} — Daily Digest</h2>
+    <div style="color:#666;margin-bottom:16px;">${d.window.local_day} (${d.window.timezone})</div>
+
+    <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+      <tr><td style="padding:8px;background:#f7f7f7;">Revenue</td><td style="padding:8px;background:#f7f7f7;text-align:right;">${currency(d.totals.revenue)}</td></tr>
+      <tr><td style="padding:8px;">COGS</td><td style="padding:8px;text-align:right;">${currency(d.totals.cogs)}</td></tr>
+      <tr><td style="padding:8px;">Gross Profit</td><td style="padding:8px;text-align:right;">${currency(d.totals.gross_profit)}</td></tr>
+      <tr><td style="padding:8px;">Gross Margin</td><td style="padding:8px;text-align:right;">${d.totals.gross_margin_pct}%</td></tr>
+    </table>
+
+    <h3 style="margin:16px 0 8px 0;">By Product</h3>
+    <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f7f7f7;">
+          <th style="padding:6px 8px;text-align:left;">Item</th>
+          <th style="padding:6px 8px;text-align:right;">Qty</th>
+          <th style="padding:6px 8px;text-align:right;">Revenue</th>
+          <th style="padding:6px 8px;text-align:right;">COGS</th>
+          <th style="padding:6px 8px;text-align:right;">Gross Profit</th>
+          <th style="padding:6px 8px;text-align:right;">GM%</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="6" style="padding:10px;color:#666;">No product rows for this day.</td></tr>`}
+      </tbody>
+    </table>
+
+    <div style="color:#999;margin-top:16px;font-size:12px;">
+      Window (UTC): ${d.window.start_utc} → ${d.window.end_utc}
+    </div>
+  </div>
+  `;
+}
+
+async function sendViaSendGrid(to: string[], subject: string, html: string) {
+  const body = {
+    personalizations: [{ to: to.map((e) => ({ email: e })) }],
+    from: { email: FROM_EMAIL, name: BRAND_NAME },
+    subject,
+    content: [{ type: "text/html", value: html }],
+  };
+  const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (resp.status !== 202) {
+    const msg = await resp.text();
+    throw new Error(`SendGrid error: ${resp.status} ${msg}`);
+  }
+}
+
+serve(async () => {
+  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+  // 1) Oldest pending job
+  const { data: jobs, error: qErr } = await supabase
+    .from("digest_queue").select("*").eq("status", "pending")
+    .order("created_at", { ascending: true }).limit(1);
+  if (qErr) return new Response(qErr.message, { status: 500 });
+  if (!jobs?.length) return new Response("no pending jobs", { status: 200 });
+
+  const job = jobs[0] as DigestQueueRow;
+
+  // 2) Claim
+  const { error: claimErr } = await supabase
+    .from("digest_queue").update({ status: "processing" }).eq("id", job.id).eq("status", "pending");
+  if (claimErr) return new Response(claimErr.message, { status: 500 });
+
+  // verify we hold it
+  const { data: claimed } = await supabase.from("digest_queue").select("status").eq("id", job.id).limit(1);
+  if (!claimed || claimed[0]?.status !== "processing") return new Response("job already taken", { status: 200 });
+
+  try {
+    // 3) Build payload
+    const { data: payload, error: rpcErr } = await supabase.rpc("build_daily_digest_payload", {
+      p_company_id: job.company_id, p_local_day: job.run_for_local_date, p_timezone: job.timezone,
+    });
+    if (rpcErr) throw rpcErr;
+    const digest = payload as DigestPayload;
+
+    // 4) Prepare email
+    const emails = job.payload?.recipients?.emails ?? [];
+    const wantsEmail = job.payload?.channels?.email !== false;
+    if (!emails.length || !wantsEmail) throw new Error("No email recipients configured for this job.");
+
+    const subject = `${BRAND_NAME} — Daily Digest (${digest.window.local_day})`;
+    const html = htmlEmail(digest);
+
+    // 5) Send or DRY_RUN
+    if (DRY_RUN) {
+      console.log("[DRY_RUN] Would send digest to:", emails);
+    } else {
+      if (!SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set");
+      await sendViaSendGrid(emails, subject, html);
+    }
+
+    // 6) Mark done + state
+    await supabase.from("digest_queue")
+      .update({ status: "done", processed_at: new Date().toISOString(), error: null })
+      .eq("id", job.id);
+    await supabase.from("company_digest_state")
+      .update({ last_status: "sent", last_error: null, last_attempt_at: new Date().toISOString() })
+      .eq("company_id", job.company_id);
+
+    return new Response("ok", { status: 200 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await supabase.from("digest_queue")
+      .update({ status: "failed", error: msg, processed_at: new Date().toISOString() })
+      .eq("id", job.id);
+    await supabase.from("company_digest_state")
+      .update({ last_status: "failed", last_error: msg, last_attempt_at: new Date().toISOString() })
+      .eq("company_id", job.company_id);
+    return new Response(msg, { status: 500 });
+  }
+});
