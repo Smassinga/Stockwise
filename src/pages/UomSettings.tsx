@@ -8,11 +8,11 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { buildConvGraph, tryConvertQty, type ConvRow } from '../lib/uom'
 
-type Uom = { id: string; code: string; name: string; Family?: string }
+type Uom = { id: string; code: string; name: string; family?: string }
 type Conv = { from_uom_id: string; to_uom_id: string; factor: number }
 
 const FAMILIES = ['mass','volume','length','count','other'] as const
-type Family = typeof FAMILIES[number]
+type family = typeof FAMILIES[number]
 
 export default function UomSettings() {
   const [uoms, setUoms] = useState<Uom[]>([])
@@ -23,7 +23,7 @@ export default function UomSettings() {
   // add unit
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
-  const [Family, setFamily] = useState<Family>('count')
+  const [family, setfamily] = useState<family>('count')
 
   // add conversion
   const [fromId, setFromId] = useState('')
@@ -40,7 +40,7 @@ export default function UomSettings() {
   async function loadAll() {
     setLoading(true)
     try {
-      const u = await supabase.from('uoms').select('id,code,name,Family').order('name', { ascending: true })
+      const u = await supabase.from('uoms').select('id,code,name,family').order('name', { ascending: true })
       if (u.error) throw u.error
       const uu = (u.data || []).map((x: any) => ({ ...x, code: String(x.code || '').toUpperCase() })) as Uom[]
       setUoms(uu)
@@ -69,10 +69,10 @@ export default function UomSettings() {
     // if your uoms.id is UUID, drop "id" and let DB default generate
     const id = `uom_${c.toLowerCase()}`
     try {
-      const { error } = await supabase.from('uoms').upsert([{ id, code: c, name: n, Family }], { onConflict: 'id' })
+      const { error } = await supabase.from('uoms').upsert([{ id, code: c, name: n, family }], { onConflict: 'id' })
       if (error) throw error
       toast.success('Unit saved')
-      setCode(''); setName(''); setFamily('count')
+      setCode(''); setName(''); setfamily('count')
       await loadAll()
     } catch (e: any) {
       console.error(e)
@@ -87,9 +87,9 @@ export default function UomSettings() {
     const f = Number(factor)
     if (!f || f <= 0) return toast.error('Factor must be > 0')
 
-    // Optional: same-Family warning
-    const a = byId.get(fromId)?.Family
-    const b = byId.get(toId)?.Family
+    // Optional: same-family warning
+    const a = byId.get(fromId)?.family
+    const b = byId.get(toId)?.family
     if (a && b && a !== b) {
       toast('Warning: converting across different families', { icon: '⚠️' })
     }
@@ -163,8 +163,8 @@ export default function UomSettings() {
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Kilogram" />
             </div>
             <div className="space-y-2">
-              <Label>Family</Label>
-              <Select value={Family} onValueChange={(v: Family) => setFamily(v)}>
+              <Label>family</Label>
+              <Select value={family} onValueChange={(v: family) => setfamily(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {FAMILIES.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}

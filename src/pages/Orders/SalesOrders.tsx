@@ -172,7 +172,7 @@ export default function SalesOrders() {
       try {
         const [it, uu, cs, appRes] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
-          supabase.from('uoms').select('id,code,name,Family').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('company_currencies_view').select('code,name,symbol,decimals').order('code', { ascending: true }),
           supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])
@@ -641,7 +641,7 @@ export default function SalesOrders() {
     `
     const w = window.open('', '_blank'); if (!w) return
     w.document.write(`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>
-      body{font-Family:ui-sans-serif; padding:24px}
+      body{font-family:ui-sans-serif; padding:24px}
       table{width:100%;border-collapse:collapse;font-size:12px}
       th,td{border-bottom:1px solid #ddd;padding:8px 6px;text-align:left}
       .right{text-align:right}.meta{font-size:12px;color:#444;margin:8px 0 16px}
