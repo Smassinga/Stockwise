@@ -4,11 +4,12 @@
 import { serve } from "https://deno.land/std/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ---------- Types ----------
 type DigestQueueRow = {
   id: number;
   company_id: string;
-  run_for_local_date: string;
-  timezone: string;
+  run_for_local_date: string; // YYYY-MM-DD in the company's local timezone
+  timezone: string;           // IANA TZ, e.g., "Africa/Maputo"
   payload: {
     channels?: { email?: boolean; sms?: boolean; whatsapp?: boolean };
     recipients?: { emails?: string[]; phones?: string[]; whatsapp?: string[] };
@@ -18,28 +19,48 @@ type DigestQueueRow = {
 };
 
 type DigestPayload = {
-  window: { local_day: string; timezone: string; start_utc: string; end_utc: string };
-  totals: { revenue: number; cogs: number; gross_profit: number; gross_margin_pct: number };
+  window: {
+    local_day: string; // "YYYY-MM-DD" in local TZ
+    timezone: string;  // IANA
+    start_utc: string; // ISO
+    end_utc: string;   // ISO
+  };
+  totals: {
+    revenue: number;
+    cogs: number;
+    gross_profit: number;
+    gross_margin_pct: number;
+  };
   by_product: Array<{
-    item_id: string; qty: number; revenue: number; cogs: number; gross_profit: number; gross_margin_pct: number;
+    item_id: string;
+    item_name?: string | null; // Optional: provided if you applied the SQL that joins item name
+    qty: number;
+    revenue: number;
+    cogs: number;
+    gross_profit: number;
+    gross_margin_pct: number;
   }>;
 };
 
+// ---------- Environment ----------
 const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
-const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "no-reply@example.com";
-const BRAND_NAME = Deno.env.get("BRAND_NAME") ?? "Stockwise";
-const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
+const FROM_EMAIL       = Deno.env.get("FROM_EMAIL")       ?? "no-reply@example.com";
+const BRAND_NAME       = Deno.env.get("BRAND_NAME")       ?? "Stockwise";
+const DRY_RUN          = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
+const MODE             = DRY_RUN ? "dry-run" : "live";
 
 // IMPORTANT: use SERVICE_ROLE_KEY (allowed name). Fallback to SUPABASE_SERVICE_ROLE_KEY if present.
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY =
   Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 function supa() {
+  if (!SUPABASE_URL)    throw new Error("SUPABASE_URL not set");
   if (!SERVICE_ROLE_KEY) throw new Error("SERVICE_ROLE_KEY not set");
   return createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 }
 
+// ---------- Helpers ----------
 function currency(n: number): string {
   return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
@@ -47,7 +68,9 @@ function currency(n: number): string {
 function htmlEmail(d: DigestPayload): string {
   const rows = d.by_product.map((p) => `
     <tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${p.item_id}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">
+        ${p.item_name ?? p.item_id}
+      </td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${p.qty}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${currency(p.revenue)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${currency(p.cogs)}</td>
@@ -110,6 +133,7 @@ async function sendViaSendGrid(to: string[], subject: string, html: string) {
   }
 }
 
+// ---------- Handler ----------
 serve(async () => {
   const supabase = supa();
 
@@ -117,26 +141,47 @@ serve(async () => {
   const { data: jobs, error: qErr } = await supabase
     .from("digest_queue").select("*").eq("status", "pending")
     .order("created_at", { ascending: true }).limit(1);
-  if (qErr) return new Response(qErr.message, { status: 500 });
-  if (!jobs?.length) return new Response("no pending jobs", { status: 200 });
+
+  if (qErr) return new Response(qErr.message, { status: 500, headers: { "content-type": "text/plain" } });
+  if (!jobs?.length) return new Response(JSON.stringify({ ok: true, mode: MODE, message: "no pending jobs" }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 
   const job = jobs[0] as DigestQueueRow;
 
   // 2) Claim
   const { error: claimErr } = await supabase
-    .from("digest_queue").update({ status: "processing" }).eq("id", job.id).eq("status", "pending");
-  if (claimErr) return new Response(claimErr.message, { status: 500 });
+    .from("digest_queue")
+    .update({ status: "processing" })
+    .eq("id", job.id)
+    .eq("status", "pending");
 
-  // verify we hold it
-  const { data: claimed } = await supabase.from("digest_queue").select("status").eq("id", job.id).limit(1);
-  if (!claimed || claimed[0]?.status !== "processing") return new Response("job already taken", { status: 200 });
+  if (claimErr) return new Response(claimErr.message, { status: 500, headers: { "content-type": "text/plain" } });
+
+  // Verify we hold it
+  const { data: claimed } = await supabase
+    .from("digest_queue")
+    .select("status")
+    .eq("id", job.id)
+    .limit(1);
+
+  if (!claimed || claimed[0]?.status !== "processing") {
+    return new Response(JSON.stringify({ ok: true, mode: MODE, message: "job already taken" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   try {
     // 3) Build payload
     const { data: payload, error: rpcErr } = await supabase.rpc("build_daily_digest_payload", {
-      p_company_id: job.company_id, p_local_day: job.run_for_local_date, p_timezone: job.timezone,
+      p_company_id: job.company_id,
+      p_local_day: job.run_for_local_date,
+      p_timezone: job.timezone,
     });
     if (rpcErr) throw rpcErr;
+
     const digest = payload as DigestPayload;
 
     // 4) Prepare email
@@ -147,31 +192,46 @@ serve(async () => {
     const subject = `${BRAND_NAME} — Daily Digest (${digest.window.local_day})`;
     const html = htmlEmail(digest);
 
+    // Visibility for troubleshooting
+    console.log("[digest-worker] mode=%s from=%s to=%o subject=%s", MODE, FROM_EMAIL, emails, subject);
+
     // 5) Send or DRY_RUN
     if (DRY_RUN) {
-      console.log("[DRY_RUN] Would send digest to:", emails);
+      console.log("[digest-worker] DRY_RUN: skipping SendGrid send");
     } else {
       if (!SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set");
       await sendViaSendGrid(emails, subject, html);
     }
 
     // 6) Mark done + state
+    const nowIso = new Date().toISOString();
     await supabase.from("digest_queue")
-      .update({ status: "done", processed_at: new Date().toISOString(), error: null })
+      .update({ status: "done", processed_at: nowIso, error: null })
       .eq("id", job.id);
+
     await supabase.from("company_digest_state")
-      .update({ last_status: "sent", last_error: null, last_attempt_at: new Date().toISOString() })
+      .update({ last_status: "sent", last_error: null, last_attempt_at: nowIso })
       .eq("company_id", job.company_id);
 
-    return new Response("ok", { status: 200 });
+    return new Response(JSON.stringify({
+      ok: true,
+      mode: MODE,
+      jobId: job.id,
+      recipients: emails.length,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    const nowIso = new Date().toISOString();
+
     await supabase.from("digest_queue")
-      .update({ status: "failed", error: msg, processed_at: new Date().toISOString() })
+      .update({ status: "failed", error: msg, processed_at: nowIso })
       .eq("id", job.id);
+
     await supabase.from("company_digest_state")
-      .update({ last_status: "failed", last_error: msg, last_attempt_at: new Date().toISOString() })
+      .update({ last_status: "failed", last_error: msg, last_attempt_at: nowIso })
       .eq("company_id", job.company_id);
-    return new Response(msg, { status: 500 });
+
+    return new Response(msg, { status: 500, headers: { "content-type": "text/plain" } });
   }
 });
