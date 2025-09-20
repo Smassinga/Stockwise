@@ -349,7 +349,7 @@ export default function StockMovements() {
       warehouse_to_id: warehouseToId,
       bin_to_id: toBin,
       notes,
-      created_by: 'system',
+      created_by: (rt === 'SO' ? 'so_ship' : 'system'),
       ref_type: rt || 'ADJUST',
       ref_id: rt === 'PO' ? (refId || null) : null,
       ref_line_id: rt === 'PO' ? (refLineId || null) : null,
