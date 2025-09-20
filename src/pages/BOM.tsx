@@ -15,7 +15,7 @@ type Item = {
   sku?: string | null
   base_uom_id?: string | null
 }
-type Uom = { id: string; code: string; name: string; Family?: string }
+type Uom = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouse_id: string }
 
@@ -127,7 +127,7 @@ export default function BOMPage() {
 
         // UoMs + conversions
         const [uRes, cRes] = await Promise.all([
-          supabase.from('uoms').select('id,code,name, Family').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name, family').order('code', { ascending: true }),
           supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor'),
         ])
         if (uRes.error) throw uRes.error

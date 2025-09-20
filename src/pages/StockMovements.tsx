@@ -18,7 +18,7 @@ type Bin = { id: string; code: string; name: string; warehouseId: string }
 // NOTE: load from items (snake_case -> camelCase)
 type Item = { id: string; name: string; sku: string | null; baseUomId: string | null }
 
-type Uom = { id: string; code: string; name: string; Family?: string }
+type Uom = { id: string; code: string; name: string; family?: string }
 type Currency = { code: string; name: string }
 type Customer = { id: string; code?: string; name: string }
 
@@ -133,7 +133,7 @@ export default function StockMovements() {
         }
 
         const [uRes, cRes, base] = await Promise.all([
-          supabase.from('uoms').select('id,code,name,Family').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
           getBaseCurrencyCode().catch(() => 'MZN'),
         ])
@@ -221,10 +221,10 @@ export default function StockMovements() {
     if (existsByCode) return
 
     let fetched: Uom | null = null
-    let res = await supabase.from('uoms').select('id,code,name,Family').eq('id', idOrCode).limit(1)
+    let res = await supabase.from('uoms').select('id,code,name,family').eq('id', idOrCode).limit(1)
     if (!res.error && res.data?.length) fetched = { ...res.data[0], code: String(res.data[0].code || '').toUpperCase() }
     else {
-      res = await supabase.from('uoms').select('id,code,name,Family').eq('code', byCode).limit(1)
+      res = await supabase.from('uoms').select('id,code,name,family').eq('code', byCode).limit(1)
       if (!res.error && res.data?.length) fetched = { ...res.data[0], code: String(res.data[0].code || '').toUpperCase() }
     }
     if (fetched) setUoms(prev => (prev.some(u => u.id === fetched!.id) ? prev : [...prev, fetched!]))

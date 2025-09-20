@@ -7,7 +7,7 @@ module.exports = {
   ],
   theme: {
   	extend: {
-  		fontFamily: {
+  		fontfamily: {
   			sans: ['Inter', 'sans-serif'],
   			serif: ['Inter', 'serif'],
   			mono: ['ui-monospace', 'SFMono-Regular', 'monospace']

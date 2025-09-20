@@ -134,7 +134,7 @@ export default function PurchaseOrders() {
       try {
         const [it, uu, cs] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
-          supabase.from('uoms').select('id,code,name,Family').order('code', { ascending: true }),
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
         ])
 
@@ -513,7 +513,7 @@ export default function PurchaseOrders() {
       </div>
     `
     const css = `
-      body{font-Family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#111}
+      body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#111}
       .cap{text-transform:capitalize}
       .header{display:flex; justify-content:space-between; gap:24px; margin-bottom:12px}
       .supplier{border:1px solid #ddd; border-radius:8px; padding:12px; min-width:260px}
