@@ -1,5 +1,5 @@
 // src/pages/StockMovements.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Fragment } from 'react'
 import { db, supabase } from '../lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -752,45 +752,64 @@ export default function StockMovements() {
         {/* Bin contents (grouped by item base UoM family) */}
         <Card className="col-span-12 md:col-span-8">
           <CardHeader><CardTitle>{tt('movements.title.binContents', 'Bin Contents')}</CardTitle></CardHeader>
+
+          {/* <<< REPLACED BLOCK STARTS HERE >>> */}
           <CardContent className="overflow-x-auto">
             {!(fromBin || toBin) ? (
-              <div className="text-sm text-muted-foreground">{tt('movements.pickBinToSee', 'Pick a bin to see contents')}</div>
+              <div className="text-sm text-muted-foreground">
+                {tt('movements.pickBinToSee', 'Pick a bin to see contents')}
+              </div>
             ) : (
-              <table className="w-full text-sm">
+              <table className="w-full table-fixed text-sm">
+                {/* fixed column widths for clean alignment */}
+                <colgroup>
+                  <col className="w-[48%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[17%]" />
+                </colgroup>
+
                 <thead>
                   <tr className="text-left border-b">
                     <th className="py-2 pr-2">{tt('table.item', 'Item')}</th>
                     <th className="py-2 pr-2">{tt('table.sku', 'SKU')}</th>
-                    <th className="py-2 pr-2">{tt('movements.onHandBase', 'On Hand (base)')}</th>
-                    <th className="py-2 pr-2">{tt('movements.avgCost', 'Avg Cost')}</th>
+                    <th className="py-2 pr-2 text-right">{tt('movements.onHandBase', 'On Hand (base)')}</th>
+                    <th className="py-2 pr-2 text-right">{tt('movements.avgCost', 'Avg Cost')}</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {binContentGroups.length === 0 && (
-                    <tr><td colSpan={4} className="py-4 text-muted-foreground">{tt('movements.emptyBin', 'Empty bin')}</td></tr>
-                  )}
 
-                  {binContentGroups.map(group => (
-                    <tbody key={group.key}>
-                      <tr className="bg-muted/40">
-                        <td colSpan={4} className="py-1 px-2 text-[11px] font-semibold uppercase">
-                          {group.label} — {tt('movements.total', 'Total')}: {fmtAcct(group.totalQty)}
-                        </td>
-                      </tr>
-                      {group.rows.map(row => (
-                        <tr key={row.item.id} className="border-b">
-                          <td className="py-2 pr-2">{row.item.name}</td>
-                          <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
-                          <td className="py-2 pr-2">{fmtAcct(row.onHandQty)}</td>
-                          <td className="py-2 pr-2">{fmtAcct(num(row.avgCost, 0))}</td>
+                <tbody>
+                  {binContentGroups.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-4 text-muted-foreground">
+                        {tt('movements.emptyBin', 'Empty bin')}
+                      </td>
+                    </tr>
+                  ) : (
+                    binContentGroups.map(group => (
+                      <Fragment key={group.key}>
+                        <tr className="bg-muted/40">
+                          <td colSpan={4} className="py-1 px-2 text-[11px] font-semibold uppercase">
+                            {group.label} — {tt('movements.total', 'Total')}: {fmtAcct(group.totalQty)}
+                          </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  ))}
+
+                        {group.rows.map(row => (
+                          <tr key={row.item.id} className="border-b">
+                            <td className="py-2 pr-2 truncate">{row.item.name}</td>
+                            <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
+                            <td className="py-2 pr-2 text-right">{fmtAcct(row.onHandQty)}</td>
+                            <td className="py-2 pr-2 text-right">{fmtAcct(num(row.avgCost, 0))}</td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))
+                  )}
                 </tbody>
               </table>
             )}
           </CardContent>
+          {/* <<< REPLACED BLOCK ENDS HERE >>> */}
         </Card>
       </div>
 

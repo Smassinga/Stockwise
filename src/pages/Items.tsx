@@ -11,7 +11,13 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
-type Uom = { id: string; code: string; name: string; family: 'mass' | 'volume' | 'length' | 'count' | string }
+type Uom = {
+  id: string
+  code: string
+  name: string
+  family: string // normalized: 'mass', 'volume', 'length', 'count', 'area', 'time', 'other', 'unspecified', etc.
+}
+
 type Item = {
   id: string
   sku: string
@@ -44,57 +50,76 @@ const Items: React.FC = () => {
 
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
 
+  // ------- Family helpers (same spirit as StockMovements) -------
+  const familyLabel = (fam?: string) => {
+    const key = String(fam || 'unspecified').toLowerCase()
+    const map: Record<string, string> = {
+      mass: 'Mass',
+      volume: 'Volume',
+      length: 'Length',
+      area: 'Area',
+      count: 'Count',
+      time: 'Time',
+      other: 'Other',
+      unspecified: 'Unspecified',
+    }
+    return map[key] || (fam ? fam : 'Unspecified')
+  }
+
+  const groupedUoms = useMemo(() => {
+    const groups = new Map<string, Uom[]>()
+    for (const u of uoms) {
+      const fam = (u.family && u.family.trim()) ? u.family : 'unspecified'
+      if (!groups.has(fam)) groups.set(fam, [])
+      groups.get(fam)!.push(u)
+    }
+    // sort within each family by code
+    for (const arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    // sort families by friendly label
+    const families = Array.from(groups.keys()).sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
+    return { groups, families }
+  }, [uoms])
+
   useEffect(() => {
     ;(async () => {
       try {
         setLoading(true)
 
-        // ---- UOMs: try uom then uoms; if first returns 0 rows, try the other
+        // ---- UOMs: robust fetch across schemas (uom or uoms) with graceful fallback if 'family' doesn't exist
         const normalize = (rows: any[]): Uom[] =>
           (rows ?? []).map((r: any) => ({
             id: String(r.id),
-            code: String(r.code ?? ''),
+            code: String(r.code ?? '').toUpperCase(),
             name: String(r.name ?? ''),
-            family: 'other',
+            family: String(r.family ?? '').trim() || 'unspecified',
           }))
 
-        const fetchFrom = async (table: 'uom' | 'uoms') => {
-          const res: any = await supabase.from(table).select('id, code, name').order('code', { ascending: true })
-          if (res.error) return { rows: [] as any[], ok: false, err: res.error }
-          return { rows: (res.data ?? []) as any[], ok: true, err: null }
+        const tryFetch = async (table: 'uom' | 'uoms', cols: string) => {
+          const res: any = await supabase.from(table).select(cols).order('code', { ascending: true })
+          if (res.error) return { ok: false, rows: [] as any[], err: res.error }
+          return { ok: true, rows: (res.data ?? []) as any[], err: null }
         }
 
-        let rows: any[] = []
-        // 1st attempt: uom
-        const a = await fetchFrom('uom')
-        if (a.ok && a.rows.length > 0) {
-          rows = a.rows
-        } else {
-          // 2nd attempt: uoms (fallback if uom empty or errored)
-          const b = await fetchFrom('uoms')
-          if (b.ok && b.rows.length > 0) {
-            rows = b.rows
-          } else if (a.ok && b.ok) {
-            // both ok but empty
-            rows = []
-          } else {
-            // surface some context if both failed
-            const err = a.err || b.err
-            if (err) console.error('UoM load error:', err)
-          }
-        }
+        // Try both tables with family
+        let a = await tryFetch('uom', 'id, code, name, family')
+        let b = await tryFetch('uoms', 'id, code, name, family')
 
-        // union/dedupe in case both exist and have data
-        if (rows.length === 0) {
-          // try merging both if neither individually returned rows
-          const a2 = a.ok ? a.rows : []
-          const b2 = (await fetchFrom('uoms')).rows
+        // If both errored (e.g., family col missing), fallback without family and patch it as 'unspecified'
+        if ((!a.ok || a.rows.length === 0) && (!b.ok || b.rows.length === 0)) {
+          const a2 = await tryFetch('uom', 'id, code, name')
+          const b2 = await tryFetch('uoms', 'id, code, name')
+          // Merge/dedupe by id
           const map = new Map<string, any>()
-          for (const r of [...a2, ...b2]) map.set(String(r.id), r)
-          rows = Array.from(map.values())
+          for (const r of [...(a2.ok ? a2.rows : []), ...(b2.ok ? b2.rows : [])]) {
+            map.set(String(r.id), { ...r, family: 'unspecified' })
+          }
+          setUoms(normalize(Array.from(map.values())))
+        } else {
+          // Merge/dedupe by id (prefer rows that came with family)
+          const map = new Map<string, any>()
+          for (const r of [...(a.ok ? a.rows : []), ...(b.ok ? b.rows : [])]) map.set(String(r.id), r)
+          setUoms(normalize(Array.from(map.values())))
         }
-
-        setUoms(normalize(rows))
 
         // ---- Items via camelCase view
         const res = await supabase
@@ -196,27 +221,57 @@ const Items: React.FC = () => {
               <Label>Base UoM *</Label>
               <Select value={baseUomId} onValueChange={setBaseUomId}>
                 <SelectTrigger><SelectValue placeholder="Select a unit" /></SelectTrigger>
-                <SelectContent>
-                  {uoms.length === 0
-                    ? <SelectItem value="__none__" disabled>No UoMs available</SelectItem>
-                    : uoms.map(u => (
-                        <SelectItem key={u.id} value={u.id}>{uomLabel(u)}</SelectItem>
-                      ))
-                  }
+
+                {/* Grouped by family with sticky headers */}
+                <SelectContent className="max-h-72 overflow-auto">
+                  {groupedUoms.families.length === 0 && (
+                    <SelectItem value="__none__" disabled>No UoMs available</SelectItem>
+                  )}
+
+                  {groupedUoms.families.map(fam => {
+                    const list = groupedUoms.groups.get(fam) || []
+                    return (
+                      <div key={fam}>
+                        <div className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground sticky top-0 bg-popover">
+                          {familyLabel(fam)}
+                        </div>
+                        {list.map(u => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {uomLabel(u)}
+                          </SelectItem>
+                        ))}
+                        <div className="h-1" />
+                      </div>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="unitPrice">Unit Price</Label>
-              <Input id="unitPrice" type="number" step="0.0001" min="0"
-                     value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" />
+              <Input
+                id="unitPrice"
+                type="number"
+                step="0.0001"
+                min="0"
+                value={unitPrice}
+                onChange={(e) => setUnitPrice(e.target.value)}
+                placeholder="0.00"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="minStock">Min Stock</Label>
-              <Input id="minStock" type="number" step="1" min="0"
-                     value={minStock} onChange={(e) => setMinStock(e.target.value)} placeholder="0" />
+              <Input
+                id="minStock"
+                type="number"
+                step="1"
+                min="0"
+                value={minStock}
+                onChange={(e) => setMinStock(e.target.value)}
+                placeholder="0"
+              />
             </div>
 
             <div className="flex items-end">
