@@ -501,7 +501,56 @@ export default function PurchaseOrders() {
     })
   }
 
-  function printPO(po: PO) {
+  // ---------- helper to resolve supplier details for printing (type-safe) ----------
+  async function resolveSupplierDetails(po: PO): Promise<Partial<Supplier>> {
+    const codeUpper = (po.supplier || '').toString().toUpperCase()
+    const nameUpper = (po.supplier_name || '').toString().toUpperCase()
+
+    // Try in-memory first (avoid `&&` so we don't ever return a string)
+    const s: Supplier | undefined =
+      (po.supplier_id ? suppliers.find(x => x.id === po.supplier_id) : undefined) ??
+      (codeUpper ? suppliers.find(x => (x.code || '').toUpperCase() === codeUpper) : undefined) ??
+      (nameUpper ? suppliers.find(x => (x.name || '').toUpperCase() === nameUpper) : undefined)
+
+    if (s) return s
+
+    // Fallback to small direct lookups, in order: id → code → name
+    try {
+      if (po.supplier_id) {
+        const { data } = await supabase
+          .from('suppliers')
+          .select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('id', po.supplier_id)
+          .limit(1)
+        if (data && data.length) return data[0] as Supplier
+      }
+
+      if (po.supplier) {
+        const { data } = await supabase
+          .from('suppliers')
+          .select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('code', po.supplier)
+          .limit(1)
+        if (data && data.length) return data[0] as Supplier
+      }
+
+      if (po.supplier_name) {
+        const { data } = await supabase
+          .from('suppliers')
+          .select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('name', po.supplier_name) // exact match is safer for names/codes
+          .limit(1)
+        if (data && data.length) return data[0] as Supplier
+      }
+    } catch (e) {
+      console.warn('Supplier lookup failed; using PO snapshot where available.', e)
+    }
+
+    return {}
+  }
+  // -------------------------------------------------------------------------
+
+  async function printPO(po: PO): Promise<void> {
     const currency = curPO(po) || '—'
     const fx = fxPO(po) || 1
     const lines = polines.filter(l => l.po_id === po.id)
@@ -526,12 +575,15 @@ export default function PurchaseOrders() {
     const total = (po.total ?? (subtotal + tax))
     const number = poNo(po)
 
+    // Resolve live supplier details to fill missing snapshot fields
+    const live = await resolveSupplierDetails(po)
+
     const supp = {
-      name: po.supplier_name ?? poSupplierLabel(po),
-      email: po.supplier_email ?? '—',
-      phone: po.supplier_phone ?? '—',
-      tax_id: po.supplier_tax_id ?? '—',
-      terms: po.payment_terms ?? '—',
+      name: po.supplier_name ?? live.name ?? poSupplierLabel(po),
+      email: po.supplier_email ?? live.email ?? '—',
+      phone: po.supplier_phone ?? live.phone ?? '—',
+      tax_id: po.supplier_tax_id ?? live.tax_id ?? '—',
+      terms: po.payment_terms ?? live.payment_terms ?? '—',
     }
     const printedAt = new Date().toLocaleString()
 
