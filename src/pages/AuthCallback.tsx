@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { Button } from '../components/ui/button'
 
 function parseHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -16,6 +17,7 @@ function parseHash() {
 export default function AuthCallback() {
   const nav = useNavigate()
   const [msg, setMsg] = useState('Finishing sign-in…')
+  const [showHomeBtn, setShowHomeBtn] = useState(false)
 
   useEffect(() => {
     const run = async () => {
@@ -27,39 +29,53 @@ export default function AuthCallback() {
 
         if (errQuery || errHash || errHash2) {
           setMsg(decodeURIComponent(errQuery || errHash || errHash2!))
+          setShowHomeBtn(true)
           return
         }
 
-        // Complete auth
+        // 1) Try PKCE / magic link first (?code=…)
         let authed = false
-
-        // A) PKCE / magic link (?code=…)
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
           if (!error) authed = true
         }
 
-        // B) Hash tokens (#access_token=…&refresh_token=…)
+        // 2) Fallback: hash tokens (#access_token=…&refresh_token=…)
         if (!authed && access_token && refresh_token) {
           const { error } = await supabase.auth.setSession({ access_token, refresh_token })
           if (!error) authed = true
         }
 
+        // 3) If still not authed, bail with a helpful message
         if (!authed) {
           setMsg(
             'Could not complete sign-in. Open the link in the SAME browser/profile where you started, or resend the email and try again.'
           )
+          setShowHomeBtn(true)
           return
         }
 
-        // Best-effort: link + auto-activate any pending invites (if you have this Edge Function)
+        // Clean up URL (remove tokens / code to avoid refresh loops)
+        try {
+          const clean = `${window.location.origin}/auth/callback`
+          window.history.replaceState({}, '', clean)
+        } catch {}
+
+        // Optional best-effort invite sync (ignores errors)
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
         // Decide destination
         const { data: { session } } = await supabase.auth.getSession()
         const userId = session?.user?.id
-        if (!userId) { setMsg('Signed in, but no session found. Please try again.'); return }
+        if (!userId) {
+          setMsg('Signed in, but no session found. Please try again.')
+          setShowHomeBtn(true)
+          return
+        }
 
+        setMsg('Signed in. Redirecting…')
+
+        // If member, go to dashboard; otherwise onboarding (which now handles unverified users)
         const { data: membership, error: memErr } = await supabase
           .from('company_members')
           .select('company_id')
@@ -69,7 +85,6 @@ export default function AuthCallback() {
           .limit(1)
           .maybeSingle()
 
-        setMsg('Signed in. Redirecting…')
         if (memErr) {
           nav('/', { replace: true })
         } else if (membership?.company_id) {
@@ -79,6 +94,7 @@ export default function AuthCallback() {
         }
       } catch (e: any) {
         setMsg(e?.message || 'Unexpected error while finishing sign-in')
+        setShowHomeBtn(true)
       }
     }
 
@@ -87,8 +103,11 @@ export default function AuthCallback() {
   }, [])
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
       <div className="text-center text-sm text-muted-foreground">{msg}</div>
+      {showHomeBtn && (
+        <Button onClick={() => location.assign('/auth')}>Back to sign-in</Button>
+      )}
     </div>
   )
 }
