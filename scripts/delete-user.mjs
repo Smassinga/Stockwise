@@ -1,3 +1,4 @@
+// scripts/delete-user.mjs
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL;
@@ -10,9 +11,13 @@ if (!url || !key || !uid) {
 }
 
 const supabase = createClient(url, key);
-const { error } = await supabase.auth.admin.deleteUser(uid);
+
+// try a HARD delete (bypass soft-delete) and print any server message
+const { error } = await supabase.auth.admin.deleteUser(uid, { shouldSoftDelete: false });
+
 if (error) {
-  console.error('Failed:', error.message);
+  console.error('Delete failed:', JSON.stringify(error, null, 2));
   process.exit(1);
 }
+
 console.log('Deleted user:', uid);
