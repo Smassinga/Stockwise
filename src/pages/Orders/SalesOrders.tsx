@@ -22,6 +22,12 @@ type AppSettings = {
     autoCompleteWhenShipped?: boolean
     defaultFulfilWarehouseId?: string
   }
+  // possible branding shapes; we probe defensively
+  branding?: { companyName?: string; logoUrl?: string }
+  brand?: { logoUrl?: string }
+  logoUrl?: string
+  companyName?: string
+  company?: { name?: string; logoUrl?: string }
 } & Record<string, any>
 
 type Item = { id: string; name: string; sku: string; baseUomId: string }
@@ -46,7 +52,7 @@ type SoStatus = typeof VALID_SO_STATUSES[number]
 
 type SO = {
   id: string
-  customer?: string
+  customer?: string            // may be legacy name or code
   customer_id?: string
   status: SoStatus | string
   currency_code?: string
@@ -54,6 +60,7 @@ type SO = {
   expected_ship_date?: string | null
   notes?: string | null
   total_amount?: number | null
+  tax_total?: number | null
   payment_terms?: string | null
   bill_to_name?: string | null
   bill_to_email?: string | null
@@ -62,7 +69,7 @@ type SO = {
   bill_to_billing_address?: string | null
   bill_to_shipping_address?: string | null
 
-  // extra fields used by the “Shipped SOs” browser
+  // browser-only
   order_no?: string | null
   created_at?: string | null
   updated_at?: string | null
@@ -95,6 +102,13 @@ const fmtAcct = (v: number) => {
 const ts = (row: any) =>
   row?.createdAt ?? row?.created_at ?? row?.createdat ?? row?.updatedAt ?? row?.updated_at ?? row?.updatedat ?? 0
 
+const initials = (s?: string | null) => {
+  const t = (s || '').trim()
+  if (!t) return '—'
+  const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
+}
+
 export default function SalesOrders() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
@@ -111,6 +125,10 @@ export default function SalesOrders() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
   const [app, setApp] = useState<AppSettings | null>(null)
+
+  // branding (for print header)
+  const [brandName, setBrandName] = useState<string>('')
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string>('')
 
   // conversions
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
@@ -144,7 +162,7 @@ export default function SalesOrders() {
   >({})
   const [soBinOnHand, setSoBinOnHand] = useState<Record<string, number>>({})
 
-  // --- Shipped SOs browser state (DB-aligned: shipped + closed)
+  // --- Shipped SOs browser state
   const PAGE_SIZE = 100
   const [shippedOpen, setShippedOpen] = useState(false)
   const [shippedRows, setShippedRows] = useState<SO[]>([])
@@ -171,13 +189,13 @@ export default function SalesOrders() {
 
     let q = supabase
       .from('sales_orders')
-      .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,updated_at,created_at,order_no')
+      .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,updated_at,created_at,order_no,bill_to_name')
       .in('status', statuses as SoStatus[])
       .order('updated_at', { ascending: false })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
 
     const term = shipQ.trim()
-    if (term) q = q.or(`order_no.ilike.%${term}%,customer.ilike.%${term}%`)
+    if (term) q = q.or(`order_no.ilike.%${term}%,bill_to_name.ilike.%${term}%,customer.ilike.%${term}%`)
     if (shipDateFrom) q = q.gte('updated_at', shipDateFrom)
     if (shipDateTo)   q = q.lte('updated_at', shipDateTo + ' 23:59:59')
 
@@ -255,12 +273,18 @@ export default function SalesOrders() {
   const soNo = (s: any) => s?.orderNo ?? s?.order_no ?? s?.id
   const fxSO = (s: SO) => n((s as any).fx_to_base ?? (s as any).fxToBase, 1)
   const curSO = (s: SO) => (s as any).currency_code ?? (s as any).currencyCode
-  const soCustomerLabel = (s: SO) =>
-    s.customer ?? (s.customer_id ? (customers.find(c => c.id === s.customer_id)?.name ?? s.customer_id) : tt('none', '(none)'))
+
+  // Prefer bill_to_name; if we can resolve a customer row, show CODE — Name
+  const soCustomerLabel = (s: SO) => {
+    const cust = s.customer_id ? customers.find(c => c.id === s.customer_id) : undefined
+    if (cust) return `${cust.code ? cust.code + ' — ' : ''}${cust.name}`
+    return s.bill_to_name ?? s.customer ?? (s.customer_id || tt('none', '(none)'))
+  }
+
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
   const remaining = (l: SOL) => Math.max(n(l.qty) - n(l.shipped_qty), 0)
 
-  // load masters, conversions, settings, lists, defaults
+  // load masters, conversions, settings, lists, defaults, branding
   useEffect(() => {
     ;(async () => {
       try {
@@ -317,6 +341,32 @@ export default function SalesOrders() {
           const firstBin = (binRes || []).find(b => b.warehouseId === preferred.id)?.id || ''
           setShipBinId(firstBin)
         }
+
+        // --- Branding (logo + company name) ---
+        try {
+          const [brandRes, companyRes] = await Promise.all([
+            supabase.from('app_settings').select('data').eq('id', 'brand').maybeSingle(),
+            supabase.from('app_settings').select('data').eq('id', 'company').maybeSingle(),
+          ])
+          const a = (appRes.data as any)?.data ?? {}
+          const brand = (brandRes.data as any)?.data ?? {}
+          const company = (companyRes.data as any)?.data ?? {}
+          const nameGuess =
+            company?.name ||
+            brand?.companyName ||
+            a?.company?.name ||
+            a?.companyName ||
+            a?.branding?.companyName || ''
+          const logoGuess =
+            brand?.logoUrl ||
+            company?.logoUrl ||
+            a?.branding?.logoUrl ||
+            a?.brand?.logoUrl ||
+            a?.logoUrl || ''
+          setBrandName(String(nameGuess || ''))
+          setBrandLogoUrl(String(logoGuess || ''))
+        } catch { /* non-fatal */ }
+
       } catch (err: any) {
         console.error(err)
         toast.error(err?.message || tt('orders.loadFailed', 'Failed to load sales orders'))
@@ -453,7 +503,6 @@ export default function SalesOrders() {
       if (!VALID_SO_STATUSES.includes(status)) continue
       const { error } = await supabase.from('sales_orders').update({ status }).eq('id', id)
       if (!error) return status
-      // If RLS/business rules block it, bubble up; if enum mismatch happens, it's our bug since we validate above.
       if (!String(error?.message || '').toLowerCase().includes('violates')) console.warn('Status update error:', error)
     }
     return null
@@ -495,6 +544,7 @@ export default function SalesOrders() {
           bill_to_billing_address: cust?.billing_address ?? null,
           bill_to_shipping_address: cust?.shipping_address ?? null,
           total_amount: headerSubtotal,
+          tax_total: headerSubtotal * n(soTaxPct, 0) / 100,
         })
         .select('id')
         .single()
@@ -571,7 +621,6 @@ export default function SalesOrders() {
 
   async function setSOFinalStatus(soId: string) {
     const allowComplete = !!app?.sales?.autoCompleteWhenShipped
-    // Prefer directly the final target; if blocked, fall back to shipped.
     const targets: SoStatus[] = allowComplete ? ['closed','shipped'] : ['shipped']
     return await tryUpdateStatus(soId, targets)
   }
@@ -711,6 +760,7 @@ export default function SalesOrders() {
     return solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
   }
 
+  // ---- Enhanced print: logo/company + customer card from bill_to_* OR customer row
   function printSO(so: SO) {
     const currency = curSO(so) || '—'
     const fx = fxSO(so) || 1
@@ -721,26 +771,115 @@ export default function SalesOrders() {
       const disc = n(l.discount_pct, 0)
       const lineTotal = n(l.qty) * n(l.unit_price) * (1 - disc/100)
       const shippedBadge = (n(l.shipped_qty) >= n(l.qty)) || l.is_shipped
-        ? ' <span style="color:#16a34a;font-weight:600">(shipped)</span>' : ''
-      return `<tr><td>${it?.name || l.item_id}${shippedBadge}</td><td>${it?.sku || ''}</td><td class="right">${fmtAcct(n(l.qty))}</td><td>${uomCode}</td><td class="right">${fmtAcct(n(l.unit_price))}</td><td class="right">${fmtAcct(disc)}</td><td class="right">${fmtAcct(lineTotal)}</td></tr>`
+        ? ' <span class="shipped">(shipped)</span>' : ''
+      return `<tr>
+        <td>${it?.name || l.item_id}${shippedBadge}</td>
+        <td>${it?.sku || ''}</td>
+        <td class="right">${fmtAcct(n(l.qty))}</td>
+        <td>${uomCode}</td>
+        <td class="right">${fmtAcct(n(l.unit_price))}</td>
+        <td class="right">${fmtAcct(disc)}</td>
+        <td class="right">${fmtAcct(lineTotal)}</td>
+      </tr>`
     }).join('')
 
     const subtotal = soHeaderSubtotal(so)
+    const tax = n((so as any).tax_total, 0)
+    const total = subtotal + tax
     const number = soNo(so)
+    const printedAt = new Date().toLocaleString()
+
+    // Prefer bill_to_*; otherwise resolve customer by id (and show code)
+    const custRow = so.customer_id ? customers.find(c => c.id === so.customer_id) : undefined
+    const cust = {
+      code: custRow?.code || '',
+      name: so.bill_to_name ?? custRow?.name ?? so.customer ?? '—',
+      email: so.bill_to_email ?? custRow?.email ?? '—',
+      phone: so.bill_to_phone ?? custRow?.phone ?? '—',
+      tax_id: so.bill_to_tax_id ?? custRow?.tax_id ?? '—',
+      bill_to: (so.bill_to_billing_address ?? custRow?.billing_address ?? '')?.trim() || '—',
+      ship_to: (so.bill_to_shipping_address ?? custRow?.shipping_address ?? '')?.trim() || '—',
+      terms: so.payment_terms ?? custRow?.payment_terms ?? '—',
+    }
+
+    const company = (brandName || '').trim()
+    const logo = (brandLogoUrl || '').trim()
+    const init = initials(company)
+
+    const css = `
+      body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#111}
+      .topline{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px}
+      .brand{display:flex; align-items:center; gap:10px}
+      .logo{height:40px; width:auto; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; padding:4px}
+      .logo-fallback{height:40px; width:40px; border:1px solid #e5e7eb; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:600; background:#f4f4f5}
+      .cap{text-transform:capitalize}
+      .header{display:flex; justify-content:space-between; gap:24px; margin-bottom:12px}
+      .customer{border:1px solid #ddd; border-radius:8px; padding:12px; min-width:320px; max-width:420px}
+      .card-title{font-size:12px; color:#555; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px}
+      .meta{font-size:12px;color:#444;margin:4px 0}
+      table{width:100%; border-collapse:collapse; font-size:12px; margin-top:8px}
+      th,td{border-bottom:1px solid #eee; padding:8px 6px; text-align:left}
+      .right{text-align:right}
+      .totals{margin-top:16px; width:420px; margin-left:auto; display:flex; flex-direction:column; gap:6px}
+      .totals>div{display:flex; justify-content:space-between}
+      .muted{color:#555}
+      .grand{font-weight:600}
+      .shipped{color:#16a34a; font-weight:600}
+      .addr{white-space:pre-wrap}
+    `
     const html = `
-      <h1>Sales Order ${number}</h1>
-      <div class="meta">Status: <b>${so.status}</b> · Currency: <b>${currency}</b> · FX→${baseCode}: <b>${fmtAcct(fx)}</b></div>
-      <table><thead><tr><th>Item</th><th>SKU</th><th class="right">Qty</th><th>UoM</th><th class="right">Unit Price</th><th class="right">Disc %</th><th class="right">Line Total (${currency})</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="totals"><div><span>Subtotal (${currency})</span><span>${fmtAcct(subtotal)}</span></div><div class="muted"><span>FX to ${baseCode}</span><span>${fmtAcct(fx)}</span></div><div><span>Total (${baseCode})</span><span>${fmtAcct(subtotal * fx)}</span></div></div>
+      <div class="topline">
+        <div class="brand">
+          ${logo ? `<img src="${logo}" alt="${company || 'Company logo'}" class="logo" onerror="this.style.display='none'">`
+                 : `<div class="logo-fallback">${init}</div>`}
+          <div class="text-base" style="font-weight:600">${company || '—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:28px; font-weight:700; letter-spacing:.02em">Sales Order ${number}</div>
+          <div class="meta">Printed at: <b>${printedAt}</b></div>
+        </div>
+      </div>
+
+      <div class="header">
+        <div>
+          <div class="meta">Status: <b class="cap">${so.status}</b></div>
+          <div class="meta">Currency: <b>${currency}</b> · FX→${baseCode}: <b>${fmtAcct(fx)}</b></div>
+          <div class="meta">Expected Ship: <b>${(so as any).expected_ship_date || '—'}</b></div>
+        </div>
+        <div class="customer">
+          <div class="card-title">Customer</div>
+          <div><b>${cust.code ? cust.code + ' — ' : ''}${cust.name}</b></div>
+          <div>Email: ${cust.email}</div>
+          <div>Phone: ${cust.phone}</div>
+          <div>Tax ID: ${cust.tax_id}</div>
+          <div>Payment Terms: ${cust.terms}</div>
+          <div class="card-title" style="margin-top:10px">Bill To</div>
+          <div class="addr">${cust.bill_to}</div>
+          <div class="card-title" style="margin-top:10px">Ship To</div>
+          <div class="addr">${cust.ship_to}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th><th>SKU</th><th class="right">Qty</th><th>UoM</th>
+            <th class="right">Unit Price</th><th class="right">Disc %</th><th class="right">Line Total (${currency})</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="totals">
+        <div><span>Subtotal (${currency})</span><span>${fmtAcct(subtotal)}</span></div>
+        <div><span>Tax (${currency})</span><span>${fmtAcct(tax)}</span></div>
+        <div class="muted"><span>FX to ${baseCode}</span><span>${fmtAcct(fx)}</span></div>
+        <div class="grand"><span>Total (${currency})</span><span>${fmtAcct(total)}</span></div>
+        <div class="grand"><span>Total (${baseCode})</span><span>${fmtAcct(total * fx)}</span></div>
+      </div>
     `
     const w = window.open('', '_blank'); if (!w) return
-    w.document.write(`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>
-      body{font-family:ui-sans-serif; padding:24px}
-      table{width:100%;border-collapse:collapse;font-size:12px}
-      th,td{border-bottom:1px solid #ddd;padding:8px 6px;text-align:left}
-      .right{text-align:right}.meta{font-size:12px;color:#444;margin:8px 0 16px}
-      .totals{margin-top:12px;width:320px;margin-left:auto;display:flex;flex-direction:column;gap:4px}
-    </style></head><body>${html}</body></html>`)
+    w.document.write(`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>${css}</style></head><body>${html}</body></html>`)
     w.document.close(); w.focus(); w.print()
   }
 
