@@ -36,7 +36,8 @@ type DigestPayload = {
 };
 
 const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
-const FROM_EMAIL       = Deno.env.get("FROM_EMAIL")       ?? "no-reply@example.com";
+const FROM_EMAIL       = Deno.env.get("FROM_EMAIL")       ?? "no-reply@stockwiseapp.com";
+const REPLY_TO_EMAIL  = Deno.env.get("REPLY_TO_EMAIL")  ?? "support@stockwiseapp.com";
 const BRAND_NAME       = Deno.env.get("BRAND_NAME")       ?? "Stockwise";
 const DRY_RUN          = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
 
@@ -104,6 +105,7 @@ async function sendViaSendGrid(to: string[], subject: string, html: string) {
   const body = {
     personalizations: [{ to: to.map((e) => ({ email: e })) }],
     from: { email: FROM_EMAIL, name: BRAND_NAME },
+    reply_to: { email: REPLY_TO_EMAIL },
     subject,
     content: [{ type: "text/html", value: html }],
   };
