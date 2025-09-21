@@ -37,6 +37,11 @@ type PO = {
   subtotal?: number|null
   tax_total?: number|null
   total?: number|null
+
+  // browser extras
+  order_no?: string|null
+  updated_at?: string|null
+  created_at?: string|null
 }
 
 type POL = {
@@ -103,6 +108,56 @@ export default function PurchaseOrders() {
   // per-line plan and receipts map
   const [receivePlan, setReceivePlan] = useState<Record<string, { qty: string; whId: string; binId: string }>>({})
   const [receivedMap, setReceivedMap] = useState<Record<string, number>>({}) // key: line id -> sum(received qty in line UOM)
+
+  // --- Closed/Received POs browser state (new)
+  const [browserOpen, setBrowserOpen] = useState(false)
+  const [browserRows, setBrowserRows] = useState<PO[]>([])
+  const [browserHasMore, setBrowserHasMore] = useState(false)
+  const [browserPage, setBrowserPage] = useState(0)
+  const [browserQ, setBrowserQ] = useState('')
+  const [browserFrom, setBrowserFrom] = useState('')
+  const [browserTo, setBrowserTo] = useState('')
+  const [browserStatuses, setBrowserStatuses] = useState<Record<string, boolean>>({
+    closed: true, partially_received: true,
+  })
+  const PAGE_SIZE = 100
+  const activeStatuses = () => Object.entries(browserStatuses).filter(([,v]) => v).map(([k]) => k)
+  function resetBrowserPaging() { setBrowserRows([]); setBrowserPage(0); setBrowserHasMore(false) }
+
+  async function fetchBrowserPage(page = 0) {
+    const statuses = activeStatuses()
+    if (statuses.length === 0) { setBrowserRows([]); setBrowserHasMore(false); return }
+
+    let q = supabase
+      .from('purchase_orders')
+      .select('id,supplier_id,supplier_name,supplier,status,currency_code,fx_to_base,total,updated_at,created_at,order_no')
+      .in('status', statuses)
+      .order('updated_at', { ascending: false })
+      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+
+    const term = browserQ.trim()
+    if (term) {
+      // Match PO number OR supplier_name OR supplier
+      q = q.or(`order_no.ilike.%${term}%,supplier_name.ilike.%${term}%,supplier.ilike.%${term}%`)
+    }
+    if (browserFrom) q = q.gte('updated_at', browserFrom)
+    if (browserTo)   q = q.lte('updated_at', browserTo + ' 23:59:59')
+
+    const { data, error } = await q
+    if (error) { console.error(error); toast.error('Failed to load POs'); return }
+
+    const rows = (data || []) as PO[]
+    setBrowserRows(prev => page === 0 ? rows : [...prev, ...rows])
+    setBrowserHasMore(rows.length === PAGE_SIZE)
+    setBrowserPage(page)
+  }
+
+  useEffect(() => {
+    if (!browserOpen) return
+    const t = setTimeout(() => { resetBrowserPaging(); fetchBrowserPage(0) }, 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browserOpen, browserQ, browserFrom, browserTo, browserStatuses.closed, browserStatuses.partially_received])
 
   // helpers
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
@@ -191,7 +246,7 @@ export default function PurchaseOrders() {
     for (const r of (data || [])) {
       if (!r.ref_line_id) continue
       const q = n((r as any).qty, 0)
-      // Only counting receives; if you ever support returns for PO, subtract 'issue'
+      // Only counting receives; if you ever support PO returns, subtract 'issue'
       m[String(r.ref_line_id)] = (m[String(r.ref_line_id)] || 0) + q
     }
     setReceivedMap(m)
@@ -395,7 +450,7 @@ export default function PurchaseOrders() {
 
   // outstanding = open/draft/approved/etc. (not closed/canceled)
   const poOutstanding = useMemo(
-    () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized'].includes(String(p.status).toLowerCase())),
+    () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(p.status).toLowerCase())),
     [pos]
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
@@ -540,141 +595,148 @@ export default function PurchaseOrders() {
           <div className="flex items-center justify-between">
             <CardTitle>{tt('orders.outstandingPOs', 'Open & Approved Purchase Orders')}</CardTitle>
 
-            <Sheet open={poOpen} onOpenChange={setPoOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm">{tt('orders.newPO', 'New PO')}</Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-                <SheetHeader>
-                  <SheetTitle>{tt('orders.newPO', 'New Purchase Order')}</SheetTitle>
-                  <SheetDescription className="sr-only">{tt('orders.createPO', 'Create a purchase order')}</SheetDescription>
-                </SheetHeader>
+            <div className="flex items-center gap-2">
+              {/* New: Closed/Received POs Browser */}
+              <Button size="sm" variant="outline" onClick={() => setBrowserOpen(true)}>
+                {tt('orders.poBrowser', 'Closed/Received POs')}
+              </Button>
 
-                {/* Header */}
-                <div className="mt-4 grid md:grid-cols-4 gap-3">
-                  <div>
-                    <Label>{tt('orders.supplier', 'Supplier')}</Label>
-                    <Select value={poSupplierId} onValueChange={setPoSupplierId}>
-                      <SelectTrigger><SelectValue placeholder={tt('orders.selectSupplier', 'Select supplier')} /></SelectTrigger>
-                      <SelectContent className="max-h-64 overflow-auto">
-                        {suppliers.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{(s.code ? s.code + ' — ' : '') + s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.currency', 'Currency')}</Label>
-                    <Select value={poCurrency} onValueChange={setPoCurrency}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode })}</Label>
-                    <Input type="number" min="0" step="0.000001" value={poFx} onChange={e => setPoFx(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>{tt('orders.expectedDate', 'Expected Date')}</Label>
-                    <Input type="date" value={poDate} onChange={e => setPoDate(e.target.value)} />
-                  </div>
-                </div>
+              <Sheet open={poOpen} onOpenChange={setPoOpen}>
+                <SheetTrigger asChild>
+                  <Button size="sm">{tt('orders.newPO', 'New PO')}</Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+                  <SheetHeader>
+                    <SheetTitle>{tt('orders.newPO', 'New Purchase Order')}</SheetTitle>
+                    <SheetDescription className="sr-only">{tt('orders.createPO', 'Create a purchase order')}</SheetDescription>
+                  </SheetHeader>
 
-                {/* Lines */}
-                <div className="mt-6">
-                  <Label>{tt('orders.lines', 'Lines')}</Label>
-                  <div className="mt-2 border rounded-lg overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/50">
-                        <tr className="text-left">
-                          <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
-                          <th className="py-2 px-3 w-24">{tt('orders.uom', 'UoM')}</th>
-                          <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
-                          <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
-                          <th className="py-2 px-3 w-28">{tt('orders.discountPct', 'Disc %')}</th>
-                          <th className="py-2 px-3 w-36 text-right">{tt('orders.lineTotal', 'Line Total')}</th>
-                          <th className="py-2 px-3 w-10"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {poLinesForm.map((ln, idx) => {
-                          const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
-                          return (
-                            <tr key={idx} className="border-t">
-                              <td className="py-2 px-3">
-                                <Select
-                                  value={ln.itemId}
-                                  onValueChange={(v) =>
-                                    setPoLinesForm(prev =>
-                                      prev.map((x, i) => i === idx ? { ...x, itemId: v, uomId: (itemById.get(v)?.baseUomId || x.uomId) } : x)
-                                    )
-                                  }
-                                >
-                                  <SelectTrigger><SelectValue placeholder={tt('orders.item', 'Item')} /></SelectTrigger>
-                                  <SelectContent className="max-h-64 overflow-auto">
-                                    {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                              <td className="py-2 px-3">
-                                <Select value={ln.uomId} onValueChange={(v) => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}>
-                                  <SelectTrigger><SelectValue placeholder={tt('orders.uom', 'UoM')} /></SelectTrigger>
-                                  <SelectContent className="max-h-64 overflow-auto">
-                                    {uoms.map((u) => <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                              <td className="py-2 px-3">
-                                <Input inputMode="decimal" type="number" min="0" step="0.0001" value={ln.qty} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
-                              </td>
-                              <td className="py-2 px-3">
-                                <Input inputMode="decimal" type="number" min="0" step="0.0001" value={ln.unitPrice} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, unitPrice: e.target.value } : x))} />
-                              </td>
-                              <td className="py-2 px-3">
-                                <Input type="number" min="0" max="100" step="0.01" value={ln.discountPct} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))} />
-                              </td>
-                              <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
-                              <td className="py-2 px-3 text-right">
-                                <Button size="icon" variant="ghost" onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    <div className="p-2">
-                      <MobileAddLineButton
-                        onAdd={() => setPoLinesForm(prev => [...prev, { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])}
-                        label={tt('orders.addLine', 'Add Line')}
-                      />
+                  {/* Header */}
+                  <div className="mt-4 grid md:grid-cols-4 gap-3">
+                    <div>
+                      <Label>{tt('orders.supplier', 'Supplier')}</Label>
+                      <Select value={poSupplierId} onValueChange={setPoSupplierId}>
+                        <SelectTrigger><SelectValue placeholder={tt('orders.selectSupplier', 'Select supplier')} /></SelectTrigger>
+                        <SelectContent className="max-h-64 overflow-auto">
+                          {suppliers.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>{(s.code ? s.code + ' — ' : '') + s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('orders.currency', 'Currency')}</Label>
+                      <Select value={poCurrency} onValueChange={setPoCurrency}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode })}</Label>
+                      <Input type="number" min="0" step="0.000001" value={poFx} onChange={e => setPoFx(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>{tt('orders.expectedDate', 'Expected Date')}</Label>
+                      <Input type="date" value={poDate} onChange={e => setPoDate(e.target.value)} />
                     </div>
                   </div>
 
-                  {/* Totals */}
-                  <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                      <div className="flex items-center gap-3">
-                        <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
-                        <Input className="w-28" type="number" min="0" step="0.01" value={poTaxPct} onChange={e => setPoTaxPct(e.target.value)} />
+                  {/* Lines */}
+                  <div className="mt-6">
+                    <Label>{tt('orders.lines', 'Lines')}</Label>
+                    <div className="mt-2 border rounded-lg overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr className="text-left">
+                            <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                            <th className="py-2 px-3 w-24">{tt('orders.uom', 'UoM')}</th>
+                            <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
+                            <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
+                            <th className="py-2 px-3 w-28">{tt('orders.discountPct', 'Disc %')}</th>
+                            <th className="py-2 px-3 w-36 text-right">{tt('orders.lineTotal', 'Line Total')}</th>
+                            <th className="py-2 px-3 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {poLinesForm.map((ln, idx) => {
+                            const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
+                            return (
+                              <tr key={idx} className="border-t">
+                                <td className="py-2 px-3">
+                                  <Select
+                                    value={ln.itemId}
+                                    onValueChange={(v) =>
+                                      setPoLinesForm(prev =>
+                                        prev.map((x, i) => i === idx ? { ...x, itemId: v, uomId: (itemById.get(v)?.baseUomId || x.uomId) } : x)
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger><SelectValue placeholder={tt('orders.item', 'Item')} /></SelectTrigger>
+                                    <SelectContent className="max-h-64 overflow-auto">
+                                      {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="py-2 px-3">
+                                  <Select value={ln.uomId} onValueChange={(v) => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}>
+                                    <SelectTrigger><SelectValue placeholder={tt('orders.uom', 'UoM')} /></SelectTrigger>
+                                    <SelectContent className="max-h-64 overflow-auto">
+                                      {uoms.map((u) => <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="py-2 px-3">
+                                  <Input inputMode="decimal" type="number" min="0" step="0.0001" value={ln.qty} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
+                                </td>
+                                <td className="py-2 px-3">
+                                  <Input inputMode="decimal" type="number" min="0" step="0.0001" value={ln.unitPrice} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, unitPrice: e.target.value } : x))} />
+                                </td>
+                                <td className="py-2 px-3">
+                                  <Input type="number" min="0" max="100" step="0.01" value={ln.discountPct} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))} />
+                                </td>
+                                <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
+                                <td className="py-2 px-3 text-right">
+                                  <Button size="icon" variant="ghost" onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                      <div className="p-2">
+                        <MobileAddLineButton
+                          onAdd={() => setPoLinesForm(prev => [...prev, { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])}
+                          label={tt('orders.addLine', 'Add Line')}
+                        />
                       </div>
-                      <div className="flex flex-col items-end text-sm">
-                        <div className="w-full max-w-sm grid grid-cols-2 gap-1">
-                          <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({poCurrency})</div>
-                          <div className="text-right">{fmtAcct(poSubtotal)}</div>
-                          <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
-                          <div className="text-right">{fmtAcct(poTax)}</div>
-                          <div className="font-medium">{tt('orders.total', 'Total')}</div>
-                          <div className="text-right font-medium">{fmtAcct(poSubtotal + poTax)}</div>
+                    </div>
+
+                    {/* Totals */}
+                    <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                        <div className="flex items-center gap-3">
+                          <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
+                          <Input className="w-28" type="number" min="0" step="0.01" value={poTaxPct} onChange={e => setPoTaxPct(e.target.value)} />
                         </div>
-                        <div className="mt-3">
-                          <Button onClick={createPO}>{tt('orders.createPO', 'Create PO')}</Button>
+                        <div className="flex flex-col items-end text-sm">
+                          <div className="w-full max-w-sm grid grid-cols-2 gap-1">
+                            <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({poCurrency})</div>
+                            <div className="text-right">{fmtAcct(poSubtotal)}</div>
+                            <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
+                            <div className="text-right">{fmtAcct(poTax)}</div>
+                            <div className="font-medium">{tt('orders.total', 'Total')}</div>
+                            <div className="text-right font-medium">{fmtAcct(poSubtotal + poTax)}</div>
+                          </div>
+                          <div className="mt-3">
+                            <Button onClick={createPO}>{tt('orders.createPO', 'Create PO')}</Button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </SheetContent>
-            </Sheet>
+                </SheetContent>
+              </Sheet>
+            </div>
           </div>
         </CardHeader>
 
@@ -897,6 +959,107 @@ export default function PurchaseOrders() {
               </div>
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Closed/Received POs Browser */}
+      <Sheet open={browserOpen} onOpenChange={setBrowserOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-3xl max-w-none p-0 md:p-6">
+          <SheetHeader>
+            <SheetTitle>{tt('orders.poBrowser', 'Closed/Received POs')}</SheetTitle>
+            <SheetDescription className="sr-only">
+              {tt('orders.poBrowserDesc', 'Search, filter and print purchase orders')}
+            </SheetDescription>
+          </SheetHeader>
+
+          {/* Filters */}
+          <div className="mt-4 grid md:grid-cols-4 gap-3 p-4 md:p-0">
+            <div className="md:col-span-2">
+              <Label>{tt('common.search', 'Search')}</Label>
+              <Input
+                placeholder={tt('orders.searchHintPO', 'PO no. or supplier')}
+                value={browserQ}
+                onChange={e => setBrowserQ(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>{tt('orders.from', 'From (updated)')}</Label>
+              <Input type="date" value={browserFrom} onChange={e => setBrowserFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>{tt('orders.to', 'To (updated)')}</Label>
+              <Input type="date" value={browserTo} onChange={e => setBrowserTo(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Status checkboxes */}
+          <div className="p-4 md:p-0 mt-2 flex flex-wrap gap-4 text-sm">
+            <div className="text-muted-foreground">{tt('orders.statuses', 'Statuses')}:</div>
+            {(['closed','partially_received'] as const).map(sname => (
+              <label key={sname} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!browserStatuses[sname]}
+                  onChange={(e) => setBrowserStatuses(prev => ({ ...prev, [sname]: e.target.checked }))}
+                />
+                <span className="capitalize">{sname.replace('_',' ')}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Results */}
+          <div className="mt-3 border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr className="text-left">
+                  <th className="py-2 px-3">{tt('orders.po', 'PO')}</th>
+                  <th className="py-2 px-3">{tt('orders.supplier', 'Supplier')}</th>
+                  <th className="py-2 px-3">{tt('orders.status', 'Status')}</th>
+                  <th className="py-2 px-3">{tt('orders.updated', 'Updated')}</th>
+                  <th className="py-2 px-3">{tt('orders.total', 'Total')}</th>
+                  <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {browserRows.length === 0 && (
+                  <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noResults', 'No results')}</td></tr>
+                )}
+                {browserRows.map(po => {
+                  const totalInCurrency = (po.total ?? (polines.filter(l => l.po_id === po.id).reduce((s, l) => s + n(l.line_total), 0)))
+                  const totalBase = totalInCurrency * fxPO(po)
+                  const updated = (po.updated_at || po.created_at || '').slice(0, 19).replace('T', ' ')
+                  return (
+                    <tr key={po.id} className="border-t">
+                      <td className="py-2 px-3">{poNo(po)}</td>
+                      <td className="py-2 px-3">{poSupplierLabel(po)}</td>
+                      <td className="py-2 px-3 capitalize">{po.status}</td>
+                      <td className="py-2 px-3">{updated || '—'}</td>
+                      <td className="py-2 px-3">{formatMoneyBase(totalBase, baseCode)}</td>
+                      <td className="py-2 px-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => printPO(po)}>
+                            {tt('orders.print', 'Print')}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paging */}
+          <div className="p-4 flex justify-between items-center">
+            <div className="text-xs text-muted-foreground">
+              {tt('orders.rows', 'Rows')}: {browserRows.length}
+            </div>
+            {browserHasMore && (
+              <Button size="sm" variant="secondary" onClick={() => fetchBrowserPage(browserPage + 1)}>
+                {tt('common.loadMore', 'Load more')}
+              </Button>
+            )}
+          </div>
         </SheetContent>
       </Sheet>
     </>

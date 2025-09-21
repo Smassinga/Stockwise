@@ -13,6 +13,9 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Switch } from '../components/ui/switch'
 
+// NEW
+import LogoUploader from '../components/settings/LogoUploader'
+
 import {
   Settings as SettingsIcon,
   Users,
@@ -137,7 +140,6 @@ function Settings() {
     ;(async () => {
       if (!companyId) { setLoading(false); return }
 
-      // PRE-APPLY per-company cached language to avoid cross-org flicker
       const cachedLang = readCachedLang(companyId)
       if (cachedLang) setLang(cachedLang)
 
@@ -662,26 +664,33 @@ function Settings() {
             <FileText className="w-5 h-5" /> {t('sections.documents.title')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <div>
+        <CardContent className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-2">
             <Label>{t('fields.companyName')}</Label>
             <Input
               value={data.documents.brand.name}
               onChange={(e) => setField('documents.brand.name', e.target.value)}
               disabled={!canEditOps}
+              placeholder="Leave blank to use your organization name"
             />
+            <div className="text-xs text-muted-foreground">
+              Display name on documents. If empty, we’ll use your organization’s company name.
+            </div>
           </div>
 
-          <div>
-            <Label>{t('fields.logoUrl')}</Label>
-            <Input
+          <div className="space-y-2">
+            <LogoUploader
               value={data.documents.brand.logoUrl}
-              onChange={(e) => setField('documents.brand.logoUrl', e.target.value)}
+              onChange={(url) => setField('documents.brand.logoUrl', url)}
+              companyId={companyId}
               disabled={!canEditOps}
             />
+            <div className="text-xs text-muted-foreground">
+              Paste a URL or upload to Supabase Storage (public). PNG/SVG recommended.
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 md:col-span-2">
             <Switch
               checked={data.documents.packingSlipShowsPrices}
               onCheckedChange={(v) => setField('documents.packingSlipShowsPrices', v)}

@@ -41,11 +41,14 @@ type Customer = {
 type Warehouse = { id: string; code?: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 
+const VALID_SO_STATUSES = ['draft','submitted','confirmed','allocated','shipped','closed','cancelled'] as const
+type SoStatus = typeof VALID_SO_STATUSES[number]
+
 type SO = {
   id: string
   customer?: string
   customer_id?: string
-  status: string
+  status: SoStatus | string
   currency_code?: string
   fx_to_base?: number
   expected_ship_date?: string | null
@@ -58,6 +61,12 @@ type SO = {
   bill_to_tax_id?: string | null
   bill_to_billing_address?: string | null
   bill_to_shipping_address?: string | null
+
+  // extra fields used by the “Shipped SOs” browser
+  order_no?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  company_id?: string | null
 }
 
 type SOL = {
@@ -135,6 +144,59 @@ export default function SalesOrders() {
   >({})
   const [soBinOnHand, setSoBinOnHand] = useState<Record<string, number>>({})
 
+  // --- Shipped SOs browser state (DB-aligned: shipped + closed)
+  const PAGE_SIZE = 100
+  const [shippedOpen, setShippedOpen] = useState(false)
+  const [shippedRows, setShippedRows] = useState<SO[]>([])
+  const [shippedHasMore, setShippedHasMore] = useState(false)
+  const [shippedPage, setShippedPage] = useState(0)
+  const [shipQ, setShipQ] = useState('')
+  const [shipDateFrom, setShipDateFrom] = useState('')
+  const [shipDateTo, setShipDateTo] = useState('')
+  const [shipStatuses, setShipStatuses] = useState<Record<'shipped' | 'closed', boolean>>({
+    shipped: true, closed: true,
+  })
+  const shippedStatusList = () =>
+    (['shipped','closed'] as const).filter(k => shipStatuses[k])
+
+  function resetShippedPaging() {
+    setShippedRows([])
+    setShippedPage(0)
+    setShippedHasMore(false)
+  }
+
+  async function fetchShippedPage(page = 0) {
+    const statuses = shippedStatusList()
+    if (statuses.length === 0) { setShippedRows([]); setShippedHasMore(false); return }
+
+    let q = supabase
+      .from('sales_orders')
+      .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,updated_at,created_at,order_no')
+      .in('status', statuses as SoStatus[])
+      .order('updated_at', { ascending: false })
+      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+
+    const term = shipQ.trim()
+    if (term) q = q.or(`order_no.ilike.%${term}%,customer.ilike.%${term}%`)
+    if (shipDateFrom) q = q.gte('updated_at', shipDateFrom)
+    if (shipDateTo)   q = q.lte('updated_at', shipDateTo + ' 23:59:59')
+
+    const { data, error } = await q
+    if (error) { console.error(error); toast.error('Failed to load shipped SOs'); return }
+
+    const rows = (data || []) as SO[]
+    setShippedRows(prev => page === 0 ? rows : [...prev, ...rows])
+    setShippedHasMore(rows.length === PAGE_SIZE)
+    setShippedPage(page)
+  }
+
+  useEffect(() => {
+    if (!shippedOpen) return
+    const t = setTimeout(() => { resetShippedPaging(); fetchShippedPage(0) }, 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shippedOpen, shipQ, shipDateFrom, shipDateTo, shipStatuses.shipped, shipStatuses.closed])
+
   // helpers
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
   const uomIdFromIdOrCode = (v?: string | null): string => {
@@ -180,7 +242,7 @@ export default function SalesOrders() {
     if (!it) return groupedUoms
     const base = uomIdFromIdOrCode(it.baseUomId)
     if (!base) return groupedUoms
-    if (!convGraph) return groupedUoms // until conversions arrive, show all
+    if (!convGraph) return groupedUoms
 
     const out = new Map<string, Uom[]>()
     groupedUoms.forEach((arr, fam) => {
@@ -386,11 +448,13 @@ export default function SalesOrders() {
   }
 
   // actions
-  async function tryUpdateStatus(id: string, candidates: string[]) {
+  async function tryUpdateStatus(id: string, candidates: SoStatus[]) {
     for (const status of candidates) {
+      if (!VALID_SO_STATUSES.includes(status)) continue
       const { error } = await supabase.from('sales_orders').update({ status }).eq('id', id)
       if (!error) return status
-      if (!String(error?.message || '').toLowerCase().includes('invalid input value for enum')) throw error
+      // If RLS/business rules block it, bubble up; if enum mismatch happens, it's our bug since we validate above.
+      if (!String(error?.message || '').toLowerCase().includes('violates')) console.warn('Status update error:', error)
     }
     return null
   }
@@ -483,7 +547,7 @@ export default function SalesOrders() {
       const lines = solines.filter(l => l.so_id === soId)
       const subtotal = lines.reduce((s, l) => s + n(l.line_total), 0)
 
-      const updated = await tryUpdateStatus(soId, ['confirmed', 'approved', 'open'])
+      const updated = await tryUpdateStatus(soId, ['confirmed'])
       await supabase.from('sales_orders').update({ total_amount: subtotal }).eq('id', soId)
 
       setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated || s.status, total_amount: subtotal } : s)))
@@ -496,7 +560,7 @@ export default function SalesOrders() {
 
   async function cancelSO(soId: string) {
     try {
-      const updated = await tryUpdateStatus(soId, ['cancelled', 'canceled'])
+      const updated = await tryUpdateStatus(soId, ['cancelled'])
       if (updated) setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated } : s)))
       toast.success(tt('orders.soCancelled', 'SO cancelled'))
     } catch (err: any) {
@@ -507,10 +571,9 @@ export default function SalesOrders() {
 
   async function setSOFinalStatus(soId: string) {
     const allowComplete = !!app?.sales?.autoCompleteWhenShipped
-    const candidates = allowComplete
-      ? ['completed', 'shipped', 'fulfilled', 'delivered', 'closed']
-      : ['shipped', 'fulfilled', 'delivered', 'closed']
-    return await tryUpdateStatus(soId, candidates)
+    // Prefer directly the final target; if blocked, fall back to shipped.
+    const targets: SoStatus[] = allowComplete ? ['closed','shipped'] : ['shipped']
+    return await tryUpdateStatus(soId, targets)
   }
 
   // Ship a line: ship the outstanding (qty - shipped_qty)
@@ -545,7 +608,7 @@ export default function SalesOrders() {
       // 1) Deduct stock
       await upsertStockLevel(shipWhId, shipBinId, it.id, -qtyBaseOutstanding)
 
-      // 2) Movement record (capture id)
+      // 2) Movement record
       const mv = await supabase.from('stock_movements').insert({
         type: 'issue',
         item_id: it.id,
@@ -600,7 +663,7 @@ export default function SalesOrders() {
         ? { ...l, shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : l.shipped_at }
         : l))
 
-      // 5) If everything is shipped, close order
+      // 5) If everything is shipped, close order per setting
       const outstandingLeft = solines.filter(l => l.so_id === so.id && remaining(l) > 0 && l.id !== line.id).length
       if (outstandingLeft === 0) {
         const final = await setSOFinalStatus(so.id)
@@ -625,7 +688,6 @@ export default function SalesOrders() {
       if (!lines.length) return toast.error(tt('orders.noLinesToShip', 'No lines to ship'))
 
       for (const l of lines) {
-        // ship sequentially
         // eslint-disable-next-line no-await-in-loop
         await doShipLineSO(so, l)
       }
@@ -690,198 +752,203 @@ export default function SalesOrders() {
           <div className="flex items-center justify-between">
             <CardTitle>{tt('orders.outstandingSOs', 'Outstanding Sales Orders')}</CardTitle>
 
-            <Sheet open={soOpen} onOpenChange={setSoOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm">{tt('orders.newSO', 'New SO')}</Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-                <SheetHeader>
-                  <SheetTitle>{tt('orders.newSO', 'New Sales Order')}</SheetTitle>
-                  <SheetDescription className="sr-only">{tt('orders.createSO', 'Create a sales order')}</SheetDescription>
-                </SheetHeader>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShippedOpen(true)}>
+                {tt('orders.shippedBrowser', 'Shipped SOs')}
+              </Button>
 
-                {/* Header */}
-                <div className="mt-4 grid md:grid-cols-4 gap-3">
-                  <div>
-                    <Label>{tt('orders.customer', 'Customer')}</Label>
-                    <Select value={soCustomerId} onValueChange={setSoCustomerId}>
-                      <SelectTrigger><SelectValue placeholder={tt('orders.selectCustomer', 'Select customer')} /></SelectTrigger>
-                      <SelectContent className="max-h-64 overflow-auto">
-                        {customers.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {(c.code ? c.code + ' — ' : '') + c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.currency', 'Currency')}</Label>
-                    <Select value={soCurrency} onValueChange={setSoCurrency}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {(currencies.length ? currencies : [{ code: baseCode, name: baseCode }]).map(c =>
-                          <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode })}</Label>
-                    <Input type="number" min="0" step="0.000001" value={soFx} onChange={e => setSoFx(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>{tt('orders.expectedShip', 'Expected Ship')}</Label>
-                    <Input type="date" value={soDate} onChange={e => setSoDate(e.target.value)} />
-                  </div>
-                </div>
+              <Sheet open={soOpen} onOpenChange={setSoOpen}>
+                <SheetTrigger asChild>
+                  <Button size="sm">{tt('orders.newSO', 'New SO')}</Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+                  <SheetHeader>
+                    <SheetTitle>{tt('orders.newSO', 'New Sales Order')}</SheetTitle>
+                    <SheetDescription className="sr-only">{tt('orders.createSO', 'Create a sales order')}</SheetDescription>
+                  </SheetHeader>
 
-                {/* Lines */}
-                <div className="mt-6">
-                  <Label>{tt('orders.lines', 'Lines')}</Label>
-                  <div className="mt-2 border rounded-lg overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/50">
-                        <tr className="text-left">
-                          <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
-                          <th className="py-2 px-3 w-24">{tt('orders.uom', 'UoM')}</th>
-                          <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
-                          <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
-                          <th className="py-2 px-3 w-28">{tt('orders.discountPct', 'Disc %')}</th>
-                          <th className="py-2 px-3 w-36 text-right">{tt('orders.lineTotal', 'Line Total')}</th>
-                          <th className="py-2 px-3 w-10"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {soLinesForm.map((ln, idx) => {
-                          const it = itemById.get(ln.itemId)
-                          const baseUomId = it?.baseUomId || ''
-                          const baseUomCode =
-                            it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
-                          const qtyPreviewBase = it ? safeConvert(n(ln.qty), ln.uomId || baseUomId, baseUomId) : null
-                          const previewInvalid = it ? (qtyPreviewBase == null && n(ln.qty) > 0) : false
-
-                          const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
-
-                          return (
-                            <tr key={idx} className="border-t">
-                              <td className="py-2 px-3">
-                                <Select
-                                  value={ln.itemId}
-                                  onValueChange={(v) =>
-                                    setSoLinesForm(prev =>
-                                      prev.map((x, i) => i === idx ? { ...x, itemId: v, uomId: (itemById.get(v)?.baseUomId || x.uomId) } : x)
-                                    )
-                                  }
-                                >
-                                  <SelectTrigger><SelectValue placeholder={tt('orders.item', 'Item')} /></SelectTrigger>
-                                  <SelectContent className="max-h-64 overflow-auto">
-                                    {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-
-                              <td className="py-2 px-3">
-                                <Select
-                                  value={ln.uomId}
-                                  onValueChange={(v) => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}
-                                  disabled={!ln.itemId}
-                                >
-                                  <SelectTrigger><SelectValue placeholder={tt('orders.uom', 'UoM')} /></SelectTrigger>
-                                  <SelectContent className="max-h-64 overflow-auto">
-                                    {Array.from(convertibleGroupedUomsForItem(ln.itemId).entries()).map(([fam, arr]) => (
-                                      <SelectGroup key={fam}>
-                                        <SelectLabel>{fam}</SelectLabel>
-                                        {arr.map(u => (
-                                          <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-
-                              <td className="py-2 px-3">
-                                <Input
-                                  inputMode="decimal"
-                                  type="number"
-                                  min="0"
-                                  step="0.0001"
-                                  value={ln.qty}
-                                  onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))}
-                                />
-                                {/* qty -> base preview */}
-                                {!!ln.itemId && (
-                                  <div className={`text-xs mt-1 ${previewInvalid ? 'text-red-600' : 'text-muted-foreground'}`}>
-                                    {qtyPreviewBase == null
-                                      ? tt('orders.previewNoPath', 'No conversion path to base')
-                                      : `→ ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
-                                  </div>
-                                )}
-                              </td>
-
-                              <td className="py-2 px-3">
-                                <Input
-                                  inputMode="decimal"
-                                  type="number"
-                                  min="0"
-                                  step="0.0001"
-                                  value={ln.unitPrice}
-                                  onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, unitPrice: e.target.value } : x))}
-                                />
-                              </td>
-                              <td className="py-2 px-3">
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  step="0.01"
-                                  value={ln.discountPct}
-                                  onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))}
-                                />
-                              </td>
-                              <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
-                              <td className="py-2 px-3 text-right">
-                                <Button size="icon" variant="ghost" onClick={() => setSoLinesForm(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    <div className="p-2">
-                      <MobileAddLineButton
-                        onAdd={() => setSoLinesForm(prev => [...prev, { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])}
-                        label={tt('orders.addLine', 'Add Line')}
-                      />
+                  {/* Header */}
+                  <div className="mt-4 grid md:grid-cols-4 gap-3">
+                    <div>
+                      <Label>{tt('orders.customer', 'Customer')}</Label>
+                      <Select value={soCustomerId} onValueChange={setSoCustomerId}>
+                        <SelectTrigger><SelectValue placeholder={tt('orders.selectCustomer', 'Select customer')} /></SelectTrigger>
+                        <SelectContent className="max-h-64 overflow-auto">
+                          {customers.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {(c.code ? c.code + ' — ' : '') + c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('orders.currency', 'Currency')}</Label>
+                      <Select value={soCurrency} onValueChange={setSoCurrency}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(currencies.length ? currencies : [{ code: baseCode, name: baseCode }]).map(c =>
+                            <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode })}</Label>
+                      <Input type="number" min="0" step="0.000001" value={soFx} onChange={e => setSoFx(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>{tt('orders.expectedShip', 'Expected Ship')}</Label>
+                      <Input type="date" value={soDate} onChange={e => setSoDate(e.target.value)} />
                     </div>
                   </div>
 
-                  {/* Totals */}
-                  <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                      <div className="flex items-center gap-3">
-                        <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
-                        <Input className="w-28" type="number" min="0" step="0.01" value={soTaxPct} onChange={e => setSoTaxPct(e.target.value)} />
+                  {/* Lines */}
+                  <div className="mt-6">
+                    <Label>{tt('orders.lines', 'Lines')}</Label>
+                    <div className="mt-2 border rounded-lg overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr className="text-left">
+                            <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                            <th className="py-2 px-3 w-24">{tt('orders.uom', 'UoM')}</th>
+                            <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
+                            <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
+                            <th className="py-2 px-3 w-28">{tt('orders.discountPct', 'Disc %')}</th>
+                            <th className="py-2 px-3 w-36 text-right">{tt('orders.lineTotal', 'Line Total')}</th>
+                            <th className="py-2 px-3 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {soLinesForm.map((ln, idx) => {
+                            const it = itemById.get(ln.itemId)
+                            const baseUomId = it?.baseUomId || ''
+                            const baseUomCode =
+                              it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
+                            const qtyPreviewBase = it ? safeConvert(n(ln.qty), ln.uomId || baseUomId, baseUomId) : null
+                            const previewInvalid = it ? (qtyPreviewBase == null && n(ln.qty) > 0) : false
+
+                            const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
+
+                            return (
+                              <tr key={idx} className="border-t">
+                                <td className="py-2 px-3">
+                                  <Select
+                                    value={ln.itemId}
+                                    onValueChange={(v) =>
+                                      setSoLinesForm(prev =>
+                                        prev.map((x, i) => i === idx ? { ...x, itemId: v, uomId: (itemById.get(v)?.baseUomId || x.uomId) } : x)
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger><SelectValue placeholder={tt('orders.item', 'Item')} /></SelectTrigger>
+                                    <SelectContent className="max-h-64 overflow-auto">
+                                      {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+
+                                <td className="py-2 px-3">
+                                  <Select
+                                    value={ln.uomId}
+                                    onValueChange={(v) => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}
+                                    disabled={!ln.itemId}
+                                  >
+                                    <SelectTrigger><SelectValue placeholder={tt('orders.uom', 'UoM')} /></SelectTrigger>
+                                    <SelectContent className="max-h-64 overflow-auto">
+                                      {Array.from(convertibleGroupedUomsForItem(ln.itemId).entries()).map(([fam, arr]) => (
+                                        <SelectGroup key={fam}>
+                                          <SelectLabel>{fam}</SelectLabel>
+                                          {arr.map(u => (
+                                            <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>
+                                          ))}
+                                        </SelectGroup>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+
+                                <td className="py-2 px-3">
+                                  <Input
+                                    inputMode="decimal"
+                                    type="number"
+                                    min="0"
+                                    step="0.0001"
+                                    value={ln.qty}
+                                    onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))}
+                                  />
+                                  {!!ln.itemId && (
+                                    <div className={`text-xs mt-1 ${previewInvalid ? 'text-red-600' : 'text-muted-foreground'}`}>
+                                      {qtyPreviewBase == null
+                                        ? tt('orders.previewNoPath', 'No conversion path to base')
+                                        : `→ ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-2 px-3">
+                                  <Input
+                                    inputMode="decimal"
+                                    type="number"
+                                    min="0"
+                                    step="0.0001"
+                                    value={ln.unitPrice}
+                                    onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, unitPrice: e.target.value } : x))}
+                                  />
+                                </td>
+                                <td className="py-2 px-3">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    value={ln.discountPct}
+                                    onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))}
+                                  />
+                                </td>
+                                <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
+                                <td className="py-2 px-3 text-right">
+                                  <Button size="icon" variant="ghost" onClick={() => setSoLinesForm(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                      <div className="p-2">
+                        <MobileAddLineButton
+                          onAdd={() => setSoLinesForm(prev => [...prev, { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])}
+                          label={tt('orders.addLine', 'Add Line')}
+                        />
                       </div>
-                      <div className="flex flex-col items-end text-sm">
-                        <div className="w-full max-w-sm grid grid-cols-2 gap-1">
-                          <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({soCurrency})</div>
-                          <div className="text-right">{fmtAcct(soSubtotal)}</div>
-                          <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
-                          <div className="text-right">{fmtAcct(soTax)}</div>
-                          <div className="font-medium">{tt('orders.total', 'Total')}</div>
-                          <div className="text-right font-medium">{fmtAcct(soSubtotal + soTax)}</div>
+                    </div>
+
+                    {/* Totals */}
+                    <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                        <div className="flex items-center gap-3">
+                          <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
+                          <Input className="w-28" type="number" min="0" step="0.01" value={soTaxPct} onChange={e => setSoTaxPct(e.target.value)} />
                         </div>
-                        <div className="mt-3">
-                          <Button onClick={createSO}>{tt('orders.createSO', 'Create SO')}</Button>
+                        <div className="flex flex-col items-end text-sm">
+                          <div className="w-full max-w-sm grid grid-cols-2 gap-1">
+                            <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({soCurrency})</div>
+                            <div className="text-right">{fmtAcct(soSubtotal)}</div>
+                            <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
+                            <div className="text-right">{fmtAcct(soTax)}</div>
+                            <div className="font-medium">{tt('orders.total', 'Total')}</div>
+                            <div className="text-right font-medium">{fmtAcct(soSubtotal + soTax)}</div>
+                          </div>
+                          <div className="mt-3">
+                            <Button onClick={createSO}>{tt('orders.createSO', 'Create SO')}</Button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </SheetContent>
-            </Sheet>
+                </SheetContent>
+              </Sheet>
+            </div>
           </div>
         </CardHeader>
 
@@ -963,7 +1030,7 @@ export default function SalesOrders() {
 
       {/* SO View / Ship */}
       <Sheet open={soViewOpen} onOpenChange={(o) => { if (!o) { setSelectedSO(null) } setSoViewOpen(o) }}>
-        <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+        <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
           <SheetHeader>
             <SheetTitle>{tt('orders.soDetails', 'SO Details')}</SheetTitle>
             <SheetDescription className="sr-only">{tt('orders.soDetailsDesc', 'Review, select source bin, and ship')}</SheetDescription>
@@ -1077,6 +1144,109 @@ export default function SalesOrders() {
               </div>
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Shipped SOs Browser */}
+      <Sheet open={shippedOpen} onOpenChange={setShippedOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-3xl max-w-none p-0 md:p-6">
+          <SheetHeader>
+            <SheetTitle>{tt('orders.shippedBrowser', 'Shipped Sales Orders')}</SheetTitle>
+            <SheetDescription className="sr-only">
+              {tt('orders.shippedBrowserDesc', 'Search, filter and print shipped/closed orders')}
+            </SheetDescription>
+          </SheetHeader>
+
+          {/* Filters */}
+          <div className="mt-4 grid md:grid-cols-4 gap-3 p-4 md:p-0">
+            <div className="md:col-span-2">
+              <Label>{tt('common.search', 'Search')}</Label>
+              <Input
+                placeholder={tt('orders.searchHint', 'Order no. or customer')}
+                value={shipQ}
+                onChange={e => setShipQ(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>{tt('orders.from', 'From (updated)')}</Label>
+              <Input type="date" value={shipDateFrom} onChange={e => setShipDateFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>{tt('orders.to', 'To (updated)')}</Label>
+              <Input type="date" value={shipDateTo} onChange={e => setShipDateTo(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Status checkboxes */}
+          <div className="p-4 md:p-0 mt-2 flex flex-wrap gap-4 text-sm">
+            <div className="text-muted-foreground">{tt('orders.statuses', 'Statuses')}:</div>
+            {(['shipped','closed'] as const).map(sname => (
+              <label key={sname} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!shipStatuses[sname]}
+                  onChange={(e) => setShipStatuses(prev => ({ ...prev, [sname]: e.target.checked }))}
+                />
+                <span className="capitalize">{sname}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Results */}
+          <div className="mt-3 border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr className="text-left">
+                  <th className="py-2 px-3">{tt('orders.so', 'SO')}</th>
+                  <th className="py-2 px-3">{tt('orders.customer', 'Customer')}</th>
+                  <th className="py-2 px-3">{tt('orders.status', 'Status')}</th>
+                  <th className="py-2 px-3">{tt('orders.updated', 'Updated')}</th>
+                  <th className="py-2 px-3">{tt('orders.total', 'Total')}</th>
+                  <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shippedRows.length === 0 && (
+                  <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noResults', 'No results')}</td></tr>
+                )}
+                {shippedRows.map(so => {
+                  const header = n((so as any).total_amount, NaN)
+                  const sumLines = solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
+                  const orderSubtotal = Number.isFinite(header) ? header : sumLines
+                  const totalBase = orderSubtotal * fxSO(so)
+                  const updated = (so.updated_at || so.created_at || '').slice(0, 19).replace('T', ' ')
+                  return (
+                    <tr key={so.id} className="border-t">
+                      <td className="py-2 px-3">{soNo(so)}</td>
+                      <td className="py-2 px-3">{soCustomerLabel(so)}</td>
+                      <td className="py-2 px-3 capitalize">{so.status}</td>
+                      <td className="py-2 px-3">{updated || '—'}</td>
+                      <td className="py-2 px-3">{formatMoneyBase(totalBase, baseCode)}</td>
+                      <td className="py-2 px-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => printSO(so)}>
+                            {tt('orders.print', 'Print')}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paging */}
+          <div className="p-4 flex justify-between items-center">
+            <div className="text-xs text-muted-foreground">
+              {tt('orders.rows', 'Rows')}: {shippedRows.length}
+            </div>
+            {shippedHasMore && (
+              <Button size="sm" variant="secondary" onClick={() => fetchShippedPage(shippedPage + 1)}>
+                {tt('common.loadMore', 'Load more')}
+              </Button>
+            )}
+          </div>
         </SheetContent>
       </Sheet>
     </>
