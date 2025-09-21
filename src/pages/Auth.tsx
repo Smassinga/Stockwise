@@ -5,9 +5,10 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Alert, AlertDescription } from '../components/ui/alert'
-import { Package, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import Logo from '../components/brand/Logo'
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true)
@@ -74,9 +75,8 @@ export default function Auth() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center space-x-2 mb-4">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <Package className="w-6 h-6 text-primary-foreground" />
-            </div>
+            {/* Theming-only change: app/tenant logo instead of Package glyph */}
+            <Logo h={44} alt="StockWise" />
             <span className="text-2xl font-bold">StockWise</span>
           </div>
           <p className="text-muted-foreground">Advanced Inventory Management System</p>
