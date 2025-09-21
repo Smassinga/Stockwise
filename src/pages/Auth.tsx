@@ -9,6 +9,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import Logo from '../components/brand/Logo'
+import ThemeToggle from '../components/ThemeToggle' // <-- toggle
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true)
@@ -73,9 +74,14 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        {/* top bar with theme toggle */}
+        <div className="flex justify-end mb-2">
+          <ThemeToggle />
+        </div>
+
         <div className="text-center mb-8">
           <div className="flex items-center justify-center space-x-2 mb-4">
-            {/* Theming-only change: app/tenant logo instead of Package glyph */}
+            {/* App/tenant logo (SVG mark fallback), theming handled globally */}
             <Logo h={44} alt="StockWise" />
             <span className="text-2xl font-bold">StockWise</span>
           </div>

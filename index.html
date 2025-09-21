@@ -9,11 +9,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Stockwise — Inventory & Sales Insights</title>
-    <meta
-      name="description"
-      content="Stockwise helps you track stock, shipments, revenue, and COGS in real time."
-    />
+    <meta name="description" content="Stockwise helps you track stock, shipments, revenue, and COGS in real time." />
     <meta name="robots" content="index, follow" />
+    <meta name="color-scheme" content="light dark" />
 
     <!-- Theme colors for shells -->
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
@@ -24,18 +22,18 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Stockwise — Inventory & Sales Insights" />
     <meta property="og:description" content="Track stock, shipments, revenue, and COGS in real time." />
-    <meta property="og:image" content="/og-cover.png" />
+    <meta property="og:image" content="https://stockwiseapp.com/og-cover.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Stockwise — Inventory & Sales Insights" />
     <meta name="twitter:description" content="Track stock, shipments, revenue, and COGS in real time." />
-    <meta name="twitter:image" content="/og-cover.png" />
+    <meta name="twitter:image" content="https://stockwiseapp.com/og-cover.png" />
 
     <!-- Icons / PWA -->
-    <!-- Light/Dark aware favicons WITHOUT inline JS -->
     <link rel="icon" href="/favicon-dark.ico" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.ico"       media="(prefers-color-scheme: light)" />
-    <!-- Fallback for old browsers -->
     <link rel="icon" href="/favicon.ico" />
 
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -43,6 +41,9 @@
 
     <!-- Optional font preload -->
     <!-- <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin> -->
+
+    <!-- Apply theme class early (CSP-safe, no inline JS) -->
+    <script defer src="/js/theme.js"></script>
 
     <!-- Vite entry -->
     <script type="module" src="/src/main.tsx"></script>
