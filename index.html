@@ -1,67 +1,53 @@
-# ---------- /index.html (FULL REPLACEMENT) ----------
 <!doctype html>
 <html lang="en">
-<head>
-<!-- Canonical -->
-<link rel="canonical" href="https://stockwiseapp.com/" />
-<meta property="og:url" content="https://stockwiseapp.com/" />
+  <head>
+    <!-- Canonical -->
+    <link rel="canonical" href="https://stockwiseapp.com/" />
+    <meta property="og:url" content="https://stockwiseapp.com/" />
 
+    <!-- Basic meta -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stockwise — Inventory & Sales Insights</title>
+    <meta
+      name="description"
+      content="Stockwise helps you track stock, shipments, revenue, and COGS in real time."
+    />
+    <meta name="robots" content="index, follow" />
 
-<!-- Basic meta -->
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Stockwise — Inventory & Sales Insights</title>
-<meta name="description" content="Stockwise helps you track stock, shipments, revenue, and COGS in real time." />
-<meta name="robots" content="index, follow" />
+    <!-- Theme colors for shells -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#0B1220" />
+    <meta name="theme-color" content="#2F5DF5" />
 
+    <!-- Social sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Stockwise — Inventory & Sales Insights" />
+    <meta property="og:description" content="Track stock, shipments, revenue, and COGS in real time." />
+    <meta property="og:image" content="/og-cover.png" />
 
-<!-- Theme color for light/dark shells (Chrome/Android, Windows tiles, etc.) -->
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1220" />
-<!-- Fallback (older UAs) -->
-<meta name="theme-color" content="#2F5DF5" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Stockwise — Inventory & Sales Insights" />
+    <meta name="twitter:description" content="Track stock, shipments, revenue, and COGS in real time." />
+    <meta name="twitter:image" content="/og-cover.png" />
 
+    <!-- Icons / PWA -->
+    <!-- Light/Dark aware favicons WITHOUT inline JS -->
+    <link rel="icon" href="/favicon-dark.ico" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/favicon.ico"       media="(prefers-color-scheme: light)" />
+    <!-- Fallback for old browsers -->
+    <link rel="icon" href="/favicon.ico" />
 
-<!-- Social sharing -->
-<meta property="og:type" content="website" />
-<meta property="og:title" content="Stockwise — Inventory & Sales Insights" />
-<meta property="og:description" content="Track stock, shipments, revenue, and COGS in real time." />
-<meta property="og:image" content="/og-cover.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
 
+    <!-- Optional font preload -->
+    <!-- <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin> -->
 
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Stockwise — Inventory & Sales Insights" />
-<meta name="twitter:description" content="Track stock, shipments, revenue, and COGS in real time." />
-<meta name="twitter:image" content="/og-cover.png" />
-
-
-<!-- Icons / PWA (files live in /public) -->
-<link id="favicon" rel="icon" href="/favicon.ico" sizes="any" />
-<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<link rel="manifest" href="/manifest.webmanifest" />
-
-
-<!-- Optional font preload example -->
-<!-- <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin> -->
-
-
-<!-- Dark-mode favicon swap (keeps crisp contrast on dark shells) -->
-<script>
-(function () {
-var m = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-if (!m) return;
-var el = document.getElementById('favicon');
-function setIcon() { el && (el.href = m.matches ? '/favicon-dark.ico' : '/favicon.ico'); }
-setIcon();
-if (m.addEventListener) m.addEventListener('change', setIcon); else m.addListener(setIcon);
-})();
-</script>
-
-
-<!-- Vite entry -->
-<script type="module" src="/src/main.tsx"></script>
-</head>
-<body>
-<div id="root"></div>
-</body>
+    <!-- Vite entry -->
+    <script type="module" src="/src/main.tsx"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>
