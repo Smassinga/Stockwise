@@ -1,7 +1,7 @@
-// supabase/functions/digest-worker/index.ts
 // Sends one Daily Digest via SendGrid. Uses SERVICE_ROLE_KEY to bypass RLS.
+// Adds a simple auth gate: X-Webhook-Secret header (or ?key= when DEBUG_ACCEPT_QUERY_KEY=true).
 
-import { serve } from "https://deno.land/std/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type DigestQueueRow = {
@@ -35,14 +35,18 @@ type DigestPayload = {
   }>;
 };
 
-const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
-const FROM_EMAIL       = Deno.env.get("FROM_EMAIL")       ?? "no-reply@stockwiseapp.com";
-const REPLY_TO_EMAIL  = Deno.env.get("REPLY_TO_EMAIL")  ?? "support@stockwiseapp.com";
-const BRAND_NAME       = Deno.env.get("BRAND_NAME")       ?? "Stockwise";
-const DRY_RUN          = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
+const SENDGRID_API_KEY   = Deno.env.get("SENDGRID_API_KEY")   ?? "";
+const FROM_EMAIL         = Deno.env.get("FROM_EMAIL")         ?? "no-reply@stockwiseapp.com";
+const REPLY_TO_EMAIL     = Deno.env.get("REPLY_TO_EMAIL")     ?? "support@stockwiseapp.com";
+const BRAND_NAME         = Deno.env.get("BRAND_NAME")         ?? "Stockwise";
+const DRY_RUN            = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
 
-const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_URL       = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY   = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+const DIGEST_HOOK_SECRET = Deno.env.get("DIGEST_HOOK_SECRET") ?? "";
+const DEBUG_ACCEPT_QUERY_KEY = (Deno.env.get("DEBUG_ACCEPT_QUERY_KEY") ?? "false").toLowerCase() === "true";
+const DEBUG_LOG          = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
 
 function supa() {
   if (!SERVICE_ROLE_KEY) throw new Error("SERVICE_ROLE_KEY not set");
@@ -120,31 +124,78 @@ async function sendViaSendGrid(to: string[], subject: string, html: string) {
   }
 }
 
-serve(async () => {
+function authorized(req: Request): boolean {
+  if (!DIGEST_HOOK_SECRET) return false;
+  const hdr = req.headers.get("x-webhook-secret") ?? "";
+  const auth = req.headers.get("authorization") ?? "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const url = new URL(req.url);
+  const key = url.searchParams.get("key") ?? "";
+
+  const ok =
+    hdr === DIGEST_HOOK_SECRET ||
+    bearer === DIGEST_HOOK_SECRET ||
+    (DEBUG_ACCEPT_QUERY_KEY && key === DIGEST_HOOK_SECRET);
+
+  if (DEBUG_LOG) {
+    console.log("[auth] hdr:", hdr ? "set" : "empty",
+                "bearerLen:", bearer.length,
+                "querySet:", key ? "yes" : "no",
+                "ok:", ok);
+  }
+  return ok;
+}
+
+serve(async (req: Request) => {
   try {
+    if (!authorized(req)) {
+      return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     const supabase = supa();
 
     const { data: jobs, error: qErr } = await supabase
-      .from("digest_queue").select("*").eq("status", "pending")
-      .order("created_at", { ascending: true }).limit(1);
-    if (qErr) return new Response(JSON.stringify({ ok:false, error:qErr.message }), { status: 500 });
+      .from("digest_queue")
+      .select("*")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(1);
 
-    if (!jobs?.length) return new Response(JSON.stringify({ ok:true, mode: DRY_RUN ? "dry" : "live", message: "no pending jobs" }), { status: 200 });
+    if (qErr) {
+      return new Response(JSON.stringify({ ok: false, error: qErr.message }), { status: 500 });
+    }
+    if (!jobs?.length) {
+      return new Response(JSON.stringify({ ok: true, mode: DRY_RUN ? "dry" : "live", message: "no pending jobs" }), {
+        status: 200,
+      });
+    }
 
     const job = jobs[0] as DigestQueueRow;
 
+    // Claim atomically
     const { error: claimErr } = await supabase
-      .from("digest_queue").update({ status: "processing" }).eq("id", job.id).eq("status", "pending");
-    if (claimErr) return new Response(JSON.stringify({ ok:false, error:claimErr.message }), { status: 500 });
+      .from("digest_queue")
+      .update({ status: "processing" })
+      .eq("id", job.id)
+      .eq("status", "pending");
+    if (claimErr) {
+      return new Response(JSON.stringify({ ok: false, error: claimErr.message }), { status: 500 });
+    }
 
+    // Verify we have it
     const { data: claimed } = await supabase.from("digest_queue").select("status").eq("id", job.id).limit(1);
-    if (!claimed || claimed[0]?.status !== "processing")
-      return new Response(JSON.stringify({ ok:true, message:"job already taken" }), { status: 200 });
+    if (!claimed || claimed[0]?.status !== "processing") {
+      return new Response(JSON.stringify({ ok: true, message: "job already taken" }), { status: 200 });
+    }
 
+    // Build digest payload via SQL
     const { data: payload, error: rpcErr } = await supabase.rpc("build_daily_digest_payload", {
       p_company_id: job.company_id,
-      p_local_day:  job.run_for_local_date,
-      p_timezone:   job.timezone
+      p_local_day: job.run_for_local_date,
+      p_timezone: job.timezone,
     });
     if (rpcErr) throw rpcErr;
 
@@ -164,16 +215,25 @@ serve(async () => {
       await sendViaSendGrid(emails, subject, html);
     }
 
-    await supabase.from("digest_queue")
+    await supabase
+      .from("digest_queue")
       .update({ status: "done", processed_at: new Date().toISOString(), error: null })
       .eq("id", job.id);
-    await supabase.from("company_digest_state")
+
+    await supabase
+      .from("company_digest_state")
       .update({ last_status: "sent", last_error: null, last_attempt_at: new Date().toISOString() })
       .eq("company_id", job.company_id);
 
-    return new Response(JSON.stringify({ ok:true, mode: DRY_RUN ? "dry" : "live", message: "sent" }), { status: 200 });
+    return new Response(JSON.stringify({ ok: true, mode: DRY_RUN ? "dry" : "live", message: "sent" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return new Response(JSON.stringify({ ok:false, error: msg }), { status: 500 });
+    return new Response(JSON.stringify({ ok: false, error: msg }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
   }
 });
