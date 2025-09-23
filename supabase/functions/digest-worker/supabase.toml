@@ -1,0 +1,2 @@
+[functions.digest-worker]
+verify_jwt = false

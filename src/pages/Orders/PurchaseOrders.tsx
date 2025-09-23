@@ -12,6 +12,7 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
+import { useOrg } from '../../hooks/useOrg' // ⬅️ added
 
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string }
@@ -67,6 +68,7 @@ export default function PurchaseOrders() {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars); return s === key ? fallback : s
   }
+  const { companyId } = useOrg() // ⬅️ added
 
   // masters
   const [items, setItems] = useState<Item[]>([])
@@ -294,6 +296,13 @@ export default function PurchaseOrders() {
   async function createPO() {
     try {
       if (!poSupplierId) return toast.error(tt('orders.supplierRequired', 'Supplier is required'))
+
+      // Ensure we have a company for the order_no generator trigger
+      if (!companyId) {
+        toast.error('No company selected. Please sign in again or select a company.')
+        return
+      }
+
       const cleanLines = poLinesForm
         .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct) }))
         .filter(l => l.itemId && l.uomId && l.qty > 0 && l.unitPrice >= 0 && l.discountPct >= 0 && l.discountPct <= 100)
@@ -306,10 +315,14 @@ export default function PurchaseOrders() {
       const tax_total = subtotal * (n(poTaxPct, 0) / 100)
       const total = subtotal + tax_total
 
+      // NOTE:
+      // - Do NOT send `order_no` (trigger will generate it).
+      // - Do NOT send `order_date` with null (column is NOT NULL with default).
       const inserted: any = await db.purchaseOrders.create({
+        company_id: companyId, // ⬅️ key addition so trigger can build AAA-PO#########
         supplier_id: poSupplierId,
         status: 'draft',
-        currency_code: poCurrency,
+        currency_code: (poCurrency || '').toUpperCase().slice(0, 3),
         fx_to_base: fx,
         expected_date: poDate || null,
         notes: null,
@@ -320,6 +333,7 @@ export default function PurchaseOrders() {
         supplier_tax_id: supp?.tax_id ?? null,
         subtotal, tax_total, total,
       } as any)
+
       const poId: string = Array.isArray(inserted) ? inserted[0]?.id : inserted?.id
       if (!poId) throw new Error('PO insert did not return an id')
 
