@@ -39,6 +39,22 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
+    <!-- CSP (allows Supabase Storage images + API/realtime calls) -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      base-uri 'self';
+      form-action 'self';
+      object-src 'none';
+      img-src 'self' data: blob: https://*.supabase.co;
+      script-src 'self';
+      style-src 'self' 'unsafe-inline';
+      font-src 'self' data:;
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co;
+      frame-src 'self' https://*.supabase.co;
+      media-src 'self' data: blob: https://*.supabase.co;
+      upgrade-insecure-requests;
+    ">
+
     <!-- Optional font preload -->
     <!-- <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin> -->
 
