@@ -35,47 +35,16 @@
     <link rel="icon" href="/favicon-dark.ico" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.ico"       media="(prefers-color-scheme: light)" />
     <link rel="icon" href="/favicon.ico" />
-
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
     <!-- Google Fonts (optional) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    
-    <!-- CSP (allows Supabase Storage images + API/realtime calls) -->
-    <meta http-equiv="Content-Security-Policy" content="
-      default-src 'self';
-      base-uri 'self';
-      form-action 'self';
-      object-src 'none';
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-      /* images: your site + data/blob + Supabase Storage */
-      img-src 'self' data: blob: https://*.supabase.co;
-
-      /* scripts: your bundled JS only (Vite) */
-      script-src 'self';
-
-      /* styles: your CSS + Google Fonts stylesheet */
-      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-      /* some browsers distinguish -elem; be explicit */
-      style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com;
-
-      /* fonts: local/data + Google Fonts font files */
-      font-src 'self' data: https://fonts.gstatic.com;
-
-      /* XHR/WebSocket to Supabase */
-      connect-src 'self' https://*.supabase.co wss://*.supabase.co;
-
-      /* if you ever embed Supabase auth widgets/iframed content */
-      frame-src 'self' https://*.supabase.co;
-
-      /* media (just in case you preview files from storage) */
-      media-src 'self' data: blob: https://*.supabase.co;
-
-      upgrade-insecure-requests;
-    ">
->
+    <!-- CSP (allows Supabase Storage images + API/realtime calls + Google Fonts) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: blob: https://*.supabase.co; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self' https://*.supabase.co; media-src 'self' data: blob: https://*.supabase.co; upgrade-insecure-requests;">
 
     <!-- Optional font preload -->
     <!-- <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin> -->
