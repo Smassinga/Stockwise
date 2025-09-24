@@ -4,6 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Button } from '../components/ui/button'
 
+/**
+ * Support both PKCE magic-link (?code=...) and hash-style callbacks
+ * (#access_token=...&refresh_token=...).
+ */
 function parseHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
   return {
@@ -22,6 +26,15 @@ export default function AuthCallback() {
   useEffect(() => {
     const run = async () => {
       try {
+        // If a session already exists (e.g., user refreshed), route immediately.
+        {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) {
+            await routeByMembership(nav)
+            return
+          }
+        }
+
         const url = new URL(window.location.href)
         const code = url.searchParams.get('code')
         const errQuery = url.searchParams.get('error_description') || url.searchParams.get('error')
@@ -33,20 +46,20 @@ export default function AuthCallback() {
           return
         }
 
-        // 1) Try PKCE / magic link first (?code=…)
+        // 1) PKCE / magic link first (?code=…)
         let authed = false
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
           if (!error) authed = true
         }
 
-        // 2) Fallback: hash tokens (#access_token=…&refresh_token=…)
+        // 2) Hash tokens fallback
         if (!authed && access_token && refresh_token) {
           const { error } = await supabase.auth.setSession({ access_token, refresh_token })
           if (!error) authed = true
         }
 
-        // 3) If still not authed, bail with a helpful message
+        // 3) Give up with a helpful message
         if (!authed) {
           setMsg(
             'Could not complete sign-in. Open the link in the SAME browser/profile where you started, or resend the email and try again.'
@@ -55,43 +68,17 @@ export default function AuthCallback() {
           return
         }
 
-        // Clean up URL (remove tokens / code to avoid refresh loops)
+        // Clean the URL (prevents refresh loops)
         try {
           const clean = `${window.location.origin}/auth/callback`
           window.history.replaceState({}, '', clean)
         } catch {}
 
-        // Optional best-effort invite sync (ignores errors)
+        // Best-effort: link pending invites to this user (ignore failures)
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
-        // Decide destination
-        const { data: { session } } = await supabase.auth.getSession()
-        const userId = session?.user?.id
-        if (!userId) {
-          setMsg('Signed in, but no session found. Please try again.')
-          setShowHomeBtn(true)
-          return
-        }
-
         setMsg('Signed in. Redirecting…')
-
-        // If member, go to dashboard; otherwise onboarding (which now handles unverified users)
-        const { data: membership, error: memErr } = await supabase
-          .from('company_members')
-          .select('company_id')
-          .eq('user_id', userId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle()
-
-        if (memErr) {
-          nav('/', { replace: true })
-        } else if (membership?.company_id) {
-          nav('/dashboard', { replace: true })
-        } else {
-          nav('/onboarding', { replace: true })
-        }
+        await routeByMembership(nav)
       } catch (e: any) {
         setMsg(e?.message || 'Unexpected error while finishing sign-in')
         setShowHomeBtn(true)
@@ -110,4 +97,27 @@ export default function AuthCallback() {
       )}
     </div>
   )
+}
+
+/** After auth, decide where to send the user. */
+async function routeByMembership(nav: ReturnType<typeof useNavigate>) {
+  const { data: { session } } = await supabase.auth.getSession()
+  const userId = session?.user?.id
+  if (!userId) {
+    nav('/auth', { replace: true })
+    return
+  }
+
+  // Prefer active membership; if none, go to onboarding (which handles verify-gate)
+  const { data: membership } = await supabase
+    .from('company_members')
+    .select('company_id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (membership?.company_id) nav('/dashboard', { replace: true })
+  else nav('/onboarding', { replace: true })
 }
