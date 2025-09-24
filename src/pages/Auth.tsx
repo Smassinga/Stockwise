@@ -13,6 +13,13 @@ import { supabase } from '../lib/supabase'
 import Logo from '../components/brand/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 
+/**
+ * This screen handles both Sign In and Sign Up.
+ * When signing up (with email confirmation ON), we switch to a lightweight
+ * "Verify your email" screen with a Resend button that points to /auth/callback.
+ * When trying to sign in before confirming, we detect the specific Supabase error
+ * and also switch to the same verification screen for that email.
+ */
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
@@ -20,12 +27,17 @@ export default function Auth() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // NEW: after sign-up, we show a verification screen
+  // After sign-up or if sign-in fails with "Email not confirmed", show this
   const [awaitingVerification, setAwaitingVerification] = useState<null | { email: string }>(null)
   const [resending, setResending] = useState(false)
 
   const navigate = useNavigate()
   const { login, register, requestPasswordReset } = useAuth()
+
+  function handleInputChange(field: keyof typeof formData, value: string) {
+    setFormData(prev => ({ ...prev, [field]: value }))
+    if (error) setError('')
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,10 +48,18 @@ export default function Auth() {
       if (isLogin) {
         const res = await login(formData.email, formData.password)
         if (!res.success) {
+          // If the project has email confirmations enabled, Supabase returns an error like
+          // "Email not confirmed". Catch that and move the user to the verify screen.
+          const msg = (res.error || '').toLowerCase()
+          if (msg.includes('not confirmed') || msg.includes('confirm your email')) {
+            setAwaitingVerification({ email: formData.email })
+            toast('Please verify your email, then sign in.', { icon: '📧' })
+            return
+          }
           setError(res.error || 'Login failed')
           return
         }
-        navigate('/dashboard') // route guards will push to /onboarding if no company
+        navigate('/dashboard') // route guards will route to /onboarding if needed
         return
       }
 
@@ -50,7 +70,7 @@ export default function Auth() {
         return
       }
 
-      // Switch to "verify your email" screen instead of flipping to Sign In immediately
+      // Switch to "verify your email" screen
       setAwaitingVerification({ email: formData.email })
       toast.success('Account created. Check your email to verify, then sign in.')
     } catch (err) {
@@ -59,11 +79,6 @@ export default function Auth() {
     } finally {
       setLoading(false)
     }
-  }
-
-  function handleInputChange(field: keyof typeof formData, value: string) {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    if (error) setError('')
   }
 
   async function handleResetPassword() {
@@ -78,7 +93,7 @@ export default function Auth() {
     else toast.success('Password reset email sent!')
   }
 
-  // NEW: resend verification handler
+  // Resend verification email to the same /auth/callback route
   async function resendVerification() {
     if (!awaitingVerification?.email) return
     try {
@@ -86,23 +101,16 @@ export default function Auth() {
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: awaitingVerification.email,
-        // optional redirect; if you have a custom site URL configured in Supabase Auth,
-        // you can omit this. Otherwise, pass the AuthCallback route:
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       })
-      if (error) {
-        toast.error(error.message)
-      } else {
-        toast.success('Verification email resent.')
-      }
+      if (error) toast.error(error.message)
+      else toast.success('Verification email resent.')
     } finally {
       setResending(false)
     }
   }
 
-  // --- UI ---
-
-  // After sign-up, show the waiting/verification screen
+  // --- UI: verify-email screen (shown after sign-up or unconfirmed sign-in) ---
   if (awaitingVerification) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -126,31 +134,39 @@ export default function Auth() {
             <CardContent className="space-y-4">
               <div className="text-sm text-muted-foreground text-center">
                 We sent a verification link to <strong>{awaitingVerification.email}</strong>.
-                Open it on the same device/browser to finish sign-in.
+                Open it in the <strong>same browser/profile</strong> you used to sign up to finish sign-in.
               </div>
 
               <div className="flex items-center justify-center gap-2">
-                <Button onClick={resendVerification} disabled={resending} className="min-w-[180px]">
+                <Button onClick={resendVerification} disabled={resending} className="min-w-[200px]">
                   <Mail className="h-4 w-4 mr-2" />
-                  {resending ? 'Resending…' : 'Resend verification'}
+                  {resending ? 'Resending…' : 'Resend verification email'}
                 </Button>
               </div>
 
               <div className="text-center text-xs text-muted-foreground">
-                Wrong address? <Button
+                Wrong address?{' '}
+                <Button
                   variant="link"
                   className="px-1"
-                  onClick={() => { setAwaitingVerification(null); setIsLogin(false); }}
+                  onClick={() => {
+                    setAwaitingVerification(null)
+                    setIsLogin(false)
+                  }}
                 >
                   Go back and edit
                 </Button>
               </div>
 
               <div className="text-center text-xs text-muted-foreground">
-                Already verified? <Button
+                Already verified?{' '}
+                <Button
                   variant="link"
                   className="px-1"
-                  onClick={() => { setAwaitingVerification(null); setIsLogin(true); }}
+                  onClick={() => {
+                    setAwaitingVerification(null)
+                    setIsLogin(true)
+                  }}
                 >
                   Sign in
                 </Button>
@@ -162,7 +178,7 @@ export default function Auth() {
     )
   }
 
-  // Default login / signup form
+  // --- UI: default login / signup form ---
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -180,7 +196,9 @@ export default function Auth() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-center">{isLogin ? 'Sign In' : 'Create Account'}</CardTitle>
+            <CardTitle className="text-center">
+              {isLogin ? 'Sign In' : 'Create Account'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -268,6 +286,11 @@ export default function Auth() {
                 {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
               </Button>
             </div>
+
+            {/* Small helper for verification-based flows */}
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Using email verification? Open the link in the <strong>same browser</strong> you used here.
+            </p>
           </CardContent>
         </Card>
       </div>

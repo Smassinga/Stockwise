@@ -9,6 +9,7 @@ import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import { Mail } from 'lucide-react'
 
+/** Polls for a newly-created membership to become visible through RLS. */
 async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
@@ -45,18 +46,24 @@ export default function Onboarding() {
         const user = session?.user
         if (!user) { nav('/auth', { replace: true }); return }
 
-        // NEW: if email not confirmed, stop here and render verify screen
-        const confirmed = (user as any)?.email_confirmed_at || user?.identities?.some?.(i => i.identity_data?.email_confirmed_at)
+        // If email not confirmed, show verify-gate here.
+        // Works for both classic email + SSO identity cases.
+        const confirmed =
+          // classic field
+          (user as any)?.email_confirmed_at ||
+          // some providers expose confirm on identity_data
+          user?.identities?.some?.(i => (i as any)?.identity_data?.email_confirmed_at)
+
         if (!confirmed) {
           setUnverifiedEmail(user.email ?? 'your email')
           setLoading(false)
           return
         }
 
-        // Best-effort invite sync
+        // Best-effort: link pending invites to this user (ignore failures)
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
-        // Already a member?
+        // If already an active member, head to dashboard.
         const active = await supabase
           .from('company_members')
           .select('company_id')
@@ -67,6 +74,7 @@ export default function Onboarding() {
           .maybeSingle()
 
         if (active.data?.company_id) { nav('/dashboard', { replace: true }); return }
+
         setLoading(false)
       } catch (e: any) {
         console.error(e)
@@ -102,7 +110,10 @@ export default function Onboarding() {
       const { error } = await supabase.rpc('create_company_and_bootstrap', { p_name: name })
       if (error) { toast.error(error.message); return }
 
+      // Refresh auth (some RLS paths rely on fresh claims)
       await supabase.auth.refreshSession()
+
+      // Wait briefly for RLS to reflect membership then go.
       setLoading(true)
       const cid = await waitForMembership(8000, 400)
       if (!cid) console.warn('Membership not visible yet; navigating anyway.')
@@ -124,7 +135,7 @@ export default function Onboarding() {
     )
   }
 
-  // NEW: Verify-email screen for unverified users
+  // Verify-email screen for unverified accounts
   if (unverifiedEmail) {
     return (
       <div className="max-w-lg mx-auto">
@@ -135,10 +146,13 @@ export default function Onboarding() {
               We sent a verification link to <strong>{unverifiedEmail}</strong>. Open it on the same
               device/browser to finish sign-in.
             </p>
-            <div>
+            <div className="flex gap-2">
               <Button onClick={resendVerification} disabled={resending}>
                 <Mail className="h-4 w-4 mr-2" />
                 {resending ? 'Resending…' : 'Resend verification'}
+              </Button>
+              <Button variant="secondary" onClick={() => location.assign('/auth')}>
+                Use a different email
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
