@@ -11,6 +11,7 @@ import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
+import { useOrg } from '../hooks/useOrg' // NEW: need companyId context
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
@@ -60,6 +61,7 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 export default function StockMovements() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
+  const { companyId } = useOrg() // NEW
 
   // Master data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -337,6 +339,49 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
+  // NEW: Idempotent "CASH" customer resolver per company
+  async function getOrCreateCashCustomerId(): Promise<string> {
+    if (!companyId) throw new Error('No company selected')
+    // 1) try select
+    {
+      const q = await supabase
+        .from('customers')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('code', 'CASH')
+        .limit(1)
+        .maybeSingle()
+      if (!q.error && q.data?.id) return q.data.id
+    }
+    // 2) try upsert (on company_id,code)
+    {
+      const up = await supabase
+        .from('customers')
+        .upsert(
+          { company_id: companyId, code: 'CASH', name: 'Cash Customer' },
+          { onConflict: 'company_id,code' }
+        )
+        .select('id')
+        .single()
+      if (!up.error && up.data?.id) return up.data.id
+
+      // 3) handle race: if 23505/409, select again
+      const msg = String(up.error?.message || '')
+      const code = (up as any)?.error?.code
+      if (code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+        const q2 = await supabase
+          .from('customers')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('code', 'CASH')
+          .limit(1)
+          .maybeSingle()
+        if (!q2.error && q2.data?.id) return q2.data.id
+      }
+      throw up.error || new Error('Failed to upsert CASH customer')
+    }
+  }
+
   // Submit handlers
   async function submitReceive() {
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
@@ -390,21 +435,25 @@ export default function StockMovements() {
 
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // SO path: create SO (revenue) + COGS via RPC; do not insert a separate movement here
+    // SO path: create SO (revenue) + COGS via RPC
     if (rt === 'SO') {
+      if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
       const cur = saleCurrency || baseCode
       const fx = num(saleFx, NaN); if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.enterFx', 'Enter a valid FX to base'))
 
       try {
+        // NEW: default to per-company CASH customer if none selected
+        const effectiveCustomerId = saleCustomerId || await getOrCreateCashCustomerId()
+
         await finalizeCashSaleSOWithCOGS({
           itemId: currentItem.id,
           qty,                 // pricing qty (may be non-base)
           qtyBase,             // stock qty (base)
           uomId,
           unitPrice: unitSellPrice,
-          customerId: saleCustomerId || undefined,
+          customerId: effectiveCustomerId,
           currencyCode: cur,
           fxToBase: fx,
           status: 'shipped',
@@ -424,7 +473,14 @@ export default function StockMovements() {
         return toast.success(tt('movements.issued', 'Issued'))
       } catch (e: any) {
         console.error(e)
-        return toast.error(tt('movements.failedCreateSO', 'Failed to create the Sales Order'))
+        // Surface duplicate-code/race as a friendly message if ever bubbles up
+        const msg = String(e?.message || '')
+        if (/duplicate key|unique constraint|23505/i.test(msg)) {
+          toast.error(tt('customers.cashRace', 'CASH customer just got created by another request. Please try again.'))
+        } else {
+          toast.error(tt('movements.failedCreateSO', 'Failed to create the Sales Order'))
+        }
+        return
       }
     }
 
@@ -586,7 +642,6 @@ export default function StockMovements() {
 
   // ---------------------- Visual grouping helpers ----------------------------
 
-  // Friendly label for UoM family
   const familyLabel = (fam?: string) => {
     const key = String(fam || 'unspecified').toLowerCase()
     const map: Record<string, string> = {
@@ -602,14 +657,12 @@ export default function StockMovements() {
     return map[key] || (fam ? fam : 'Unspecified')
   }
 
-  // Base family of the currently selected item's base UoM (to pin its group first)
   const baseFamily: string | undefined = useMemo(() => {
     if (!currentItem) return undefined
     const base = uomById.get(itemBaseUomId)
     return base?.family || undefined
   }, [currentItem, itemBaseUomId, uomById])
 
-  // Group UoMs by family for the Select, base family first
   const groupedUoms = useMemo(() => {
     const groups = new Map<string, Uom[]>()
     for (const u of uoms) {
@@ -627,7 +680,6 @@ export default function StockMovements() {
     return { groups, families }
   }, [uoms, baseFamily])
 
-  // Group "Bin Contents" by the family of each item's base UoM, with totals
   const binContentGroups = useMemo(() => {
     const g: Array<{ key: string; label: string; totalQty: number; rows: BinItemRow[] }> = []
     const map = new Map<string, { key: string; label: string; totalQty: number; rows: BinItemRow[] }>()
@@ -648,7 +700,6 @@ export default function StockMovements() {
     g.sort((a, b) => a.label.localeCompare(b.label))
     return g
   }, [itemsInSelectedBin, uomById, uoms])
-
 
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
@@ -753,7 +804,6 @@ export default function StockMovements() {
         <Card className="col-span-12 md:col-span-8">
           <CardHeader><CardTitle>{tt('movements.title.binContents', 'Bin Contents')}</CardTitle></CardHeader>
 
-          {/* <<< REPLACED BLOCK STARTS HERE >>> */}
           <CardContent className="overflow-x-auto">
             {!(fromBin || toBin) ? (
               <div className="text-sm text-muted-foreground">
@@ -761,7 +811,6 @@ export default function StockMovements() {
               </div>
             ) : (
               <table className="w-full table-fixed text-sm">
-                {/* fixed column widths for clean alignment */}
                 <colgroup>
                   <col className="w-[48%]" />
                   <col className="w-[18%]" />
@@ -809,7 +858,6 @@ export default function StockMovements() {
               </table>
             )}
           </CardContent>
-          {/* <<< REPLACED BLOCK ENDS HERE >>> */}
         </Card>
       </div>
 
