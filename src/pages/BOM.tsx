@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+// src/pages/BOMPage.tsx
+import { useEffect, useMemo, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
@@ -6,23 +7,18 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 
-type Item = {
-  id: string
-  name: string
-  sku?: string | null
-  base_uom_id?: string | null
-}
-type Uom = { id: string; code: string; name: string; family?: string }
-type Warehouse = { id: string; name: string }
-type Bin = { id: string; code: string; name: string; warehouse_id: string }
+type Item = { id: string; name: string; sku?: string | null; base_uom_id?: string | null }
+type Uom  = { id: string; code: string; name: string; family?: string }
+type Warehouse = { id: string; name: string }                 // id = UUID
+type Bin = { id: string; code: string; name: string; warehouse_id: string } // id = TEXT (e.g., "bin_...")
 
 type Bom = { id: string; product_id: string; name: string; version: string; is_active: boolean }
 type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; created_at: string | null }
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
+const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || ''))
 
 async function getCurrentCompanyId(): Promise<string> {
   const { data, error } = await supabase
@@ -36,6 +32,27 @@ async function getCurrentCompanyId(): Promise<string> {
   return data[0].company_id as string
 }
 
+type OutputSplit = {
+  id: string           // UI-only key
+  warehouseId: string  // UUID
+  binId: string        // TEXT (bin_...)
+  qty: string          // text input
+}
+
+type ComponentSourceRow = {
+  id: string
+  warehouseId: string  // UUID
+  binId: string        // TEXT (bin_...)
+  sharePct: string     // percent as text; normalized on build
+}
+
+// Payload shapes for RPC
+type ComponentSourcesPayload = Array<{
+  component_item_id: string
+  sources: Array<{ warehouse_id: string; bin_id: string; share_pct: number }>
+}>
+type OutputSplitsPayload = Array<{ warehouse_id: string; bin_id: string; qty: number }>
+
 export default function BOMPage() {
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string>('')
@@ -47,36 +64,54 @@ export default function BOMPage() {
 
   // BOMs
   const [boms, setBoms] = useState<Bom[]>([])
-  const [selectedBomId, setSelectedBomId] = useState<string>('')
+  const [selectedBomId, setSelectedBomId] = useState<string>('')  
+  const selectedBom = useMemo(() => boms.find(b => b.id === selectedBomId) || null, [selectedBomId, boms])
+
+  // Editable BOM fields
+  const [editName, setEditName] = useState<string>('')  
+  const [editVersion, setEditVersion] = useState<string>('')
 
   // Components
   const [components, setComponents] = useState<ComponentRow[]>([])
 
-  // Warehouses/Bins for build
+  // Warehouses/Bins (simple/global)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [binsFrom, setBinsFrom] = useState<Bin[]>([])
   const [binsTo, setBinsTo] = useState<Bin[]>([])
-  const [warehouseFromId, setWarehouseFromId] = useState<string>('')
-  const [warehouseToId, setWarehouseToId] = useState<string>('')
-  const [binFromId, setBinFromId] = useState<string>('')
-  const [binToId, setBinToId] = useState<string>('')
+  const [warehouseFromId, setWarehouseFromId] = useState<string>('')  // UUID
+  const [warehouseToId, setWarehouseToId] = useState<string>('')      // UUID
+  const [binFromId, setBinFromId] = useState<string>('')              // TEXT
+  const [binToId, setBinToId] = useState<string>('')                  // TEXT
+
+  // Bin cache per warehouse (for per-component sources + splits)
+  const [binCache, setBinCache] = useState<Record<string, Bin[]>>({})
+
+  // Advanced: split outputs
+  const [advanced, setAdvanced] = useState(false)
+  const [splits, setSplits] = useState<OutputSplit[]>([])
+
+  // Per-component source mode
+  const [useComponentSources, setUseComponentSources] = useState(false)
+  const [sourcesByComponent, setSourcesByComponent] = useState<Record<string, ComponentSourceRow[]>>({})
 
   // Create BOM
-  const [newBomProductId, setNewBomProductId] = useState<string>('')
+  const [newBomProductId, setNewBomProductId] = useState<string>('')  // UUID
   const [newBomName, setNewBomName] = useState<string>('')
 
   // Add component
-  const [compItemId, setCompItemId] = useState<string>('')
+  const [compItemId, setCompItemId] = useState<string>('')            // UUID
   const [compQtyPer, setCompQtyPer] = useState<string>('1')
   const [compScrap, setCompScrap] = useState<string>('0')
-  const [compUomId, setCompUomId] = useState<string>('') // entry UoM; converted to component base before insert
+  const [compUomId, setCompUomId] = useState<string>('') // entry UoM (convert to base before insert)
 
   // Build
   const [buildQty, setBuildQty] = useState<string>('1')
+  const [savingBOM, setSavingBOM] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+  const [building, setBuilding] = useState(false)
 
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
-  const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
-  const selectedBom = useMemo(() => boms.find(b => b.id === selectedBomId) || null, [selectedBomId, boms])
+  const uomById  = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
 
   // Conversion helpers
   function idsOrCodesEqual(aId?: string | null, bId?: string | null) {
@@ -110,51 +145,42 @@ export default function BOMPage() {
 
   // Initial load
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       try {
         setLoading(true)
         const cid = await getCurrentCompanyId()
         setCompanyId(cid)
 
-        // Items (need base_uom_id)
         const it = await supabase
-          .from('items')
-          .select('id,name,sku,base_uom_id')
-          .eq('company_id', cid)
-          .order('name', { ascending: true })
+          .from('items').select('id,name,sku,base_uom_id')
+          .eq('company_id', cid).order('name', { ascending: true })
         if (it.error) throw it.error
         setItems((it.data || []) as Item[])
 
-        // UoMs + conversions
         const [uRes, cRes] = await Promise.all([
-          supabase.from('uoms').select('id,code,name, family').order('code', { ascending: true }),
-          supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor'),
+          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
+          supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
         ])
         if (uRes.error) throw uRes.error
         setUoms(((uRes.data || []) as any[]).map((u: any) => ({
           id: String(u.id),
           code: String(u.code || '').toUpperCase(),
           name: String(u.name || ''),
+          family: u.family || 'unspecified',
         })))
-        const convRows = (cRes.data || []) as ConvRow[]
-        setConvGraph(buildConvGraph(convRows))
+        setConvGraph(buildConvGraph((cRes.data || []) as ConvRow[]))
 
-        // BOMs
         const bm = await supabase
           .from('boms')
           .select('id,product_id,name,version,is_active')
           .eq('company_id', cid)
           .order('created_at', { ascending: true })
         if (bm.error) throw bm.error
-        // Ensure version is a string for rendering
-        setBoms(((bm.data || []) as any[]).map(b => ({ ...b, version: String(b.version ?? 'v1') })))
+        const list = ((bm.data || []) as any[]).map(b => ({ ...b, version: String(b.version ?? 'v1') })) as Bom[]
+        setBoms(list)
 
-        // Warehouses
         const wh = await supabase
-          .from('warehouses')
-          .select('id,name')
-          .eq('company_id', cid)
-          .order('name', { ascending: true })
+          .from('warehouses').select('id,name').eq('company_id', cid).order('name', { ascending: true })
         if (wh.error) throw wh.error
         setWarehouses((wh.data || []) as Warehouse[])
         if (wh.data?.length) {
@@ -170,43 +196,33 @@ export default function BOMPage() {
     })()
   }, [])
 
-  // Bins per warehouse (via bins_v with snake_case warehouse_id)
+  // Bins per warehouse (global simple path)
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       if (!warehouseFromId) { setBinsFrom([]); return }
       const { data, error } = await supabase
-        .from('bins_v')
-        .select('id,code,name,warehouse_id')
-        .eq('warehouse_id', warehouseFromId)
-        .order('code', { ascending: true })
-      if (error) {
-        console.error(error)
-        return toast.error(error.message)
-      }
+        .from('bins_v').select('id,code,name,warehouse_id')
+        .eq('warehouse_id', warehouseFromId).order('code', { ascending: true })
+      if (error) { console.error(error); toast.error(error.message); return }
       setBinsFrom((data || []) as Bin[])
     })()
   }, [warehouseFromId])
 
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       if (!warehouseToId) { setBinsTo([]); return }
       const { data, error } = await supabase
-        .from('bins_v')
-        .select('id,code,name,warehouse_id')
-        .eq('warehouse_id', warehouseToId)
-        .order('code', { ascending: true })
-      if (error) {
-        console.error(error)
-        return toast.error(error.message)
-      }
+        .from('bins_v').select('id,code,name,warehouse_id')
+        .eq('warehouse_id', warehouseToId).order('code', { ascending: true })
+      if (error) { console.error(error); toast.error(error.message); return }
       setBinsTo((data || []) as Bin[])
     })()
   }, [warehouseToId])
 
   // Components for selected BOM
   useEffect(() => {
-    ;(async () => {
-      if (!selectedBomId) { setComponents([]); return }
+    (async () => {
+      if (!selectedBomId) { setComponents([]); setSourcesByComponent({}); return }
       const { data, error } = await supabase
         .from('bom_components')
         .select('id,component_item_id,qty_per,scrap_pct,created_at')
@@ -214,15 +230,60 @@ export default function BOMPage() {
         .order('created_at', { ascending: true })
       if (error) { console.error(error); toast.error(error.message); return }
       setComponents((data || []) as ComponentRow[])
+      setSourcesByComponent({})
     })()
   }, [selectedBomId])
 
-  // Default the entry UoM to the component's base UoM when item changes
+  // Sync editable fields on BOM change
+  useEffect(() => {
+    if (selectedBom) {
+      setEditName(selectedBom.name || '')
+      setEditVersion(String(selectedBom.version || 'v1'))
+    } else {
+      setEditName('')
+      setEditVersion('')
+    }
+  }, [selectedBomId]) // eslint-disable-line
+
+  // Default entry UoM to component base
   useEffect(() => {
     if (!compItemId) { setCompUomId(''); return }
     const base = itemById.get(compItemId)?.base_uom_id || ''
     setCompUomId(base || '')
   }, [compItemId]) // eslint-disable-line
+
+  // Group UoMs by family
+  const familyLabel = (fam?: string) => {
+    const key = String(fam || 'unspecified').toLowerCase()
+    const map: Record<string, string> = {
+      mass: 'Mass', volume: 'Volume', length: 'Length', area: 'Area',
+      count: 'Count', time: 'Time', other: 'Other', unspecified: 'Unspecified',
+    }
+    return map[key] || (fam ? fam : 'Unspecified')
+  }
+  const groupedUoms = useMemo(() => {
+    const groups = new Map<string, Uom[]>()
+    for (const u of uoms) {
+      const fam = (u.family && u.family.trim()) ? u.family : 'unspecified'
+      if (!groups.has(fam)) groups.set(fam, [])
+      groups.get(fam)!.push(u)
+    }
+    for (const arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    const families = Array.from(groups.keys()).sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
+    return { groups, families }
+  }, [uoms])
+
+  // Ensure bins cached for warehouse
+  async function ensureBinsFor(warehouseId: string) {
+    if (!warehouseId) return
+    if (binCache[warehouseId]) return
+    const { data, error } = await supabase
+      .from('bins_v').select('id,code,name,warehouse_id')
+      .eq('warehouse_id', warehouseId)
+      .order('code', { ascending: true })
+    if (error) { console.error(error); toast.error(error.message); return }
+    setBinCache(prev => ({ ...prev, [warehouseId]: (data || []) as Bin[] }))
+  }
 
   // Create BOM
   async function createBomForProduct() {
@@ -238,7 +299,6 @@ export default function BOMPage() {
         .select('id,product_id,name,version,is_active')
         .single()
       if (ins.error) throw ins.error
-
       const inserted = { ...ins.data, version: String((ins.data as any).version ?? 'v1') } as Bom
       setBoms(prev => [...prev, inserted])
       setSelectedBomId(inserted.id)
@@ -247,6 +307,76 @@ export default function BOMPage() {
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Failed to create BOM')
+    }
+  }
+
+  // Save BOM metadata
+  async function saveBomMeta() {
+    if (!selectedBom) return
+    try {
+      setSavingBOM(true)
+      const { error, data } = await supabase
+        .from('boms')
+        .update({ name: editName.trim(), version: editVersion.trim() })
+        .eq('id', selectedBom.id)
+        .select('id,product_id,name,version,is_active')
+        .single()
+      if (error) throw error
+      setBoms(prev => prev.map(b => b.id === selectedBom.id ? { ...b, name: data!.name, version: String(data!.version) } : b))
+      toast.success('BOM updated')
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e?.message || 'Failed to update BOM')
+    } finally {
+      setSavingBOM(false)
+    }
+  }
+
+  // Duplicate as new version
+  async function duplicateAsNewVersion() {
+    if (!selectedBom) return
+    try {
+      setDuplicating(true)
+      const baseVers = String(editVersion || selectedBom.version || 'v1')
+      const m = /^v?(\d+)$/i.exec(baseVers)
+      let nextNum = m ? Number(m[1]) + 1 : 2
+
+      let newBom: Bom | null = null
+      for (let tries = 0; tries < 20; tries++) {
+        const next = `v${nextNum}`
+        const ins = await supabase
+          .from('boms')
+          .insert([{ company_id: companyId, product_id: selectedBom.product_id, name: editName || selectedBom.name, version: next }])
+          .select('id,product_id,name,version,is_active')
+          .single()
+        if (!ins.error && ins.data) { newBom = ins.data as Bom; break }
+        if (ins.error?.message?.toLowerCase().includes('duplicate') || ins.error?.code === '23505') {
+          nextNum++; continue
+        } else if (ins.error) { throw ins.error }
+      }
+      if (!newBom) throw new Error('Could not find a free version after several attempts')
+
+      const { data: comps, error: cErr } = await supabase
+        .from('bom_components')
+        .select('component_item_id,qty_per,scrap_pct')
+        .eq('bom_id', selectedBom.id)
+      if (cErr) throw cErr
+
+      if ((comps || []).length) {
+        const payload = (comps || []).map(c => ({ bom_id: newBom!.id, component_item_id: c.component_item_id, qty_per: c.qty_per, scrap_pct: c.scrap_pct }))
+        const insC = await supabase.from('bom_components').insert(payload)
+        if (insC.error) throw insC.error
+      }
+
+      const normalized = { ...newBom!, version: String((newBom as any).version) } as Bom
+      setBoms(prev => [...prev, normalized])
+      setSelectedBomId(normalized.id)
+      toast.success(`Duplicated as ${normalized.version}`)
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e?.message || 'Failed to duplicate BOM')
+    } finally {
+      setDuplicating(false)
     }
   }
 
@@ -288,7 +418,72 @@ export default function BOMPage() {
     const del = await supabase.from('bom_components').delete().eq('id', id)
     if (del.error) return toast.error(del.error.message)
     setComponents(prev => prev.filter(c => c.id !== id))
+    setSourcesByComponent(prev => {
+      const comp = components.find(x => x.id === id)
+      if (!comp) return prev
+      const next = { ...prev }
+      delete next[comp.component_item_id]
+      return next
+    })
     toast.success('Component removed')
+  }
+
+  // Per-component sources editor helpers
+  function addSourceRow(componentItemId: string) {
+    setSourcesByComponent(prev => {
+      const rows = prev[componentItemId] || []
+      return {
+        ...prev,
+        [componentItemId]: [...rows, { id: crypto.randomUUID(), warehouseId: warehouseFromId || '', binId: '', sharePct: '' }]
+      }
+    })
+  }
+  function updateSourceRow(componentItemId: string, rowId: string, patch: Partial<ComponentSourceRow>) {
+    setSourcesByComponent(prev => {
+      const rows = prev[componentItemId] || []
+      return {
+        ...prev,
+        [componentItemId]: rows.map(r => (r.id === rowId ? { ...r, ...patch } : r))
+      }
+    })
+  }
+  function removeSourceRow(componentItemId: string, rowId: string) {
+    setSourcesByComponent(prev => {
+      const rows = prev[componentItemId] || []
+      return { ...prev, [componentItemId]: rows.filter(r => r.id !== rowId) }
+    })
+  }
+
+  // ---------- Build helpers ----------
+  function buildComponentSourcesPayload(): ComponentSourcesPayload {
+    const payload = components.map(c => {
+      const rows = (sourcesByComponent[c.component_item_id] || []).map(r => ({
+        warehouse_id: r.warehouseId,
+        bin_id: r.binId,                        // TEXT
+        share_pct: Number(r.sharePct || 0),
+      }))
+      // keep only valid rows (warehouse UUID + non-empty bin + share >= 0)
+      .filter(x => isUuid(x.warehouse_id) && !!x.bin_id && Number.isFinite(x.share_pct) && x.share_pct >= 0)
+
+      const total = rows.reduce((s, x) => s + x.share_pct, 0)
+      const normalized = total > 0 ? rows.map(x => ({ ...x, share_pct: x.share_pct / total })) : []
+      return { component_item_id: c.component_item_id, sources: normalized }
+    }).filter(e => e.sources.length > 0)
+
+    return payload
+  }
+
+  function buildOutputSplitsPayload(qty: number): OutputSplitsPayload | null {
+    if (advanced && splits.length) {
+      const out = splits
+        .map(s => ({ warehouse_id: s.warehouseId, bin_id: s.binId, qty: num(s.qty, 0) }))
+        .filter(s => s.qty > 0 && isUuid(s.warehouse_id) && !!s.bin_id)
+      return out.length ? out : null
+    }
+    if (isUuid(warehouseToId) && !!binToId) {
+      return [{ warehouse_id: warehouseToId, bin_id: binToId, qty }]
+    }
+    return null
   }
 
   // Build
@@ -296,19 +491,85 @@ export default function BOMPage() {
     if (!selectedBomId) return toast.error('Pick a BOM first')
     const qty = num(buildQty, 0)
     if (!(qty > 0)) return toast.error('Quantity must be > 0')
-    if (!warehouseFromId || !warehouseToId) return toast.error('Select source and destination warehouses')
-    if (!binFromId || !binToId) return toast.error('Select source and destination bins')
 
-    const { data, error } = await supabase.rpc('build_from_bom', {
-      p_bom_id: selectedBomId,
-      p_qty: qty,
-      p_warehouse_from: warehouseFromId,
-      p_bin_from: binFromId,
-      p_warehouse_to: warehouseToId,
-      p_bin_to: binToId,
-    })
-    if (error) { console.error(error); return toast.error(error.message) }
-    toast.success(`Build created: ${data}`)
+    try {
+      setBuilding(true)
+
+      if (useComponentSources) {
+        const componentPayload = buildComponentSourcesPayload()
+        if (!componentPayload.length) {
+          setBuilding(false)
+          return toast.error('Add at least one valid source row (warehouse UUID + bin).')
+        }
+
+        const outSplits = buildOutputSplitsPayload(qty)
+        if (!outSplits) {
+          setBuilding(false)
+          return toast.error('Select a valid destination bin (bin id is TEXT) or add output splits.')
+        }
+
+        const { error } = await supabase.rpc('build_from_bom_sources', {
+          p_bom_id: selectedBomId,
+          p_qty: qty,
+          p_component_sources: componentPayload,
+          p_output_splits: outSplits,
+        })
+
+        if (error) {
+          console.error('[build_from_bom_sources] error', error, { componentPayload, outSplits })
+          if (error.code === '42883' || /does not exist/i.test(error.message || '')) {
+            toast.error('Backend RPC build_from_bom_sources is not defined on the DB.')
+          } else {
+            toast.error(error.message || 'Build failed')
+          }
+        } else {
+          setBuildQty('')
+          setSplits([])
+          toast.success('Build created with per-component sources')
+        }
+
+        setBuilding(false)
+        return
+      }
+
+      // Legacy path (single source) → build_from_bom
+      if (!isUuid(warehouseFromId) || !binFromId) {
+        setBuilding(false); return toast.error('Select a valid source warehouse (UUID) and bin (TEXT).')
+      }
+
+      const runs: Array<{ qty: number; wTo: string; bTo: string }> =
+        advanced && splits.length
+          ? splits
+              .map(s => ({ qty: num(s.qty, 0), wTo: s.warehouseId, bTo: s.binId }))
+              .filter(s => s.qty > 0 && isUuid(s.wTo) && !!s.bTo)
+          : (isUuid(warehouseToId) && !!binToId)
+              ? [{ qty, wTo: warehouseToId, bTo: binToId }]
+              : []
+
+      if (!runs.length) { setBuilding(false); return toast.error('Add at least one valid destination split') }
+
+      for (const r of runs) {
+        const { error } = await supabase.rpc('build_from_bom', {
+          p_bom_id: selectedBomId,
+          p_qty: r.qty,
+          p_warehouse_from: warehouseFromId, // UUID
+          p_bin_from: binFromId,             // TEXT
+          p_warehouse_to: r.wTo,             // UUID
+          p_bin_to: r.bTo,                   // TEXT
+        })
+        if (error) throw error
+      }
+
+      setBuildQty('')
+      if (!advanced) setBinToId('')
+      setSplits([])
+      toast.success(advanced ? 'Build(s) created' : 'Build created')
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e?.message || 'Build failed')
+    } finally {
+      setBuilding(false)
+    }
   }
 
   const addPreview = useMemo(() => {
@@ -330,6 +591,10 @@ export default function BOMPage() {
     return u ? `${u.code} — ${u.name}` : String(id)
   }
 
+  const updateSplit = (id: string, patch: Partial<OutputSplit>) =>
+    setSplits(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)))
+  const removeSplit = (id: string) => setSplits(prev => prev.filter(s => s.id !== id))
+
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Bill of Materials</h1>
@@ -346,28 +611,26 @@ export default function BOMPage() {
                 {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div className="text-[11px] text-muted-foreground mt-1">
+              Tip: pick the SKU you actually stock as the finished good.
+            </div>
           </div>
           <div>
             <Label>Name</Label>
-            <Input
-              value={newBomName}
-              onChange={e => setNewBomName(e.target.value)}
-              placeholder="e.g., Cake v1"
-            />
+            <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder="e.g., Cake v1" />
+            <div className="text-[11px] text-muted-foreground mt-1">
+              Include a version in the name (e.g. “v1”) so it’s easy to find.
+            </div>
           </div>
           <div className="md:col-span-1 flex items-end">
-            <Button
-              onClick={createBomForProduct}
-              disabled={!newBomProductId || !newBomName.trim()}
-              title={!newBomName.trim() ? 'Enter a name like "Cake v1"' : 'Create BOM'}
-            >
+            <Button onClick={createBomForProduct} disabled={!newBomProductId || !newBomName.trim()}>
               Create
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Pick existing BOM */}
+      {/* Pick + Edit existing BOM */}
       <Card>
         <CardHeader><CardTitle>Existing BOMs</CardTitle></CardHeader>
         <CardContent className="grid md:grid-cols-2 gap-3">
@@ -387,15 +650,27 @@ export default function BOMPage() {
               </SelectContent>
             </Select>
           </div>
+
           {selectedBom && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Product</Label>
-                <Input value={itemById.get(selectedBom.product_id)?.name || selectedBom.product_id} readOnly />
+                <Label>Name</Label>
+                <Input value={editName} onChange={e => setEditName(e.target.value)} />
               </div>
               <div>
                 <Label>Version</Label>
-                <Input value={selectedBom.version} readOnly />
+                <Input value={editVersion} onChange={e => setEditVersion(e.target.value)} />
+              </div>
+              <div className="col-span-2 flex gap-2">
+                <Button onClick={saveBomMeta} disabled={savingBOM}>
+                  {savingBOM ? 'Saving…' : 'Save'}
+                </Button>
+                <Button variant="secondary" onClick={duplicateAsNewVersion} disabled={duplicating}>
+                  {duplicating ? 'Duplicating…' : 'Duplicate as new version'}
+                </Button>
+              </div>
+              <div className="col-span-2 text-[11px] text-muted-foreground">
+                Save to update this version, or duplicate to create the next version (components are copied for you).
               </div>
             </div>
           )}
@@ -423,16 +698,82 @@ export default function BOMPage() {
                 )}
                 {components.map(c => {
                   const it = itemById.get(c.component_item_id)
+                  const sources = sourcesByComponent[c.component_item_id] || []
                   return (
-                    <tr key={c.id} className="border-b">
-                      <td className="py-2 pr-2">{it?.name ?? c.component_item_id}</td>
-                      <td className="py-2 pr-2">{c.qty_per}</td>
-                      <td className="py-2 pr-2">{uomLabel(it?.base_uom_id)}</td>
-                      <td className="py-2 pr-2">{c.scrap_pct ?? 0}</td>
-                      <td className="py-2 pr-2">
-                        <Button variant="destructive" onClick={() => deleteComponent(c.id)}>Delete</Button>
-                      </td>
-                    </tr>
+                    <Fragment key={c.id}>
+                      <tr className="border-b align-top">
+                        <td className="py-2 pr-2">{it?.name ?? c.component_item_id}</td>
+                        <td className="py-2 pr-2">{c.qty_per}</td>
+                        <td className="py-2 pr-2">{uomLabel(it?.base_uom_id)}</td>
+                        <td className="py-2 pr-2">{c.scrap_pct ?? 0}</td>
+                        <td className="py-2 pr-2 space-x-2">
+                          <Button variant="destructive" onClick={() => deleteComponent(c.id)}>Delete</Button>
+                          <Button variant="secondary" onClick={() => addSourceRow(c.component_item_id)} disabled={!useComponentSources}>
+                            Add source
+                          </Button>
+                        </td>
+                      </tr>
+
+                      {/* Per-component sources editor */}
+                      {useComponentSources && (
+                        <tr className="border-b">
+                          <td colSpan={5} className="py-3">
+                            <div className="space-y-2">
+                              {sources.length === 0 && (
+                                <div className="text-[11px] text-muted-foreground">No sources yet for this component.</div>
+                              )}
+                              {sources.map(row => {
+                                const bins = row.warehouseId ? (binCache[row.warehouseId] || []) : []
+                                return (
+                                  <div key={row.id} className="grid md:grid-cols-4 gap-2">
+                                    <div>
+                                      <Label>Warehouse (source)</Label>
+                                      <Select
+                                        value={row.warehouseId}
+                                        onValueChange={async (v) => {
+                                          updateSourceRow(c.component_item_id, row.id, { warehouseId: v, binId: '' })
+                                          await ensureBinsFor(v)
+                                        }}>
+                                        <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                                        <SelectContent>
+                                          {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Bin (source)</Label>
+                                      <Select
+                                        value={row.binId}
+                                        onValueChange={(v) => updateSourceRow(c.component_item_id, row.id, { binId: v })}
+                                        disabled={!row.warehouseId}
+                                      >
+                                        <SelectTrigger><SelectValue placeholder={row.warehouseId ? 'Select bin' : 'Pick warehouse first'} /></SelectTrigger>
+                                        <SelectContent className="max-h-64 overflow-auto">
+                                          {bins.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Share %</Label>
+                                      <Input
+                                        type="number"
+                                        min="0" max="100" step="0.01"
+                                        value={row.sharePct}
+                                        onChange={e => updateSourceRow(c.component_item_id, row.id, { sharePct: e.target.value })}
+                                        placeholder="e.g., 60"
+                                      />
+                                    </div>
+                                    <div className="flex items-end">
+                                      <Button variant="destructive" onClick={() => removeSourceRow(c.component_item_id, row.id)}>Remove</Button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -474,7 +815,17 @@ export default function BOMPage() {
                 >
                   <SelectTrigger><SelectValue placeholder={compItemId ? 'Select UoM' : 'Pick item first'} /></SelectTrigger>
                   <SelectContent className="max-h-64 overflow-auto">
-                    {uoms.map(u => <SelectItem key={u.id} value={u.id}>{u.code} — {u.name}</SelectItem>)}
+                    {groupedUoms.families.map(fam => (
+                      <Fragment key={fam}>
+                        <div className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground sticky top-0 bg-popover">
+                          {familyLabel(fam)}
+                        </div>
+                        {(groupedUoms.groups.get(fam) || []).map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.code} — {u.name}</SelectItem>
+                        ))}
+                        <div className="h-1" />
+                      </Fragment>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -488,6 +839,7 @@ export default function BOMPage() {
                 <Button onClick={addComponentLine} disabled={!compItemId}>Add Component</Button>
               </div>
 
+              {/* Preview conversion */}
               {compItemId && addPreview && (
                 <div className={`md:col-span-6 text-xs ${addPreview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
                   {`Entered: ${addPreview.entered} ${(uomById.get(addPreview.enteredId)?.code || '').toUpperCase()} → Base: ${addPreview.base} ${(uomById.get(addPreview.baseId)?.code || '').toUpperCase()}`}
@@ -495,6 +847,26 @@ export default function BOMPage() {
                 </div>
               )}
             </div>
+            <div className="text-[11px] text-muted-foreground">
+              Hint: quantities above are per **one** finished good (base UoM).
+            </div>
+
+            {/* Toggle per-component sources */}
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                id="pcs"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={useComponentSources}
+                onChange={(e) => setUseComponentSources(e.target.checked)}
+              />
+              <Label htmlFor="pcs">Use per-component source bins during build</Label>
+            </div>
+            {useComponentSources && (
+              <div className="text-[11px] text-muted-foreground mt-1">
+                Add source rows under each component. Shares are normalized automatically.
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -503,51 +875,134 @@ export default function BOMPage() {
       {!!selectedBom && (
         <Card>
           <CardHeader><CardTitle>Build from BOM</CardTitle></CardHeader>
-          <CardContent className="grid md:grid-cols-2 gap-3">
-            <div>
-              <Label>Warehouse FROM</Label>
-              <Select value={warehouseFromId} onValueChange={(v) => { setWarehouseFromId(v); setBinFromId('') }}>
-                <SelectTrigger><SelectValue placeholder="Select source warehouse" /></SelectTrigger>
-                <SelectContent>
-                  {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Bin FROM</Label>
-              <Select value={binFromId} onValueChange={setBinFromId}>
-                <SelectTrigger><SelectValue placeholder="Select source bin" /></SelectTrigger>
-                <SelectContent className="max-h-64 overflow-auto">
-                  {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          <CardContent className="space-y-3">
+            <div className="grid md:grid-cols-2 gap-3">
+              {!useComponentSources && (
+                <>
+                  <div>
+                    <Label>Warehouse FROM</Label>
+                    <Select value={warehouseFromId} onValueChange={(v) => { setWarehouseFromId(v); setBinFromId('') }}>
+                      <SelectTrigger><SelectValue placeholder="Select source warehouse" /></SelectTrigger>
+                      <SelectContent>
+                        {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Bin FROM</Label>
+                    <Select value={binFromId} onValueChange={setBinFromId}>
+                      <SelectTrigger><SelectValue placeholder="Select source bin" /></SelectTrigger>
+                      <SelectContent className="max-h-64 overflow-auto">
+                        {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {!advanced && (
+                <>
+                  <div>
+                    <Label>Warehouse TO</Label>
+                    <Select value={warehouseToId} onValueChange={(v) => { setWarehouseToId(v); setBinToId(''); }}>
+                      <SelectTrigger><SelectValue placeholder="Select destination warehouse" /></SelectTrigger>
+                      <SelectContent>
+                        {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Bin TO</Label>
+                    <Select value={binToId} onValueChange={setBinToId}>
+                      <SelectTrigger><SelectValue placeholder="Select destination bin" /></SelectTrigger>
+                      <SelectContent className="max-h-64 overflow-auto">
+                        {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
             </div>
 
-            <div>
-              <Label>Warehouse TO</Label>
-              <Select value={warehouseToId} onValueChange={(v) => { setWarehouseToId(v); setBinToId('') }}>
-                <SelectTrigger><SelectValue placeholder="Select destination warehouse" /></SelectTrigger>
-                <SelectContent>
-                  {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            {/* Advanced split outputs */}
+            <div className="flex items-center gap-2">
+              <input id="adv" type="checkbox" className="h-4 w-4" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />
+              <Label htmlFor="adv">Split output to multiple destination bins</Label>
             </div>
-            <div>
-              <Label>Bin TO</Label>
-              <Select value={binToId} onValueChange={setBinToId}>
-                <SelectTrigger><SelectValue placeholder="Select destination bin" /></SelectTrigger>
-                <SelectContent className="max-h-64 overflow-auto">
-                  {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {advanced && (
+              <div className="space-y-2">
+                <div className="text-[11px] text-muted-foreground">
+                  We’ll run multiple builds (or the advanced RPC) depending on the mode. Each row applies independently.
+                </div>
+                <div className="space-y-2">
+                  {splits.map((s) => {
+                    const destBins = s.warehouseId ? (binCache[s.warehouseId] || []) : []
+                    return (
+                      <div key={s.id} className="grid md:grid-cols-4 gap-2">
+                        <div>
+                          <Label>Warehouse TO</Label>
+                          <Select
+                            value={s.warehouseId}
+                            onValueChange={async (v) => {
+                              updateSplit(s.id, { warehouseId: v, binId: '' })
+                              await ensureBinsFor(v)
+                            }}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Warehouse" /></SelectTrigger>
+                            <SelectContent>
+                              {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Bin TO</Label>
+                          <Select
+                            value={s.binId}
+                            onValueChange={(v) => updateSplit(s.id, { binId: v })}
+                            disabled={!s.warehouseId}
+                          >
+                            <SelectTrigger><SelectValue placeholder={s.warehouseId ? 'Bin' : 'Pick warehouse first'} /></SelectTrigger>
+                            <SelectContent className="max-h-64 overflow-auto">
+                              {destBins.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Qty</Label>
+                          <Input type="number" min="0.0001" step="0.0001" value={s.qty} onChange={e => updateSplit(s.id, { qty: e.target.value })} placeholder="0" />
+                        </div>
+                        <div className="flex items-end">
+                          <Button variant="destructive" onClick={() => removeSplit(s.id)}>Remove</Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    const nextWh = warehouseToId || (warehouses[0]?.id || '')
+                    if (nextWh) await ensureBinsFor(nextWh)
+                    setSplits(prev => [...prev, { id: crypto.randomUUID(), warehouseId: nextWh, binId: '', qty: '' }])
+                  }}
+                >
+                  Add split
+                </Button>
+              </div>
+            )}
 
-            <div className="md:col-span-2 flex items-end gap-3">
-              <div className="w-48">
+            <div className="md:flex md:items-end md:gap-3">
+              <div className="md:w-48">
                 <Label>Quantity to Build</Label>
                 <Input type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
               </div>
-              <Button onClick={runBuild}>Build</Button>
+              <Button onClick={runBuild} disabled={building}>
+                {building ? 'Building…' : 'Build'}
+              </Button>
+            </div>
+
+            <div className="text-[11px] text-muted-foreground">
+              After building, the quantity field clears so you know it executed.
             </div>
           </CardContent>
         </Card>
