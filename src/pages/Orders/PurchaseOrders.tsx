@@ -12,7 +12,15 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
-import { useOrg } from '../../hooks/useOrg' // ⬅️ added
+import { useOrg } from '../../hooks/useOrg' // ⬅️ company scope
+
+type AppSettings = {
+  branding?: { companyName?: string; logoUrl?: string }
+  brand?: { logoUrl?: string }
+  logoUrl?: string
+  companyName?: string
+  company?: { name?: string; logoUrl?: string }
+} & Record<string, any>
 
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string }
@@ -39,7 +47,6 @@ type PO = {
   tax_total?: number|null
   total?: number|null
 
-  // browser extras
   order_no?: string|null
   updated_at?: string|null
   created_at?: string|null
@@ -63,12 +70,36 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 const fmtAcct = (v: number) => { const neg = v < 0; const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return neg ? `(${s})` : s }
 const ts = (row: any) => row?.createdAt ?? row?.created_at ?? row?.createdat ?? row?.updatedAt ?? row?.updated_at ?? row?.updatedat ?? 0
 
+const initials = (s?: string | null) => {
+  const t = (s || '').trim()
+  if (!t) return '—'
+  const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
+}
+/** Prefetch an image and convert to Data URL to avoid CORS/expiry; returns null on failure. */
+async function fetchDataUrl(src?: string | null): Promise<string | null> {
+  if (!src || !src.trim()) return null
+  try {
+    const r = await fetch(src, { mode: 'cors', cache: 'no-store' })
+    if (!r.ok) return null
+    const b = await r.blob()
+    return await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(String(fr.result))
+      fr.onerror = reject
+      fr.readAsDataURL(b)
+    })
+  } catch {
+    return null
+  }
+}
+
 export default function PurchaseOrders() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars); return s === key ? fallback : s
   }
-  const { companyId } = useOrg() // ⬅️ added
+  const { companyId } = useOrg()
 
   // masters
   const [items, setItems] = useState<Item[]>([])
@@ -78,6 +109,10 @@ export default function PurchaseOrders() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
+
+  // brand (company_settings preferred; app_settings fallback)
+  const [brandName, setBrandName] = useState<string>('')
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string>('')
 
   // conversions
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
@@ -109,9 +144,9 @@ export default function PurchaseOrders() {
 
   // per-line plan and receipts map
   const [receivePlan, setReceivePlan] = useState<Record<string, { qty: string; whId: string; binId: string }>>({})
-  const [receivedMap, setReceivedMap] = useState<Record<string, number>>({}) // key: line id -> sum(received qty in line UOM)
+  const [receivedMap, setReceivedMap] = useState<Record<string, number>>({})
 
-  // --- Closed/Received POs browser state (new)
+  // --- Closed/Received POs browser state
   const [browserOpen, setBrowserOpen] = useState(false)
   const [browserRows, setBrowserRows] = useState<PO[]>([])
   const [browserHasMore, setBrowserHasMore] = useState(false)
@@ -138,10 +173,7 @@ export default function PurchaseOrders() {
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
 
     const term = browserQ.trim()
-    if (term) {
-      // Match PO number OR supplier_name OR supplier
-      q = q.or(`order_no.ilike.%${term}%,supplier_name.ilike.%${term}%,supplier.ilike.%${term}%`)
-    }
+    if (term) q = q.or(`order_no.ilike.%${term}%,supplier_name.ilike.%${term}%,supplier.ilike.%${term}%`)
     if (browserFrom) q = q.gte('updated_at', browserFrom)
     if (browserTo)   q = q.lte('updated_at', browserTo + ' 23:59:59')
 
@@ -185,14 +217,15 @@ export default function PurchaseOrders() {
     p.supplier_name ?? p.supplier ?? (p.supplier_id ? (suppliers.find(s => s.id === p.supplier_id)?.name ?? p.supplier_id) : tt('none', '(none)'))
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
 
-  // load masters and lists
+  // load masters, lists, conversions, defaults, and global brand fallbacks
   useEffect(() => {
     (async () => {
       try {
-        const [it, uu, cs] = await Promise.all([
+        const [it, uu, cs, appRes] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
+          supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])
 
         setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
@@ -228,12 +261,57 @@ export default function PurchaseOrders() {
           const firstBin = (binRes || []).find(b => b.warehouseId === preferred.id)?.id || ''
           setDefaultReceiveBinId(firstBin)
         }
+
+        // GLOBAL brand fallbacks from app_settings
+        try {
+          const [brandRes, companyRes] = await Promise.all([
+            supabase.from('app_settings').select('data').eq('id', 'brand').maybeSingle(),
+            supabase.from('app_settings').select('data').eq('id', 'company').maybeSingle(),
+          ])
+          const a: AppSettings = (appRes.data as any)?.data ?? {}
+          const brand = (brandRes.data as any)?.data ?? {}
+          const company = (companyRes.data as any)?.data ?? {}
+          const nameGuess =
+            company?.name ||
+            brand?.companyName ||
+            a?.company?.name ||
+            a?.companyName ||
+            a?.branding?.companyName || ''
+          const logoGuess =
+            brand?.logoUrl ||
+            company?.logoUrl ||
+            a?.branding?.logoUrl ||
+            a?.brand?.logoUrl ||
+            a?.logoUrl || ''
+          setBrandName(prev => prev || String(nameGuess || ''))
+          setBrandLogoUrl(prev => prev || String(logoGuess || ''))
+        } catch { /* ignore */ }
       } catch (err: any) {
         console.error(err)
         toast.error(err?.message || tt('orders.loadFailed', 'Failed to load purchase orders'))
       }
     })()
   }, [])
+
+  // load per-company brand (highest priority)
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      try {
+        const res = await supabase
+          .from('company_settings')
+          .select('data')
+          .eq('company_id', companyId)
+          .maybeSingle()
+        const doc = (res.data as any)?.data || {}
+        const brand = doc?.documents?.brand || {}
+        if (brand?.name) setBrandName(String(brand.name))
+        if (brand?.logoUrl) setBrandLogoUrl(String(brand.logoUrl))
+      } catch (e) {
+        console.warn('brand load (company_settings) failed:', e)
+      }
+    })()
+  }, [companyId])
 
   // helper: fetch receipts for a PO and build map ref_line_id -> received qty
   async function loadReceiptsMap(poId: string) {
@@ -248,7 +326,6 @@ export default function PurchaseOrders() {
     for (const r of (data || [])) {
       if (!r.ref_line_id) continue
       const q = n((r as any).qty, 0)
-      // Only counting receives; if you ever support PO returns, subtract 'issue'
       m[String(r.ref_line_id)] = (m[String(r.ref_line_id)] || 0) + q
     }
     setReceivedMap(m)
@@ -296,12 +373,7 @@ export default function PurchaseOrders() {
   async function createPO() {
     try {
       if (!poSupplierId) return toast.error(tt('orders.supplierRequired', 'Supplier is required'))
-
-      // Ensure we have a company for the order_no generator trigger
-      if (!companyId) {
-        toast.error('No company selected. Please sign in again or select a company.')
-        return
-      }
+      if (!companyId) { toast.error('No company selected. Please sign in again or select a company.'); return }
 
       const cleanLines = poLinesForm
         .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct) }))
@@ -315,11 +387,8 @@ export default function PurchaseOrders() {
       const tax_total = subtotal * (n(poTaxPct, 0) / 100)
       const total = subtotal + tax_total
 
-      // NOTE:
-      // - Do NOT send `order_no` (trigger will generate it).
-      // - Do NOT send `order_date` with null (column is NOT NULL with default).
       const inserted: any = await db.purchaseOrders.create({
-        company_id: companyId, // ⬅️ key addition so trigger can build AAA-PO#########
+        company_id: companyId,
         supplier_id: poSupplierId,
         status: 'draft',
         currency_code: (poCurrency || '').toUpperCase().slice(0, 3),
@@ -373,7 +442,7 @@ export default function PurchaseOrders() {
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCancelFailed', 'Failed to cancel PO')) }
   }
 
-  // receive ALL: per-line plan; block when draft; clamp to remaining; auto-close when fully received
+  // receive ALL
   async function doReceivePO(po: PO) {
     try {
       const status = String(po.status || '').toLowerCase()
@@ -385,13 +454,12 @@ export default function PurchaseOrders() {
       const lines = polines.filter(l => l.po_id === po.id)
       if (!lines.length) return toast.error(tt('orders.noLinesToReceive', 'No lines to receive'))
 
-      // fresh receipts map
       const currentMap = await loadReceiptsMap(po.id)
       const fxToBase = n(po.fx_to_base ?? (po as any).fxToBase, 1)
 
       for (const l of lines) {
         const lineId = String(l.id || '')
-        if (!lineId) continue // safety
+        if (!lineId) continue
 
         const ordered = n(l.qty)
         const already = n(currentMap[lineId] || 0)
@@ -401,13 +469,9 @@ export default function PurchaseOrders() {
         const p = receivePlan[key]
         const qtyRequested = n(p?.qty ?? 0)
         if (!p || qtyRequested <= 0) continue
+        if (qtyRequested > remaining) throw new Error(tt('orders.overReceiveNotAllowed', 'Receive qty cannot exceed remaining for a line'))
 
-        if (qtyRequested > remaining) {
-          throw new Error(tt('orders.overReceiveNotAllowed', 'Receive qty cannot exceed remaining for a line'))
-        }
-
-        const whId = p.whId
-        const binId = p.binId
+        const whId = p.whId, binId = p.binId
         if (!whId || !binId) throw new Error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
 
         const it = itemById.get(l.item_id); if (!it) throw new Error(`Item not found for line ${l.item_id}`)
@@ -422,10 +486,8 @@ export default function PurchaseOrders() {
         const totalBase = n(l.unit_price) * qtyRequested * (1 - disc/100) * fxToBase
         const unitCostBase = qtyBase > 0 ? totalBase / qtyBase : 0
 
-        // Stock +
         await upsertStockLevel(whId, binId, it.id, qtyBase, unitCostBase)
 
-        // Movement (qty in line UOM)
         await supabase.from('stock_movements').insert({
           type: 'receive',
           item_id: it.id,
@@ -444,15 +506,11 @@ export default function PurchaseOrders() {
         } as any)
       }
 
-      // reload receipts for this PO
       const nextMap = await loadReceiptsMap(po.id)
       const linesForPO = polines.filter(l => l.po_id === po.id)
       const allDone = linesForPO.every(l => (n(nextMap[String(l.id || '')] || 0) >= n(l.qty)))
-      if (allDone) {
-        await tryUpdateStatus(po.id, ['closed', 'completed', 'received'])
-      }
+      if (allDone) await tryUpdateStatus(po.id, ['closed', 'completed', 'received'])
 
-      // refresh lists
       const [freshPO, freshPOL] = await Promise.all([ db.purchaseOrders.list(), db.purchaseOrderLines.list() ])
       setPOs((freshPO || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
       setPOLines(freshPOL || [])
@@ -462,7 +520,7 @@ export default function PurchaseOrders() {
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.receiveFailed', 'Failed to receive PO')) }
   }
 
-  // outstanding = open/draft/approved/etc. (not closed/canceled)
+  // outstanding
   const poOutstanding = useMemo(
     () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(p.status).toLowerCase())),
     [pos]
@@ -470,7 +528,7 @@ export default function PurchaseOrders() {
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const poTax = poSubtotal * (n(poTaxPct, 0) / 100)
 
-  // when PO is selected, load receipts and seed per-line plan with REMAINING qty and default bin/wh
+  // when PO is selected, load receipts and seed per-line plan
   useEffect(() => {
     (async () => {
       if (!selectedPO) return
@@ -515,12 +573,11 @@ export default function PurchaseOrders() {
     })
   }
 
-  // ---------- helper to resolve supplier details for printing (type-safe) ----------
+  // ---------- supplier resolve (for print) ----------
   async function resolveSupplierDetails(po: PO): Promise<Partial<Supplier>> {
     const codeUpper = (po.supplier || '').toString().toUpperCase()
     const nameUpper = (po.supplier_name || '').toString().toUpperCase()
 
-    // Try in-memory first (avoid `&&` so we don't ever return a string)
     const s: Supplier | undefined =
       (po.supplier_id ? suppliers.find(x => x.id === po.supplier_id) : undefined) ??
       (codeUpper ? suppliers.find(x => (x.code || '').toUpperCase() === codeUpper) : undefined) ??
@@ -528,41 +585,31 @@ export default function PurchaseOrders() {
 
     if (s) return s
 
-    // Fallback to small direct lookups, in order: id → code → name
     try {
       if (po.supplier_id) {
         const { data } = await supabase
-          .from('suppliers')
-          .select('id,code,name,email,phone,tax_id,payment_terms')
-          .eq('id', po.supplier_id)
-          .limit(1)
+          .from('suppliers').select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('id', po.supplier_id).limit(1)
         if (data && data.length) return data[0] as Supplier
       }
-
       if (po.supplier) {
         const { data } = await supabase
-          .from('suppliers')
-          .select('id,code,name,email,phone,tax_id,payment_terms')
-          .eq('code', po.supplier)
-          .limit(1)
+          .from('suppliers').select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('code', po.supplier).limit(1)
         if (data && data.length) return data[0] as Supplier
       }
-
       if (po.supplier_name) {
         const { data } = await supabase
-          .from('suppliers')
-          .select('id,code,name,email,phone,tax_id,payment_terms')
-          .eq('name', po.supplier_name) // exact match is safer for names/codes
-          .limit(1)
+          .from('suppliers').select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('name', po.supplier_name).limit(1)
         if (data && data.length) return data[0] as Supplier
       }
     } catch (e) {
       console.warn('Supplier lookup failed; using PO snapshot where available.', e)
     }
-
     return {}
   }
-  // -------------------------------------------------------------------------
+  // --------------------------------------------------
 
   async function printPO(po: PO): Promise<void> {
     const currency = curPO(po) || '—'
@@ -589,9 +636,8 @@ export default function PurchaseOrders() {
     const total = (po.total ?? (subtotal + tax))
     const number = poNo(po)
 
-    // Resolve live supplier details to fill missing snapshot fields
+    // Resolve supplier details
     const live = await resolveSupplierDetails(po)
-
     const supp = {
       name: po.supplier_name ?? live.name ?? poSupplierLabel(po),
       email: po.supplier_email ?? live.email ?? '—',
@@ -601,40 +647,18 @@ export default function PurchaseOrders() {
     }
     const printedAt = new Date().toLocaleString()
 
-    const html = `
-      <div class="header">
-        <div>
-          <h1>Purchase Order ${number}</h1>
-          <div class="meta">Status: <b class="cap">${po.status}</b> · Currency: <b>${currency}</b> · FX→${baseCode}: <b>${fmtAcct(fx)}</b></div>
-          <div class="meta">Printed at: <b>${printedAt}</b></div>
-        </div>
-        <div class="supplier">
-          <div class="title">Supplier</div>
-          <div><b>${supp.name}</b></div>
-          <div>Email: ${supp.email}</div>
-          <div>Phone: ${supp.phone}</div>
-          <div>Tax ID: ${supp.tax_id}</div>
-          <div>Payment Terms: ${supp.terms}</div>
-        </div>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th><th>SKU</th><th class="right">Qty</th><th>UoM</th><th class="right">Unit Price</th><th class="right">Disc %</th><th class="right">Line Total (${currency})</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="totals">
-        <div><span>Subtotal (${currency})</span><span>${fmtAcct(subtotal)}</span></div>
-        <div><span>Tax (${currency})</span><span>${fmtAcct(tax)}</span></div>
-        <div class="muted"><span>FX to ${baseCode}</span><span>${fmtAcct(fx)}</span></div>
-        <div class="grand"><span>Total (${currency})</span><span>${fmtAcct(total)}</span></div>
-        <div class="grand"><span>Total (${baseCode})</span><span>${fmtAcct(total * fx)}</span></div>
-      </div>
-    `
+    // Brand (preload logo)
+    const company = (brandName || '').trim()
+    const logoUrl = (brandLogoUrl || '').trim()
+    const logoDataUrl = await fetchDataUrl(logoUrl)
+    const init = initials(company)
+
     const css = `
       body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#111}
+      .topline{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px}
+      .brand{display:flex; align-items:center; gap:10px}
+      .logo{height:40px; width:auto; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; padding:4px}
+      .logo-fallback{height:40px; width:40px; border:1px solid #e5e7eb; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:600; background:#f4f4f5}
       .cap{text-transform:capitalize}
       .header{display:flex; justify-content:space-between; gap:24px; margin-bottom:12px}
       .supplier{border:1px solid #ddd; border-radius:8px; padding:12px; min-width:260px}
@@ -648,9 +672,68 @@ export default function PurchaseOrders() {
       .totals .muted{color:#555}
       .totals .grand{font-weight:600}
     `
+
+    const headerBrand = logoDataUrl
+      ? `<img src="${logoDataUrl}" alt="${company || 'Company logo'}" class="logo">`
+      : `<div class="logo-fallback">${init}</div>`
+
+    const html = `
+      <div class="topline">
+        <div class="brand">
+          ${headerBrand}
+          <div class="text-base" style="font-weight:600">${company || '—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:28px; font-weight:700; letter-spacing:.02em">Purchase Order ${number}</div>
+          <div class="meta">Printed at: <b>${printedAt}</b></div>
+        </div>
+      </div>
+
+      <div class="header">
+        <div>
+          <div class="meta">Status: <b class="cap">${po.status}</b></div>
+          <div class="meta">Currency: <b>${currency}</b> · FX→${baseCode}: <b>${fmtAcct(fx)}</b></div>
+          <div class="meta">Expected Date: <b>${(po as any).expected_date || '—'}</b></div>
+        </div>
+        <div class="supplier">
+          <div class="title">Supplier</div>
+          <div><b>${supp.name}</b></div>
+          <div>Email: ${supp.email}</div>
+          <div>Phone: ${supp.phone}</div>
+          <div>Tax ID: ${supp.tax_id}</div>
+          <div>Payment Terms: ${supp.terms}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th><th>SKU</th><th class="right">Qty</th><th>UoM</th><th class="right">Unit Price</th><th class="right">Disc %</th><th class="right">Line Total (${currency})</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="totals">
+        <div><span>Subtotal (${currency})</span><span>${fmtAcct(subtotal)}</span></div>
+        <div><span>Tax (${currency})</span><span>${fmtAcct(tax)}</span></div>
+        <div class="muted"><span>FX to ${baseCode}</span><span>${fmtAcct(fx)}</span></div>
+        <div class="grand"><span>Total (${currency})</span><span>${fmtAcct(total)}</span></div>
+        <div class="grand"><span>Total (${baseCode})</span><span>${fmtAcct(total * fx)}</span></div>
+      </div>
+    `
+
     const w = window.open('', '_blank'); if (!w) return
     w.document.write(`<html><head><title>PO ${number}</title><meta charset="utf-8"/><style>${css}</style></head><body>${html}</body></html>`)
-    w.document.close(); w.focus(); w.print()
+    w.document.close()
+
+    // wait for fonts + logo decode to avoid blank images on print
+    try { await (w as any).document?.fonts?.ready } catch {}
+    const img = w.document.querySelector('img.logo') as HTMLImageElement | null
+    if (img && 'decode' in img) {
+      try { await (img as any).decode() } catch {}
+    }
+    setTimeout(() => { w.focus(); w.print() }, 50)
   }
 
   return (
@@ -662,7 +745,7 @@ export default function PurchaseOrders() {
             <CardTitle>{tt('orders.outstandingPOs', 'Open & Approved Purchase Orders')}</CardTitle>
 
             <div className="flex items-center gap-2">
-              {/* New: Closed/Received POs Browser */}
+              {/* Closed/Received POs Browser */}
               <Button size="sm" variant="outline" onClick={() => setBrowserOpen(true)}>
                 {tt('orders.poBrowser', 'Closed/Received POs')}
               </Button>

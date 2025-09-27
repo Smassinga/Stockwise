@@ -15,6 +15,7 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
+import { useOrg } from '../../hooks/useOrg'
 
 type AppSettings = {
   sales?: {
@@ -52,7 +53,7 @@ type SoStatus = typeof VALID_SO_STATUSES[number]
 
 type SO = {
   id: string
-  customer?: string            // may be legacy name or code
+  customer?: string
   customer_id?: string
   status: SoStatus | string
   currency_code?: string
@@ -109,8 +110,27 @@ const initials = (s?: string | null) => {
   return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
 }
 
+/** Prefetch an image and convert to Data URL to avoid CORS/expiry; returns null on failure. */
+async function fetchDataUrl(src?: string | null): Promise<string | null> {
+  if (!src || !src.trim()) return null
+  try {
+    const r = await fetch(src, { mode: 'cors', cache: 'no-store' })
+    if (!r.ok) return null
+    const b = await r.blob()
+    return await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(String(fr.result))
+      fr.onerror = reject
+      fr.readAsDataURL(b)
+    })
+  } catch {
+    return null
+  }
+}
+
 export default function SalesOrders() {
   const { t } = useI18n()
+  const { companyId } = useOrg()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars)
     return s === key ? fallback : s
@@ -284,7 +304,7 @@ export default function SalesOrders() {
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
   const remaining = (l: SOL) => Math.max(n(l.qty) - n(l.shipped_qty), 0)
 
-  // load masters, conversions, settings, lists, defaults, branding
+  // load masters, conversions, settings, lists, defaults, (global) branding fallbacks
   useEffect(() => {
     ;(async () => {
       try {
@@ -314,10 +334,7 @@ export default function SalesOrders() {
         if (custs.error) throw custs.error
         setCustomers((custs.data || []) as Customer[])
 
-        const [so, sol] = await Promise.all([
-          db.salesOrders.list(),
-          db.salesOrderLines.list()
-        ])
+        const [so, sol] = await Promise.all([ db.salesOrders.list(), db.salesOrderLines.list() ])
         const withFlags = (sol || []).map((l: any) => ({
           ...l,
           is_shipped: l.is_shipped ?? false,
@@ -342,7 +359,7 @@ export default function SalesOrders() {
           setShipBinId(firstBin)
         }
 
-        // --- Branding (logo + company name) ---
+        // GLOBAL fallbacks for brand (used only if company_settings doesn't provide one)
         try {
           const [brandRes, companyRes] = await Promise.all([
             supabase.from('app_settings').select('data').eq('id', 'brand').maybeSingle(),
@@ -363,8 +380,9 @@ export default function SalesOrders() {
             a?.branding?.logoUrl ||
             a?.brand?.logoUrl ||
             a?.logoUrl || ''
-          setBrandName(String(nameGuess || ''))
-          setBrandLogoUrl(String(logoGuess || ''))
+          // only set these if we don't already have per-company ones (another effect below may set them)
+          setBrandName(prev => prev || String(nameGuess || ''))
+          setBrandLogoUrl(prev => prev || String(logoGuess || ''))
         } catch { /* non-fatal */ }
 
       } catch (err: any) {
@@ -372,7 +390,29 @@ export default function SalesOrders() {
         toast.error(err?.message || tt('orders.loadFailed', 'Failed to load sales orders'))
       }
     })()
-  }, [])
+  }, []) // once
+
+  // Load per-company brand (highest priority) when companyId becomes known
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      try {
+        const res = await supabase
+          .from('company_settings')
+          .select('data')
+          .eq('company_id', companyId)
+          .maybeSingle()
+        const doc = (res.data as any)?.data || {}
+        const brand = doc?.documents?.brand || {}
+        // Prefer explicit brand; if missing, leave whatever fallback we already set
+        if (brand?.name) setBrandName(String(brand.name))
+        if (brand?.logoUrl) setBrandLogoUrl(String(brand.logoUrl))
+      } catch (e) {
+        // not fatal
+        console.warn('brand load (company_settings) failed:', e)
+      }
+    })()
+  }, [companyId])
 
   // default chosen currency = baseCode (if previous was placeholder)
   useEffect(() => { setSoCurrency((prev) => prev && prev !== 'MZN' ? prev : baseCode) }, [baseCode])
@@ -760,8 +800,8 @@ export default function SalesOrders() {
     return solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
   }
 
-  // ---- Enhanced print: logo/company + customer card from bill_to_* OR customer row
-  function printSO(so: SO) {
+  // ---- Print: logo/company from company_settings (preferred) or app_settings fallback
+  async function printSO(so: SO) {
     const currency = curSO(so) || '—'
     const fx = fxSO(so) || 1
     const lines = solines.filter(l => l.so_id === so.id)
@@ -803,7 +843,8 @@ export default function SalesOrders() {
     }
 
     const company = (brandName || '').trim()
-    const logo = (brandLogoUrl || '').trim()
+    const logoUrl = (brandLogoUrl || '').trim()
+    const logoDataUrl = await fetchDataUrl(logoUrl) // preload & convert
     const init = initials(company)
 
     const css = `
@@ -827,11 +868,15 @@ export default function SalesOrders() {
       .shipped{color:#16a34a; font-weight:600}
       .addr{white-space:pre-wrap}
     `
+
+    const headerBrand = logoDataUrl
+      ? `<img src="${logoDataUrl}" alt="${company || 'Company logo'}" class="logo">`
+      : `<div class="logo-fallback">${init}</div>`
+
     const html = `
       <div class="topline">
         <div class="brand">
-          ${logo ? `<img src="${logo}" alt="${company || 'Company logo'}" class="logo" onerror="this.style.display='none'">`
-                 : `<div class="logo-fallback">${init}</div>`}
+          ${headerBrand}
           <div class="text-base" style="font-weight:600">${company || '—'}</div>
         </div>
         <div style="text-align:right">
@@ -878,9 +923,18 @@ export default function SalesOrders() {
         <div class="grand"><span>Total (${baseCode})</span><span>${fmtAcct(total * fx)}</span></div>
       </div>
     `
+
     const w = window.open('', '_blank'); if (!w) return
     w.document.write(`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>${css}</style></head><body>${html}</body></html>`)
-    w.document.close(); w.focus(); w.print()
+    w.document.close()
+
+    // Wait for fonts + logo decode before printing (prevents blank logo)
+    try { await (w as any).document?.fonts?.ready } catch {}
+    const img = w.document.querySelector('img.logo') as HTMLImageElement | null
+    if (img && 'decode' in img) {
+      try { await (img as any).decode() } catch {}
+    }
+    setTimeout(() => { w.focus(); w.print() }, 50)
   }
 
   return (

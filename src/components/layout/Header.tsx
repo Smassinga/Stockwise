@@ -1,4 +1,3 @@
-// src/components/layout/header.tsx
 import { useEffect, useRef, useState } from 'react'
 import { Menu, Search, LogOut } from 'lucide-react'
 import { Button } from '../ui/button'
@@ -6,12 +5,12 @@ import { Input } from '../ui/input'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
+import ThemeToggle from '../ThemeToggle'
 
 interface User {
   id: string
   email: string
   name: string
-  // role removed - roles are per-company via useOrg()
 }
 
 interface HeaderProps {
@@ -72,8 +71,9 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
         </div>
       </div>
 
-      <div className="flex items-center space-x-4">
-        <NotificationCenter />
+      <div className="flex items-center space-x-2 sm:space-x-4">
+        <ThemeToggle />           {/* same labeled toggle as Auth */}
+        <NotificationCenter />    {/* bell; opens fixed panel */}
 
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center md:hidden">
@@ -98,7 +98,7 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
                 <div className="p-1">
                   <button
                     className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent"
-                    onClick={() => { setOpen(false); logout?.() }}
+                    onClick={() => { setOpen(false); (logout as any)?.() }}
                   >
                     <LogOut className="h-4 w-4" />
                     Sign out
