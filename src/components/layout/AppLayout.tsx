@@ -1,3 +1,4 @@
+// src/components/layout/AppLayout.tsx
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
@@ -12,10 +13,9 @@ import {
   Coins,
   Truck,
   Settings as SettingsIcon,
-  Bell,
   Menu,
   LogOut,
-  Layers, // <-- added for BOM
+  Layers, // BOM
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -23,6 +23,10 @@ import { Input } from '../ui/input'
 import { cn } from '../../lib/utils'
 import { useOrg } from '../../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../../lib/roles'
+
+// NEW: add theme toggle + notifications
+import ThemeToggle from '../ThemeToggle'
+import { NotificationCenter } from '../notifications/NotificationCenter'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -35,7 +39,7 @@ type NavItem = {
 const BASE_NAV: NavItem[] = [
   { label: 'Dashboard',  to: '/dashboard',  icon: LayoutGrid },
   { label: 'Items',      to: '/items',      icon: Package },
-  { label: 'BOM',        to: '/bom',        icon: Layers },          // <-- added
+  { label: 'BOM',        to: '/bom',        icon: Layers },
   { label: 'Movements',  to: '/movements',  icon: ArrowLeftRight },
   { label: 'Orders',     to: '/orders',     icon: ShoppingCart },
   { label: 'Reports',    to: '/reports',    icon: BarChart3 },
@@ -71,7 +75,7 @@ export function AppLayout({ user, children }: Props) {
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const { logout } = useAuth() as any
-  const { companyName, myRole } = useOrg()   // <-- FIX: was orgName
+  const { companyName, myRole } = useOrg()
 
   // filter nav (Users = MANAGER+)
   const nav = useMemo(() => {
@@ -114,14 +118,21 @@ export function AppLayout({ user, children }: Props) {
             </svg>
           </div>
           <div className="text-lg font-bold">StockWise</div>
+
+          {/* Theme toggle next to brand (desktop sidebar) */}
+          <div className="ml-2 shrink-0">
+            <ThemeToggle />
+          </div>
         </div>
+
         <nav className="flex-1 space-y-1 px-3 py-2">
           {nav.map((item) => (
             <NavLink key={item.to} item={item} />
           ))}
         </nav>
+
         <div className="border-t p-3">
-          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>} {/* <-- FIX */}
+          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
           <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
           <Button
@@ -136,7 +147,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [user, location.pathname, logout, nav, companyName, myRole] // <-- FIX: companyName
+    [user, location.pathname, logout, nav, companyName, myRole]
   )
 
   // Header user menu
@@ -174,6 +185,12 @@ export function AppLayout({ user, children }: Props) {
               </svg>
             </div>
             <div className="text-lg font-bold">StockWise</div>
+            {/* Theme toggle next to brand (mobile sidebar) */}
+            <div className="ml-2 shrink-0">
+              {/* Compact works if your ThemeToggle supports it; otherwise it renders normally */}
+              {/* @ts-ignore */}
+              <ThemeToggle compact />
+            </div>
           </div>
           <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close menu">
             ✕
@@ -185,7 +202,7 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
         <div className="mt-auto border-t p-3">
-          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>} {/* <-- FIX */}
+          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
           <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
           <Button
@@ -211,12 +228,11 @@ export function AppLayout({ user, children }: Props) {
             <Input placeholder="Search items, SKU, barcode..." className="max-w-xl" />
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="icon" aria-label="Notifications">
-              <Bell className="h-5 w-5" />
-            </Button>
+            {/* Replace plain bell with the real notification center */}
+            <NotificationCenter />
 
             <div className="hidden text-right md:block">
-              {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>} {/* <-- FIX */}
+              {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
               <div className="text-sm font-semibold leading-tight">{user.name || user.email}</div>
               <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
             </div>

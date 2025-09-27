@@ -1,39 +1,50 @@
 import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
+import { Button } from './ui/button'
 
-export default function ThemeToggle() {
+type Props = { compact?: boolean }
+
+export default function ThemeToggle({ compact = false }: Props) {
   const [dark, setDark] = useState(
     typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
   )
 
   useEffect(() => {
-    // sync if user hasn’t explicitly chosen (optional)
     const stored = localStorage.getItem('theme')
     if (stored) return
     if (!window.matchMedia) return
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const onChange = () => {
       if (localStorage.getItem('theme')) return
-      if (mq.matches) document.documentElement.classList.add('dark')
-      else document.documentElement.classList.remove('dark')
+      document.documentElement.classList.toggle('dark', mq.matches)
       setDark(mq.matches)
     }
     onChange()
+    // @ts-ignore Safari fallback
     mq.addEventListener ? mq.addEventListener('change', onChange) : mq.addListener(onChange)
     return () =>
+      // @ts-ignore
       mq.removeEventListener ? mq.removeEventListener('change', onChange) : mq.removeListener(onChange)
   }, [])
 
   const apply = (wantDark: boolean) => {
-    const root = document.documentElement
-    if (wantDark) {
-      root.classList.add('dark')
-      localStorage.setItem('theme', 'dark')
-    } else {
-      root.classList.remove('dark')
-      localStorage.setItem('theme', 'light')
-    }
+    document.documentElement.classList.toggle('dark', wantDark)
+    localStorage.setItem('theme', wantDark ? 'dark' : 'light')
     setDark(wantDark)
+  }
+
+  if (compact) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Toggle theme"
+        title="Toggle light/dark"
+        onClick={() => apply(!dark)}
+      >
+        {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+      </Button>
+    )
   }
 
   return (

@@ -1,3 +1,4 @@
+// src/components/layout/Sidebar.tsx
 import { Link } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -21,6 +22,7 @@ import { Button } from '../ui/button'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../../lib/roles'
+import ThemeToggle from '../ThemeToggle'   // uses the same toggle as Auth
 
 interface User {
   id: string
@@ -47,7 +49,7 @@ type NavItem = {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Items', href: '/items', icon: Package },
-  { name: 'BOM', href: '/bom', icon: Layers },            // <-- added
+  { name: 'BOM', href: '/bom', icon: Layers },
   { name: 'Movements', href: '/movements', icon: ArrowUpDown },
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Warehouses', href: '/warehouses', icon: Warehouse },
@@ -102,18 +104,30 @@ export function Sidebar({
     >
       {/* Header */}
       <div className="border-b flex-shrink-0 p-6">
-        <div className="flex items-center justify-between">{/* fixed typo: items-center */}
-          {(!isCollapsed || isMobile) && (
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+        <div className="flex items-center justify-between">
+          {/* Brand + Theme */}
+          {(!isCollapsed || isMobile) ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
                 <Package className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-semibold text-lg">StockWise</span>
+              <span className="font-semibold text-lg truncate">StockWise</span>
+
+              {/* Full (labeled) toggle next to the brand */}
+              <div className="ml-2 shrink-0">
+                <ThemeToggle />
+              </div>
+            </div>
+          ) : (
+            // Collapsed: show compact icon-only toggle
+            <div className="flex items-center shrink-0">
+              <ThemeToggle compact />
             </div>
           )}
 
+          {/* Right-side controls */}
           {isMobile && onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close menu">
+            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close menu" className="shrink-0">
               <X className="w-4 h-4" />
             </Button>
           )}
@@ -124,6 +138,7 @@ export function Sidebar({
               size="sm"
               onClick={onCollapseToggle}
               aria-label="Collapse sidebar"
+              className="shrink-0"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
@@ -134,6 +149,7 @@ export function Sidebar({
               size="sm"
               onClick={onCollapseToggle}
               aria-label="Expand sidebar"
+              className="shrink-0"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
@@ -162,7 +178,7 @@ export function Sidebar({
                 )}
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
-                {(!isCollapsed || isMobile) && <span>{item.name}</span>}
+                {(!isCollapsed || isMobile) && <span className="truncate">{item.name}</span>}
               </Link>
             )
           })}
