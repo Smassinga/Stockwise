@@ -1,7 +1,6 @@
 // src/pages/Users.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { authFetch } from '../lib/authFetch'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -34,38 +33,47 @@ export default function Users() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('VIEWER')
 
-  // current user email (for self-protect on delete)
+  // current user identity
   const [myEmail, setMyEmail] = useState<string | null>(null)
+  const [myUserId, setMyUserId] = useState<string | null>(null)
+  const [myRole, setMyRole] = useState<Role | null>(null)
 
-  // ----- Resolve my company (prefer active membership) -----
+  // derived perms (computed locally from myRole)
+  const canManageUsers = !!myRole && (myRole === 'OWNER' || myRole === 'ADMIN' || myRole === 'MANAGER')
+  const canInviteAdmins = !!myRole && (myRole === 'OWNER' || myRole === 'ADMIN')
+
+  // ----- Resolve session + run invite sync, then resolve company -----
   useEffect(() => {
     (async () => {
       try {
         setLoading(true)
 
-        // Store my email for self-protection
-        const { data: sessionData } = await supabase.auth.getSession()
-        setMyEmail(sessionData.session?.user?.email ?? null)
-        const myUserId = sessionData.session?.user?.id
+        // Session
+        const { data: sessionData, error: sessErr } = await supabase.auth.getSession()
+        if (sessErr) throw sessErr
+        const session = sessionData.session
+        setMyEmail(session?.user?.email ?? null)
+        setMyUserId(session?.user?.id ?? null)
 
-        // Best-effort: link any pending invites to me (no-op if none)
-        await authFetch('admin-users/sync', { method: 'POST' }).catch(() => {})
+        // Link any email-based invites to this account (no-op if none)
+        {
+          const { error: _syncErr } = await supabase.rpc('sync_invites_for_me')
+          // swallow _syncErr; it's best-effort
+        }
 
+        // Resolve preferred company:
+        // 1) my active membership, else 2) first company row
         let resolved: Company | null = null
-
-        if (myUserId) {
-          // 1) Prefer my *active* membership (invited users will have this after /sync)
+        if (session?.user?.id) {
           const { data: membership, error: memErr } = await supabase
             .from('company_members')
             .select('company_id')
-            .eq('user_id', myUserId)
+            .eq('user_id', session.user.id)
             .eq('status', 'active')
             .order('created_at', { ascending: true })
             .limit(1)
             .maybeSingle()
-
           if (memErr) throw memErr
-
           if (membership?.company_id) {
             const { data: comp, error: compErr } = await supabase
               .from('companies')
@@ -76,9 +84,7 @@ export default function Users() {
             if (comp) resolved = comp
           }
         }
-
         if (!resolved) {
-          // 2) Fallback: first company row (keeps old behavior for owners/empty membership)
           const { data: firstComp, error: firstErr } = await supabase
             .from('companies')
             .select('id,name')
@@ -94,7 +100,6 @@ export default function Users() {
           }
           resolved = firstComp
         }
-
         setCompany(resolved)
       } catch (e: any) {
         console.error(e)
@@ -105,9 +110,29 @@ export default function Users() {
     })()
   }, [])
 
+  // ----- Load my role for this company (drives perms) -----
+  useEffect(() => {
+    if (!company?.id || !myUserId) return
+    ;(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('company_members')
+          .select('role')
+          .eq('company_id', company.id)
+          .eq('user_id', myUserId)
+          .maybeSingle()
+        if (error) throw error
+        setMyRole((data?.role as Role | undefined) ?? null)
+      } catch (e: any) {
+        console.warn('could not resolve my role:', e?.message)
+        setMyRole(null)
+      }
+    })()
+  }, [company?.id, myUserId])
+
   // ----- Load members when company is available -----
   useEffect(() => {
-    if (!company) return
+    if (!company?.id) return
     refreshMembers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id])
@@ -116,15 +141,13 @@ export default function Users() {
     if (!company) return
     try {
       setLoading(true)
-      interface UsersApiResponse {
-        users: Member[]
-        [key: string]: unknown
-      }
-      const json: UsersApiResponse = await authFetch(
-        `admin-users/?company_id=${encodeURIComponent(company.id)}`,
-        { method: 'GET' }
-      )
-      setMembers(json?.users ?? [])
+      const { data, error } = await supabase
+        .from('company_members')
+        .select('email, user_id, role, status, invited_by, created_at')
+        .eq('company_id', company.id)
+        .order('role', { ascending: true })
+      if (error) throw error
+      setMembers((data || []) as Member[])
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Failed to load members')
@@ -133,22 +156,25 @@ export default function Users() {
     }
   }
 
-  // ----- Actions -----
+  // ----- Actions (all DB/RPC; RLS enforces) -----
   async function invite() {
     if (!company) return
+    if (!canManageUsers) return toast.error('You do not have permission to invite users.')
     const email = inviteEmail.trim().toLowerCase()
     if (!email) return toast.error('Email is required')
+    if (!canInviteAdmins && (inviteRole === 'OWNER' || inviteRole === 'ADMIN')) {
+      return toast.error('You cannot invite owners/admins.')
+    }
     try {
-      const json = await authFetch('admin-users/invite', {
-        method: 'POST',
-        body: JSON.stringify({ company_id: company.id, email, role: inviteRole }),
-      }) as any
-      if (json?.error) throw new Error(json.error)
-      toast.success(
-        json?.warning === 'invite_email_failed'
-          ? 'Added as invited (email failed to send)'
-          : 'Invite sent'
-      )
+      const { data: token, error } = await supabase.rpc('invite_company_member', {
+        p_company: company.id,
+        p_email: email,
+        p_role: inviteRole,
+      })
+      if (error) throw error
+      const link = `${window.location.origin}/accept-invite?token=${token}`
+      await navigator.clipboard.writeText(link)
+      toast.success('Invite created. Link copied to clipboard.')
       setInviteEmail('')
       setInviteRole('VIEWER')
       await refreshMembers()
@@ -158,21 +184,23 @@ export default function Users() {
     }
   }
 
-  /** Generate a shareable invite link (works even if emails arrive late). */
   async function copyInviteLink() {
     if (!company) return
+    if (!canManageUsers) return toast.error('You do not have permission to invite users.')
     const email = inviteEmail.trim().toLowerCase()
     if (!email) return toast.error('Enter an email first (the link is tied to that email)')
+    if (!canInviteAdmins && (inviteRole === 'OWNER' || inviteRole === 'ADMIN')) {
+      return toast.error('You cannot invite owners/admins.')
+    }
     try {
-      const json = await authFetch('admin-users/invite-link', {
-        method: 'POST',
-        body: JSON.stringify({ company_id: company.id, email, role: inviteRole }),
-      }) as any
-      if (json?.error) throw new Error(json.error)
-      const link = json?.link as string | undefined
-      if (!link) throw new Error('No link returned')
+      const { data: token, error } = await supabase.rpc('reinvite_company_member', {
+        p_company: company.id,
+        p_email: email,
+      })
+      if (error) throw error
+      const link = `${window.location.origin}/accept-invite?token=${token}`
       await navigator.clipboard.writeText(link)
-      toast.success('Invite link copied to clipboard')
+      toast.success('New invite link copied')
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Could not generate link')
@@ -181,13 +209,16 @@ export default function Users() {
 
   async function reinvite(email: string) {
     if (!company) return
+    if (!canManageUsers) return toast.error('You do not have permission to reinvite.')
     try {
-      const json = await authFetch('admin-users/reinvite', {
-        method: 'POST',
-        body: JSON.stringify({ company_id: company.id, email }),
-      }) as any
-      if (json?.error) throw new Error(json.error)
-      toast.success('Invite email resent')
+      const { data: token, error } = await supabase.rpc('reinvite_company_member', {
+        p_company: company.id,
+        p_email: email,
+      })
+      if (error) throw error
+      const link = `${window.location.origin}/accept-invite?token=${token}`
+      await navigator.clipboard.writeText(link)
+      toast.success('Invite link copied')
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Failed to reinvite')
@@ -196,12 +227,17 @@ export default function Users() {
 
   async function updateMember(email: string, next: Partial<Pick<Member, 'role' | 'status'>>) {
     if (!company) return
+    if (!canManageUsers) return toast.error('You do not have permission to update members.')
+    if (!canInviteAdmins && (next.role === 'OWNER' || next.role === 'ADMIN')) {
+      return toast.error('You cannot assign owners/admins.')
+    }
     try {
-      const json = await authFetch('admin-users/member', {
-        method: 'PATCH',
-        body: JSON.stringify({ company_id: company.id, email, ...next }),
-      }) as any
-      if (json?.error) throw new Error(json.error)
+      const { error } = await supabase
+        .from('company_members')
+        .update(next)
+        .eq('company_id', company.id)
+        .eq('email', email)
+      if (error) throw error
       toast.success('Member updated')
       await refreshMembers()
     } catch (e: any) {
@@ -212,15 +248,17 @@ export default function Users() {
 
   async function removeMember(email: string) {
     if (!company) return
+    if (!canManageUsers) return toast.error('You do not have permission to remove members.')
     if (myEmail && email.toLowerCase() === myEmail.toLowerCase()) {
       return toast.error('You cannot remove yourself')
     }
     try {
-      const json = await authFetch('admin-users/member', {
-        method: 'DELETE',
-        body: JSON.stringify({ company_id: company.id, email }),
-      }) as any
-      if (json?.error) throw new Error(json.error)
+      const { error } = await supabase
+        .from('company_members')
+        .delete()
+        .eq('company_id', company.id)
+        .eq('email', email)
+      if (error) throw error
       toast.success('Member removed')
       await refreshMembers()
     } catch (e: any) {
@@ -251,6 +289,7 @@ export default function Users() {
         {company && (
           <div className="text-sm text-muted-foreground">
             Company: {company.name || company.id}
+            {myRole ? ` — Your role: ${myRole}` : ''}
           </div>
         )}
       </div>
@@ -275,22 +314,29 @@ export default function Users() {
               </div>
               <div>
                 <Label>Role</Label>
-                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as Role)}>
+                <Select
+                  value={inviteRole}
+                  onValueChange={(v) => setInviteRole(v as Role)}
+                  disabled={!canManageUsers}
+                >
                   <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
                   <SelectContent>
-                    {roleOptions.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    {roleOptions.map(r => (
+                      <SelectItem
+                        key={r}
+                        value={r}
+                        disabled={!canInviteAdmins && (r === 'OWNER' || r === 'ADMIN')}
+                      >
+                        {r}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex gap-2">
-                <Button onClick={invite}>Invite</Button>
-                <Button variant="outline" onClick={copyInviteLink}>Copy invite link</Button>
-                <Button
-                  variant="outline"
-                  onClick={() => { setInviteEmail(''); setInviteRole('VIEWER') }}
-                >
-                  Clear
-                </Button>
+                <Button onClick={invite} disabled={!canManageUsers}>Invite</Button>
+                <Button variant="outline" onClick={copyInviteLink} disabled={!canManageUsers}>Copy invite link</Button>
+                <Button variant="outline" onClick={() => { setInviteEmail(''); setInviteRole('VIEWER') }}>Clear</Button>
               </div>
             </div>
           )}
@@ -326,15 +372,31 @@ export default function Users() {
                     <tr key={m.email} className="border-b">
                       <td className="py-2 pr-2">{m.email}</td>
                       <td className="py-2 pr-2">
-                        <Select value={m.role} onValueChange={(v) => updateMember(m.email, { role: v as Role })}>
+                        <Select
+                          value={m.role}
+                          onValueChange={(v) => updateMember(m.email, { role: v as Role })}
+                          disabled={!canManageUsers}
+                        >
                           <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {roleOptions.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                            {roleOptions.map(r => (
+                              <SelectItem
+                                key={r}
+                                value={r}
+                                disabled={!canInviteAdmins && (r === 'OWNER' || r === 'ADMIN')}
+                              >
+                                {r}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </td>
                       <td className="py-2 pr-2">
-                        <Select value={m.status} onValueChange={(v) => updateMember(m.email, { status: v as Status })}>
+                        <Select
+                          value={m.status}
+                          onValueChange={(v) => updateMember(m.email, { status: v as Status })}
+                          disabled={!canManageUsers}
+                        >
                           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {statusOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -351,24 +413,25 @@ export default function Users() {
                         <div className="flex gap-2 justify-end">
                           {m.status === 'invited' && (
                             <>
-                              <Button variant="outline" onClick={() => reinvite(m.email)}>Resend invite</Button>
-                              {/* Convenience: regenerate + copy a link for this person */}
+                              <Button variant="outline" onClick={() => reinvite(m.email)} disabled={!canManageUsers}>Resend invite</Button>
                               <Button
                                 variant="outline"
                                 onClick={async () => {
+                                  if (!canManageUsers) return
                                   try {
-                                    const json = await authFetch('admin-users/invite-link', {
-                                      method: 'POST',
-                                      body: JSON.stringify({ company_id: company!.id, email: m.email, role: m.role }),
-                                    }) as any
-                                    const link = json?.link as string | undefined
-                                    if (!link) throw new Error('No link returned')
+                                    const { data: token, error } = await supabase.rpc('reinvite_company_member', {
+                                      p_company: company!.id,
+                                      p_email: m.email,
+                                    })
+                                    if (error) throw error
+                                    const link = `${window.location.origin}/accept-invite?token=${token}`
                                     await navigator.clipboard.writeText(link)
                                     toast.success('Invite link copied')
                                   } catch (e: any) {
                                     toast.error(e?.message || 'Could not copy link')
                                   }
                                 }}
+                                disabled={!canManageUsers}
                               >
                                 Copy link
                               </Button>
@@ -377,8 +440,8 @@ export default function Users() {
                           <Button
                             variant="outline"
                             onClick={() => removeMember(m.email)}
-                            disabled={!!isSelf}
-                            title={isSelf ? 'You cannot remove yourself' : 'Remove member'}
+                            disabled={!canManageUsers || !!isSelf}
+                            title={!canManageUsers ? 'No permission' : (isSelf ? 'You cannot remove yourself' : 'Remove member')}
                           >
                             Remove
                           </Button>
