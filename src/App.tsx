@@ -19,7 +19,10 @@ import Auth from './pages/Auth';
 import UomSettings from './pages/UomSettings';
 import AuthCallback from './pages/AuthCallback';
 import Onboarding from './pages/Onboarding';
-
+import Transactions from './pages/Transactions'
+import Cash from './pages/Cash'   // <-- NEW
+import Banks from './pages/Banks'             // NEW
+import BankDetail from './pages/BankDetail'
 import { OrgProvider, useOrg } from './hooks/useOrg';
 import { CanManageUsers } from './lib/roles';
 
@@ -111,6 +114,10 @@ export default function App() {
               <Route path="/items" element={<Items />} />
               <Route path="/movements" element={<StockMovements />} />
               <Route path="/warehouses" element={<Warehouses />} />
+              <Route path="/transactions" element={<Transactions />} />
+              <Route path="/cash" element={<Cash />} /> {/* NEW */}
+              <Route path="/banks" element={<Banks />} />              {/* NEW */}
+              <Route path="/banks/:bankId" element={<BankDetail />} />
 
               {/* Only OWNER/ADMIN/MANAGER can access Users */}
               <Route element={<RequireOrgRole allowed={CanManageUsers} />}>

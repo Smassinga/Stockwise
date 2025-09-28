@@ -1,5 +1,5 @@
 // src/components/layout/AppLayout.tsx
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { ReactNode, useEffect, useRef, useState, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -15,7 +15,10 @@ import {
   Settings as SettingsIcon,
   Menu,
   LogOut,
-  Layers, // BOM
+  Layers,          // BOM
+  Receipt,         // Transactions icon
+  Wallet,          // Cash icon
+  Banknote,        // Banks icon
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -23,8 +26,6 @@ import { Input } from '../ui/input'
 import { cn } from '../../lib/utils'
 import { useOrg } from '../../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../../lib/roles'
-
-// NEW: add theme toggle + notifications
 import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 
@@ -37,18 +38,21 @@ type NavItem = {
 }
 
 const BASE_NAV: NavItem[] = [
-  { label: 'Dashboard',  to: '/dashboard',  icon: LayoutGrid },
-  { label: 'Items',      to: '/items',      icon: Package },
-  { label: 'BOM',        to: '/bom',        icon: Layers },
-  { label: 'Movements',  to: '/movements',  icon: ArrowLeftRight },
-  { label: 'Orders',     to: '/orders',     icon: ShoppingCart },
-  { label: 'Reports',    to: '/reports',    icon: BarChart3 },
-  { label: 'Warehouses', to: '/warehouses', icon: Boxes },
-  { label: 'Users',      to: '/users',      icon: UsersIcon }, // filtered by role
-  { label: 'Customers',  to: '/customers',  icon: Users },
-  { label: 'Suppliers',  to: '/suppliers',  icon: Truck },
-  { label: 'Currency',   to: '/currency',   icon: Coins },
-  { label: 'Settings',   to: '/settings',   icon: SettingsIcon },
+  { label: 'Dashboard',    to: '/dashboard',    icon: LayoutGrid },
+  { label: 'Items',        to: '/items',        icon: Package },
+  { label: 'BOM',          to: '/bom',          icon: Layers },
+  { label: 'Movements',    to: '/movements',    icon: ArrowLeftRight },
+  { label: 'Transactions', to: '/transactions', icon: Receipt },
+  { label: 'Cash',         to: '/cash',         icon: Wallet },
+  { label: 'Banks',        to: '/banks',        icon: Banknote },
+  { label: 'Orders',       to: '/orders',       icon: ShoppingCart },
+  { label: 'Reports',      to: '/reports',      icon: BarChart3 },
+  { label: 'Warehouses',   to: '/warehouses',   icon: Boxes },
+  { label: 'Users',        to: '/users',        icon: UsersIcon }, // role-filtered
+  { label: 'Customers',    to: '/customers',    icon: Users },
+  { label: 'Suppliers',    to: '/suppliers',    icon: Truck },
+  { label: 'Currency',     to: '/currency',     icon: Coins },
+  { label: 'Settings',     to: '/settings',     icon: SettingsIcon },
 ]
 
 function useClickOutside<T extends HTMLElement>(onClose: () => void) {
@@ -77,7 +81,6 @@ export function AppLayout({ user, children }: Props) {
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
 
-  // filter nav (Users = MANAGER+)
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, CanManageUsers)
     return BASE_NAV.filter(item => !(item.to === '/users' && !canManage))
@@ -118,8 +121,6 @@ export function AppLayout({ user, children }: Props) {
             </svg>
           </div>
           <div className="text-lg font-bold">StockWise</div>
-
-          {/* Theme toggle next to brand (desktop sidebar) */}
           <div className="ml-2 shrink-0">
             <ThemeToggle />
           </div>
@@ -150,17 +151,14 @@ export function AppLayout({ user, children }: Props) {
     [user, location.pathname, logout, nav, companyName, myRole]
   )
 
-  // Header user menu
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false))
   const initial = (user.name || user.email || '?').charAt(0).toUpperCase()
 
   return (
     <div className="flex min-h-screen">
-      {/* Desktop sidebar */}
       {sidebar}
 
-      {/* Mobile overlay */}
       <div
         className={cn(
           'fixed inset-0 z-40 bg-background/70 backdrop-blur-sm md:hidden',
@@ -168,7 +166,6 @@ export function AppLayout({ user, children }: Props) {
         )}
         onClick={() => setOpen(false)}
       />
-      {/* Mobile slide-in sidebar */}
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 w-64 border-r bg-background transition-transform md:hidden',
@@ -185,11 +182,8 @@ export function AppLayout({ user, children }: Props) {
               </svg>
             </div>
             <div className="text-lg font-bold">StockWise</div>
-            {/* Theme toggle next to brand (mobile sidebar) */}
             <div className="ml-2 shrink-0">
-              {/* Compact works if your ThemeToggle supports it; otherwise it renders normally */}
-              {/* @ts-ignore */}
-              <ThemeToggle compact />
+              {/* @ts-ignore */}<ThemeToggle compact />
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close menu">
@@ -217,9 +211,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex min-h-screen flex-1 flex-col">
-        {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background px-4">
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu className="h-5 w-5" />
@@ -228,7 +220,6 @@ export function AppLayout({ user, children }: Props) {
             <Input placeholder="Search items, SKU, barcode..." className="max-w-xl" />
           </div>
           <div className="ml-auto flex items-center gap-2">
-            {/* Replace plain bell with the real notification center */}
             <NotificationCenter />
 
             <div className="hidden text-right md:block">
@@ -237,7 +228,6 @@ export function AppLayout({ user, children }: Props) {
               <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
             </div>
 
-            {/* Avatar + dropdown */}
             <div className="relative ml-2 hidden md:block" ref={menuRef}>
               <button
                 className="h-9 w-9 rounded-full bg-primary/10 text-sm font-semibold flex items-center justify-center hover:bg-primary/20 transition"

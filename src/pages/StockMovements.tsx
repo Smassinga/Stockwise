@@ -11,7 +11,7 @@ import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
-import { useOrg } from '../hooks/useOrg' // NEW: need companyId context
+import { useOrg } from '../hooks/useOrg' // company scope
 
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
@@ -61,7 +61,7 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 export default function StockMovements() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
-  const { companyId } = useOrg() // NEW
+  const { companyId } = useOrg()
 
   // Master data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -339,50 +339,117 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // NEW: Idempotent "CASH" customer resolver per company
+  // ---------------------- CASH helpers ----------------------
+
+  // per-company CASH customer (for SO on issue)
   async function getOrCreateCashCustomerId(): Promise<string> {
     if (!companyId) throw new Error('No company selected')
-    // 1) try select
-    {
-      const q = await supabase
-        .from('customers')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('code', 'CASH')
-        .limit(1)
-        .maybeSingle()
-      if (!q.error && q.data?.id) return q.data.id
+    const q = await supabase
+      .from('customers')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('code', 'CASH')
+      .maybeSingle()
+    if (!q.error && q.data?.id) return q.data.id
+    const up = await supabase
+      .from('customers')
+      .upsert({ company_id: companyId, code: 'CASH', name: 'Cash Customer' }, { onConflict: 'company_id,code' })
+      .select('id')
+      .single()
+    if (!up.error && up.data?.id) return up.data.id
+    const msg = String(up.error?.message || '')
+    if ((up as any)?.error?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+      const q2 = await supabase.from('customers').select('id').eq('company_id', companyId).eq('code', 'CASH').maybeSingle()
+      if (!q2.error && q2.data?.id) return q2.data.id
     }
-    // 2) try upsert (on company_id,code)
-    {
-      const up = await supabase
-        .from('customers')
-        .upsert(
-          { company_id: companyId, code: 'CASH', name: 'Cash Customer' },
-          { onConflict: 'company_id,code' }
-        )
-        .select('id')
-        .single()
-      if (!up.error && up.data?.id) return up.data.id
-
-      // 3) handle race: if 23505/409, select again
-      const msg = String(up.error?.message || '')
-      const code = (up as any)?.error?.code
-      if (code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
-        const q2 = await supabase
-          .from('customers')
-          .select('id')
-          .eq('company_id', companyId)
-          .eq('code', 'CASH')
-          .limit(1)
-          .maybeSingle()
-        if (!q2.error && q2.data?.id) return q2.data.id
-      }
-      throw up.error || new Error('Failed to upsert CASH customer')
-    }
+    throw up.error || new Error('Failed to upsert CASH customer')
   }
 
-  // Submit handlers
+  // per-company CASH-PURCHASES supplier (for PO on receive)
+  async function getOrCreateCashPurchasesSupplierId(): Promise<string> {
+    if (!companyId) throw new Error('No company selected')
+    const CODE = 'CASH-PURCHASES'
+    const q = await supabase
+      .from('suppliers')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('code', CODE as any) // code is a domain type in your schema
+      .maybeSingle()
+    if (!q.error && q.data?.id) return q.data.id
+
+    const up = await supabase
+      .from('suppliers')
+      .upsert({ company_id: companyId, code: CODE as any, name: 'Cash Purchases' }, { onConflict: 'company_id,code' })
+      .select('id')
+      .single()
+    if (!up.error && up.data?.id) return up.data.id
+
+    const msg = String(up.error?.message || '')
+    if ((up as any)?.error?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+      const q2 = await supabase.from('suppliers').select('id').eq('company_id', companyId).eq('code', CODE as any).maybeSingle()
+      if (!q2.error && q2.data?.id) return q2.data.id
+    }
+    throw up.error || new Error('Failed to upsert CASH-PURCHASES supplier')
+  }
+
+  // create a CLOSED PO + one line for this receipt (RLS-safe with company_id)
+  async function createClosedPOForReceipt(params: {
+    companyId: string
+    supplierId: string
+    itemId: string
+    uomId: string
+    qtyEntered: number
+    qtyBase: number
+    unitCost: number
+    currencyCode: string
+    notes?: string
+  }): Promise<{ poId: string; poLineId: string; poNumber?: string }> {
+    const { companyId, supplierId, itemId, uomId, qtyEntered, qtyBase, unitCost, currencyCode, notes } = params
+    const lineTotalBase = unitCost * qtyBase
+
+    // include company_id to satisfy RLS
+    const poIns = await supabase
+      .from('purchase_orders')
+      .insert({
+        company_id: companyId,
+        supplier_id: supplierId,
+        status: 'closed',
+        currency_code: currencyCode,
+        fx_to_base: 1,
+        subtotal: lineTotalBase,
+        tax_total: 0,
+        total: lineTotalBase,
+        notes: notes || null,
+        received_at: new Date().toISOString(),
+      } as any)
+      .select('id,order_no')
+      .single()
+
+    if (poIns.error || !poIns.data?.id) throw poIns.error || new Error('Failed to create PO')
+    const poId = poIns.data.id as string
+    const poNumber = (poIns.data as any)?.order_no || undefined
+
+    const polIns = await supabase
+      .from('purchase_order_lines')
+      .insert({
+        po_id: poId,
+        line_no: 1,
+        item_id: itemId,
+        uom_id: uomId,
+        qty: qtyEntered,
+        unit_price: unitCost,
+        line_total: lineTotalBase,
+        notes: notes || null,
+      } as any)
+      .select('id')
+      .single()
+
+    if (polIns.error || !polIns.data?.id) throw polIns.error || new Error('Failed to create PO line')
+    return { poId, poLineId: polIns.data.id as string, poNumber }
+  }
+
+  // ---------------------- Submit handlers ----------------------
+
   async function submitReceive() {
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
     if (!toBin) return toast.error(tt('orders.selectBin', 'Select bin'))
@@ -392,7 +459,38 @@ export default function StockMovements() {
     const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ≥ 0'))
     const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
-    const rt = normalizeRefForSubmit('receive', refType)
+    // If the user chose Ref Type PO and didn’t provide an existing ref, create a closed PO under CASH-PURCHASES
+    let effectiveRefId: string | null = null
+    let effectiveRefLineId: string | null = null
+    let poNoteSuffix = ''
+
+    const rtRaw = normalizeRefForSubmit('receive', refType)
+    if (rtRaw === 'PO' && !refId) {
+      try {
+        if (!companyId) throw new Error('No company selected')
+        const supId = await getOrCreateCashPurchasesSupplierId()
+        const { poId, poLineId, poNumber } = await createClosedPOForReceipt({
+          companyId,
+          supplierId: supId,
+          itemId: currentItem.id,
+          uomId,
+          qtyEntered: qty,
+          qtyBase,
+          unitCost: unitCostNum,
+          currencyCode: baseCode, // PO currency
+          notes,
+        })
+        effectiveRefId = poId
+        effectiveRefLineId = poLineId
+        if (poNumber) poNoteSuffix = `PO ${poNumber}`
+      } catch (e: any) {
+        console.error(e)
+        toast.error(tt('movements.failed', 'Action failed'))
+        return
+      }
+    }
+
+    const finalRefType = rtRaw
     const ins = await supabase.from('stock_movements').insert({
       type: 'receive',
       item_id: currentItem.id,
@@ -403,11 +501,11 @@ export default function StockMovements() {
       total_value: unitCostNum * qtyBase,
       warehouse_to_id: warehouseToId,
       bin_to_id: toBin,
-      notes,
-      created_by: (rt === 'SO' ? 'so_ship' : 'system'),
-      ref_type: rt || 'ADJUST',
-      ref_id: rt === 'PO' ? (refId || null) : null,
-      ref_line_id: rt === 'PO' ? (refLineId || null) : null,
+      notes: [notes, poNoteSuffix].filter(Boolean).join(' ').trim() || null,
+      created_by: (finalRefType === 'SO' ? 'so_ship' : 'system'),
+      ref_type: finalRefType || 'ADJUST',
+      ref_id: finalRefType === 'PO' ? (effectiveRefId || refId || null) : null,
+      ref_line_id: finalRefType === 'PO' ? (effectiveRefLineId || refLineId || null) : null,
     }).select('id').single()
 
     if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
@@ -444,7 +542,6 @@ export default function StockMovements() {
       const fx = num(saleFx, NaN); if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.enterFx', 'Enter a valid FX to base'))
 
       try {
-        // NEW: default to per-company CASH customer if none selected
         const effectiveCustomerId = saleCustomerId || await getOrCreateCashCustomerId()
 
         await finalizeCashSaleSOWithCOGS({
@@ -473,7 +570,6 @@ export default function StockMovements() {
         return toast.success(tt('movements.issued', 'Issued'))
       } catch (e: any) {
         console.error(e)
-        // Surface duplicate-code/race as a friendly message if ever bubbles up
         const msg = String(e?.message || '')
         if (/duplicate key|unique constraint|23505/i.test(msg)) {
           toast.error(tt('customers.cashRace', 'CASH customer just got created by another request. Please try again.'))
