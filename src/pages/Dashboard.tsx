@@ -1,5 +1,6 @@
 // src/pages/Dashboard.tsx
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { db } from '../lib/db'
 import { useI18n } from '../lib/i18n'
@@ -64,6 +65,7 @@ const toISODateLocal = (d: Date) => {
 export default function Dashboard() {
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => withFallback(t, key, fallback, vars)
+  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -219,7 +221,7 @@ export default function Dashboard() {
       .slice(0, 5)
   }, [items, stockFiltered])
 
-  // ---------- Top Products by GM (unchanged) ----------
+  // ---------- Top Products by GM ----------
   const topGM = useMemo(() => {
     const lineRevBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> rev)
     const linesRevSO = new Map<string, number>()                    // soId -> rev sum
@@ -391,7 +393,8 @@ export default function Dashboard() {
     }))
   }, [sos, revenueBaseBySO, moves, dailyYear, dailyMonth, monthDaysISO])
 
-  const recentMoves = useMemo(() => moves.slice(0, 10), [moves])
+  // ↓↓↓ only 5 recent, we add the “All Transactions” button below
+  const recentMoves = useMemo(() => moves.slice(0, 5), [moves])
 
   if (loading) {
     return (
@@ -505,27 +508,32 @@ export default function Dashboard() {
                 </Button>
               </div>
 
-              <div className="mt-2 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left border-b">
-                      <th className="py-2 pr-2">{t('table.date')}</th>
-                      <th className="py-2 pr-2">{t('table.revenue')}</th>
-                      <th className="py-2 pr-2">{t('table.cogs')}</th>
-                      <th className="py-2 pr-2">{t('table.grossMargin')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dailyRows.map(r => (
-                      <tr key={r.date} className="border-b">
-                        <td className="py-2 pr-2">{r.date}</td>
-                        <td className="py-2 pr-2">{formatMoneyBase(r.revenue, baseCode)}</td>
-                        <td className="py-2 pr-2">{formatMoneyBase(r.cogs, baseCode)}</td>
-                        <td className="py-2 pr-2">{formatMoneyBase(r.revenue - r.cogs, baseCode)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* SCROLLABLE daily table */}
+              <div className="mt-2">
+                <div className="max-h-[360px] overflow-auto overscroll-contain rounded-md border">
+                  <div className="min-w-[560px] overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-2 pr-2">{t('table.date')}</th>
+                          <th className="py-2 pr-2">{t('table.revenue')}</th>
+                          <th className="py-2 pr-2">{t('table.cogs')}</th>
+                          <th className="py-2 pr-2">{t('table.grossMargin')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dailyRows.map(r => (
+                          <tr key={r.date} className="border-b">
+                            <td className="py-2 pr-2">{r.date}</td>
+                            <td className="py-2 pr-2">{formatMoneyBase(r.revenue, baseCode)}</td>
+                            <td className="py-2 pr-2">{formatMoneyBase(r.cogs, baseCode)}</td>
+                            <td className="py-2 pr-2">{formatMoneyBase(r.revenue - r.cogs, baseCode)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </SheetContent>
           </Sheet>
@@ -684,9 +692,16 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Recent movements */}
+      {/* Recent movements (5) + “All Transactions” button */}
       <Card>
-        <CardHeader><CardTitle>{t('recentMovements.title')}</CardTitle></CardHeader>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('recentMovements.title')}</CardTitle>
+            <Button size="sm" variant="outline" onClick={() => navigate('/transactions')}>
+              {tt('recentMovements.all', 'All Transactions')}
+            </Button>
+          </div>
+        </CardHeader>
         <CardContent>
           {recentMoves.length === 0 ? (
             <p className="text-muted-foreground">{t('recentMovements.empty')}</p>

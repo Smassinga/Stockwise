@@ -10,11 +10,15 @@ import { Link } from 'react-router-dom'
 import { ReportsProvider, useReports } from './reports/context/ReportsProvider'
 
 // lazy tabs
-const SummaryTab = lazy(() => import('./reports/tabs/SummaryTab'))
+const SummaryTab   = lazy(() => import('./reports/tabs/SummaryTab'))
 const ValuationTab = lazy(() => import('./reports/tabs/ValuationTab'))
-const TurnoverTab = lazy(() => import('./reports/tabs/TurnoverTab'))
-const AgingTab = lazy(() => import('./reports/tabs/AgingTab'))
-const RevenueTab = lazy(() => import('./reports/tabs/RevenueTab'))
+const TurnoverTab  = lazy(() => import('./reports/tabs/TurnoverTab'))
+const AgingTab     = lazy(() => import('./reports/tabs/AgingTab'))
+const RevenueTab   = lazy(() => import('./reports/tabs/RevenueTab'))
+
+// NEW: supplier / customer statement tabs
+const SuppliersTab = lazy(() => import('./reports/tabs/SuppliersTab'))
+const CustomersTab = lazy(() => import('./reports/tabs/CustomersTab'))
 
 function FiltersBar() {
   const {
@@ -38,7 +42,9 @@ function FiltersBar() {
           {ui.subtitle}
         </h1>
         <div className="text-xs text-muted-foreground">
-          Money shown in {displayCurrency}{fxRate !== 1 ? ` @ FX ${fxRate.toFixed(6)} per ${baseCurrency}` : ''}{ui.fxNote ? ` • ${ui.fxNote}` : ''}
+          Money shown in {displayCurrency}
+          {fxRate !== 1 ? ` @ FX ${fxRate.toFixed(6)} per ${baseCurrency}` : ''}
+          {ui.fxNote ? ` • ${ui.fxNote}` : ''}
         </div>
       </div>
 
@@ -137,6 +143,9 @@ export default function Reports() {
             <TabsTrigger value="turnover">Turnover</TabsTrigger>
             <TabsTrigger value="aging">Aging</TabsTrigger>
             <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            {/* NEW */}
+            <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
+            <TabsTrigger value="customers">Customers</TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary">
@@ -166,6 +175,20 @@ export default function Reports() {
           <TabsContent value="revenue">
             <Suspense fallback={<div>Loading Revenue…</div>}>
               <RevenueTab />
+            </Suspense>
+          </TabsContent>
+
+          {/* NEW: Suppliers */}
+          <TabsContent value="suppliers">
+            <Suspense fallback={<div>Loading Suppliers…</div>}>
+              <SuppliersTab />
+            </Suspense>
+          </TabsContent>
+
+          {/* NEW: Customers */}
+          <TabsContent value="customers">
+            <Suspense fallback={<div>Loading Customers…</div>}>
+              <CustomersTab />
             </Suspense>
           </TabsContent>
         </Tabs>

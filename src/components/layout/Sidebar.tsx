@@ -13,16 +13,19 @@ import {
   ChevronRight,
   ShoppingCart,
   Coins,
-  Users,         // for Customers
-  Building2,     // for Suppliers
-  Layers,        // for BOM
+  Users,         // Customers
+  Building2,     // Suppliers
+  Layers,        // BOM
+  Receipt,       // NEW: Transactions
+  Wallet,        // NEW: Cash
+  Banknote,      // NEW: Banks
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../../lib/roles'
-import ThemeToggle from '../ThemeToggle'   // uses the same toggle as Auth
+import ThemeToggle from '../ThemeToggle'
 
 interface User {
   id: string
@@ -47,19 +50,22 @@ type NavItem = {
 }
 
 const navigation: NavItem[] = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Items', href: '/items', icon: Package },
-  { name: 'BOM', href: '/bom', icon: Layers },
-  { name: 'Movements', href: '/movements', icon: ArrowUpDown },
-  { name: 'Reports', href: '/reports', icon: FileText },
-  { name: 'Warehouses', href: '/warehouses', icon: Warehouse },
-  { name: 'Orders', href: '/orders', icon: ShoppingCart },
-  { name: 'Currency', href: '/currency', icon: Coins },
-  { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Suppliers', href: '/suppliers', icon: Building2 },
+  { name: 'Dashboard', href: '/',            icon: LayoutDashboard },
+  { name: 'Items',     href: '/items',       icon: Package },
+  { name: 'BOM',       href: '/bom',         icon: Layers },
+  { name: 'Movements', href: '/movements',   icon: ArrowUpDown },
+  { name: 'Transactions', href: '/transactions', icon: Receipt },  // NEW
+  { name: 'Cash',      href: '/cash',        icon: Wallet },       // NEW
+  { name: 'Banks',     href: '/banks',       icon: Banknote },    // NEW
+  { name: 'Reports',   href: '/reports',     icon: FileText },
+  { name: 'Warehouses',href: '/warehouses',  icon: Warehouse },
+  { name: 'Orders',    href: '/orders',      icon: ShoppingCart },
+  { name: 'Currency',  href: '/currency',    icon: Coins },
+  { name: 'Customers', href: '/customers',   icon: Users },
+  { name: 'Suppliers', href: '/suppliers',   icon: Building2 },
   // Admin
-  { name: 'Users', href: '/users', icon: UsersIcon, requiresPrivileged: true },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Users',     href: '/users',       icon: UsersIcon, requiresPrivileged: true },
+  { name: 'Settings',  href: '/settings',    icon: Settings },
 ]
 
 export function Sidebar({
@@ -113,13 +119,11 @@ export function Sidebar({
               </div>
               <span className="font-semibold text-lg truncate">StockWise</span>
 
-              {/* Full (labeled) toggle next to the brand */}
               <div className="ml-2 shrink-0">
                 <ThemeToggle />
               </div>
             </div>
           ) : (
-            // Collapsed: show compact icon-only toggle
             <div className="flex items-center shrink-0">
               <ThemeToggle compact />
             </div>
