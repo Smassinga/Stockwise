@@ -19,6 +19,8 @@ import {
   Receipt,         // Transactions icon
   Wallet,          // Cash icon
   Banknote,        // Banks icon
+  Ruler,           // UoM
+  ClipboardList,   // Stock Levels
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -47,11 +49,13 @@ const BASE_NAV: NavItem[] = [
   { label: 'Banks',        to: '/banks',        icon: Banknote },
   { label: 'Orders',       to: '/orders',       icon: ShoppingCart },
   { label: 'Reports',      to: '/reports',      icon: BarChart3 },
+  { label: 'Stock Levels', to: '/stock-levels', icon: ClipboardList }, // NEW
   { label: 'Warehouses',   to: '/warehouses',   icon: Boxes },
   { label: 'Users',        to: '/users',        icon: UsersIcon }, // role-filtered
   { label: 'Customers',    to: '/customers',    icon: Users },
   { label: 'Suppliers',    to: '/suppliers',    icon: Truck },
   { label: 'Currency',     to: '/currency',     icon: Coins },
+  { label: 'UoM',          to: '/uom',          icon: Ruler },     // NEW
   { label: 'Settings',     to: '/settings',     icon: SettingsIcon },
 ]
 

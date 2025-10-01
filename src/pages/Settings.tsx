@@ -1,4 +1,3 @@
-// src/pages/Settings.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -13,7 +12,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Switch } from '../components/ui/switch'
 
-// NEW
+// Existing uploader (fast preview / storage)
 import LogoUploader from '../components/settings/LogoUploader'
 
 import {
@@ -25,11 +24,32 @@ import {
   Bell,
   FileText,
   DollarSign,
+  Building,
 } from 'lucide-react'
 
 type Warehouse = { id: string; name: string }
 
-// -------- Settings shape (server stores this inside company_settings.data) --------
+// ---------------- company profile (companies table) ----------------
+type CompanyProfile = {
+  id: string
+  legal_name: string | null
+  trade_name: string | null
+  tax_id: string | null
+  registration_no: string | null
+  phone: string | null
+  email: string | null
+  website: string | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  state: string | null
+  postal_code: string | null
+  country_code: string | null
+  print_footer_note: string | null
+  logo_path: string | null
+}
+
+// ---------------- Settings shape (company_settings.data) ------------
 type SettingsData = {
   locale: { language: 'en' | 'pt' }
   dashboard: { defaultWindowDays: number; defaultWarehouseId: string; hideZeros: boolean }
@@ -110,7 +130,7 @@ function csvToList(s: string) {
     .filter(Boolean)
 }
 
-// ----- per-company language cache helpers -----
+// ----- per-company language cache -----
 const langKey = (companyId?: string | null) => (companyId ? `ui:lang:${companyId}` : 'ui:lang')
 function readCachedLang(companyId?: string | null): 'en' | 'pt' | null {
   const c = companyId ? localStorage.getItem(langKey(companyId)) : null
@@ -121,14 +141,27 @@ function writeCachedLang(companyId: string | null | undefined, lang: 'en' | 'pt'
   localStorage.setItem(langKey(companyId), lang)
 }
 
+// extract storage path from public URL for brand-logos bucket
+function pathFromPublicUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  const marker = '/storage/v1/object/public/brand-logos/'
+  const i = url.indexOf(marker)
+  if (i === -1) return null
+  return url.slice(i + marker.length)
+}
+
 function Settings() {
   const { t, setLang } = useI18n()
   const { companyId, myRole } = useOrg()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
   const [missingRow, setMissingRow] = useState(false)
+
   const [data, setData] = useState<SettingsData>(DEFAULTS)
+  const [profile, setProfile] = useState<CompanyProfile | null>(null)
+
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
 
   const roleUpper = useMemo(() => String(myRole || '').toUpperCase(), [myRole])
@@ -147,53 +180,44 @@ function Settings() {
         setLoading(true)
         setMissingRow(false)
 
-        // ---- Load company settings (no 406s)
-        const res = await supabase
-          .from('company_settings')
-          .select('data')
-          .eq('company_id', companyId)
-          .maybeSingle()
+        // load settings + company + warehouses in parallel (snappier)
+        const [resSettings, resCompany, resWh] = await Promise.all([
+          supabase.from('company_settings').select('data').eq('company_id', companyId).maybeSingle(),
+          supabase.from('companies').select(`
+            id, legal_name, trade_name, tax_id, registration_no, phone, email, website,
+            address_line1, address_line2, city, state, postal_code, country_code,
+            print_footer_note, logo_path
+          `).eq('id', companyId).maybeSingle(),
+          supabase.from('warehouses').select('id,name').order('name', { ascending: true }),
+        ])
 
-        if (res.error) console.error(res.error)
-
-        if (!res.data) {
+        // settings
+        if (resSettings.error) console.error(resSettings.error)
+        if (!resSettings.data) {
           setMissingRow(true)
           if (canEditAll) {
             const rpc = await supabase.rpc('update_company_settings', {
               p_company_id: companyId,
               p_patch: DEFAULTS,
             })
-            if (rpc.error) {
-              console.error(rpc.error)
-            } else if (!cancelled) {
+            if (!rpc.error && !cancelled) {
               const merged = deepMerge(DEFAULTS, (rpc.data as Partial<SettingsData>) ?? {})
-              setData(merged)
-              setLang(merged.locale.language)
-              writeCachedLang(companyId, merged.locale.language)
+              setData(merged); setLang(merged.locale.language); writeCachedLang(companyId, merged.locale.language)
             }
           } else {
             if (!cancelled) {
-              setData(DEFAULTS)
-              setLang(DEFAULTS.locale.language)
-              writeCachedLang(companyId, DEFAULTS.locale.language)
+              setData(DEFAULTS); setLang(DEFAULTS.locale.language); writeCachedLang(companyId, DEFAULTS.locale.language)
             }
           }
         } else {
-          const merged = deepMerge(DEFAULTS, (res.data.data as Partial<SettingsData>) ?? {})
-          if (!cancelled) {
-            setData(merged)
-            setLang(merged.locale.language)
-            writeCachedLang(companyId, merged.locale.language)
-          }
+          const merged = deepMerge(DEFAULTS, (resSettings.data.data as Partial<SettingsData>) ?? {})
+          if (!cancelled) { setData(merged); setLang(merged.locale.language); writeCachedLang(companyId, merged.locale.language) }
         }
 
-        // ---- Warehouses (for selects)
-        const wh = await supabase
-          .from('warehouses')
-          .select('id,name')
-          .order('name', { ascending: true })
-        if (wh.error) throw wh.error
-        if (!cancelled) setWarehouses((wh.data ?? []) as Warehouse[])
+        // company
+        if (!resCompany.error && !cancelled) setProfile((resCompany.data as any) ?? null)
+        // warehouses
+        if (!resWh.error && !cancelled) setWarehouses((resWh.data ?? []) as Warehouse[])
 
       } catch (e: any) {
         console.error(e)
@@ -219,14 +243,16 @@ function Settings() {
     })
   }
 
+  const setProfileField = (key: keyof CompanyProfile, value: any) => {
+    setProfile(p => (p ? { ...p, [key]: value } : p))
+  }
+
   const save = async () => {
     if (!companyId) return
     if (!canEditOps) { toast.error('You do not have permission to edit settings'); return }
 
     try {
       setSaving(true)
-
-      // Save ONLY to company_settings via RPC (server will sanitize)
       const { data: updated, error } = await supabase.rpc('update_company_settings', {
         p_company_id: companyId,
         p_patch: data,
@@ -243,6 +269,25 @@ function Settings() {
       toast.error(e?.message || 'Save failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const saveProfile = async () => {
+    if (!companyId || !profile) return
+    if (!canEditOps) { toast.error('You do not have permission to edit company profile'); return }
+    try {
+      setSavingProfile(true)
+      const upd = { ...profile }
+      // Ensure only writable cols are sent (id is used in filter, not payload)
+      delete (upd as any).id
+      const { error } = await supabase.from('companies').update(upd).eq('id', companyId)
+      if (error) throw error
+      toast.success('Company profile saved')
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e?.message || 'Save failed')
+    } finally {
+      setSavingProfile(false)
     }
   }
 
@@ -267,9 +312,14 @@ function Settings() {
           <h1 className="text-3xl font-bold">{t('settings.title')}</h1>
           <p className="text-muted-foreground">{t('settings.subtitle')}</p>
         </div>
-        <Button onClick={save} disabled={saving || !canEditOps}>
-          {saving ? t('actions.saving') : t('actions.save')}
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={saveProfile} disabled={savingProfile || !canEditOps} variant="secondary">
+            {savingProfile ? t('actions.saving') : 'Save Company'}
+          </Button>
+          <Button onClick={save} disabled={saving || !canEditOps}>
+            {saving ? t('actions.saving') : t('actions.save')}
+          </Button>
+        </div>
       </div>
 
       {!canEditOps && (
@@ -316,10 +366,179 @@ function Settings() {
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-muted-foreground">{t('sections.uom.desc')}</p>
-            <Button asChild><Link to="/items">{t('sections.uom.button')}</Link></Button>
+            <Button asChild><Link to="/uom">{t('sections.uom.button')}</Link></Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* ===================== Company Profile (companies) ===================== */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building className="w-5 h-5" /> Company Profile
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Trade name</Label>
+              <Input
+                value={profile?.trade_name ?? ''}
+                onChange={(e) => setProfileField('trade_name', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Legal name</Label>
+              <Input
+                value={profile?.legal_name ?? ''}
+                onChange={(e) => setProfileField('legal_name', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tax ID</Label>
+              <Input
+                value={profile?.tax_id ?? ''}
+                onChange={(e) => setProfileField('tax_id', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Registration No.</Label>
+              <Input
+                value={profile?.registration_no ?? ''}
+                onChange={(e) => setProfileField('registration_no', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Phone</Label>
+              <Input
+                value={profile?.phone ?? ''}
+                onChange={(e) => setProfileField('phone', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                value={profile?.email ?? ''}
+                onChange={(e) => setProfileField('email', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Website</Label>
+              <Input
+                value={profile?.website ?? ''}
+                onChange={(e) => setProfileField('website', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Print footer note</Label>
+              <Input
+                value={profile?.print_footer_note ?? ''}
+                onChange={(e) => setProfileField('print_footer_note', e.target.value)}
+                disabled={!canEditOps}
+                placeholder="Thank you for your business!"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2 md:col-span-3">
+              <Label>Address line 1</Label>
+              <Input
+                value={profile?.address_line1 ?? ''}
+                onChange={(e) => setProfileField('address_line1', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-3">
+              <Label>Address line 2</Label>
+              <Input
+                value={profile?.address_line2 ?? ''}
+                onChange={(e) => setProfileField('address_line2', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2">
+              <Label>City</Label>
+              <Input
+                value={profile?.city ?? ''}
+                onChange={(e) => setProfileField('city', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>State/Province</Label>
+              <Input
+                value={profile?.state ?? ''}
+                onChange={(e) => setProfileField('state', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Postal Code</Label>
+              <Input
+                value={profile?.postal_code ?? ''}
+                onChange={(e) => setProfileField('postal_code', e.target.value)}
+                disabled={!canEditOps}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Country</Label>
+              <Input
+                value={profile?.country_code ?? ''}
+                onChange={(e) => setProfileField('country_code', e.target.value)}
+                disabled={!canEditOps}
+                placeholder="e.g., MZ"
+              />
+            </div>
+          </div>
+
+          {/* Logo (write settings.brand.logoUrl for immediate prints; also try to store logo_path) */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Company Logo</Label>
+              <LogoUploader
+                value={data.documents.brand.logoUrl}
+                onChange={(url) => {
+                  setField('documents.brand.logoUrl', url)
+                  const p = pathFromPublicUrl(url)
+                  if (p) setProfileField('logo_path', p)
+                }}
+                companyId={companyId}
+                disabled={!canEditOps}
+              />
+              <div className="text-xs text-muted-foreground">
+                Public image stored in <code>brand-logos</code>. We’ll use it on printed documents.
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-sm text-muted-foreground">Current storage path</Label>
+              <Input
+                value={profile?.logo_path ?? ''}
+                onChange={(e) => setProfileField('logo_path', e.target.value)}
+                disabled={!canEditOps}
+                placeholder="companyId/uuid.jpg"
+              />
+              <div className="text-[11px] text-muted-foreground">Kept for stable, cache-friendly references.</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Localization & UI */}
       <Card>
@@ -657,7 +876,7 @@ function Settings() {
         </CardContent>
       </Card>
 
-      {/* Documents & Templates */}
+      {/* Documents & Templates (kept) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -681,7 +900,11 @@ function Settings() {
           <div className="space-y-2">
             <LogoUploader
               value={data.documents.brand.logoUrl}
-              onChange={(url) => setField('documents.brand.logoUrl', url)}
+              onChange={(url) => {
+                setField('documents.brand.logoUrl', url)
+                const p = pathFromPublicUrl(url)
+                if (p) setProfileField('logo_path', p)
+              }}
               companyId={companyId}
               disabled={!canEditOps}
             />

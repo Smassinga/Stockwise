@@ -19,6 +19,8 @@ import {
   Receipt,       // NEW: Transactions
   Wallet,        // NEW: Cash
   Banknote,      // NEW: Banks
+  Ruler,         // NEW: UoM
+  ClipboardList, // NEW: Stock Levels
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -58,9 +60,11 @@ const navigation: NavItem[] = [
   { name: 'Cash',      href: '/cash',        icon: Wallet },       // NEW
   { name: 'Banks',     href: '/banks',       icon: Banknote },    // NEW
   { name: 'Reports',   href: '/reports',     icon: FileText },
+  { name: 'Stock Levels', href: '/stock-levels', icon: ClipboardList }, // NEW
   { name: 'Warehouses',href: '/warehouses',  icon: Warehouse },
   { name: 'Orders',    href: '/orders',      icon: ShoppingCart },
   { name: 'Currency',  href: '/currency',    icon: Coins },
+  { name: 'UoM',       href: '/uom',         icon: Ruler },        // NEW
   { name: 'Customers', href: '/customers',   icon: Users },
   { name: 'Suppliers', href: '/suppliers',   icon: Building2 },
   // Admin

@@ -11,6 +11,7 @@ import { Warehouses } from './pages/Warehouses';
 import Users from './pages/Users';
 import { Settings } from './pages/Settings';
 import Orders from './pages/Orders';
+import StockLevels from './pages/StockLevels';
 import CurrencyPage from './pages/Currency';
 import CustomersPage from './pages/Customers';
 import SuppliersPage from './pages/Suppliers';
@@ -126,11 +127,14 @@ export default function App() {
 
               <Route path="/reports" element={<Reports />} />
               <Route path="/orders" element={<Orders />} />
+              <Route path="/stock-levels" element={<StockLevels />} />
               <Route path="/currency" element={<CurrencyPage />} />
               <Route path="/customers" element={<CustomersPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/uoms" element={<UomSettings />} />
++              {/* Friendly top-level path for sidebar */}
+              <Route path="/uom" element={<UomSettings />} />
               <Route path="/bom" element={<BOMPage />} />
             </Route>
           </Route>

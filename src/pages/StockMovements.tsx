@@ -13,6 +13,10 @@ import { getBaseCurrencyCode } from '../lib/currency'
 import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
 import { useOrg } from '../hooks/useOrg' // company scope
 
+// ---- Local type shim so we can pass notes even if lib/sales isn’t updated yet.
+type CashSaleWithCogsArgsWithNotes =
+  Parameters<typeof finalizeCashSaleSOWithCOGS>[0] & { notes?: string }
+
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Item = { id: string; name: string; sku: string | null; baseUomId: string | null }
@@ -373,7 +377,7 @@ export default function StockMovements() {
       .from('suppliers')
       .select('id')
       .eq('company_id', companyId)
-      .eq('code', CODE as any) // code is a domain type in your schema
+      .eq('code', CODE as any)
       .maybeSingle()
     if (!q.error && q.data?.id) return q.data.id
 
@@ -407,7 +411,6 @@ export default function StockMovements() {
     const { companyId, supplierId, itemId, uomId, qtyEntered, qtyBase, unitCost, currencyCode, notes } = params
     const lineTotalBase = unitCost * qtyBase
 
-    // include company_id to satisfy RLS
     const poIns = await supabase
       .from('purchase_orders')
       .insert({
@@ -556,7 +559,8 @@ export default function StockMovements() {
           status: 'shipped',
           binId: fromBin,
           cogsUnitCost: avgCost,
-        })
+          notes: notes?.trim() || undefined, // <— pass user notes (type-safe via local shim)
+        } as CashSaleWithCogsArgsWithNotes)
 
         const { data: fresh } = await supabase
           .from('stock_levels')
@@ -1133,7 +1137,11 @@ export default function StockMovements() {
 
           <div>
             <Label>{tt('orders.notes', 'Notes')}</Label>
-            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder={tt('movements.notes.placeholder', 'Optional notes')} />
+            <Input
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder={tt('movements.notes.placeholder', 'Optional notes (e.g., Sold to John)')}
+            />
           </div>
 
           <div className="flex justify-end">
