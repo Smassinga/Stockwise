@@ -59,6 +59,20 @@ export default function Transactions() {
   // friendly ref maps
   const [soNoById, setSoNoById] = useState<Record<string, string>>({})
   const [poNoById, setPoNoById] = useState<Record<string, string>>({})
+  const [soNotesById, setSoNotesById] = useState<Record<string, string>>({}) // <— NEW
+
+  // helper: choose which note to display/search
+  const autoCashRegex = /cash sale\s*\(auto\)/i
+  const effectiveNotes = (r: MovementRow): string => {
+    const movementNote = (r.notes || '').trim()
+    if (r.ref_type === 'SO' && r.ref_id) {
+      const soNote = (soNotesById[r.ref_id] || '').trim()
+      if (soNote && (!movementNote || autoCashRegex.test(movementNote))) {
+        return soNote
+      }
+    }
+    return movementNote
+  }
 
   // initial load
   useEffect(() => {
@@ -91,16 +105,22 @@ export default function Transactions() {
     const list = (data || []) as MovementRow[]
     setRowsAll(list)
 
-    // map SO/PO ids → order_no for pretty refs
+    // map SO/PO ids → order_no (& SO notes) for pretty refs and notes override
     const soIds = Array.from(new Set(list.filter(r => r.ref_type === 'SO' && r.ref_id).map(r => r.ref_id!)))
     const poIds = Array.from(new Set(list.filter(r => r.ref_type === 'PO' && r.ref_id).map(r => r.ref_id!)))
 
     if (soIds.length) {
-      const { data: so } = await supabase.from('sales_orders').select('id,order_no').in('id', soIds)
-      const m: Record<string, string> = {}
-      for (const s of so || []) m[(s as any).id] = (s as any).order_no || (s as any).id
-      setSoNoById(m)
-    } else setSoNoById({})
+      const { data: so } = await supabase.from('sales_orders').select('id,order_no,notes').in('id', soIds)
+      const mNo: Record<string, string> = {}
+      const mNotes: Record<string, string> = {}
+      for (const s of so || []) {
+        const id = (s as any).id
+        mNo[id] = (s as any).order_no || id
+        mNotes[id] = (s as any).notes || ''
+      }
+      setSoNoById(mNo)
+      setSoNotesById(mNotes) // <— NEW
+    } else { setSoNoById({}); setSoNotesById({}) }
 
     if (poIds.length) {
       const { data: po } = await supabase.from('purchase_orders').select('id,order_no').in('id', poIds)
@@ -110,17 +130,17 @@ export default function Transactions() {
     } else setPoNoById({})
   }
 
-  // client-side instant search filtering
+  // client-side instant search filtering (include effective notes)
   const rowsFiltered = useMemo(() => {
     const term = search.trim().toLowerCase()
     if (!term) return rowsAll
     return rowsAll.filter(r => {
       const it = itemById.get(r.item_id)
       const hay =
-        `${it?.name ?? ''} ${it?.sku ?? ''} ${r.ref_type ?? ''} ${r.ref_id ?? ''} ${r.notes ?? ''}`.toLowerCase()
+        `${it?.name ?? ''} ${it?.sku ?? ''} ${r.ref_type ?? ''} ${r.ref_id ?? ''} ${effectiveNotes(r)}`.toLowerCase()
       return hay.includes(term)
     })
-  }, [rowsAll, search, itemById])
+  }, [rowsAll, search, itemById, soNotesById])
 
   const valueOf = (r: MovementRow) =>
     Number.isFinite(r.total_value) ? num(r.total_value) : num(r.unit_cost) * num(r.qty_base)
@@ -266,6 +286,7 @@ export default function Transactions() {
                   {rowsFiltered.map(r => {
                     const it = itemById.get(r.item_id)
                     const val = valueOf(r)
+                    const note = effectiveNotes(r)
                     return (
                       <tr key={r.id} className="border-b">
                         <td className="py-2 px-3 whitespace-nowrap">{new Date(r.created_at).toLocaleString(lang)}</td>
@@ -274,7 +295,7 @@ export default function Transactions() {
                         <td className="py-2 px-3">{it ? `${it.name} (${it.sku})` : r.item_id}</td>
                         <td className="py-2 px-3 text-right font-mono tabular-nums">{num(r.qty_base)}</td>
                         <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(val, baseCode)}</td>
-                        <td className="py-2 px-3 text-muted-foreground">{r.notes || '—'}</td>
+                        <td className="py-2 px-3 text-muted-foreground">{note || '—'}</td>
                       </tr>
                     )
                   })}
