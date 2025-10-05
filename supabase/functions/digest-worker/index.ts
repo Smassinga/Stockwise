@@ -8,7 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 type DigestQueueRow = {
   id: number;
   company_id: string;
-  run_for_local_date: string;
+  run_for_local_date: string; // YYYY-MM-DD
   timezone: string;
   payload: {
     channels?: { email?: boolean; sms?: boolean; whatsapp?: boolean };
@@ -38,18 +38,18 @@ type DigestPayload = {
   }>;
 };
 
-const SENDGRID_API_KEY     = Deno.env.get("SENDGRID_API_KEY")   ?? "";
-const FROM_EMAIL           = Deno.env.get("FROM_EMAIL")         ?? "no-reply@stockwiseapp.com";
-const REPLY_TO_EMAIL       = Deno.env.get("REPLY_TO_EMAIL")     ?? "support@stockwiseapp.com";
-const BRAND_NAME           = Deno.env.get("BRAND_NAME")         ?? "Stockwise";
-const DRY_RUN              = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
+const SENDGRID_API_KEY       = Deno.env.get("SENDGRID_API_KEY")   ?? "";
+const FROM_EMAIL             = Deno.env.get("FROM_EMAIL")         ?? "no-reply@stockwiseapp.com";
+const REPLY_TO_EMAIL         = Deno.env.get("REPLY_TO_EMAIL")     ?? "support@stockwiseapp.com";
+const BRAND_NAME             = Deno.env.get("BRAND_NAME")         ?? "Stockwise";
+const DRY_RUN                = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
 
-const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY     = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_URL           = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY       = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const DIGEST_HOOK_SECRET   = Deno.env.get("DIGEST_HOOK_SECRET") ?? "";
+const DIGEST_HOOK_SECRET     = Deno.env.get("DIGEST_HOOK_SECRET") ?? "";
 const DEBUG_ACCEPT_QUERY_KEY = (Deno.env.get("DEBUG_ACCEPT_QUERY_KEY") ?? "false").toLowerCase() === "true";
-const DEBUG_LOG            = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
+const DEBUG_LOG              = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
 
 function supa() {
   if (!SERVICE_ROLE_KEY) throw new Error("SERVICE_ROLE_KEY not set");
@@ -62,19 +62,30 @@ function currency(n: number): string {
   return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
 
-function textEmail(d: DigestPayload): string {
+function ddmmyyyy(localDayISO: string): string {
+  // localDayISO e.g. "2025-10-05" -> "05/10/2025"
+  const [y, m, d] = localDayISO.split("-").map(Number);
+  if (!y || !m || !d) return localDayISO;
+  return `${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y}`;
+}
+
+function textEmail(d: DigestPayload, companyLabel: string): string {
   const lines: string[] = [];
+  lines.push(`Dear Client,`);
+  lines.push(``);
+  lines.push(`As of ${ddmmyyyy(d.window.local_day)} the company ${companyLabel} has performed as below:`);
+  lines.push(``);
   lines.push(`${BRAND_NAME} — Daily Digest`);
   lines.push(`${d.window.local_day} (${d.window.timezone})`);
-  lines.push("");
+  lines.push(``);
   lines.push(`Revenue:      ${currency(d.totals.revenue)}`);
   lines.push(`COGS:         ${currency(d.totals.cogs)}`);
   lines.push(`Gross Profit: ${currency(d.totals.gross_profit)}`);
   lines.push(`Gross Margin: ${d.totals.gross_margin_pct}%`);
-  lines.push("");
-  lines.push("By Product:");
+  lines.push(``);
+  lines.push(`By Product:`);
   if (!d.by_product.length) {
-    lines.push("  (No product rows for this day.)");
+    lines.push(`  (No product rows for this day.)`);
   } else {
     for (const p of d.by_product.slice(0, 100)) {
       const name = p.item_label || p.item_name || p.item_id;
@@ -83,12 +94,16 @@ function textEmail(d: DigestPayload): string {
       );
     }
   }
-  lines.push("");
+  lines.push(``);
   lines.push(`Window (UTC): ${d.window.start_utc} → ${d.window.end_utc}`);
+  lines.push(``);
+  lines.push(`Sincerely,`);
+  lines.push(``);
+  lines.push(`${BRAND_NAME} Daily-digest worker bot`);
   return lines.join("\n");
 }
 
-function htmlEmail(d: DigestPayload): string {
+function htmlEmail(d: DigestPayload, companyLabel: string): string {
   const preheader = `Yesterday’s sales, profit and top products.`;
   const rows = d.by_product.map((p) => `
     <tr>
@@ -107,6 +122,11 @@ function htmlEmail(d: DigestPayload): string {
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
       ${preheader}
     </div>
+
+    <p style="margin:0 0 12px 0;">Dear Client,</p>
+    <p style="margin:0 0 16px 0;">
+      As of <strong>${ddmmyyyy(d.window.local_day)}</strong> the company <strong>${companyLabel}</strong> has performed as below:
+    </p>
 
     <h2 style="margin:0 0 8px 0;font-size:20px;">${BRAND_NAME} — Daily Digest</h2>
     <div style="color:#666;margin-bottom:16px;">${d.window.local_day} (${d.window.timezone})</div>
@@ -138,6 +158,9 @@ function htmlEmail(d: DigestPayload): string {
     <div style="color:#999;margin-top:16px;font-size:12px;">
       Window (UTC): ${d.window.start_utc} → ${d.window.end_utc}
     </div>
+
+    <p style="margin:16px 0 4px 0;">Sincerely,</p>
+    <p style="margin:0;">${BRAND_NAME} Daily-digest worker bot</p>
   </div>
   `;
 }
@@ -228,13 +251,22 @@ serve(async (req: Request) => {
 
     const digest = payload as DigestPayload;
 
+    // Fetch company name for greeting/label
+    let companyLabel = `(${job.company_id})`;
+    const { data: co } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", job.company_id)
+      .maybeSingle();
+    if (co?.name) companyLabel = `(${job.company_id}) ${co.name}`;
+
     const emails = job.payload?.recipients?.emails ?? [];
     const wantsEmail = job.payload?.channels?.email !== false;
     if (!emails.length || !wantsEmail) throw new Error("No email recipients configured for this job.");
 
-    const subject = `${BRAND_NAME} — Daily Digest (${digest.window.local_day})`;
-    const html = htmlEmail(digest);
-    const text = textEmail(digest);
+    const subject = `${BRAND_NAME} — Daily Digest (${digest.window.local_day})${co?.name ? ` — ${co.name}` : ""}`;
+    const html = htmlEmail(digest, companyLabel);
+    const text = textEmail(digest, companyLabel);
 
     if (DRY_RUN) {
       log("[DRY_RUN] Would send digest to:", emails);
