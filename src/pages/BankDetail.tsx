@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../lib/roles'
+import { useI18n } from '../lib/i18n'
 
 type Bank = {
   id: string
@@ -127,6 +128,7 @@ function parseAmount(raw: string): number | null {
 // ---------------------------------------------------
 
 export default function BankDetail() {
+  const { t } = useI18n()
   const { bankId: bankIdA, id: bankIdB } = useParams()
   const bankId = bankIdA ?? bankIdB
   const { myRole } = useOrg()
@@ -274,7 +276,7 @@ export default function BankDetail() {
       if (error) throw error
       setRows(rs => rs.map(r => (r.id === txId ? { ...r, reconciled: value } : r)))
     } catch (e: any) {
-      toast.error('Failed to update reconciliation')
+      toast.error(t('bank.toast.updateReconFailed'))
       console.error(e)
     } finally {
       setSavingTx(null)
@@ -285,9 +287,9 @@ export default function BankDetail() {
 
   async function uploadStatement() {
     if (!bankId) return
-    if (!stDate) { toast.error('Statement date is required'); return }
+    if (!stDate) { toast.error(t('bank.statementDate')); return }
     const closing = Number(stClosing)
-    if (Number.isNaN(closing)) { toast.error('Closing balance must be a number'); return }
+    if (Number.isNaN(closing)) { toast.error(t('common.headsUp')); return }
 
     setUploading(true)
     try {
@@ -345,7 +347,7 @@ export default function BankDetail() {
       setTimeout(() => URL.revokeObjectURL(url), 30_000)
     } catch (e) {
       console.error(e)
-      toast.error('Could not open file')
+      toast.error(t('bank.toast.toggleFailed'))
     }
   }
 
@@ -366,10 +368,10 @@ export default function BankDetail() {
       if (error) throw error
       await loadBookBalance()
       await loadStatements()
-      toast.success('Statement deleted')
+      toast.success(t('bank.toast.deleted'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Delete failed')
+      toast.error(e?.message || t('bank.toast.deleteFailed'))
       await loadStatements()
     }
   }
@@ -451,17 +453,17 @@ export default function BankDetail() {
       {/* Header + filters */}
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <h1 className="text-xl font-semibold">{bank?.name ?? 'Bank'}</h1>
+          <h1 className="text-xl font-semibold">{bank?.name ?? t('banks.title')}</h1>
           <div className="text-sm text-muted-foreground">
             {bank?.bank_name ?? '—'} · {bank?.account_number ?? '—'} · {(bank?.currency_code ?? baseCurrency) || 'MZN'}
           </div>
         </div>
         <div>
-          <Label>From</Label>
+          <Label>{t('filters.from')}</Label>
           <Input type="date" value={from} onChange={e => setFrom(e.target.value)} />
         </div>
         <div>
-          <Label>To</Label>
+          <Label>{t('filters.to')}</Label>
           <Input type="date" value={to} onChange={e => setTo(e.target.value)} />
         </div>
         <div className="flex items-center gap-2 ml-2">
@@ -472,17 +474,17 @@ export default function BankDetail() {
             checked={onlyUnreconciled}
             onChange={e => { setOnlyUnreconciled(e.target.checked); loadTx() }}
           />
-          <Label htmlFor="unrec">Unreconciled only</Label>
+          <Label htmlFor="unrec">{t('bank.notReconciled')}</Label>
         </div>
       </div>
 
       {/* Bank master data */}
       <Card>
-        <CardHeader><CardTitle>Bank Details</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bank.details')}</CardTitle></CardHeader>
         <CardContent className="grid md:grid-cols-3 gap-3">
           {/* NEW: Nickname */}
           <div>
-            <Label>Nickname</Label>
+            <Label>{t('banks.nickname')}</Label>
             <Input
               value={bank?.name ?? ''}
               onChange={e => setBank(b => (b ? { ...b, name: e.target.value } : b))}
@@ -492,7 +494,7 @@ export default function BankDetail() {
           </div>
 
           <div>
-            <Label>Bank name</Label>
+            <Label>{t('banks.bankName')}</Label>
             <Input
               value={bank?.bank_name ?? ''}
               onChange={e => setBank(b => (b ? { ...b, bank_name: e.target.value } : b))}
@@ -501,7 +503,7 @@ export default function BankDetail() {
             />
           </div>
           <div>
-            <Label>Account number</Label>
+            <Label>{t('banks.accountNumber')}</Label>
             <Input
               value={bank?.account_number ?? ''}
               onChange={e => setBank(b => (b ? { ...b, account_number: e.target.value } : b))}
@@ -510,7 +512,7 @@ export default function BankDetail() {
             />
           </div>
           <div>
-            <Label>Currency code</Label>
+            <Label>{t('banks.currencyCode')}</Label>
             <Input
               value={bank?.currency_code ?? ''}
               onChange={e => setBank(b => (b ? { ...b, currency_code: e.target.value.toUpperCase() } : b))}
@@ -548,7 +550,7 @@ export default function BankDetail() {
 
           <div className="md:col-span-3">
             <Button onClick={saveBankDetails} disabled={!canEditBank}>
-              {canEditBank ? 'Save details' : 'View only (Manager+ to edit)'}
+              {canEditBank ? t('bank.saveDetails') : t('bank.viewOnly')}
             </Button>
           </div>
         </CardContent>
@@ -557,11 +559,11 @@ export default function BankDetail() {
       {/* Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card>
-          <CardHeader><CardTitle>Book balance</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bank.bookBalance')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(bookBalance)}</CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Statement balance</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bank.statementBalance')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">
             {formatMoneyBase(
               statements.find(s => s.reconciled)?.closing_balance_base ??
@@ -570,7 +572,7 @@ export default function BankDetail() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Difference</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bank.difference')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(diff)}</CardContent>
         </Card>
       </div>
@@ -578,33 +580,33 @@ export default function BankDetail() {
       {/* Transactions */}
       <Card className="overflow-hidden">
         <CardHeader className="flex items-center justify-between">
-          <CardTitle>Transactions</CardTitle>
+          <CardTitle>{t('bank.transactions')}</CardTitle>
           <div className="flex flex-col md:flex-row gap-3 md:items-end">
             {/* Manual entry */}
             <div className="flex gap-2 items-end">
               <div>
-                <Label>Date</Label>
+                <Label>{t('table.date')}</Label>
                 <Input type="date" value={txDate} onChange={e => setTxDate(e.target.value)} />
               </div>
               <div>
-                <Label>Memo</Label>
+                <Label>{t('bank.memo')}</Label>
                 <Input value={txMemo} onChange={e => setTxMemo(e.target.value)} placeholder="e.g., Bank fee" />
               </div>
               <div>
-                <Label>Amount ({currency})</Label>
+                <Label>{t('bank.amount', { code: currency })}</Label>
                 <Input inputMode="decimal" value={txAmt} onChange={e => setTxAmt(e.target.value)} placeholder="-120.00" />
               </div>
-              <Button onClick={addTx} disabled={addingTx}>{addingTx ? 'Adding…' : 'Add'}</Button>
+              <Button onClick={addTx} disabled={addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
             </div>
 
             {/* CSV import */}
             <div className="flex items-end gap-2">
               <div>
-                <Label className="block">CSV file</Label>
+                <Label className="block">CSV</Label>
                 <Input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files?.[0] ?? null)} />
               </div>
               <Button onClick={importCsv} disabled={importing || !csvFile}>
-                {importing ? 'Importing…' : 'Import CSV'}
+                {importing ? t('bank.csv.importing') : t('bank.csv.import')}
               </Button>
             </div>
           </div>
@@ -612,44 +614,40 @@ export default function BankDetail() {
 
         <CardContent className="overflow-x-auto">
           {/* Guidance */}
-          <div className="text-xs text-muted-foreground mb-2">
-            CSV columns (header optional) & manual entry use this format:
-          </div>
+          <div className="text-xs text-muted-foreground mb-2">{t('bank.csv.header')}</div>
           <table className="w-full text-xs mb-4 border rounded">
             <thead className="bg-muted/30 text-left">
               <tr>
-                <th className="py-2 px-3">Date (DD/MM/YYYY)</th>
-                <th className="py-2 px-3">Memo</th>
-                <th className="py-2 px-3 text-right">Amount ({currency})</th>
+                <th className="py-2 px-3">{t('table.date')} (DD/MM/YYYY)</th>
+                <th className="py-2 px-3">{t('bank.memo')}</th>
+                <th className="py-2 px-3 text-right">{t('bank.amount', { code: currency })}</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-t">
-                <td className="py-2 px-3">05/01/2025</td>
-                <td className="py-2 px-3">Opening balance</td>
-                <td className="py-2 px-3 text-right">1,000.00</td>
+                <td className="py-2 px-3">{t('bank.csv.placeholderDate')}</td>
+                <td className="py-2 px-3">{t('bank.csv.placeholderOpen')}</td>
+                <td className="py-2 px-3 text-right">{t('bank.csv.placeholderAmount')}</td>
               </tr>
             </tbody>
           </table>
-          <div className="text-xs text-muted-foreground mb-4">
-            Amount is in base currency. <strong>Inflows are positive</strong>, <strong>outflows are negative</strong>.
-          </div>
+          <div className="text-xs text-muted-foreground mb-4"></div>
 
           {/* List */}
           <table className="w-full text-sm">
             <thead className="text-left sticky top-0 bg-background">
               <tr>
-                <th className="py-2 pr-3">Date</th>
-                <th className="py-2 pr-3">Memo</th>
-                <th className="py-2 pr-3 text-right">Amount ({currency})</th>
-                <th className="py-2 pl-3 text-right">Reconciled</th>
+                <th className="py-2 pr-3">{t('table.date')}</th>
+                <th className="py-2 pr-3">{t('bank.memo')}</th>
+                <th className="py-2 pr-3 text-right">{t('bank.amount', { code: currency })}</th>
+                <th className="py-2 pl-3 text-right">{t('bank.reconciled')}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(r => (
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
-                  <td className="py-2 pr-3">{r.memo ?? '—'}</td>
+                  <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right">
                     <Button
@@ -658,13 +656,13 @@ export default function BankDetail() {
                       onClick={() => toggleReconciled(r.id, !r.reconciled)}
                       disabled={savingTx === r.id}
                     >
-                      {r.reconciled ? 'Reconciled' : 'Mark as reconciled'}
+                      {r.reconciled ? t('bank.reconciled') : t('bank.markReconciled')}
                     </Button>
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td className="py-6 text-muted-foreground" colSpan={4}>No transactions in range.</td></tr>
+                <tr><td className="py-6 text-muted-foreground" colSpan={4}>{t('bank.noTx')}</td></tr>
               )}
             </tbody>
           </table>
@@ -673,24 +671,24 @@ export default function BankDetail() {
 
       {/* Statements */}
       <Card>
-        <CardHeader><CardTitle>Statements (audit archive)</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bank.statements')}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="grid md:grid-cols-4 gap-3 items-end">
             <div>
-              <Label>Statement date</Label>
+              <Label>{t('bank.statementDate')}</Label>
               <Input type="date" value={stDate} onChange={e => setStDate(e.target.value)} />
             </div>
             <div>
-              <Label>Closing balance ({currency})</Label>
+              <Label>{t('bank.closing', { code: currency })}</Label>
               <Input inputMode="decimal" value={stClosing} onChange={e => setStClosing(e.target.value)} />
             </div>
             <div>
-              <Label>File (PDF/CSV/Image)</Label>
+              <Label>{t('bank.file')}</Label>
               <Input type="file" onChange={e => setStFile(e.target.files?.[0] ?? null)} />
             </div>
             <div>
               <Button onClick={uploadStatement} disabled={uploading}>
-                {uploading ? 'Uploading…' : 'Save statement'}
+                {uploading ? t('bank.uploading') : t('bank.saveStatement')}
               </Button>
             </div>
           </div>
@@ -699,10 +697,10 @@ export default function BankDetail() {
             <table className="w-full text-sm">
               <thead className="text-left">
                 <tr>
-                  <th className="py-2 pr-3">Date</th>
-                  <th className="py-2 pr-3 text-right">Closing ({currency})</th>
-                  <th className="py-2 pr-3">File</th>
-                  <th className="py-2 pr-3">Actions</th>
+                  <th className="py-2 pr-3">{t('table.date')}</th>
+                  <th className="py-2 pr-3 text-right">{t('bank.closing', { code: currency })}</th>
+                  <th className="py-2 pr-3">{t('bank.file')}</th>
+                  <th className="py-2 pr-3">{t('bank.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -712,8 +710,8 @@ export default function BankDetail() {
                     <td className="py-2 pr-3 text-right">{formatMoneyBase(s.closing_balance_base)}</td>
                     <td className="py-2 pr-3">
                       {s.file_path ? (
-                        <Button variant="link" className="px-0" onClick={() => openFile(s.file_path!)}>View</Button>
-                      ) : '—'}
+                        <Button variant="link" className="px-0" onClick={() => openFile(s.file_path!)}>{t('bank.view')}</Button>
+                      ) : t('common.dash')}
                     </td>
                     <td className="py-2 pr-3">
                       <div className="flex justify-end gap-2">
@@ -728,7 +726,7 @@ export default function BankDetail() {
                             await loadBookBalance()
                           }}
                         >
-                          {s.reconciled ? 'Reconciled' : 'Not reconciled'}
+                          {s.reconciled ? t('bank.reconciled') : t('bank.notReconciled')}
                         </Button>
                         <Button
                           variant="destructive"
@@ -736,14 +734,14 @@ export default function BankDetail() {
                           disabled={s.reconciled}
                           onClick={() => deleteStatement(s)}
                         >
-                          Delete
+                          {t('bank.delete')}
                         </Button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {statements.length === 0 && (
-                  <tr><td className="py-6 text-muted-foreground" colSpan={4}>No statements uploaded.</td></tr>
+                  <tr><td className="py-6 text-muted-foreground" colSpan={4}>{t('bank.noStatements')}</td></tr>
                 )}
               </tbody>
             </table>

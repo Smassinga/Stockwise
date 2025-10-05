@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
+import { useI18n } from '../lib/i18n'
 
 type Item = { id: string; name: string; sku?: string | null; base_uom_id?: string | null }
 type Uom  = { id: string; code: string; name: string; family?: string }
@@ -44,6 +45,7 @@ type ComponentSourcesPayload = Array<{
 type OutputSplitsPayload = Array<{ warehouse_id: string; bin_id: string; qty: number }>
 
 export default function BOMPage() {
+  const { t } = useI18n()
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string>('')
 
@@ -566,7 +568,7 @@ export default function BOMPage() {
     return { entered, base: conv ?? entered, invalid: conv == null, baseId, enteredId }
   }, [compItemId, compQtyPer, compUomId, items, convGraph]) // eslint-disable-line
 
-  if (loading) return <div className="p-6">Loading…</div>
+  if (loading) return <div className="p-6">{t('loading')}</div>
 
   const uomLabel = (id?: string | null) => {
     if (!id) return ''
@@ -580,14 +582,14 @@ export default function BOMPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Bill of Materials</h1>
+      <h1 className="text-2xl font-semibold">{t('bom.title')}</h1>
 
       {/* Create a BOM */}
       <Card>
-        <CardHeader><CardTitle>Create BOM</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bom.create')}</CardTitle></CardHeader>
         <CardContent className="grid md:grid-cols-4 gap-3">
           <div className="md:col-span-2">
-            <Label>Finished Product</Label>
+            <Label>{t('orders.item')}</Label>
             <Select value={newBomProductId} onValueChange={setNewBomProductId}>
               <SelectTrigger><SelectValue placeholder="Select finished product" /></SelectTrigger>
               <SelectContent className="max-h-64 overflow-auto">
@@ -599,7 +601,7 @@ export default function BOMPage() {
             </div>
           </div>
           <div>
-            <Label>Name</Label>
+            <Label>{t('items.fields.name')}</Label>
             <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder="e.g., Cake v1" />
             <div className="text-[11px] text-muted-foreground mt-1">
               Include a version in the name (e.g. “v1”) so it’s easy to find.
@@ -607,7 +609,7 @@ export default function BOMPage() {
           </div>
           <div className="md:col-span-1 flex items-end">
             <Button onClick={createBomForProduct} disabled={!newBomProductId || !newBomName.trim()}>
-              Create
+              {t('orders.createSO')}
             </Button>
           </div>
         </CardContent>
@@ -615,7 +617,7 @@ export default function BOMPage() {
 
       {/* Pick + Edit existing BOM */}
       <Card>
-        <CardHeader><CardTitle>Existing BOMs</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('bom.existing')}</CardTitle></CardHeader>
         <CardContent className="grid md:grid-cols-2 gap-3">
           <div>
             <Label>BOM</Label>
@@ -637,7 +639,7 @@ export default function BOMPage() {
           {selectedBom && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Name</Label>
+                <Label>{t('items.fields.name')}</Label>
                 <Input value={editName} onChange={e => setEditName(e.target.value)} />
               </div>
               <div>
@@ -646,7 +648,7 @@ export default function BOMPage() {
               </div>
               <div className="col-span-2 flex gap-2">
                 <Button onClick={saveBomMeta} disabled={savingBOM}>
-                  {savingBOM ? 'Saving…' : 'Save'}
+                  {savingBOM ? t('actions.saving') : t('actions.save')}
                 </Button>
                 <Button variant="secondary" onClick={duplicateAsNewVersion} disabled={duplicating}>
                   {duplicating ? 'Duplicating…' : 'Duplicate as new version'}
@@ -663,21 +665,21 @@ export default function BOMPage() {
       {/* Components */}
       {!!selectedBom && (
         <Card>
-          <CardHeader><CardTitle>Components</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('bom.components')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
-                  <th className="py-2 pr-2">Component</th>
+                  <th className="py-2 pr-2">{t('table.item')}</th>
                   <th className="py-2 pr-2">Qty per (base UoM)</th>
-                  <th className="py-2 pr-2">Base UoM</th>
+                  <th className="py-2 pr-2">{t('items.table.baseUom')}</th>
                   <th className="py-2 pr-2">Scrap (0..1)</th>
                   <th className="py-2 pr-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {components.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-muted-foreground">No components yet.</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-muted-foreground">{t('common.none')}</td></tr>
                 )}
                 {components.map(c => {
                   const it = itemById.get(c.component_item_id)
@@ -690,7 +692,7 @@ export default function BOMPage() {
                         <td className="py-2 pr-2">{uomLabel(it?.base_uom_id)}</td>
                         <td className="py-2 pr-2">{c.scrap_pct ?? 0}</td>
                         <td className="py-2 pr-2 space-x-2">
-                          <Button variant="destructive" onClick={() => deleteComponent(c.id)}>Delete</Button>
+                          <Button variant="destructive" onClick={() => deleteComponent(c.id)}>{t('common.remove')}</Button>
                           <Button variant="secondary" onClick={() => addSourceRow(c.component_item_id)} disabled={!useComponentSources}>
                             Add source
                           </Button>
@@ -709,27 +711,27 @@ export default function BOMPage() {
                                 return (
                                   <div key={row.id} className="grid md:grid-cols-4 gap-2">
                                     <div>
-                                      <Label>Warehouse (source)</Label>
+                                      <Label>{t('orders.fromWarehouse')}</Label>
                                       <Select
                                         value={row.warehouseId}
                                         onValueChange={async (v) => {
                                           updateSourceRow(c.component_item_id, row.id, { warehouseId: v, binId: '' })
                                           await ensureBinsFor(v)
                                         }}>
-                                        <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                                        <SelectTrigger><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
                                         <SelectContent>
                                           {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                                         </SelectContent>
                                       </Select>
                                     </div>
                                     <div>
-                                      <Label>Bin (source)</Label>
+                                      <Label>{t('orders.fromBin')}</Label>
                                       <Select
                                         value={row.binId}
                                         onValueChange={(v) => updateSourceRow(c.component_item_id, row.id, { binId: v })}
                                         disabled={!row.warehouseId}
                                       >
-                                        <SelectTrigger><SelectValue placeholder={row.warehouseId ? 'Select bin' : 'Pick warehouse first'} /></SelectTrigger>
+                                        <SelectTrigger><SelectValue placeholder={row.warehouseId ? t('orders.selectSourceBin') : t('movements.pickFromBinFirst')} /></SelectTrigger>
                                         <SelectContent className="max-h-64 overflow-auto">
                                           {bins.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
                                         </SelectContent>
@@ -746,7 +748,7 @@ export default function BOMPage() {
                                       />
                                     </div>
                                     <div className="flex items-end">
-                                      <Button variant="destructive" onClick={() => removeSourceRow(c.component_item_id, row.id)}>Remove</Button>
+                                      <Button variant="destructive" onClick={() => removeSourceRow(c.component_item_id, row.id)}>{t('common.remove')}</Button>
                                     </div>
                                   </div>
                                 )
@@ -764,9 +766,9 @@ export default function BOMPage() {
             {/* Add component row */}
             <div className="grid md:grid-cols-6 gap-3">
               <div className="md:col-span-2">
-                <Label>Component Item</Label>
+                <Label>{t('table.item')}</Label>
                 <Select value={compItemId} onValueChange={(v) => { setCompItemId(v); setCompQtyPer('1') }}>
-                  <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('movements.selectItem')} /></SelectTrigger>
                   <SelectContent className="max-h-64 overflow-auto">
                     {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
                   </SelectContent>
@@ -774,12 +776,12 @@ export default function BOMPage() {
               </div>
 
               <div>
-                <Label>Qty</Label>
+                <Label>{t('orders.qty')}</Label>
                 <Input type="number" min="0.0001" step="0.0001" value={compQtyPer} onChange={e => setCompQtyPer(e.target.value)} placeholder="1" />
               </div>
 
               <div>
-                <Label>Qty UoM</Label>
+                <Label>{t('orders.uom')}</Label>
                 <Select
                   value={compUomId}
                   onValueChange={(uomId) => {
@@ -795,7 +797,7 @@ export default function BOMPage() {
                   }}
                   disabled={!compItemId}
                 >
-                  <SelectTrigger><SelectValue placeholder={compItemId ? 'Select UoM' : 'Pick item first'} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={compItemId ? t('movements.selectUom') : t('movements.pickItemFirst')} /></SelectTrigger>
                   <SelectContent className="max-h-64 overflow-auto">
                     {groupedUoms.families.map(fam => (
                       <Fragment key={fam}>
@@ -818,7 +820,7 @@ export default function BOMPage() {
               </div>
 
               <div className="md:col-span-2 flex items-end">
-                <Button onClick={addComponentLine} disabled={!compItemId}>Add Component</Button>
+                <Button onClick={addComponentLine} disabled={!compItemId}>{t('bom.addComponent')}</Button>
               </div>
 
               {/* Preview conversion */}
@@ -850,24 +852,24 @@ export default function BOMPage() {
       {/* Build */}
       {!!selectedBom && (
         <Card>
-          <CardHeader><CardTitle>Build from BOM</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('bom.build')}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <div className="grid md:grid-cols-2 gap-3">
               {!useComponentSources && (
                 <>
                   <div>
-                    <Label>Warehouse FROM</Label>
+                    <Label>{t('orders.fromWarehouse')}</Label>
                     <Select value={warehouseFromId} onValueChange={(v) => { setWarehouseFromId(v); setBinFromId('') }}>
-                      <SelectTrigger><SelectValue placeholder="Select source warehouse" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
                       <SelectContent>
                         {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label>Bin FROM</Label>
+                    <Label>{t('orders.fromBin')}</Label>
                     <Select value={binFromId} onValueChange={setBinFromId}>
-                      <SelectTrigger><SelectValue placeholder="Select source bin" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={t('orders.selectSourceBin')} /></SelectTrigger>
                       <SelectContent className="max-h-64 overflow-auto">
                         {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
                       </SelectContent>
@@ -879,18 +881,18 @@ export default function BOMPage() {
               {!advanced && (
                 <>
                   <div>
-                    <Label>Warehouse TO</Label>
+                    <Label>{t('orders.toWarehouse')}</Label>
                     <Select value={warehouseToId} onValueChange={(v) => { setWarehouseToId(v); setBinToId(''); }}>
-                      <SelectTrigger><SelectValue placeholder="Select destination warehouse" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={t('orders.selectDestWh')} /></SelectTrigger>
                       <SelectContent>
                         {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label>Bin TO</Label>
+                    <Label>{t('orders.toBin')}</Label>
                     <Select value={binToId} onValueChange={setBinToId}>
-                      <SelectTrigger><SelectValue placeholder="Select destination bin" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={t('orders.selectDestBin')} /></SelectTrigger>
                       <SelectContent className="max-h-64 overflow-auto">
                         {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
                       </SelectContent>
@@ -916,7 +918,7 @@ export default function BOMPage() {
                     return (
                       <div key={s.id} className="grid md:grid-cols-4 gap-2">
                         <div>
-                          <Label>Warehouse TO</Label>
+                          <Label>{t('orders.toWarehouse')}</Label>
                           <Select
                             value={s.warehouseId}
                             onValueChange={async (v) => {
@@ -924,31 +926,31 @@ export default function BOMPage() {
                               await ensureBinsFor(v)
                             }}
                           >
-                            <SelectTrigger><SelectValue placeholder="Warehouse" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t('orders.toWarehouse')} /></SelectTrigger>
                             <SelectContent>
                               {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
                         <div>
-                          <Label>Bin TO</Label>
+                          <Label>{t('orders.toBin')}</Label>
                           <Select
                             value={s.binId}
                             onValueChange={(v) => updateSplit(s.id, { binId: v })}
                             disabled={!s.warehouseId}
                           >
-                            <SelectTrigger><SelectValue placeholder={s.warehouseId ? 'Bin' : 'Pick warehouse first'} /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={s.warehouseId ? t('orders.toBin') : t('movements.pickToBinFirst')} /></SelectTrigger>
                             <SelectContent className="max-h-64 overflow-auto">
                               {destBins.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
                         <div>
-                          <Label>Qty</Label>
+                          <Label>{t('orders.qty')}</Label>
                           <Input type="number" min="0.0001" step="0.0001" value={s.qty} onChange={e => updateSplit(s.id, { qty: e.target.value })} placeholder="0" />
                         </div>
                         <div className="flex items-end">
-                          <Button variant="destructive" onClick={() => removeSplit(s.id)}>Remove</Button>
+                          <Button variant="destructive" onClick={() => removeSplit(s.id)}>{t('common.remove')}</Button>
                         </div>
                       </div>
                     )
@@ -969,11 +971,11 @@ export default function BOMPage() {
 
             <div className="md:flex md:items-end md:gap-3">
               <div className="md:w-48">
-                <Label>Quantity to Build</Label>
+                <Label>{t('orders.qty')}</Label>
                 <Input type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
               </div>
               <Button onClick={runBuild} disabled={building}>
-                {building ? 'Building…' : 'Build'}
+                {building ? 'Building…' : t('bom.build')}
               </Button>
             </div>
 

@@ -12,6 +12,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import Logo from '../components/brand/Logo'
 import ThemeToggle from '../components/ThemeToggle'
+import { useI18n } from '../lib/i18n'
 
 /**
  * This screen handles both Sign In and Sign Up.
@@ -21,6 +22,7 @@ import ThemeToggle from '../components/ThemeToggle'
  * and also switch to the same verification screen for that email.
  */
 export default function Auth() {
+  const { t } = useI18n()
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '' })
@@ -53,7 +55,7 @@ export default function Auth() {
           const msg = (res.error || '').toLowerCase()
           if (msg.includes('not confirmed') || msg.includes('confirm your email')) {
             setAwaitingVerification({ email: formData.email })
-            toast('Please verify your email, then sign in.', { icon: '📧' })
+            toast(t('auth.toast.verifyPlease'), { icon: '📧' })
             return
           }
           setError(res.error || 'Login failed')
@@ -72,7 +74,7 @@ export default function Auth() {
 
       // Switch to "verify your email" screen
       setAwaitingVerification({ email: formData.email })
-      toast.success('Account created. Check your email to verify, then sign in.')
+      toast.success(t('auth.toast.accountCreated'))
     } catch (err) {
       console.error(err)
       setError('An unexpected error occurred')
@@ -90,7 +92,7 @@ export default function Auth() {
     const res = await requestPasswordReset(formData.email)
     setLoading(false)
     if (!res.success) setError(res.error || 'Failed to request password reset')
-    else toast.success('Password reset email sent!')
+    else toast.success(t('auth.toast.resetSent'))
   }
 
   // Resend verification email to the same /auth/callback route
@@ -129,18 +131,17 @@ export default function Auth() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-center">Verify your email</CardTitle>
+              <CardTitle className="text-center">{t('auth.verify.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-sm text-muted-foreground text-center">
-                We sent a verification link to <strong>{awaitingVerification.email}</strong>.
-                Open it in the <strong>same browser/profile</strong> you used to sign up to finish sign-in.
+                {t('auth.verify.desc', { email: awaitingVerification.email })}
               </div>
 
               <div className="flex items-center justify-center gap-2">
                 <Button onClick={resendVerification} disabled={resending} className="min-w-[200px]">
                   <Mail className="h-4 w-4 mr-2" />
-                  {resending ? 'Resending…' : 'Resend verification email'}
+                  {resending ? 'Resending…' : t('auth.verify.resend')}
                 </Button>
               </div>
 
@@ -154,7 +155,7 @@ export default function Auth() {
                     setIsLogin(false)
                   }}
                 >
-                  Go back and edit
+                  {t('auth.verify.goBackEdit')}
                 </Button>
               </div>
 
@@ -168,7 +169,7 @@ export default function Auth() {
                     setIsLogin(true)
                   }}
                 >
-                  Sign in
+                  {t('auth.verify.signIn')}
                 </Button>
               </div>
             </CardContent>
@@ -197,47 +198,47 @@ export default function Auth() {
         <Card>
           <CardHeader>
             <CardTitle className="text-center">
-              {isLogin ? 'Sign In' : 'Create Account'}
+              {isLogin ? t('auth.title.signIn') : t('auth.title.signUp')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {!isLogin && (
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
+                  <Label htmlFor="name">{t('auth.field.fullName')}</Label>
                   <Input
                     id="name"
                     type="text"
                     value={formData.name}
                     onChange={(e) => handleInputChange('name', e.target.value)}
-                    placeholder="Enter your full name"
+                    placeholder={t('auth.field.fullName')}
                     required
                   />
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">{t('auth.field.email')}</Label>
                 <Input
                   id="email"
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
-                  placeholder="Enter your email"
+                  placeholder={t('auth.field.email')}
                   required
                   autoComplete="email"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t('auth.field.password')}</Label>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
-                    placeholder="Enter your password"
+                    placeholder={t('auth.field.password')}
                     required
                     autoComplete={isLogin ? 'current-password' : 'new-password'}
                   />
@@ -261,14 +262,14 @@ export default function Auth() {
               )}
 
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Please wait…' : (isLogin ? 'Sign In' : 'Create Account')}
+                {loading ? 'Please wait…' : (isLogin ? t('auth.action.submit.signIn') : t('auth.action.submit.signUp'))}
               </Button>
             </form>
 
             {isLogin && (
               <div className="mt-4 text-right">
                 <Button variant="link" onClick={handleResetPassword}>
-                  Forgot Password?
+                  {t('auth.action.forgot')}
                 </Button>
               </div>
             )}
@@ -283,7 +284,7 @@ export default function Auth() {
                 }}
                 className="text-sm"
               >
-                {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+                {isLogin ? t('auth.switch.toSignUp') : t('auth.switch.toSignIn')}
               </Button>
             </div>
 

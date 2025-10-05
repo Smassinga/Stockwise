@@ -8,6 +8,7 @@ import { RefreshCw, FileDown, Package, Warehouse as WarehouseIcon, Search } from
 import { toast } from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
+import { useI18n } from '../lib/i18n'
 
 interface Item {
   id: string
@@ -39,6 +40,7 @@ interface StockLevel {
 
 export function StockLevels() {
   const { companyId } = useOrg()
+  const { t } = useI18n()
 
   const [items, setItems] = useState<Item[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -157,10 +159,10 @@ export function StockLevels() {
 
   const downloadCSV = (data: typeof rows, filename: string) => {
     if (!data.length) {
-      toast('No data to export')
+      toast(t('common.headsUp'))
       return
     }
-    const headers = ['Item', 'SKU', 'Warehouse', 'On Hand Qty', 'Avg Cost', 'Total Value']
+    const headers = [t('table.item'), t('table.sku'), t('warehouses.warehouse'), t('table.onHand'), t('stock.avgCost'), t('stock.totalValue')]
     const csv = [
       headers.join(','),
       ...data.map(r =>
@@ -187,13 +189,13 @@ export function StockLevels() {
     a.download = filename
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('Export complete')
+    toast.success(t('export.done'))
   }
 
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Join or create a company to view stock levels.</p>
+        <p className="text-muted-foreground">{t('org.noCompany') ?? ''}</p>
       </div>
     )
   }
@@ -202,7 +204,7 @@ export function StockLevels() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Stock Levels</h1>
+          <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
         </div>
         <div className="animate-pulse">
           <div className="h-10 bg-muted rounded mb-4" />
@@ -219,9 +221,9 @@ export function StockLevels() {
   if (error) {
     return (
       <div className="p-6">
-        <h2 className="text-xl font-bold mb-2">Stock Levels Error</h2>
+        <h2 className="text-xl font-bold mb-2">{t('errors.title') ?? 'Error'}</h2>
         <p className="text-muted-foreground mb-4">{error}</p>
-        <Button onClick={loadData}>Retry</Button>
+        <Button onClick={loadData}>{t('common.retry') ?? 'Retry'}</Button>
       </div>
     )
   }
@@ -231,28 +233,28 @@ export function StockLevels() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Stock Levels</h1>
-          <p className="text-muted-foreground">View on-hand by item and warehouse</p>
+          <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
+          <p className="text-muted-foreground">{t('stock.subtitle') ?? ''}</p>
         </div>
         <Button variant="outline" onClick={loadData}>
           <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
+          {t('common.refresh') ?? 'Refresh'}
         </Button>
       </div>
 
       {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle>Filters</CardTitle>
+          <CardTitle>{t('reports.filters')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-3">
           <div className="sm:col-span-1">
-            <Label htmlFor="search">Search</Label>
+            <Label htmlFor="search">{t('common.search')}</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 id="search"
-                placeholder="Item name, SKU, warehouse..."
+                placeholder={t('stock.searchPlaceholder') ?? ''}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -260,13 +262,13 @@ export function StockLevels() {
             </div>
           </div>
           <div>
-            <Label>Item</Label>
+            <Label>{t('table.item')}</Label>
             <Select value={itemFilter} onValueChange={setItemFilter}>
               <SelectTrigger>
-                <SelectValue placeholder="All items" />
+                <SelectValue placeholder={t('stock.allItems') ?? ''} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All items</SelectItem>
+                <SelectItem value="all">{t('stock.allItems') ?? ''}</SelectItem>
                 {items.map(i => (
                   <SelectItem key={i.id} value={i.id}>
                     {i.name} ({i.sku})
@@ -276,13 +278,13 @@ export function StockLevels() {
             </Select>
           </div>
           <div>
-            <Label>Warehouse</Label>
+            <Label>{t('warehouses.warehouse')}</Label>
             <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
               <SelectTrigger>
-                <SelectValue placeholder="All warehouses" />
+                <SelectValue placeholder={t('filters.warehouse.all')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All warehouses</SelectItem>
+                <SelectItem value="all">{t('filters.warehouse.all')}</SelectItem>
                 {warehouses.map(w => (
                   <SelectItem key={w.id} value={w.id}>
                     {w.name} ({w.code})
@@ -297,28 +299,28 @@ export function StockLevels() {
       {/* Summary + Export */}
       <Card>
         <CardHeader>
-          <CardTitle>Summary</CardTitle>
+          <CardTitle>{t('reports.tab.summary')}</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <Package className="w-5 h-5" />
               <div>
-                <div className="text-xs text-muted-foreground">Total Qty</div>
+                <div className="text-xs text-muted-foreground">{t('table.qtyBase')}</div>
                 <div className="text-xl font-semibold">{totals.qty}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <WarehouseIcon className="w-5 h-5" />
               <div>
-                <div className="text-xs text-muted-foreground">Total Value</div>
+                <div className="text-xs text-muted-foreground">{t('table.value')}</div>
                 <div className="text-xl font-semibold">{formatCurrency(totals.value)}</div>
               </div>
             </div>
           </div>
           <Button onClick={() => downloadCSV(rows, 'stock_levels.csv')}>
             <FileDown className="w-4 h-4 mr-2" />
-            Export CSV
+            {t('export.csv') ?? 'Export CSV'}
           </Button>
         </CardContent>
       </Card>
@@ -326,19 +328,19 @@ export function StockLevels() {
       {/* Results */}
       <Card>
         <CardHeader>
-          <CardTitle>Results ({rows.length})</CardTitle>
+          <CardTitle>{t('transactions.results')} ({rows.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {rows.length ? (
             <div className="w-full overflow-x-auto">
               <div className="min-w-[720px]">
                 <div className="grid grid-cols-6 px-3 py-2 text-xs uppercase text-muted-foreground">
-                  <div>Item</div>
-                  <div>SKU</div>
-                  <div>Warehouse</div>
-                  <div className="text-right">On Hand</div>
-                  <div className="text-right">Avg Cost</div>
-                  <div className="text-right">Total Value</div>
+                  <div>{t('table.item')}</div>
+                  <div>{t('table.sku')}</div>
+                  <div>{t('warehouses.warehouse')}</div>
+                  <div className="text-right">{t('table.onHand')}</div>
+                  <div className="text-right">{t('stock.avgCost')}</div>
+                  <div className="text-right">{t('stock.totalValue')}</div>
                 </div>
                 <div className="divide-y">
                   {rows.map(r => (
@@ -355,7 +357,7 @@ export function StockLevels() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No stock levels match your filters.</p>
+            <p className="text-sm text-muted-foreground">{t('stock.none')}</p>
           )}
         </CardContent>
       </Card>

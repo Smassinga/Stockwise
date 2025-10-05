@@ -375,13 +375,13 @@ function Settings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Building className="w-5 h-5" /> Company Profile
+            <Building className="w-5 h-5" /> {t('settings.companyProfile.title')}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>Trade name</Label>
+              <Label>{t('settings.companyProfile.tradeName')}</Label>
               <Input
                 value={profile?.trade_name ?? ''}
                 onChange={(e) => setProfileField('trade_name', e.target.value)}
@@ -389,7 +389,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Legal name</Label>
+              <Label>{t('settings.companyProfile.legalName')}</Label>
               <Input
                 value={profile?.legal_name ?? ''}
                 onChange={(e) => setProfileField('legal_name', e.target.value)}
@@ -397,7 +397,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Tax ID</Label>
+              <Label>{t('settings.companyProfile.taxId')}</Label>
               <Input
                 value={profile?.tax_id ?? ''}
                 onChange={(e) => setProfileField('tax_id', e.target.value)}
@@ -408,7 +408,7 @@ function Settings() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>Registration No.</Label>
+              <Label>{t('settings.companyProfile.registrationNo')}</Label>
               <Input
                 value={profile?.registration_no ?? ''}
                 onChange={(e) => setProfileField('registration_no', e.target.value)}
@@ -416,7 +416,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Phone</Label>
+              <Label>{t('settings.companyProfile.phone')}</Label>
               <Input
                 value={profile?.phone ?? ''}
                 onChange={(e) => setProfileField('phone', e.target.value)}
@@ -424,7 +424,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
+              <Label>{t('orders.email')}</Label>
               <Input
                 value={profile?.email ?? ''}
                 onChange={(e) => setProfileField('email', e.target.value)}
@@ -435,7 +435,7 @@ function Settings() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>Website</Label>
+              <Label>{t('settings.companyProfile.website')}</Label>
               <Input
                 value={profile?.website ?? ''}
                 onChange={(e) => setProfileField('website', e.target.value)}
@@ -443,19 +443,19 @@ function Settings() {
               />
             </div>
             <div className="space-y-2 md:col-span-2">
-              <Label>Print footer note</Label>
+              <Label>{t('settings.companyProfile.printFooter')}</Label>
               <Input
                 value={profile?.print_footer_note ?? ''}
                 onChange={(e) => setProfileField('print_footer_note', e.target.value)}
                 disabled={!canEditOps}
-                placeholder="Thank you for your business!"
+                placeholder={t('settings.companyProfile.printFooter.placeholder')}
               />
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2 md:col-span-3">
-              <Label>Address line 1</Label>
+              <Label>{t('settings.companyProfile.address1')}</Label>
               <Input
                 value={profile?.address_line1 ?? ''}
                 onChange={(e) => setProfileField('address_line1', e.target.value)}
@@ -463,7 +463,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2 md:col-span-3">
-              <Label>Address line 2</Label>
+              <Label>{t('settings.companyProfile.address2')}</Label>
               <Input
                 value={profile?.address_line2 ?? ''}
                 onChange={(e) => setProfileField('address_line2', e.target.value)}
@@ -474,7 +474,7 @@ function Settings() {
 
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
-              <Label>City</Label>
+              <Label>{t('settings.companyProfile.city')}</Label>
               <Input
                 value={profile?.city ?? ''}
                 onChange={(e) => setProfileField('city', e.target.value)}
@@ -482,7 +482,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>State/Province</Label>
+              <Label>{t('settings.companyProfile.state')}</Label>
               <Input
                 value={profile?.state ?? ''}
                 onChange={(e) => setProfileField('state', e.target.value)}
@@ -490,7 +490,7 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Postal Code</Label>
+              <Label>{t('settings.companyProfile.postal')}</Label>
               <Input
                 value={profile?.postal_code ?? ''}
                 onChange={(e) => setProfileField('postal_code', e.target.value)}
@@ -498,12 +498,12 @@ function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Country</Label>
+              <Label>{t('settings.companyProfile.country')}</Label>
               <Input
                 value={profile?.country_code ?? ''}
                 onChange={(e) => setProfileField('country_code', e.target.value)}
                 disabled={!canEditOps}
-                placeholder="e.g., MZ"
+                placeholder={t('settings.companyProfile.country.placeholder')}
               />
             </div>
           </div>
@@ -511,7 +511,7 @@ function Settings() {
           {/* Logo (write settings.brand.logoUrl for immediate prints; also try to store logo_path) */}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Company Logo</Label>
+              <Label>{t('settings.companyProfile.logo')}</Label>
               <LogoUploader
                 value={data.documents.brand.logoUrl}
                 onChange={(url) => {
@@ -523,18 +523,18 @@ function Settings() {
                 disabled={!canEditOps}
               />
               <div className="text-xs text-muted-foreground">
-                Public image stored in <code>brand-logos</code>. We’ll use it on printed documents.
+                {t('settings.companyProfile.logo.helper')}
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-sm text-muted-foreground">Current storage path</Label>
+              <Label className="text-sm text-muted-foreground">{t('settings.companyProfile.logoPath')}</Label>
               <Input
                 value={profile?.logo_path ?? ''}
                 onChange={(e) => setProfileField('logo_path', e.target.value)}
                 disabled={!canEditOps}
-                placeholder="companyId/uuid.jpg"
+                placeholder={t('settings.companyProfile.logoPath.placeholder')}
               />
-              <div className="text-[11px] text-muted-foreground">Kept for stable, cache-friendly references.</div>
+              <div className="text-[11px] text-muted-foreground">{t('settings.companyProfile.logoPath.helper')}</div>
             </div>
           </div>
         </CardContent>
@@ -766,12 +766,12 @@ function Settings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" /> Notifications
+            <Bell className="w-5 h-5" /> {t('sections.notifications.title')}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div>
-            <Label>Low stock channel</Label>
+            <Label>{t('fields.lowStockChannel')}</Label>
             <Select
               value={data.notifications.lowStock.channel}
               onValueChange={(v) => setField('notifications.lowStock.channel', v)}
@@ -779,10 +779,10 @@ function Settings() {
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="email">Email</SelectItem>
+                <SelectItem value="email">{t('common.email')}</SelectItem>
                 <SelectItem value="slack">Slack</SelectItem>
                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="none">{t('common.none')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -793,24 +793,24 @@ function Settings() {
               onCheckedChange={(v) => setField('notifications.dailyDigest', v)}
               disabled={!canEditOps}
             />
-            <Label>Daily digest (Revenue & COGS by product)</Label>
+            <Label>{t('notifications.dailyDigestLabel')}</Label>
           </div>
 
           <div>
-            <Label>Digest time (local)</Label>
+            <Label>{t('notifications.digestTime')}</Label>
             <Input
               type="time"
               value={data.notifications.dailyDigestTime || '08:00'}
               onChange={(e) => setField('notifications.dailyDigestTime', e.target.value)}
               disabled={!canEditOps}
             />
-            <div className="text-xs text-muted-foreground mt-1">24-hour format. We’ll use your timezone below.</div>
+            <div className="text-xs text-muted-foreground mt-1">{t('notifications.digestTime.helper')}</div>
           </div>
 
           <div>
-            <Label>Timezone</Label>
+            <Label>{t('notifications.timezone')}</Label>
             <Input
-              placeholder="Africa/Maputo"
+              placeholder={t('notifications.timezone.placeholder')}
               value={data.notifications.timezone || 'Africa/Maputo'}
               onChange={(e) => setField('notifications.timezone', e.target.value)}
               disabled={!canEditOps}
@@ -824,7 +824,7 @@ function Settings() {
                 onCheckedChange={(v) => setField('notifications.dailyDigestChannels.email', v)}
                 disabled={!canEditOps}
               />
-              <Label>Email</Label>
+              <Label>{t('orders.email')}</Label>
             </div>
             <div className="flex items-center gap-2">
               <Switch
@@ -846,27 +846,27 @@ function Settings() {
 
           <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <Label>Recipient emails (comma separated)</Label>
+              <Label>{t('notifications.recipientEmails')}</Label>
               <Input
-                placeholder="owner@company.com, manager@company.com"
+                placeholder={t('notifications.recipientEmails.placeholder')}
                 value={listToCSV(data.notifications.recipients?.emails || [])}
                 onChange={(e) => setField('notifications.recipients.emails', csvToList(e.target.value))}
                 disabled={!canEditOps}
               />
             </div>
             <div>
-              <Label>Recipient phones for SMS (comma separated)</Label>
+              <Label>{t('notifications.recipientPhones')}</Label>
               <Input
-                placeholder="+25884xxxxxxx, +25886xxxxxxx"
+                placeholder={t('notifications.recipientPhones.placeholder')}
                 value={listToCSV(data.notifications.recipients?.phones || [])}
                 onChange={(e) => setField('notifications.recipients.phones', csvToList(e.target.value))}
                 disabled={!canEditOps}
               />
             </div>
             <div>
-              <Label>Recipient WhatsApp numbers (comma separated)</Label>
+              <Label>{t('notifications.recipientWhatsapp')}</Label>
               <Input
-                placeholder="+25884xxxxxxx"
+                placeholder={t('notifications.recipientWhatsapp.placeholder')}
                 value={listToCSV(data.notifications.recipients?.whatsapp || [])}
                 onChange={(e) => setField('notifications.recipients.whatsapp', csvToList(e.target.value))}
                 disabled={!canEditOps}

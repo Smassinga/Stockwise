@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
 import { Button } from './ui/button'
+import { useI18n } from '../lib/i18n'
 
 type Props = { compact?: boolean }
 
 export default function ThemeToggle({ compact = false }: Props) {
+  const { t } = useI18n()
   const [dark, setDark] = useState(
     typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
   )
@@ -38,8 +40,8 @@ export default function ThemeToggle({ compact = false }: Props) {
       <Button
         variant="ghost"
         size="sm"
-        aria-label="Toggle theme"
-        title="Toggle light/dark"
+        aria-label={t('theme.toggle')}
+        title={t('theme.toggle')}
         onClick={() => apply(!dark)}
       >
         {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -53,11 +55,11 @@ export default function ThemeToggle({ compact = false }: Props) {
       onClick={() => apply(!dark)}
       className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm
                  border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800"
-      aria-label="Toggle theme"
-      title="Toggle light/dark"
+      aria-label={t('theme.toggle')}
+      title={t('theme.toggle')}
     >
       {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      {dark ? 'Light' : 'Dark'}
+      {dark ? t('theme.light') : t('theme.dark')}
     </button>
   )
 }

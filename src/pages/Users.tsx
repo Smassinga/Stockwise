@@ -8,6 +8,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import toast from 'react-hot-toast'
 import { useOrg } from '../hooks/useOrg'
+import { useI18n } from '../lib/i18n'
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER'
 type Status = 'invited' | 'active' | 'disabled'
@@ -43,6 +44,7 @@ function extractFnErr(err: any): string {
 
 export default function Users() {
   const { companyId, companyName, myRole } = useOrg()
+  const { t } = useI18n()
 
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
@@ -333,11 +335,11 @@ export default function Users() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Users</h1>
+        <h1 className="text-3xl font-bold">{t('sections.users.title')}</h1>
         {companyId && (
           <div className="text-sm text-muted-foreground">
-            Company: {companyName || companyId}
-            {myRole ? ` — Your role: ${myRole}` : ''}
+            {t('users.company')}: {companyName || companyId}
+            {myRole ? ` — ${t('users.yourRole')}: ${myRole}` : ''}
           </div>
         )}
       </div>
@@ -345,15 +347,15 @@ export default function Users() {
       {/* Invite */}
       <Card className="border-dashed">
         <CardHeader>
-          <CardTitle>Invite a user</CardTitle>
+          <CardTitle>{t('users.invite.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           {!companyId ? (
-            <p className="text-muted-foreground">No company available.</p>
+            <p className="text-muted-foreground">{t('users.noCompany')}</p>
           ) : (
             <div className="grid sm:grid-cols-3 gap-3 items-end max-w-3xl">
               <div>
-                <Label>Email</Label>
+                <Label>{t('users.email')}</Label>
                 <Input
                   placeholder="name@example.com"
                   value={inviteEmail}
@@ -361,7 +363,7 @@ export default function Users() {
                 />
               </div>
               <div>
-                <Label>Role</Label>
+                <Label>{t('users.role')}</Label>
                 <Select
                   value={inviteRole}
                   onValueChange={(v) => setInviteRole(v as Role)}
@@ -383,13 +385,13 @@ export default function Users() {
               </div>
               <div className="flex gap-2">
                 <Button onClick={invite} disabled={!canManageUsers || sendingInvite}>
-                  {sendingInvite ? 'Sending…' : 'Invite & email'}
+                  {sendingInvite ? t('loading') : t('users.inviteAndEmail')}
                 </Button>
                 <Button variant="outline" onClick={copyInviteLink} disabled={!canManageUsers}>
-                  Copy invite link
+                  {t('users.copyInviteLink')}
                 </Button>
                 <Button variant="outline" onClick={() => { setInviteEmail(''); setInviteRole('VIEWER') }}>
-                  Clear
+                  {t('common.clear')}
                 </Button>
               </div>
             </div>
@@ -400,23 +402,23 @@ export default function Users() {
       {/* List */}
       <Card>
         <CardHeader>
-          <CardTitle>Members</CardTitle>
+          <CardTitle>{t('users.members')}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {loading ? (
-            <p className="text-muted-foreground">Loading…</p>
+            <p className="text-muted-foreground">{t('loading')}</p>
           ) : sorted.length === 0 ? (
-            <p className="text-muted-foreground">No members yet.</p>
+            <p className="text-muted-foreground">{t('lowStock.empty')}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-2">Email</th>
-                  <th className="py-2 pr-2">Role</th>
+                  <th className="py-2 pr-2">{t('users.role')}</th>
                   <th className="py-2 pr-2">Status</th>
-                  <th className="py-2 pr-2">Confirmed</th>
-                  <th className="py-2 pr-2">Last Sign-in</th>
-                  <th className="py-2 pr-2 text-right">Actions</th>
+                  <th className="py-2 pr-2">{t('users.table.confirmed')}</th>
+                  <th className="py-2 pr-2">{t('users.table.lastSignin')}</th>
+                  <th className="py-2 pr-2 text-right">{t('users.table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -487,9 +489,9 @@ export default function Users() {
                                   variant="outline"
                                   onClick={() => reinvite(m.email)}
                                   disabled={!canManageUsers || isHigher}
-                                  title={isHigher ? 'Higher role' : 'Resend invite email'}
+                                  title={isHigher ? t('users.higherRole') : t('users.resendEmail')}
                                 >
-                                  Resend email
+                                  {t('users.resendEmail')}
                                 </Button>
                                 <Button
                                   variant="outline"
@@ -503,15 +505,15 @@ export default function Users() {
                                       if (error) throw error
                                       const link = `${window.location.origin}/accept-invite?token=${token}`
                                       await navigator.clipboard.writeText(link)
-                                      toast.success('Invite link copied')
+                                      toast.success(t('users.copyInviteLink'))
                                     } catch (e: any) {
                                       toast.error(e?.message || 'Could not copy link')
                                     }
                                   }}
                                   disabled={!canManageUsers || isHigher}
-                                  title={isHigher ? 'Higher role' : 'Copy invite link'}
+                                  title={isHigher ? t('users.higherRole') : t('users.copyInviteLink')}
                                 >
-                                  Copy link
+                                  {t('users.copyLink')}
                                 </Button>
                               </>
                             )}
@@ -521,7 +523,7 @@ export default function Users() {
                               disabled={removeDisabled}
                               title={removeTitle}
                             >
-                              Remove
+                              {t('common.remove')}
                             </Button>
                           </div>
 
@@ -532,7 +534,7 @@ export default function Users() {
                               disabled
                               className="opacity-60 cursor-not-allowed h-7 px-2 text-xs"
                             >
-                              Higher role
+                              {t('users.higherRole')}
                             </Button>
                           )}
                         </div>

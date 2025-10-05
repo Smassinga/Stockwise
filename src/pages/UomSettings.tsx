@@ -8,6 +8,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { buildConvGraph, tryConvertQty, type ConvRow } from '../lib/uom'
 import { useOrg } from '../hooks/useOrg'
+import { useI18n } from '../lib/i18n'
 
 type Uom = { id: string; code: string; name: string; family?: string }
 type Conv = { from_uom_id: string; to_uom_id: string; factor: number; company_id: string | null }
@@ -17,6 +18,7 @@ type Family = typeof FAMILIES[number]
 
 export default function UomSettings() {
   const { companyId, companyName, loading: orgLoading } = useOrg()
+  const { t } = useI18n()
 
   const [uoms, setUoms] = useState<Uom[]>([])
   const [convs, setConvs] = useState<Conv[]>([])
@@ -57,7 +59,7 @@ export default function UomSettings() {
     if (orgLoading) return
     loadAll().catch((e) => {
       console.error(e)
-      toast.error(e?.message || 'Failed to load UoMs')
+      toast.error(e?.message || t('errors.title'))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgLoading, companyId])
@@ -100,7 +102,7 @@ export default function UomSettings() {
     e.preventDefault()
     const c = code.trim().toUpperCase()
     const n = name.trim()
-    if (!c || !n) return toast.error('Code and Name are required')
+    if (!c || !n) return toast.error(t('uom.required') ?? 'Code and Name are required')
 
     // if uoms.id is UUID server-generated, drop id field
     const id = `uom_${c.toLowerCase()}`
@@ -109,27 +111,27 @@ export default function UomSettings() {
         .from('uoms')
         .upsert([{ id, code: c, name: n, family }], { onConflict: 'id' })
       if (error) throw error
-      toast.success('Unit saved')
+      toast.success(t('uom.unitSaved') ?? 'Unit saved')
       setCode(''); setName(''); setFamily('count')
       await loadAll()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to save unit')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
   async function addConv(e: React.FormEvent) {
     e.preventDefault()
-    if (!companyId) return toast.error('Join or select a company first')
-    if (!fromId || !toId) return toast.error('Pick both From and To')
-    if (fromId === toId) return toast.error('From and To must be different')
+    if (!companyId) return toast.error(t('org.noCompany'))
+    if (!fromId || !toId) return toast.error(t('uom.pickBoth') ?? 'Pick both From and To')
+    if (fromId === toId) return toast.error(t('uom.mustDiffer') ?? 'From and To must be different')
     const f = Number(factor)
-    if (!f || f <= 0) return toast.error('Factor must be > 0')
+    if (!f || f <= 0) return toast.error(t('uom.factorGt0') ?? 'Factor must be > 0')
 
     // Optional: cross-family heads-up
     const a = byId.get(fromId)?.family
     const b = byId.get(toId)?.family
-    if (a && b && a !== b) toast('Warning: converting across different families', { icon: '⚠️' })
+    if (a && b && a !== b) toast(t('uom.crossFamilyWarn') ?? 'Warning: converting across different families', { icon: '⚠️' })
 
     try {
       const { error } = await supabase
@@ -139,17 +141,17 @@ export default function UomSettings() {
           { onConflict: 'company_id,from_uom_id,to_uom_id' } // relies on the full unique index
         )
       if (error) throw error
-      toast.success('Conversion saved')
+      toast.success(t('uom.convSaved') ?? 'Conversion saved')
       setFromId(''); setToId(''); setFactor('')
       await loadAll()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to save conversion')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
   async function deleteConv(from: string, to: string) {
-    if (!companyId) return toast.error('No company selected')
+    if (!companyId) return toast.error(t('org.noCompany'))
     try {
       // Only delete your company’s own conversion (leave global defaults intact)
       const { error } = await supabase
@@ -159,11 +161,11 @@ export default function UomSettings() {
         .eq('to_uom_id', to)
         .eq('company_id', companyId)
       if (error) throw error
-      toast.success('Conversion deleted')
+      toast.success(t('uom.convDeleted') ?? 'Conversion deleted')
       await loadAll()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to delete conversion')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
@@ -178,11 +180,11 @@ export default function UomSettings() {
 
   function runTest() {
     const q = Number(testQty)
-    if (!graph) return toast.error('No graph loaded yet')
-    if (!testFrom || !testTo) return toast.error('Pick both units')
-    if (!Number.isFinite(q)) return toast.error('Enter a number to test')
+    if (!graph) return toast.error(t('uom.noGraph') ?? 'No graph loaded yet')
+    if (!testFrom || !testTo) return toast.error(t('uom.pickBothUnits') ?? 'Pick both units')
+    if (!Number.isFinite(q)) return toast.error(t('uom.enterNumber') ?? 'Enter a number to test')
     const out = tryConvertQty(q, testFrom, testTo, graph)
-    if (out == null) toast.error('No path found')
+    if (out == null) toast.error(t('uom.noPath') ?? 'No path found')
     else {
       const fromC = byId.get(testFrom)?.code || testFrom
       const toC = byId.get(testTo)?.code || testTo
@@ -198,14 +200,14 @@ export default function UomSettings() {
     return map[key] || (fam || 'Other')
   }
 
-  if (orgLoading || loading) return <div className="p-6">Loading…</div>
+  if (orgLoading || loading) return <div className="p-6">{t('loading')}</div>
 
   if (!companyId) {
     return (
       <div className="p-6 space-y-2">
-        <h1 className="text-3xl font-bold">Units & Conversions</h1>
+        <h1 className="text-3xl font-bold">{t('uom.title')}</h1>
         <p className="text-sm text-muted-foreground">
-          You’re not inside a company yet. Join or create a company to manage company-scoped conversions.
+          {t('uom.noCompanyDesc')}
         </p>
       </div>
     )
@@ -213,26 +215,26 @@ export default function UomSettings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Units & Conversions</h1>
+      <h1 className="text-3xl font-bold">{t('uom.title')}</h1>
       <p className="text-sm text-muted-foreground">
         Company: <span className="font-medium">{companyName || companyId}</span>
       </p>
 
       {/* Add Unit (global) */}
       <Card>
-        <CardHeader><CardTitle>Add Unit</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('uom.addUnit')}</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={addUnit} className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
-              <Label htmlFor="code">Code *</Label>
+              <Label htmlFor="code">{t('users.code') ?? 'Code'} *</Label>
               <Input id="code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g., BOX" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
+              <Label htmlFor="name">{t('items.fields.name')} *</Label>
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Box" />
             </div>
             <div className="space-y-2">
-              <Label>Family</Label>
+              <Label>{t('uom.family')}</Label>
               <Select value={family} onValueChange={(v: Family) => setFamily(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -241,7 +243,7 @@ export default function UomSettings() {
               </Select>
             </div>
             <div className="flex items-end">
-              <Button type="submit">Save Unit</Button>
+              <Button type="submit">{t('uom.saveUnit')}</Button>
             </div>
           </form>
         </CardContent>
@@ -249,14 +251,14 @@ export default function UomSettings() {
 
       {/* Add Conversion (company-scoped) */}
       <Card>
-        <CardHeader><CardTitle>Add Conversion</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('uom.addConversion')}</CardTitle></CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-3">
-            <strong>Rule:</strong> <code>1 × FROM × factor = TO</code>. Example: BOX → EACH with factor 24 (so 1 BOX = 24 EACH).
+            <strong>{t('uom.rule')}</strong> <code>1 × FROM × factor = TO</code>. {t('uom.ruleExample')}
           </p>
           <form onSubmit={addConv} className="grid gap-4 md:grid-cols-5">
             <div className="space-y-2">
-              <Label>From *</Label>
+              <Label>{t('uom.from')} *</Label>
               <Select value={fromId} onValueChange={setFromId}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent className="max-h-64 overflow-auto">
@@ -275,7 +277,7 @@ export default function UomSettings() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>To *</Label>
+              <Label>{t('uom.to')} *</Label>
               <Select value={toId} onValueChange={setToId}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent className="max-h-64 overflow-auto">
@@ -294,18 +296,18 @@ export default function UomSettings() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="factor">Factor *</Label>
+              <Label htmlFor="factor">{t('uom.factor')} *</Label>
               <Input id="factor" type="number" min="0" step="0.000001" value={factor}
                      onChange={(e) => setFactor(e.target.value)} placeholder="e.g., 24" />
               <div className="text-xs text-muted-foreground mt-1">{preview}</div>
             </div>
             <div className="flex items-end">
-              <Button type="submit">Save Conversion</Button>
+              <Button type="submit">{t('uom.saveConversion')}</Button>
             </div>
 
             {/* Quick Test */}
             <div className="space-y-2">
-              <Label>Quick Test</Label>
+              <Label>{t('uom.quickTest')}</Label>
               <div className="grid grid-cols-3 gap-2">
                 <Input placeholder="Qty" value={testQty} onChange={(e)=>setTestQty(e.target.value)} />
                 <Select value={testFrom} onValueChange={setTestFrom}>
@@ -341,7 +343,7 @@ export default function UomSettings() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button variant="outline" onClick={runTest}>Run Test</Button>
+              <Button variant="outline" onClick={runTest}>{t('uom.runTest')}</Button>
             </div>
           </form>
         </CardContent>
@@ -349,22 +351,22 @@ export default function UomSettings() {
 
       {/* Existing Conversions (scrollable) */}
       <Card>
-        <CardHeader><CardTitle>Existing Conversions</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('uom.existing')}</CardTitle></CardHeader>
         <CardContent className="overflow-hidden">
           <div className="max-h-[60vh] overflow-auto rounded-md border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0 z-10">
                 <tr className="text-left">
-                  <th className="py-2 px-3">From</th>
-                  <th className="py-2 px-3">To</th>
-                  <th className="py-2 px-3">Factor</th>
-                  <th className="py-2 px-3">Scope</th>
-                  <th className="py-2 px-3">Actions</th>
+                  <th className="py-2 px-3">{t('uom.from')}</th>
+                  <th className="py-2 px-3">{t('uom.to')}</th>
+                  <th className="py-2 px-3">{t('uom.factor')}</th>
+                  <th className="py-2 px-3">{t('uom.scope')}</th>
+                  <th className="py-2 px-3">{t('users.table.actions')}</th>
                 </tr>
               </thead>
               <tbody className="[&_tr:nth-child(even)]:bg-muted/30">
                 {convs.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 px-3 text-muted-foreground">No conversions yet.</td></tr>
+                  <tr><td colSpan={5} className="py-4 px-3 text-muted-foreground">{t('uom.none')}</td></tr>
                 )}
                 {convs.map(c => {
                   const a = byId.get(c.from_uom_id)
@@ -375,11 +377,11 @@ export default function UomSettings() {
                       <td className="py-2 px-3">{a ? `${a.code} — ${a.name}` : c.from_uom_id}</td>
                       <td className="py-2 px-3">{b ? `${b.code} — ${b.name}` : c.to_uom_id}</td>
                       <td className="py-2 px-3">{c.factor}</td>
-                      <td className="py-2 px-3">{isCompanyRow ? 'Company' : 'Global'}</td>
+                      <td className="py-2 px-3">{isCompanyRow ? t('uom.company') : t('uom.global')}</td>
                       <td className="py-2 px-3">
                         {isCompanyRow
-                          ? <Button variant="destructive" onClick={() => deleteConv(c.from_uom_id, c.to_uom_id)}>Delete</Button>
-                          : <span className="text-muted-foreground">—</span>}
+                          ? <Button variant="destructive" onClick={() => deleteConv(c.from_uom_id, c.to_uom_id)}>{t('common.remove')}</Button>
+                          : <span className="text-muted-foreground">{t('common.dash')}</span>}
                       </td>
                     </tr>
                   )

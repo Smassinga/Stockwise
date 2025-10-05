@@ -23,6 +23,8 @@ import {
   AlertDialogTrigger
 } from '../components/ui/alert-dialog'
 import { Warehouse as WarehouseIcon, Plus, Search, Edit, Trash2, MapPin, Package } from 'lucide-react'
+import { useI18n } from '../lib/i18n'
+import { useIsMobile } from '../hooks/use-mobile'
 
 type Warehouse = {
   id: string
@@ -45,6 +47,8 @@ type Bin = {
 
 export function Warehouses() {
   const { companyId } = useOrg()
+  const { t } = useI18n()
+  const isMobile = useIsMobile()
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
@@ -68,7 +72,7 @@ export function Warehouses() {
         await loadAll()
       } catch (e: any) {
         console.error(e)
-        setError(e?.message || 'Failed to load warehouses')
+        setError(e?.message || t('errors.title'))
       } finally {
         setLoading(false)
       }
@@ -115,7 +119,7 @@ export function Warehouses() {
 
     if (bnErr) {
       console.error(bnErr)
-      toast.error(bnErr.message || 'Failed to load bins')
+        toast.error(bnErr.message || t('errors.title'))
       setBins([])
       return
     }
@@ -143,7 +147,7 @@ export function Warehouses() {
   async function addWarehouse() {
     try {
       if (!companyId) {
-        toast.error('Join or create a company first')
+        toast.error(t('org.noCompany'))
         return
       }
       const payload = {
@@ -176,10 +180,10 @@ export function Warehouses() {
 
       setIsAddDialogOpen(false)
       resetForm()
-      toast.success('Warehouse added')
+      toast.success(t('warehouses.added') ?? 'Warehouse added')
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to add warehouse')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
@@ -219,10 +223,10 @@ export function Warehouses() {
 
       setEditing(null)
       resetForm()
-      toast.success('Warehouse updated')
+      toast.success(t('warehouses.updated') ?? 'Warehouse updated')
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to update warehouse')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
@@ -236,11 +240,11 @@ export function Warehouses() {
 
       if (slErr) {
         console.warn('Stock-level check failed; aborting delete:', slErr)
-        toast.error('Could not verify stock levels; aborting delete')
+        toast.error(t('warehouses.cannotVerify') ?? 'Could not verify stock levels; aborting delete')
         return
       }
       if ((count ?? 0) > 0) {
-        toast.error('Cannot delete warehouse with existing stock')
+        toast.error(t('warehouses.cannotDeleteHasStock') ?? 'Cannot delete warehouse with existing stock')
         return
       }
 
@@ -250,17 +254,17 @@ export function Warehouses() {
 
       setWarehouses(prev => prev.filter(wh => wh.id !== id))
       setBins(prev => prev.filter(b => b.warehouseId !== id))
-      toast.success('Warehouse deleted')
+      toast.success(t('warehouses.deleted') ?? 'Warehouse deleted')
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to delete warehouse')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
   async function addBin() {
     try {
       if (!binForm.warehouseId) {
-        toast.error('Select a warehouse first')
+        toast.error(t('warehouses.selectFirst') ?? 'Select a warehouse first')
         return
       }
       const payload = {
@@ -291,10 +295,10 @@ export function Warehouses() {
       ])
       setIsAddBinDialogOpen(false)
       resetBinForm()
-      toast.success('Bin added')
+      toast.success(t('warehouses.binAdded') ?? 'Bin added')
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to add bin')
+      toast.error(e?.message || t('errors.title'))
     }
   }
 
@@ -310,7 +314,7 @@ export function Warehouses() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Warehouses</h1>
+          <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>
         </div>
         <div className="animate-pulse">
           <div className="h-10 bg-muted rounded mb-4"></div>
@@ -327,9 +331,9 @@ export function Warehouses() {
   if (error) {
     return (
       <div className="p-6">
-        <h2 className="text-xl font-bold mb-2">Warehouses Error</h2>
+        <h2 className="text-xl font-bold mb-2">{t('errors.title')}</h2>
         <p className="text-muted-foreground mb-4">{error}</p>
-        <Button onClick={() => location.reload()}>Retry</Button>
+        <Button onClick={() => location.reload()}>{t('common.retry')}</Button>
       </div>
     )
   }
@@ -338,30 +342,30 @@ export function Warehouses() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Warehouses</h1>
-          <p className="text-muted-foreground">Manage warehouse locations and bin storage</p>
+          <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>
+          <p className="text-muted-foreground">{t('warehouses.subtitle') ?? ''}</p>
         </div>
         <div className="flex gap-2">
           <Dialog open={isAddBinDialogOpen} onOpenChange={setIsAddBinDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" onClick={resetBinForm}>
+              <Button variant="outline" onClick={resetBinForm} className={isMobile ? 'px-2' : ''}>
                 <Package className="w-4 h-4 mr-2" />
-                Add Bin
+                {t('warehouses.addBin') ?? 'Add Bin'}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Add Bin Location</DialogTitle>
-                <DialogDescription>Create a new storage bin</DialogDescription>
+                <DialogTitle>{t('warehouses.addBin')}</DialogTitle>
+                <DialogDescription>{t('warehouses.addBinDesc') ?? ''}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Warehouse</Label>
+                  <Label>{t('warehouses.warehouse')}</Label>
                   <Select
                     value={binForm.warehouseId}
                     onValueChange={(v) => setBinForm(s => ({ ...s, warehouseId: v }))}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('orders.selectWarehouse')} /></SelectTrigger>
                     <SelectContent>
                       {warehouses.map(wh => (
                         <SelectItem key={wh.id} value={wh.id}>
@@ -372,7 +376,7 @@ export function Warehouses() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Bin Code</Label>
+                  <Label>{t('warehouses.binCode') ?? 'Bin Code'}</Label>
                   <Input
                     value={binForm.code}
                     onChange={e => setBinForm(s => ({ ...s, code: e.target.value }))}
@@ -380,7 +384,7 @@ export function Warehouses() {
                   />
                 </div>
                 <div>
-                  <Label>Bin Name</Label>
+                  <Label>{t('warehouses.binName') ?? 'Bin Name'}</Label>
                   <Input
                     value={binForm.name}
                     onChange={e => setBinForm(s => ({ ...s, name: e.target.value }))}
@@ -388,8 +392,8 @@ export function Warehouses() {
                   />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsAddBinDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={addBin}>Add Bin</Button>
+                  <Button variant="outline" onClick={() => setIsAddBinDialogOpen(false)}>{t('common.cancel') ?? 'Cancel'}</Button>
+                  <Button onClick={addBin}>{t('warehouses.addBin') ?? 'Add Bin'}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -397,19 +401,19 @@ export function Warehouses() {
 
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={resetForm}>
+              <Button onClick={resetForm} className={isMobile ? 'px-2' : ''}>
                 <Plus className="w-4 h-4 mr-2" />
-                Add Warehouse
+                {t('warehouses.addWarehouse') ?? 'Add Warehouse'}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Add New Warehouse</DialogTitle>
-                <DialogDescription>Set up a new warehouse</DialogDescription>
+                <DialogTitle>{t('warehouses.addWarehouse')}</DialogTitle>
+                <DialogDescription>{t('warehouses.addWarehouseDesc') ?? ''}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Code</Label>
+                  <Label>{t('users.code') ?? 'Code'}</Label>
                   <Input
                     value={form.code}
                     onChange={e => setForm(s => ({ ...s, code: e.target.value }))}
@@ -417,7 +421,7 @@ export function Warehouses() {
                   />
                 </div>
                 <div>
-                  <Label>Name</Label>
+                  <Label>{t('items.fields.name')}</Label>
                   <Input
                     value={form.name}
                     onChange={e => setForm(s => ({ ...s, name: e.target.value }))}
@@ -425,7 +429,7 @@ export function Warehouses() {
                   />
                 </div>
                 <div>
-                  <Label>Address</Label>
+                  <Label>{t('settings.companyProfile.address1')}</Label>
                   <Input
                     value={form.address}
                     onChange={e => setForm(s => ({ ...s, address: e.target.value }))}
@@ -433,21 +437,21 @@ export function Warehouses() {
                   />
                 </div>
                 <div>
-                  <Label>Status</Label>
+                  <Label>{t('orders.status')}</Label>
                   <Select
                     value={form.status}
                     onValueChange={(v) => setForm(s => ({ ...s, status: v }))}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="active">{t('suppliers.active')}</SelectItem>
+                      <SelectItem value="inactive">{t('suppliers.inactive')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={addWarehouse}>Add Warehouse</Button>
+                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>{t('common.cancel') ?? 'Cancel'}</Button>
+                  <Button onClick={addWarehouse}>{t('warehouses.addWarehouse') ?? 'Add Warehouse'}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -459,7 +463,7 @@ export function Warehouses() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name, code, or address..."
+            placeholder={t('warehouses.search') ?? 'Search by name, code, or address...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -471,7 +475,7 @@ export function Warehouses() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <WarehouseIcon className="w-5 h-5" />
-            <span>Warehouses ({filtered.length})</span>
+            <span>{t('nav.warehouses')} ({filtered.length})</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -488,7 +492,7 @@ export function Warehouses() {
                         </div>
                         <div>
                           <h3 className="font-medium">{wh.name}</h3>
-                          <p className="text-sm text-muted-foreground">Code: {wh.code}</p>
+                          <p className="text-sm text-muted-foreground">{t('users.code') ?? 'Code'}: {wh.code}</p>
                           {wh.address && (
                             <p className="text-xs text-muted-foreground flex items-center mt-1">
                               <MapPin className="w-3 h-3 mr-1" />
@@ -500,7 +504,7 @@ export function Warehouses() {
 
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <p className="text-sm"><span className="text-muted-foreground">Bins:</span> {wBins.length}</p>
+                          <p className="text-sm"><span className="text-muted-foreground">{t('warehouses.bins') ?? 'Bins'}:</span> {wBins.length}</p>
                         </div>
                         <Badge variant={wh.status === 'active' ? 'default' : 'secondary'}>{wh.status}</Badge>
                         <div className="flex items-center gap-2">
@@ -524,26 +528,26 @@ export function Warehouses() {
                             </DialogTrigger>
                             <DialogContent className="max-w-md">
                               <DialogHeader>
-                                <DialogTitle>Edit Warehouse</DialogTitle>
-                                <DialogDescription>Update details</DialogDescription>
+                                <DialogTitle>{t('warehouses.edit') ?? 'Edit Warehouse'}</DialogTitle>
+                                <DialogDescription>{t('warehouses.editDesc') ?? 'Update details'}</DialogDescription>
                               </DialogHeader>
                               <div className="space-y-4">
-                                <div><Label>Code</Label><Input value={form.code} onChange={e => setForm(s => ({ ...s, code: e.target.value }))} /></div>
-                                <div><Label>Name</Label><Input value={form.name} onChange={e => setForm(s => ({ ...s, name: e.target.value }))} /></div>
-                                <div><Label>Address</Label><Input value={form.address} onChange={e => setForm(s => ({ ...s, address: e.target.value }))} /></div>
+                                <div><Label>{t('users.code') ?? 'Code'}</Label><Input value={form.code} onChange={e => setForm(s => ({ ...s, code: e.target.value }))} /></div>
+                                <div><Label>{t('items.fields.name')}</Label><Input value={form.name} onChange={e => setForm(s => ({ ...s, name: e.target.value }))} /></div>
+                                <div><Label>{t('settings.companyProfile.address1')}</Label><Input value={form.address} onChange={e => setForm(s => ({ ...s, address: e.target.value }))} /></div>
                                 <div>
                                   <Label>Status</Label>
                                   <Select value={form.status} onValueChange={(v) => setForm(s => ({ ...s, status: v }))}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="active">Active</SelectItem>
-                                      <SelectItem value="inactive">Inactive</SelectItem>
+                                      <SelectItem value="active">{t('suppliers.active')}</SelectItem>
+                                      <SelectItem value="inactive">{t('suppliers.inactive')}</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </div>
                                 <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-                                  <Button onClick={updateWarehouse}>Update Warehouse</Button>
+                                  <Button variant="outline" onClick={() => setEditing(null)}>{t('common.cancel') ?? 'Cancel'}</Button>
+                                  <Button onClick={updateWarehouse}>{t('warehouses.updateWarehouse') ?? 'Update Warehouse'}</Button>
                                 </div>
                               </div>
                             </DialogContent>
@@ -557,14 +561,14 @@ export function Warehouses() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Warehouse</AlertDialogTitle>
+                                <AlertDialogTitle>{t('warehouses.delete') ?? 'Delete Warehouse'}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will also delete all associated bins.
+                                  {t('warehouses.deleteDesc') ?? 'This will also delete all associated bins.'}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteWarehouse(wh.id)}>Delete</AlertDialogAction>
+                                <AlertDialogCancel>{t('common.cancel') ?? 'Cancel'}</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deleteWarehouse(wh.id)}>{t('common.remove')}</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -574,7 +578,7 @@ export function Warehouses() {
 
                     {wBins.length > 0 && (
                       <div className="mt-4 pt-4 border-t">
-                        <p className="text-sm font-medium mb-2">Bin Locations:</p>
+                        <p className="text-sm font-medium mb-2">{t('warehouses.binLocations') ?? 'Bin Locations:'}</p>
                         <div className="flex flex-wrap gap-2">
                           {wBins.map(b => (
                             <Badge key={b.id} variant="outline" className="text-xs">
@@ -591,15 +595,15 @@ export function Warehouses() {
           ) : (
             <div className="text-center py-12">
               <WarehouseIcon className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No warehouses found</h3>
+              <h3 className="text-lg font-medium mb-2">{t('warehouses.none') ?? 'No warehouses found'}</h3>
               <p className="text-muted-foreground mb-4">
-                {searchTerm ? 'Try adjusting your search terms' : 'Get started by adding your first warehouse'}
+                {searchTerm ? (t('warehouses.searchAdjust') ?? 'Try adjusting your search terms') : (t('warehouses.getStarted') ?? 'Get started by adding your first warehouse')}
               </p>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
                   <Button onClick={resetForm}>
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Warehouse
+                    {t('warehouses.addWarehouse') ?? 'Add Warehouse'}
                   </Button>
                 </DialogTrigger>
               </Dialog>

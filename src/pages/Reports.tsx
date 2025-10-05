@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Link } from 'react-router-dom'
+import { useI18n } from '../lib/i18n'
 
 import { ReportsProvider, useReports } from './reports/context/ReportsProvider'
 
@@ -21,6 +22,7 @@ const SuppliersTab = lazy(() => import('./reports/tabs/SuppliersTab'))
 const CustomersTab = lazy(() => import('./reports/tabs/CustomersTab'))
 
 function FiltersBar() {
+  const { t } = useI18n()
   const {
     ui,
     startDate, endDate, setStartDate, setEndDate,
@@ -55,40 +57,40 @@ function FiltersBar() {
       </div>
 
       <Card className="mt-4">
-        <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('reports.filters')}</CardTitle></CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <Label>Start</Label>
+              <Label>{t('reports.start')}</Label>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
             </div>
             <div>
-              <Label>End</Label>
+              <Label>{t('reports.end')}</Label>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
             </div>
             <div className="flex items-end">
               <div className="flex gap-2 flex-wrap">
-                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(30); setStartDate(d.start); setEndDate(d.end) }}>Last 30d</Button>
-                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(90); setStartDate(d.start); setEndDate(d.end) }}>Last 90d</Button>
-                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(365); setStartDate(d.start); setEndDate(d.end) }}>Last 365d</Button>
+                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(30); setStartDate(d.start); setEndDate(d.end) }}>{t('reports.last30d')}</Button>
+                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(90); setStartDate(d.start); setEndDate(d.end) }}>{t('reports.last90d')}</Button>
+                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(365); setStartDate(d.start); setEndDate(d.end) }}>{t('reports.last365d')}</Button>
               </div>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <Label>Costing Method</Label>
+              <Label>{t('reports.costingMethod')}</Label>
               <select
                 className={selectCx} // ← updated
                 value={ui.costMethod}
                 onChange={e => setCostMethod(e.target.value === 'FIFO' ? 'FIFO' : 'WA')}
               >
-                <option value="WA">Weighted Average</option>
-                <option value="FIFO">FIFO</option>
+                <option value="WA">{t('reports.weightedAverage')}</option>
+                <option value="FIFO">{t('reports.fifo')}</option>
               </select>
             </div>
             <div>
-              <Label>Valuation Timing</Label>
+              <Label>{t('reports.valuationTiming')}</Label>
               <div className="flex items-center gap-2 h-9">
                 <input
                   id="asof"
@@ -97,15 +99,15 @@ function FiltersBar() {
                   checked={valuationAsOfEnd}
                   onChange={e => setValuationAsOfEnd(e.target.checked)}
                 />
-                <Label htmlFor="asof">Use valuation as of end date (warehouse level)</Label>
+                <Label htmlFor="asof">{t('reports.asOfEnd')}</Label>
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                Bin-level valuation uses the current snapshot until movements include bin IDs.
+                {t('reports.binNote')}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Currency</Label>
+                <Label>{t('reports.currency')}</Label>
                 <select
                   className={selectCx} // ← updated
                   value={displayCurrency}
@@ -115,7 +117,7 @@ function FiltersBar() {
                 </select>
               </div>
               <div>
-                <Label>FX rate (per {baseCurrency})</Label>
+                <Label>{t('reports.fxPerBase', { code: baseCurrency })}</Label>
                 <Input
                   type="number"
                   step="0.000001"
@@ -125,7 +127,7 @@ function FiltersBar() {
                 />
                 <div className="flex items-center gap-2 mt-1">
                   <input id="autofx" type="checkbox" className="h-4 w-4" checked={autoFx} onChange={e => setAutoFx(e.target.checked)} />
-                  <Label htmlFor="autofx" className="text-xs">Auto FX (use latest rate on/before End date)</Label>
+                  <Label htmlFor="autofx" className="text-xs">{t('reports.autoFx')}</Label>
                 </div>
               </div>
             </div>
@@ -137,6 +139,7 @@ function FiltersBar() {
 }
 
 export default function Reports() {
+  const { t } = useI18n()
   return (
     <ReportsProvider>
       <div className="p-4 space-y-6">
@@ -144,56 +147,56 @@ export default function Reports() {
 
         <Tabs defaultValue="summary">
           <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="summary">Summary</TabsTrigger>
-            <TabsTrigger value="valuation">Valuation</TabsTrigger>
-            <TabsTrigger value="turnover">Turnover</TabsTrigger>
-            <TabsTrigger value="aging">Aging</TabsTrigger>
-            <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            <TabsTrigger value="summary">{t('reports.tab.summary')}</TabsTrigger>
+            <TabsTrigger value="valuation">{t('reports.tab.valuation')}</TabsTrigger>
+            <TabsTrigger value="turnover">{t('reports.tab.turnover')}</TabsTrigger>
+            <TabsTrigger value="aging">{t('reports.tab.aging')}</TabsTrigger>
+            <TabsTrigger value="revenue">{t('reports.tab.revenue')}</TabsTrigger>
             {/* NEW */}
-            <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
-            <TabsTrigger value="customers">Customers</TabsTrigger>
+            <TabsTrigger value="suppliers">{t('reports.tab.suppliers')}</TabsTrigger>
+            <TabsTrigger value="customers">{t('reports.tab.customers')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary">
-            <Suspense fallback={<div>Loading Summary…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.summary')}…</div>}>
               <SummaryTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="valuation">
-            <Suspense fallback={<div>Loading Valuation…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.valuation')}…</div>}>
               <ValuationTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="turnover">
-            <Suspense fallback={<div>Loading Turnover…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.turnover')}…</div>}>
               <TurnoverTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="aging">
-            <Suspense fallback={<div>Loading Aging…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.aging')}…</div>}>
               <AgingTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="revenue">
-            <Suspense fallback={<div>Loading Revenue…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.revenue')}…</div>}>
               <RevenueTab />
             </Suspense>
           </TabsContent>
 
           {/* NEW: Suppliers */}
           <TabsContent value="suppliers">
-            <Suspense fallback={<div>Loading Suppliers…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.suppliers')}…</div>}>
               <SuppliersTab />
             </Suspense>
           </TabsContent>
 
           {/* NEW: Customers */}
           <TabsContent value="customers">
-            <Suspense fallback={<div>Loading Customers…</div>}>
+            <Suspense fallback={<div>{t('loading')} {t('reports.tab.customers')}…</div>}>
               <CustomersTab />
             </Suspense>
           </TabsContent>

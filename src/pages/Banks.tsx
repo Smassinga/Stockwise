@@ -17,6 +17,7 @@ import {
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg' // <- source of truth for company id
+import { useI18n } from '../lib/i18n'
 
 type BankAccount = {
   id: string
@@ -35,6 +36,7 @@ type BankAccount = {
 type BalanceRow = { bank_id: string; balance_base: number }
 
 export default function Banks() {
+  const { t } = useI18n()
   const { companyId } = useOrg() // no changes to useOrg needed
   const [rows, setRows] = useState<BankAccount[]>([])
   const [balances, setBalances] = useState<Record<string, number>>({})
@@ -115,7 +117,7 @@ export default function Banks() {
 
   async function addBank() {
     if (!form.name.trim()) {
-      toast.error('Bank nickname is required')
+      toast.error(t('banks.required.nickname'))
       return
     }
     setSaving(true)
@@ -132,7 +134,7 @@ export default function Banks() {
       const { error } = await supabase.from('bank_accounts').insert(payload)
       if (error) throw error
 
-      toast.success('Bank added')
+      toast.success(t('banks.toast.added'))
       setOpenAdd(false)
       setForm({ name: '', bank_name: '', account_number: '', currency_code: baseCurrency || 'MZN' })
 
@@ -142,7 +144,7 @@ export default function Banks() {
         await loadBalances()
       }
     } catch (e: any) {
-      toast.error('Could not add bank (DB not ready)')
+      toast.error(t('banks.toast.addFailed'))
       console.error(e)
     } finally {
       setSaving(false)
@@ -152,38 +154,38 @@ export default function Banks() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <h1 className="text-xl font-semibold">Banks</h1>
+        <h1 className="text-xl font-semibold">{t('banks.title')}</h1>
         <div className="ml-auto">
           <Sheet open={openAdd} onOpenChange={setOpenAdd}>
             <SheetTrigger asChild>
-              <Button>+ New Bank</Button>
+              <Button>+ {t('banks.new')}</Button>
             </SheetTrigger>
             <SheetContent>
               <SheetHeader>
-                <SheetTitle>Add bank account</SheetTitle>
+                <SheetTitle>{t('banks.addTitle')}</SheetTitle>
                 {/* a11y: provide description so DialogContent stops warning */}
                 <SheetDescription className="sr-only">
-                  Fill in the bank account details and click Save.
+                  {t('actions.save')}
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-3 mt-4">
                 <div>
-                  <Label>Nickname</Label>
+                  <Label>{t('banks.nickname')}</Label>
                   <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
                 </div>
                 <div>
-                  <Label>Bank name</Label>
+                  <Label>{t('banks.bankName')}</Label>
                   <Input value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))} />
                 </div>
                 <div>
-                  <Label>Account number</Label>
+                  <Label>{t('banks.accountNumber')}</Label>
                   <Input
                     value={form.account_number}
                     onChange={(e) => setForm((f) => ({ ...f, account_number: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <Label>Currency code</Label>
+                  <Label>{t('banks.currencyCode')}</Label>
                   <Input
                     value={form.currency_code}
                     onChange={(e) => setForm((f) => ({ ...f, currency_code: e.target.value.toUpperCase() }))}
@@ -191,7 +193,7 @@ export default function Banks() {
                   />
                 </div>
                 <Button onClick={addBank} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving ? t('actions.saving') : t('banks.save')}
                 </Button>
               </div>
             </SheetContent>
@@ -211,7 +213,7 @@ export default function Banks() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex-1">
-              <div className="text-sm text-muted-foreground">Account</div>
+              <div className="text-sm text-muted-foreground">{t('banks.account')}</div>
               <div className="mb-2">{b.account_number || '—'}</div>
 
               {(b.swift || b.nib || b.tax_number) && (
@@ -234,12 +236,12 @@ export default function Banks() {
                 </div>
               )}
 
-              <div className="text-sm text-muted-foreground">Balance (base)</div>
+              <div className="text-sm text-muted-foreground">{t('banks.balanceBase')}</div>
               <div className="text-2xl">{formatMoneyBase(balances[b.id] ?? 0)}</div>
               <div className="mt-4">
                 <Link to={`/banks/${b.id}`}>
                   <Button variant="secondary" className="w-full">
-                    Open
+                    {t('banks.open')}
                   </Button>
                 </Link>
               </div>
@@ -248,7 +250,7 @@ export default function Banks() {
         ))}
         {rows.length === 0 && (
           <Card>
-            <CardContent className="py-8 text-muted-foreground">No banks yet.</CardContent>
+            <CardContent className="py-8 text-muted-foreground">{t('banks.empty')}</CardContent>
           </Card>
         )}
       </div>

@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import { Mail } from 'lucide-react'
+import { useI18n } from '../lib/i18n'
 
 /** LocalStorage key shared with /accept-invite and AuthCallback */
 const LS_INVITE_KEY = 'sw:inviteToken'
@@ -34,6 +35,7 @@ async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
 }
 
 export default function Onboarding() {
+  const { t } = useI18n()
   const nav = useNavigate()
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -92,7 +94,7 @@ export default function Onboarding() {
         setLoading(false)
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || 'Failed to check membership')
+        toast.error(e?.message || t('common.headsUp'))
         setLoading(false)
       }
     })()
@@ -109,7 +111,7 @@ export default function Onboarding() {
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       })
       if (error) toast.error(error.message)
-      else toast.success('Verification email resent.')
+      else toast.success(t('auth.toast.resetSent'))
     } finally {
       setResending(false)
     }
@@ -144,7 +146,7 @@ export default function Onboarding() {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
-        Checking your membership…
+        {t('loading')}
       </div>
     )
   }
@@ -154,23 +156,22 @@ export default function Onboarding() {
     return (
       <div className="max-w-lg mx-auto">
         <Card>
-          <CardHeader><CardTitle>Verify your email</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('onboarding.verifyTitle')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              We sent a verification link to <strong>{unverifiedEmail}</strong>. Open it on the same
-              device/browser to finish sign-in.
+              {t('onboarding.verifyDesc', { email: unverifiedEmail })}
             </p>
             <div className="flex gap-2">
               <Button onClick={resendVerification} disabled={resending}>
                 <Mail className="h-4 w-4 mr-2" />
-                {resending ? 'Resending…' : 'Resend verification'}
+                {resending ? t('actions.saving') : t('onboarding.resend')}
               </Button>
               <Button variant="secondary" onClick={() => location.assign('/auth')}>
-                Use a different email
+                {t('onboarding.useDifferent')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Already verified? Refresh this page after clicking the link.
+              {t('onboarding.already')}
             </p>
           </CardContent>
         </Card>
@@ -182,14 +183,14 @@ export default function Onboarding() {
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
-        <CardHeader><CardTitle>Create your company</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('onboarding.createCompanyTitle')}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Looks like you’re not part of a company yet. Create one to get started.
+            {t('onboarding.notInCompany')}
           </p>
           <div className="grid sm:grid-cols-3 items-end gap-3">
             <div className="sm:col-span-2">
-              <Label htmlFor="companyName">Company name</Label>
+              <Label htmlFor="companyName">{t('onboarding.companyName')}</Label>
               <Input
                 id="companyName"
                 placeholder="Acme Inc."
@@ -199,7 +200,7 @@ export default function Onboarding() {
             </div>
             <div className="flex gap-2">
               <Button onClick={createCompany} disabled={creating}>
-                {creating ? 'Creating…' : 'Create company'}
+                {creating ? t('actions.saving') : t('onboarding.create')}
               </Button>
             </div>
           </div>

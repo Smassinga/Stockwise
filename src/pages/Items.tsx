@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
+import { useI18n } from '../lib/i18n'
 
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -33,6 +34,7 @@ function sortByName<T extends { name?: string }>(arr: T[]) {
 }
 
 const Items: React.FC = () => {
+  const { t } = useI18n()
   const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
 
@@ -198,37 +200,37 @@ const Items: React.FC = () => {
     }
   }
 
-  if (loading) return <div className="p-6">Loading…</div>
+  if (loading) return <div className="p-6">{t('loading')}</div>
 
   const uomLabel = (u: Uom) => `${u.code} — ${u.name}`
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Items</h1>
+        <h1 className="text-3xl font-bold">{t('items.title')}</h1>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Create Item</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('items.create.title')}</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Maize 50kg bag" />
+              <Label htmlFor="name">{t('items.fields.name')} *</Label>
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('items.placeholder.name')} />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="sku">SKU *</Label>
-              <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="e.g., MZ-50KG" />
+              <Label htmlFor="sku">{t('items.fields.sku')} *</Label>
+              <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder={t('items.placeholder.sku')} />
             </div>
 
             <div className="space-y-2">
-              <Label>Base UoM *</Label>
+              <Label>{t('items.fields.baseUom')} *</Label>
               <Select value={baseUomId} onValueChange={setBaseUomId}>
-                <SelectTrigger><SelectValue placeholder="Select a unit" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('items.placeholder.selectUnit')} /></SelectTrigger>
                 <SelectContent className="max-h-72 overflow-auto">
                   {groupedUoms.families.length === 0 && (
-                    <SelectItem value="__none__" disabled>No UoMs available</SelectItem>
+                    <SelectItem value="__none__" disabled>{t('none')}</SelectItem>
                   )}
                   {groupedUoms.families.map(fam => {
                     const list = groupedUoms.groups.get(fam) || []
@@ -251,7 +253,7 @@ const Items: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="minStock">Min Stock</Label>
+              <Label htmlFor="minStock">{t('items.fields.minStock')}</Label>
               <Input
                 id="minStock"
                 type="number"
@@ -264,28 +266,28 @@ const Items: React.FC = () => {
             </div>
 
             <div className="flex items-end">
-              <Button type="submit" disabled={!can.createItem(role)}>Create</Button>
+              <Button type="submit" disabled={!can.createItem(role)}>{t('items.actions.create')}</Button>
             </div>
           </form>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Items List</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('items.list.title')}</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b">
-                <th className="py-2 pr-2">Name</th>
-                <th className="py-2 pr-2">SKU</th>
-                <th className="py-2 pr-2">Base UoM</th>
-                <th className="py-2 pr-2">Min Stock</th>
-                <th className="py-2 pr-2">Actions</th>
+                <th className="py-2 pr-2">{t('items.fields.name')}</th>
+                <th className="py-2 pr-2">{t('items.fields.sku')}</th>
+                <th className="py-2 pr-2">{t('items.table.baseUom')}</th>
+                <th className="py-2 pr-2">{t('items.fields.minStock')}</th>
+                <th className="py-2 pr-2">{t('items.table.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
-                <tr><td colSpan={5} className="py-4 text-muted-foreground">No items yet.</td></tr>
+                <tr><td colSpan={5} className="py-4 text-muted-foreground">{t('items.list.empty')}</td></tr>
               )}
               {items.map(it => {
                 const u = uomById.get(it.baseUomId)
@@ -306,7 +308,7 @@ const Items: React.FC = () => {
                               : toast.error('Only MANAGER+ can delete items')
                           }
                         >
-                          Delete
+                          {t('common.remove')}
                         </Button>
                       </div>
                     </td>

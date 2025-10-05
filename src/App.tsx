@@ -1,30 +1,31 @@
 // src/App.tsx
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { AppLayout } from './components/layout/AppLayout';
 
-import Dashboard from './pages/Dashboard';
-import Items from './pages/Items';
-import StockMovements from './pages/StockMovements';
-import Reports from './pages/Reports';
-import { Warehouses } from './pages/Warehouses';
-import Users from './pages/Users';
-import { Settings } from './pages/Settings';
-import Orders from './pages/Orders';
-import StockLevels from './pages/StockLevels';
-import CurrencyPage from './pages/Currency';
-import CustomersPage from './pages/Customers';
-import SuppliersPage from './pages/Suppliers';
-import BOMPage from './pages/BOM'
-import Auth from './pages/Auth';
-import UomSettings from './pages/UomSettings';
-import AuthCallback from './pages/AuthCallback';
-import AcceptInvite from './pages/AcceptInvite';
-import Onboarding from './pages/Onboarding';
-import Transactions from './pages/Transactions'
-import Cash from './pages/Cash'   // <-- NEW
-import Banks from './pages/Banks'             // NEW
-import BankDetail from './pages/BankDetail'
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Items = lazy(() => import('./pages/Items'));
+const StockMovements = lazy(() => import('./pages/StockMovements'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Warehouses = lazy(() => import('./pages/Warehouses').then(m => ({ default: m.Warehouses })));
+const Users = lazy(() => import('./pages/Users'));
+const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
+const Orders = lazy(() => import('./pages/Orders'));
+const StockLevels = lazy(() => import('./pages/StockLevels'));
+const CurrencyPage = lazy(() => import('./pages/Currency'));
+const CustomersPage = lazy(() => import('./pages/Customers'));
+const SuppliersPage = lazy(() => import('./pages/Suppliers'));
+const BOMPage = lazy(() => import('./pages/BOM'));
+const Auth = lazy(() => import('./pages/Auth'));
+const UomSettings = lazy(() => import('./pages/UomSettings'));
+const AuthCallback = lazy(() => import('./pages/AuthCallback'));
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
+const Onboarding = lazy(() => import('./pages/Onboarding'));
+const Transactions = lazy(() => import('./pages/Transactions'));
+const Cash = lazy(() => import('./pages/Cash'));
+const Banks = lazy(() => import('./pages/Banks'));
+const BankDetail = lazy(() => import('./pages/BankDetail'));
 import { OrgProvider, useOrg } from './hooks/useOrg';
 import { CanManageUsers } from './lib/roles';
 
@@ -99,47 +100,47 @@ export default function App() {
       <Routes>
         {/* Public (but if logged, route to onboarding or dashboard) */}
         <Route path="/auth" element={<PublicOnly />}>
-          <Route index element={<Auth />} />
+          <Route index element={<Suspense fallback={<LoadingSplash />}><Auth /></Suspense>} />
         </Route>
-        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/callback" element={<Suspense fallback={<LoadingSplash />}><AuthCallback /></Suspense>} />
         
         {/* Public: invite landing — stores token & handles auth/redirect */}
-        <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/accept-invite" element={<Suspense fallback={<LoadingSplash />}><AcceptInvite /></Suspense>} />
         
         {/* Private area (must be logged in) */}
         <Route element={<RequireAuth />}>
           {/* Onboarding is private but outside the app shell */}
-          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/onboarding" element={<Suspense fallback={<LoadingSplash />}><Onboarding /></Suspense>} />
 
           {/* Main app requires membership before mounting */}
           <Route element={<RequireMembership />}>
             <Route element={<AppLayout user={user!}><Outlet /></AppLayout>}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/items" element={<Items />} />
-              <Route path="/movements" element={<StockMovements />} />
-              <Route path="/warehouses" element={<Warehouses />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/cash" element={<Cash />} /> {/* NEW */}
-              <Route path="/banks" element={<Banks />} />              {/* NEW */}
-              <Route path="/banks/:bankId" element={<BankDetail />} />
+              <Route path="/dashboard" element={<Suspense fallback={<LoadingSplash />}><Dashboard /></Suspense>} />
+              <Route path="/items" element={<Suspense fallback={<LoadingSplash />}><Items /></Suspense>} />
+              <Route path="/movements" element={<Suspense fallback={<LoadingSplash />}><StockMovements /></Suspense>} />
+              <Route path="/warehouses" element={<Suspense fallback={<LoadingSplash />}><Warehouses /></Suspense>} />
+              <Route path="/transactions" element={<Suspense fallback={<LoadingSplash />}><Transactions /></Suspense>} />
+              <Route path="/cash" element={<Suspense fallback={<LoadingSplash />}><Cash /></Suspense>} /> {/* NEW */}
+              <Route path="/banks" element={<Suspense fallback={<LoadingSplash />}><Banks /></Suspense>} />              {/* NEW */}
+              <Route path="/banks/:bankId" element={<Suspense fallback={<LoadingSplash />}><BankDetail /></Suspense>} />
 
               {/* Only OWNER/ADMIN/MANAGER can access Users */}
               <Route element={<RequireOrgRole allowed={CanManageUsers} />}>
-                <Route path="/users" element={<Users />} />
+                <Route path="/users" element={<Suspense fallback={<LoadingSplash />}><Users /></Suspense>} />
               </Route>
 
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/orders" element={<Orders />} />
-              <Route path="/stock-levels" element={<StockLevels />} />
-              <Route path="/currency" element={<CurrencyPage />} />
-              <Route path="/customers" element={<CustomersPage />} />
-              <Route path="/suppliers" element={<SuppliersPage />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/settings/uoms" element={<UomSettings />} />
+              <Route path="/reports" element={<Suspense fallback={<LoadingSplash />}><Reports /></Suspense>} />
+              <Route path="/orders" element={<Suspense fallback={<LoadingSplash />}><Orders /></Suspense>} />
+              <Route path="/stock-levels" element={<Suspense fallback={<LoadingSplash />}><StockLevels /></Suspense>} />
+              <Route path="/currency" element={<Suspense fallback={<LoadingSplash />}><CurrencyPage /></Suspense>} />
+              <Route path="/customers" element={<Suspense fallback={<LoadingSplash />}><CustomersPage /></Suspense>} />
+              <Route path="/suppliers" element={<Suspense fallback={<LoadingSplash />}><SuppliersPage /></Suspense>} />
+              <Route path="/settings" element={<Suspense fallback={<LoadingSplash />}><Settings /></Suspense>} />
+              <Route path="/settings/uoms" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
 +              {/* Friendly top-level path for sidebar */}
-              <Route path="/uom" element={<UomSettings />} />
-              <Route path="/bom" element={<BOMPage />} />
+              <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
+              <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
             </Route>
           </Route>
         </Route>

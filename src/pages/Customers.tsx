@@ -5,6 +5,7 @@ import { supabase } from '../lib/db' // keep your existing client import
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
+import { useI18n } from '../lib/i18n'
 
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -67,6 +68,7 @@ export default function Customers() {
   const { user } = useAuth()
   const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
+  const { t } = useI18n()
 
   const [loading, setLoading] = useState(true)
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -200,34 +202,34 @@ export default function Customers() {
   }
 
   // ---------- Render ----------
-  if (!user) return <div className="p-6 text-muted-foreground">Please sign in to manage customers.</div>
-  if (loading) return <div className="p-6">Loading…</div>
+  if (!user) return <div className="p-6 text-muted-foreground">{t('auth.title.signIn')}</div>
+  if (loading) return <div className="p-6">{t('loading')}</div>
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Customers</h1>
+        <h1 className="text-3xl font-bold">{t('customers.title')}</h1>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create Customer</CardTitle>
+          <CardTitle>{t('customers.create')}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="code">Code *</Label>
+              <Label htmlFor="code">{t('customers.code')} *</Label>
               <Input id="code" value={code} onChange={e => setCode(e.target.value)} placeholder="e.g., CUST-001" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="Customer name" />
+              <Label htmlFor="name">{t('customers.name')} *</Label>
+              <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder={t('customers.name')} />
             </div>
             <div className="space-y-2">
-              <Label>Currency</Label>
+              <Label>{t('customers.currency')}</Label>
               <Select value={currencyCode} onValueChange={setCurrencyCode}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select currency (optional)" />
+                  <SelectValue placeholder={t('orders.currency')} />
                 </SelectTrigger>
                 <SelectContent>
                   {currencies.map(c => (
@@ -240,39 +242,39 @@ export default function Customers() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('customers.email')}</Label>
               <Input id="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="customer@email.com" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
+              <Label htmlFor="phone">{t('customers.phone')}</Label>
               <Input id="phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+258 ..." />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="taxId">Tax ID</Label>
+              <Label htmlFor="taxId">{t('customers.taxId')}</Label>
               <Input id="taxId" value={taxId} onChange={e => setTaxId(e.target.value)} placeholder="NIF / VAT" />
             </div>
 
             <div className="space-y-2 md:col-span-3">
-              <Label htmlFor="billingAddress">Billing Address</Label>
+              <Label htmlFor="billingAddress">{t('customers.billing')}</Label>
               <Input id="billingAddress" value={billingAddress} onChange={e => setBillingAddress(e.target.value)} placeholder="Street, City…" />
             </div>
             <div className="space-y-2 md:col-span-3">
-              <Label htmlFor="shippingAddress">Shipping Address</Label>
+              <Label htmlFor="shippingAddress">{t('customers.shipping')}</Label>
               <Input id="shippingAddress" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} placeholder="Street, City…" />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="paymentTerms">Payment Terms</Label>
+              <Label htmlFor="paymentTerms">{t('customers.paymentTerms')}</Label>
               <Input id="paymentTerms" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="Net 30, COD, etc." />
             </div>
             <div className="space-y-2 md:col-span-1">
-              <Label htmlFor="notes">Notes</Label>
+              <Label htmlFor="notes">{t('customers.notes')}</Label>
               <Input id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
             </div>
 
             <div className="flex items-end">
               <Button type="submit" disabled={!can.createMaster(role)}>
-                Create
+                {t('customers.create')}
               </Button>
             </div>
           </form>
@@ -281,24 +283,24 @@ export default function Customers() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Customers List</CardTitle>
+          <CardTitle>{t('customers.list')}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b">
-                <th className="py-2 pr-2">Code</th>
-                <th className="py-2 pr-2">Name</th>
-                <th className="py-2 pr-2">Currency</th>
-                <th className="py-2 pr-2">Email</th>
-                <th className="py-2 pr-2">Phone</th>
-                <th className="py-2 pr-2">Actions</th>
+                <th className="py-2 pr-2">{t('customers.code')}</th>
+                <th className="py-2 pr-2">{t('customers.name')}</th>
+                <th className="py-2 pr-2">{t('customers.currency')}</th>
+                <th className="py-2 pr-2">{t('customers.email')}</th>
+                <th className="py-2 pr-2">{t('customers.phone')}</th>
+                <th className="py-2 pr-2">{t('customers.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {customers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-muted-foreground">No customers yet.</td>
+                  <td colSpan={6} className="py-4 text-muted-foreground">{t('customers.empty')}</td>
                 </tr>
               )}
               {customers.map(c => (
@@ -313,9 +315,9 @@ export default function Customers() {
                       <Button
                         variant="destructive"
                         disabled={!can.deleteMaster(role)}
-                        onClick={() => (can.deleteMaster(role) ? handleDelete(c.id) : toast.error('Only MANAGER+ can delete customers'))}
+                        onClick={() => (can.deleteMaster(role) ? handleDelete(c.id) : toast.error(''))}
                       >
-                        Delete
+                        {t('common.remove')}
                       </Button>
                     </div>
                   </td>

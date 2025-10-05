@@ -9,6 +9,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import { setBaseCurrencyCode } from '../lib/currency'
+import { useI18n } from '../lib/i18n'
 
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type FxRate = {
@@ -31,6 +32,7 @@ const DEFAULT_CURRENCIES: Currency[] = [
 
 export default function CurrencyPage() {
   const { companyId } = useOrg()
+  const { t } = useI18n()
 
   const [loading, setLoading] = useState(true)
   const [allCurrencies, setAllCurrencies] = useState<Currency[]>([])
@@ -212,7 +214,7 @@ export default function CurrencyPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold">Currency &amp; FX</h1>
+        <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
         <Card><CardContent className="p-6"><div className="h-24 rounded bg-muted animate-pulse" /></CardContent></Card>
         <Card><CardContent className="p-6"><div className="h-24 rounded bg-muted animate-pulse" /></CardContent></Card>
         <Card><CardContent className="p-6"><div className="h-24 rounded bg-muted animate-pulse" /></CardContent></Card>
@@ -222,14 +224,14 @@ export default function CurrencyPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Currency &amp; FX</h1>
+      <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
 
       {/* Allowed per company */}
       <Card>
-        <CardHeader><CardTitle>Allowed Currencies (this company)</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('currency.allowed')}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
           <div className="text-sm text-muted-foreground">
-            Toggle which codes this company can use. Changes here don’t affect other companies.
+            Toggle which codes this company can use.
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -260,7 +262,7 @@ export default function CurrencyPage() {
                     </Button>
                   ) : (
                     <Button size="sm" className="ml-1" onClick={() => addAllowed(c.code)}>
-                      Enable
+                      {t('suppliers.enable')}
                     </Button>
                   )}
                 </div>
@@ -272,10 +274,10 @@ export default function CurrencyPage() {
 
       {/* Base currency */}
       <Card>
-        <CardHeader><CardTitle>Base Currency (this company)</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('currency.base')}</CardTitle></CardHeader>
         <CardContent className="flex items-end gap-3">
           <div className="w-72">
-            <Label>Base Currency</Label>
+            <Label>{t('currency.baseLabel')}</Label>
             <Select value={base} onValueChange={setBase}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -287,20 +289,20 @@ export default function CurrencyPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={saveBase}>Save</Button>
+          <Button onClick={saveBase}>{t('currency.save')}</Button>
         </CardContent>
       </Card>
 
       {/* FX */}
       <Card>
-        <CardHeader><CardTitle>Add / Update FX Rate</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('currency.addFx')}</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-5">
           <div>
-            <Label>Date</Label>
+            <Label>{t('currency.date')}</Label>
             <Input type="date" value={fxDate} onChange={e => setFxDate(e.target.value)} />
           </div>
           <div>
-            <Label>From</Label>
+            <Label>{t('currency.from')}</Label>
             <Select value={from} onValueChange={setFrom}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -309,7 +311,7 @@ export default function CurrencyPage() {
             </Select>
           </div>
           <div>
-            <Label>To</Label>
+            <Label>{t('currency.to')}</Label>
             <Select value={to} onValueChange={setTo}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -318,7 +320,7 @@ export default function CurrencyPage() {
             </Select>
           </div>
           <div>
-            <Label>Rate (1 From = ? To)</Label>
+            <Label>{t('currency.rate')}</Label>
             <Input
               type="number"
               min="0"
@@ -329,26 +331,26 @@ export default function CurrencyPage() {
             />
           </div>
           <div className="flex items-end">
-            <Button onClick={addFx}>Save Rate</Button>
+            <Button onClick={addFx}>{t('currency.saveRate')}</Button>
           </div>
         </CardContent>
       </Card>
 
       {/* Recent rates */}
       <Card>
-        <CardHeader><CardTitle>Recent Rates</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('currency.recentRates')}</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b">
-                <th className="py-2 pr-2">Date</th>
-                <th className="py-2 pr-2">Pair</th>
-                <th className="py-2 pr-2">Rate</th>
+                <th className="py-2 pr-2">{t('table.date')}</th>
+                <th className="py-2 pr-2">{t('currency.pair')}</th>
+                <th className="py-2 pr-2">{t('currency.rate')}</th>
               </tr>
             </thead>
             <tbody>
               {fx.length === 0 && (
-                <tr><td colSpan={3} className="py-4 text-muted-foreground">No rates saved.</td></tr>
+                <tr><td colSpan={3} className="py-4 text-muted-foreground">{t('currency.noRates')}</td></tr>
               )}
               {fx.map(r => (
                 <tr key={r.id} className="border-b">

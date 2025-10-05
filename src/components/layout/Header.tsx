@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import ThemeToggle from '../ThemeToggle'
 import CompanySwitcher from '../CompanySwitcher'
+import { useI18n } from '../../lib/i18n'
 
 interface User {
   id: string
@@ -43,6 +44,7 @@ function useClickOutside<T extends HTMLElement>(onClose: () => void) {
 }
 
 export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderProps) {
+  const { t } = useI18n()
   const initial =
     (user && typeof user.name === 'string' && user.name.length > 0)
       ? user.name.charAt(0).toUpperCase()
@@ -50,7 +52,7 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
 
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
-  const roleLine = `${companyName ?? 'Company'}${myRole ? ` · ${myRole}` : ''}`
+  const roleLine = `${companyName ?? t('none')}${myRole ? ` · ${myRole}` : ''}`
 
   const [open, setOpen] = useState(false)
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false))
@@ -71,7 +73,7 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search items, SKU, barcode..." className="pl-10 w-64" />
+          <Input placeholder={t('common.searchPlaceholder')} className="pl-10 w-64" />
         </div>
       </div>
 
@@ -110,7 +112,7 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
                     onClick={() => { setOpen(false); (logout as any)?.() }}
                   >
                     <LogOut className="h-4 w-4" />
-                    Sign out
+                    {t('common.signOut')}
                   </button>
                 </div>
               </div>

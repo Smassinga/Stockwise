@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from '../components/ui/sheet'
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
+import { useI18n } from '../lib/i18n'
 
 type CashSummary = { beginning: number; inflows: number; outflows: number; net: number; ending: number }
 type CashTx = {
@@ -48,6 +49,7 @@ const monthStartISO = () => {
 }
 
 export default function CashPage() {
+  const { t } = useI18n()
   const { companyId } = useOrg()
   const [from, setFrom] = useState<string>(monthStartISO())
   const [to, setTo] = useState<string>(todayISO())
@@ -274,24 +276,24 @@ export default function CashPage() {
       {/* Filters + Add */}
       <div className="flex items-end gap-2">
         <div>
-          <Label>From</Label>
+          <Label>{t('filters.from')}</Label>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div>
-          <Label>To</Label>
+          <Label>{t('filters.to')}</Label>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
         <div>
-          <Label>Type</Label>
+          <Label>{t('filters.type')}</Label>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="All types" />
+              <SelectValue placeholder={t('filters.type.all')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="sale_receipt">Sale receipt (in)</SelectItem>
-              <SelectItem value="purchase_payment">Purchase payment (out)</SelectItem>
-              <SelectItem value="adjustment">Adjustment</SelectItem>
+              <SelectItem value="all">{t('cash.allTypes')}</SelectItem>
+              <SelectItem value="sale_receipt">{t('cash.saleReceipt')}</SelectItem>
+              <SelectItem value="purchase_payment">{t('cash.purchasePayment')}</SelectItem>
+              <SelectItem value="adjustment">{t('cash.adjustment')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -299,35 +301,35 @@ export default function CashPage() {
         <div className="ml-auto flex gap-2">
           <Sheet open={openAdd} onOpenChange={setOpenAdd}>
             <SheetTrigger asChild>
-              <Button>+ Add transaction</Button>
+              <Button>+ {t('cash.addTx')}</Button>
             </SheetTrigger>
             <SheetContent>
               <SheetHeader>
-                <SheetTitle>Add cash transaction</SheetTitle>
+                <SheetTitle>{t('cash.addCashTx')}</SheetTitle>
                 <SheetDescription className="sr-only">
-                  Fill out the fields below to record a cash transaction.
+                  {t('cash.addCashTx')}
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-3 mt-4">
                 <div>
-                  <Label>Date</Label>
+                  <Label>{t('table.date')}</Label>
                   <Input type="date" value={addForm.date} onChange={(e) => setAddForm((v) => ({ ...v, date: e.target.value }))} />
                 </div>
                 <div>
-                  <Label>Type</Label>
+                  <Label>{t('filters.type')}</Label>
                   <Select value={addForm.type} onValueChange={(v: any) => setAddForm((f) => ({ ...f, type: v }))}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sale_receipt">Sale receipt (in)</SelectItem>
-                      <SelectItem value="purchase_payment">Purchase payment (out)</SelectItem>
-                      <SelectItem value="adjustment">Adjustment</SelectItem>
+                      <SelectItem value="sale_receipt">{t('cash.saleReceipt')}</SelectItem>
+                      <SelectItem value="purchase_payment">{t('cash.purchasePayment')}</SelectItem>
+                      <SelectItem value="adjustment">{t('cash.adjustment')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Amount ({baseCurrency || 'MZN'})</Label>
+                  <Label>{t('cash.amount', { code: baseCurrency || 'MZN' })}</Label>
                   <Input
                     inputMode="decimal"
                     placeholder="e.g. 1500 or -450"
@@ -336,18 +338,18 @@ export default function CashPage() {
                   />
                 </div>
                 <div>
-                  <Label>Memo</Label>
-                  <Input placeholder="Optional" value={addForm.memo} onChange={(e) => setAddForm((v) => ({ ...v, memo: e.target.value }))} />
+                  <Label>{t('cash.memo')}</Label>
+                  <Input placeholder={t('cash.optional')} value={addForm.memo} onChange={(e) => setAddForm((v) => ({ ...v, memo: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="col-span-1">
-                    <Label>Ref type</Label>
+                    <Label>{t('filters.ref')}</Label>
                     <Select value={addForm.refType} onValueChange={(v: any) => setAddForm((f) => ({ ...f, refType: v }))}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="none">{t('common.none')}</SelectItem>
                         <SelectItem value="SO">SO</SelectItem>
                         <SelectItem value="PO">PO</SelectItem>
                         <SelectItem value="ADJ">ADJ</SelectItem>
@@ -355,16 +357,16 @@ export default function CashPage() {
                     </Select>
                   </div>
                   <div className="col-span-2">
-                    <Label>Ref ID</Label>
+                    <Label>{t('movements.refId')}</Label>
                     <Input
-                      placeholder="UUID (optional)"
+                      placeholder="UUID"
                       value={addForm.refId}
                       onChange={(e) => setAddForm((v) => ({ ...v, refId: e.target.value }))}
                     />
                   </div>
                 </div>
                 <Button disabled={savingTx} onClick={addTransaction}>
-                  {savingTx ? 'Saving…' : 'Add'}
+                  {savingTx ? t('actions.saving') : t('cash.add')}
                 </Button>
               </div>
             </SheetContent>
@@ -375,33 +377,33 @@ export default function CashPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <Card>
-          <CardHeader><CardTitle>Beginning</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('cash.beginning')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(summary?.beginning ?? 0)}</CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Inflows</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('cash.inflows')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(summary?.inflows ?? 0)}</CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Outflows</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('cash.outflows')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(summary?.outflows ?? 0)}</CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Net</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('cash.net')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(summary?.net ?? 0)}</CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Ending</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('cash.ending')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">{formatMoneyBase(summary?.ending ?? 0)}</CardContent>
         </Card>
       </div>
 
       {/* Beginning balance editor */}
       <Card>
-        <CardHeader><CardTitle>Beginning balance</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('cash.beginningBalance')}</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div>
-            <Label>As of</Label>
+            <Label>{t('cash.asOf')}</Label>
             <Input
               type="date"
               value={book?.beginning_as_of ?? todayISO()}
@@ -415,7 +417,7 @@ export default function CashPage() {
             />
           </div>
           <div>
-            <Label>Amount ({baseCurrency || 'MZN'})</Label>
+            <Label>{t('cash.amount', { code: baseCurrency || 'MZN' })}</Label>
             <Input
               inputMode="decimal"
               value={String(book?.beginning_balance_base ?? 0)}
@@ -430,7 +432,7 @@ export default function CashPage() {
             />
           </div>
           <Button onClick={upsertBeginningBalance} disabled={savingBeg}>
-            {savingBeg ? 'Saving…' : book?.id ? 'Update' : 'Create'}
+            {savingBeg ? t('actions.saving') : book?.id ? t('cash.update') : t('cash.create')}
           </Button>
         </CardContent>
       </Card>
@@ -438,15 +440,15 @@ export default function CashPage() {
       {/* Awaiting approvals */}
       <Card className="overflow-hidden">
         <CardHeader className="flex items-center justify-between">
-          <CardTitle>Awaiting approvals</CardTitle>
+          <CardTitle>{t('cash.awaiting')}</CardTitle>
           <div className="flex items-center gap-2">
-            <Label>Kind</Label>
+            <Label>{t('cash.kind')}</Label>
             <Select value={queueKind} onValueChange={(v: 'ALL' | 'SO' | 'PO') => setQueueKind(v)}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All</SelectItem>
+                <SelectItem value="ALL">{t('common.all') ?? 'All'}</SelectItem>
                 <SelectItem value="SO">SO</SelectItem>
                 <SelectItem value="PO">PO</SelectItem>
               </SelectContent>
@@ -458,15 +460,15 @@ export default function CashPage() {
           <table className="w-full text-sm">
             <thead className="text-left sticky top-0 bg-background">
               <tr>
-                <th className="py-2 pr-3">Kind</th>
-                <th className="py-2 pr-3">Order</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3 text-right">Total</th>
-                <th className="py-2 pr-3 text-right">Posted</th>
-                <th className="py-2 pr-3 text-right">Due</th>
-                <th className="py-2 pr-3 text-right">Suggest</th>
-                <th className="py-2 pr-3">Last activity</th>
-                <th className="py-2 pr-0 text-right">Action</th>
+                <th className="py-2 pr-3">{t('cash.kind')}</th>
+                <th className="py-2 pr-3">{t('cash.order')}</th>
+                <th className="py-2 pr-3">{t('cash.status')}</th>
+                <th className="py-2 pr-3 text-right">{t('cash.total')}</th>
+                <th className="py-2 pr-3 text-right">{t('cash.posted')}</th>
+                <th className="py-2 pr-3 text-right">{t('cash.due')}</th>
+                <th className="py-2 pr-3 text-right">{t('cash.suggest')}</th>
+                <th className="py-2 pr-3">{t('cash.lastActivity')}</th>
+                <th className="py-2 pr-0 text-right">{t('cash.action')}</th>
               </tr>
             </thead>
             <tbody>
@@ -481,14 +483,14 @@ export default function CashPage() {
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(q.suggested_amount_base)}</td>
                   <td className="py-2 pr-3">{q.last_activity_at ?? '—'}</td>
                   <td className="py-2 pr-0 text-right">
-                    <Button size="sm" onClick={() => approveRow(q)}>Approve</Button>
+                    <Button size="sm" onClick={() => approveRow(q)}>{t('cash.approve')}</Button>
                   </td>
                 </tr>
               ))}
               {filteredQueue.length === 0 && (
                 <tr>
                   <td className="py-6 text-muted-foreground" colSpan={9}>
-                    Nothing awaiting approval.
+                    {t('cash.nothing')}
                   </td>
                 </tr>
               )}
@@ -499,20 +501,20 @@ export default function CashPage() {
 
       {/* Ledger table */}
       <Card className="overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Transactions</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>{t('cash.ledger')}</CardTitle>
         </CardHeader>
         {/* 👇 scrollable area with sticky header */}
         <CardContent className="overflow-x-auto overflow-y-auto max-h-[55vh]">
           <table className="w-full text-sm">
             <thead className="text-left sticky top-0 bg-background">
               <tr>
-                <th className="py-2 pr-3">Date</th>
-                <th className="py-2 pr-3">Type</th>
-                <th className="py-2 pr-3">Ref</th>
-                <th className="py-2 pr-3">Memo</th>
-                <th className="py-2 pr-3 text-right">Amount ({baseCurrency || 'MZN'})</th>
-                <th className="py-2 pl-3 text-right">Running</th>
+                <th className="py-2 pr-3">{t('table.date')}</th>
+                <th className="py-2 pr-3">{t('filters.type')}</th>
+                <th className="py-2 pr-3">{t('table.ref')}</th>
+                <th className="py-2 pr-3">{t('bank.memo')}</th>
+                <th className="py-2 pr-3 text-right">{t('cash.amount', { code: baseCurrency || 'MZN' })}</th>
+                <th className="py-2 pl-3 text-right">{t('cash.running')}</th>
               </tr>
             </thead>
             <tbody>
@@ -520,8 +522,8 @@ export default function CashPage() {
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
                   <td className="py-2 pr-3">{r.type}</td>
-                  <td className="py-2 pr-3">{r.ref_type ? `${r.ref_type}${r.ref_id ? `:${r.ref_id.slice(0, 8)}…` : ''}` : '—'}</td>
-                  <td className="py-2 pr-3">{r.memo ?? '—'}</td>
+                  <td className="py-2 pr-3">{r.ref_type ? `${r.ref_type}${r.ref_id ? `:${r.ref_id.slice(0, 8)}…` : ''}` : t('common.dash')}</td>
+                  <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right font-medium">{formatMoneyBase(r.running_balance)}</td>
                 </tr>
@@ -529,7 +531,7 @@ export default function CashPage() {
               {rows.length === 0 && (
                 <tr>
                   <td className="py-6 text-muted-foreground" colSpan={6}>
-                    No transactions in range.
+                    {t('bank.noTx')}
                   </td>
                 </tr>
               )}

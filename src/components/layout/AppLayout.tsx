@@ -31,6 +31,7 @@ import { hasRole, CanManageUsers } from '../../lib/roles'
 import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 import CompanySwitcher from '../CompanySwitcher'
+import { useI18n } from '../../lib/i18n'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -40,25 +41,27 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>
 }
 
-const BASE_NAV: NavItem[] = [
-  { label: 'Dashboard',    to: '/dashboard',    icon: LayoutGrid },
-  { label: 'Items',        to: '/items',        icon: Package },
-  { label: 'BOM',          to: '/bom',          icon: Layers },
-  { label: 'Movements',    to: '/movements',    icon: ArrowLeftRight },
-  { label: 'Transactions', to: '/transactions', icon: Receipt },
-  { label: 'Cash',         to: '/cash',         icon: Wallet },
-  { label: 'Banks',        to: '/banks',        icon: Banknote },
-  { label: 'Orders',       to: '/orders',       icon: ShoppingCart },
-  { label: 'Reports',      to: '/reports',      icon: BarChart3 },
-  { label: 'Stock Levels', to: '/stock-levels', icon: ClipboardList },
-  { label: 'Warehouses',   to: '/warehouses',   icon: Boxes },
-  { label: 'Users',        to: '/users',        icon: UsersIcon }, // role-filtered
-  { label: 'Customers',    to: '/customers',    icon: Users },
-  { label: 'Suppliers',    to: '/suppliers',    icon: Truck },
-  { label: 'Currency',     to: '/currency',     icon: Coins },
-  { label: 'UoM',          to: '/uom',          icon: Ruler },
-  { label: 'Settings',     to: '/settings',     icon: SettingsIcon },
-]
+function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
+  return [
+    { label: t('nav.dashboard'),    to: '/dashboard',    icon: LayoutGrid },
+    { label: t('nav.items'),        to: '/items',        icon: Package },
+    { label: t('nav.bom'),          to: '/bom',          icon: Layers },
+    { label: t('nav.movements'),    to: '/movements',    icon: ArrowLeftRight },
+    { label: t('nav.transactions'), to: '/transactions', icon: Receipt },
+    { label: t('nav.cash'),         to: '/cash',         icon: Wallet },
+    { label: t('nav.banks'),        to: '/banks',        icon: Banknote },
+    { label: t('nav.orders'),       to: '/orders',       icon: ShoppingCart },
+    { label: t('nav.reports'),      to: '/reports',      icon: BarChart3 },
+    { label: t('nav.stockLevels'),  to: '/stock-levels', icon: ClipboardList },
+    { label: t('nav.warehouses'),   to: '/warehouses',   icon: Boxes },
+    { label: t('nav.users'),        to: '/users',        icon: UsersIcon },
+    { label: t('nav.customers'),    to: '/customers',    icon: Users },
+    { label: t('nav.suppliers'),    to: '/suppliers',    icon: Truck },
+    { label: t('nav.currency'),     to: '/currency',     icon: Coins },
+    { label: t('nav.uom'),          to: '/uom',          icon: Ruler },
+    { label: t('nav.settings'),     to: '/settings',     icon: SettingsIcon },
+  ]
+}
 
 function useClickOutside<T extends HTMLElement>(onClose: () => void) {
   const ref = useRef<T | null>(null)
@@ -85,11 +88,13 @@ export function AppLayout({ user, children }: Props) {
   const [open, setOpen] = useState(false)
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
+  const { t } = useI18n()
 
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, CanManageUsers)
-    return BASE_NAV.filter(item => !(item.to === '/users' && !canManage))
-  }, [myRole])
+    const base = buildNavLabels(t)
+    return base.filter(item => !(item.to === '/users' && !canManage))
+  }, [myRole, t])
 
   const isActive = (to: string) =>
     location.pathname === to || location.pathname.startsWith(to + '/')
@@ -149,7 +154,7 @@ export function AppLayout({ user, children }: Props) {
             onClick={() => logout?.()}
           >
             <LogOut className="mr-2 h-4 w-4" />
-            Sign out
+            {t('common.signOut')}
           </Button>
         </div>
       </aside>
@@ -215,7 +220,7 @@ export function AppLayout({ user, children }: Props) {
             onClick={() => { setOpen(false); logout?.() }}
           >
             <LogOut className="mr-2 h-4 w-4" />
-            Sign out
+            {t('common.signOut')}
           </Button>
         </div>
       </aside>
@@ -226,7 +231,7 @@ export function AppLayout({ user, children }: Props) {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="ml-1 hidden flex-1 md:flex">
-            <Input placeholder="Search items, SKU, barcode..." className="max-w-xl" />
+            <Input placeholder={t('common.searchPlaceholder')} className="max-w-xl" />
           </div>
           <div className="ml-auto flex items-center gap-2">
             <NotificationCenter />
@@ -253,7 +258,7 @@ export function AppLayout({ user, children }: Props) {
                       onClick={() => { setMenuOpen(false); logout?.() }}
                     >
                       <LogOut className="h-4 w-4" />
-                      Sign out
+                      {t('common.signOut')}
                     </button>
                   </div>
                 </div>
