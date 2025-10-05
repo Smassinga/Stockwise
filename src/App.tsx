@@ -19,6 +19,7 @@ import BOMPage from './pages/BOM'
 import Auth from './pages/Auth';
 import UomSettings from './pages/UomSettings';
 import AuthCallback from './pages/AuthCallback';
+import AcceptInvite from './pages/AcceptInvite';
 import Onboarding from './pages/Onboarding';
 import Transactions from './pages/Transactions'
 import Cash from './pages/Cash'   // <-- NEW
@@ -101,7 +102,10 @@ export default function App() {
           <Route index element={<Auth />} />
         </Route>
         <Route path="/auth/callback" element={<AuthCallback />} />
-
+        
+        {/* Public: invite landing — stores token & handles auth/redirect */}
+        <Route path="/accept-invite" element={<AcceptInvite />} />
+        
         {/* Private area (must be logged in) */}
         <Route element={<RequireAuth />}>
           {/* Onboarding is private but outside the app shell */}

@@ -173,6 +173,9 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
   }
 }
 
+// --- NEW: per-line on-hand state
+type OnHandByBin = { bin_id: string | null; qty: number }
+
 export default function SalesOrders() {
   const { t } = useI18n()
   const { companyId } = useOrg()
@@ -221,14 +224,14 @@ export default function SalesOrders() {
   // view+ship
   const [soViewOpen, setSoViewOpen] = useState(false)
   const [selectedSO, setSelectedSO] = useState<SO | null>(null)
-  const [shipWhId, setShipWhId] = useState<string>('')
-  const [shipBinId, setShipBinId] = useState<string>('')
 
-  // live bin previews
-  const [soBinsPreview, setSoBinsPreview] = useState<
-    Record<string, Array<{ binId: string | null; code: string; qty: number }>>
-  >({})
-  const [soBinOnHand, setSoBinOnHand] = useState<Record<string, number>>({})
+  // GLOBAL override/default warehouse (optional UX)
+  const [shipWhId, setShipWhId] = useState<string>('')
+
+  // --- NEW: per-line warehouse + bin selection and on-hand
+  const [whByLine, setWhByLine] = useState<Record<string, string>>({})
+  const [binByLine, setBinByLine] = useState<Record<string, string>>({})
+  const [onHandByLine, setOnHandByLine] = useState<Record<string, OnHandByBin[]>>({})
 
   // --- Shipped SOs browser state
   const PAGE_SIZE = 100
@@ -252,12 +255,14 @@ export default function SalesOrders() {
   }
 
   async function fetchShippedPage(page = 0) {
+    if (!companyId) return
     const statuses = shippedStatusList()
     if (statuses.length === 0) { setShippedRows([]); setShippedHasMore(false); return }
 
     let q = supabase
       .from('sales_orders')
       .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,updated_at,created_at,order_no,bill_to_name')
+      .eq('company_id', companyId)
       .in('status', statuses as SoStatus[])
       .order('updated_at', { ascending: false })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
@@ -277,11 +282,11 @@ export default function SalesOrders() {
   }
 
   useEffect(() => {
-    if (!shippedOpen) return
+    if (!shippedOpen || !companyId) return
     const t = setTimeout(() => { resetShippedPaging(); fetchShippedPage(0) }, 250)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shippedOpen, shipQ, shipDateFrom, shipDateTo, shipStatuses.shipped, shipStatuses.closed])
+  }, [shippedOpen, shipQ, shipDateFrom, shipDateTo, shipStatuses.shipped, shipStatuses.closed, companyId])
 
   // helpers
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
@@ -349,17 +354,15 @@ export default function SalesOrders() {
     return s.bill_to_name ?? s.customer ?? (s.customer_id || tt('none', '(none)'))
   }
 
-  const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
   const remaining = (l: SOL) => Math.max(n(l.qty) - n(l.shipped_qty), 0)
 
   // load masters, conversions, settings, lists, defaults, (global) branding fallbacks
   useEffect(() => {
     ;(async () => {
       try {
-        const [it, uu, cs, appRes] = await Promise.all([
+        const [it, uu, appRes] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
-          supabase.from('company_currencies_view').select('code,name,symbol,decimals').order('code', { ascending: true }),
           supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])
         setApp((appRes.data as any)?.data ?? {})
@@ -367,20 +370,11 @@ export default function SalesOrders() {
         setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
         if (uu.error) throw uu.error
         setUoms(((uu.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
-        setCurrencies((cs.data || []) as Currency[])
-        setBaseCode(await getBaseCurrencyCode())
 
         const { data: convRows, error: convErr } = await supabase
           .from('uom_conversions')
           .select('from_uom_id,to_uom_id,factor')
         setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))
-
-        const custs = await supabase
-          .from('customers')
-          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,payment_terms')
-          .order('name', { ascending: true })
-        if (custs.error) throw custs.error
-        setCustomers((custs.data || []) as Customer[])
 
         const [so, sol] = await Promise.all([ db.salesOrders.list(), db.salesOrderLines.list() ])
         const withFlags = (sol || []).map((l: any) => ({
@@ -391,21 +385,6 @@ export default function SalesOrders() {
         })) as SOL[]
         setSOs((so || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
         setSOLines(withFlags)
-
-        const [whRes, binRes] = await Promise.all([
-          db.warehouses.list({ orderBy: { name: 'asc' } }),
-          db.bins.list({ orderBy: { code: 'asc' } }),
-        ])
-        setWarehouses(whRes || [])
-        setBins(binRes || [])
-
-        if (whRes && whRes.length) {
-          const fromSettings = (appRes.data as any)?.data?.sales?.defaultFulfilWarehouseId
-          const preferred = whRes.find(w => w.id === fromSettings) ?? whRes[0]
-          setShipWhId(preferred.id)
-          const firstBin = (binRes || []).find(b => b.warehouseId === preferred.id)?.id || ''
-          setShipBinId(firstBin)
-        }
 
         // GLOBAL fallbacks for brand (used only if company_settings doesn't provide one)
         try {
@@ -439,12 +418,71 @@ export default function SalesOrders() {
     })()
   }, []) // once
 
-  // Load per-company brand + full profile (highest priority) when companyId becomes known
+  // Load company-scoped masters when companyId is known (A)
   useEffect(() => {
     if (!companyId) return
     ;(async () => {
       try {
-        // 1) companies (source of truth)
+        // 0) base currency for this company
+        setBaseCode(await getBaseCurrencyCode())
+
+        // 1) currencies scoped to company
+        const cs = await supabase
+          .from('company_currencies_view')
+          .select('code,name,symbol,decimals')
+          .order('code', { ascending: true })
+        if (cs.error) throw cs.error
+        setCurrencies((cs.data || []) as Currency[])
+
+        // 2) items scoped to company
+        const itRes = await supabase
+          .from('items')
+          .select('id,sku,name,base_uom_id')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
+        if (itRes.error) throw itRes.error
+        setItems(
+          (itRes.data || []).map((x: any) => ({
+            id: x.id, sku: x.sku, name: x.name, baseUomId: x.base_uom_id ?? x.baseUomId ?? '',
+          }))
+        )
+
+        // 3) customers
+        const custs = await supabase
+          .from('customers')
+          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,payment_terms')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
+        if (custs.error) throw custs.error
+        setCustomers((custs.data || []) as Customer[])
+
+        // 4) warehouses
+        const whs = await supabase
+          .from('warehouses')
+          .select('id,name,code')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
+        if (whs.error) throw whs.error
+        setWarehouses(((whs.data || []) as any[]).map(w => ({ id:w.id, name:w.name, code:w.code })))
+
+        // 5) bins
+        const bns = await supabase
+          .from('bins')
+          .select('id,code,name,warehouseId')
+          .eq('company_id', companyId)
+          .order('code', { ascending: true })
+        if (bns.error) throw bns.error
+        setBins(((bns.data || []) as any[]).map(b => ({ id:b.id, code:b.code, name:b.name, warehouseId:b.warehouseId })))
+
+        // 6) default WH (for the global override)
+        const fromSettings = (await supabase
+          .from('app_settings').select('data').eq('id', 'app').maybeSingle()
+        ).data as any
+        const prefId = fromSettings?.data?.sales?.defaultFulfilWarehouseId
+        const preferred = (whs.data || []).find((w:any) => w.id === prefId) ?? (whs.data || [])[0]
+        setShipWhId(preferred?.id || '')
+
+        // 7) branding—companies table (preferred)
         const row = await getCompanyProfileDB(companyId)
         setCompanyProfile(mapDBProfile(row))
         const nameFromCompanies = (row?.trade_name || row?.legal_name || '').trim()
@@ -452,7 +490,7 @@ export default function SalesOrders() {
         if (nameFromCompanies) setBrandName(nameFromCompanies)
         if (logoFromCompanies) setBrandLogoUrl(logoFromCompanies)
 
-        // 2) fallback to company_settings brand (if companies lacks a logo/name)
+        // 8) fallback to company_settings brand
         if (!logoFromCompanies || !nameFromCompanies) {
           const res = await supabase
             .from('company_settings')
@@ -466,7 +504,7 @@ export default function SalesOrders() {
           if (!nameFromCompanies && csName) setBrandName(csName)
         }
       } catch (e) {
-        console.warn('brand/profile load failed:', e)
+        console.warn('company-scoped masters load failed:', e)
       }
     })()
   }, [companyId])
@@ -479,107 +517,77 @@ export default function SalesOrders() {
     if (!exists) setSoCurrency(currencies[0].code)
   }, [currencies])
 
-  // live "top bins" preview across the selected warehouse
+  // Initialize per-line warehouse and bin when opening View
+  useEffect(() => {
+    if (!soViewOpen || !selectedSO) return
+    const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
+    setWhByLine(prev => {
+      const next = { ...prev }
+      const fallbackWh = shipWhId || warehouses[0]?.id || ''
+      for (const ln of lines) {
+        const key = String(ln.id)
+        if (!next[key]) next[key] = fallbackWh
+      }
+      return next
+    })
+  }, [soViewOpen, selectedSO, solines, shipWhId, warehouses])
+
+  // Fetch on-hand per line (group queries by warehouse)
   useEffect(() => {
     async function run() {
-      if (!soViewOpen || !selectedSO || !shipWhId) { setSoBinsPreview({}); return }
+      if (!soViewOpen || !selectedSO) { setOnHandByLine({}); return }
       const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
-      const itemIds = Array.from(new Set(lines.map(l => l.item_id)))
-      if (itemIds.length === 0) { setSoBinsPreview({}); return }
-      try {
+      if (lines.length === 0) { setOnHandByLine({}); return }
+
+      // Group items by selected warehouse
+      const groups = new Map<string, Set<string>>() // whId -> itemIds
+      for (const ln of lines) {
+        const wh = whByLine[String(ln.id)] || shipWhId
+        if (!wh) continue
+        if (!groups.has(wh)) groups.set(wh, new Set())
+        groups.get(wh)!.add(ln.item_id)
+      }
+
+      const result: Record<string, OnHandByBin[]> = {}
+      for (const [wh, itemsSet] of groups.entries()) {
+        const itemIds = Array.from(itemsSet)
         const { data, error } = await supabase
           .from('stock_levels')
           .select('item_id,bin_id,qty')
-          .eq('warehouse_id', shipWhId)
+          .eq('warehouse_id', wh)
           .in('item_id', itemIds)
-        if (error) throw error
-        const byItem: Record<string, Array<{ binId: string | null; code: string; qty: number }>> = {}
-        for (const r of (data || []) as Array<{ item_id: string; bin_id: string | null; qty: number | null }>) {
-          const qty = n(r.qty, 0)
-          const binId = r.bin_id
-          const code = binId ? (bins.find(b => b.id === binId)?.code || 'bin') : tt('orders.noBin', '(no bin)')
-          if (!byItem[r.item_id]) byItem[r.item_id] = []
-          byItem[r.item_id].push({ binId, code, qty })
+        if (error) { console.warn('on-hand fetch failed', error); continue }
+        const byItem: Record<string, OnHandByBin[]> = {}
+        for (const r of (data || []) as any[]) {
+          (byItem[r.item_id] ||= []).push({ bin_id: r.bin_id, qty: Number(r.qty) || 0 })
         }
-        Object.keys(byItem).forEach(k => byItem[k].sort((a, b) => b.qty - a.qty))
-        setSoBinsPreview(byItem)
-      } catch (e) {
-        console.warn('SO bin preview failed:', e)
-        setSoBinsPreview({})
+        // Map back to lines in this warehouse
+        for (const ln of lines.filter(l => (whByLine[String(l.id)] || shipWhId) === wh)) {
+          result[String(ln.id)] = (byItem[ln.item_id] || []).sort((a,b) => b.qty - a.qty)
+        }
       }
+
+      setOnHandByLine(result)
+
+      // Initialize default bin per line (first bin with stock; else first bin in that wh)
+      setBinByLine(prev => {
+        const next = { ...prev }
+        for (const ln of lines) {
+          const key = String(ln.id)
+          const wh = whByLine[key] || shipWhId
+          if (!wh) continue
+          if (!next[key]) {
+            const choices = result[key] || []
+            const withStock = choices.find(c => (c.qty || 0) > 0)?.bin_id
+            const firstBinInWh = bins.find(b => b.warehouseId === wh)?.id
+            next[key] = (withStock as string | undefined) || firstBinInWh || ''
+          }
+        }
+        return next
+      })
     }
     run()
-  }, [soViewOpen, selectedSO, shipWhId, bins, solines])
-
-  // on-hand for the selected bin
-  useEffect(() => {
-    async function run() {
-      if (!soViewOpen || !selectedSO || !shipWhId || !shipBinId) { setSoBinOnHand({}); return }
-      const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
-      const itemIds = Array.from(new Set(lines.map(l => l.item_id)))
-      if (itemIds.length === 0) { setSoBinOnHand({}); return }
-      try {
-        const { data, error } = await supabase
-          .from('stock_levels')
-          .select('item_id,qty')
-          .eq('warehouse_id', shipWhId)
-          .eq('bin_id', shipBinId)
-          .in('item_id', itemIds)
-        if (error) throw error
-        const map: Record<string, number> = {}
-        for (const r of (data || []) as Array<{ item_id: string; qty: number | null }>) {
-          map[r.item_id] = n(r.qty, 0)
-        }
-        setSoBinOnHand(map)
-      } catch (e) {
-        console.warn('SO bin on-hand fetch failed:', e)
-        setSoBinOnHand({})
-      }
-    }
-    run()
-  }, [soViewOpen, selectedSO, shipWhId, shipBinId, solines])
-
-  // stock helpers
-  const num = (v: any, d=0) => (Number.isFinite(Number(v)) ? Number(v) : d)
-  async function upsertStockLevel(whId: string, binId: string | null, itemId: string, deltaQtyBase: number) {
-    let q = supabase
-      .from('stock_levels')
-      .select('id,qty,avg_cost')
-      .eq('warehouse_id', whId)
-      .eq('item_id', itemId)
-      .limit(1)
-    q = binId ? q.eq('bin_id', binId) : q.is('bin_id', null)
-    const { data: found, error: selErr } = await q
-    if (selErr) throw selErr
-
-    if (!found || found.length === 0) {
-      if (deltaQtyBase > 0) {
-        await supabase.from('stock_levels').insert({
-          warehouse_id: whId,
-          bin_id: binId,
-          item_id: itemId,
-          qty: deltaQtyBase,
-          allocated_qty: 0,
-          avg_cost: 0,
-          updated_at: nowISO(),
-        } as any)
-      } else {
-        throw new Error(tt('orders.insufficientStock', 'Insufficient stock at source bin'))
-      }
-      return
-    }
-
-    const row = found[0] as { id: string; qty: number | null }
-    const oldQty = num(row.qty, 0)
-    const newQty = oldQty + deltaQtyBase
-    if (newQty < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock at source bin'))
-
-    const { error: updErr } = await supabase
-      .from('stock_levels')
-      .update({ qty: newQty, updated_at: nowISO() })
-      .eq('id', row.id)
-    if (updErr) throw updErr
-  }
+  }, [soViewOpen, selectedSO, solines, whByLine, bins, shipWhId])
 
   async function avgCostAt(whId: string, binId: string | null, itemId: string) {
     let q = supabase
@@ -722,11 +730,14 @@ export default function SalesOrders() {
     return await tryUpdateStatus(soId, targets)
   }
 
-  // Ship a line: ship the outstanding (qty - shipped_qty)
+  // --- Ship a line using the selected WH/BIN; DB trigger updates stock_levels
   async function doShipLineSO(so: SO, line: SOL) {
     try {
-      if (!shipWhId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
-      if (!shipBinId) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
+      const lineKey = String(line.id)
+      const whId = whByLine[lineKey]
+      const binId = binByLine[lineKey]
+      if (!whId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
+      if (!binId) return toast.error(tt('orders.selectSourceBin', 'Pick a From Bin for this line'))
 
       const total = n(line.qty)
       const already = n(line.shipped_qty)
@@ -747,15 +758,16 @@ export default function SalesOrders() {
           .replace('{from}', String(fromCode)).replace('{sku}', String(it.sku)))
       }
 
-      const { onHand, avgCost } = await avgCostAt(shipWhId, shipBinId, it.id)
-      if (onHand < qtyBaseOutstanding) throw new Error(tt('orders.insufficientStockBin', 'Insufficient stock in bin for item {sku}')
-        .replace('{sku}', String(it?.sku || '')))
+      // UX guard: verify on-hand snapshot for this line
+      const avail = (onHandByLine[lineKey] || []).find(x => x.bin_id === binId)?.qty || 0
+      if (avail < qtyBaseOutstanding) {
+        throw new Error(tt('orders.insufficientStockBin', 'Insufficient stock in bin for item {sku}')
+          .replace('{sku}', String(it?.sku || '')))
+      }
 
-      // 1) Deduct stock
-      await upsertStockLevel(shipWhId, shipBinId, it.id, -qtyBaseOutstanding)
-
-      // 2) Movement record
-      const mv = await supabase.from('stock_movements').insert({
+      // Movement insert (source of truth) — DB will reject if it would go negative
+      const { avgCost } = await avgCostAt(whId, binId, it.id)
+      const mvIns = await supabase.from('stock_movements').insert({
         type: 'issue',
         item_id: it.id,
         uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
@@ -763,18 +775,18 @@ export default function SalesOrders() {
         qty_base: qtyBaseOutstanding,
         unit_cost: avgCost,
         total_value: avgCost * qtyBaseOutstanding,
-        warehouse_from_id: shipWhId,
-        bin_from_id: shipBinId,
+        warehouse_from_id: whId,
+        bin_from_id: binId,
         notes: `SO ${soNo(so)}`,
         created_by: 'system',
         ref_type: 'SO',
         ref_id: (so as any).id,
         ref_line_id: line.id ?? null,
       } as any).select('id').single()
-      if (mv.error) throw mv.error
-      const movementId = (mv.data as any).id
+      if (mvIns.error) throw mvIns.error
+      const movementId = (mvIns.data as any).id
 
-      // 3) Sales shipment (for revenue reporting)
+      // Sales shipment (ignore duplicate if retried)
       const disc = n(line.discount_pct, 0)
       const revenue = outstanding * n(line.unit_price) * (1 - disc / 100)
       const fx = fxSO(so); const code = curSO(so) || 'MZN'
@@ -793,9 +805,10 @@ export default function SalesOrders() {
         revenue_base_amount: revenue * fx,
         company_id: (so as any).company_id ?? null
       } as any)
-      if (shipIns.error) throw shipIns.error
+      // If unique violation (23505) occurs, ignore — we consider it idempotent
+      if (shipIns.error && String(shipIns.error.code) !== '23505') throw shipIns.error
 
-      // 4) Mark shipped progress
+      // Update line shipped progress in UI
       const newShipped = already + outstanding
       const fully = newShipped >= total - 1e-9
       if (line.id) {
@@ -809,7 +822,15 @@ export default function SalesOrders() {
         ? { ...l, shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : l.shipped_at }
         : l))
 
-      // 5) If everything is shipped, close order per setting
+      // Decrement the local on-hand cache for the selected line
+      setOnHandByLine(prev => {
+        const arr = (prev[lineKey] || []).slice()
+        const idx = arr.findIndex(x => x.bin_id === binId)
+        if (idx >= 0) arr[idx] = { ...arr[idx], qty: Math.max(0, (arr[idx].qty || 0) - qtyBaseOutstanding) }
+        return { ...prev, [lineKey]: arr }
+      })
+
+      // If everything is shipped, close order per setting
       const outstandingLeft = solines.filter(l => l.so_id === so.id && remaining(l) > 0 && l.id !== line.id).length
       if (outstandingLeft === 0) {
         const final = await setSOFinalStatus(so.id)
@@ -825,14 +846,17 @@ export default function SalesOrders() {
     }
   }
 
+  // Ship all outstanding lines (each uses its own selected warehouse/bin)
   async function doShipSO(so: SO) {
     try {
-      if (!shipWhId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
-      if (!shipBinId) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
-
       const lines = solines.filter(l => l.so_id === so.id && remaining(l) > 0)
       if (!lines.length) return toast.error(tt('orders.noLinesToShip', 'No lines to ship'))
 
+      for (const l of lines) {
+        const key = String(l.id)
+        if (!whByLine[key]) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
+        if (!binByLine[key]) return toast.error(tt('orders.selectSourceBin', 'Pick a From Bin for each line'))
+      }
       for (const l of lines) {
         // eslint-disable-next-line no-await-in-loop
         await doShipLineSO(so, l)
@@ -1364,7 +1388,7 @@ export default function SalesOrders() {
         <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
           <SheetHeader>
             <SheetTitle>{tt('orders.soDetails', 'SO Details')}</SheetTitle>
-            <SheetDescription className="sr-only">{tt('orders.soDetailsDesc', 'Review, select source bin, and ship')}</SheetDescription>
+            <SheetDescription className="sr-only">{tt('orders.soDetailsDesc', 'Review, pick source warehouse/bin per line, and ship')}</SheetDescription>
           </SheetHeader>
 
           {!selectedSO ? (
@@ -1380,32 +1404,32 @@ export default function SalesOrders() {
                 <div><Label>{tt('orders.expectedShip', 'Expected Ship')}</Label><div>{(selectedSO as any).expected_ship_date || tt('none', '(none)')}</div></div>
               </div>
 
+              {/* Global "From Warehouse" = quick setter for all lines */}
               <div className="grid md:grid-cols-3 gap-3">
                 <div>
-                  <Label>{tt('orders.fromWarehouse', 'From Warehouse')}</Label>
-                  <Select value={shipWhId} onValueChange={(v) => {
-                    setShipWhId(v)
-                    const first = binsForWH(v)[0]?.id || ''
-                    setShipBinId(first)
-                  }}>
+                  <Label>{tt('orders.fromWarehouse', 'From Warehouse (set for all lines)')}</Label>
+                  <Select
+                    value={shipWhId}
+                    onValueChange={(v) => {
+                      setShipWhId(v)
+                      // Set all outstanding lines to this WH and clear their bins (will auto-pick best bin)
+                      setWhByLine(prev => {
+                        const next = { ...prev }
+                        for (const ln of solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)) {
+                          next[String(ln.id)] = v
+                        }
+                        return next
+                      })
+                      setBinByLine({})
+                    }}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>{tt('orders.fromBin', 'From Bin')}</Label>
-                  <Select value={shipBinId} onValueChange={setShipBinId}>
-                    <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
-                    <SelectContent>
-                      {binsForWH(shipWhId).map(b => (
-                        <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end justify-end gap-2">
+                <div className="flex items-end justify-end gap-2 md:col-span-2">
                   <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
                   {String(selectedSO.status).toLowerCase() === 'confirmed' && (
                     <Button onClick={() => doShipSO(selectedSO)}>
@@ -1424,6 +1448,8 @@ export default function SalesOrders() {
                       <th className="py-2 px-3">{tt('orders.qtyUom', 'Qty (UoM)')}</th>
                       <th className="py-2 px-3">{tt('orders.discountPct', 'Disc %')}</th>
                       <th className="py-2 px-3">{tt('table.qtyBase', 'Qty (base)')}</th>
+                      <th className="py-2 px-3">{tt('orders.fromWarehouse', 'From Warehouse')}</th>
+                      <th className="py-2 px-3">{tt('orders.fromBin', 'From Bin')}</th>
                       <th className="py-2 px-3">{tt('orders.onHandBin', 'On-hand (bin)')}</th>
                       <th className="py-2 px-3">{tt('orders.binHint', 'Bin Hint')}</th>
                       <th className="py-2 px-3 text-right">{tt('orders.action', 'Action')}</th>
@@ -1440,27 +1466,84 @@ export default function SalesOrders() {
                         it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
 
                       const disc = n(l.discount_pct, 0)
-                      const onHandBin = soBinOnHand[l.item_id] ?? 0
-                      const enough = qtyBase != null && onHandBin >= qtyBase
 
-                      const tops = (soBinsPreview[l.item_id] || []).slice(0, 3)
+                      const key = String(l.id)
+                      const lineWh = whByLine[key] || shipWhId
+                      const lineOnHands = onHandByLine[key] || []
+                      const lineSelectedBin = binByLine[key] || ''
+                      const selectedBinQty = (lineOnHands.find(x => x.bin_id === lineSelectedBin)?.qty) ?? 0
+                      const enough = qtyBase != null && selectedBinQty >= (qtyBase || 0)
+
+                      const tops = lineOnHands.slice(0, 3)
                       const hint = tops.length
-                        ? tops.map(t => `${t.code}: ${fmtAcct(t.qty)} ${baseUomCode}`).join(', ')
+                        ? tops.map(t => {
+                            const code = t.bin_id ? (bins.find(b => b.id === t.bin_id)?.code || 'bin') : tt('orders.noBin', '(no bin)')
+                            return `${code}: ${fmtAcct(t.qty)} ${baseUomCode}`
+                          }).join(', ')
                         : tt('orders.noStockInWh', 'No stock in selected warehouse')
 
                       return (
-                        <tr key={String(l.id) || `${l.so_id}-${l.item_id}-${l.line_no}`} className="border-t">
+                        <tr key={key} className="border-t">
                           <td className="py-2 px-3">{it?.name || l.item_id}</td>
                           <td className="py-2 px-3">{it?.sku || '—'}</td>
                           <td className="py-2 px-3">{fmtAcct(n(l.qty))} {uomCode}</td>
                           <td className="py-2 px-3">{fmtAcct(disc)}</td>
                           <td className="py-2 px-3">{qtyBase == null ? '—' : `${fmtAcct(qtyBase)} ${baseUomCode}`}</td>
-                          <td className={`py-2 px-3 font-medium ${enough ? 'text-green-600' : 'text-red-600'}`}>
-                            {fmtAcct(onHandBin)} {baseUomCode}
+
+                          {/* Per-line Warehouse */}
+                          <td className="py-2 px-3">
+                            <Select
+                              value={lineWh || ''}
+                              onValueChange={(v) => {
+                                setWhByLine(s => ({ ...s, [key]: v }))
+                                // clear bin so it re-picks for new warehouse
+                                setBinByLine(s => {
+                                  const n = { ...s }; delete n[key]; return n
+                                })
+                              }}
+                            >
+                              <SelectTrigger className="w-44"><SelectValue placeholder={tt('orders.selectWh', 'Select warehouse')} /></SelectTrigger>
+                              <SelectContent>
+                                {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
                           </td>
+
+                          {/* Per-line From Bin */}
+                          <td className="py-2 px-3">
+                            <Select
+                              value={lineSelectedBin}
+                              onValueChange={(v) => setBinByLine(s => ({ ...s, [key]: v }))}
+                            >
+                              <SelectTrigger className="w-48"><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
+                              <SelectContent>
+                                {(bins
+                                  .filter(b => b.warehouseId === lineWh)
+                                  .map(b => ({
+                                    bin: b,
+                                    qty: (lineOnHands.find(x => x.bin_id === b.id)?.qty) ?? 0
+                                  }))
+                                  .sort((a,b) => (b.qty - a.qty) || a.bin.code.localeCompare(b.bin.code))
+                                ).map(({ bin, qty }) => (
+                                  <SelectItem key={bin.id} value={bin.id}>
+                                    {bin.code} — {fmtAcct(qty)} {baseUomCode}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+
+                          <td className={`py-2 px-3 font-medium ${enough ? 'text-green-600' : 'text-red-600'}`}>
+                            {fmtAcct(selectedBinQty)} {baseUomCode}
+                          </td>
+
                           <td className="py-2 px-3">{hint}</td>
                           <td className="py-2 px-3 text-right">
-                            <Button size="sm" disabled={!enough || String(selectedSO.status).toLowerCase() !== 'confirmed'} onClick={() => doShipLineSO(selectedSO, l)}>
+                            <Button
+                              size="sm"
+                              disabled={String(selectedSO.status).toLowerCase() !== 'confirmed'}
+                              onClick={() => doShipLineSO(selectedSO, l)}
+                            >
                               {tt('orders.ship', 'Ship Outstanding')}
                             </Button>
                           </td>
@@ -1468,7 +1551,7 @@ export default function SalesOrders() {
                       )
                     })}
                     {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).length === 0 && (
-                      <tr><td colSpan={8} className="py-3 text-muted-foreground">{tt('orders.allLinesShipped', 'All lines shipped.')}</td></tr>
+                      <tr><td colSpan={10} className="py-3 text-muted-foreground">{tt('orders.allLinesShipped', 'All lines shipped.')}</td></tr>
                     )}
                   </tbody>
                 </table>

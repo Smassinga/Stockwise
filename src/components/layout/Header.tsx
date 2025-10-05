@@ -1,3 +1,4 @@
+// src/components/layout/Header.tsx
 import { useEffect, useRef, useState } from 'react'
 import { Menu, Search, LogOut } from 'lucide-react'
 import { Button } from '../ui/button'
@@ -6,6 +7,7 @@ import { NotificationCenter } from '../notifications/NotificationCenter'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import ThemeToggle from '../ThemeToggle'
+import CompanySwitcher from '../CompanySwitcher'
 
 interface User {
   id: string
@@ -41,9 +43,10 @@ function useClickOutside<T extends HTMLElement>(onClose: () => void) {
 }
 
 export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderProps) {
-  const initial = (user && typeof user.name === 'string' && user.name.length > 0)
-    ? user.name.charAt(0).toUpperCase()
-    : (user && user.email ? user.email.charAt(0).toUpperCase() : '?')
+  const initial =
+    (user && typeof user.name === 'string' && user.name.length > 0)
+      ? user.name.charAt(0).toUpperCase()
+      : (user && user.email ? user.email.charAt(0).toUpperCase() : '?')
 
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
@@ -54,13 +57,14 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
 
   return (
     <header className="h-16 border-b bg-card flex items-center justify-between px-6">
+      {/* Left side: menu + search */}
       <div className="flex items-center space-x-4">
         {isMobile ? (
-          <Button variant="ghost" size="sm" onClick={onMenuClick}>
+          <Button variant="ghost" size="sm" onClick={onMenuClick} aria-label="Open menu">
             <Menu className="w-5 h-5" />
           </Button>
         ) : (
-          <Button variant="ghost" size="sm" onClick={onToggleSidebar}>
+          <Button variant="ghost" size="sm" onClick={onToggleSidebar} aria-label="Toggle sidebar">
             <Menu className="w-5 h-5" />
           </Button>
         )}
@@ -71,16 +75,21 @@ export function Header({ onToggleSidebar, onMenuClick, user, isMobile }: HeaderP
         </div>
       </div>
 
+      {/* Right side: theme, notifications, company switcher, user */}
       <div className="flex items-center space-x-2 sm:space-x-4">
-        <ThemeToggle />           {/* same labeled toggle as Auth */}
-        <NotificationCenter />    {/* bell; opens fixed panel */}
+        <ThemeToggle />
+        <NotificationCenter />
+
+        {/* Desktop company switcher */}
+        <CompanySwitcher className="hidden md:block" />
 
         <div className="flex items-center space-x-2">
+          {/* Mobile avatar bubble (no dropdown on very small screens) */}
           <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center md:hidden">
             <span className="text-sm font-medium">{initial}</span>
           </div>
 
-          {/* Desktop: name/company·role + avatar dropdown */}
+          {/* Desktop: name + company·role + avatar dropdown */}
           <div className="hidden md:flex items-center space-x-2" ref={ref}>
             <div className="text-right">
               <p className="text-sm font-medium">{user.name ?? user.email ?? 'Unknown'}</p>

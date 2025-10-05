@@ -1,4 +1,3 @@
-// src/pages/BOMPage.tsx
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
@@ -11,8 +10,8 @@ import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 
 type Item = { id: string; name: string; sku?: string | null; base_uom_id?: string | null }
 type Uom  = { id: string; code: string; name: string; family?: string }
-type Warehouse = { id: string; name: string }                 // id = UUID
-type Bin = { id: string; code: string; name: string; warehouse_id: string } // id = TEXT (e.g., "bin_...")
+type Warehouse = { id: string; name: string }
+type Bin = { id: string; code: string; name: string; warehouse_id: string }
 
 type Bom = { id: string; product_id: string; name: string; version: string; is_active: boolean }
 type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; created_at: string | null }
@@ -20,33 +19,24 @@ type ComponentRow = { id: string; component_item_id: string; qty_per: number; sc
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || ''))
 
-async function getCurrentCompanyId(): Promise<string> {
-  const { data, error } = await supabase
+async function resolveActiveCompanyId(): Promise<string> {
+  // Prefer server-side setting; fallback to earliest active membership
+  const g = await supabase.rpc('get_active_company')
+  if (!g.error && g.data) return String(g.data)
+  const { data } = await supabase
     .from('company_members')
     .select('company_id')
     .eq('status', 'active')
     .order('created_at', { ascending: true })
     .limit(1)
-  if (error) throw error
-  if (!data?.length) throw new Error('No active company membership found')
-  return data[0].company_id as string
+    .single()
+  if (!data?.company_id) throw new Error('No active company membership found')
+  return String(data.company_id)
 }
 
-type OutputSplit = {
-  id: string           // UI-only key
-  warehouseId: string  // UUID
-  binId: string        // TEXT (bin_...)
-  qty: string          // text input
-}
+type OutputSplit = { id: string; warehouseId: string; binId: string; qty: string }
+type ComponentSourceRow = { id: string; warehouseId: string; binId: string; sharePct: string }
 
-type ComponentSourceRow = {
-  id: string
-  warehouseId: string  // UUID
-  binId: string        // TEXT (bin_...)
-  sharePct: string     // percent as text; normalized on build
-}
-
-// Payload shapes for RPC
 type ComponentSourcesPayload = Array<{
   component_item_id: string
   sources: Array<{ warehouse_id: string; bin_id: string; share_pct: number }>
@@ -67,14 +57,14 @@ export default function BOMPage() {
   const [selectedBomId, setSelectedBomId] = useState<string>('')  
   const selectedBom = useMemo(() => boms.find(b => b.id === selectedBomId) || null, [selectedBomId, boms])
 
-  // Editable BOM fields
+  // Editable
   const [editName, setEditName] = useState<string>('')  
   const [editVersion, setEditVersion] = useState<string>('')
 
   // Components
   const [components, setComponents] = useState<ComponentRow[]>([])
 
-  // Warehouses/Bins (simple/global)
+  // Warehouses/Bins
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [binsFrom, setBinsFrom] = useState<Bin[]>([])
   const [binsTo, setBinsTo] = useState<Bin[]>([])
@@ -83,14 +73,11 @@ export default function BOMPage() {
   const [binFromId, setBinFromId] = useState<string>('')              // TEXT
   const [binToId, setBinToId] = useState<string>('')                  // TEXT
 
-  // Bin cache per warehouse (for per-component sources + splits)
   const [binCache, setBinCache] = useState<Record<string, Bin[]>>({})
 
-  // Advanced: split outputs
   const [advanced, setAdvanced] = useState(false)
   const [splits, setSplits] = useState<OutputSplit[]>([])
 
-  // Per-component source mode
   const [useComponentSources, setUseComponentSources] = useState(false)
   const [sourcesByComponent, setSourcesByComponent] = useState<Record<string, ComponentSourceRow[]>>({})
 
@@ -113,47 +100,20 @@ export default function BOMPage() {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
   const uomById  = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
 
-  // Conversion helpers
-  function idsOrCodesEqual(aId?: string | null, bId?: string | null) {
-    if (!aId || !bId) return false
-    if (aId === bId) return true
-    const ac = (uomById.get(String(aId))?.code || '').toUpperCase()
-    const bc = (uomById.get(String(bId))?.code || '').toUpperCase()
-    return !!(ac && bc && ac === bc)
-  }
-  function canConvert(fromId?: string | null, toId?: string | null) {
-    if (!fromId || !toId) return false
-    if (idsOrCodesEqual(fromId, toId)) return true
-    if (!convGraph) return false
-    const visited = new Set<string>([fromId])
-    const q: string[] = [fromId]
-    while (q.length) {
-      const id = q.shift()!
-      const edges = convGraph.get(id) || []
-      for (const e of edges) {
-        if (idsOrCodesEqual(e.to, toId) || e.to === toId) return true
-        if (!visited.has(e.to)) { visited.add(e.to); q.push(e.to) }
-      }
-    }
-    return false
-  }
-  function safeConvert(qty: number, fromId: string, toId: string): number | null {
-    if (idsOrCodesEqual(fromId, toId)) return qty
-    if (!convGraph) return null
-    try { return Number(convertQty(qty, fromId, toId, convGraph)) } catch { return null }
-  }
-
   // Initial load
   useEffect(() => {
     (async () => {
       try {
         setLoading(true)
-        const cid = await getCurrentCompanyId()
+        const cid = await resolveActiveCompanyId()
         setCompanyId(cid)
 
+        // Items for this company (ensures names, no UUIDs shown)
         const it = await supabase
-          .from('items').select('id,name,sku,base_uom_id')
-          .eq('company_id', cid).order('name', { ascending: true })
+          .from('items')
+          .select('id,name,sku,base_uom_id')
+          .eq('company_id', cid)
+          .order('name', { ascending: true })
         if (it.error) throw it.error
         setItems((it.data || []) as Item[])
 
@@ -180,7 +140,10 @@ export default function BOMPage() {
         setBoms(list)
 
         const wh = await supabase
-          .from('warehouses').select('id,name').eq('company_id', cid).order('name', { ascending: true })
+          .from('warehouses')
+          .select('id,name')
+          .eq('company_id', cid)
+          .order('name', { ascending: true })
         if (wh.error) throw wh.error
         setWarehouses((wh.data || []) as Warehouse[])
         if (wh.data?.length) {
@@ -196,13 +159,15 @@ export default function BOMPage() {
     })()
   }, [])
 
-  // Bins per warehouse (global simple path)
+  // Bins per warehouse
   useEffect(() => {
     (async () => {
       if (!warehouseFromId) { setBinsFrom([]); return }
       const { data, error } = await supabase
-        .from('bins_v').select('id,code,name,warehouse_id')
-        .eq('warehouse_id', warehouseFromId).order('code', { ascending: true })
+        .from('bins_v')
+        .select('id,code,name,warehouse_id')
+        .eq('warehouse_id', warehouseFromId)
+        .order('code', { ascending: true })
       if (error) { console.error(error); toast.error(error.message); return }
       setBinsFrom((data || []) as Bin[])
     })()
@@ -212,8 +177,10 @@ export default function BOMPage() {
     (async () => {
       if (!warehouseToId) { setBinsTo([]); return }
       const { data, error } = await supabase
-        .from('bins_v').select('id,code,name,warehouse_id')
-        .eq('warehouse_id', warehouseToId).order('code', { ascending: true })
+        .from('bins_v')
+        .select('id,code,name,warehouse_id')
+        .eq('warehouse_id', warehouseToId)
+        .order('code', { ascending: true })
       if (error) { console.error(error); toast.error(error.message); return }
       setBinsTo((data || []) as Bin[])
     })()
@@ -234,7 +201,7 @@ export default function BOMPage() {
     })()
   }, [selectedBomId])
 
-  // Sync editable fields on BOM change
+  // Sync editable fields
   useEffect(() => {
     if (selectedBom) {
       setEditName(selectedBom.name || '')
@@ -252,7 +219,6 @@ export default function BOMPage() {
     setCompUomId(base || '')
   }, [compItemId]) // eslint-disable-line
 
-  // Group UoMs by family
   const familyLabel = (fam?: string) => {
     const key = String(fam || 'unspecified').toLowerCase()
     const map: Record<string, string> = {
@@ -273,7 +239,6 @@ export default function BOMPage() {
     return { groups, families }
   }, [uoms])
 
-  // Ensure bins cached for warehouse
   async function ensureBinsFor(warehouseId: string) {
     if (!warehouseId) return
     if (binCache[warehouseId]) return
@@ -380,6 +345,36 @@ export default function BOMPage() {
     }
   }
 
+  // Conversion helpers
+  function idsOrCodesEqual(aId?: string | null, bId?: string | null) {
+    if (!aId || !bId) return false
+    if (aId === bId) return true
+    const ac = (uomById.get(String(aId))?.code || '').toUpperCase()
+    const bc = (uomById.get(String(bId))?.code || '').toUpperCase()
+    return !!(ac && bc && ac === bc)
+  }
+  function canConvert(fromId?: string | null, toId?: string | null) {
+    if (!fromId || !toId) return false
+    if (idsOrCodesEqual(fromId, toId)) return true
+    if (!convGraph) return false
+    const visited = new Set<string>([fromId])
+    const q: string[] = [fromId]
+    while (q.length) {
+      const id = q.shift()!
+      const edges = convGraph.get(id) || []
+      for (const e of edges) {
+        if (idsOrCodesEqual(e.to, toId) || e.to === toId) return true
+        if (!visited.has(e.to)) { visited.add(e.to); q.push(e.to) }
+      }
+    }
+    return false
+  }
+  function safeConvert(qty: number, fromId: string, toId: string): number | null {
+    if (idsOrCodesEqual(fromId, toId)) return qty
+    if (!convGraph) return null
+    try { return Number(convertQty(qty, fromId, toId, convGraph)) } catch { return null }
+  }
+
   // Add component (convert to base UoM before saving)
   async function addComponentLine() {
     if (!selectedBomId) return toast.error('Pick a BOM first')
@@ -454,16 +449,13 @@ export default function BOMPage() {
     })
   }
 
-  // ---------- Build helpers ----------
   function buildComponentSourcesPayload(): ComponentSourcesPayload {
     const payload = components.map(c => {
       const rows = (sourcesByComponent[c.component_item_id] || []).map(r => ({
         warehouse_id: r.warehouseId,
-        bin_id: r.binId,                        // TEXT
+        bin_id: r.binId,
         share_pct: Number(r.sharePct || 0),
-      }))
-      // keep only valid rows (warehouse UUID + non-empty bin + share >= 0)
-      .filter(x => isUuid(x.warehouse_id) && !!x.bin_id && Number.isFinite(x.share_pct) && x.share_pct >= 0)
+      })).filter(x => isUuid(x.warehouse_id) && !!x.bin_id && Number.isFinite(x.share_pct) && x.share_pct >= 0)
 
       const total = rows.reduce((s, x) => s + x.share_pct, 0)
       const normalized = total > 0 ? rows.map(x => ({ ...x, share_pct: x.share_pct / total })) : []
@@ -497,16 +489,10 @@ export default function BOMPage() {
 
       if (useComponentSources) {
         const componentPayload = buildComponentSourcesPayload()
-        if (!componentPayload.length) {
-          setBuilding(false)
-          return toast.error('Add at least one valid source row (warehouse UUID + bin).')
-        }
+        if (!componentPayload.length) { setBuilding(false); return toast.error('Add at least one valid source row (warehouse UUID + bin).') }
 
         const outSplits = buildOutputSplitsPayload(qty)
-        if (!outSplits) {
-          setBuilding(false)
-          return toast.error('Select a valid destination bin (bin id is TEXT) or add output splits.')
-        }
+        if (!outSplits) { setBuilding(false); return toast.error('Select a valid destination bin (TEXT id) or add output splits.') }
 
         const { error } = await supabase.rpc('build_from_bom_sources', {
           p_bom_id: selectedBomId,
@@ -514,7 +500,6 @@ export default function BOMPage() {
           p_component_sources: componentPayload,
           p_output_splits: outSplits,
         })
-
         if (error) {
           console.error('[build_from_bom_sources] error', error, { componentPayload, outSplits })
           if (error.code === '42883' || /does not exist/i.test(error.message || '')) {
@@ -527,21 +512,19 @@ export default function BOMPage() {
           setSplits([])
           toast.success('Build created with per-component sources')
         }
-
         setBuilding(false)
         return
       }
 
-      // Legacy path (single source) → build_from_bom
+      // Legacy single-source path
       if (!isUuid(warehouseFromId) || !binFromId) {
         setBuilding(false); return toast.error('Select a valid source warehouse (UUID) and bin (TEXT).')
       }
 
       const runs: Array<{ qty: number; wTo: string; bTo: string }> =
         advanced && splits.length
-          ? splits
-              .map(s => ({ qty: num(s.qty, 0), wTo: s.warehouseId, bTo: s.binId }))
-              .filter(s => s.qty > 0 && isUuid(s.wTo) && !!s.bTo)
+          ? splits.map(s => ({ qty: num(s.qty, 0), wTo: s.warehouseId, bTo: s.binId }))
+                  .filter(s => s.qty > 0 && isUuid(s.wTo) && !!s.bTo)
           : (isUuid(warehouseToId) && !!binToId)
               ? [{ qty, wTo: warehouseToId, bTo: binToId }]
               : []
@@ -552,10 +535,10 @@ export default function BOMPage() {
         const { error } = await supabase.rpc('build_from_bom', {
           p_bom_id: selectedBomId,
           p_qty: r.qty,
-          p_warehouse_from: warehouseFromId, // UUID
-          p_bin_from: binFromId,             // TEXT
-          p_warehouse_to: r.wTo,             // UUID
-          p_bin_to: r.bTo,                   // TEXT
+          p_warehouse_from: warehouseFromId,
+          p_bin_from: binFromId,
+          p_warehouse_to: r.wTo,
+          p_bin_to: r.bTo,
         })
         if (error) throw error
       }
@@ -714,7 +697,6 @@ export default function BOMPage() {
                         </td>
                       </tr>
 
-                      {/* Per-component sources editor */}
                       {useComponentSources && (
                         <tr className="border-b">
                           <td colSpan={5} className="py-3">
@@ -853,13 +835,7 @@ export default function BOMPage() {
 
             {/* Toggle per-component sources */}
             <div className="mt-3 flex items-center gap-2">
-              <input
-                id="pcs"
-                type="checkbox"
-                className="h-4 w-4"
-                checked={useComponentSources}
-                onChange={(e) => setUseComponentSources(e.target.checked)}
-              />
+              <input id="pcs" type="checkbox" className="h-4 w-4" checked={useComponentSources} onChange={(e) => setUseComponentSources(e.target.checked)} />
               <Label htmlFor="pcs">Use per-component source bins during build</Label>
             </div>
             {useComponentSources && (

@@ -1,4 +1,4 @@
-// src/pages/Customers.tsx
+// src/pages/Customers.tsx (company-scoped drop-in)
 import React, { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db' // keep your existing client import
@@ -12,10 +12,13 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
+// ---------------- Types ----------------
+
 type Currency = { code: string; name: string }
 
 type CustomerRow = {
   id: string
+  company_id?: string | null
   code: string
   name: string
   email: string | null
@@ -62,7 +65,7 @@ function mapRow(r: CustomerRow): Customer {
 
 export default function Customers() {
   const { user } = useAuth()
-  const { myRole } = useOrg()
+  const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
 
   const [loading, setLoading] = useState(true)
@@ -81,33 +84,29 @@ export default function Customers() {
   const [paymentTerms, setPaymentTerms] = useState('')
   const [notes, setNotes] = useState('')
 
+  // ---------- Load ----------
   useEffect(() => {
     (async () => {
-      if (!user) return
       try {
         setLoading(true)
 
-        // currencies
-        {
-          const res = await supabase
-            .from('currencies')
-            .select('code,name')
-            .order('code', { ascending: true })
-          if (res.error) throw res.error
-          setCurrencies(res.data || [])
-        }
+        // currencies (global)
+        const resCur = await supabase
+          .from('currencies')
+          .select('code,name')
+          .order('code', { ascending: true })
+        if (resCur.error) throw resCur.error
+        setCurrencies((resCur.data || []) as Currency[])
 
-        // customers
-        {
-          const res = await supabase
-            .from('customers')
-            .select(
-              'id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms,notes,created_at,updated_at'
-            )
-            .order('name', { ascending: true })
-          if (res.error) throw res.error
-          setCustomers((res.data || []).map(mapRow))
-        }
+        // customers (strictly company-scoped)
+        if (!companyId) { setCustomers([]); return }
+        const resCus = await supabase
+          .from('customers')
+          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms,notes,created_at,updated_at')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
+        if (resCus.error) throw resCus.error
+        setCustomers((resCus.data || []).map(mapRow))
       } catch (e: any) {
         console.error(e)
         toast.error(e?.message || 'Failed to load Customers')
@@ -115,47 +114,44 @@ export default function Customers() {
         setLoading(false)
       }
     })()
-  }, [user])
+  }, [companyId])
 
   const currencyByCode = useMemo(() => new Map(currencies.map(c => [c.code, c])), [currencies])
 
   async function reloadCustomers() {
+    if (!companyId) { setCustomers([]); return }
     const res = await supabase
       .from('customers')
-      .select(
-        'id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms,notes,created_at,updated_at'
-      )
+      .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms,notes,created_at,updated_at')
+      .eq('company_id', companyId)
       .order('name', { ascending: true })
-    if (res.error) {
-      toast.error(res.error.message)
-      return
-    }
+    if (res.error) { toast.error(res.error.message); return }
     setCustomers((res.data || []).map(mapRow))
   }
 
+  // ---------- Create / Delete ----------
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!can.createMaster(role)) {
-      toast.error('Only OPERATOR+ can create customers')
-      return
-    }
+    if (!can.createMaster(role)) return toast.error('Only OPERATOR+ can create customers')
+    if (!companyId) return toast.error('Join or create a company first')
+
     const c = code.trim()
     const n = name.trim()
-    if (!c || !n) {
-      toast.error('Code and Name are required')
-      return
-    }
+    if (!c || !n) return toast.error('Code and Name are required')
 
     try {
-      // unique code check
-      const dup = await supabase.from('customers').select('id').eq('code', c).limit(1)
+      // unique code check *per company*
+      const dup = await supabase
+        .from('customers')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('code', c)
+        .limit(1)
       if (dup.error) throw dup.error
-      if (dup.data && dup.data.length) {
-        toast.error('Code must be unique')
-        return
-      }
+      if (dup.data && dup.data.length) return toast.error('Code must be unique in this company')
 
       const payload: Partial<CustomerRow> = {
+        company_id: companyId,
         code: c,
         name: n,
         email: email.trim() || null,
@@ -168,20 +164,15 @@ export default function Customers() {
         notes: notes.trim() || null,
       }
 
-      const ins = await supabase.from('customers').insert(payload).select('id').single()
+      const ins = await supabase
+        .from('customers')
+        .insert(payload)
+        .select('id')
+        .single()
       if (ins.error) throw ins.error
 
       toast.success('Customer created')
-      setCode('')
-      setName('')
-      setEmail('')
-      setPhone('')
-      setTaxId('')
-      setBillingAddress('')
-      setShippingAddress('')
-      setCurrencyCode('')
-      setPaymentTerms('')
-      setNotes('')
+      setCode(''); setName(''); setEmail(''); setPhone(''); setTaxId(''); setBillingAddress(''); setShippingAddress(''); setCurrencyCode(''); setPaymentTerms(''); setNotes('')
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
@@ -190,12 +181,15 @@ export default function Customers() {
   }
 
   async function handleDelete(id: string) {
-    if (!can.deleteMaster(role)) {
-      toast.error('Only MANAGER+ can delete customers')
-      return
-    }
+    if (!can.deleteMaster(role)) return toast.error('Only MANAGER+ can delete customers')
+    if (!companyId) return toast.error('Join or create a company first')
     try {
-      const del = await supabase.from('customers').delete().eq('id', id)
+      // Hard-scope deletion by company to be extra safe (even with RLS)
+      const del = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', id)
+        .eq('company_id', companyId)
       if (del.error) throw del.error
       toast.success('Customer deleted')
       await reloadCustomers()
@@ -205,10 +199,8 @@ export default function Customers() {
     }
   }
 
-  if (!user) {
-    return <div className="p-6 text-muted-foreground">Please sign in to manage customers.</div>
-  }
-
+  // ---------- Render ----------
+  if (!user) return <div className="p-6 text-muted-foreground">Please sign in to manage customers.</div>
   if (loading) return <div className="p-6">Loading…</div>
 
   return (
@@ -262,31 +254,16 @@ export default function Customers() {
 
             <div className="space-y-2 md:col-span-3">
               <Label htmlFor="billingAddress">Billing Address</Label>
-              <Input
-                id="billingAddress"
-                value={billingAddress}
-                onChange={e => setBillingAddress(e.target.value)}
-                placeholder="Street, City…"
-              />
+              <Input id="billingAddress" value={billingAddress} onChange={e => setBillingAddress(e.target.value)} placeholder="Street, City…" />
             </div>
             <div className="space-y-2 md:col-span-3">
               <Label htmlFor="shippingAddress">Shipping Address</Label>
-              <Input
-                id="shippingAddress"
-                value={shippingAddress}
-                onChange={e => setShippingAddress(e.target.value)}
-                placeholder="Street, City…"
-              />
+              <Input id="shippingAddress" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} placeholder="Street, City…" />
             </div>
 
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="paymentTerms">Payment Terms</Label>
-              <Input
-                id="paymentTerms"
-                value={paymentTerms}
-                onChange={e => setPaymentTerms(e.target.value)}
-                placeholder="Net 30, COD, etc."
-              />
+              <Input id="paymentTerms" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="Net 30, COD, etc." />
             </div>
             <div className="space-y-2 md:col-span-1">
               <Label htmlFor="notes">Notes</Label>
@@ -321,18 +298,14 @@ export default function Customers() {
             <tbody>
               {customers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-muted-foreground">
-                    No customers yet.
-                  </td>
+                  <td colSpan={6} className="py-4 text-muted-foreground">No customers yet.</td>
                 </tr>
               )}
               {customers.map(c => (
                 <tr key={c.id} className="border-b">
                   <td className="py-2 pr-2">{c.code}</td>
                   <td className="py-2 pr-2">{c.name}</td>
-                  <td className="py-2 pr-2">
-                    {c.currencyCode ? `${c.currencyCode} — ${currencyByCode.get(c.currencyCode)?.name || ''}` : '-'}
-                  </td>
+                  <td className="py-2 pr-2">{c.currencyCode ? `${c.currencyCode} — ${currencyByCode.get(c.currencyCode)?.name || ''}` : '-'}</td>
                   <td className="py-2 pr-2">{c.email || '-'}</td>
                   <td className="py-2 pr-2">{c.phone || '-'}</td>
                   <td className="py-2 pr-2">
@@ -340,11 +313,7 @@ export default function Customers() {
                       <Button
                         variant="destructive"
                         disabled={!can.deleteMaster(role)}
-                        onClick={() =>
-                          can.deleteMaster(role)
-                            ? handleDelete(c.id)
-                            : toast.error('Only MANAGER+ can delete customers')
-                        }
+                        onClick={() => (can.deleteMaster(role) ? handleDelete(c.id) : toast.error('Only MANAGER+ can delete customers'))}
                       >
                         Delete
                       </Button>

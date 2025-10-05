@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Button } from '../components/ui/button'
 
+/** LocalStorage key used by /accept-invite to cache the pending token */
+const LS_INVITE_KEY = 'sw:inviteToken'
+
 /**
  * Support both PKCE magic-link (?code=...) and hash-style callbacks
  * (#access_token=...&refresh_token=...).
@@ -30,6 +33,7 @@ export default function AuthCallback() {
         {
           const { data: { session } } = await supabase.auth.getSession()
           if (session?.user) {
+            await maybeRedeemInviteToken()
             await routeByMembership(nav)
             return
           }
@@ -77,6 +81,9 @@ export default function AuthCallback() {
         // Best-effort: link pending invites to this user (ignore failures)
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
 
+        // If user arrived via /accept-invite then /auth, redeem the cached token now
+        await maybeRedeemInviteToken()
+
         setMsg('Signed in. Redirecting…')
         await routeByMembership(nav)
       } catch (e: any) {
@@ -97,6 +104,19 @@ export default function AuthCallback() {
       )}
     </div>
   )
+}
+
+/** Try to redeem a cached invite token created by /accept-invite. */
+async function maybeRedeemInviteToken() {
+  const token = localStorage.getItem(LS_INVITE_KEY)
+  if (!token) return
+  try {
+    await supabase.rpc('accept_invite_with_token', { p_token: token })
+  } catch (e) {
+    console.warn('invite token redeem failed (callback):', (e as any)?.message || e)
+  } finally {
+    localStorage.removeItem(LS_INVITE_KEY)
+  }
 }
 
 /** After auth, decide where to send the user. */

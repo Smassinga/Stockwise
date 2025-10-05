@@ -1,4 +1,3 @@
-// src/pages/StockLevels.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -7,8 +6,8 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { RefreshCw, FileDown, Package, Warehouse as WarehouseIcon, Search } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../hooks/useOrg'
 
 interface Item {
   id: string
@@ -39,7 +38,7 @@ interface StockLevel {
 }
 
 export function StockLevels() {
-  const { user } = useAuth()
+  const { companyId } = useOrg()
 
   const [items, setItems] = useState<Item[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -52,32 +51,52 @@ export function StockLevels() {
   const [warehouseFilter, setWarehouseFilter] = useState<string>('all')
 
   useEffect(() => {
-    if (!user) return
+    if (!companyId) return
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  }, [companyId])
 
   const loadData = async () => {
-    if (!user) return
+    if (!companyId) return
     try {
       setLoading(true)
       setError(null)
 
-      const [{ data: itemsData, error: iErr }, { data: whsData, error: wErr }, { data: stockData, error: sErr }] =
-        await Promise.all([
-          supabase.from('items').select('id,sku,name').order('name', { ascending: true }),
-          supabase.from('warehouses').select('id,code,name').order('name', { ascending: true }),
-          supabase.from('stock_levels').select('id,item_id,warehouse_id,qty,avg_cost'),
-        ])
+      // 1) Warehouses for this company
+      const { data: whsData, error: wErr } = await supabase
+        .from('warehouses')
+        .select('id,code,name')
+        .eq('company_id', companyId)
+        .order('name', { ascending: true })
+
+      if (wErr) throw wErr
+      const whs = (whsData ?? []) as Warehouse[]
+      setWarehouses(whs)
+
+      // 2) Items for this company (keeps picker consistent with company scope)
+      const { data: itemsData, error: iErr } = await supabase
+        .from('items')
+        .select('id,sku,name')
+        .eq('company_id', companyId)
+        .order('name', { ascending: true })
 
       if (iErr) throw iErr
-      if (wErr) throw wErr
-      if (sErr) throw sErr
+      setItems((itemsData ?? []) as Item[])
 
-      setItems(itemsData ?? [])
-      setWarehouses(whsData ?? [])
+      // 3) Stock levels for company warehouses
+      const whIds = whs.map(w => w.id)
+      let stockData: StockLevelRow[] = []
+      if (whIds.length) {
+        const { data: slData, error: sErr } = await supabase
+          .from('stock_levels')
+          .select('id,item_id,warehouse_id,qty,avg_cost')
+          .in('warehouse_id', whIds)
 
-      const mapped: StockLevel[] = (stockData ?? []).map((r: StockLevelRow) => ({
+        if (sErr) throw sErr
+        stockData = (slData ?? []) as StockLevelRow[]
+      }
+
+      const mapped: StockLevel[] = (stockData ?? []).map((r) => ({
         id: r.id,
         itemId: r.item_id,
         warehouseId: r.warehouse_id,
@@ -171,10 +190,10 @@ export function StockLevels() {
     toast.success('Export complete')
   }
 
-  if (!user) {
+  if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Please sign in to view stock levels</p>
+        <p className="text-muted-foreground">Join or create a company to view stock levels.</p>
       </div>
     )
   }

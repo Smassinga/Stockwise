@@ -28,3 +28,8 @@ import_map = "./functions/schema-snapshot-cron/deno.json"
 # Supported file extensions: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/schema-snapshot-cron/index.ts"
 # static_files = [ "./functions/schema-snapshot-cron/*.html" ]
+
+[functions.mailer-invite]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/mailer-invite/index.ts"

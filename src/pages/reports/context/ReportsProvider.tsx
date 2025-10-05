@@ -1,6 +1,6 @@
-// src/pages/reports/context/ReportsProvider.tsx
+// src/pages/reports/context/ReportsProvider.tsx — company-scoped (v2)
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { supabase, db } from '../../../lib/db'
+import { supabase } from '../../../lib/supabase' // ← use the same client as your app
 import { useAuth } from '../../../hooks/useAuth'
 import { useOrg } from '../../../hooks/useOrg'
 import toast from 'react-hot-toast'
@@ -91,16 +91,11 @@ const lastNDays = (days: number) => { const end = new Date(); const start = new 
 function normalizeStockLevel(row: any): StockLevel {
   return {
     id: String(row.id ?? row.uuid ?? row.pk ?? ''),
-    itemId:
-      row.itemId ?? row.item_id ?? row.itemID ?? row.itemid,
-    warehouseId:
-      row.warehouseId ?? row.warehouse_id ?? row.warehouseID ?? row.warehouseid,
-    binId:
-      row.binId ?? row.bin_id ?? null,
-    onHandQty:
-      n(row.onHandQty ?? row.on_hand_qty ?? row.qty ?? row.qtyOnHand ?? row.qty_on_hand ?? row.quantity_on_hand ?? row.onhandqty, 0),
-    avgCost:
-      n(row.avgCost ?? row.avg_cost ?? row.averageCost ?? row.average_cost ?? row.avg_unit_cost ?? row.average_unit_cost ?? row.unit_cost_avg, 0),
+    itemId: row.itemId ?? row.item_id ?? row.itemID ?? row.itemid,
+    warehouseId: row.warehouseId ?? row.warehouse_id ?? row.warehouseID ?? row.warehouseid,
+    binId: row.binId ?? row.bin_id ?? null,
+    onHandQty: n(row.onHandQty ?? row.on_hand_qty ?? row.qty ?? row.qtyOnHand ?? row.qty_on_hand ?? row.quantity_on_hand ?? row.onhandqty, 0),
+    avgCost: n(row.avgCost ?? row.avg_cost ?? row.averageCost ?? row.average_cost ?? row.avg_unit_cost ?? row.average_unit_cost ?? row.unit_cost_avg, 0),
     updatedAt: row.updatedAt ?? row.updated_at ?? null,
   }
 }
@@ -236,29 +231,85 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true }
   }, [companyId])
 
-  /* ---------- load settings + master ---------- */
+  /* ---------- load settings + master (COMPANY-SCOPED) ---------- */
   useEffect(() => {
     ;(async () => {
       try {
+        // Settings (not company-scoped)
         const { data: settingsRows } = await supabase.from('settings').select('*').eq('id', 'app').limit(1)
         const setting: any = Array.isArray(settingsRows) && settingsRows.length ? settingsRows[0] : null
 
-        const [wh, bb, it, sl, mv, cs, custs] = await Promise.all([
-          db.warehouses.list({ orderBy: { name: 'asc' } }),
-          db.bins.list({ orderBy: { code: 'asc' } }),
-          db.items.list({ orderBy: { name: 'asc' } }),
-          db.stockLevels.list(),
-          db.movements.list({ orderBy: { createdAt: 'asc' } }),
-          db.currencies.list({ orderBy: { code: 'asc' } }),
-          supabase.from('customers').select('id,name,code').order('name', { ascending: true }),
+        if (!companyId) {
+          setWarehouses([]); setBins([]); setItems([]); setLevels([]); setMoves([]); setCustomers([])
+          // currencies still helpful even without company
+          const cRes = await supabase.from('currencies').select('code,name').order('code', { ascending: true })
+          setCurrencies((cRes.data || []) as Currency[])
+          return
+        }
+
+        // Warehouses, Items — scoped
+        const [whRes, itRes] = await Promise.all([
+          supabase.from('warehouses').select('id,name,code').eq('company_id', companyId).order('name', { ascending: true }),
+          supabase.from('items').select('id,name,sku,base_uom_id').eq('company_id', companyId).order('name', { ascending: true }),
         ])
+        if (whRes.error) throw whRes.error
+        if (itRes.error) throw itRes.error
 
-        setWarehouses(wh || []); setBins(bb || []); setItems(it || [])
-        // normalize stock_levels
-        setLevels(Array.isArray(sl) ? sl.map(normalizeStockLevel) : [])
-        setMoves(mv || []); setCurrencies(cs || [])
-        if ((custs as any)?.data) setCustomers((custs as any).data as Customer[])
+        const wh = (whRes.data || []).map(w => ({ id: w.id, name: w.name, code: w.code })) as Warehouse[]
+        setWarehouses(wh)
 
+        const it = (itRes.data || []).map(i => ({ id: i.id, name: i.name, sku: i.sku, baseUomId: i.base_uom_id })) as Item[]
+        setItems(it)
+
+        // Bins — by warehouses of this company
+        const whIds = wh.map(w => w.id)
+        if (whIds.length) {
+          const bRes = await supabase.from('bins').select('id,code,name,warehouseId').in('warehouseId', whIds).order('code', { ascending: true })
+          setBins(((bRes.data || []) as any[]).map(b => ({ id: b.id, code: b.code, name: b.name, warehouseId: b.warehouseId })) as Bin[])
+        } else {
+          setBins([])
+        }
+
+        // Stock levels — scoped
+        const slRes = await supabase
+          .from('stock_levels')
+          .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,updated_at')
+          .eq('company_id', companyId)
+        if (slRes.error) throw slRes.error
+        setLevels(((slRes.data || []) as any[]).map(normalizeStockLevel))
+
+        // Movements — scoped
+        const mvRes = await supabase
+          .from('stock_movements')
+          .select('id,type,item_id,qty,qty_base,unit_cost,total_value,warehouse_id,warehouse_from_id,warehouse_to_id,bin_from_id,bin_to_id,created_at')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: true })
+        if (mvRes.error) throw mvRes.error
+        setMoves(((mvRes.data || []) as any[]).map(r => ({
+          id: r.id,
+          type: r.type,
+          itemId: r.item_id,
+          qty: r.qty,
+          qtyBase: r.qty_base,
+          unitCost: r.unit_cost,
+          totalValue: r.total_value,
+          warehouseId: r.warehouse_id,
+          warehouseFromId: r.warehouse_from_id,
+          warehouseToId: r.warehouse_to_id,
+          binFromId: r.bin_from_id,
+          binToId: r.bin_to_id,
+          createdAt: r.created_at,
+        } as Movement)))
+
+        // Currencies (global)
+        const cs = await supabase.from('currencies').select('code,name').order('code', { ascending: true })
+        setCurrencies((cs.data || []) as Currency[])
+
+        // Customers (scoped)
+        const custs = await supabase.from('customers').select('id,name,code').eq('company_id', companyId).order('name', { ascending: true })
+        if (!custs.error) setCustomers((custs.data || []) as Customer[])
+
+        // Base currency from settings
         const baseCur = pickString(
           setting?.baseCurrencyCode, setting?.base_currency_code,
           at(setting, 'documents.finance.baseCurrency'),
@@ -267,6 +318,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         ) || 'MZN'
         setBaseCurrency(baseCur); setDisplayCurrency(prev => prev || baseCur)
 
+        // Revenue table/view names (not necessarily company-scoped; we’ll try to filter later)
         const ordersSrc = pickString(
           setting?.ordersSource, setting?.orders_source, setting?.ordersView, setting?.orders_table,
           at(setting, 'documents.revenue.ordersSource'),
@@ -286,12 +338,12 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         toast.error(err?.message || 'Failed to load report prerequisites')
       }
     })()
-  }, [])
+  }, [companyId])
 
-  /* ---------- revenue sources by date window ---------- */
+  /* ---------- revenue sources by date window (TRY to apply company filter) ---------- */
   useEffect(() => {
     ;(async () => {
-      const key = `${ordersSource}|${startDate}|${endDate}`
+      const key = `${ordersSource}|${startDate}|${endDate}|${companyId || ''}`
       if (ordersFetchKeyRef.current === key) return
       ordersFetchKeyRef.current = key
       setOrders([]); setOrdersUnavailable(false)
@@ -299,33 +351,54 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
       const startIso = `${startDate}T00:00:00Z`; const endIso = `${endDate}T23:59:59.999Z`
       type DateCol = 'createdAt' | 'created_at'
-      const run = (col: DateCol) =>
-        supabase.from(ordersSource)
+      async function attempt(col: DateCol, withCompany: boolean) {
+        let q = supabase.from(ordersSource)
           .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${col}`)
           .gte(col, startIso)
           .lte(col, endIso)
           .order(col, { ascending: true })
+        if (withCompany && companyId) {
+          // Try both column styles using OR; if the table lacks either, Postgrest may error → we’ll catch and retry.
+          q = q.or(`company_id.eq.${companyId},companyId.eq.${companyId}`)
+        }
+        return q
+      }
 
       try {
-        let resp = await run('createdAt')
+        let resp = await attempt('createdAt', true)
         if (resp.error) {
+          // retry combos to be resilient
           const msg = (resp.error.message || '').toLowerCase()
           if (msg.includes('column') && msg.includes('does not exist')) {
-            const r2 = await run('created_at')
-            if (r2.error) { setOrdersUnavailable(true); return }
+            const r2 = await attempt('created_at', true)
+            if (r2.error) {
+              const r3 = await attempt('createdAt', false)
+              if (r3.error) {
+                const r4 = await attempt('created_at', false)
+                if (r4.error) { setOrdersUnavailable(true); return }
+                setOrders((r4.data || []) as OrderLite[]); return
+              }
+              setOrders((r3.data || []) as OrderLite[]); return
+            }
             setOrders((r2.data || []) as OrderLite[]); return
           }
-          if (msg.includes('relation') || msg.includes('not found')) { setOrdersUnavailable(true); return }
-          setOrdersUnavailable(true); return
+          // unknown error: retry without company filter
+          const r5 = await attempt('createdAt', false)
+          if (r5.error) {
+            const r6 = await attempt('created_at', false)
+            if (r6.error) { setOrdersUnavailable(true); return }
+            setOrders((r6.data || []) as OrderLite[]); return
+          }
+          setOrders((r5.data || []) as OrderLite[]); return
         }
         setOrders((resp.data || []) as OrderLite[])
       } catch { setOrdersUnavailable(true) }
     })()
-  }, [ordersSource, startDate, endDate])
+  }, [ordersSource, startDate, endDate, companyId])
 
   useEffect(() => {
     ;(async () => {
-      const key = `${cashSource}|${startDate}|${endDate}`
+      const key = `${cashSource}|${startDate}|${endDate}|${companyId || ''}`
       if (cashFetchKeyRef.current === key) return
       cashFetchKeyRef.current = key
       setCashSales([]); setCashUnavailable(false)
@@ -333,29 +406,47 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
       const startIso = `${startDate}T00:00:00Z`; const endIso = `${endDate}T23:59:59.999Z`
       type DateCol = 'createdAt' | 'created_at'
-      const run = (col: DateCol) =>
-        supabase.from(cashSource)
+      async function attempt(col: DateCol, withCompany: boolean) {
+        let q = supabase.from(cashSource)
           .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${col}`)
           .gte(col, startIso)
           .lte(col, endIso)
           .order(col, { ascending: true })
+        if (withCompany && companyId) {
+          q = q.or(`company_id.eq.${companyId},companyId.eq.${companyId}`)
+        }
+        return q
+      }
 
       try {
-        let resp = await run('createdAt')
+        let resp = await attempt('createdAt', true)
         if (resp.error) {
           const msg = (resp.error.message || '').toLowerCase()
           if (msg.includes('column') && msg.includes('does not exist')) {
-            const r2 = await run('created_at')
-            if (r2.error) { setCashUnavailable(true); return }
+            const r2 = await attempt('created_at', true)
+            if (r2.error) {
+              const r3 = await attempt('createdAt', false)
+              if (r3.error) {
+                const r4 = await attempt('created_at', false)
+                if (r4.error) { setCashUnavailable(true); return }
+                setCashSales((r4.data || []) as CashSaleLite[]); return
+              }
+              setCashSales((r3.data || []) as CashSaleLite[]); return
+            }
             setCashSales((r2.data || []) as CashSaleLite[]); return
           }
-          if (msg.includes('relation') || msg.includes('not found')) { setCashUnavailable(true); return }
-          setCashUnavailable(true); return
+          const r5 = await attempt('createdAt', false)
+          if (r5.error) {
+            const r6 = await attempt('created_at', false)
+            if (r6.error) { setCashUnavailable(true); return }
+            setCashSales((r6.data || []) as CashSaleLite[]); return
+          }
+          setCashSales((r5.data || []) as CashSaleLite[]); return
         }
         setCashSales((resp.data || []) as CashSaleLite[])
       } catch { setCashUnavailable(true) }
     })()
-  }, [cashSource, startDate, endDate])
+  }, [cashSource, startDate, endDate, companyId])
 
   /* ---------- auto FX ---------- */
   useEffect(() => {
@@ -456,6 +547,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     type WAState = { qty: number; avgCost: number }
     const start = period.startMs, end = period.endMs
     const cogsByItemInPeriod = new Map<string, number>()
+    theSold: { }
     const soldUnitsByItemInPeriod = new Map<string, number>()
     const asOfEndQtyByKey = new Map<Key, number>()
     const asOfEndAvgCostByKey = new Map<Key, number>()
@@ -486,7 +578,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
     for (const m of sorted) {
       const t = getTime(m)
-      if (t > end) break; // ►► Only consider moves up to END for as-of-end valuation
+      if (t > end) break
 
       const qtySigned = n(m.qtyBase ?? m.qty, 0)
       const qty = Math.abs(qtySigned)
@@ -524,17 +616,17 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Direction (robust for ADJUST without sign):
-        let dir: 'IN' | 'OUT'
-        if (nt === 'ADJ') {
+      let dir: 'IN' | 'OUT'
+      if (nt === 'ADJ') {
         const v = n(m.totalValue, 0)
         if (v !== 0) dir = v < 0 ? 'OUT' : 'IN'
         else {
-            const sign = Math.sign(qtySigned)
-            dir = sign >= 0 ? 'IN' : 'OUT'
+          const sign = Math.sign(qtySigned)
+          dir = sign >= 0 ? 'IN' : 'OUT'
         }
-        } else {
+      } else {
         dir = (nt === 'IN') ? 'IN' : 'OUT'
-        }
+      }
 
       const wh = resolveWarehouse(m, dir); if (!wh) continue
       const k = keyOf(wh, m.itemId)

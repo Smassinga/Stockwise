@@ -15,7 +15,7 @@ type Uom = {
   id: string
   code: string
   name: string
-  family: string // 'mass' | 'volume' | 'length' | 'count' | 'area' | 'time' | 'other' | 'unspecified' | etc.
+  family: string
 }
 
 type Item = {
@@ -23,7 +23,6 @@ type Item = {
   sku: string
   name: string
   baseUomId: string
-  unitPrice: number | null
   minStock: number | null
   createdAt: string | null
   updatedAt: string | null
@@ -34,7 +33,7 @@ function sortByName<T extends { name?: string }>(arr: T[]) {
 }
 
 const Items: React.FC = () => {
-  const { myRole } = useOrg()
+  const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
 
   const [loading, setLoading] = useState(true)
@@ -45,12 +44,11 @@ const Items: React.FC = () => {
   const [name, setName] = useState('')
   const [sku, setSku] = useState('')
   const [baseUomId, setBaseUomId] = useState('')
-  const [unitPrice, setUnitPrice] = useState<string>('')
   const [minStock, setMinStock] = useState<string>('')
 
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
 
-  // ------- Family helpers (same spirit as StockMovements) -------
+  // ------- Family helpers -------
   const familyLabel = (fam?: string) => {
     const key = String(fam || 'unspecified').toLowerCase()
     const map: Record<string, string> = {
@@ -82,8 +80,7 @@ const Items: React.FC = () => {
     ;(async () => {
       try {
         setLoading(true)
-
-        // ---- UOMs: sequential probing to avoid noisy 400s and only fall back when needed
+        // ---- UOMs
         const normalize = (rows: any[]): Uom[] =>
           (rows ?? []).map((r: any) => ({
             id: String(r.id),
@@ -99,19 +96,17 @@ const Items: React.FC = () => {
 
         let uomRows: any[] = []
 
-        // 1) Prefer 'uoms' with family
+        // Prefer 'uoms' with family; fallback variants preserved
         let res = await safeSelect('uoms', 'id, code, name, family')
         if (res?.data?.length) {
           uomRows = res.data
         } else if (res?.error && res.error.status === 400) {
-          // Family likely missing; retry without family on 'uoms'
           const resNoFam = await safeSelect('uoms', 'id, code, name')
           if (resNoFam?.data?.length) {
             uomRows = resNoFam.data.map((r: any) => ({ ...r, family: 'unspecified' }))
           }
         }
 
-        // 2) If still empty, try 'uom' with family, then fallback without family
         if (!uomRows.length) {
           res = await safeSelect('uom', 'id, code, name, family')
           if (res?.data?.length) {
@@ -126,10 +121,10 @@ const Items: React.FC = () => {
 
         setUoms(normalize(uomRows || []))
 
-        // ---- Items via camelCase view
+        // ---- Items via view (already scoped by RLS and/or view)
         const itemsRes = await supabase
           .from('items_view')
-          .select('id,sku,name,baseUomId,unitPrice,minStock,createdAt,updatedAt')
+          .select('id,sku,name,baseUomId,minStock,createdAt,updatedAt')
           .order('name', { ascending: true })
         if (itemsRes.error) throw itemsRes.error
         setItems(sortByName(itemsRes.data || []))
@@ -145,7 +140,7 @@ const Items: React.FC = () => {
   async function reloadItems() {
     const res = await supabase
       .from('items_view')
-      .select('id,sku,name,baseUomId,unitPrice,minStock,createdAt,updatedAt')
+      .select('id,sku,name,baseUomId,minStock,createdAt,updatedAt')
       .order('name', { ascending: true })
     if (res.error) return toast.error(res.error.message)
     setItems(sortByName(res.data || []))
@@ -154,30 +149,35 @@ const Items: React.FC = () => {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!can.createItem(role)) return toast.error('Only OPERATOR+ can create items')
+    if (!companyId) return toast.error('No active company')
     if (!name.trim() || !sku.trim() || !baseUomId) return toast.error('Name, SKU and Base UoM are required')
 
-    const priceNum = unitPrice ? Number(unitPrice) : 0
     const minStockNum = minStock ? Number(minStock) : 0
-    if (Number.isNaN(priceNum) || priceNum < 0) return toast.error('Unit Price must be a non-negative number')
     if (Number.isNaN(minStockNum) || minStockNum < 0) return toast.error('Min Stock must be a non-negative number')
 
     try {
-      const dup = await supabase.from('items').select('id').eq('sku', sku.trim()).limit(1)
+      // Duplicate check scoped to THIS company
+      const dup = await supabase
+        .from('items')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('sku', sku.trim())
+        .limit(1)
       if (dup.error) throw dup.error
-      if (dup.data && dup.data.length) return toast.error('SKU must be unique')
+      if (dup.data && dup.data.length) return toast.error('SKU must be unique in this company')
 
       const payload: any = {
+        company_id: companyId,          // keep it explicitly scoped
         name: name.trim(),
         sku: sku.trim(),
         base_uom_id: baseUomId,
-        unit_price: priceNum,
         min_stock: minStockNum,
       }
       const ins = await supabase.from('items').insert(payload).select('id').single()
       if (ins.error) throw ins.error
 
       toast.success('Item created')
-      setName(''); setSku(''); setBaseUomId(''); setUnitPrice(''); setMinStock('')
+      setName(''); setSku(''); setBaseUomId(''); setMinStock('')
       await reloadItems()
     } catch (e: any) {
       console.error(e)
@@ -226,13 +226,10 @@ const Items: React.FC = () => {
               <Label>Base UoM *</Label>
               <Select value={baseUomId} onValueChange={setBaseUomId}>
                 <SelectTrigger><SelectValue placeholder="Select a unit" /></SelectTrigger>
-
-                {/* Grouped by family with sticky headers */}
                 <SelectContent className="max-h-72 overflow-auto">
                   {groupedUoms.families.length === 0 && (
                     <SelectItem value="__none__" disabled>No UoMs available</SelectItem>
                   )}
-
                   {groupedUoms.families.map(fam => {
                     const list = groupedUoms.groups.get(fam) || []
                     return (
@@ -251,19 +248,6 @@ const Items: React.FC = () => {
                   })}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="unitPrice">Unit Price</Label>
-              <Input
-                id="unitPrice"
-                type="number"
-                step="0.0001"
-                min="0"
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                placeholder="0.00"
-              />
             </div>
 
             <div className="space-y-2">
@@ -295,14 +279,13 @@ const Items: React.FC = () => {
                 <th className="py-2 pr-2">Name</th>
                 <th className="py-2 pr-2">SKU</th>
                 <th className="py-2 pr-2">Base UoM</th>
-                <th className="py-2 pr-2">Unit Price</th>
                 <th className="py-2 pr-2">Min Stock</th>
                 <th className="py-2 pr-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
-                <tr><td colSpan={6} className="py-4 text-muted-foreground">No items yet.</td></tr>
+                <tr><td colSpan={5} className="py-4 text-muted-foreground">No items yet.</td></tr>
               )}
               {items.map(it => {
                 const u = uomById.get(it.baseUomId)
@@ -311,7 +294,6 @@ const Items: React.FC = () => {
                     <td className="py-2 pr-2">{it.name}</td>
                     <td className="py-2 pr-2">{it.sku}</td>
                     <td className="py-2 pr-2">{u ? `${u.code} — ${u.name}` : it.baseUomId}</td>
-                    <td className="py-2 pr-2">{typeof it.unitPrice === 'number' ? it.unitPrice.toFixed(2) : '-'}</td>
                     <td className="py-2 pr-2">{typeof it.minStock === 'number' ? it.minStock : '-'}</td>
                     <td className="py-2 pr-2">
                       <div className="flex gap-2">

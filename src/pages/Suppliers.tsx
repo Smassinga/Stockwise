@@ -12,7 +12,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
-// Currency “id” is always the CODE (fits FK on suppliers.currency_code)
+// Currency “id” is always the CODE
 type Currency = { id: string; code: string; name: string }
 
 type Supplier = {
@@ -23,7 +23,7 @@ type Supplier = {
   email: string | null
   phone: string | null
   taxId: string | null
-  currencyId: string | null // mirrors currency_code in base table
+  currencyId: string | null // mirrors suppliers.currency_code
   paymentTerms: string | null
   isActive: boolean
   notes: string | null
@@ -34,9 +34,25 @@ type Supplier = {
 const sortBy = <T,>(arr: T[], key: (t: T) => string) =>
   [...arr].sort((a, b) => key(a).localeCompare(key(b)))
 
+const mapSupplierRow = (r: any): Supplier => ({
+  id: String(r.id),
+  code: r.code ?? '',
+  name: r.name ?? '',
+  contactName: r.contactName ?? r.contact_name ?? null,
+  email: r.email ?? null,
+  phone: r.phone ?? null,
+  taxId: r.taxId ?? r.tax_id ?? null,
+  currencyId: r.currencyId ?? r.currency_code ?? null,
+  paymentTerms: r.paymentTerms ?? r.payment_terms ?? null,
+  isActive: typeof r.isActive === 'boolean' ? r.isActive : !!r.is_active,
+  notes: r.notes ?? null,
+  createdAt: r.createdAt ?? r.created_at ?? null,
+  updatedAt: r.updatedAt ?? r.updated_at ?? null,
+})
+
 export default function Suppliers() {
   const { user } = useAuth()
-  const { myRole } = useOrg()
+  const { companyId, myRole } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
 
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -57,31 +73,24 @@ export default function Suppliers() {
 
   const currencyById = useMemo(() => new Map(currencies.map(c => [c.id, c])), [currencies])
 
+  // ----------- Load masters (scoped) -----------
   useEffect(() => {
     (async () => {
       if (!user) return
       try {
         setLoading(true)
 
-        // Currencies: always code+name; use code as id
-        const cur = await supabase
-          .from('currencies')
-          .select('code,name')
-          .order('code', { ascending: true })
-        if (cur.error) throw cur.error
-        setCurrencies((cur.data || []).map((r: any) => ({
-          id: r.code,
-          code: r.code,
-          name: r.name,
-        })))
+        // Currencies (global)
+        {
+          const cur = await supabase
+            .from('currencies')
+            .select('code,name')
+            .order('code', { ascending: true })
+          if (cur.error) throw cur.error
+          setCurrencies((cur.data || []).map((r: any) => ({ id: r.code, code: r.code, name: r.name })))
+        }
 
-        // Suppliers (camelCase view)
-        const sRes = await supabase
-          .from('suppliers_view')
-          .select('id,code,name,contactName,email,phone,taxId,currencyId,paymentTerms,isActive,notes,createdAt,updatedAt')
-          .order('name', { ascending: true })
-        if (sRes.error) throw sRes.error
-        setSuppliers(sRes.data || [])
+        await reloadSuppliers()
       } catch (e: any) {
         console.error(e)
         toast.error(e?.message || 'Failed to load suppliers')
@@ -89,27 +98,58 @@ export default function Suppliers() {
         setLoading(false)
       }
     })()
-  }, [user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, companyId])
 
   async function reloadSuppliers() {
-    const res = await supabase
+    if (!companyId) { setSuppliers([]); return }
+
+    // First try the view (preferred)
+    const v = await supabase
       .from('suppliers_view')
-      .select('id,code,name,contactName,email,phone,taxId,currencyId,paymentTerms,isActive,notes,createdAt,updatedAt')
+      .select('id,code,name,contactName,email,phone,taxId,currencyId,paymentTerms,isActive,notes,createdAt,updatedAt,company_id')
+      .eq('company_id', companyId)
       .order('name', { ascending: true })
-    if (res.error) {
-      toast.error(res.error.message)
+
+    if (!v.error) {
+      setSuppliers((v.data || []).map(mapSupplierRow))
       return
     }
-    setSuppliers(res.data || [])
+
+    // If the view is missing company_id column or not deployed yet, fall back to base table.
+    const fallback = await supabase
+      .from('suppliers')
+      .select('id,code,name,contact_name, email, phone, tax_id, currency_code, payment_terms, is_active, notes, created_at, updated_at')
+      .eq('company_id', companyId)
+      .order('name', { ascending: true })
+
+    if (fallback.error) {
+      toast.error(fallback.error.message)
+      setSuppliers([])
+      return
+    }
+    setSuppliers((fallback.data || []).map(mapSupplierRow))
   }
 
+  // ----------- Create / Update / Delete (scoped) -----------
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (!companyId) return toast.error('Join or create a company first')
     if (!can.createMaster(role)) return toast.error('Only OPERATOR+ can create suppliers')
     if (!code.trim() || !name.trim()) return toast.error('Code and Name are required')
 
     try {
+      // Per-company duplicate code check
+      const dup = await supabase
+        .from('suppliers')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .eq('code', code.trim())
+      if (dup.error) throw dup.error
+      if ((dup.count ?? 0) > 0) return toast.error('Code must be unique (per company)')
+
       const payload: any = {
+        company_id: companyId,          // tenant key
         code: code.trim(),
         name: name.trim(),
         contact_name: contactName.trim() || null,
@@ -137,9 +177,14 @@ export default function Suppliers() {
   }
 
   async function handleDelete(id: string) {
+    if (!companyId) return toast.error('Join or create a company first')
     if (!can.deleteMaster(role)) return toast.error('Only MANAGER+ can delete suppliers')
     try {
-      const del = await supabase.from('suppliers').delete().eq('id', id)
+      const del = await supabase
+        .from('suppliers')
+        .delete()
+        .eq('id', id)
+        .eq('company_id', companyId) // fail-closed to tenant
       if (del.error) throw del.error
       toast.success('Supplier deleted')
       await reloadSuppliers()
@@ -150,9 +195,14 @@ export default function Suppliers() {
   }
 
   async function toggleActive(id: string, next: boolean) {
+    if (!companyId) return toast.error('Join or create a company first')
     if (!can.updateMaster(role)) return toast.error('Only OPERATOR+ can update suppliers')
     try {
-      const upd = await supabase.from('suppliers').update({ is_active: next }).eq('id', id)
+      const upd = await supabase
+        .from('suppliers')
+        .update({ is_active: next })
+        .eq('id', id)
+        .eq('company_id', companyId) // tenant guard
       if (upd.error) throw upd.error
       await reloadSuppliers()
     } catch (e: any) {

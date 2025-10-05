@@ -1,6 +1,6 @@
 // src/pages/Orders/PurchaseOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { db, supabase } from '../../lib/db'
+import { supabase } from '../../lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -12,7 +12,7 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
-import { useOrg } from '../../hooks/useOrg' // ⬅️ company scope
+import { useOrg } from '../../hooks/useOrg'
 
 type AppSettings = {
   branding?: { companyName?: string; logoUrl?: string }
@@ -46,7 +46,6 @@ type PO = {
   subtotal?: number|null
   tax_total?: number|null
   total?: number|null
-
   order_no?: string|null
   updated_at?: string|null
   created_at?: string|null
@@ -76,7 +75,6 @@ const initials = (s?: string | null) => {
   const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
   return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
 }
-/** Prefetch an image and convert to Data URL to avoid CORS/expiry; returns null on failure. */
 async function fetchDataUrl(src?: string | null): Promise<string | null> {
   if (!src || !src.trim()) return null
   try {
@@ -89,9 +87,7 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
       fr.onerror = reject
       fr.readAsDataURL(b)
     })
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 export default function PurchaseOrders() {
@@ -162,12 +158,14 @@ export default function PurchaseOrders() {
   function resetBrowserPaging() { setBrowserRows([]); setBrowserPage(0); setBrowserHasMore(false) }
 
   async function fetchBrowserPage(page = 0) {
+    if (!companyId) return
     const statuses = activeStatuses()
     if (statuses.length === 0) { setBrowserRows([]); setBrowserHasMore(false); return }
 
     let q = supabase
       .from('purchase_orders')
       .select('id,supplier_id,supplier_name,supplier,status,currency_code,fx_to_base,total,updated_at,created_at,order_no')
+      .eq('company_id', companyId)
       .in('status', statuses)
       .order('updated_at', { ascending: false })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
@@ -186,14 +184,6 @@ export default function PurchaseOrders() {
     setBrowserPage(page)
   }
 
-  useEffect(() => {
-    if (!browserOpen) return
-    const t = setTimeout(() => { resetBrowserPaging(); fetchBrowserPage(0) }, 250)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [browserOpen, browserQ, browserFrom, browserTo, browserStatuses.closed, browserStatuses.partially_received])
-
-  // helpers
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
   const uomIdFromIdOrCode = (v?: string | null): string => {
     if (!v) return ''
@@ -217,21 +207,26 @@ export default function PurchaseOrders() {
     p.supplier_name ?? p.supplier ?? (p.supplier_id ? (suppliers.find(s => s.id === p.supplier_id)?.name ?? p.supplier_id) : tt('none', '(none)'))
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
 
-  // load masters, lists, conversions, defaults, and global brand fallbacks
+  // load masters, lists, conversions, defaults, brand fallbacks
   useEffect(() => {
     (async () => {
       try {
-        const [it, uu, cs, appRes] = await Promise.all([
-          db.items.list({ orderBy: { name: 'asc' } }),
+        if (!companyId) return
+
+        const [itemsRes, uomsRes, curRes, appRes] = await Promise.all([
+          supabase.from('items')
+            .select('id,sku,name,base_uom_id')
+            .eq('company_id', companyId)
+            .order('name', { ascending: true }),
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
           supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])
 
-        setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
-        if (uu.error) throw uu.error
-        setUoms(((uu.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
-        setCurrencies((cs.data || []) as Currency[])
+        setItems(((itemsRes.data || []) as any[]).map(x => ({ id: x.id, name: x.name, sku: x.sku, baseUomId: x.base_uom_id || '' })))
+        if (uomsRes.error) throw uomsRes.error
+        setUoms(((uomsRes.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
+        setCurrencies((curRes.data || []) as Currency[])
         setBaseCode(await getBaseCurrencyCode())
 
         const { data: convRows, error: convErr } = await supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
@@ -240,29 +235,47 @@ export default function PurchaseOrders() {
         const supps = await supabase
           .from('suppliers')
           .select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (supps.error) throw supps.error
         setSuppliers((supps.data || []) as Supplier[])
 
-        const [po, pol] = await Promise.all([ db.purchaseOrders.list(), db.purchaseOrderLines.list() ])
-        setPOs((po || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-        setPOLines(pol || [])
+        // POs + lines for this company
+        const [poRes, polRes] = await Promise.all([
+          supabase.from('purchase_orders')
+            .select('id,status,currency_code,fx_to_base,total,subtotal,tax_total,updated_at,created_at,order_no,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
+            .eq('company_id', companyId),
+          supabase.from('purchase_order_lines')
+            .select('id,po_id,item_id,uom_id,line_no,qty,unit_price,discount_pct,line_total')
+            .eq('company_id', companyId),
+        ])
+        const poRows = (poRes.data || []) as PO[]
+        setPOs(poRows.sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
+        setPOLines((polRes.data || []) as POL[])
 
         const [whRes, binRes] = await Promise.all([
-          db.warehouses.list({ orderBy: { name: 'asc' } }),
-          db.bins.list({ orderBy: { code: 'asc' } })
+          supabase
+            .from('warehouses')
+            .select('id,name')
+            .eq('company_id', companyId)
+            .order('name', { ascending: true }),
+          supabase
+            .from('bins')
+            .select('id,code,name,warehouseId')   // ✅ camelCase column
+            .eq('company_id', companyId)
+            .order('code', { ascending: true }),
         ])
-        setWarehouses(whRes || [])
-        setBins(binRes || [])
+        setWarehouses((whRes.data || []) as Warehouse[])
+        setBins(((binRes.data || []) as any[]).map(b => ({ id: b.id, code: b.code, name: b.name, warehouseId: b.warehouseId })) as Bin[])
 
-        if (whRes && whRes.length) {
-          const preferred = whRes[0]
+        if (whRes.data && whRes.data.length) {
+          const preferred = whRes.data[0]
           setDefaultReceiveWhId(preferred.id)
-          const firstBin = (binRes || []).find(b => b.warehouseId === preferred.id)?.id || ''
+          const firstBin = ((binRes.data || []) as any[]).find(b => b.warehouseId === preferred.id)?.id || ''
           setDefaultReceiveBinId(firstBin)
         }
 
-        // GLOBAL brand fallbacks from app_settings
+        // GLOBAL brand fallbacks
         try {
           const [brandRes, companyRes] = await Promise.all([
             supabase.from('app_settings').select('data').eq('id', 'brand').maybeSingle(),
@@ -285,15 +298,15 @@ export default function PurchaseOrders() {
             a?.logoUrl || ''
           setBrandName(prev => prev || String(nameGuess || ''))
           setBrandLogoUrl(prev => prev || String(logoGuess || ''))
-        } catch { /* ignore */ }
+        } catch {}
       } catch (err: any) {
         console.error(err)
         toast.error(err?.message || tt('orders.loadFailed', 'Failed to load purchase orders'))
       }
     })()
-  }, [])
+  }, [companyId])
 
-  // load per-company brand (highest priority)
+  // per-company brand (highest priority)
   useEffect(() => {
     if (!companyId) return
     ;(async () => {
@@ -313,13 +326,15 @@ export default function PurchaseOrders() {
     })()
   }, [companyId])
 
-  // helper: fetch receipts for a PO and build map ref_line_id -> received qty
+  // receipts map (company-scoped)
   async function loadReceiptsMap(poId: string) {
+    if (!companyId) return {}
     const { data, error } = await supabase
       .from('stock_movements')
       .select('ref_line_id, qty, type, ref_type, ref_id')
+      .eq('company_id', companyId)
       .eq('ref_type', 'PO')
-      .eq('ref_id', poId)
+      .eq('ref_id', String(poId)) // ref_id is TEXT in DB
     if (error) throw error
 
     const m: Record<string, number> = {}
@@ -337,7 +352,13 @@ export default function PurchaseOrders() {
   async function upsertStockLevel(
     whId: string, binId: string | null, itemId: string, deltaQtyBase: number, unitCostForReceipts?: number
   ) {
-    let q = supabase.from('stock_levels').select('id,qty,avg_cost').eq('warehouse_id', whId).eq('item_id', itemId).limit(1)
+    if (!companyId) throw new Error('No company selected')
+    let q = supabase.from('stock_levels')
+      .select('id,qty,avg_cost')
+      .eq('company_id', companyId)
+      .eq('warehouse_id', whId)
+      .eq('item_id', itemId)
+      .limit(1)
     q = binId ? q.eq('bin_id', binId) : q.is('bin_id', null)
     const { data: found, error: selErr } = await q
     if (selErr) throw selErr
@@ -346,7 +367,9 @@ export default function PurchaseOrders() {
     if (!found || found.length === 0) {
       if (deltaQtyBase < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock at source bin'))
       const { error: insErr } = await supabase.from('stock_levels').insert({
-        warehouse_id: whId, bin_id: binId, item_id: itemId, qty: deltaQtyBase, allocated_qty: 0, avg_cost: unitCost, updated_at: nowISO(),
+        company_id: companyId,
+        warehouse_id: whId, bin_id: binId, item_id: itemId,
+        qty: deltaQtyBase, allocated_qty: 0, avg_cost: unitCost, updated_at: nowISO(),
       } as any)
       if (insErr) throw insErr
       return
@@ -360,10 +383,9 @@ export default function PurchaseOrders() {
     if (updErr) throw updErr
   }
 
-  // actions
   async function tryUpdateStatus(id: string, candidates: string[]) {
     for (const status of candidates) {
-      const { error } = await supabase.from('purchase_orders').update({ status }).eq('id', id)
+      const { error } = await supabase.from('purchase_orders').update({ status }).eq('id', id).eq('company_id', companyId!)
       if (!error) return status
       if (!String(error?.message || '').toLowerCase().includes('invalid input value for enum')) throw error
     }
@@ -387,7 +409,7 @@ export default function PurchaseOrders() {
       const tax_total = subtotal * (n(poTaxPct, 0) / 100)
       const total = subtotal + tax_total
 
-      const inserted: any = await db.purchaseOrders.create({
+      const { data: insPO, error: poErr } = await supabase.from('purchase_orders').insert({
         company_id: companyId,
         supplier_id: poSupplierId,
         status: 'draft',
@@ -401,18 +423,19 @@ export default function PurchaseOrders() {
         supplier_phone: supp?.phone ?? null,
         supplier_tax_id: supp?.tax_id ?? null,
         subtotal, tax_total, total,
-      } as any)
-
-      const poId: string = Array.isArray(inserted) ? inserted[0]?.id : inserted?.id
-      if (!poId) throw new Error('PO insert did not return an id')
+      } as any).select('id').single()
+      if (poErr) throw poErr
+      const poId = insPO!.id as string
 
       for (let i = 0; i < cleanLines.length; i++) {
-        const l = cleanLines[i]; const lineNo = i + 1
+        const l = cleanLines[i]
         const lineTotal = l.qty * l.unitPrice * (1 - l.discountPct / 100)
-        await db.purchaseOrderLines.create({
-          po_id: poId, item_id: l.itemId, uom_id: l.uomId, line_no: lineNo,
+        const { error: lineErr } = await supabase.from('purchase_order_lines').insert({
+          company_id: companyId,
+          po_id: poId, item_id: l.itemId, uom_id: l.uomId, line_no: i + 1,
           qty: l.qty, unit_price: l.unitPrice, discount_pct: l.discountPct, line_total: lineTotal
         } as any)
+        if (lineErr) throw lineErr
       }
 
       toast.success(tt('orders.poCreated', 'Purchase Order created'))
@@ -420,9 +443,7 @@ export default function PurchaseOrders() {
       setPoLinesForm([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
       setPoOpen(false)
 
-      const [po, pol] = await Promise.all([ db.purchaseOrders.list(), db.purchaseOrderLines.list() ])
-      setPOs((po || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-      setPOLines(pol || [])
+      await refreshPOData()
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCreateFailed', 'Failed to create PO')) }
   }
 
@@ -442,9 +463,142 @@ export default function PurchaseOrders() {
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCancelFailed', 'Failed to cancel PO')) }
   }
 
-  // receive ALL
+  // ---------------- NEW HELPERS ----------------
+
+  // Refresh all PO + POL company-scoped lists
+  async function refreshPOData() {
+    if (!companyId) return
+    const [poRes, polRes] = await Promise.all([
+      supabase.from('purchase_orders').select('*').eq('company_id', companyId),
+      supabase.from('purchase_order_lines').select('*').eq('company_id', companyId),
+    ])
+    setPOs(((poRes.data || []) as PO[]).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
+    setPOLines((polRes.data || []) as POL[])
+  }
+
+  // DRY: post one receipt movement for a single line
+  async function postReceiptForLine(
+    po: PO,
+    line: POL,
+    qtyRequested: number,
+    whId: string,
+    binId: string
+  ) {
+    if (!companyId) throw new Error('No company selected')
+
+    const it = itemById.get(line.item_id); if (!it) throw new Error(`Item not found for line ${line.item_id}`)
+    const baseUom = it.baseUomId
+    const qtyBase = safeConvert(qtyRequested, line.uom_id, baseUom)
+    if (qtyBase == null) {
+      const fromCode = uomById.get(uomIdFromIdOrCode(line.uom_id))?.code || line.uom_id
+      throw new Error(tt('orders.noConversion', 'No conversion from {from} to base for {sku}')
+        .replace('{from}', String(fromCode)).replace('{sku}', String(it.sku)))
+    }
+
+    const fxToBase = n(po.fx_to_base ?? (po as any).fxToBase, 1)
+    const disc = n(line.discount_pct, 0)
+    const totalBase = n(line.unit_price) * qtyRequested * (1 - disc/100) * fxToBase
+    const unitCostBase = qtyBase > 0 ? totalBase / qtyBase : 0
+
+    await upsertStockLevel(whId, binId, it.id, qtyBase, unitCostBase)
+    await supabase.from('stock_movements').insert({
+      company_id: companyId,
+      type: 'receive',
+      item_id: it.id,
+      uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
+      qty: qtyRequested,
+      qty_base: qtyBase,
+      unit_cost: unitCostBase,
+      total_value: totalBase,
+      warehouse_to_id: whId,
+      bin_to_id: binId,
+      notes: `PO ${poNo(po)}`,
+      created_by: 'system',
+      ref_type: 'PO',
+      ref_id: String((po as any).id), // ensure TEXT
+      ref_line_id: line.id ?? null,
+    } as any)
+  }
+
+  // Receive a single line (used by the per-line button)
+  async function receiveLine(po: PO, line: POL) {
+    try {
+      if (!companyId) throw new Error('No company selected')
+
+      const currentMap = await loadReceiptsMap(po.id)
+      const lineId = String(line.id || '')
+      const ordered = n(line.qty)
+      const already = n(currentMap[lineId] || 0)
+      const remaining = Math.max(0, ordered - already)
+      if (remaining <= 0) {
+        // Nothing left — try to trim & possibly close
+        let closedViaRpc = false
+        try {
+          const { data, error } = await supabase.rpc('po_trim_and_close', {
+            p_company_id: companyId,
+            p_po_id: po.id,
+          })
+          if (error) {
+            const msg = String(error.message || '').toLowerCase()
+            // tolerate PostgREST 404/routability while function becomes available
+            if (!msg.includes('not found')) throw error
+          } else {
+            closedViaRpc = !!data?.[0]?.closed
+          }
+        } catch (e) {
+          // swallow: fallback happens via refresh + status check
+          console.warn('po_trim_and_close (tolerated):', e)
+        }
+        if (closedViaRpc) toast.success(tt('orders.poClosed', 'PO closed — all items received'))
+        await refreshPOData()
+        await loadReceiptsMap(po.id)
+        return
+      }
+
+      const key = String(line.id ?? `${line.po_id}-${line.line_no}`)
+      const plan = receivePlan[key]
+      const qtyRequested = clamp(n(plan?.qty ?? 0), 0, remaining)
+      if (!plan || qtyRequested <= 0) return toast.error(tt('orders.enterQty', 'Enter a quantity to receive'))
+      if (!plan.whId || !plan.binId) return toast.error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
+
+      await postReceiptForLine(po, line, qtyRequested, plan.whId, plan.binId)
+
+      // Trim fully-received lines & possibly close
+      let closed = false
+      try {
+        const { data, error } = await supabase.rpc('po_trim_and_close', {
+          p_company_id: companyId,
+          p_po_id: po.id,
+        })
+        if (error) {
+          const msg = String(error.message || '').toLowerCase()
+          if (!msg.includes('not found')) throw error
+        } else {
+          closed = !!data?.[0]?.closed
+        }
+      } catch (e) {
+        console.warn('po_trim_and_close (tolerated):', e)
+      }
+
+      await refreshPOData()
+      await loadReceiptsMap(po.id)
+      if (closed) {
+        toast.success(tt('orders.poClosed', 'PO closed — all items received'))
+        setPoViewOpen(false)
+        setSelectedPO(null)
+      } else {
+        toast.success(tt('orders.lineReceived', 'Line received'))
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err?.message || tt('orders.receiveFailed', 'Failed to receive'))
+    }
+  }
+
+  // -------------- REPLACE: Receive ALL --------------
   async function doReceivePO(po: PO) {
     try {
+      if (!companyId) throw new Error('No company selected')
       const status = String(po.status || '').toLowerCase()
       if (status === 'draft') {
         toast.error(tt('orders.approveBeforeReceive', 'Approve the PO before receiving'))
@@ -455,8 +609,9 @@ export default function PurchaseOrders() {
       if (!lines.length) return toast.error(tt('orders.noLinesToReceive', 'No lines to receive'))
 
       const currentMap = await loadReceiptsMap(po.id)
-      const fxToBase = n(po.fx_to_base ?? (po as any).fxToBase, 1)
+      let anyPosted = false
 
+      // Post movements for every line that has a >0 request (clamped to remaining)
       for (const l of lines) {
         const lineId = String(l.id || '')
         if (!lineId) continue
@@ -464,69 +619,72 @@ export default function PurchaseOrders() {
         const ordered = n(l.qty)
         const already = n(currentMap[lineId] || 0)
         const remaining = Math.max(0, ordered - already)
+        if (remaining <= 0) continue
 
         const key = String(l.id ?? `${l.po_id}-${l.line_no}`)
         const p = receivePlan[key]
-        const qtyRequested = n(p?.qty ?? 0)
-        if (!p || qtyRequested <= 0) continue
-        if (qtyRequested > remaining) throw new Error(tt('orders.overReceiveNotAllowed', 'Receive qty cannot exceed remaining for a line'))
+        if (!p) continue
 
-        const whId = p.whId, binId = p.binId
-        if (!whId || !binId) throw new Error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
+        const qtyRequested = clamp(n(p.qty ?? 0), 0, remaining)
+        if (qtyRequested <= 0) continue
+        if (!p.whId || !p.binId) throw new Error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
 
-        const it = itemById.get(l.item_id); if (!it) throw new Error(`Item not found for line ${l.item_id}`)
-        const baseUom = it.baseUomId
-        const qtyBase = safeConvert(qtyRequested, l.uom_id, baseUom)
-        if (qtyBase == null) {
-          const fromCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
-          throw new Error(tt('orders.noConversion', 'No conversion from {from} to base for {sku}').replace('{from}', String(fromCode)).replace('{sku}', String(it.sku)))
-        }
-
-        const disc = n(l.discount_pct, 0)
-        const totalBase = n(l.unit_price) * qtyRequested * (1 - disc/100) * fxToBase
-        const unitCostBase = qtyBase > 0 ? totalBase / qtyBase : 0
-
-        await upsertStockLevel(whId, binId, it.id, qtyBase, unitCostBase)
-
-        await supabase.from('stock_movements').insert({
-          type: 'receive',
-          item_id: it.id,
-          uom_id: uomIdFromIdOrCode(l.uom_id) || l.uom_id,
-          qty: qtyRequested,
-          qty_base: qtyBase,
-          unit_cost: unitCostBase,
-          total_value: totalBase,
-          warehouse_to_id: whId,
-          bin_to_id: binId,
-          notes: `PO ${poNo(po)}`,
-          created_by: 'system',
-          ref_type: 'PO',
-          ref_id: (po as any).id,
-          ref_line_id: l.id ?? null,
-        } as any)
+        await postReceiptForLine(po, l, qtyRequested, p.whId, p.binId)
+        anyPosted = true
       }
 
-      const nextMap = await loadReceiptsMap(po.id)
-      const linesForPO = polines.filter(l => l.po_id === po.id)
-      const allDone = linesForPO.every(l => (n(nextMap[String(l.id || '')] || 0) >= n(l.qty)))
-      if (allDone) await tryUpdateStatus(po.id, ['closed', 'completed', 'received'])
+      // Always call the RPC — delete fully-received lines and close if none left
+      let closed = false
+      try {
+        const { data, error } = await supabase.rpc('po_trim_and_close', {
+          p_company_id: companyId,
+          p_po_id: po.id,
+        })
+        if (error) {
+          const msg = String(error.message || '').toLowerCase()
+          // Ignore PostgREST 404/“not found” which can surface while the function deploys
+          if (!msg.includes('not found')) throw error
+        } else {
+          closed = !!data?.[0]?.closed
+        }
+      } catch (e) {
+        console.warn('po_trim_and_close (tolerated):', e)
+      }
 
-      const [freshPO, freshPOL] = await Promise.all([ db.purchaseOrders.list(), db.purchaseOrderLines.list() ])
-      setPOs((freshPO || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-      setPOLines(freshPOL || [])
-      toast.success(tt('orders.poReceived', 'PO receipts recorded'))
-      setPoViewOpen(false); setSelectedPO(null)
-      setReceivePlan({})
-    } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.receiveFailed', 'Failed to receive PO')) }
+      await refreshPOData()
+      await loadReceiptsMap(po.id)
+
+      if (closed) {
+        toast.success(tt('orders.poClosed', 'PO closed — all items received'))
+        setPoViewOpen(false); setSelectedPO(null); setReceivePlan({})
+        return
+      }
+
+      if (anyPosted) {
+        toast.success(tt('orders.poReceived', 'PO receipts recorded'))
+      } else {
+        toast(tt('orders.nothingToReceive', 'Nothing left to receive.'))
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err?.message || tt('orders.receiveFailed', 'Failed to receive PO'))
+    }
   }
+  // ---------------------------------------------------
 
-  // outstanding
   const poOutstanding = useMemo(
     () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(p.status).toLowerCase())),
     [pos]
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const poTax = poSubtotal * (n(poTaxPct, 0) / 100)
+
+  useEffect(() => {
+    if (!browserOpen) return
+    const t = setTimeout(() => { resetBrowserPaging(); fetchBrowserPage(0) }, 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browserOpen, browserQ, browserFrom, browserTo, browserStatuses.closed, browserStatuses.partially_received, companyId])
 
   // when PO is selected, load receipts and seed per-line plan
   useEffect(() => {
@@ -575,6 +733,7 @@ export default function PurchaseOrders() {
 
   // ---------- supplier resolve (for print) ----------
   async function resolveSupplierDetails(po: PO): Promise<Partial<Supplier>> {
+    if (!companyId) return {}
     const codeUpper = (po.supplier || '').toString().toUpperCase()
     const nameUpper = (po.supplier_name || '').toString().toUpperCase()
 
@@ -589,18 +748,21 @@ export default function PurchaseOrders() {
       if (po.supplier_id) {
         const { data } = await supabase
           .from('suppliers').select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('company_id', companyId)
           .eq('id', po.supplier_id).limit(1)
         if (data && data.length) return data[0] as Supplier
       }
       if (po.supplier) {
         const { data } = await supabase
           .from('suppliers').select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('company_id', companyId)
           .eq('code', po.supplier).limit(1)
         if (data && data.length) return data[0] as Supplier
       }
       if (po.supplier_name) {
         const { data } = await supabase
           .from('suppliers').select('id,code,name,email,phone,tax_id,payment_terms')
+          .eq('company_id', companyId)
           .eq('name', po.supplier_name).limit(1)
         if (data && data.length) return data[0] as Supplier
       }
@@ -636,7 +798,6 @@ export default function PurchaseOrders() {
     const total = (po.total ?? (subtotal + tax))
     const number = poNo(po)
 
-    // Resolve supplier details
     const live = await resolveSupplierDetails(po)
     const supp = {
       name: po.supplier_name ?? live.name ?? poSupplierLabel(po),
@@ -647,7 +808,6 @@ export default function PurchaseOrders() {
     }
     const printedAt = new Date().toLocaleString()
 
-    // Brand (preload logo)
     const company = (brandName || '').trim()
     const logoUrl = (brandLogoUrl || '').trim()
     const logoDataUrl = await fetchDataUrl(logoUrl)
@@ -726,13 +886,9 @@ export default function PurchaseOrders() {
     const w = window.open('', '_blank'); if (!w) return
     w.document.write(`<html><head><title>PO ${number}</title><meta charset="utf-8"/><style>${css}</style></head><body>${html}</body></html>`)
     w.document.close()
-
-    // wait for fonts + logo decode to avoid blank images on print
     try { await (w as any).document?.fonts?.ready } catch {}
     const img = w.document.querySelector('img.logo') as HTMLImageElement | null
-    if (img && 'decode' in img) {
-      try { await (img as any).decode() } catch {}
-    }
+    if (img && 'decode' in img) { try { await (img as any).decode() } catch {} }
     setTimeout(() => { w.focus(); w.print() }, 50)
   }
 
@@ -745,7 +901,6 @@ export default function PurchaseOrders() {
             <CardTitle>{tt('orders.outstandingPOs', 'Open & Approved Purchase Orders')}</CardTitle>
 
             <div className="flex items-center gap-2">
-              {/* Closed/Received POs Browser */}
               <Button size="sm" variant="outline" onClick={() => setBrowserOpen(true)}>
                 {tt('orders.poBrowser', 'Closed/Received POs')}
               </Button>
@@ -1008,10 +1163,7 @@ export default function PurchaseOrders() {
                 <div className="flex gap-2 justify-end">
                   <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
                   <Button variant="secondary" onClick={applyDefaultsToAll}>{tt('orders.applyToAll', 'Apply to all lines')}</Button>
-                  <Button
-                    onClick={() => doReceivePO(selectedPO)}
-                    disabled={String(selectedPO.status).toLowerCase() === 'draft'}
-                  >
+                  <Button onClick={() => doReceivePO(selectedPO)} disabled={String(selectedPO.status).toLowerCase() === 'draft'}>
                     {tt('orders.receiveAll', 'Receive')}
                   </Button>
                 </div>
@@ -1031,6 +1183,7 @@ export default function PurchaseOrders() {
                       <th className="py-2 px-3">{tt('orders.toWarehouse', 'To Warehouse')}</th>
                       <th className="py-2 px-3">{tt('orders.toBin', 'To Bin')}</th>
                       <th className="py-2 px-3 text-right">{tt('orders.lineValueBase', 'Line Value (base)')}</th>
+                      <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1100,6 +1253,17 @@ export default function PurchaseOrders() {
                           </td>
 
                           <td className="py-2 px-3 text-right">{formatMoneyBase(valueBase, baseCode)}</td>
+
+                          <td className="py-2 px-3 text-right">
+                            <Button
+                              size="sm"
+                              onClick={() => receiveLine(selectedPO!, l)}
+                              disabled={remaining <= 0 || String(selectedPO.status).toLowerCase() === 'draft'}
+                              variant="secondary"
+                            >
+                              {tt('orders.receive', 'Receive')}
+                            </Button>
+                          </td>
                         </tr>
                       )
                     })}

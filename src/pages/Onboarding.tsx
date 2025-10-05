@@ -9,6 +9,9 @@ import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import { Mail } from 'lucide-react'
 
+/** LocalStorage key shared with /accept-invite and AuthCallback */
+const LS_INVITE_KEY = 'sw:inviteToken'
+
 /** Polls for a newly-created membership to become visible through RLS. */
 async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
   const t0 = Date.now()
@@ -62,6 +65,17 @@ export default function Onboarding() {
 
         // Best-effort: link pending invites to this user (ignore failures)
         try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
+
+        // Optional: if user came via invite then verified, redeem cached token here too
+        try {
+          const token = localStorage.getItem(LS_INVITE_KEY)
+          if (token) {
+            await supabase.rpc('accept_invite_with_token', { p_token: token })
+            localStorage.removeItem(LS_INVITE_KEY)
+          }
+        } catch (e) {
+          console.warn('invite token redeem failed (onboarding):', (e as any)?.message || e)
+        }
 
         // If already an active member, head to dashboard.
         const active = await supabase

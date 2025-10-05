@@ -1,4 +1,4 @@
-// src/pages/Transactions.tsx
+// src/pages/Transactions.tsx (company-scoped drop-in)
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useI18n } from '../lib/i18n'
@@ -9,7 +9,9 @@ import { Input } from '../components/ui/input'
 import { Badge } from '../components/ui/badge'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { cn } from '../lib/utils'
+import { useOrg } from '../hooks/useOrg' // <-- company scope
 
+// ---------------- Types ----------------
 type MovementRow = {
   id: string
   item_id: string
@@ -18,23 +20,49 @@ type MovementRow = {
   created_at: string
   unit_cost: number | null
   total_value: number | null
-  ref_type?: 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | 'CASH_SALE' | 'POS' | 'CASH' | null
+  ref_type?:
+    | 'SO'
+    | 'PO'
+    | 'ADJUST'
+    | 'TRANSFER'
+    | 'WRITE_OFF'
+    | 'INTERNAL_USE'
+    | 'CASH_SALE'
+    | 'POS'
+    | 'CASH'
+    | 'SO_REVERSAL'
+    | null
   ref_id?: string | null
   notes?: string | null
 }
+
 type Item = { id: string; name: string; sku: string }
 
+// ---------------- Utils ----------------
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
-const ymd = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const startOf30Ago = () => { const d = new Date(); d.setDate(d.getDate() - 30); return ymd(d) }
 const today = () => ymd(new Date())
 
 const TYPE_VALUES = ['ALL', 'receive', 'issue', 'transfer', 'adjust'] as const
-const REF_VALUES = ['ALL', 'SO', 'PO', 'CASH_SALE', 'POS', 'CASH', 'TRANSFER', 'ADJUST', 'WRITE_OFF', 'INTERNAL_USE'] as const
+// --- NEW: include SO_REVERSAL in ref filters
+const REF_VALUES = [
+  'ALL',
+  'SO',
+  'SO_REVERSAL',
+  'PO',
+  'CASH_SALE',
+  'POS',
+  'CASH',
+  'TRANSFER',
+  'ADJUST',
+  'WRITE_OFF',
+  'INTERNAL_USE',
+] as const
 
 export default function Transactions() {
   const { t, lang } = useI18n()
+  const { companyId } = useOrg()
   const tt = (key: string, fallback: string, vars?: Record<string, any>) => {
     const s = t(key, vars)
     return s === key ? fallback : s
@@ -59,13 +87,13 @@ export default function Transactions() {
   // friendly ref maps
   const [soNoById, setSoNoById] = useState<Record<string, string>>({})
   const [poNoById, setPoNoById] = useState<Record<string, string>>({})
-  const [soNotesById, setSoNotesById] = useState<Record<string, string>>({}) // <— NEW
+  const [soNotesById, setSoNotesById] = useState<Record<string, string>>({})
 
   // helper: choose which note to display/search
   const autoCashRegex = /cash sale\s*\(auto\)/i
   const effectiveNotes = (r: MovementRow): string => {
     const movementNote = (r.notes || '').trim()
-    if (r.ref_type === 'SO' && r.ref_id) {
+    if ((r.ref_type === 'SO' || r.ref_type === 'SO_REVERSAL') && r.ref_id) {
       const soNote = (soNotesById[r.ref_id] || '').trim()
       if (soNote && (!movementNote || autoCashRegex.test(movementNote))) {
         return soNote
@@ -74,24 +102,38 @@ export default function Transactions() {
     return movementNote
   }
 
-  // initial load
+  // initial load + whenever company changes
   useEffect(() => {
     (async () => {
-      setBaseCode((await getBaseCurrencyCode()) || 'MZN')
-      const { data } = await supabase.from('items_view').select('id,sku,name')
-      setItems((data || []) as Item[])
-      await load()
+      try {
+        setBaseCode((await getBaseCurrencyCode()) || 'MZN')
+        if (!companyId) { setItems([]); setRowsAll([]); setSoNoById({}); setPoNoById({}); setSoNotesById({}); return }
+
+        // Items: scope to company (align with StockLevels)
+        const { data: itemsData, error: itemsErr } = await supabase
+          .from('items')
+          .select('id,sku,name')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
+        if (!itemsErr) setItems((itemsData || []) as Item[])
+
+        await load()
+      } catch (e) { console.error(e) }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [companyId])
 
   // reload when server-side filters change
   useEffect(() => { load() /* eslint-disable-next-line */ }, [from, to, typeFilter, refFilter])
 
   async function load() {
+    if (!companyId) { setRowsAll([]); return }
+
+    // Base query: strictly company-scoped
     let q = supabase
       .from('stock_movements')
       .select('id,item_id,qty_base,type,created_at,unit_cost,total_value,ref_type,ref_id,notes')
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false })
       .gte('created_at', `${from} 00:00:00`)
       .lte('created_at', `${to} 23:59:59`)
@@ -101,32 +143,55 @@ export default function Transactions() {
     if (refFilter !== 'ALL') q = q.eq('ref_type', refFilter)
 
     const { data, error } = await q
-    if (error) { console.error(error); setRowsAll([]); return }
+    if (error) {
+      console.error(error)
+      setRowsAll([]); setSoNoById({}); setPoNoById({}); setSoNotesById({})
+      return
+    }
+
     const list = (data || []) as MovementRow[]
     setRowsAll(list)
 
     // map SO/PO ids → order_no (& SO notes) for pretty refs and notes override
-    const soIds = Array.from(new Set(list.filter(r => r.ref_type === 'SO' && r.ref_id).map(r => r.ref_id!)))
+    const soIds = Array.from(
+      new Set(
+        list
+          .filter(r => (r.ref_type === 'SO' || r.ref_type === 'SO_REVERSAL') && r.ref_id)
+          .map(r => r.ref_id!) // reversals also point to the original SO
+      )
+    )
     const poIds = Array.from(new Set(list.filter(r => r.ref_type === 'PO' && r.ref_id).map(r => r.ref_id!)))
 
     if (soIds.length) {
-      const { data: so } = await supabase.from('sales_orders').select('id,order_no,notes').in('id', soIds)
-      const mNo: Record<string, string> = {}
-      const mNotes: Record<string, string> = {}
-      for (const s of so || []) {
-        const id = (s as any).id
-        mNo[id] = (s as any).order_no || id
-        mNotes[id] = (s as any).notes || ''
-      }
-      setSoNoById(mNo)
-      setSoNotesById(mNotes) // <— NEW
+      const { data: so, error: soErr } = await supabase
+        .from('sales_orders')
+        .select('id,order_no,notes')
+        .eq('company_id', companyId)
+        .in('id', soIds)
+      if (!soErr) {
+        const mNo: Record<string, string> = {}
+        const mNotes: Record<string, string> = {}
+        for (const s of so || []) {
+          const id = (s as any).id
+          mNo[id] = (s as any).order_no || id
+          mNotes[id] = (s as any).notes || ''
+        }
+        setSoNoById(mNo)
+        setSoNotesById(mNotes)
+      } else { setSoNoById({}); setSoNotesById({}) }
     } else { setSoNoById({}); setSoNotesById({}) }
 
     if (poIds.length) {
-      const { data: po } = await supabase.from('purchase_orders').select('id,order_no').in('id', poIds)
-      const m: Record<string, string> = {}
-      for (const p of po || []) m[(p as any).id] = (p as any).order_no || (p as any).id
-      setPoNoById(m)
+      const { data: po, error: poErr } = await supabase
+        .from('purchase_orders')
+        .select('id,order_no')
+        .eq('company_id', companyId)
+        .in('id', poIds)
+      if (!poErr) {
+        const m: Record<string, string> = {}
+        for (const p of po || []) m[(p as any).id] = (p as any).order_no || (p as any).id
+        setPoNoById(m)
+      } else setPoNoById({})
     } else setPoNoById({})
   }
 
@@ -136,8 +201,7 @@ export default function Transactions() {
     if (!term) return rowsAll
     return rowsAll.filter(r => {
       const it = itemById.get(r.item_id)
-      const hay =
-        `${it?.name ?? ''} ${it?.sku ?? ''} ${r.ref_type ?? ''} ${r.ref_id ?? ''} ${effectiveNotes(r)}`.toLowerCase()
+      const hay = `${it?.name ?? ''} ${it?.sku ?? ''} ${r.ref_type ?? ''} ${r.ref_id ?? ''} ${effectiveNotes(r)}`.toLowerCase()
       return hay.includes(term)
     })
   }, [rowsAll, search, itemById, soNotesById])
@@ -151,26 +215,28 @@ export default function Transactions() {
   const typeBadge = (tp: MovementRow['type']) => {
     const base = 'px-2 py-0.5 rounded-md text-xs font-medium'
     switch (tp) {
-      case 'receive': return <span className={cn(base, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300')}>{tt('movement.receive', 'receive')}</span>
-      case 'issue':   return <span className={cn(base, 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300')}>{tt('movement.issue', 'issue')}</span>
-      case 'transfer':return <span className={cn(base, 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300')}>{tt('movement.transfer', 'transfer')}</span>
-      case 'adjust':  return <span className={cn(base, 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300')}>{tt('movement.adjust', 'adjust')}</span>
-      default:        return <span className={cn(base, 'bg-muted text-foreground/70')}>{tt('common.dash', '—')}</span>
+      case 'receive':  return <span className={cn(base, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300')}>{tt('movement.receive', 'receive')}</span>
+      case 'issue':    return <span className={cn(base, 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300')}>{tt('movement.issue', 'issue')}</span>
+      case 'transfer': return <span className={cn(base, 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300')}>{tt('movement.transfer', 'transfer')}</span>
+      case 'adjust':   return <span className={cn(base, 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300')}>{tt('movement.adjust', 'adjust')}</span>
+      default:         return <span className={cn(base, 'bg-muted text-foreground/70')}>{tt('common.dash', '—')}</span>
     }
   }
 
+  // --- NEW: pretty label for SO_REVERSAL too
   const refPretty = (r: MovementRow) => {
     const rt = String(r.ref_type || '')
     const id = r.ref_id || ''
     if (!id) return rt || '—'
-    if (rt === 'SO') return `${tt('ref.so', 'SO')} ${soNoById[id] || id.slice(0, 8)}`
-    if (rt === 'PO') return `${tt('ref.po', 'PO')} ${poNoById[id] || id.slice(0, 8)}`
-    if (rt === 'CASH_SALE') return tt('ref.cashSale', 'Cash sale')
-    if (rt === 'POS') return tt('ref.pos', 'POS')
-    if (rt === 'CASH') return tt('ref.cash', 'Cash')
-    if (rt === 'TRANSFER') return tt('ref.transfer', 'TRANSFER')
-    if (rt === 'ADJUST') return tt('ref.adjust', 'ADJUST')
-    if (rt === 'WRITE_OFF') return tt('ref.writeOff', 'Write off')
+    if (rt === 'SO')           return `${tt('ref.so', 'SO')} ${soNoById[id] || id.slice(0, 8)}`
+    if (rt === 'SO_REVERSAL')  return `${tt('ref.soReversal', 'SO reversal')} ${soNoById[id] || id.slice(0, 8)}`
+    if (rt === 'PO')           return `${tt('ref.po', 'PO')} ${poNoById[id] || id.slice(0, 8)}`
+    if (rt === 'CASH_SALE')    return tt('ref.cashSale', 'Cash sale')
+    if (rt === 'POS')          return tt('ref.pos', 'POS')
+    if (rt === 'CASH')         return tt('ref.cash', 'Cash')
+    if (rt === 'TRANSFER')     return tt('ref.transfer', 'TRANSFER')
+    if (rt === 'ADJUST')       return tt('ref.adjust', 'ADJUST')
+    if (rt === 'WRITE_OFF')    return tt('ref.writeOff', 'Write off')
     if (rt === 'INTERNAL_USE') return tt('ref.internalUse', 'Internal use')
     return rt || id.slice(0, 8)
   }
@@ -183,9 +249,11 @@ export default function Transactions() {
       : v === 'adjust' ? tt('movement.adjust', 'Adjust')
       : v
 
+  // --- NEW: i18n fallbacks for SO reversal options
   const refLabelOption = (v: typeof REF_VALUES[number]) =>
     v === 'ALL' ? tt('filters.ref.all', 'All refs')
       : v === 'SO' ? tt('ref.soPlural', 'Sales orders')
+      : v === 'SO_REVERSAL' ? tt('ref.soReversalPlural', 'SO reversals')
       : v === 'PO' ? tt('ref.poPlural', 'Purchase orders')
       : v === 'CASH_SALE' ? tt('ref.cashSale', 'Cash sale')
       : v === 'POS' ? tt('ref.pos', 'POS')

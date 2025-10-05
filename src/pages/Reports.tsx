@@ -31,6 +31,12 @@ function FiltersBar() {
     currencyOptions,
   } = useReports()
 
+  // Higher-contrast select styling for light theme, still theme-aware
+  const selectCx =
+    "w-full h-9 rounded-md border border-input bg-background text-foreground px-2 pr-8 " +
+    "shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background " +
+    "disabled:opacity-50";
+
   return (
     <>
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -73,7 +79,7 @@ function FiltersBar() {
             <div>
               <Label>Costing Method</Label>
               <select
-                className="w-full border rounded-md h-9 px-2"
+                className={selectCx} // ← updated
                 value={ui.costMethod}
                 onChange={e => setCostMethod(e.target.value === 'FIFO' ? 'FIFO' : 'WA')}
               >
@@ -101,7 +107,7 @@ function FiltersBar() {
               <div>
                 <Label>Currency</Label>
                 <select
-                  className="w-full border rounded-md h-9 px-2"
+                  className={selectCx} // ← updated
                   value={displayCurrency}
                   onChange={e => setDisplayCurrency(e.target.value)}
                 >

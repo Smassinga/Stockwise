@@ -293,7 +293,40 @@ serve(async (req) => {
         .eq("user_id", userId)
         .eq("status", "invited" as Status)
         .select("*", { count: "exact", head: true });
+      // ADD THIS (best-effort): create “user joined” notifications for all companies they just joined
+try {
+  // which companies did this user just become active in?
+  const { data: nowActive } = await admin
+    .from("company_members")
+    .select("company_id, role")
+    .eq("user_id", userId)
+    .eq("status", "active");
 
+  // basic display name
+  const displayName =
+    (userData.user.user_metadata?.name as string) ||
+    (userData.user.email?.split("@")[0]) ||
+    "New member";
+
+  // insert one notification per company
+  const rows =
+    (nowActive ?? []).map((m) => ({
+      company_id: m.company_id,
+      user_id: null,                 // broadcast (visible to everyone in company)
+      level: "info",
+      title: "New team member joined",
+      body: `${displayName} joined the company${m.role ? ` as ${m.role}` : ""}.`,
+      url: "/users",
+      icon: null,
+      meta: null,
+    }));
+
+  if (rows.length) {
+    await admin.from("notifications").insert(rows);
+  }
+} catch (_e) {
+  // swallow – notification shouldn’t block the flow
+}
       if (actErr) {
         return json({ ok: true, linked: data ?? 0, activated: 0, warning: actErr.message });
       }

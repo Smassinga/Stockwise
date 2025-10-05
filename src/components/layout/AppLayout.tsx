@@ -30,6 +30,7 @@ import { useOrg } from '../../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../../lib/roles'
 import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
+import CompanySwitcher from '../CompanySwitcher'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -49,13 +50,13 @@ const BASE_NAV: NavItem[] = [
   { label: 'Banks',        to: '/banks',        icon: Banknote },
   { label: 'Orders',       to: '/orders',       icon: ShoppingCart },
   { label: 'Reports',      to: '/reports',      icon: BarChart3 },
-  { label: 'Stock Levels', to: '/stock-levels', icon: ClipboardList }, // NEW
+  { label: 'Stock Levels', to: '/stock-levels', icon: ClipboardList },
   { label: 'Warehouses',   to: '/warehouses',   icon: Boxes },
   { label: 'Users',        to: '/users',        icon: UsersIcon }, // role-filtered
   { label: 'Customers',    to: '/customers',    icon: Users },
   { label: 'Suppliers',    to: '/suppliers',    icon: Truck },
   { label: 'Currency',     to: '/currency',     icon: Coins },
-  { label: 'UoM',          to: '/uom',          icon: Ruler },     // NEW
+  { label: 'UoM',          to: '/uom',          icon: Ruler },
   { label: 'Settings',     to: '/settings',     icon: SettingsIcon },
 ]
 
@@ -137,6 +138,7 @@ export function AppLayout({ user, children }: Props) {
         </nav>
 
         <div className="border-t p-3">
+          <CompanySwitcher className="mb-2" />
           {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
           <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
@@ -194,6 +196,9 @@ export function AppLayout({ user, children }: Props) {
             ✕
           </Button>
         </div>
+        <div className="px-3 pb-2">
+          <CompanySwitcher />
+        </div>
         <nav className="space-y-1 px-3 py-2">
           {nav.map((item) => (
             <NavLink key={item.to} item={item} />
@@ -225,7 +230,7 @@ export function AppLayout({ user, children }: Props) {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <NotificationCenter />
-
+            <CompanySwitcher className="hidden md:block" />
             <div className="hidden text-right md:block">
               {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
               <div className="text-sm font-semibold leading-tight">{user.name || user.email}</div>

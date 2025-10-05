@@ -1,17 +1,56 @@
-// src/pages/reports/tabs/SummaryTab.tsx
+// src/pages/reports/tabs/SummaryTab.tsx — company-scoped (v3: shipments − SO_REVERSAL for units; dashboard-aligned COGS net of SO_REVERSAL)
+//
+// What’s new in this version:
+// • Units sold = Shipments (qty_base) MINUS SO_REVERSAL receives (qty_base) in the same period, per item.
+//   - Best/Worst sellers use these NET units (clamped at 0).
+//   - “Zero sales” counts items whose net units == 0.
+// • COGS (period) = sum of stock_movements that are:
+//     - + issues for sales ref types (SO/CASH_SALE/POS/CASH)
+//     - − receives with ref_type='SO_REVERSAL'
+//   Fallback to unit_cost×qty_base when total_value is missing (matches Dashboard).
+//
+// Everything else stays the same (valuation & audit table).
+
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui/card'
 import { useReports } from '../context/ReportsProvider'
 import KPI from '../KPI'
 import ExportButtons from '../components/ExportButtons'
 import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
+import { useOrg } from '../../../hooks/useOrg'
+import { supabase } from '../../../lib/supabase'
+
+type ShipmentRow = {
+  id: string
+  item_id: string
+  qty_base: number | string
+  created_at: string
+  company_id?: string | null
+}
+
+type ReversalRow = {
+  id: string
+  item_id: string
+  qty_base: number | string | null
+  created_at: string
+  type: 'receive' | string | null
+  ref_type: string | null
+  company_id?: string | null
+}
+
+// Match the Dashboard's sales ref types for COGS
+const SALES_REF_TYPES = new Set(['SO', 'CASH_SALE', 'POS', 'CASH'])
+const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 
 export default function SummaryTab() {
+  const { companyId } = useOrg()
+
   const {
-    turnoverPerItem, turnoverSummary, bestWorst,
+    turnoverPerItem, turnoverSummary,
     valuationAsOfEnd, ui, valuationEngine, valuationCurrent,
     period, itemById, moneyText, fmt,
     displayCurrency, fxRate, baseCurrency, fxNote, startDate, endDate,
-    whName, // ← name resolver (works for id or code)
+    whName,
   } = useReports()
 
   const ctx = {
@@ -22,15 +61,183 @@ export default function SummaryTab() {
 
   const stamp = endDate.replace(/-/g, '')
 
-  // ----- build export rows -----
+  // --- movements remain for the audit table / exports (unchanged) ---
+  const isThisCompany = (m: any) => {
+    if (!companyId) return true
+    return (m?.companyId ?? m?.company_id) === companyId
+  }
+  const movementsInCompany = (period?.inRange ?? []).filter(isThisCompany)
+
+  // ------------------------------------------------------------------
+  // Sales Shipments → base for "units sold" (qty_base)
+  // + SO_REVERSAL receives → subtract from units sold
+  // ------------------------------------------------------------------
+  const [shipments, setShipments] = useState<ShipmentRow[]>([])
+  const [reversals, setReversals] = useState<ReversalRow[]>([])
+  const [loadingShip, setLoadingShip] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!companyId || !startDate || !endDate) {
+        setShipments([])
+        setReversals([])
+        return
+      }
+      setLoadingShip(true)
+      try {
+        // 1) shipments in period
+        const { data: shipData, error: shipErr } = await supabase
+          .from('sales_shipments')
+          .select('id,item_id,qty_base,created_at,company_id')
+          .eq('company_id', companyId)
+          .gte('created_at', `${startDate}T00:00:00Z`)
+          .lte('created_at', `${endDate}T23:59:59.999Z`)
+
+        if (shipErr) throw shipErr
+
+        // 2) SO reversal receives in period (to net out units)
+        const { data: revData, error: revErr } = await supabase
+          .from('stock_movements')
+          .select('id,item_id,qty_base,created_at,type,ref_type,company_id')
+          .eq('company_id', companyId)
+          .eq('type', 'receive')
+          .eq('ref_type', 'SO_REVERSAL')
+          .gte('created_at', `${startDate}T00:00:00Z`)
+          .lte('created_at', `${endDate}T23:59:59.999Z`)
+
+        if (revErr) throw revErr
+
+        if (!cancelled) {
+          setShipments((shipData || []) as ShipmentRow[])
+          setReversals((revData || []) as ReversalRow[])
+        }
+      } catch (e) {
+        console.error(e)
+        if (!cancelled) { setShipments([]); setReversals([]) }
+      } finally {
+        if (!cancelled) setLoadingShip(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [companyId, startDate, endDate])
+
+  // Aggregate shipments & reversals → NET totals per item (qty_base)
+  const salesAgg = useMemo(() => {
+    const shippedByItem = new Map<string, number>()
+    for (const s of shipments) {
+      const q = Number(s.qty_base) || 0
+      if (q <= 0) continue
+      shippedByItem.set(s.item_id, (shippedByItem.get(s.item_id) || 0) + q)
+    }
+
+    const reversedByItem = new Map<string, number>()
+    for (const r of reversals) {
+      const q = Number(r.qty_base) || 0
+      if (q <= 0) continue
+      reversedByItem.set(r.item_id, (reversedByItem.get(r.item_id) || 0) + q)
+    }
+
+    // NET = max(0, shipped - reversed) to avoid negative units in the period view
+    const netByItem = new Map<string, number>()
+    for (const iid of new Set<string>([...shippedByItem.keys(), ...reversedByItem.keys()])) {
+      const net = Math.max(0, (shippedByItem.get(iid) || 0) - (reversedByItem.get(iid) || 0))
+      if (net > 0) netByItem.set(iid, net)
+    }
+
+    // totals / best / worst / zero-sales
+    let total = 0
+    for (const q of netByItem.values()) total += q
+
+    let best: { itemId: string, qty: number } | null = null
+    let worst: { itemId: string, qty: number } | null = null
+    for (const [iid, q] of netByItem.entries()) {
+      if (!best || q > best.qty) best = { itemId: iid, qty: q }
+      if (!worst || q < worst.qty) worst = { itemId: iid, qty: q }
+    }
+
+    // zero-sales = items we know about with no NET sales in the period
+    let zero = 0
+    for (const iid of itemById.keys()) {
+      if (!(netByItem.has(iid))) zero++
+    }
+
+    return { totalUnitsSold: total, perItemNet: netByItem, best, worst, zero }
+  }, [shipments, reversals, itemById])
+
+  // Resolve best/worst item objects for display
+  const salesBestWorst = useMemo(() => {
+    const best = salesAgg.best
+      ? { item: itemById.get(salesAgg.best.itemId), qty: salesAgg.best.qty }
+      : null
+    const worst = salesAgg.worst
+      ? { item: itemById.get(salesAgg.worst.itemId), qty: salesAgg.worst.qty }
+      : null
+    return { best, worst, zeroSales: salesAgg.zero }
+  }, [salesAgg, itemById])
+
+  // ------------------------------------------------------------------
+  // COGS (period) — identical logic to Dashboard KPIs, net of SO reversals
+  // ------------------------------------------------------------------
+  const [cogsFromSalesMoves, setCogsFromSalesMoves] = useState(0)
+  const [loadingCogs, setLoadingCogs] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!companyId || !startDate || !endDate) {
+        setCogsFromSalesMoves(0)
+        return
+      }
+      setLoadingCogs(true)
+      try {
+        const { data, error } = await supabase
+          .from('stock_movements')
+          .select('type,ref_type,created_at,total_value,unit_cost,qty_base')
+          .eq('company_id', companyId)
+          // include both sales issues and SO reversal receives
+          .in('type', ['issue', 'receive'])
+          .in('ref_type', [...Array.from(SALES_REF_TYPES), 'SO_REVERSAL'])
+          .gte('created_at', `${startDate}T00:00:00Z`)
+          .lte('created_at', `${endDate}T23:59:59.999Z`)
+
+        if (error) throw error
+
+        let sum = 0
+        for (const m of (data || []) as any[]) {
+          const val = Number.isFinite(Number(m.total_value))
+            ? Number(m.total_value)
+            : num(m.unit_cost) * num(m.qty_base)
+
+          // issues add to COGS; SO_REVERSAL receives subtract
+          const sign =
+            m.type === 'issue' ? 1 :
+            (m.type === 'receive' && m.ref_type === 'SO_REVERSAL' ? -1 : 0)
+
+          if (sign !== 0) sum += sign * val
+        }
+        if (!cancelled) setCogsFromSalesMoves(sum)
+      } catch (e) {
+        console.error(e)
+        if (!cancelled) setCogsFromSalesMoves(0)
+      } finally {
+        if (!cancelled) setLoadingCogs(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [companyId, startDate, endDate])
+
+  // ----- export rows -----
   const kpiRows: Row[] = [
     ['Metric', 'Value'],
     ['Days in period', Number(turnoverPerItem.daysInPeriod)],
-    ['Units sold', Number(turnoverSummary.totalSold)],
+    // IMPORTANT: shipments − reversals (net) figure
+    ['Units sold (net)', Number(salesAgg.totalUnitsSold)],
     ['Avg inventory (units)', Number(turnoverSummary.avgInv)],
     ['Turns (units)', Number(turnoverSummary.turns)],
     ['Avg days to sell', turnoverSummary.avgDaysToSell != null ? Number(turnoverSummary.avgDaysToSell) : ''],
-    ['COGS (period)', Number(turnoverSummary.totalCOGS)],
+    // IMPORTANT: dashboard-aligned COGS (net of SO reversals)
+    ['COGS (period)', Number(cogsFromSalesMoves)],
     ['Valuation total', Number(valuationAsOfEnd
       ? Array.from(valuationEngine.valuationByWH_AsOfEnd.values()).reduce((s, v) => s + v, 0)
       : valuationCurrent.total)],
@@ -38,7 +245,7 @@ export default function SummaryTab() {
 
   const movementsRows: Row[] = [
     ['Time', 'Type', 'Item', 'Qty', 'Unit Cost', 'Warehouse From', 'Warehouse To'],
-    ...period.inRange.map(m => {
+    ...movementsInCompany.map(m => {
       const created = m?.createdAt ?? m?.created_at ?? m?.createdat
       const t = created ? new Date(created).toLocaleString() : ''
       const it = itemById.get(m.itemId)
@@ -96,34 +303,40 @@ export default function SummaryTab() {
 
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <KPI label="Days in period" value={fmt(turnoverPerItem.daysInPeriod, 0)} />
-          <KPI label="Units sold" value={fmt(turnoverSummary.totalSold, 2)} />
+          {/* IMPORTANT: shipments − SO reversals (net) */}
+          <KPI label="Units sold (net)" value={loadingShip ? '…' : fmt(salesAgg.totalUnitsSold, 2)} />
           <KPI label="Avg inventory (units)" value={fmt(turnoverSummary.avgInv, 2)} />
           <KPI label="Turns (units)" value={fmt(turnoverSummary.turns, 2)} />
           <KPI label="Avg days to sell" value={turnoverSummary.avgDaysToSell != null ? fmt(turnoverSummary.avgDaysToSell, 1) : '—'} />
-          <KPI label="COGS (period)" value={moneyText(turnoverSummary.totalCOGS)} />
+          {/* IMPORTANT: dashboard-aligned COGS, net of reversals */}
+          <KPI label="COGS (period)" value={loadingCogs ? '…' : moneyText(cogsFromSalesMoves)} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
           <Card className="border-dashed">
-            <CardHeader><CardTitle>Best &amp; Worst Sellers (by units)</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Best &amp; Worst Sellers (by net units)</CardTitle></CardHeader>
             <CardContent>
               <table className="w-full text-sm">
                 <tbody>
                   <tr className="border-b">
                     <td className="py-2 pr-2 font-medium">Best</td>
                     <td className="py-2 pr-2">
-                      {bestWorst.best ? `${bestWorst.best.item!.name} (${fmt(bestWorst.best.qty, 2)} units)` : '—'}
+                      {salesBestWorst.best
+                        ? `${salesBestWorst.best.item?.name ?? salesAgg.best?.itemId} (${fmt(salesBestWorst.best.qty, 2)} units)`
+                        : '—'}
                     </td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 pr-2 font-medium">Worst</td>
                     <td className="py-2 pr-2">
-                      {bestWorst.worst ? `${bestWorst.worst.item!.name} (${fmt(bestWorst.worst.qty, 2)} units)` : '—'}
+                      {salesBestWorst.worst
+                        ? `${salesBestWorst.worst.item?.name ?? salesAgg.worst?.itemId} (${fmt(salesBestWorst.worst.qty, 2)} units)`
+                        : '—'}
                     </td>
                   </tr>
                   <tr>
                     <td className="py-2 pr-2 font-medium">Zero sales</td>
-                    <td className="py-2 pr-2">{fmt(bestWorst.zeroSales, 0)}</td>
+                    <td className="py-2 pr-2">{fmt(salesBestWorst.zeroSales, 0)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -163,7 +376,9 @@ export default function SummaryTab() {
 
         <div className="mt-6">
           <Card className="border-dashed">
-            <CardHeader><CardTitle>Movements (in period) — Audit trail</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Movements (in period) — Audit trail</CardTitle>
+            </CardHeader>
             <CardContent className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -178,10 +393,10 @@ export default function SummaryTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {period.inRange.length === 0 && (
+                  {movementsInCompany.length === 0 && (
                     <tr><td colSpan={7} className="py-4 text-muted-foreground">No movements in the selected period.</td></tr>
                   )}
-                  {period.inRange.map(m => {
+                  {movementsInCompany.map(m => {
                     const created = m?.createdAt ?? m?.created_at ?? m?.createdat
                     const t = created ? new Date(created).toLocaleString() : ''
                     const it = itemById.get(m.itemId)

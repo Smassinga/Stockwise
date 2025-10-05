@@ -1,5 +1,6 @@
+// src/pages/reports/tabs/SuppliersTab.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../../../lib/db'
+import { supabase } from '../../../lib/supabase'
 import { useI18n } from '../../../lib/i18n'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Button } from '../../../components/ui/button'
@@ -9,41 +10,34 @@ import { formatMoneyBase, getBaseCurrencyCode } from '../../../lib/currency'
 import ExportButtons from '../components/ExportButtons'
 import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
 import { useReports } from '../context/ReportsProvider'
+import { useOrg } from '../../../hooks/useOrg'
 
-type Supplier = { id: string; code: string | null; name: string }
-
-// Normalized shape we render/export
-type DisplayRow = {
+type RowT = {
   id: string
-  createdAt: string
-  supplierId: string | null
-  supplierCode: string | null
-  supplierName: string | null
-  refType: string | null
-  refNo: string | null
-  itemId: string | null
-  itemName: string | null
-  itemSku: string | null
-  qtyBase: number | null
-  totalValue: number | null
+  created_at: string
+  supplier_id: string | null
+  supplier_code: string | null
+  supplier_name: string | null
+  ref_type: string | null
+  ref_no: string | null
+  item_id: string | null
+  item_name: string | null
+  item_sku: string | null
+  qty_base: number | null
+  total_value: number | null
   notes: string | null
+  company_id: string | null
 }
+
+type Supplier = { id: string; code: string | null; name: string; company_id: string | null }
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 
-// i18n helper so we don’t show raw keys on screen
-const tr = (t: (k: any) => string, key: string, fallback: string) =>
-  (t(key as any) === key ? fallback : t(key as any))
-
-// Detect missing PostgREST table/view
-const isPgRestMissing = (err: any) => {
-  const code = err?.code || ''
-  const msg = String(err?.message || '').toLowerCase()
-  return code === 'PGRST205' || msg.includes('could not find the table') || msg.includes('schema cache')
-}
-
 export default function SuppliersTab() {
   const { t, lang } = useI18n()
+  const tt = (k: string, fb: string) => (t(k as any) === k ? fb : t(k as any))
+  const { companyId } = useOrg()
+
   const { ui, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote } = useReports()
   const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
 
@@ -54,115 +48,61 @@ export default function SuppliersTab() {
   const [q, setQ] = useState<string>('')
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [rows, setRows] = useState<DisplayRow[]>([])
+  const [rows, setRows] = useState<RowT[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     (async () => {
-      setBaseCode(await getBaseCurrencyCode())
-      const ss = await supabase.from('suppliers').select('id,code,name').order('name', { ascending: true })
-      setSuppliers((ss.data || []) as Supplier[])
-      await fetchRows()
-      setLoading(false)
+      try {
+        setLoading(true)
+        setBaseCode(await getBaseCurrencyCode())
+        if (!companyId) return
+
+        // scope suppliers to the active company
+        const cs = await supabase
+          .from('suppliers')
+          .select('id,code,name,company_id')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
+        if (cs.error) throw cs.error
+        setSuppliers((cs.data || []) as Supplier[])
+
+        await fetchRows(companyId)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setLoading(false)
+      }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [companyId])
 
-  async function fetchRows() {
+  async function fetchRows(cid = companyId) {
+    if (!cid) return
     setLoading(true)
     try {
-      // Try the movements view (best UX)
       let qy = supabase
         .from('supplier_movements_view')
-        .select('id, created_at, supplier_id, supplier_code, supplier_name, ref_type, ref_no, item_id, item_name, item_sku, qty_base, total_value, notes')
+        .select('*')
+        .eq('company_id', cid)
         .gte('created_at', from)
         .lte('created_at', to + ' 23:59:59')
         .order('created_at', { ascending: false })
 
       if (supplierId !== 'ALL') qy = qy.eq('supplier_id', supplierId)
 
-      const mv = await qy
-      if (mv.error) {
-        // Fallback to simple master list if the view isn't deployed yet
-        if (isPgRestMissing(mv.error)) {
-          const master = await supabase
-            .from('suppliers_view') // or 'suppliers' if you don’t have suppliers_view
-            .select('id, code, name, notes, createdAt, created_at, updatedAt, updated_at')
-            .order('createdAt', { ascending: false })
-          if (master.error) throw master.error
-
-          const raw = (master.data || []) as any[]
-          const norm: DisplayRow[] = raw
-            .filter(r => {
-              const dateStr: string =
-                r.createdAt || r.created_at || r.updatedAt || r.updated_at || new Date().toISOString()
-              const ms = new Date(dateStr).getTime()
-              return ms >= new Date(from + 'T00:00:00Z').getTime()
-                  && ms <= new Date(to + 'T23:59:59Z').getTime()
-            })
-            .map(r => {
-              const dateStr: string =
-                r.createdAt || r.created_at || r.updatedAt || r.updated_at || new Date().toISOString()
-              return {
-                id: String(r.id),
-                createdAt: new Date(dateStr).toISOString(),
-                supplierId: String(r.id),
-                supplierCode: r.code ?? null,
-                supplierName: r.name ?? null,
-                refType: null,
-                refNo: null,
-                itemId: null,
-                itemName: null,
-                itemSku: null,
-                qtyBase: null,
-                totalValue: null,
-                notes: r.notes ?? null,
-              }
-            })
-
-          const filteredBySupplier = supplierId === 'ALL'
-            ? norm
-            : norm.filter(r => r.supplierId === supplierId)
-
-          const term = q.trim().toLowerCase()
-          const filtered = !term
-            ? filteredBySupplier
-            : filteredBySupplier.filter(r => {
-                const hay = `${r.supplierName || ''} ${r.supplierCode || ''} ${r.notes || ''}`.toLowerCase()
-                return hay.includes(term)
-              })
-
-          setRows(filtered)
-          return
-        }
-        throw mv.error
-      }
+      const { data, error } = await qy
+      if (error) throw error
 
       const term = q.trim().toLowerCase()
-      const normalized: DisplayRow[] = (mv.data || []).map((r: any) => ({
-        id: String(r.id),
-        createdAt: new Date(r.created_at).toISOString(),
-        supplierId: r.supplier_id ?? null,
-        supplierCode: r.supplier_code ?? null,
-        supplierName: r.supplier_name ?? null,
-        refType: r.ref_type ?? null,
-        refNo: r.ref_no ?? null,
-        itemId: r.item_id ?? null,
-        itemName: r.item_name ?? null,
-        itemSku: r.item_sku ?? null,
-        qtyBase: Number.isFinite(r.qty_base) ? Number(r.qty_base) : null,
-        totalValue: Number.isFinite(r.total_value) ? Number(r.total_value) : null,
-        notes: r.notes ?? null,
-      }))
-
       const filtered = !term
-        ? normalized
-        : normalized.filter(r => {
-            const hay = `${r.refType || ''} ${r.refNo || ''} ${r.itemName || ''} ${r.itemSku || ''} ${r.supplierName || ''}`.toLowerCase()
+        ? (data || [])
+        : (data || []).filter((r: any) => {
+            const hay = `${r.ref_type || ''} ${r.ref_no || ''} ${r.item_name || ''} ${r.item_sku || ''} ${r.supplier_name || ''}`.toLowerCase()
             return hay.includes(term)
           })
 
-      setRows(filtered)
+      setRows(filtered as RowT[])
     } catch (e) {
       console.error(e)
     } finally {
@@ -171,40 +111,37 @@ export default function SuppliersTab() {
   }
 
   const count = rows.length
-  const totalValue = useMemo(() => rows.reduce((s, r) => s + num(r.totalValue), 0), [rows])
+  const totalValue = useMemo(() => rows.reduce((s, r) => s + num(r.total_value), 0), [rows])
 
   // ---------- Export handlers ----------
   const stamp = endDate.replace(/-/g, '')
   const exportBody: Row[] = [
     ['Date', 'Ref', 'Item', 'Qty (base)', `Value (${displayCurrency})`, 'Notes'],
     ...rows.map(r => [
-      new Date(r.createdAt).toLocaleString(lang),
-      `${r.refType || ''}${r.refNo ? ` ${r.refNo}` : ''}`,
-      r.itemName ? `${r.itemName}${r.itemSku ? ` (${r.itemSku})` : ''}` : (r.itemId || ''),
-      Number(num(r.qtyBase)),
-      Number(num(r.totalValue)),
+      new Date(r.created_at).toLocaleString(lang),
+      `${r.ref_type || ''}${r.ref_no ? ` ${r.ref_no}` : ''}`,
+      r.item_name ? `${r.item_name}${r.item_sku ? ` (${r.item_sku})` : ''}` : (r.item_id || ''),
+      Number(num(r.qty_base)),
+      Number(num(r.total_value)),
       r.notes || '',
     ]),
   ]
-  const onCSV = () =>
-    downloadCSV(`supplier_movements_${stamp}.csv`, [
-      ...headerRows(ctx, 'Supplier Movements'),
-      ...formatRowsForCSV(exportBody, ctx, [4], [3]),
-    ])
-  const onXLSX = () =>
-    saveXLSX(`supplier_movements_${stamp}.xlsx`, ctx, [
-      { title: 'Movements', headerTitle: 'Supplier Movements', body: exportBody, moneyCols: [4], qtyCols: [3] },
-    ])
-  const onPDF = () => {
-    const doc = startPDF(ctx, 'Supplier Movements')
-    pdfTable(doc, exportBody[0] as string[], exportBody.slice(1), [4], ctx, 110)
-    doc.save(`supplier_movements_${stamp}.pdf`)
-  }
+
+  const onCSV  = () => downloadCSV(`supplier_movements_${stamp}.csv`, [
+    ...headerRows(ctx, 'Supplier Movements'),
+    ...formatRowsForCSV(exportBody, ctx, [4], [3]),
+  ])
+
+  const onXLSX = () => saveXLSX(`supplier_movements_${stamp}.xlsx`, ctx, [
+    { title: 'Movements', headerTitle: 'Supplier Movements', body: exportBody, moneyCols: [4], qtyCols: [3] },
+  ])
+
+  const onPDF  = () => { const doc = startPDF(ctx, 'Supplier Movements'); pdfTable(doc, exportBody[0] as string[], exportBody.slice(1), [4], ctx, 110); doc.save(`supplier_movements_${stamp}.pdf`) }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{tr(t, 'reports.suppliers.title', 'Suppliers')}</CardTitle>
+        <CardTitle>{tt('reports.suppliers.title', 'Suppliers')}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mb-3 flex flex-wrap gap-2">
@@ -216,9 +153,9 @@ export default function SuppliersTab() {
           </div>
           <div className="w-64">
             <Select value={supplierId} onValueChange={setSupplierId}>
-              <SelectTrigger><SelectValue placeholder={tr(t,'common.select','Select')} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={tt('common.select', 'Select')} /></SelectTrigger>
               <SelectContent className="max-h-64">
-                <SelectItem value="ALL">{tr(t,'common.all','All')}</SelectItem>
+                <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
                 {suppliers.map(s => (
                   <SelectItem key={s.id} value={s.id}>
                     {(s.code ? s.code + ' — ' : '') + s.name}
@@ -228,18 +165,18 @@ export default function SuppliersTab() {
             </Select>
           </div>
           <div className="w-56">
-            <Input placeholder={tr(t,'common.search','Search')} value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input placeholder={tt('common.search', 'Search')} value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <Button variant="secondary" onClick={fetchRows} disabled={loading}>
-            {tr(t,'common.apply','Apply')}
+          <Button variant="secondary" onClick={() => fetchRows()} disabled={loading}>
+            {tt('common.apply', 'Apply')}
           </Button>
         </div>
 
         <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} />
 
         <div className="mb-2 text-sm text-muted-foreground">
-          {tr(t,'transactions.summary','Transactions')}: {count}
-          {' '}• {tr(t,'table.value','Value')}: {formatMoneyBase(totalValue, baseCode)}
+          {tt('transactions.summary', 'Transactions')}: {count}
+          {' '}• {tt('table.value', 'Value')}: {formatMoneyBase(totalValue, baseCode)}
         </div>
 
         <div className="max-h-[520px] overflow-auto overscroll-contain rounded-md border">
@@ -247,27 +184,26 @@ export default function SuppliersTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
-                  <th className="py-2 pr-2">{tr(t,'table.date','Date')}</th>
-                  <th className="py-2 pr-2">{tr(t,'table.ref','Ref')}</th>
-                  <th className="py-2 pr-2">{tr(t,'table.item','Item')}</th>
-                  <th className="py-2 pr-2">{tr(t,'table.qtyBase','Qty (base)')}</th>
-                  <th className="py-2 pr-2">{tr(t,'table.value','Value')}</th>
-                  <th className="py-2 pr-2">{tr(t,'table.notes','Notes')}</th>
+                  <th className="py-2 pr-2">{tt('table.date', 'Date')}</th>
+                  <th className="py-2 pr-2">{tt('table.ref', 'Ref')}</th>
+                  <th className="py-2 pr-2">{tt('table.item', 'Item')}</th>
+                  <th className="py-2 pr-2">{tt('table.qtyBase', 'Qty (base)')}</th>
+                  <th className="py-2 pr-2">{tt('table.value', 'Value')}</th>
+                  <th className="py-2 pr-2">{tt('table.notes', 'Notes')}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={6} className="py-4 text-muted-foreground">{tr(t,'common.noResults','No results')}</td></tr>
+                  <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('common.noResults', 'No results')}</td></tr>
                 ) : rows.map(r => (
-                  // unique key fix:
-                  <tr key={`${r.id}-${r.createdAt}`} className="border-b">
-                    <td className="py-2 pr-2">{new Date(r.createdAt).toLocaleString(lang)}</td>
-                    <td className="py-2 pr-2">{r.refType || '—'}{r.refNo ? ` ${r.refNo}` : ''}</td>
+                  <tr key={`${r.id}-${r.created_at}`} className="border-b">
+                    <td className="py-2 pr-2">{new Date(r.created_at).toLocaleString(lang)}</td>
+                    <td className="py-2 pr-2">{r.ref_type || '—'}{r.ref_no ? ` ${r.ref_no}` : ''}</td>
                     <td className="py-2 pr-2">
-                      {r.itemName ? `${r.itemName}${r.itemSku ? ` (${r.itemSku})` : ''}` : (r.itemId || '—')}
+                      {r.item_name ? `${r.item_name}${r.item_sku ? ` (${r.item_sku})` : ''}` : (r.item_id || '—')}
                     </td>
-                    <td className="py-2 pr-2">{r.qtyBase != null ? num(r.qtyBase) : '—'}</td>
-                    <td className="py-2 pr-2">{r.totalValue != null ? formatMoneyBase(num(r.totalValue), baseCode) : '—'}</td>
+                    <td className="py-2 pr-2">{r.qty_base != null ? num(r.qty_base) : '—'}</td>
+                    <td className="py-2 pr-2">{r.total_value != null ? formatMoneyBase(num(r.total_value), baseCode) : '—'}</td>
                     <td className="py-2 pr-2">{r.notes || '—'}</td>
                   </tr>
                 ))}

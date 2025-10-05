@@ -1,6 +1,12 @@
-// src/pages/StockMovements.tsx
+// src/pages/StockMovements.tsx — company-scoped drop-in (v2.1)
+// Notes:
+// • Replaces db.warehouses.list and db.bins.list with explicit Supabase queries scoped by company_id and warehouseId.
+// • Adds .eq('company_id', companyId) to *all* stock_levels reads.
+// • Keeps UI/UX identical; only the data sources and filters are hardened.
+// • Fix: In transfer mode, selecting From/To bin no longer clears the other; Item is enabled after selecting From Bin.
+
 import { useEffect, useMemo, useState, Fragment } from 'react'
-import { db, supabase } from '../lib/db'
+import { supabase } from '../lib/supabase' // ← use the same client as Warehouses/StockLevels
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -11,12 +17,13 @@ import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
-import { useOrg } from '../hooks/useOrg' // company scope
+import { useOrg } from '../hooks/useOrg'
 
 // ---- Local type shim so we can pass notes even if lib/sales isn’t updated yet.
 type CashSaleWithCogsArgsWithNotes =
   Parameters<typeof finalizeCashSaleSOWithCOGS>[0] & { notes?: string }
 
+// Master data types
 type Warehouse = { id: string; name: string; code?: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 type Item = { id: string; name: string; sku: string | null; baseUomId: string | null }
@@ -88,8 +95,8 @@ export default function StockMovements() {
   const [stockTo, setStockTo] = useState<StockLevel[]>([])
 
   // Movement form
-  const [fromBin, setFromBin] = useState<string>('') // mutually exclusive with toBin
-  const [toBin, setToBin] = useState<string>('')     // mutually exclusive with fromBin
+  const [fromBin, setFromBin] = useState<string>('')
+  const [toBin, setToBin] = useState<string>('')
   const [itemId, setItemId] = useState<string>('')
   const [movementUomId, setMovementUomId] = useState<string>('') // selected UoM for entry
   const [qtyEntered, setQtyEntered] = useState<string>('')
@@ -111,29 +118,44 @@ export default function StockMovements() {
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
   const currentItem = useMemo(() => items.find(i => i.id === itemId) || null, [itemId, items])
 
-  // Load masters
+  // Load masters (scoped to company)
   useEffect(() => {
     (async () => {
       try {
-        const [whRes, itResRaw] = await Promise.all([
-          db.warehouses.list({ orderBy: { name: 'asc' } }),
-          supabase.from('items').select('id,name,sku,base_uom_id').order('name', { ascending: true }),
-        ])
-        setWarehouses(whRes || [])
-
-        if (itResRaw.error) throw itResRaw.error
-        setItems(((itResRaw.data || []) as any[]).map(x => ({
-          id: x.id,
-          name: x.name,
-          sku: x.sku ?? null,
-          baseUomId: x.base_uom_id ?? null,
-        })))
-
-        if (whRes && whRes.length) {
-          setWarehouseFromId(whRes[0].id)
-          setWarehouseToId(whRes[0].id)
+        // Reset if no company yet
+        if (!companyId) {
+          setWarehouses([]); setItems([]); setCustomers([])
+          setBinsFrom([]); setBinsTo([]); setStockFrom([]); setStockTo([])
+          setWarehouseFromId(''); setWarehouseToId(''); setFromBin(''); setToBin('')
+          return
         }
 
+        // Warehouses (company-scoped)
+        const [whRes, itResRaw] = await Promise.all([
+          supabase
+            .from('warehouses')
+            .select('id,name,code')
+            .eq('company_id', companyId)
+            .order('name', { ascending: true }),
+          supabase
+            .from('items')
+            .select('id,name,sku,base_uom_id')
+            .eq('company_id', companyId)
+            .order('name', { ascending: true }),
+        ])
+
+        if (whRes.error) throw whRes.error
+        setWarehouses(((whRes.data || []) as any[]).map(w => ({ id: w.id, name: w.name, code: w.code })) as Warehouse[])
+
+        if (itResRaw.error) throw itResRaw.error
+        setItems(((itResRaw.data || []) as any[]).map(x => ({ id: x.id, name: x.name, sku: x.sku ?? null, baseUomId: x.base_uom_id ?? null })))
+
+        // Default both selectors to first warehouse (if any) to preserve prior UX
+        const first = (whRes.data || [])[0]
+        setWarehouseFromId(first?.id || '')
+        setWarehouseToId(first?.id || '')
+
+        // Global masters (not company-scoped)
         const [uRes, cRes, base] = await Promise.all([
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
@@ -149,7 +171,12 @@ export default function StockMovements() {
           .from('uom_conversions').select('from_uom_id,to_uom_id,factor')
         setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))
 
-        const custs = await supabase.from('customers').select('id,code,name').order('name', { ascending: true })
+        // Customers: scope to company
+        const custs = await supabase
+          .from('customers')
+          .select('id,code,name')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true })
         if (!custs.error) setCustomers((custs.data || []) as Customer[])
       } catch (e: any) {
         console.error(e)
@@ -157,7 +184,7 @@ export default function StockMovements() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [companyId])
 
   // Helpers
   const mapSL = (r: DBStockLevelRow): StockLevel => ({
@@ -171,19 +198,33 @@ export default function StockMovements() {
     updatedAt: r.updated_at ?? null,
   })
 
+  // Scoped loader for one side (from/to)
   const loadWH = async (whId: string, which: 'from' | 'to') => {
-    if (!whId) {
+    if (!companyId || !whId) {
       which === 'from' ? (setBinsFrom([]), setStockFrom([])) : (setBinsTo([]), setStockTo([]))
       return
     }
-    const bb = await db.bins.list({ where: { warehouseId: whId }, orderBy: { code: 'asc' } })
-    const { data: slRows, error: slErr } = await supabase
+
+    // Bins: camelCase columns, constrained by the selected warehouse id
+    const bbRaw = await supabase
+      .from('bins')
+      .select('id,code,name,warehouseId')
+      .eq('warehouseId', whId)
+      .order('code', { ascending: true })
+    if (bbRaw.error) throw bbRaw.error
+    const bins = (bbRaw.data || []) as Bin[]
+
+    // Stock levels: double filter (company + warehouse) for belt-and-suspenders
+    const slRaw = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
+      .eq('company_id', companyId)
       .eq('warehouse_id', whId)
-    if (slErr) throw slErr
-    if (which === 'from') { setBinsFrom(bb || []); setStockFrom((slRows || []).map(mapSL)) }
-    else { setBinsTo(bb || []); setStockTo((slRows || []).map(mapSL)) }
+
+    if (slRaw.error) throw slRaw.error
+
+    if (which === 'from') { setBinsFrom(bins); setStockFrom((slRaw.data || []).map(mapSL)) }
+    else { setBinsTo(bins); setStockTo((slRaw.data || []).map(mapSL)) }
   }
 
   useEffect(() => {
@@ -194,7 +235,8 @@ export default function StockMovements() {
         if (movementType === 'issue') { setItemId(''); setQtyEntered(''); setMovementUomId('') }
       } catch (e: any) { console.error(e); toast.error(tt('movements.loadFailedSourceWh', 'Failed to load source warehouse')) }
     })()
-  }, [warehouseFromId, movementType]) // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseFromId, movementType, companyId])
 
   useEffect(() => {
     (async () => {
@@ -204,7 +246,8 @@ export default function StockMovements() {
         if (movementType !== 'issue') { setItemId(''); setQtyEntered(''); setMovementUomId(''); setUnitCost('') }
       } catch (e: any) { console.error(e); toast.error(tt('movements.loadFailedDestWh', 'Failed to load destination warehouse')) }
     })()
-  }, [warehouseToId, movementType]) // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseToId, movementType, companyId])
 
   // UoM helpers
   const uomIdFromIdOrCode = (v?: string | null): string => {
@@ -237,7 +280,8 @@ export default function StockMovements() {
     ensureUomPresent(raw)
     setMovementUomId(uomIdFromIdOrCode(raw || ''))
     setQtyEntered('')
-  }, [itemId]) // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId])
 
   const codeOf = (id?: string) => (id ? (uomById.get(id)?.code || '').toUpperCase() : '')
   const idsOrCodesEqual = (aId?: string, bId?: string) => {
@@ -344,8 +388,6 @@ export default function StockMovements() {
   }
 
   // ---------------------- CASH helpers ----------------------
-
-  // per-company CASH customer (for SO on issue)
   async function getOrCreateCashCustomerId(): Promise<string> {
     if (!companyId) throw new Error('No company selected')
     const q = await supabase
@@ -369,7 +411,6 @@ export default function StockMovements() {
     throw up.error || new Error('Failed to upsert CASH customer')
   }
 
-  // per-company CASH-PURCHASES supplier (for PO on receive)
   async function getOrCreateCashPurchasesSupplierId(): Promise<string> {
     if (!companyId) throw new Error('No company selected')
     const CODE = 'CASH-PURCHASES'
@@ -396,7 +437,6 @@ export default function StockMovements() {
     throw up.error || new Error('Failed to upsert CASH-PURCHASES supplier')
   }
 
-  // create a CLOSED PO + one line for this receipt (RLS-safe with company_id)
   async function createClosedPOForReceipt(params: {
     companyId: string
     supplierId: string
@@ -454,6 +494,7 @@ export default function StockMovements() {
   // ---------------------- Submit handlers ----------------------
 
   async function submitReceive() {
+    if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
     if (!warehouseToId) return toast.error(tt('orders.selectDestWh', 'Select destination warehouse'))
     if (!toBin) return toast.error(tt('orders.selectBin', 'Select bin'))
     if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
@@ -470,7 +511,6 @@ export default function StockMovements() {
     const rtRaw = normalizeRefForSubmit('receive', refType)
     if (rtRaw === 'PO' && !refId) {
       try {
-        if (!companyId) throw new Error('No company selected')
         const supId = await getOrCreateCashPurchasesSupplierId()
         const { poId, poLineId, poNumber } = await createClosedPOForReceipt({
           companyId,
@@ -495,6 +535,7 @@ export default function StockMovements() {
 
     const finalRefType = rtRaw
     const ins = await supabase.from('stock_movements').insert({
+      company_id: companyId,
       type: 'receive',
       item_id: currentItem.id,
       uom_id: uomId,
@@ -516,6 +557,7 @@ export default function StockMovements() {
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
+      .eq('company_id', companyId)
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
     setQtyEntered(''); setUnitCost(''); setRefId(''); setRefLineId(''); setNotes('')
@@ -523,6 +565,7 @@ export default function StockMovements() {
   }
 
   async function submitIssue() {
+    if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
     if (!warehouseFromId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
     if (!fromBin) return toast.error(tt('orders.selectSourceBin', 'Select source bin'))
     if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
@@ -538,7 +581,6 @@ export default function StockMovements() {
 
     // SO path: create SO (revenue) + COGS via RPC
     if (rt === 'SO') {
-      if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
       const unitSellPrice = num(saleUnitPrice, NaN)
       if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
       const cur = saleCurrency || baseCode
@@ -559,12 +601,13 @@ export default function StockMovements() {
           status: 'shipped',
           binId: fromBin,
           cogsUnitCost: avgCost,
-          notes: notes?.trim() || undefined, // <— pass user notes (type-safe via local shim)
+          notes: notes?.trim() || undefined,
         } as CashSaleWithCogsArgsWithNotes)
 
         const { data: fresh } = await supabase
           .from('stock_levels')
           .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
+          .eq('company_id', companyId)
           .eq('warehouse_id', warehouseFromId)
         setStockFrom((fresh || []).map(mapSL))
 
@@ -586,6 +629,7 @@ export default function StockMovements() {
 
     // Non-SO issues
     const ins = await supabase.from('stock_movements').insert({
+      company_id: companyId,
       type: 'issue',
       item_id: currentItem.id,
       uom_id: uomId,
@@ -607,6 +651,7 @@ export default function StockMovements() {
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
+      .eq('company_id', companyId)
       .eq('warehouse_id', warehouseFromId)
     setStockFrom((fresh || []).map(mapSL))
 
@@ -616,6 +661,7 @@ export default function StockMovements() {
   }
 
   async function submitTransfer() {
+    if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
     if (!warehouseFromId || !warehouseToId) return toast.error(tt('movements.pickBothWh', 'Pick both warehouses'))
     if (!fromBin || !toBin) return toast.error(tt('movements.pickBothBins', 'Pick both bins'))
     if (warehouseFromId === warehouseToId && fromBin === toBin) return toast.error(tt('movements.sameSourceDest', 'Source and destination are the same'))
@@ -629,6 +675,7 @@ export default function StockMovements() {
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
     const ins = await supabase.from('stock_movements').insert({
+      company_id: companyId,
       type: 'transfer',
       item_id: currentItem.id,
       uom_id: uomId,
@@ -650,8 +697,8 @@ export default function StockMovements() {
     if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
 
     const [freshFrom, freshTo] = await Promise.all([
-      supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at').eq('warehouse_id', warehouseFromId),
-      supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at').eq('warehouse_id', warehouseToId),
+      supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at').eq('company_id', companyId).eq('warehouse_id', warehouseFromId),
+      supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at').eq('company_id', companyId).eq('warehouse_id', warehouseToId),
     ])
     setStockFrom((freshFrom.data || []).map(mapSL))
     setStockTo((freshTo.data || []).map(mapSL))
@@ -660,6 +707,7 @@ export default function StockMovements() {
   }
 
   async function submitAdjust() {
+    if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
     if (!warehouseToId) return toast.error(tt('movements.selectWhToAdjust', 'Select a warehouse to adjust'))
     if (!toBin) return toast.error(tt('movements.selectBinToAdjust', 'Select a bin to adjust'))
     if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
@@ -682,6 +730,7 @@ export default function StockMovements() {
       if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostRequiredForIncrease', 'Unit cost required when increasing on-hand'))
 
       const ins = await supabase.from('stock_movements').insert({
+        company_id: companyId,
         type: 'adjust',
         item_id: currentItem.id,
         uom_id: uomId,
@@ -701,6 +750,7 @@ export default function StockMovements() {
     } else {
       const qtyBase = Math.abs(delta)
       const ins = await supabase.from('stock_movements').insert({
+        company_id: companyId,
         type: 'issue',
         item_id: currentItem.id,
         uom_id: uomId,
@@ -722,6 +772,7 @@ export default function StockMovements() {
     const { data: fresh } = await supabase
       .from('stock_levels')
       .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
+      .eq('company_id', companyId)
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
     setQtyEntered(''); setUnitCost('')
@@ -770,7 +821,7 @@ export default function StockMovements() {
       if (!groups.has(fam)) groups.set(fam, [])
       groups.get(fam)!.push(u)
     }
-    for (const  arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    for (const arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     const families = Array.from(groups.keys())
     families.sort((a, b) => {
       if (baseFamily && a === baseFamily && b !== baseFamily) return -1
@@ -869,7 +920,11 @@ export default function StockMovements() {
                       key={b.id}
                       variant={fromBin === b.id ? 'default' : 'outline'}
                       className="w-full justify-start"
-                      onClick={() => { setFromBin(b.id); setToBin('') }}
+                      onClick={() => {
+                        setFromBin(b.id)
+                        if (movementType !== 'transfer') setToBin('')
+                        setItemId(''); setQtyEntered('')
+                      }}
                     >
                       {b.code} — {b.name}
                     </Button>
@@ -889,7 +944,10 @@ export default function StockMovements() {
                       key={b.id}
                       variant={toBin === b.id ? 'default' : 'outline'}
                       className="w-full justify-start"
-                      onClick={() => { setToBin(b.id); setFromBin('') }}
+                      onClick={() => {
+                        setToBin(b.id)
+                        if (movementType !== 'transfer') setFromBin('')
+                      }}
                     >
                       {b.code} — {b.name}
                     </Button>
@@ -974,7 +1032,14 @@ export default function StockMovements() {
             {movementType !== 'receive' && movementType !== 'adjust' && (
               <div>
                 <Label>{tt('orders.fromBin', 'From Bin')}</Label>
-                <Select value={fromBin} onValueChange={(v) => { setFromBin(v); setToBin(''); setItemId(''); setQtyEntered(''); }}>
+                <Select
+                  value={fromBin}
+                  onValueChange={(v) => {
+                    setFromBin(v)
+                    if (movementType !== 'transfer') setToBin('')
+                    setItemId(''); setQtyEntered('')
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
@@ -986,7 +1051,13 @@ export default function StockMovements() {
             {movementType !== 'issue' && (
               <div>
                 <Label>{tt('orders.toBin', 'To Bin')}</Label>
-                <Select value={toBin} onValueChange={(v) => { setToBin(v); setFromBin('') }}>
+                <Select
+                  value={toBin}
+                  onValueChange={(v) => {
+                    setToBin(v)
+                    if (movementType !== 'transfer') setFromBin('')
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
@@ -1000,10 +1071,11 @@ export default function StockMovements() {
               <Select
                 value={itemId}
                 onValueChange={(v) => { setItemId(v); setQtyEntered('') }}
-                disabled={(movementType === 'issue' && !fromBin) || (movementType !== 'issue' && !toBin)}
+                // In transfer & issue, require FROM bin; in receive/adjust, require TO bin
+                disabled={(movementType === 'issue' || movementType === 'transfer') ? !fromBin : !toBin}
               >
                 <SelectTrigger><SelectValue placeholder={
-                  movementType === 'issue'
+                  (movementType === 'issue' || movementType === 'transfer')
                     ? (fromBin ? tt('movements.selectItem', 'Select item') : tt('movements.pickFromBinFirst', 'Pick a source bin first'))
                     : (toBin ? tt('movements.selectItem', 'Select item') : tt('movements.pickToBinFirst', 'Pick a destination bin first'))
                 } /></SelectTrigger>

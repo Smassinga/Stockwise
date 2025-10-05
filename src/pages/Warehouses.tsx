@@ -1,8 +1,8 @@
 // src/pages/Warehouses.tsx
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { db } from '../lib/db'
-import { supabase } from '../lib/supabase' // NEW: use Supabase directly for stock check & delete
+import { supabase } from '../lib/supabase'
+import { useOrg } from '../hooks/useOrg'
 
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -35,20 +35,23 @@ type Warehouse = {
 }
 
 type Bin = {
-  id: string
-  warehouseId: string
+  id: string                    // text (e.g., "bin_...")
+  warehouseId: string           // camelCase in your DB
   code: string
   name: string
   status: string
-  createdAt?: string | null
+  createdAt?: string | null     // camelCase in your DB
 }
 
 export function Warehouses() {
+  const { companyId } = useOrg()
+
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isAddBinDialogOpen, setIsAddBinDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Warehouse | null>(null)
@@ -57,18 +60,12 @@ export function Warehouses() {
   const [binForm, setBinForm] = useState({ code: '', name: '', warehouseId: '', status: 'active' })
 
   useEffect(() => {
-    (async () => {
+    if (!companyId) return
+    ;(async () => {
       try {
         setLoading(true)
         setError(null)
-
-        const [wh, bn] = await Promise.all([
-          db.warehouses.list({ orderBy: { createdAt: 'desc' } }),
-          db.bins.list({ orderBy: { createdAt: 'desc' } }),
-        ])
-
-        setWarehouses(Array.isArray(wh) ? wh : [])
-        setBins(Array.isArray(bn) ? bn : [])
+        await loadAll()
       } catch (e: any) {
         console.error(e)
         setError(e?.message || 'Failed to load warehouses')
@@ -76,7 +73,64 @@ export function Warehouses() {
         setLoading(false)
       }
     })()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
+
+  async function loadAll() {
+    if (!companyId) return
+
+    // Warehouses are snake_case in DB
+    const { data: whRaw, error: whErr } = await supabase
+      .from('warehouses')
+      .select('id,code,name,address,status,created_at,updated_at,company_id')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false })
+
+    if (whErr) throw whErr
+
+    const whs: Warehouse[] = (whRaw || []).map((w: any) => ({
+      id: w.id,
+      code: w.code,
+      name: w.name,
+      address: w.address ?? null,
+      status: w.status,
+      createdAt: w.created_at ?? null,
+      updatedAt: w.updated_at ?? null,
+    }))
+
+    setWarehouses(whs)
+
+    // Bins use camelCase columns in your DB (warehouseId, createdAt)
+    const whIds = whs.map(w => w.id)
+    if (whIds.length === 0) {
+      setBins([])
+      return
+    }
+
+    const { data: bnRaw, error: bnErr } = await supabase
+      .from('bins')
+      .select('id,warehouseId,code,name,status,createdAt')
+      .in('warehouseId', whIds)
+      .order('createdAt', { ascending: false })
+
+    if (bnErr) {
+      console.error(bnErr)
+      toast.error(bnErr.message || 'Failed to load bins')
+      setBins([])
+      return
+    }
+
+    const bns: Bin[] = (bnRaw || []).map((b: any) => ({
+      id: b.id,
+      warehouseId: b.warehouseId,
+      code: b.code,
+      name: b.name,
+      status: b.status,
+      createdAt: b.createdAt ?? null,
+    }))
+
+    setBins(bns)
+  }
 
   function resetForm() {
     setForm({ code: '', name: '', address: '', status: 'active' })
@@ -88,13 +142,38 @@ export function Warehouses() {
 
   async function addWarehouse() {
     try {
-      const w = await db.warehouses.create({
+      if (!companyId) {
+        toast.error('Join or create a company first')
+        return
+      }
+      const payload = {
+        company_id: companyId,
         code: form.code,
         name: form.name,
         address: form.address || null,
         status: form.status,
-      })
-      setWarehouses(prev => [w, ...prev])
+      }
+      const { data, error } = await supabase
+        .from('warehouses')
+        .insert(payload)
+        .select('id,code,name,address,status,created_at,updated_at')
+        .single()
+
+      if (error) throw error
+
+      setWarehouses(prev => [
+        {
+          id: data!.id,
+          code: data!.code,
+          name: data!.name,
+          address: data!.address ?? null,
+          status: data!.status,
+          createdAt: data!.created_at ?? null,
+          updatedAt: data!.updated_at ?? null,
+        },
+        ...prev,
+      ])
+
       setIsAddDialogOpen(false)
       resetForm()
       toast.success('Warehouse added')
@@ -107,13 +186,37 @@ export function Warehouses() {
   async function updateWarehouse() {
     if (!editing) return
     try {
-      const w = await db.warehouses.update(editing.id, {
+      const patch = {
         code: form.code,
         name: form.name,
         address: form.address || null,
         status: form.status,
-      })
-      setWarehouses(prev => prev.map(x => (x.id === editing.id ? { ...x, ...w } : x)))
+      }
+      const { data, error } = await supabase
+        .from('warehouses')
+        .update(patch)
+        .eq('id', editing.id)
+        .select('id,code,name,address,status,created_at,updated_at')
+        .single()
+
+      if (error) throw error
+
+      setWarehouses(prev =>
+        prev.map(x =>
+          x.id === editing.id
+            ? {
+                id: data!.id,
+                code: data!.code,
+                name: data!.name,
+                address: data!.address ?? null,
+                status: data!.status,
+                createdAt: data!.created_at ?? null,
+                updatedAt: data!.updated_at ?? null,
+              }
+            : x
+        )
+      )
+
       setEditing(null)
       resetForm()
       toast.success('Warehouse updated')
@@ -125,7 +228,7 @@ export function Warehouses() {
 
   async function deleteWarehouse(id: string) {
     try {
-      // ✅ Correct stock check using snake_case column
+      // Stock-level check (snake_case)
       const { count, error: slErr } = await supabase
         .from('stock_levels')
         .select('id', { head: true, count: 'exact' })
@@ -141,11 +244,11 @@ export function Warehouses() {
         return
       }
 
-      // ✅ Delete the warehouse (FK ON DELETE CASCADE should remove bins)
+      // Delete the warehouse; bins should be removed by FK CASCADE if configured.
       const { error: delErr } = await supabase.from('warehouses').delete().eq('id', id)
       if (delErr) throw delErr
 
-      setWarehouses(prev => prev.filter(w => w.id !== id))
+      setWarehouses(prev => prev.filter(wh => wh.id !== id))
       setBins(prev => prev.filter(b => b.warehouseId !== id))
       toast.success('Warehouse deleted')
     } catch (e: any) {
@@ -160,14 +263,32 @@ export function Warehouses() {
         toast.error('Select a warehouse first')
         return
       }
-      const bn = await db.bins.create({
-        id: `bin_${Date.now()}`, // bins.id is text
-        warehouseId: binForm.warehouseId,
+      const payload = {
+        id: `bin_${Date.now()}`, // bins.id is TEXT
+        warehouseId: binForm.warehouseId, // camelCase column
         code: binForm.code,
         name: binForm.name,
         status: binForm.status,
-      })
-      setBins(prev => [bn, ...prev])
+      }
+      const { data, error } = await supabase
+        .from('bins')
+        .insert(payload)
+        .select('id,warehouseId,code,name,status,createdAt')
+        .single()
+
+      if (error) throw error
+
+      setBins(prev => [
+        {
+          id: data!.id,
+          warehouseId: data!.warehouseId,
+          code: data!.code,
+          name: data!.name,
+          status: data!.status,
+          createdAt: data!.createdAt ?? null,
+        },
+        ...prev,
+      ])
       setIsAddBinDialogOpen(false)
       resetBinForm()
       toast.success('Bin added')
@@ -242,9 +363,9 @@ export function Warehouses() {
                   >
                     <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
                     <SelectContent>
-                      {warehouses.map(w => (
-                        <SelectItem key={w.id} value={w.id}>
-                          {w.name} ({w.code})
+                      {warehouses.map(wh => (
+                        <SelectItem key={wh.id} value={wh.id}>
+                          {wh.name} ({wh.code})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -356,22 +477,22 @@ export function Warehouses() {
         <CardContent>
           {filtered.length > 0 ? (
             <div className="space-y-4">
-              {filtered.map(w => {
-                const wBins = binsFor(w.id)
+              {filtered.map(wh => {
+                const wBins = binsFor(wh.id)
                 return (
-                  <div key={w.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                  <div key={wh.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
                           <WarehouseIcon className="w-6 h-6 text-primary" />
                         </div>
                         <div>
-                          <h3 className="font-medium">{w.name}</h3>
-                          <p className="text-sm text-muted-foreground">Code: {w.code}</p>
-                          {w.address && (
+                          <h3 className="font-medium">{wh.name}</h3>
+                          <p className="text-sm text-muted-foreground">Code: {wh.code}</p>
+                          {wh.address && (
                             <p className="text-xs text-muted-foreground flex items-center mt-1">
                               <MapPin className="w-3 h-3 mr-1" />
-                              {w.address}
+                              {wh.address}
                             </p>
                           )}
                         </div>
@@ -381,7 +502,7 @@ export function Warehouses() {
                         <div className="text-right">
                           <p className="text-sm"><span className="text-muted-foreground">Bins:</span> {wBins.length}</p>
                         </div>
-                        <Badge variant={w.status === 'active' ? 'default' : 'secondary'}>{w.status}</Badge>
+                        <Badge variant={wh.status === 'active' ? 'default' : 'secondary'}>{wh.status}</Badge>
                         <div className="flex items-center gap-2">
                           <Dialog>
                             <DialogTrigger asChild>
@@ -389,12 +510,12 @@ export function Warehouses() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  setEditing(w)
+                                  setEditing(wh)
                                   setForm({
-                                    code: w.code,
-                                    name: w.name,
-                                    address: w.address ?? '',
-                                    status: w.status,
+                                    code: wh.code,
+                                    name: wh.name,
+                                    address: wh.address ?? '',
+                                    status: wh.status,
                                   })
                                 }}
                               >
@@ -443,7 +564,7 @@ export function Warehouses() {
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteWarehouse(w.id)}>Delete</AlertDialogAction>
+                                <AlertDialogAction onClick={() => deleteWarehouse(wh.id)}>Delete</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -489,3 +610,5 @@ export function Warehouses() {
     </div>
   )
 }
+
+export default Warehouses

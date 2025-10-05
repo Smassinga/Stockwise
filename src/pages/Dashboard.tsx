@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { db } from '../lib/db'
 import { useI18n } from '../lib/i18n'
+import { useOrg } from '../hooks/useOrg'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Button } from '../components/ui/button'
@@ -25,7 +25,7 @@ type MovementRow = {
   total_value: number | null
   warehouse_from_id?: string | null
   warehouse_to_id?: string | null
-  ref_type?: 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | 'CASH_SALE' | 'POS' | 'CASH' | null
+  ref_type?: 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | 'CASH_SALE' | 'POS' | 'CASH' | 'SO_REVERSAL' | null
   ref_id?: string | null
   ref_line_id?: string | null
 }
@@ -41,20 +41,37 @@ type SO = {
 type SOL = { so_id: string; item_id: string; uom_id: string; qty: number | null; unit_price: number | null; line_total: number | null }
 type Warehouse = { id: string; name: string }
 
+// --- NEW: window-scoped shipments + their linked movements (for COGS everywhere)
+type ShipmentRowDash = {
+  id: string
+  so_id: string | null
+  item_id: string
+  qty_base: number | null
+  created_at: string
+  movement_id: string | null
+  company_id?: string | null
+}
+type MovementCostRow = {
+  id: string
+  qty_base: number | null
+  unit_cost: number | null
+  total_value: number | null
+  ref_type?: string | null
+  type?: string | null
+  company_id?: string | null
+}
+
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const withinWindow = (iso: string | null | undefined, sinceMs: number) => !!iso && new Date(iso).getTime() >= sinceMs
 const shippedLike = (s: string) => ['shipped', 'completed', 'delivered', 'closed'].includes(String(s).toLowerCase())
 
-// Treat these movement ref_types as sales for COGS
-const SALES_REF_TYPES = new Set(['SO', 'CASH_SALE', 'POS', 'CASH'])
-
-// ----- NEW: tiny i18n fallback helper (avoids showing raw keys) -----
+// tiny i18n fallback helper (avoids showing raw keys)
 const withFallback = (t: (k: string, v?: any) => string, key: string, fallback: string, vars?: Record<string, any>) => {
   const s = t(key, vars)
   return s === key ? fallback : s
 }
 
-// ----- NEW: build YYYY-MM-DD without UTC shifting -----
+// build YYYY-MM-DD without UTC shifting
 const toISODateLocal = (d: Date) => {
   const y = d.getFullYear()
   const m = (d.getMonth() + 1).toString().padStart(2, '0')
@@ -62,8 +79,19 @@ const toISODateLocal = (d: Date) => {
   return `${y}-${m}-${day}`
 }
 
+// --- NEW: cost helper (prefers total_value, falls back to unit_cost * qty)
+const mnum = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+const movementCost = (mv?: MovementCostRow, fallbackQty?: number | null) => {
+  if (!mv) return 0
+  const tv = mnum(mv.total_value)
+  if (tv !== 0) return tv
+  const qty = mnum(mv.qty_base) || mnum(fallbackQty)
+  return mnum(mv.unit_cost) * qty
+}
+
 export default function Dashboard() {
   const { t, lang } = useI18n()
+  const { companyId } = useOrg()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => withFallback(t, key, fallback, vars)
   const navigate = useNavigate()
 
@@ -92,42 +120,65 @@ export default function Dashboard() {
   const [sos, setSOs] = useState<SO[]>([])
   const [sol, setSOL] = useState<SOL[]>([])
 
+  // --- NEW: window-scoped shipments + movements used for COGS
+  const [shipmentsWin, setShipmentsWin] = useState<ShipmentRowDash[]>([])
+  const [mvByIdWin, setMvByIdWin] = useState<Map<string, MovementCostRow>>(new Map())
+
+  // quick lookups
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
+
   useEffect(() => {
     let cancelled = false
+
     async function load() {
       try {
         setLoading(true)
         setError(null)
 
+        if (!companyId) {
+          // no company yet -> empty state
+          setWarehouses([]); setItems([]); setStock([]); setMoves([]); setSOs([]); setSOL([])
+          setBaseCode((await getBaseCurrencyCode()) || 'MZN')
+          return
+        }
+
         const base = await getBaseCurrencyCode()
 
-        const [wh, itRes, slRes, mvRes, soRes] = await Promise.all([
-          db.warehouses.list({ orderBy: { name: 'asc' } }),
-          supabase.from('items_view').select('id,sku,name,minStock'),
-          supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,updated_at'),
+        // All reads explicitly fenced by company_id
+        const [whRes, itRes, slRes, mvRes, soRes] = await Promise.all([
+          supabase.from('warehouses').select('id,name').eq('company_id', companyId).order('name', { ascending: true }),
+          // IMPORTANT: base table + snake_case column
+          supabase.from('items').select('id,sku,name,min_stock').eq('company_id', companyId),
+          supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,updated_at').eq('company_id', companyId),
           supabase
             .from('stock_movements')
             .select('id,item_id,qty_base,type,created_at,unit_cost,total_value,warehouse_from_id,warehouse_to_id,ref_type,ref_id,ref_line_id')
+            .eq('company_id', companyId)
             .order('created_at', { ascending: false })
             .limit(2000),
-          supabase.from('sales_orders').select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at'),
+          supabase.from('sales_orders').select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at').eq('company_id', companyId),
         ])
 
-        // Lines
         const { data: lineRows, error: lineErr } = await supabase
           .from('sales_order_lines')
           .select('so_id,item_id,uom_id,qty,unit_price,line_total')
+          .eq('company_id', companyId)
         if (lineErr) throw lineErr
 
         if (!cancelled) {
           setBaseCode(base || 'MZN')
-          setWarehouses((wh || []) as Warehouse[])
-          setItems(((itRes.data || []) as any[]).map(x => ({ id: x.id, name: x.name, sku: x.sku, minStock: (x as any).minStock ?? null })))
+          setWarehouses((whRes.data || []) as Warehouse[])
+          setItems(((itRes.data || []) as any[]).map(x => ({
+            id: x.id,
+            name: x.name,
+            sku: x.sku,
+            minStock: (x as any).min_stock ?? null,
+          })))
           setStock((slRes.data || []) as StockRow[])
           setMoves((mvRes.data || []) as MovementRow[])
           setSOs((soRes.data || []) as SO[])
           setSOL((lineRows || []) as SOL[])
-          if (!wh?.length) setWarehouseId('ALL')
+          if (!whRes.data?.length) setWarehouseId('ALL')
         }
       } catch (e: any) {
         console.error(e)
@@ -136,13 +187,58 @@ export default function Dashboard() {
         if (!cancelled) setLoading(false)
       }
     }
+
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [companyId])
 
   // ----- filter helpers
   const now = Date.now()
   const since = now - windowDays * 24 * 60 * 60 * 1000
+
+  // --- NEW: fetch shipments inside the KPI window + their SO/issue movements
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!companyId) { setShipmentsWin([]); setMvByIdWin(new Map()); return }
+
+      const startISO = new Date(since).toISOString()
+      const endISO = new Date().toISOString()
+
+      try {
+        // 1) shipments for this company within window
+        const { data: shipRows, error: shipErr } = await supabase
+          .from('sales_shipments')
+          .select('id,so_id,item_id,qty_base,created_at,company_id,movement_id')
+          .eq('company_id', companyId)
+          .gte('created_at', startISO)
+          .lte('created_at', endISO)
+        if (shipErr) throw shipErr
+        const ships = (shipRows || []) as ShipmentRowDash[]
+
+        // 2) fetch ONLY the movements they link to (SO issues)
+        const mvIds = Array.from(new Set(ships.map(s => s.movement_id).filter(Boolean))) as string[]
+        const mvMap = new Map<string, MovementCostRow>()
+        if (mvIds.length) {
+          const { data: mvRows, error: mvErr } = await supabase
+            .from('stock_movements')
+            .select('id,qty_base,unit_cost,total_value,ref_type,type,company_id')
+            .in('id', mvIds)
+            .eq('company_id', companyId)
+            .eq('ref_type', 'SO')
+            .eq('type', 'issue')
+          if (mvErr) throw mvErr
+          for (const r of (mvRows || []) as MovementCostRow[]) mvMap.set(r.id, r)
+        }
+
+        if (!cancelled) { setShipmentsWin(ships); setMvByIdWin(mvMap) }
+      } catch (e) {
+        console.error(e)
+        if (!cancelled) { setShipmentsWin([]); setMvByIdWin(new Map()) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [companyId, since, windowDays])
 
   // stock filtered by warehouse
   const stockFiltered = useMemo(() => (warehouseId === 'ALL' ? stock : stock.filter(r => r.warehouse_id === warehouseId)), [stock, warehouseId])
@@ -171,7 +267,7 @@ export default function Dashboard() {
     return map
   }, [sol, fxBySO])
 
-  // Revenue per SO in base — total first, otherwise lines (NEW: tolerate 'total' vs 'total_amount')
+  // Revenue per SO in base
   const revenueBaseBySO = useMemo(() => {
     const map = new Map<string, number>()
     for (const s of sos) {
@@ -194,17 +290,15 @@ export default function Dashboard() {
     return sum
   }, [shippedInWindow, revenueBaseBySO])
 
-  // COGS in window — issues of recognized sales ref_types
+  // --- NEW: COGS in window from shipments → linked SO/issue movements
   const cogsWindow = useMemo(() => {
     let sum = 0
-    for (const m of moves) {
-      if (m.type !== 'issue' || !SALES_REF_TYPES.has(String(m.ref_type || ''))) continue
-      if (!withinWindow(m.created_at, since)) continue
-      const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
-      sum += val
+    for (const s of shipmentsWin) {
+      const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
+      sum += movementCost(mv, s.qty_base)
     }
     return sum
-  }, [moves, since])
+  }, [shipmentsWin, mvByIdWin])
 
   // Gross margin
   const grossMargin = revenueWindow - cogsWindow
@@ -221,8 +315,9 @@ export default function Dashboard() {
       .slice(0, 5)
   }, [items, stockFiltered])
 
-  // ---------- Top Products by GM ----------
+  // ---------- Top Products by GM (shipment-linked costs) ----------
   const topGM = useMemo(() => {
+    // revenue distribution (same logic as before)
     const lineRevBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> rev)
     const linesRevSO = new Map<string, number>()                    // soId -> rev sum
     for (const l of sol) {
@@ -237,21 +332,21 @@ export default function Dashboard() {
       linesRevSO.set(soId, (linesRevSO.get(soId) || 0) + r)
     }
 
+    // --- NEW: cost by SO->item using shipmentsWin
     const costBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> cost)
     const costSumBySO = new Map<string, number>()
-    for (const mv of moves) {
-      if (mv.type !== 'issue' || !SALES_REF_TYPES.has(String(mv.ref_type || ''))) continue
-      const soId = mv.ref_id || ''
+    for (const s of shipmentsWin) {
+      const soId = s.so_id || ''
       if (!soId) continue
-      if (!sos.find(s => s.id === soId && shippedLike(s.status))) continue
-      if (!withinWindow(mv.created_at, since)) continue
-      const val = Number.isFinite(mv.total_value) ? num(mv.total_value) : num(mv.unit_cost) * num(mv.qty_base)
+      const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
+      const val = movementCost(mv, s.qty_base)
       if (!costBySOItem.has(soId)) costBySOItem.set(soId, new Map())
       const m = costBySOItem.get(soId)!
-      m.set(mv.item_id, (m.get(mv.item_id) || 0) + val)
+      m.set(s.item_id, (m.get(s.item_id) || 0) + val)
       costSumBySO.set(soId, (costSumBySO.get(soId) || 0) + val)
     }
 
+    // per-item revenue allocation (unchanged, but can fall back to cost weights)
     const perItemRevenue = new Map<string, number>()
     const shippedSet = new Set(sos.filter(s => shippedLike(s.status)).map(s => s.id))
     for (const soId of shippedSet) {
@@ -273,6 +368,7 @@ export default function Dashboard() {
           }
         }
       } else {
+        // fallback: allocate by cost weights if revenue lines are missing
         const costMap = costBySOItem.get(soId)
         const costSum = costSumBySO.get(soId) || 0
         if (costMap && costSum > 0) {
@@ -284,12 +380,12 @@ export default function Dashboard() {
       }
     }
 
+    // --- NEW: per-item COGS from shipmentsWin
     const cogsByItem = new Map<string, number>()
-    for (const mv of moves) {
-      if (mv.type !== 'issue' || !SALES_REF_TYPES.has(String(mv.ref_type || ''))) continue
-      if (!withinWindow(mv.created_at, since)) continue
-      const val = Number.isFinite(mv.total_value) ? num(mv.total_value) : num(mv.unit_cost) * num(mv.qty_base)
-      cogsByItem.set(mv.item_id, (cogsByItem.get(mv.item_id) || 0) + val)
+    for (const s of shipmentsWin) {
+      const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
+      const val = movementCost(mv, s.qty_base)
+      cogsByItem.set(s.item_id, (cogsByItem.get(s.item_id) || 0) + val)
     }
 
     const itemIds = new Set<string>([...perItemRevenue.keys(), ...cogsByItem.keys()])
@@ -298,12 +394,12 @@ export default function Dashboard() {
       const cogs = cogsByItem.get(itemId) || 0
       const gm = revenue - cogs
       const pct = revenue > 0 ? gm / revenue : 0
-      const it = items.find(i => i.id === itemId)
+      const it = itemById.get(itemId)
       return { itemId, name: it?.name || itemId, sku: it?.sku || '', revenue, cogs, gm, pct }
     })
     rows.sort((a, b) => b.gm - a.gm)
     return rows.slice(0, 10)
-  }, [sos, sol, fxBySO, moves, items, since, revenueBaseBySO])
+  }, [sos, sol, fxBySO, shipmentsWin, mvByIdWin, revenueBaseBySO, itemById])
 
   // ----- Available years for Daily selector -----
   const availableYears = useMemo(() => {
@@ -322,7 +418,7 @@ export default function Dashboard() {
     return arr.length ? arr : [nowDate.getFullYear()]
   }, [sos, moves])
 
-  // ----- FIX: build month days without UTC shift -----
+  // month days without UTC shift
   const monthDaysISO = useMemo(() => {
     const lastDay = new Date(dailyYear, dailyMonth + 1, 0).getDate()
     const arr: string[] = []
@@ -332,23 +428,23 @@ export default function Dashboard() {
     return arr
   }, [dailyYear, dailyMonth])
 
-  // ----- FIX: Daily rows — allocate revenue by the days that had sales issues -----
+  // --- NEW: Daily table rows using shipment-linked costs (+ revenue allocation by cost day-weights)
   const dailyRows = useMemo(() => {
     const revByDate = new Map<string, number>()
     const cogsByDate = new Map<string, number>()
 
-    // 1) COGS per day (issues of sales ref_types) in the selected month
+    // Cost per SO per day from shipments
     const costBySODate = new Map<string, Map<string, number>>() // soId -> (date -> cost)
     const costSumBySO = new Map<string, number>()
-    for (const m of moves) {
-      if (m.type !== 'issue' || !SALES_REF_TYPES.has(String(m.ref_type || ''))) continue
-      const iso = (m.created_at || '').slice(0, 10)
+    for (const s of shipmentsWin) {
+      const iso = (s.created_at || '').slice(0, 10)
       if (!iso) continue
       const d = new Date(iso)
       if (d.getFullYear() !== dailyYear || d.getMonth() !== dailyMonth) continue
-      const soId = m.ref_id || ''
+      const soId = s.so_id || ''
       if (!soId) continue
-      const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
+      const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
+      const val = movementCost(mv, s.qty_base)
 
       cogsByDate.set(iso, (cogsByDate.get(iso) || 0) + val)
 
@@ -358,7 +454,7 @@ export default function Dashboard() {
       costSumBySO.set(soId, (costSumBySO.get(soId) || 0) + val)
     }
 
-    // 2) Revenue allocation: for each shipped SO
+    // Revenue allocation by cost weights (or SO updated_at if no costs in month)
     for (const s of sos) {
       if (!shippedLike(s.status)) continue
       const soId = s.id
@@ -369,12 +465,10 @@ export default function Dashboard() {
       const costSum = costSumBySO.get(soId) || 0
 
       if (costDays && costSum > 0) {
-        // Allocate revenue proportionally to each day's cost
         for (const [iso, dayCost] of costDays.entries()) {
           revByDate.set(iso, (revByDate.get(iso) || 0) + orderRev * (dayCost / costSum))
         }
       } else {
-        // Fallback: put revenue on the SO's updated/created day if it lives in the selected month
         const iso = (s.updated_at || s.created_at || '').slice(0, 10)
         if (iso) {
           const d = new Date(iso)
@@ -385,15 +479,14 @@ export default function Dashboard() {
       }
     }
 
-    // 3) Return rows for the month days (zeros by default)
     return monthDaysISO.map(d => ({
       date: d,
       revenue: revByDate.get(d) || 0,
       cogs: cogsByDate.get(d) || 0,
     }))
-  }, [sos, revenueBaseBySO, moves, dailyYear, dailyMonth, monthDaysISO])
+  }, [sos, revenueBaseBySO, shipmentsWin, mvByIdWin, dailyYear, dailyMonth, monthDaysISO])
 
-  // ↓↓↓ only 5 recent, we add the “All Transactions” button below
+  // recent movements (5)
   const recentMoves = useMemo(() => moves.slice(0, 5), [moves])
 
   if (loading) {
@@ -426,7 +519,6 @@ export default function Dashboard() {
     }
   }
 
-  // month names (locale-aware)
   const monthName = (m: number) => new Date(2000, m, 1).toLocaleString(lang, { month: 'long' })
 
   return (
@@ -719,13 +811,15 @@ export default function Dashboard() {
                 </thead>
                 <tbody>
                   {recentMoves.map(m => {
-                    const it = items.find(i => i.id === m.item_id)
+                    const it = itemById.get(m.item_id)
                     const label = it ? `${it.name} (${it.sku})` : m.item_id
                     const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
                     return (
                       <tr key={m.id} className="border-b">
-                        <td className="py-2 pr-2">{new Date(m.created_at).toLocaleString(lang)}</td>
-                        <td className="py-2 pr-2 capitalize">{movementLabel(m.type)}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap">{new Date(m.created_at).toLocaleString(lang)}</td>
+                        <td className="py-2 pr-2 capitalize">
+                          {movementLabel(m.type)}
+                        </td>
                         <td className="py-2 pr-2">{label}</td>
                         <td className="py-2 pr-2">{num(m.qty_base)}</td>
                         <td className="py-2 pr-2">{formatMoneyBase(val, baseCode)}</td>
