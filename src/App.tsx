@@ -26,6 +26,7 @@ const Transactions = lazy(() => import('./pages/Transactions'));
 const Cash = lazy(() => import('./pages/Cash'));
 const Banks = lazy(() => import('./pages/Banks'));
 const BankDetail = lazy(() => import('./pages/BankDetail'));
+const ResponsiveDemo = lazy(() => import('./pages/ResponsiveDemo'));
 import { OrgProvider, useOrg } from './hooks/useOrg';
 import { CanManageUsers } from './lib/roles';
 
@@ -138,9 +139,11 @@ export default function App() {
               <Route path="/suppliers" element={<Suspense fallback={<LoadingSplash />}><SuppliersPage /></Suspense>} />
               <Route path="/settings" element={<Suspense fallback={<LoadingSplash />}><Settings /></Suspense>} />
               <Route path="/settings/uoms" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
-+              {/* Friendly top-level path for sidebar */}
+              {/* Friendly top-level path for sidebar */}
               <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
               <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
+              {/* Responsive demo page */}
+              <Route path="/responsive-demo" element={<Suspense fallback={<LoadingSplash />}><ResponsiveDemo /></Suspense>} />
             </Route>
           </Route>
         </Route>

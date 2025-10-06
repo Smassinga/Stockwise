@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* Tailwind CSS directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -95,6 +96,59 @@
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Responsive utility classes */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+  
+  .mobile-stack {
+    @apply flex flex-col gap-4;
+  }
+  
+  .mobile-grid {
+    @apply grid grid-cols-1 gap-4;
+  }
+  
+  .tablet-grid {
+    @apply sm:grid-cols-2;
+  }
+  
+  .desktop-grid {
+    @apply lg:grid-cols-3;
+  }
+  
+  .responsive-padding {
+    @apply p-4 sm:p-6;
+  }
+  
+  .responsive-margin {
+    @apply m-4 sm:m-6;
+  }
+  
+  .text-responsive-sm {
+    @apply text-xs sm:text-sm;
+  }
+  
+  .text-responsive-base {
+    @apply text-sm sm:text-base;
+  }
+  
+  .text-responsive-lg {
+    @apply text-base sm:text-lg;
+  }
+  
+  .text-responsive-xl {
+    @apply text-lg sm:text-xl;
+  }
+  
+  .text-responsive-2xl {
+    @apply text-xl sm:text-2xl;
+  }
+  
+  .text-responsive-3xl {
+    @apply text-2xl sm:text-3xl;
+  }
 }
 
 /* Custom scrollbar */
@@ -131,4 +185,9 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Focus visible styles for accessibility */
+.focus-visible-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
 }

@@ -8,6 +8,7 @@ This template includes built-in detection for missing CSS variables between your
 - **Enhanced Linting**: Includes ESLint, Stylelint, and custom CSS variable validation
 - **Shadcn/ui**: Pre-configured with all Shadcn components
 - **Modern Stack**: Vite + React + TypeScript + Tailwind CSS
+- **Mobile-First Design**: Fully responsive design optimized for all device sizes
 
 ## Available Scripts
 
@@ -57,3 +58,32 @@ The detection happens during the `npm run lint` command, which will:
 - Integrate seamlessly with your development workflow
 
 This prevents runtime CSS issues where Tailwind classes reference undefined CSS variables.
+
+## Mobile Optimization
+
+Stockwise is designed with a mobile-first approach and includes:
+
+- **Responsive Layout**: Adapts to all screen sizes from mobile to desktop
+- **Touch-Friendly Controls**: All interactive elements meet WCAG touch target requirements
+- **Performance Optimized**: Lightweight implementation for mobile networks
+- **Accessibility Compliant**: Works with screen readers and assistive technologies
+
+For detailed information about mobile optimization, see [Mobile Optimization Guide](docs/MOBILE_OPTIMIZATION.md).
+
+## Documentation
+
+Comprehensive documentation is available in the [docs](docs/) directory:
+
+- [Project Overview](docs/README.md)
+- [Development Guide](docs/DEVELOPMENT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Components](docs/COMPONENTS.md)
+- [API Documentation](docs/API.md)
+- [Data Model](docs/DATA_MODEL.md)
+- [Testing Strategy](docs/TESTING.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Contributing Guide](docs/CONTRIBUTING.md)
+- [Mobile Optimization Guide](docs/MOBILE_OPTIMIZATION.md)
+
+For detailed information about the Stockwise inventory management system, please refer to the documentation files.

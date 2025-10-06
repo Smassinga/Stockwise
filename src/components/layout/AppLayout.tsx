@@ -21,6 +21,8 @@ import {
   Banknote,        // Banks icon
   Ruler,           // UoM
   ClipboardList,   // Stock Levels
+  Monitor,         // Responsive demo
+  X
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -32,6 +34,9 @@ import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 import CompanySwitcher from '../CompanySwitcher'
 import { useI18n } from '../../lib/i18n'
+// Note: useIsMobile is imported but not currently used in this component
+// It's kept for potential future use or debugging
+import { useIsMobile } from '../../hooks/use-mobile'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -59,6 +64,7 @@ function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
     { label: t('nav.suppliers'),    to: '/suppliers',    icon: Truck },
     { label: t('nav.currency'),     to: '/currency',     icon: Coins },
     { label: t('nav.uom'),          to: '/uom',          icon: Ruler },
+    { label: 'Responsive Demo',     to: '/responsive-demo', icon: Monitor },
     { label: t('nav.settings'),     to: '/settings',     icon: SettingsIcon },
   ]
 }
@@ -89,6 +95,8 @@ export function AppLayout({ user, children }: Props) {
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
   const { t } = useI18n()
+  // Note: useIsMobile is imported but not currently used in this component
+  // It's kept for potential future use or debugging
 
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, CanManageUsers)
@@ -113,8 +121,8 @@ export function AppLayout({ user, children }: Props) {
             : 'text-foreground/80 hover:bg-accent hover:text-foreground'
         )}
       >
-        <Icon className="h-4 w-4" />
-        {item.label}
+        <Icon className="h-5 w-5 flex-shrink-0" />
+        <span className="truncate">{item.label}</span>
       </Link>
     )
   }
@@ -130,7 +138,7 @@ export function AppLayout({ user, children }: Props) {
               <path d="M12 22V12" />
             </svg>
           </div>
-          <div className="text-lg font-bold">StockWise</div>
+          <div className="text-lg font-bold truncate">StockWise</div>
           <div className="ml-2 shrink-0">
             <ThemeToggle />
           </div>
@@ -145,7 +153,7 @@ export function AppLayout({ user, children }: Props) {
         <div className="border-t p-3">
           <CompanySwitcher className="mb-2" />
           {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
-          <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
+          <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
           <Button
             variant="ghost"
@@ -170,16 +178,18 @@ export function AppLayout({ user, children }: Props) {
     <div className="flex min-h-screen">
       {sidebar}
 
-      <div
-        className={cn(
-          'fixed inset-0 z-40 bg-background/70 backdrop-blur-sm md:hidden',
-          open ? 'block' : 'hidden'
-        )}
-        onClick={() => setOpen(false)}
-      />
+      {/* Mobile overlay */}
+      {open && (
+        <div 
+          className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm md:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 border-r bg-background transition-transform md:hidden',
+          'fixed inset-y-0 left-0 z-50 w-64 border-r bg-background transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -194,11 +204,17 @@ export function AppLayout({ user, children }: Props) {
             </div>
             <div className="text-lg font-bold">StockWise</div>
             <div className="ml-2 shrink-0">
-              {/* @ts-ignore */}<ThemeToggle compact />
+              <ThemeToggle compact />
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close menu">
-            ✕
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setOpen(false)} 
+            aria-label="Close menu"
+            className="h-9 w-9"
+          >
+            <X className="h-5 w-5" />
           </Button>
         </div>
         <div className="px-3 pb-2">
@@ -211,7 +227,7 @@ export function AppLayout({ user, children }: Props) {
         </nav>
         <div className="mt-auto border-t p-3">
           {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
-          <div className="mt-1 text-sm font-medium">{user.name || user.email}</div>
+          <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
           <Button
             variant="ghost"
@@ -227,24 +243,39 @@ export function AppLayout({ user, children }: Props) {
 
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background px-4">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="md:hidden h-9 w-9" 
+            onClick={() => setOpen(true)} 
+            aria-label="Open menu"
+          >
             <Menu className="h-5 w-5" />
           </Button>
+          <div className="ml-1 flex-1 md:hidden">
+            <Input 
+              placeholder={t('common.searchPlaceholder')} 
+              className="w-full" 
+            />
+          </div>
           <div className="ml-1 hidden flex-1 md:flex">
-            <Input placeholder={t('common.searchPlaceholder')} className="max-w-xl" />
+            <Input 
+              placeholder={t('common.searchPlaceholder')} 
+              className="max-w-xl" 
+            />
           </div>
           <div className="ml-auto flex items-center gap-2">
             <NotificationCenter />
             <CompanySwitcher className="hidden md:block" />
             <div className="hidden text-right md:block">
               {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
-              <div className="text-sm font-semibold leading-tight">{user.name || user.email}</div>
+              <div className="text-sm font-semibold leading-tight truncate">{user.name || user.email}</div>
               <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
             </div>
 
             <div className="relative ml-2 hidden md:block" ref={menuRef}>
               <button
-                className="h-9 w-9 rounded-full bg-primary/10 text-sm font-semibold flex items-center justify-center hover:bg-primary/20 transition"
+                className="h-9 w-9 rounded-full bg-primary/10 text-sm font-semibold flex items-center justify-center hover:bg-primary/20 transition min-h-[44px] min-w-[44px]"
                 onClick={() => setMenuOpen(v => !v)}
                 aria-label="User menu"
               >
@@ -254,7 +285,7 @@ export function AppLayout({ user, children }: Props) {
                 <div className="absolute right-0 mt-2 w-44 rounded-md border bg-popover text-popover-foreground shadow-md">
                   <div className="p-1">
                     <button
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent"
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
                       onClick={() => { setMenuOpen(false); logout?.() }}
                     >
                       <LogOut className="h-4 w-4" />

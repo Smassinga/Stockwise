@@ -11,6 +11,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { useIsMobile } from '../hooks/use-mobile'
 
 type Uom = {
   id: string
@@ -37,6 +38,7 @@ const Items: React.FC = () => {
   const { t } = useI18n()
   const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
+  const isMobile = useIsMobile()
 
   const [loading, setLoading] = useState(true)
   const [uoms, setUoms] = useState<Uom[]>([])
@@ -206,28 +208,44 @@ const Items: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">{t('items.title')}</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold">{t('items.title')}</h1>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>{t('items.create.title')}</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl">{t('items.create.title')}</CardTitle>
+        </CardHeader>
         <CardContent>
-          <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-2">
+          <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-1 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="name">{t('items.fields.name')} *</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('items.placeholder.name')} />
+              <Input 
+                id="name" 
+                value={name} 
+                onChange={(e) => setName(e.target.value)} 
+                placeholder={t('items.placeholder.name')} 
+                className="min-h-[44px]"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="sku">{t('items.fields.sku')} *</Label>
-              <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder={t('items.placeholder.sku')} />
+              <Input 
+                id="sku" 
+                value={sku} 
+                onChange={(e) => setSku(e.target.value)} 
+                placeholder={t('items.placeholder.sku')} 
+                className="min-h-[44px]"
+              />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label>{t('items.fields.baseUom')} *</Label>
               <Select value={baseUomId} onValueChange={setBaseUomId}>
-                <SelectTrigger><SelectValue placeholder={t('items.placeholder.selectUnit')} /></SelectTrigger>
+                <SelectTrigger className="min-h-[44px]">
+                  <SelectValue placeholder={t('items.placeholder.selectUnit')} />
+                </SelectTrigger>
                 <SelectContent className="max-h-72 overflow-auto">
                   {groupedUoms.families.length === 0 && (
                     <SelectItem value="__none__" disabled>{t('none')}</SelectItem>
@@ -262,61 +280,116 @@ const Items: React.FC = () => {
                 value={minStock}
                 onChange={(e) => setMinStock(e.target.value)}
                 placeholder="0"
+                className="min-h-[44px]"
               />
             </div>
 
-            <div className="flex items-end">
-              <Button type="submit" disabled={!can.createItem(role)}>{t('items.actions.create')}</Button>
+            <div className="flex items-end md:col-span-2">
+              <Button 
+                type="submit" 
+                disabled={!can.createItem(role)}
+                className="w-full sm:w-auto min-h-[44px]"
+              >
+                {t('items.actions.create')}
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>{t('items.list.title')}</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl">{t('items.list.title')}</CardTitle>
+        </CardHeader>
         <CardContent className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left border-b">
-                <th className="py-2 pr-2">{t('items.fields.name')}</th>
-                <th className="py-2 pr-2">{t('items.fields.sku')}</th>
-                <th className="py-2 pr-2">{t('items.table.baseUom')}</th>
-                <th className="py-2 pr-2">{t('items.fields.minStock')}</th>
-                <th className="py-2 pr-2">{t('items.table.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 && (
-                <tr><td colSpan={5} className="py-4 text-muted-foreground">{t('items.list.empty')}</td></tr>
-              )}
-              {items.map(it => {
-                const u = uomById.get(it.baseUomId)
-                return (
-                  <tr key={it.id} className="border-b">
-                    <td className="py-2 pr-2">{it.name}</td>
-                    <td className="py-2 pr-2">{it.sku}</td>
-                    <td className="py-2 pr-2">{u ? `${u.code} — ${u.name}` : it.baseUomId}</td>
-                    <td className="py-2 pr-2">{typeof it.minStock === 'number' ? it.minStock : '-'}</td>
-                    <td className="py-2 pr-2">
-                      <div className="flex gap-2">
-                        <Button
-                          variant="destructive"
-                          disabled={!can.deleteItem(role)}
-                          onClick={() =>
-                            can.deleteItem(role)
-                              ? handleDelete(it.id)
-                              : toast.error('Only MANAGER+ can delete items')
-                          }
-                        >
-                          {t('common.remove')}
-                        </Button>
+          {/* Mobile view - stacked cards */}
+          {isMobile ? (
+            <div className="space-y-4">
+              {items.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">{t('items.list.empty')}</p>
+              ) : (
+                items.map(it => {
+                  const u = uomById.get(it.baseUomId)
+                  return (
+                    <div key={it.id} className="border rounded-lg p-4 space-y-3">
+                      <div>
+                        <h3 className="font-medium">{it.name}</h3>
+                        <p className="text-sm text-muted-foreground">{it.sku}</p>
                       </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">{t('items.table.baseUom')}</p>
+                          <p>{u ? `${u.code} — ${u.name}` : it.baseUomId}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">{t('items.fields.minStock')}</p>
+                          <p>{typeof it.minStock === 'number' ? it.minStock : '-'}</p>
+                        </div>
+                      </div>
+                      
+                      <Button
+                        variant="destructive"
+                        disabled={!can.deleteItem(role)}
+                        onClick={() =>
+                          can.deleteItem(role)
+                            ? handleDelete(it.id)
+                            : toast.error('Only MANAGER+ can delete items')
+                        }
+                        className="w-full min-h-[44px]"
+                      >
+                        {t('common.remove')}
+                      </Button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          ) : (
+            // Desktop view - table
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b">
+                  <th className="py-2 pr-2">{t('items.fields.name')}</th>
+                  <th className="py-2 pr-2">{t('items.fields.sku')}</th>
+                  <th className="py-2 pr-2">{t('items.table.baseUom')}</th>
+                  <th className="py-2 pr-2">{t('items.fields.minStock')}</th>
+                  <th className="py-2 pr-2">{t('items.table.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 && (
+                  <tr><td colSpan={5} className="py-4 text-muted-foreground text-center">{t('items.list.empty')}</td></tr>
+                )}
+                {items.map(it => {
+                  const u = uomById.get(it.baseUomId)
+                  return (
+                    <tr key={it.id} className="border-b">
+                      <td className="py-2 pr-2">{it.name}</td>
+                      <td className="py-2 pr-2">{it.sku}</td>
+                      <td className="py-2 pr-2">{u ? `${u.code} — ${u.name}` : it.baseUomId}</td>
+                      <td className="py-2 pr-2">{typeof it.minStock === 'number' ? it.minStock : '-'}</td>
+                      <td className="py-2 pr-2">
+                        <div className="flex gap-2">
+                          <Button
+                            variant="destructive"
+                            disabled={!can.deleteItem(role)}
+                            onClick={() =>
+                              can.deleteItem(role)
+                                ? handleDelete(it.id)
+                                : toast.error('Only MANAGER+ can delete items')
+                            }
+                          >
+                            {t('common.remove')}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </CardContent>
       </Card>
     </div>

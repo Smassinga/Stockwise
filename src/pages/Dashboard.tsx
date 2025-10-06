@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 
 // per-icon imports to avoid lucide bundle resolution issues
-import { Package, DollarSign, Coins, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
+import { Package, DollarSign, Coins, AlertTriangle, TrendingUp, TrendingDown, Calendar } from 'lucide-react'
 
 type Item = { id: string; name: string; sku: string; minStock?: number | null }
 type StockRow = { id: string; item_id: string; warehouse_id: string; bin_id: string | null; qty: number | null; avg_cost: number | null; updated_at?: string | null }
@@ -523,14 +523,14 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-3xl font-bold">{t('dashboard.title')}</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold">{t('dashboard.title')}</h1>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {/* Date window (KPIs/top products) */}
-          <div className="w-40">
+          <div className="w-full sm:w-40">
             <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))}>
-              <SelectTrigger><SelectValue placeholder={t('filters.window.label')} /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.window.label')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="30">{t('window.30')}</SelectItem>
                 <SelectItem value="60">{t('window.60')}</SelectItem>
@@ -541,9 +541,9 @@ export default function Dashboard() {
           </div>
 
           {/* Warehouse filter */}
-          <div className="w-56">
+          <div className="w-full sm:w-56">
             <Select value={warehouseId} onValueChange={setWarehouseId}>
-              <SelectTrigger><SelectValue placeholder={t('filters.warehouse.label')} /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.warehouse.label')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">{t('filters.warehouse.all')}</SelectItem>
                 {warehouses.map(w => (
@@ -556,17 +556,20 @@ export default function Dashboard() {
           {/* Daily sheet */}
           <Sheet open={dailyOpen} onOpenChange={setDailyOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline">{t('daily.button')}</Button>
+              <Button variant="outline" className="w-full sm:w-auto">
+                <Calendar className="w-4 h-4 mr-2" />
+                {t('daily.button')}
+              </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-              <SheetHeader>
+              <SheetHeader className="px-4 md:px-0 pt-4 md:pt-0">
                 <SheetTitle>{t('daily.title')}</SheetTitle>
                 <SheetDescription className="sr-only">{t('daily.desc')}</SheetDescription>
               </SheetHeader>
 
               {/* Date controls */}
               <div className="px-4 md:px-0 mt-2 mb-4 flex flex-wrap items-center gap-2">
-                <div className="w-48">
+                <div className="w-full sm:w-48">
                   <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
                     <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
                     <SelectContent>
@@ -578,7 +581,7 @@ export default function Dashboard() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="w-32">
+                <div className="w-full sm:w-32">
                   <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
                     <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
                     <SelectContent>
@@ -595,15 +598,16 @@ export default function Dashboard() {
                     setDailyYear(d.getFullYear())
                     setDailyMonth(d.getMonth())
                   }}
+                  className="w-full sm:w-auto"
                 >
                   {tt('common.thisMonth', 'This month')}
                 </Button>
               </div>
 
               {/* SCROLLABLE daily table */}
-              <div className="mt-2">
+              <div className="mt-2 px-4 md:px-0">
                 <div className="max-h-[360px] overflow-auto overscroll-contain rounded-md border">
-                  <div className="min-w-[560px] overflow-x-auto">
+                  <div className="min-w-[560px] md:min-w-0 overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left border-b">
@@ -639,18 +643,20 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* KPI row */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* KPI row - responsive grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-sky-50 to-transparent">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Chip className="bg-sky-100 text-sky-700"><Package size={18} /></Chip>
-              {t('kpi.inventoryValue.title')}
+              <span className="text-sm sm:text-base">{t('kpi.inventoryValue.title')}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatMoneyBase(inventoryValue, baseCode)}
-            <div className="text-xs text-muted-foreground mt-1">
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-semibold">
+              {formatMoneyBase(inventoryValue, baseCode)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
               {t('kpi.inventoryValue.help')}
             </div>
           </CardContent>
@@ -660,12 +666,14 @@ export default function Dashboard() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Chip className="bg-emerald-100 text-emerald-700"><DollarSign size={18} /></Chip>
-              {t('kpi.revenue.title', { days: windowDays })}
+              <span className="text-sm sm:text-base">{t('kpi.revenue.title', { days: windowDays })}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatMoneyBase(revenueWindow, baseCode)}
-            <div className="text-xs text-muted-foreground mt-1">
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-semibold">
+              {formatMoneyBase(revenueWindow, baseCode)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
               {t('kpi.revenue.help')}
             </div>
           </CardContent>
@@ -675,12 +683,14 @@ export default function Dashboard() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Chip className="bg-amber-100 text-amber-700"><Coins size={18} /></Chip>
-              {t('kpi.cogs.title', { days: windowDays })}
+              <span className="text-sm sm:text-base">{t('kpi.cogs.title', { days: windowDays })}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatMoneyBase(cogsWindow, baseCode)}
-            <div className="text-xs text-muted-foreground mt-1">
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-semibold">
+              {formatMoneyBase(cogsWindow, baseCode)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
               {t('kpi.cogs.help')}
             </div>
           </CardContent>
@@ -692,12 +702,14 @@ export default function Dashboard() {
               <Chip className={grossMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}>
                 {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
               </Chip>
-              {t('kpi.grossMargin.title')}
+              <span className="text-sm sm:text-base">{t('kpi.grossMargin.title')}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatMoneyBase(grossMargin, baseCode)}
-            <div className="text-xs text-muted-foreground mt-1">
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-semibold">
+              {formatMoneyBase(grossMargin, baseCode)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
               {revenueWindow > 0 ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}` : t('common.dash')}
             </div>
           </CardContent>
@@ -709,7 +721,7 @@ export default function Dashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-600" />
-            {t('lowStock.title')} {warehouseId !== 'ALL' ? t('lowStock.warehouseOnly') : ''}
+            <span className="text-lg">{t('lowStock.title')} {warehouseId !== 'ALL' ? t('lowStock.warehouseOnly') : ''}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -729,7 +741,7 @@ export default function Dashboard() {
                 <tbody>
                   {lowStock.map(({ item, onHand, min }) => (
                     <tr key={item.id} className="border-b">
-                      <td className="py-2 pr-2">{item.name}</td>
+                      <td className="py-2 pr-2 max-w-[120px] truncate">{item.name}</td>
                       <td className="py-2 pr-2">{item.sku}</td>
                       <td className={`py-2 pr-2 ${onHand < min ? 'text-rose-600 font-medium' : ''}`}>{onHand}</td>
                       <td className="py-2 pr-2">{min}</td>
@@ -744,7 +756,9 @@ export default function Dashboard() {
 
       {/* Top products by GM */}
       <Card>
-        <CardHeader><CardTitle>{t('topProducts.title', { days: windowDays })}</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg">{t('topProducts.title', { days: windowDays })}</CardTitle>
+        </CardHeader>
         <CardContent className="overflow-x-auto">
           {topGM.length === 0 ? (
             <p className="text-muted-foreground">{t('topProducts.empty')}</p>
@@ -766,7 +780,7 @@ export default function Dashboard() {
                   const pctClass = row.revenue > 0 && row.pct < 0 ? 'text-rose-600' : ''
                   return (
                     <tr key={row.itemId} className="border-b">
-                      <td className="py-2 pr-2">{row.name}</td>
+                      <td className="py-2 pr-2 max-w-[100px] truncate">{row.name}</td>
                       <td className="py-2 pr-2">{row.sku}</td>
                       <td className="py-2 pr-2">{formatMoneyBase(row.revenue, baseCode)}</td>
                       <td className="py-2 pr-2">{formatMoneyBase(row.cogs, baseCode)}</td>
@@ -778,18 +792,20 @@ export default function Dashboard() {
               </tbody>
             </table>
           )}
-          <div className="text-xs text-muted-foreground mt-2">
+          <div className="text-xs text-muted-foreground mt-2 hidden sm:block">
             {t('topProducts.footnote')}
           </div>
         </CardContent>
       </Card>
 
-      {/* Recent movements (5) + “All Transactions” button */}
+      {/* Recent movements (5) + "All Transactions" button */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{t('recentMovements.title')}</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => navigate('/transactions')}>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              {t('recentMovements.title')}
+            </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => navigate('/transactions')} className="w-full sm:w-auto">
               {tt('recentMovements.all', 'All Transactions')}
             </Button>
           </div>
@@ -816,11 +832,11 @@ export default function Dashboard() {
                     const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
                     return (
                       <tr key={m.id} className="border-b">
-                        <td className="py-2 pr-2 whitespace-nowrap">{new Date(m.created_at).toLocaleString(lang)}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleDateString(lang)}</td>
                         <td className="py-2 pr-2 capitalize">
                           {movementLabel(m.type)}
                         </td>
-                        <td className="py-2 pr-2">{label}</td>
+                        <td className="py-2 pr-2 max-w-[100px] truncate">{label}</td>
                         <td className="py-2 pr-2">{num(m.qty_base)}</td>
                         <td className="py-2 pr-2">{formatMoneyBase(val, baseCode)}</td>
                       </tr>
