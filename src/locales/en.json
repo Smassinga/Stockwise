@@ -276,7 +276,7 @@
   "movements.refType.PO":"PO (purchase)",
   "nav.dashboard": "Dashboard",
   "nav.items": "Items",
-  "nav.bom": "BOM",
+  "nav.bom": "Bill of Materials",
   "nav.movements": "Movements",
   "nav.transactions": "Transactions",
   "nav.cash": "Cash",
