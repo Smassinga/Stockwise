@@ -339,13 +339,13 @@ export function Warehouses() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>
           <p className="text-muted-foreground">{t('warehouses.subtitle') ?? ''}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Dialog open={isAddBinDialogOpen} onOpenChange={setIsAddBinDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" onClick={resetBinForm} className={isMobile ? 'px-2' : ''}>
@@ -485,7 +485,7 @@ export function Warehouses() {
                 const wBins = binsFor(wh.id)
                 return (
                   <div key={wh.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
                           <WarehouseIcon className="w-6 h-6 text-primary" />
@@ -502,7 +502,7 @@ export function Warehouses() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-4">
                         <div className="text-right">
                           <p className="text-sm"><span className="text-muted-foreground">{t('warehouses.bins') ?? 'Bins'}:</span> {wBins.length}</p>
                         </div>

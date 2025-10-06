@@ -206,7 +206,7 @@ export default function Customers() {
   if (loading) return <div className="p-6">{t('loading')}</div>
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">{t('customers.title')}</h1>
       </div>
@@ -285,7 +285,7 @@ export default function Customers() {
         <CardHeader>
           <CardTitle>{t('customers.list')}</CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="overflow-x-auto w-full">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b">

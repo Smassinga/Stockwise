@@ -609,7 +609,7 @@ export default function BOMPage() {
           </div>
           <div className="md:col-span-1 flex items-end">
             <Button onClick={createBomForProduct} disabled={!newBomProductId || !newBomName.trim()}>
-              {t('orders.createSO')}
+              {t('bom.create')}
             </Button>
           </div>
         </CardContent>

@@ -142,7 +142,7 @@ export default function Reports() {
   const { t } = useI18n()
   return (
     <ReportsProvider>
-      <div className="p-4 space-y-6">
+      <div className="p-4 space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
         <FiltersBar />
 
         <Tabs defaultValue="summary">

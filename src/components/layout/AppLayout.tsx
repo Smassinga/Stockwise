@@ -1,6 +1,6 @@
 // src/components/layout/AppLayout.tsx
 import { ReactNode, useEffect, useRef, useState, useMemo } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
   Package,
@@ -22,7 +22,8 @@ import {
   Ruler,           // UoM
   ClipboardList,   // Stock Levels
   Monitor,         // Responsive demo
-  X
+  X,
+  Search
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -91,10 +92,13 @@ function useClickOutside<T extends HTMLElement>(onClose: () => void) {
 
 export function AppLayout({ user, children }: Props) {
   const location = useLocation()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
   const { t } = useI18n()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
   // Note: useIsMobile is imported but not currently used in this component
   // It's kept for potential future use or debugging
 
@@ -169,6 +173,22 @@ export function AppLayout({ user, children }: Props) {
     ),
     [user, location.pathname, logout, nav, companyName, myRole]
   )
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!searchQuery.trim()) return
+    
+    setIsSearching(true)
+    // Navigate to search results page with query parameter
+    navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
+    setIsSearching(false)
+  }
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch(e as any)
+    }
+  }
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false))
@@ -252,18 +272,35 @@ export function AppLayout({ user, children }: Props) {
           >
             <Menu className="h-5 w-5" />
           </Button>
+          
+          {/* Mobile search form */}
           <div className="ml-1 flex-1 md:hidden">
-            <Input 
-              placeholder={t('common.searchPlaceholder')} 
-              className="w-full" 
-            />
+            <form onSubmit={handleSearch} className="relative">
+              <Input 
+                placeholder={t('common.searchPlaceholder')} 
+                className="w-full pl-8" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+              />
+              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </form>
           </div>
+          
+          {/* Desktop search form */}
           <div className="ml-1 hidden flex-1 md:flex">
-            <Input 
-              placeholder={t('common.searchPlaceholder')} 
-              className="max-w-xl" 
-            />
+            <form onSubmit={handleSearch} className="relative w-full max-w-xl">
+              <Input 
+                placeholder={t('common.searchPlaceholder')} 
+                className="w-full pl-8" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+              />
+              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </form>
           </div>
+          
           <div className="ml-auto flex items-center gap-2">
             <NotificationCenter />
             <CompanySwitcher className="hidden md:block" />
@@ -282,8 +319,24 @@ export function AppLayout({ user, children }: Props) {
                 {initial}
               </button>
               {menuOpen && (
-                <div className="absolute right-0 mt-2 w-44 rounded-md border bg-popover text-popover-foreground shadow-md">
+                <div className="absolute right-0 mt-2 w-48 rounded-md border bg-popover text-popover-foreground shadow-md">
                   <div className="p-1">
+                    {/* Profile Menu Items */}
+                    <button
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
+                      onClick={() => { setMenuOpen(false); navigate('/profile'); }}
+                    >
+                      <Users className="h-4 w-4" />
+                      {t('common.profile')}
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
+                      onClick={() => { setMenuOpen(false); navigate('/settings'); }}
+                    >
+                      <SettingsIcon className="h-4 w-4" />
+                      {t('common.settings')}
+                    </button>
+                    <hr className="my-1" />
                     <button
                       className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
                       onClick={() => { setMenuOpen(false); logout?.() }}

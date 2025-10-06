@@ -893,14 +893,14 @@ export default function PurchaseOrders() {
   }
 
   return (
-    <>
+    <div className="mobile-container w-full max-w-full overflow-x-hidden">
       {/* Outstanding + Create PO */}
       <Card className="border-dashed">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>{tt('orders.outstandingPOs', 'Open & Approved Purchase Orders')}</CardTitle>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => setBrowserOpen(true)}>
                 {tt('orders.poBrowser', 'Closed/Received POs')}
               </Button>
@@ -909,14 +909,14 @@ export default function PurchaseOrders() {
                 <SheetTrigger asChild>
                   <Button size="sm">{tt('orders.newPO', 'New PO')}</Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+                <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
                   <SheetHeader>
                     <SheetTitle>{tt('orders.newPO', 'New Purchase Order')}</SheetTitle>
                     <SheetDescription className="sr-only">{tt('orders.createPO', 'Create a purchase order')}</SheetDescription>
                   </SheetHeader>
 
-                  {/* Header */}
-                  <div className="mt-4 grid md:grid-cols-4 gap-3">
+                  {/* Header - Responsive grid */}
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                       <Label>{tt('orders.supplier', 'Supplier')}</Label>
                       <Select value={poSupplierId} onValueChange={setPoSupplierId}>
@@ -948,7 +948,7 @@ export default function PurchaseOrders() {
                   {/* Lines */}
                   <div className="mt-6">
                     <Label>{tt('orders.lines', 'Lines')}</Label>
-                    <div className="mt-2 border rounded-lg overflow-x-auto">
+                    <div className="mt-2 border rounded-lg overflow-x-auto w-full">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50">
                           <tr className="text-left">
@@ -1015,15 +1015,15 @@ export default function PurchaseOrders() {
                       </div>
                     </div>
 
-                    {/* Totals */}
+                    {/* Totals - Responsive layout */}
                     <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
-                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                        <div className="flex items-center gap-3">
+                      <div className="p-4 grid grid-cols-1 gap-3 items-center">
+                        <div className="flex flex-wrap items-center gap-3">
                           <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
                           <Input className="w-28" type="number" min="0" step="0.01" value={poTaxPct} onChange={e => setPoTaxPct(e.target.value)} />
                         </div>
                         <div className="flex flex-col items-end text-sm">
-                          <div className="w-full max-w-sm grid grid-cols-2 gap-1">
+                          <div className="w-full grid grid-cols-2 gap-1">
                             <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({poCurrency})</div>
                             <div className="text-right">{fmtAcct(poSubtotal)}</div>
                             <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
@@ -1044,7 +1044,7 @@ export default function PurchaseOrders() {
           </div>
         </CardHeader>
 
-        <CardContent className="overflow-x-auto">
+        <CardContent className="overflow-x-auto w-full">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.po', 'PO')}</th>
@@ -1087,7 +1087,7 @@ export default function PurchaseOrders() {
       {/* Recent */}
       <Card>
         <CardHeader><CardTitle>{tt('orders.recentPOs', 'Recent Purchase Orders')}</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="overflow-x-auto w-full">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.po', 'PO')}</th>
@@ -1129,7 +1129,7 @@ export default function PurchaseOrders() {
           ) : (
             <div className="mt-4 space-y-4">
               {/* PO Header */}
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div><Label>{tt('orders.po', 'PO')}</Label><div>{poNo(selectedPO)}</div></div>
                 <div><Label>{tt('orders.supplier', 'Supplier')}</Label><div>{poSupplierLabel(selectedPO)}</div></div>
                 <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedPO.status}</div></div>
@@ -1139,7 +1139,7 @@ export default function PurchaseOrders() {
               </div>
 
               {/* Defaults row */}
-              <div className="grid md:grid-cols-3 gap-3 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
                 <div>
                   <Label>{tt('orders.defaultWarehouse', 'Default Warehouse')}</Label>
                   <Select value={defaultReceiveWhId} onValueChange={(v) => {
@@ -1160,7 +1160,7 @@ export default function PurchaseOrders() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex gap-2 justify-end">
+                <div className="flex flex-wrap gap-2 justify-end md:col-span-2 lg:col-span-1">
                   <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
                   <Button variant="secondary" onClick={applyDefaultsToAll}>{tt('orders.applyToAll', 'Apply to all lines')}</Button>
                   <Button onClick={() => doReceivePO(selectedPO)} disabled={String(selectedPO.status).toLowerCase() === 'draft'}>
@@ -1260,6 +1260,7 @@ export default function PurchaseOrders() {
                               onClick={() => receiveLine(selectedPO!, l)}
                               disabled={remaining <= 0 || String(selectedPO.status).toLowerCase() === 'draft'}
                               variant="secondary"
+                              className="touch-target"
                             >
                               {tt('orders.receive', 'Receive')}
                             </Button>
@@ -1286,8 +1287,8 @@ export default function PurchaseOrders() {
           </SheetHeader>
 
           {/* Filters */}
-          <div className="mt-4 grid md:grid-cols-4 gap-3 p-4 md:p-0">
-            <div className="md:col-span-2">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4 md:p-0">
+            <div>
               <Label>{tt('common.search', 'Search')}</Label>
               <Input
                 placeholder={tt('orders.searchHintPO', 'PO no. or supplier')}
@@ -1375,6 +1376,6 @@ export default function PurchaseOrders() {
           </div>
         </SheetContent>
       </Sheet>
-    </>
+    </div>
   )
 }

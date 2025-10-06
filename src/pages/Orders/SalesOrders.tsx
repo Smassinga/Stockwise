@@ -1100,11 +1100,11 @@ export default function SalesOrders() {
   }
 
   return (
-    <>
+    <div className="mobile-container w-full max-w-full overflow-x-hidden">
       {/* Outstanding + Create SO */}
       <Card className="border-dashed">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>{tt('orders.outstandingSOs', 'Outstanding Sales Orders')}</CardTitle>
 
             <div className="flex items-center gap-2">
@@ -1123,7 +1123,7 @@ export default function SalesOrders() {
                   </SheetHeader>
 
                   {/* Header */}
-                  <div className="mt-4 grid md:grid-cols-4 gap-3">
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                       <Label>{tt('orders.customer', 'Customer')}</Label>
                       <Select value={soCustomerId} onValueChange={setSoCustomerId}>
@@ -1280,13 +1280,13 @@ export default function SalesOrders() {
 
                     {/* Totals */}
                     <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
-                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                        <div className="flex items-center gap-3">
+                      <div className="p-4 grid grid-cols-1 gap-3 items-center">
+                        <div className="flex flex-wrap items-center gap-3">
                           <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
                           <Input className="w-28" type="number" min="0" step="0.01" value={soTaxPct} onChange={e => setSoTaxPct(e.target.value)} />
                         </div>
                         <div className="flex flex-col items-end text-sm">
-                          <div className="w-full max-w-sm grid grid-cols-2 gap-1">
+                          <div className="w-full grid grid-cols-2 gap-1">
                             <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({soCurrency})</div>
                             <div className="text-right">{fmtAcct(soSubtotal)}</div>
                             <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
@@ -1307,7 +1307,7 @@ export default function SalesOrders() {
           </div>
         </CardHeader>
 
-        <CardContent className="overflow-x-auto">
+        <CardContent className="overflow-x-auto w-full">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.so', 'SO')}</th>
@@ -1352,7 +1352,7 @@ export default function SalesOrders() {
       {/* Recent */}
       <Card>
         <CardHeader><CardTitle>{tt('orders.recentSOs', 'Recent Sales Orders')}</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="overflow-x-auto w-full">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.so', 'SO')}</th>
@@ -1395,7 +1395,7 @@ export default function SalesOrders() {
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noSOSelected', 'No SO selected.')}</div>
           ) : (
             <div className="mt-4 space-y-4">
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>
                 <div><Label>{tt('orders.customer', 'Customer')}</Label><div>{soCustomerLabel(selectedSO)}</div></div>
                 <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedSO.status}</div></div>
@@ -1405,7 +1405,7 @@ export default function SalesOrders() {
               </div>
 
               {/* Global "From Warehouse" = quick setter for all lines */}
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
                   <Label>{tt('orders.fromWarehouse', 'From Warehouse (set for all lines)')}</Label>
                   <Select
@@ -1429,7 +1429,7 @@ export default function SalesOrders() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-end justify-end gap-2 md:col-span-2">
+                <div className="flex flex-wrap items-end justify-end gap-2 md:col-span-2 lg:col-span-2">
                   <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
                   {String(selectedSO.status).toLowerCase() === 'confirmed' && (
                     <Button onClick={() => doShipSO(selectedSO)}>
@@ -1543,6 +1543,7 @@ export default function SalesOrders() {
                               size="sm"
                               disabled={String(selectedSO.status).toLowerCase() !== 'confirmed'}
                               onClick={() => doShipLineSO(selectedSO, l)}
+                              className="touch-target"
                             >
                               {tt('orders.ship', 'Ship Outstanding')}
                             </Button>
@@ -1572,8 +1573,8 @@ export default function SalesOrders() {
           </SheetHeader>
 
           {/* Filters */}
-          <div className="mt-4 grid md:grid-cols-4 gap-3 p-4 md:p-0">
-            <div className="md:col-span-2">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4 md:p-0">
+            <div>
               <Label>{tt('common.search', 'Search')}</Label>
               <Input
                 placeholder={tt('orders.searchHint', 'Order no. or customer')}
@@ -1663,6 +1664,6 @@ export default function SalesOrders() {
           </div>
         </SheetContent>
       </Sheet>
-    </>
+    </div>
   )
 }

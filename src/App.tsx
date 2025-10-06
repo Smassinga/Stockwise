@@ -27,6 +27,8 @@ const Cash = lazy(() => import('./pages/Cash'));
 const Banks = lazy(() => import('./pages/Banks'));
 const BankDetail = lazy(() => import('./pages/BankDetail'));
 const ResponsiveDemo = lazy(() => import('./pages/ResponsiveDemo'));
+const Profile = lazy(() => import('./pages/Profile')); // Add this line
+const SearchResults = lazy(() => import('./pages/SearchResults')); // Add this line
 import { OrgProvider, useOrg } from './hooks/useOrg';
 import { CanManageUsers } from './lib/roles';
 
@@ -144,6 +146,10 @@ export default function App() {
               <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
               {/* Responsive demo page */}
               <Route path="/responsive-demo" element={<Suspense fallback={<LoadingSplash />}><ResponsiveDemo /></Suspense>} />
+              {/* Profile page */}
+              <Route path="/profile" element={<Suspense fallback={<LoadingSplash />}><Profile /></Suspense>} />
+              {/* Search results page */}
+              <Route path="/search" element={<Suspense fallback={<LoadingSplash />}><SearchResults /></Suspense>} />
             </Route>
           </Route>
         </Route>
