@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StockWise — Concept C Kit</title>
+  <style>
+    body{font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px;color:#0B1220}
+    .card{border:1px solid #E6E8F0;border-radius:16px;padding:16px;margin-bottom:16px}
+    .row{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+    .btn{appearance:none;border:1px solid #d7d9e3;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:600}
+    .btn:hover{border-color:#c7cad7}
+    .label{font-size:12px;opacity:.7}
+    canvas{image-rendering:crisp-edges}
+  </style>
+</head>
+<body>
+  <h1>StockWise — Concept C Brand Kit</h1>
+  <p class="label">Export PNGs on-device; SVGs are in the /svgs folder.</p>
+  <div class="card">
+    <h3>PNG Icon Export</h3>
+    <div class="row">
+      <canvas id="iconPreview" width="192" height="192" style="border:1px dashed #E6E8F0;border-radius:12px"></canvas>
+      <div>
+        <div>
+          <label><input type="radio" name="theme" value="light" checked> Light</label>
+          <label><input type="radio" name="theme" value="dark"> Dark</label>
+        </div>
+        <div style="margin-top:8px">
+          <button class="btn" onclick="downloadIcon(16)">16×16</button>
+          <button class="btn" onclick="downloadIcon(32)">32×32</button>
+          <button class="btn" onclick="downloadIcon(48)">48×48</button>
+          <button class="btn" onclick="downloadIcon(64)">64×64</button>
+          <button class="btn" onclick="downloadIcon(128)">128×128</button>
+          <button class="btn" onclick="downloadIcon(192)">192×192</button>
+          <button class="btn" onclick="downloadIcon(256)">256×256</button>
+          <button class="btn" onclick="downloadIcon(512)">512×512</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function drawIconToCanvas(ctx, size, theme){
+      const bg = theme==='dark' ? '#0B1220' : '#FFFFFF';
+      ctx.fillStyle = bg; ctx.fillRect(0,0,size,size);
+      const s = size*0.72;
+      const x = (size - s)/2, y = (size - s)/2;
+      ctx.save(); ctx.translate(x, y); ctx.scale(s/256, s/256);
+      const base = new Path2D('M44 92 C44 62 84 46 114 54 C140 60 154 78 148 98 C142 116 122 126 106 134 C86 144 74 156 74 176 C74 198 98 206 118 202 C134 200 148 192 158 182');
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.strokeStyle = theme==='dark' ? '#FFFFFF' : '#0B1220'; ctx.lineWidth=16; ctx.stroke(base);
+      const tick = new Path2D('M100 170 L126 188 L198 122');
+      ctx.strokeStyle = theme==='dark' ? '#4DA3FF' : '#1565FF'; ctx.lineWidth=16; ctx.stroke(tick);
+      const bar = new Path2D('M166 154 L214 154'); ctx.stroke(bar);
+      ctx.restore();
+    }
+    function getTheme(){ return (document.querySelector('input[name="theme"]:checked')||{}).value || 'light'; }
+    function downloadIcon(size){
+      const c=document.createElement('canvas'); c.width=size; c.height=size; const ctx=c.getContext('2d');
+      drawIconToCanvas(ctx,size,getTheme());
+      c.toBlob(b=>{ const url=URL.createObjectURL(b); const a=document.createElement('a'); a.href=url; a.download=`icon-${size}.png`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }, 'image/png');
+    }
+    // preview
+    (function(){ const c=document.getElementById('iconPreview'); const ctx=c.getContext('2d'); drawIconToCanvas(ctx,192,'light'); })();
+  </script>
+</body>
+</html>

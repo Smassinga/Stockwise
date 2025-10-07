@@ -957,16 +957,16 @@ export default function SalesOrders() {
       }
       .brand { display: flex; align-items: center; gap: 12px; min-height: 42px; }
       .logo {
-        height: 40px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+        height: 55px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
         background: #f8fafc; padding: 4px;
       }
       .logo-fallback {
-        height: 40px; width: 40px; border: 1px solid #e5e7eb; border-radius: 8px;
+        height: 55px; width: 50px; border: 1px solid #e5e7eb; border-radius: 8px;
         display: flex; align-items: center; justify-content: center; font-weight: 700; background: #eef2ff;
       }
-      .company-name { font-size: 16px; font-weight: 700; letter-spacing: .01em; }
+      .company-name { font-size: 26px; font-weight: 700; letter-spacing: .01em; }
       .doc-meta { text-align: right; }
-      .doc-title { font-size: 26px; font-weight: 800; letter-spacing: .01em; margin: 0; }
+      .doc-title { font-size: 30px; font-weight: 800; letter-spacing: .01em; margin: 0; }
       .muted { color: #64748b; }
       .cap { text-transform: capitalize; }
 
@@ -1009,16 +1009,16 @@ export default function SalesOrders() {
 
     const companyCard = `
       <div class="card">
-        <h4>Company Details</h4>
+        <h4>${tt('orders.companyDetails', 'Company Details')}</h4>
         <div class="kv">
-          <div class="k">Trade name</div><div><b>${cp.tradeName || companyName || '—'}</b></div>
-          <div class="k">Legal name</div><div>${cp.legalName || '—'}</div>
-          <div class="k">Tax ID</div><div>${cp.taxId || '—'}</div>
-          <div class="k">Registration No.</div><div>${cp.regNo || '—'}</div>
-          <div class="k">Phone</div><div>${cp.phone || '—'}</div>
-          <div class="k">Email</div><div>${cp.email || '—'}</div>
-          <div class="k">Website</div><div>${cp.website || '—'}</div>
-          <div class="k">Address</div><div class="addr">${addrLines || '—'}</div>
+          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || '—'}</b></div>
+          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || '—'}</div>
+          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || '—'}</div>
+          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || '—'}</div>
+          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || '—'}</div>
+          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || '—'}</div>
+          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || '—'}</div>
+          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || '—'}</div>
         </div>
         ${cp.printFooterNote ? `<div class="footnote">${cp.printFooterNote}</div>` : ''}
       </div>
@@ -1026,25 +1026,25 @@ export default function SalesOrders() {
 
     const orderCard = `
       <div class="card">
-        <h4>Order</h4>
+        <h4>${tt('orders.order', 'Order')}</h4>
         <div class="kv">
-          <div class="k">Status</div><div><b class="cap">${so.status}</b></div>
-          <div class="k">Currency</div><div><b>${currency}</b></div>
-          <div class="k">FX → ${baseCode}</div><div><b>${fmtAcct(fx)}</b></div>
-          <div class="k">Expected Ship</div><div><b>${(so as any).expected_ship_date || '—'}</b></div>
+          <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${so.status}</b></div>
+          <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
+          <div class="k">${tt('orders.fxToBaseShort', 'FX → {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
+          <div class="k">${tt('orders.expectedShip', 'Expected Ship')}</div><div><b>${(so as any).expected_ship_date || '—'}</b></div>
         </div>
       </div>
     `
 
     const customerCard = `
       <div class="card" style="margin-top:8px">
-        <h4>Customer</h4>
+        <h4>${tt('orders.customer', 'Customer')}</h4>
         <div><b>${cust.code ? cust.code + ' — ' : ''}${cust.name}</b></div>
-        <div class="muted">Email: ${cust.email} · Phone: ${cust.phone} · Tax ID: ${cust.tax_id}</div>
+        <div class="muted">${tt('orders.email', 'Email')}: ${cust.email} · ${tt('orders.phone', 'Phone')}: ${cust.phone} · ${tt('orders.taxId', 'Tax ID')}: ${cust.tax_id}</div>
         <div class="kv" style="margin-top:6px">
-          <div class="k">Bill To</div><div class="addr">${cust.bill_to}</div>
-          <div class="k">Ship To</div><div class="addr">${cust.ship_to}</div>
-          <div class="k">Terms</div><div>${cust.terms}</div>
+          <div class="k">${tt('orders.billTo', 'Bill To')}</div><div class="addr">${cust.bill_to}</div>
+          <div class="k">${tt('orders.shipTo', 'Ship To')}</div><div class="addr">${cust.ship_to}</div>
+          <div class="k">${tt('orders.terms', 'Terms')}</div><div>${cust.terms}</div>
         </div>
       </div>
     `
@@ -1057,8 +1057,8 @@ export default function SalesOrders() {
             <div class="company-name">${companyName || '—'}</div>
           </div>
           <div class="doc-meta">
-            <h1 class="doc-title">Sales Order ${number}</h1>
-            <div class="muted">Printed: <b>${printedAt}</b></div>
+            <h1 class="doc-title">${tt('orders.salesOrder', 'Sales Order')} ${number}</h1>
+            <div class="muted">${tt('orders.printed', 'Printed')}: <b>${printedAt}</b></div>
           </div>
         </div>
 
@@ -1072,22 +1072,23 @@ export default function SalesOrders() {
         <table>
           <thead>
             <tr>
-              <th>Item</th><th>SKU</th><th class="right">Qty</th><th>UoM</th>
-              <th class="right">Unit Price</th><th class="right">Disc %</th><th class="right">Line Total (${currency})</th>
+              <th>${tt('table.item', 'Item')}</th><th>${tt('table.sku', 'SKU')}</th><th class="right">${tt('orders.qty', 'Qty')}</th><th>${tt('orders.uom', 'UoM')}</th>
+              <th class="right">${tt('orders.unitPrice', 'Unit Price')}</th><th class="right">${tt('orders.discountPct', 'Disc %')}</th><th class="right">${tt('orders.lineTotal', 'Line Total')} (${currency})</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
 
         <div class="totals">
-          <div class="label">Subtotal (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
-          <div class="label">Tax (${currency})</div><div class="right">${fmtAcct(tax)}</div>
-          <div class="muted">FX to ${baseCode}</div><div class="right muted">${fmtAcct(fx)}</div>
-          <div class="grand">Total (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
-          <div class="grand">Total (${baseCode})</div><div class="right grand">${fmtAcct(total * fx)}</div>
+          <div class="label">${tt('orders.subtotal', 'Subtotal')} (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
+          <div class="label">${tt('orders.tax', 'Tax')} (${currency})</div><div class="right">${fmtAcct(tax)}</div>
+          <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
+          <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
+          <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
         </div>
       </div>
     `
+
 
     const w = window.open('', '_blank'); if (!w) return
     w.document.write(`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>${css}</style></head><body>${html}</body></html>`)

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-label="StockWise">
+<path d="M44 92 C44 62 84 46 114 54 C140 60 154 78 148 98 C142 116 122 126 106 134 C86 144 74 156 74 176 C74 198 98 206 118 202 C134 200 148 192 158 182" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round"/>
+<path d="M100 170 L126 188 L198 122" fill="none" stroke="#4DA3FF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M166 154 L214 154" fill="none" stroke="#4DA3FF" stroke-width="16" stroke-linecap="round"/>
+</svg>

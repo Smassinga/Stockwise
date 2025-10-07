@@ -1,0 +1,17 @@
+:root{
+  --sw-ink:#0B1220;
+  --sw-blue:#1565FF;
+  --sw-blue-acc:#4DA3FF;
+  --sw-bg:#FFFFFF;
+}
+.header{
+  display:flex;align-items:center;gap:.6rem;
+  padding:.75rem 1rem;border-bottom:1px solid rgba(11,18,32,.08);
+}
+.header .logo{
+  width:28px;height:28px;flex:0 0 28px;
+}
+.header .brand{
+  font-weight:800;font-size:1.25rem;letter-spacing:.2px;
+}
+.header .brand .wise{color:var(--sw-blue);}

@@ -14,6 +14,13 @@ import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
 
+// NEW: company profile helper (DB companies + storage URL)
+import {
+  getCompanyProfile as getCompanyProfileDB,
+  companyLogoUrl,
+  type CompanyProfile as DBCompanyProfile,
+} from '../../lib/companyProfile'
+
 type AppSettings = {
   branding?: { companyName?: string; logoUrl?: string }
   brand?: { logoUrl?: string }
@@ -21,6 +28,44 @@ type AppSettings = {
   companyName?: string
   company?: { name?: string; logoUrl?: string }
 } & Record<string, any>
+
+// NEW: UI mapping for Company Profile
+type CompanyProfileUI = {
+  tradeName?: string
+  legalName?: string
+  taxId?: string
+  regNo?: string
+  phone?: string
+  email?: string
+  website?: string
+  address1?: string
+  address2?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  country?: string
+  printFooterNote?: string
+}
+const mapDBProfile = (p?: DBCompanyProfile | null): CompanyProfileUI => {
+  const norm = (v: any) => (v ?? '').toString().trim() || undefined
+  if (!p) return {}
+  return {
+    tradeName:      norm(p.trade_name),
+    legalName:      norm(p.legal_name),
+    taxId:          norm(p.tax_id),
+    regNo:          norm(p.registration_no),
+    phone:          norm(p.phone),
+    email:          norm(p.email),
+    website:        norm(p.website),
+    address1:       norm(p.address_line1),
+    address2:       norm(p.address_line2),
+    city:           norm(p.city),
+    state:          norm(p.state),
+    postalCode:     norm(p.postal_code),
+    country:        norm(p.country_code),
+    printFooterNote:norm(p.print_footer_note),
+  }
+}
 
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string }
@@ -109,6 +154,9 @@ export default function PurchaseOrders() {
   // brand (company_settings preferred; app_settings fallback)
   const [brandName, setBrandName] = useState<string>('')
   const [brandLogoUrl, setBrandLogoUrl] = useState<string>('')
+
+  // NEW: full company profile (companies table)
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfileUI>({})
 
   // conversions
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
@@ -298,6 +346,18 @@ export default function PurchaseOrders() {
             a?.logoUrl || ''
           setBrandName(prev => prev || String(nameGuess || ''))
           setBrandLogoUrl(prev => prev || String(logoGuess || ''))
+          
+          // NEW: Load company profile
+          try {
+            const profile = await getCompanyProfileDB(companyId)
+            setCompanyProfile(mapDBProfile(profile))
+            const nameFromCompanies = (profile?.trade_name || profile?.legal_name || '').trim()
+            const logoFromCompanies = companyLogoUrl(profile?.logo_path || undefined)
+            if (nameFromCompanies) setBrandName(prev => prev || nameFromCompanies)
+            if (logoFromCompanies) setBrandLogoUrl(prev => prev || logoFromCompanies)
+          } catch (e) {
+            console.warn('company profile load failed:', e)
+          }
         } catch {}
       } catch (err: any) {
         console.error(err)
@@ -318,8 +378,10 @@ export default function PurchaseOrders() {
           .maybeSingle()
         const doc = (res.data as any)?.data || {}
         const brand = doc?.documents?.brand || {}
-        if (brand?.name) setBrandName(String(brand.name))
-        if (brand?.logoUrl) setBrandLogoUrl(String(brand.logoUrl))
+        const csLogo = (brand?.logoUrl || '').trim()
+        const csName = (brand?.name || '').trim()
+        if (csName) setBrandName(prev => prev || csName)
+        if (csLogo) setBrandLogoUrl(prev => prev || csLogo)
       } catch (e) {
         console.warn('brand load (company_settings) failed:', e)
       }
@@ -777,6 +839,7 @@ export default function PurchaseOrders() {
     const currency = curPO(po) || '—'
     const fx = fxPO(po) || 1
     const lines = polines.filter(l => l.po_id === po.id)
+
     const rows = lines.map(l => {
       const it = itemById.get(l.item_id)
       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
@@ -797,6 +860,7 @@ export default function PurchaseOrders() {
     const tax = (po.tax_total ?? 0)
     const total = (po.total ?? (subtotal + tax))
     const number = poNo(po)
+    const printedAt = new Date().toLocaleString()
 
     const live = await resolveSupplierDetails(po)
     const supp = {
@@ -806,80 +870,167 @@ export default function PurchaseOrders() {
       tax_id: po.supplier_tax_id ?? live.tax_id ?? '—',
       terms: po.payment_terms ?? live.payment_terms ?? '—',
     }
-    const printedAt = new Date().toLocaleString()
 
-    const company = (brandName || '').trim()
+    // Brand & company details
+    const companyName = (brandName
+      || companyProfile.tradeName
+      || companyProfile.legalName
+      || ''
+    ).trim()
     const logoUrl = (brandLogoUrl || '').trim()
-    const logoDataUrl = await fetchDataUrl(logoUrl)
-    const init = initials(company)
+    const logoDataUrl = await fetchDataUrl(logoUrl) // avoid CORS/expiry
+    const init = initials(companyName || companyProfile.tradeName || companyProfile.legalName)
 
     const css = `
-      body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#111}
-      .topline{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px}
-      .brand{display:flex; align-items:center; gap:10px}
-      .logo{height:40px; width:auto; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; padding:4px}
-      .logo-fallback{height:40px; width:40px; border:1px solid #e5e7eb; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:600; background:#f4f4f5}
-      .cap{text-transform:capitalize}
-      .header{display:flex; justify-content:space-between; gap:24px; margin-bottom:12px}
-      .supplier{border:1px solid #ddd; border-radius:8px; padding:12px; min-width:260px}
-      .supplier .title{font-size:12px; color:#555; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px}
-      table{width:100%; border-collapse:collapse; font-size:12px; margin-top:8px}
-      th,td{border-bottom:1px solid #eee; padding:8px 6px; text-align:left}
-      .right{text-align:right}
-      .meta{font-size:12px;color:#444;margin:4px 0}
-      .totals{margin-top:16px; width:360px; margin-left:auto; display:flex; flex-direction:column; gap:6px}
-      .totals>div{display:flex; justify-content:space-between}
-      .totals .muted{color:#555}
-      .totals .grand{font-weight:600}
+      @page { margin: 20mm; }
+      * { box-sizing: border-box; }
+      body{
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        margin: 0; padding: 0; color: #0f172a;
+        font: 12px/1.45 ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
+      }
+      .wrap { padding: 8px; }
+      .header {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb;
+      }
+      .brand { display: flex; align-items: center; gap: 12px; min-height: 42px; }
+      .logo {
+        height: 55px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+        background: #f8fafc; padding: 4px;
+      }
+      .logo-fallback {
+        height: 55px; width: 50px; border: 1px solid #e5e7eb; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center; font-weight: 700; background: #eef2ff;
+      }
+      .company-name { font-size: 26px; font-weight: 700; letter-spacing: .01em; }
+      .doc-meta { text-align: right; }
+      .doc-title { font-size: 30px; font-weight: 800; letter-spacing: .01em; margin: 0; }
+      .muted { color: #64748b; }
+      .cap { text-transform: capitalize; }
+
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; }
+      .card h4 { margin: 0 0 6px; font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+      .kv .k { color: #64748b; }
+      .addr { white-space: pre-wrap; }
+
+      table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+      th, td { border-bottom: 1px solid #eef2f7; padding: 8px 6px; text-align: left; }
+      thead th { background: #f8fafc; font-weight: 700; }
+      .right { text-align: right; }
+      .pill {
+        display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 10px; line-height: 18px; vertical-align: middle;
+        border: 1px solid #e5e7eb; color: #334155; background: #f1f5f9; margin-left: 6px;
+      }
+      .pill-ok { border-color: #86efac; background: #ecfdf5; color: #166534; }
+
+      .totals {
+        margin-top: 14px; width: 380px; margin-left: auto;
+        display: grid; grid-template-columns: 1fr auto; row-gap: 6px;
+      }
+      .totals .label { color: #475569; }
+      .totals .grand { font-weight: 800; }
+      .totals .muted { color: #64748b; }
+
+      .footnote {
+        margin-top: 18px; padding-top: 8px; border-top: 1px dashed #e5e7eb;
+        color: #475569; font-size: 11px;
+      }
+
+      @media print { .wrap { padding: 0; } }
     `
 
     const headerBrand = logoDataUrl
-      ? `<img src="${logoDataUrl}" alt="${company || 'Company logo'}" class="logo">`
+      ? `<img src="${logoDataUrl}" alt="${companyName || 'Company logo'}" class="logo">`
       : `<div class="logo-fallback">${init}</div>`
 
+    const cp = companyProfile
+    const addrLines = [
+      cp.address1,
+      cp.address2,
+      [cp.city, cp.state, cp.postalCode].filter(Boolean).join(', '),      
+      cp.country
+    ].filter(Boolean).join('<br/>')
+    
+    const companyCard = `
+      <div class="card">
+        <h4>${tt('orders.companyDetails', 'Company Details')}</h4>
+        <div class="kv">
+          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || '—'}</b></div>
+          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || '—'}</div>
+          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || '—'}</div>
+          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || '—'}</div>
+          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || '—'}</div>
+          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || '—'}</div>
+          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || '—'}</div>
+          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || '—'}</div>
+        </div>
+        ${cp.printFooterNote ? `<div class="footnote">${cp.printFooterNote}</div>` : ''}
+      </div>
+    `
+
+    const orderCard = `
+      <div class="card">
+        <h4>${tt('orders.order', 'Order')}</h4>
+        <div class="kv">
+          <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${po.status}</b></div>
+          <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
+          <div class="k">${tt('orders.fxToBaseShort', 'FX → {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
+          <div class="k">${tt('orders.expectedDate', 'Expected Date')}</div><div><b>${(po as any).expected_date || '—'}</b></div>
+        </div>
+      </div>
+    `
+
+    const supplierCard = `
+      <div class="card" style="margin-top:8px">
+        <h4>${tt('orders.supplier', 'Supplier')}</h4>
+        <div><b>${supp.name}</b></div>
+        <div class="muted">${tt('orders.email', 'Email')}: ${supp.email} · ${tt('orders.phone', 'Phone')}: ${supp.phone} · ${tt('orders.taxId', 'Tax ID')}: ${supp.tax_id}</div>
+        <div class="kv" style="margin-top:6px">
+          <div class="k">${tt('orders.paymentTerms', 'Payment Terms')}</div><div>${supp.terms}</div>
+        </div>
+      </div>
+    `
+
     const html = `
-      <div class="topline">
-        <div class="brand">
-          ${headerBrand}
-          <div class="text-base" style="font-weight:600">${company || '—'}</div>
+      <div class="wrap">
+        <div class="header">
+          <div class="brand">
+            ${headerBrand}
+            <div class="company-name">${companyName || '—'}</div>
+          </div>
+          <div class="doc-meta">
+            <h1 class="doc-title">${tt('orders.purchaseOrder', 'Purchase Order')} ${number}</h1>
+            <div class="muted">${tt('orders.printed', 'Printed')}: <b>${printedAt}</b></div>
+          </div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:28px; font-weight:700; letter-spacing:.02em">Purchase Order ${number}</div>
-          <div class="meta">Printed at: <b>${printedAt}</b></div>
-        </div>
-      </div>
 
-      <div class="header">
-        <div>
-          <div class="meta">Status: <b class="cap">${po.status}</b></div>
-          <div class="meta">Currency: <b>${currency}</b> · FX→${baseCode}: <b>${fmtAcct(fx)}</b></div>
-          <div class="meta">Expected Date: <b>${(po as any).expected_date || '—'}</b></div>
+        <div class="grid2">
+          ${orderCard}
+          ${companyCard}
         </div>
-        <div class="supplier">
-          <div class="title">Supplier</div>
-          <div><b>${supp.name}</b></div>
-          <div>Email: ${supp.email}</div>
-          <div>Phone: ${supp.phone}</div>
-          <div>Tax ID: ${supp.tax_id}</div>
-          <div>Payment Terms: ${supp.terms}</div>
+
+        ${supplierCard}
+
+        <table>
+          <thead>
+            <tr>
+              <th>${tt('table.item', 'Item')}</th><th>${tt('table.sku', 'SKU')}</th><th class="right">${tt('orders.qty', 'Qty')}</th><th>${tt('orders.uom', 'UoM')}</th>
+              <th class="right">${tt('orders.unitPrice', 'Unit Price')}</th><th class="right">${tt('orders.discountPct', 'Disc %')}</th><th class="right">${tt('orders.lineTotal', 'Line Total')} (${currency})</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+
+        <div class="totals">
+          <div class="label">${tt('orders.subtotal', 'Subtotal')} (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
+          <div class="label">${tt('orders.tax', 'Tax')} (${currency})</div><div class="right">${fmtAcct(tax)}</div>
+          <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
+          <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
+          <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
         </div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th><th>SKU</th><th class="right">Qty</th><th>UoM</th><th class="right">Unit Price</th><th class="right">Disc %</th><th class="right">Line Total (${currency})</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-
-      <div class="totals">
-        <div><span>Subtotal (${currency})</span><span>${fmtAcct(subtotal)}</span></div>
-        <div><span>Tax (${currency})</span><span>${fmtAcct(tax)}</span></div>
-        <div class="muted"><span>FX to ${baseCode}</span><span>${fmtAcct(fx)}</span></div>
-        <div class="grand"><span>Total (${currency})</span><span>${fmtAcct(total)}</span></div>
-        <div class="grand"><span>Total (${baseCode})</span><span>${fmtAcct(total * fx)}</span></div>
       </div>
     `
 

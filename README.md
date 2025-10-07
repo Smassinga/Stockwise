@@ -2,6 +2,10 @@
 
 This template includes built-in detection for missing CSS variables between your Tailwind config and CSS files.
 
+## Brand Kit
+
+This project includes a StockWise Concept C Brand Kit implementation. For instructions on how to generate icons and use the brand assets, see [BRAND_KIT_INSTRUCTIONS.md](BRAND_KIT_INSTRUCTIONS.md).
+
 ## Features
 
 - **CSS Variable Detection**: Automatically detects if CSS variables referenced in `tailwind.config.cjs` are defined in `src/index.css`
@@ -9,6 +13,7 @@ This template includes built-in detection for missing CSS variables between your
 - **Shadcn/ui**: Pre-configured with all Shadcn components
 - **Modern Stack**: Vite + React + TypeScript + Tailwind CSS
 - **Mobile-First Design**: Fully responsive design optimized for all device sizes
+- **Desktop Support**: Tauri integration for native desktop applications
 
 ## Available Scripts
 
@@ -22,9 +27,16 @@ npm run check:css-vars
 # Individual linting
 npm run lint:js    # ESLint
 npm run lint:css   # Stylelint
+
+# Tauri desktop application
+npm run tauri      # Tauri CLI
+npm run tauri:dev  # Run Tauri development version
+npm run tauri:build # Build Tauri application for distribution
 ```
 
-## CSS Variable Detection
+For detailed Tauri setup and usage instructions, see [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md).
+
+> **Note for Windows users**: If you encounter PATH issues with Rust after installation, try running `scripts\add-rust-to-path.bat` or restart your terminal/command prompt.
 
 The template includes a custom script that:
 
@@ -85,5 +97,6 @@ Comprehensive documentation is available in the [docs](docs/) directory:
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Contributing Guide](docs/CONTRIBUTING.md)
 - [Mobile Optimization Guide](docs/MOBILE_OPTIMIZATION.md)
+- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md)
 
 For detailed information about the Stockwise inventory management system, please refer to the documentation files.
