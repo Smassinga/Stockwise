@@ -8,6 +8,7 @@ package-lock.json
 dist/
 .vite/
 coverage/
+src-tauri/target/
 
 # Local env files (never commit secrets)
 .env*
