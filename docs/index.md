@@ -22,20 +22,30 @@ If you're new to Stockwise, start here:
 - [Data Model](DATA_MODEL.md) - Database schema and relationships
 - [API Documentation](API.md) - API endpoints and usage
 
+### Features
+
+- [Due Reminders](due-reminders.md) - Automated invoice due date reminders system
+
 ### Testing
 
 - [Testing Strategy](TESTING.md) - Comprehensive testing approach
 
+## Mobile & Desktop
+
+- [Mobile Optimization Guide](MOBILE_OPTIMIZATION.md) - Comprehensive mobile optimization approach
+- [Mobile Improvements Summary](MOBILE_IMPROVEMENTS_SUMMARY.md) - Summary of implemented mobile improvements
+- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md) - Tauri desktop application guide
+
 ## Deployment & Operations
 
-- [Deployment Guide](DEPLOYMENT.md) - Deployment procedures (to be created)
+- [Deployment Guide](DEPLOYMENT.md) - Deployment procedures
 - [Monitoring](MONITORING.md) - System monitoring and alerting (to be created)
-- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions (to be created)
+- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
 
 ## Contributing
 
-- [Contributing Guide](CONTRIBUTING.md) - How to contribute to the project (to be created)
-- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines (to be created)
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute to the project
+- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
 
 ## Additional Resources
 

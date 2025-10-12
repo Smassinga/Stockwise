@@ -4,8 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { openPath, showOpenDialog, showMessageDialog, isTauriContext } from '@/lib/tauri';
+import { useI18n } from '@/lib/i18n';
 
 const TauriDemo: React.FC = () => {
+  const { t } = useI18n();
   const [filePath, setFilePath] = useState<string>('');
   const [message, setMessage] = useState<string>('Hello from Tauri!');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -15,16 +17,16 @@ const TauriDemo: React.FC = () => {
       await openPath(filePath);
     } catch (error) {
       console.error('Error opening path:', error);
-      await showMessageDialog(`Error opening path: ${error}`, { type: 'error' });
+      await showMessageDialog(`${t('common.headsUp')}: ${error}`, { type: 'error' });
     }
   };
 
   const handleOpenDialog = async () => {
     try {
       const result = await showOpenDialog({
-        title: 'Select a file',
+        title: t('tauri.demo.fileSelection'),
         filters: [{
-          name: 'All Files',
+          name: t('common.all'),
           extensions: ['*']
         }]
       });
@@ -34,70 +36,69 @@ const TauriDemo: React.FC = () => {
       }
     } catch (error) {
       console.error('Error opening dialog:', error);
-      await showMessageDialog(`Error opening dialog: ${error}`, { type: 'error' });
+      await showMessageDialog(`${t('common.headsUp')}: ${error}`, { type: 'error' });
     }
   };
 
   const handleShowMessage = async () => {
     try {
-      await showMessageDialog(message, { title: 'Tauri Message' });
+      await showMessageDialog(message, { title: t('tauri.demo.showMessageDialog') });
     } catch (error) {
       console.error('Error showing message:', error);
-      await showMessageDialog(`Error showing message: ${error}`, { type: 'error' });
+      await showMessageDialog(`${t('common.headsUp')}: ${error}`, { type: 'error' });
     }
   };
 
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
-        <CardTitle>Tauri Desktop Features Demo</CardTitle>
+        <CardTitle>{t('tauri.demo.title')}</CardTitle>
         <CardDescription>
-          This demo shows how to use Tauri APIs in your Stockwise application.
-          {isTauriContext() ? ' You are currently running in a Tauri context.' : ' You are currently running in a web browser.'}
+          {t('tauri.demo.featuresAvailable')} {isTauriContext() ? t('tauri.demo.features.systemDialog') : t('common.headsUp')}.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="message">Message to display</Label>
+          <Label htmlFor="message">{t('tauri.demo.messageToDisplay')}</Label>
           <Input
             id="message"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Enter a message"
+            placeholder={t('tauri.demo.messageToDisplay')}
           />
-          <Button onClick={handleShowMessage}>Show Message Dialog</Button>
+          <Button onClick={handleShowMessage}>{t('tauri.demo.showMessageDialog')}</Button>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="path">Path to open</Label>
+          <Label htmlFor="path">{t('tauri.demo.pathToOpen')}</Label>
           <Input
             id="path"
             value={filePath}
             onChange={(e) => setFilePath(e.target.value)}
-            placeholder="Enter a file path or URL"
+            placeholder={t('tauri.demo.pathToOpen')}
           />
-          <Button onClick={handleOpenPath}>Open Path/URL</Button>
+          <Button onClick={handleOpenPath}>{t('tauri.demo.openPathUrl')}</Button>
         </div>
 
         <div className="space-y-2">
-          <Label>File Selection</Label>
-          <Button onClick={handleOpenDialog}>Open File Dialog</Button>
+          <Label>{t('tauri.demo.fileSelection')}</Label>
+          <Button onClick={handleOpenDialog}>{t('tauri.demo.openFileDialog')}</Button>
           {selectedPath && (
             <p className="text-sm text-muted-foreground mt-2">
-              Selected: {selectedPath}
+              {t('tauri.demo.selectedPath', { selectedPath })}
             </p>
           )}
         </div>
 
         <div className="text-sm text-muted-foreground pt-4">
-          <h3 className="font-medium mb-2">Tauri Features Available:</h3>
+          <h3 className="font-medium mb-2">{t('tauri.demo.featuresAvailable')}</h3>
           <ul className="list-disc list-inside space-y-1">
-            <li>Native file system access</li>
-            <li>System dialog integration</li>
-            <li>Desktop notifications</li>
-            <li>Menu bar customization</li>
-            <li>System tray integration</li>
-            <li>Auto-updater capabilities</li>
+            <li>{t('tauri.demo.features.nativeFileSystem')}</li>
+            <li>{t('tauri.demo.features.systemDialog')}</li>
+            <li>{t('tauri.demo.features.desktopNotifications')}</li>
+            <li>{t('tauri.demo.features.menuBar')}</li>
+            <li>{t('tauri.demo.features.systemTray')}</li>
+            <li>{t('tauri.demo.features.autoUpdater')}</li>
           </ul>
         </div>
       </CardContent>

@@ -1,0 +1,2 @@
+[functions.due-reminder-worker]
+verify_jwt = false

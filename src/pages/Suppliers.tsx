@@ -13,7 +13,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
-// Currency “id” is always the CODE
+// Currency "id" is always the CODE
 type Currency = { id: string; code: string; name: string }
 
 type Supplier = {
@@ -24,12 +24,20 @@ type Supplier = {
   email: string | null
   phone: string | null
   taxId: string | null
-  currencyId: string | null // mirrors suppliers.currency_code
-  paymentTerms: string | null
+  currencyId: string | null
+  paymentTermsId: string | null
   isActive: boolean
   notes: string | null
   createdAt: string | null
   updatedAt: string | null
+}
+
+// NEW: Payment term type
+type PaymentTerm = {
+  id: string
+  code: string
+  name: string
+  net_days: number
 }
 
 const sortBy = <T,>(arr: T[], key: (t: T) => string) =>
@@ -44,7 +52,7 @@ const mapSupplierRow = (r: any): Supplier => ({
   phone: r.phone ?? null,
   taxId: r.taxId ?? r.tax_id ?? null,
   currencyId: r.currencyId ?? r.currency_code ?? null,
-  paymentTerms: r.paymentTerms ?? r.payment_terms ?? null,
+  paymentTermsId: r.paymentTermsId ?? r.payment_terms_id ?? null,
   isActive: typeof r.isActive === 'boolean' ? r.isActive : !!r.is_active,
   notes: r.notes ?? null,
   createdAt: r.createdAt ?? r.created_at ?? null,
@@ -58,6 +66,7 @@ export default function Suppliers() {
   const { t } = useI18n()
 
   const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -69,11 +78,14 @@ export default function Suppliers() {
   const [phone, setPhone] = useState('')
   const [taxId, setTaxId] = useState('')
   const [currencyId, setCurrencyId] = useState('') // stores currency CODE
-  const [paymentTerms, setPaymentTerms] = useState('')
+  const [paymentTermsId, setPaymentTermsId] = useState('')
+  const [customPaymentTerms, setCustomPaymentTerms] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [notes, setNotes] = useState('')
 
   const currencyById = useMemo(() => new Map(currencies.map(c => [c.id, c])), [currencies])
+  // Create a map of payment terms by ID for display
+  const paymentTermById = useMemo(() => new Map(paymentTermsList.map(pt => [pt.id, pt])), [paymentTermsList])
 
   // ----------- Load masters (scoped) -----------
   useEffect(() => {
@@ -90,6 +102,14 @@ export default function Suppliers() {
             .order('code', { ascending: true })
           if (cur.error) throw cur.error
           setCurrencies((cur.data || []).map((r: any) => ({ id: r.code, code: r.code, name: r.name })))
+        }
+
+        // Load payment terms using RPC function
+        if (companyId) {
+          const { data: pts, error: ptErr } = await supabase
+            .rpc('get_payment_terms', { p_company_id: companyId })
+          if (ptErr) throw ptErr
+          setPaymentTermsList((pts || []) as PaymentTerm[])
         }
 
         await reloadSuppliers()
@@ -109,7 +129,7 @@ export default function Suppliers() {
     // First try the view (preferred)
     const v = await supabase
       .from('suppliers_view')
-      .select('id,code,name,contactName,email,phone,taxId,currencyId,paymentTerms,isActive,notes,createdAt,updatedAt,company_id')
+      .select('id,code,name,contactName,email,phone,taxId,currencyId,paymentTermsId,isActive,notes,createdAt,updatedAt,company_id')
       .eq('company_id', companyId)
       .order('name', { ascending: true })
 
@@ -121,7 +141,7 @@ export default function Suppliers() {
     // If the view is missing company_id column or not deployed yet, fall back to base table.
     const fallback = await supabase
       .from('suppliers')
-      .select('id,code,name,contact_name, email, phone, tax_id, currency_code, payment_terms, is_active, notes, created_at, updated_at')
+      .select('id,code,name,contact_name, email, phone, tax_id, currency_code, payment_terms_id, is_active, notes, created_at, updated_at')
       .eq('company_id', companyId)
       .order('name', { ascending: true })
 
@@ -150,6 +170,12 @@ export default function Suppliers() {
       if (dup.error) throw dup.error
       if ((dup.count ?? 0) > 0) return toast.error('Code must be unique (per company)')
 
+      // Determine effective payment terms
+      const CUSTOM = "__custom__"
+      // Remove the effectiveTerms logic since we're now using payment_terms_id
+      // const effectiveTerms = 
+      //   paymentTerms === CUSTOM ? (customPaymentTerms.trim() || null) : paymentTerms
+
       const payload: any = {
         company_id: companyId,          // tenant key
         code: code.trim(),
@@ -159,7 +185,7 @@ export default function Suppliers() {
         phone: phone.trim() || null,
         tax_id: taxId.trim() || null,
         currency_code: currencyId || null, // FK by CODE
-        payment_terms: paymentTerms.trim() || null,
+        payment_terms_id: paymentTermsId || null,
         is_active: !!isActive,
         notes: notes.trim() || null,
       }
@@ -169,7 +195,7 @@ export default function Suppliers() {
 
       toast.success('Supplier created')
       setCode(''); setName(''); setContactName(''); setEmail(''); setPhone(''); setTaxId('')
-      setCurrencyId(''); setPaymentTerms(''); setIsActive(true); setNotes('')
+      setCurrencyId(''); setPaymentTermsId(''); setCustomPaymentTerms(''); setIsActive(true); setNotes('')
 
       await reloadSuppliers()
     } catch (e: any) {
@@ -218,6 +244,9 @@ export default function Suppliers() {
   if (!user) return <div className="p-6 text-muted-foreground">{t('auth.title.signIn')}</div>
   if (loading) return <div className="p-6">{t('loading')}</div>
 
+  // Constant for custom payment terms
+  const CUSTOM = "__custom__"
+
   return (
     <div className="space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
       <div className="flex items-center justify-between">
@@ -238,9 +267,9 @@ export default function Suppliers() {
               <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Samsung Electronics" />
             </div>
             <div className="space-y-2">
-              <Label>{t('suppliers.currency')}</Label>
+              <Label htmlFor="currency">{t('suppliers.currency')}</Label>
               <Select value={currencyId} onValueChange={setCurrencyId}>
-                <SelectTrigger><SelectValue placeholder="Select a currency" /></SelectTrigger>
+                <SelectTrigger id="currency"><SelectValue placeholder="Select a currency" /></SelectTrigger>
                 <SelectContent>
                   {currencies.map(c => (
                     <SelectItem key={c.id} value={c.id}>
@@ -268,10 +297,32 @@ export default function Suppliers() {
               <Label htmlFor="taxId">{t('suppliers.taxId')}</Label>
               <Input id="taxId" value={taxId} onChange={e => setTaxId(e.target.value)} />
             </div>
+            
+            {/* Payment terms selector */}
             <div className="space-y-2">
-              <Label htmlFor="paymentTerms">{t('suppliers.paymentTerms')}</Label>
-              <Input id="paymentTerms" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="e.g., NET 30" />
+              <Label>{t('suppliers.paymentTerms')}</Label>
+              <Select value={paymentTermsId} onValueChange={setPaymentTermsId}>
+                <SelectTrigger id="paymentTerms">
+                  <SelectValue placeholder="Select payment terms" />
+                </SelectTrigger>
+                <SelectContent>
+                  {paymentTermsList.map(pt => (
+                    <SelectItem key={pt.id} value={pt.id}>
+                      {pt.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM}>Custom</SelectItem>
+                </SelectContent>
+              </Select>
+              {paymentTermsId === CUSTOM && (
+                <Input 
+                  placeholder="Enter custom payment terms" 
+                  value={customPaymentTerms} 
+                  onChange={e => setCustomPaymentTerms(e.target.value)} 
+                />
+              )}
             </div>
+            
             <div className="space-y-2">
               <Label htmlFor="isActive" className="inline-flex items-center gap-2">
                 <input
@@ -307,6 +358,7 @@ export default function Suppliers() {
                 <th className="py-2 pr-2">{t('customers.code')}</th>
                 <th className="py-2 pr-2">{t('customers.name')}</th>
                 <th className="py-2 pr-2">{t('suppliers.currency')}</th>
+                <th className="py-2 pr-2">{t('suppliers.paymentTerms')}</th>
                 <th className="py-2 pr-2">{t('customers.email')}</th>
                 <th className="py-2 pr-2">{t('customers.phone')}</th>
                 <th className="py-2 pr-2">{t('suppliers.status')}</th>
@@ -315,16 +367,19 @@ export default function Suppliers() {
             </thead>
             <tbody>
               {suppliersRows.length === 0 && (
-                <tr><td colSpan={7} className="py-4 text-muted-foreground">{t('common.none')}</td></tr>
+                <tr><td colSpan={8} className="py-4 text-muted-foreground">{t('common.none')}</td></tr>
               )}
               {suppliersRows.map(s => {
                 const c = s.currencyId ? currencyById.get(String(s.currencyId)) : null
                 const curLabel = c ? `${c.code} — ${c.name}` : (s.currencyId || '-')
+                // Get payment terms label
+                const ptLabel = s.paymentTermsId ? (paymentTermById.get(s.paymentTermsId)?.name || s.paymentTermsId) : '-'
                 return (
                   <tr key={s.id} className="border-b">
                     <td className="py-2 pr-2">{s.code}</td>
                     <td className="py-2 pr-2">{s.name}</td>
                     <td className="py-2 pr-2">{curLabel}</td>
+                    <td className="py-2 pr-2">{ptLabel}</td>
                     <td className="py-2 pr-2">{s.email || '-'}</td>
                     <td className="py-2 pr-2">{s.phone || '-'}</td>
                     <td className="py-2 pr-2">
@@ -333,7 +388,7 @@ export default function Suppliers() {
                       </span>
                     </td>
                     <td className="py-2 pr-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <Button
                           variant="outline"
                           disabled={!can.updateMaster(role)}

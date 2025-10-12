@@ -1,6 +1,8 @@
 // src/pages/Orders/SalesOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { db, supabase } from '../../lib/db'
+
+
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -117,7 +119,11 @@ type CompanyProfileUI = {
   printFooterNote?: string
 }
 const mapDBProfile = (p?: DBCompanyProfile | null): CompanyProfileUI => {
-  const norm = (v: any) => (v ?? '').toString().trim() || undefined
+  const norm = (v: any) => {
+    if (v === null || v === undefined) return undefined
+    const str = String(v).trim()
+    return str === '' ? undefined : str
+  }
   if (!p) return {}
   return {
     tradeName:      norm(p.trade_name),
@@ -159,7 +165,17 @@ const initials = (s?: string | null) => {
 async function fetchDataUrl(src?: string | null): Promise<string | null> {
   if (!src || !src.trim()) return null
   try {
-    const r = await fetch(src, { mode: 'cors', cache: 'no-store' })
+    // Add a timeout to prevent hanging
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+    
+    const r = await fetch(src, { 
+      mode: 'cors', 
+      cache: 'no-store',
+      signal: controller.signal
+    })
+    clearTimeout(timeoutId)
+    
     if (!r.ok) return null
     const b = await r.blob()
     return await new Promise<string>((resolve, reject) => {
@@ -168,7 +184,8 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
       fr.onerror = reject
       fr.readAsDataURL(b)
     })
-  } catch {
+  } catch (error) {
+    console.warn('Failed to fetch logo:', error)
     return null
   }
 }
@@ -216,10 +233,50 @@ export default function SalesOrders() {
   const [soCurrency, setSoCurrency] = useState('MZN')
   const [soFx, setSoFx] = useState('1')
   const [soDate, setSoDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [soDueDate, setSoDueDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [soTaxPct, setSoTaxPct] = useState<string>('0')
   const [soLinesForm, setSoLinesForm] = useState<
     Array<{ itemId: string; uomId: string; qty: string; unitPrice: string; discountPct: string }>
   >([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
+
+  // Auto-fetch FX rate when currency changes
+  useEffect(() => {
+    async function fetchFxRate() {
+      if (!companyId || soCurrency === baseCode) {
+        setSoFx('1')
+        return
+      }
+      
+      try {
+        const { data, error } = await supabase
+          .from('fx_rates')
+          .select('rate')
+          .eq('from_code', soCurrency)
+          .eq('to_code', baseCode)
+          .eq('company_id', companyId)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        
+        if (error) {
+          console.warn('Failed to fetch FX rate:', error)
+          setSoFx('1')
+          return
+        }
+        
+        if (data) {
+          setSoFx(String(data.rate))
+        } else {
+          setSoFx('1')
+        }
+      } catch (err) {
+        console.warn('Error fetching FX rate:', err)
+        setSoFx('1')
+      }
+    }
+    
+    fetchFxRate()
+  }, [soCurrency, baseCode, companyId])
 
   // view+ship
   const [soViewOpen, setSoViewOpen] = useState(false)
@@ -483,15 +540,19 @@ export default function SalesOrders() {
         setShipWhId(preferred?.id || '')
 
         // 7) branding—companies table (preferred)
-        const row = await getCompanyProfileDB(companyId)
-        setCompanyProfile(mapDBProfile(row))
-        const nameFromCompanies = (row?.trade_name || row?.legal_name || '').trim()
-        const logoFromCompanies = companyLogoUrl(row?.logo_path || undefined)
-        if (nameFromCompanies) setBrandName(nameFromCompanies)
-        if (logoFromCompanies) setBrandLogoUrl(logoFromCompanies)
+        try {
+          const row = await getCompanyProfileDB(companyId)
+          setCompanyProfile(mapDBProfile(row))
+          const nameFromCompanies = (row?.trade_name || row?.legal_name || '').trim()
+          const logoFromCompanies = companyLogoUrl(row?.logo_path || undefined)
+          if (nameFromCompanies) setBrandName(nameFromCompanies)
+          if (logoFromCompanies) setBrandLogoUrl(logoFromCompanies)
+        } catch (profileError) {
+          console.warn('company profile load failed:', profileError)
+        }
 
         // 8) fallback to company_settings brand
-        if (!logoFromCompanies || !nameFromCompanies) {
+        try {
           const res = await supabase
             .from('company_settings')
             .select('data')
@@ -500,8 +561,10 @@ export default function SalesOrders() {
           const doc = (res.data as any)?.data || {}
           const csLogo = (doc?.documents?.brand?.logoUrl || '').trim()
           const csName = (doc?.documents?.brand?.name || '').trim()
-          if (!logoFromCompanies && csLogo) setBrandLogoUrl(csLogo)
-          if (!nameFromCompanies && csName) setBrandName(csName)
+          if (csLogo) setBrandLogoUrl(csLogo)
+          if (csName) setBrandName(csName)
+        } catch (settingsError) {
+          console.warn('company settings load failed:', settingsError)
         }
       } catch (e) {
         console.warn('company-scoped masters load failed:', e)
@@ -640,6 +703,7 @@ export default function SalesOrders() {
           currency_code: chosenCurrency,
           fx_to_base: fx,
           expected_ship_date: soDate || null,
+          due_date: soDueDate || null,
           notes: null,
           payment_terms: cust?.payment_terms ?? null,
           bill_to_name: cust?.name ?? null,
@@ -679,6 +743,8 @@ export default function SalesOrders() {
       setSoCurrency(baseCode)
       setSoFx('1')
       setSoTaxPct('0')
+      setSoDate(() => new Date().toISOString().slice(0, 10))
+      setSoDueDate(() => new Date().toISOString().slice(0, 10))
       setSoLinesForm([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
       setSoOpen(false)
 
@@ -882,7 +948,7 @@ export default function SalesOrders() {
   }
 
   // ---- Print: uses companies profile (preferred), then company_settings brand as fallback
-  async function printSO(so: SO) {
+  async function printSO(so: SO, download = false) {
     const currency = curSO(so) || '—'
     const fx = fxSO(so) || 1
     const lines = solines.filter(l => l.so_id === so.id)
@@ -1090,6 +1156,31 @@ export default function SalesOrders() {
     `
 
 
+    if (download) {
+      // Add PDF-specific print styles
+      const pdfCss = `${css}
+        @media print {
+          @page { size: A4; margin: 20mm; }
+          body { margin: 0; padding: 0; }
+          .wrap { padding: 0; }
+        }
+      `;
+      
+      // Create a Blob with the HTML content
+      const blob = new Blob([`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>${pdfCss}</style></head><body>${html}</body></html>`], { type: 'text/html' })
+      
+      // Create a download link
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `SO-${number}.html`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      return
+    }
+
     const w = window.open('', '_blank'); if (!w) return
     w.document.write(`<html><head><title>SO ${number}</title><meta charset="utf-8"/><style>${css}</style></head><body>${html}</body></html>`)
     w.document.close()
@@ -1097,7 +1188,16 @@ export default function SalesOrders() {
     try { await (w as any).document?.fonts?.ready } catch {}
     const img = w.document.querySelector('img.logo') as HTMLImageElement | null
     if (img && 'decode' in img) { try { await (img as any).decode() } catch {} }
-    setTimeout(() => { w.focus(); w.print() }, 50)
+    setTimeout(() => { 
+      try {
+        w.focus(); 
+        w.print()
+      } catch (printError) {
+        console.warn('Print failed:', printError)
+        // Fallback: show a message to the user
+        w.alert('Unable to print automatically. Please use your browser\'s print function (Ctrl+P or Cmd+P).')
+      }
+    }, 50)
   }
 
   return (
@@ -1124,7 +1224,7 @@ export default function SalesOrders() {
                   </SheetHeader>
 
                   {/* Header */}
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
                     <div>
                       <Label>{tt('orders.customer', 'Customer')}</Label>
                       <Select value={soCustomerId} onValueChange={setSoCustomerId}>
@@ -1156,6 +1256,10 @@ export default function SalesOrders() {
                     <div>
                       <Label>{tt('orders.expectedShip', 'Expected Ship')}</Label>
                       <Input type="date" value={soDate} onChange={e => setSoDate(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>{tt('orders.dueDate', 'Due Date')}</Label>
+                      <Input type="date" value={soDueDate} onChange={e => setSoDueDate(e.target.value)} />
                     </div>
                   </div>
 
@@ -1334,6 +1438,7 @@ export default function SalesOrders() {
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => { setSelectedSO(so); setSoViewOpen(true) }}>{tt('orders.view', 'View')}</Button>
                         <Button size="sm" variant="outline" onClick={() => printSO(so)}>{tt('orders.print', 'Print')}</Button>
+                        <Button size="sm" variant="outline" onClick={() => printSO(so, true)}>{tt('orders.download', 'Download')}</Button>
                         {String(so.status).toLowerCase() === 'draft' && (
                           <>
                             <Button size="sm" variant="outline" onClick={() => confirmSO(so.id)}>{tt('orders.confirm', 'Confirm')}</Button>
@@ -1396,15 +1501,15 @@ export default function SalesOrders() {
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noSOSelected', 'No SO selected.')}</div>
           ) : (
             <div className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>
                 <div><Label>{tt('orders.customer', 'Customer')}</Label><div>{soCustomerLabel(selectedSO)}</div></div>
                 <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedSO.status}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curSO(selectedSO)}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxSO(selectedSO))}</div></div>
                 <div><Label>{tt('orders.expectedShip', 'Expected Ship')}</Label><div>{(selectedSO as any).expected_ship_date || tt('none', '(none)')}</div></div>
+                <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedSO as any).due_date || tt('none', '(none)')}</div></div>
               </div>
-
               {/* Global "From Warehouse" = quick setter for all lines */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
@@ -1432,6 +1537,7 @@ export default function SalesOrders() {
                 </div>
                 <div className="flex flex-wrap items-end justify-end gap-2 md:col-span-2 lg:col-span-2">
                   <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
+                  <Button variant="outline" onClick={() => printSO(selectedSO, true)}>{tt('orders.download', 'Download')}</Button>
                   {String(selectedSO.status).toLowerCase() === 'confirmed' && (
                     <Button onClick={() => doShipSO(selectedSO)}>
                       {tt('orders.shipAll', 'Ship All Outstanding')}
@@ -1642,6 +1748,9 @@ export default function SalesOrders() {
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => printSO(so)}>
                             {tt('orders.print', 'Print')}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => printSO(so, true)}>
+                            {tt('orders.download', 'Download')}
                           </Button>
                         </div>
                       </td>

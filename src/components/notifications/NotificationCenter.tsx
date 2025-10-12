@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { Button } from '../ui/button'
+import { useI18n } from '../../lib/i18n'
 
 type AnyRow = Record<string, any>
 
@@ -36,6 +37,7 @@ function mapRow(r: AnyRow): Notif {
 }
 
 export function NotificationCenter() {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
 
@@ -150,7 +152,7 @@ export function NotificationCenter() {
         variant="ghost"
         size="sm"
         data-role="notif-btn"
-        aria-label="Notifications"
+        aria-label={t("notifications.title")}
         onClick={() => { setOpen(v => !v); if (!rows.length) void fetchLatest() }}
         className="relative"
       >
@@ -167,15 +169,15 @@ export function NotificationCenter() {
           data-role="notif-panel"
           className="fixed right-4 top-16 w-96 max-w-[95vw] rounded-md border bg-popover text-popover-foreground shadow-lg z-[99999]"
           role="dialog"
-          aria-label="Notification center"
+          aria-label={t("notifications.title")}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b">
-            <div className="text-sm font-medium">Notifications</div>
+            <div className="text-sm font-medium">{t("notifications.title")}</div>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={fetchLatest} title="Refresh">
+              <Button variant="ghost" size="sm" onClick={fetchLatest} title={t("common.refresh")}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="sm" onClick={markAllRead} title="Mark all as read">
+              <Button variant="ghost" size="sm" onClick={markAllRead} title={t("notifications.markAllRead")}>
                 <CheckCheck className="h-4 w-4" />
               </Button>
             </div>
@@ -183,7 +185,7 @@ export function NotificationCenter() {
 
           <div className="max-h-[60vh] overflow-auto">
             {rows.length === 0 && (
-              <div className="p-4 text-sm text-muted-foreground">No notifications.</div>
+              <div className="p-4 text-sm text-muted-foreground">{t("notifications.noNotifications")}</div>
             )}
             {rows.map((n) => (
               <div key={n.id} className="px-3 py-2 border-b last:border-b-0">
@@ -200,7 +202,7 @@ export function NotificationCenter() {
                 {n.actionUrl && (
                   <div className="mt-2">
                     <a href={n.actionUrl} className="text-xs underline text-primary" target="_blank" rel="noreferrer">
-                      Open
+                      {t("notifications.open")}
                     </a>
                   </div>
                 )}
@@ -209,8 +211,8 @@ export function NotificationCenter() {
           </div>
 
           <div className="px-3 py-2 text-[11px] text-muted-foreground border-t flex items-center justify-between">
-            <span>Realtime: {subscribing ? 'connecting…' : 'on'}</span>
-            <span>Showing latest {rows.length}</span>
+            <span>{t("notifications.realtime.connecting")}: {subscribing ? t("notifications.realtime.connecting") : t("notifications.realtime.on")}</span>
+            <span>{t("notifications.showingLatest", { count: rows.length })}</span>
           </div>
         </div>
       )}

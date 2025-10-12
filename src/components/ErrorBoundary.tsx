@@ -1,5 +1,6 @@
 // src/components/ErrorBoundary.tsx
 import { Component, type ReactNode } from 'react'
+import { useI18n } from '../lib/i18n'
 
 type Props = { children: ReactNode }
 type State = { hasError: boolean; error?: Error }
@@ -18,16 +19,24 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-6">
-          <h2 className="text-xl font-semibold mb-2">Something went wrong.</h2>
-          <pre className="text-sm text-red-600 whitespace-pre-wrap">
-            {this.state.error?.message}
-          </pre>
-        </div>
+        <ErrorBoundaryContent error={this.state.error} />
       )
     }
     return this.props.children
   }
+}
+
+function ErrorBoundaryContent({ error }: { error?: Error }) {
+  const { t } = useI18n()
+  
+  return (
+    <div className="p-6">
+      <h2 className="text-xl font-semibold mb-2">{t('common.somethingWentWrong')}</h2>
+      <pre className="text-sm text-red-600 whitespace-pre-wrap">
+        {error?.message}
+      </pre>
+    </div>
+  )
 }
 
 export default ErrorBoundary

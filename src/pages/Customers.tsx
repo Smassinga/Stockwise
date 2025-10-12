@@ -28,7 +28,7 @@ type CustomerRow = {
   billing_address: string | null
   shipping_address: string | null
   currency_code: string | null
-  payment_terms: string | null
+  payment_terms_id: string | null
   notes: string | null
   created_at?: string | null
   updated_at?: string | null
@@ -44,8 +44,16 @@ type Customer = {
   billingAddress: string
   shippingAddress: string
   currencyCode: string
-  paymentTerms: string
+  paymentTermsId: string
   notes: string
+}
+
+// NEW: Payment term type
+type PaymentTerm = {
+  id: string
+  code: string
+  name: string
+  net_days: number
 }
 
 function mapRow(r: CustomerRow): Customer {
@@ -59,7 +67,7 @@ function mapRow(r: CustomerRow): Customer {
     billingAddress: r.billing_address || '',
     shippingAddress: r.shipping_address || '',
     currencyCode: r.currency_code || '',
-    paymentTerms: r.payment_terms || '',
+    paymentTermsId: r.payment_terms_id || '',
     notes: r.notes || '',
   }
 }
@@ -72,6 +80,8 @@ export default function Customers() {
 
   const [loading, setLoading] = useState(true)
   const [currencies, setCurrencies] = useState<Currency[]>([])
+  // NEW: Payment terms state
+  const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
 
   // form
@@ -83,7 +93,8 @@ export default function Customers() {
   const [billingAddress, setBillingAddress] = useState('')
   const [shippingAddress, setShippingAddress] = useState('')
   const [currencyCode, setCurrencyCode] = useState('')
-  const [paymentTerms, setPaymentTerms] = useState('')
+  const [paymentTermsId, setPaymentTermsId] = useState('')
+  const [customPaymentTerms, setCustomPaymentTerms] = useState('')
   const [notes, setNotes] = useState('')
 
   // ---------- Load ----------
@@ -100,11 +111,19 @@ export default function Customers() {
         if (resCur.error) throw resCur.error
         setCurrencies((resCur.data || []) as Currency[])
 
+        // NEW: Load payment terms using RPC function
+        if (companyId) {
+          const { data: pts, error: ptErr } = await supabase
+            .rpc('get_payment_terms', { p_company_id: companyId })
+          if (ptErr) throw ptErr
+          setPaymentTermsList((pts || []) as PaymentTerm[])
+        }
+
         // customers (strictly company-scoped)
         if (!companyId) { setCustomers([]); return }
         const resCus = await supabase
           .from('customers')
-          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms,notes,created_at,updated_at')
+          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms_id,notes,created_at,updated_at')
           .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (resCus.error) throw resCus.error
@@ -119,12 +138,14 @@ export default function Customers() {
   }, [companyId])
 
   const currencyByCode = useMemo(() => new Map(currencies.map(c => [c.code, c])), [currencies])
+  // NEW: Create a map of payment terms by ID for display
+  const paymentTermById = useMemo(() => new Map(paymentTermsList.map(pt => [pt.id, pt])), [paymentTermsList])
 
   async function reloadCustomers() {
     if (!companyId) { setCustomers([]); return }
     const res = await supabase
       .from('customers')
-      .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms,notes,created_at,updated_at')
+      .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms_id,notes,created_at,updated_at')
       .eq('company_id', companyId)
       .order('name', { ascending: true })
     if (res.error) { toast.error(res.error.message); return }
@@ -152,6 +173,12 @@ export default function Customers() {
       if (dup.error) throw dup.error
       if (dup.data && dup.data.length) return toast.error('Code must be unique in this company')
 
+      // NEW: Determine effective payment terms
+      const CUSTOM = "__custom__"
+      // Remove the effectiveTerms logic since we're now using payment_terms_id
+      // const effectiveTerms = 
+      //   paymentTerms === CUSTOM ? (customPaymentTerms.trim() || null) : paymentTerms
+
       const payload: Partial<CustomerRow> = {
         company_id: companyId,
         code: c,
@@ -162,7 +189,7 @@ export default function Customers() {
         billing_address: billingAddress.trim() || null,
         shipping_address: shippingAddress.trim() || null,
         currency_code: currencyCode || null,
-        payment_terms: paymentTerms.trim() || null,
+        payment_terms_id: paymentTermsId || null,
         notes: notes.trim() || null,
       }
 
@@ -174,7 +201,7 @@ export default function Customers() {
       if (ins.error) throw ins.error
 
       toast.success('Customer created')
-      setCode(''); setName(''); setEmail(''); setPhone(''); setTaxId(''); setBillingAddress(''); setShippingAddress(''); setCurrencyCode(''); setPaymentTerms(''); setNotes('')
+      setCode(''); setName(''); setEmail(''); setPhone(''); setTaxId(''); setBillingAddress(''); setShippingAddress(''); setCurrencyCode(''); setPaymentTermsId(''); setCustomPaymentTerms(''); setNotes('')
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
@@ -205,6 +232,9 @@ export default function Customers() {
   if (!user) return <div className="p-6 text-muted-foreground">{t('auth.title.signIn')}</div>
   if (loading) return <div className="p-6">{t('loading')}</div>
 
+  // NEW: Constant for custom payment terms
+  const CUSTOM = "__custom__"
+
   return (
     <div className="space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
       <div className="flex items-center justify-between">
@@ -226,9 +256,9 @@ export default function Customers() {
               <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder={t('customers.name')} />
             </div>
             <div className="space-y-2">
-              <Label>{t('customers.currency')}</Label>
+              <Label htmlFor="currency">{t('customers.currency')}</Label>
               <Select value={currencyCode} onValueChange={setCurrencyCode}>
-                <SelectTrigger>
+                <SelectTrigger id="currency">
                   <SelectValue placeholder={t('orders.currency')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -263,9 +293,29 @@ export default function Customers() {
               <Input id="shippingAddress" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} placeholder="Street, City…" />
             </div>
 
+            {/* Payment terms selector */}
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="paymentTerms">{t('customers.paymentTerms')}</Label>
-              <Input id="paymentTerms" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="Net 30, COD, etc." />
+              <Label>{t('customers.paymentTerms')}</Label>
+              <Select value={paymentTermsId} onValueChange={setPaymentTermsId}>
+                <SelectTrigger id="paymentTerms">
+                  <SelectValue placeholder="Select payment terms" />
+                </SelectTrigger>
+                <SelectContent>
+                  {paymentTermsList.map(pt => (
+                    <SelectItem key={pt.id} value={pt.id}>
+                      {pt.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM}>Custom</SelectItem>
+                </SelectContent>
+              </Select>
+              {paymentTermsId === CUSTOM && (
+                <Input 
+                  placeholder="Enter custom payment terms" 
+                  value={customPaymentTerms} 
+                  onChange={e => setCustomPaymentTerms(e.target.value)} 
+                />
+              )}
             </div>
             <div className="space-y-2 md:col-span-1">
               <Label htmlFor="notes">{t('customers.notes')}</Label>
@@ -292,6 +342,7 @@ export default function Customers() {
                 <th className="py-2 pr-2">{t('customers.code')}</th>
                 <th className="py-2 pr-2">{t('customers.name')}</th>
                 <th className="py-2 pr-2">{t('customers.currency')}</th>
+                <th className="py-2 pr-2">{t('customers.paymentTerms')}</th>
                 <th className="py-2 pr-2">{t('customers.email')}</th>
                 <th className="py-2 pr-2">{t('customers.phone')}</th>
                 <th className="py-2 pr-2">{t('customers.actions')}</th>
@@ -300,7 +351,7 @@ export default function Customers() {
             <tbody>
               {customers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-muted-foreground">{t('customers.empty')}</td>
+                  <td colSpan={7} className="py-4 text-muted-foreground">{t('customers.empty')}</td>
                 </tr>
               )}
               {customers.map(c => (
@@ -308,6 +359,7 @@ export default function Customers() {
                   <td className="py-2 pr-2">{c.code}</td>
                   <td className="py-2 pr-2">{c.name}</td>
                   <td className="py-2 pr-2">{c.currencyCode ? `${c.currencyCode} — ${currencyByCode.get(c.currencyCode)?.name || ''}` : '-'}</td>
+                  <td className="py-2 pr-2">{paymentTermById.get(c.paymentTermsId)?.name || '-'}</td>
                   <td className="py-2 pr-2">{c.email || '-'}</td>
                   <td className="py-2 pr-2">{c.phone || '-'}</td>
                   <td className="py-2 pr-2">
