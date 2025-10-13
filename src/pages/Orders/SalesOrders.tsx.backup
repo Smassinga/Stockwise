@@ -790,6 +790,12 @@ export default function SalesOrders() {
     }
   }
 
+  async function setSOFinalStatus(soId: string) {
+    const allowComplete = !!app?.sales?.autoCompleteWhenShipped
+    const targets: SoStatus[] = allowComplete ? ['closed','shipped'] : ['shipped']
+    return await tryUpdateStatus(soId, targets)
+  }
+
   // --- Ship a line using the selected WH/BIN; DB trigger updates stock_levels
   async function doShipLineSO(so: SO, line: SOL) {
     try {
@@ -825,7 +831,7 @@ export default function SalesOrders() {
           .replace('{sku}', String(it?.sku || '')))
       }
 
-      // Source-of-truth insert; trigger handles the rest
+      // Movement insert (source of truth) — DB will reject if it would go negative
       const { avgCost } = await avgCostAt(whId, binId, it.id)
       const mvIns = await supabase.from('stock_movements').insert({
         type: 'issue',
@@ -844,25 +850,60 @@ export default function SalesOrders() {
         ref_line_id: line.id ?? null,
       } as any).select('id').single()
       if (mvIns.error) throw mvIns.error
+      const movementId = (mvIns.data as any).id
 
-      // Refresh UI state from DB (trigger will have updated things)
-      const [soList, soLineList] = await Promise.all([db.salesOrders.list(), db.salesOrderLines.list()])
-      const withFlags = (soLineList || []).map((l: any) => ({
-        ...l,
-        is_shipped: l.is_shipped ?? false,
-        shipped_at: l.shipped_at ?? null,
-        shipped_qty: Number.isFinite(Number(l.shipped_qty)) ? Number(l.shipped_qty) : 0,
-      })) as SOL[]
-      setSOs((soList || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-      setSOLines(withFlags)
+      // Sales shipment (ignore duplicate if retried)
+      const disc = n(line.discount_pct, 0)
+      const revenue = outstanding * n(line.unit_price) * (1 - disc / 100)
+      const fx = fxSO(so); const code = curSO(so) || 'MZN'
+      const shipIns = await supabase.from('sales_shipments').insert({
+        movement_id: movementId,
+        so_id: (so as any).id,
+        so_line_id: line.id ?? null,
+        item_id: it.id,
+        qty: outstanding,
+        qty_base: qtyBaseOutstanding,
+        unit_price: n(line.unit_price),
+        discount_pct: disc,
+        revenue_amount: revenue,
+        currency_code: code,
+        fx_to_base: fx,
+        revenue_base_amount: revenue * fx,
+        company_id: (so as any).company_id ?? null
+      } as any)
+      // If unique violation (23505) occurs, ignore — we consider it idempotent
+      if (shipIns.error && String(shipIns.error.code) !== '23505') throw shipIns.error
 
-      // Update local on-hand cache for the selected line (best-effort UX)
+      // Update line shipped progress in UI
+      const newShipped = already + outstanding
+      const fully = newShipped >= total - 1e-9
+      if (line.id) {
+        const { error: updErr } = await supabase
+          .from('sales_order_lines')
+          .update({ shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : (line.shipped_at ?? null) })
+          .eq('id', line.id)
+        if (updErr) throw updErr
+      }
+      setSOLines(prev => prev.map(l => l.id === line.id
+        ? { ...l, shipped_qty: newShipped, is_shipped: fully, shipped_at: fully ? nowISO() : l.shipped_at }
+        : l))
+
+      // Decrement the local on-hand cache for the selected line
       setOnHandByLine(prev => {
         const arr = (prev[lineKey] || []).slice()
         const idx = arr.findIndex(x => x.bin_id === binId)
         if (idx >= 0) arr[idx] = { ...arr[idx], qty: Math.max(0, (arr[idx].qty || 0) - qtyBaseOutstanding) }
         return { ...prev, [lineKey]: arr }
       })
+
+      // If everything is shipped, close order per setting
+      const outstandingLeft = solines.filter(l => l.so_id === so.id && remaining(l) > 0 && l.id !== line.id).length
+      if (outstandingLeft === 0) {
+        const final = await setSOFinalStatus(so.id)
+        if (final) setSOs(prev => prev.map(s => (s.id === so.id ? { ...s, status: final } : s)))
+        setSoViewOpen(false)
+        setSelectedSO(null)
+      }
 
       toast.success(tt('orders.lineShipped', 'Line shipped'))
     } catch (err: any) {

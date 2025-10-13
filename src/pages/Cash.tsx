@@ -48,6 +48,9 @@ const monthStartISO = () => {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
 }
 
+// ✅ strict RFC4122-ish UUID check (prevents 400 on ref_id)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 export default function CashPage() {
   const { t } = useI18n()
   const { companyId } = useOrg()
@@ -223,21 +226,38 @@ export default function CashPage() {
   async function addTransaction() {
     if (!companyId) return
     const amt = Number(addForm.amount)
-    if (Number.isNaN(amt) || amt === 0) {
+    if (!Number.isFinite(amt) || amt === 0) {
       toast.error('Amount must be non-zero')
       return
     }
+
+    // ✅ enforce ref semantics BEFORE hitting the DB
+    const needsRef = addForm.refType === 'SO' || addForm.refType === 'PO'
+    const disallowRef = addForm.refType === 'ADJ'
+
+    if (needsRef && !UUID_RE.test(addForm.refId)) {
+      toast.error('Provide a valid UUID for the selected reference (SO/PO).')
+      return
+    }
+    if (disallowRef && addForm.refId.trim()) {
+      toast.error('Adjustments (ADJ) must not carry a reference ID.')
+      return
+    }
+
+    // ✅ normalize payload (null out ref_id unless needed)
+    const payload = {
+      company_id: companyId,
+      happened_at: addForm.date,
+      type: addForm.type,
+      ref_type: addForm.refType === 'none' ? null : addForm.refType,
+      ref_id: needsRef ? addForm.refId : null,
+      memo: addForm.memo || null,
+      amount_base: amt,
+    }
+
     setSavingTx(true)
     try {
-      const { error } = await supabase.from('cash_transactions').insert({
-        company_id: companyId,
-        happened_at: addForm.date,
-        type: addForm.type,
-        ref_type: addForm.refType === 'none' ? null : addForm.refType,
-        ref_id: addForm.refId || null,
-        memo: addForm.memo || null,
-        amount_base: amt,
-      })
+      const { error } = await supabase.from('cash_transactions').insert(payload)
       if (error) throw error
       toast.success('Transaction added')
       setOpenAdd(false)
@@ -455,7 +475,6 @@ export default function CashPage() {
             </Select>
           </div>
         </CardHeader>
-        {/* 👇 scrollable area with sticky header */}
         <CardContent className="overflow-x-auto overflow-y-auto max-h-[45vh]">
           <table className="w-full text-sm">
             <thead className="text-left sticky top-0 bg-background">
@@ -501,10 +520,9 @@ export default function CashPage() {
 
       {/* Ledger table */}
       <Card className="overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>{t('cash.ledger')}</CardTitle>
         </CardHeader>
-        {/* 👇 scrollable area with sticky header */}
         <CardContent className="overflow-x-auto overflow-y-auto max-h-[55vh]">
           <table className="w-full text-sm">
             <thead className="text-left sticky top-0 bg-background">

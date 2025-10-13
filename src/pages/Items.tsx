@@ -160,25 +160,34 @@ const Items: React.FC = () => {
     if (Number.isNaN(minStockNum) || minStockNum < 0) return toast.error('Min Stock must be a non-negative number')
 
     try {
-      // Duplicate check scoped to THIS company
+      // Case-insensitive duplicate check scoped to THIS company
       const dup = await supabase
         .from('items')
-        .select('id')
+        .select('id', { count: 'exact', head: true })
         .eq('company_id', companyId)
-        .eq('sku', sku.trim())
-        .limit(1)
+        .ilike('sku', sku.trim())
       if (dup.error) throw dup.error
-      if (dup.data && dup.data.length) return toast.error('SKU must be unique in this company')
+      if ((dup.count ?? 0) > 0) return toast.error('SKU must be unique in this company')
 
       const payload: any = {
-        company_id: companyId,          // keep it explicitly scoped
+        company_id: companyId,          // explicit scope
         name: name.trim(),
         sku: sku.trim(),
         base_uom_id: baseUomId,
         min_stock: minStockNum,
       }
+
       const ins = await supabase.from('items').insert(payload).select('id').single()
-      if (ins.error) throw ins.error
+
+      // If the pre-check raced another insert, catch the unique violation here too
+      if (ins.error) {
+        const msg = String(ins.error.message || '')
+        const code = String((ins.error as any).code || '')
+        if (code === '23505' || /duplicate key|unique/i.test(msg)) {
+          return toast.error('SKU must be unique in this company')
+        }
+        throw ins.error
+      }
 
       toast.success('Item created')
       setName(''); setSku(''); setBaseUomId(''); setMinStock('')
@@ -220,22 +229,22 @@ const Items: React.FC = () => {
           <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-1 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="name">{t('items.fields.name')} *</Label>
-              <Input 
-                id="name" 
-                value={name} 
-                onChange={(e) => setName(e.target.value)} 
-                placeholder={t('items.placeholder.name')} 
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t('items.placeholder.name')}
                 className="min-h-[44px]"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="sku">{t('items.fields.sku')} *</Label>
-              <Input 
-                id="sku" 
-                value={sku} 
-                onChange={(e) => setSku(e.target.value)} 
-                placeholder={t('items.placeholder.sku')} 
+              <Input
+                id="sku"
+                value={sku}
+                onChange={(e) => setSku(e.target.value)}
+                placeholder={t('items.placeholder.sku')}
                 className="min-h-[44px]"
               />
             </div>
@@ -285,8 +294,8 @@ const Items: React.FC = () => {
             </div>
 
             <div className="flex items-end md:col-span-2">
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 disabled={!can.createItem(role)}
                 className="w-full sm:w-auto min-h-[44px]"
               >
@@ -316,7 +325,7 @@ const Items: React.FC = () => {
                         <h3 className="font-medium">{it.name}</h3>
                         <p className="text-sm text-muted-foreground">{it.sku}</p>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
                           <p className="text-muted-foreground">{t('items.table.baseUom')}</p>
@@ -327,7 +336,7 @@ const Items: React.FC = () => {
                           <p>{typeof it.minStock === 'number' ? it.minStock : '-'}</p>
                         </div>
                       </div>
-                      
+
                       <Button
                         variant="destructive"
                         disabled={!can.deleteItem(role)}
