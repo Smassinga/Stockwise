@@ -45,6 +45,18 @@ type Bin = {
   createdAt?: string | null     // camelCase in your DB
 }
 
+// Helper function to check existence of records (avoids HEAD requests)
+async function existsBy<T extends string>(
+  table: string,
+  where: Record<string, string|number|null|boolean>
+): Promise<boolean> {
+  let q = supabase.from(table).select('id', { count: 'exact' }).limit(1);
+  for (const [k, v] of Object.entries(where)) q = q.eq(k, v as any);
+  const { count, error } = await q;
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
 export function Warehouses() {
   const { companyId } = useOrg()
   const { t } = useI18n()
@@ -232,19 +244,8 @@ export function Warehouses() {
 
   async function deleteWarehouse(id: string) {
     try {
-      // Check if warehouse has any stock before allowing delete (GET, not HEAD) to avoid network/HEAD quirks
-      const { count, error: slErr } = await supabase
-        .from('stock_levels')
-        .select('id', { count: 'exact' })   // no head:true -> GET
-        .eq('warehouse_id', id)
-        .limit(1);
-
-      if (slErr) {
-        console.warn('Stock-level check failed; aborting delete:', slErr)
-        toast.error(t('warehouses.cannotVerify') ?? 'Could not verify stock levels; aborting delete')
-        return
-      }
-      if ((count ?? 0) > 0) {
+      // Stock-level check using helper function (avoids HEAD requests)
+      if (await existsBy('stock_levels', { warehouse_id: id })) {
         toast.error(t('warehouses.cannotDeleteHasStock') ?? 'Cannot delete warehouse with existing stock')
         return
       }

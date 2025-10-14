@@ -160,14 +160,13 @@ const Items: React.FC = () => {
     if (Number.isNaN(minStockNum) || minStockNum < 0) return toast.error('Min Stock must be a non-negative number')
 
     try {
-      // Case-insensitive duplicate check scoped to THIS company (GET, not HEAD) to avoid network/HEAD quirks
+      // Case-insensitive duplicate check scoped to THIS company
       const dup = await supabase
         .from('items')
-        .select('id', { count: 'exact' })   // no head:true -> GET
+        .select('id', { count: 'exact', head: true })
         .eq('company_id', companyId)
         .ilike('sku', sku.trim())
-        .limit(1);
-      if (dup.error) throw dup.error;
+      if (dup.error) throw dup.error
       if ((dup.count ?? 0) > 0) return toast.error('SKU must be unique in this company')
 
       const payload: any = {

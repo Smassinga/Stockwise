@@ -43,6 +43,18 @@ type PaymentTerm = {
 const sortBy = <T,>(arr: T[], key: (t: T) => string) =>
   [...arr].sort((a, b) => key(a).localeCompare(key(b)))
 
+// Helper function to check existence of records (avoids HEAD requests)
+async function existsBy<T extends string>(
+  table: string,
+  where: Record<string, string|number|null|boolean>
+): Promise<boolean> {
+  let q = supabase.from(table).select('id', { count: 'exact' }).limit(1);
+  for (const [k, v] of Object.entries(where)) q = q.eq(k, v as any);
+  const { count, error } = await q;
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
 const mapSupplierRow = (r: any): Supplier => ({
   id: String(r.id),
   code: r.code ?? '',
@@ -161,15 +173,10 @@ export default function Suppliers() {
     if (!code.trim() || !name.trim()) return toast.error('Code and Name are required')
 
     try {
-      // Per-company duplicate code check (GET, not HEAD) to avoid network/HEAD quirks
-      const dup = await supabase
-        .from('suppliers')
-        .select('id', { count: 'exact' })   // no head:true -> GET
-        .eq('company_id', companyId)
-        .eq('code', code.trim())
-        .limit(1);
-      if (dup.error) throw dup.error;
-      if ((dup.count ?? 0) > 0) return toast.error('Code must be unique (per company)');
+      // Per-company duplicate code check using helper function (avoids HEAD requests)
+      if (await existsBy('suppliers', { company_id: companyId, code: code.trim() })) {
+        return toast.error('Code must be unique (per company)');
+      }
 
       // Determine effective payment terms
       const CUSTOM = "__custom__"
