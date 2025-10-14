@@ -45,18 +45,6 @@ type Bin = {
   createdAt?: string | null     // camelCase in your DB
 }
 
-// Helper function to check existence of records (avoids HEAD requests)
-async function existsBy<T extends string>(
-  table: string,
-  where: Record<string, string|number|null|boolean>
-): Promise<boolean> {
-  let q = supabase.from(table).select('id', { count: 'exact' }).limit(1);
-  for (const [k, v] of Object.entries(where)) q = q.eq(k, v as any);
-  const { count, error } = await q;
-  if (error) throw error;
-  return (count ?? 0) > 0;
-}
-
 export function Warehouses() {
   const { companyId } = useOrg()
   const { t } = useI18n()
@@ -244,8 +232,18 @@ export function Warehouses() {
 
   async function deleteWarehouse(id: string) {
     try {
-      // Stock-level check using helper function (avoids HEAD requests)
-      if (await existsBy('stock_levels', { warehouse_id: id })) {
+      // Stock-level check (snake_case)
+      const { count, error: slErr } = await supabase
+        .from('stock_levels')
+        .select('id', { head: true, count: 'exact' })
+        .eq('warehouse_id', id)
+
+      if (slErr) {
+        console.warn('Stock-level check failed; aborting delete:', slErr)
+        toast.error(t('warehouses.cannotVerify') ?? 'Could not verify stock levels; aborting delete')
+        return
+      }
+      if ((count ?? 0) > 0) {
         toast.error(t('warehouses.cannotDeleteHasStock') ?? 'Cannot delete warehouse with existing stock')
         return
       }
