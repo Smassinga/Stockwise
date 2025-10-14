@@ -232,11 +232,12 @@ export function Warehouses() {
 
   async function deleteWarehouse(id: string) {
     try {
-      // Stock-level check (snake_case)
+      // Check if warehouse has any stock before allowing delete (GET, not HEAD) to avoid network/HEAD quirks
       const { count, error: slErr } = await supabase
         .from('stock_levels')
-        .select('id', { head: true, count: 'exact' })
+        .select('id', { count: 'exact' })   // no head:true -> GET
         .eq('warehouse_id', id)
+        .limit(1);
 
       if (slErr) {
         console.warn('Stock-level check failed; aborting delete:', slErr)

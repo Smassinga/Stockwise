@@ -161,14 +161,15 @@ export default function Suppliers() {
     if (!code.trim() || !name.trim()) return toast.error('Code and Name are required')
 
     try {
-      // Per-company duplicate code check
+      // Per-company duplicate code check (GET, not HEAD) to avoid network/HEAD quirks
       const dup = await supabase
         .from('suppliers')
-        .select('id', { count: 'exact', head: true })
+        .select('id', { count: 'exact' })   // no head:true -> GET
         .eq('company_id', companyId)
         .eq('code', code.trim())
-      if (dup.error) throw dup.error
-      if ((dup.count ?? 0) > 0) return toast.error('Code must be unique (per company)')
+        .limit(1);
+      if (dup.error) throw dup.error;
+      if ((dup.count ?? 0) > 0) return toast.error('Code must be unique (per company)');
 
       // Determine effective payment terms
       const CUSTOM = "__custom__"
