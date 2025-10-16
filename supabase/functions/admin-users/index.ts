@@ -30,6 +30,9 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) {
 
 // Build the correct redirectTo for invites / magic links
 function makeRedirectTo(req: Request) {
+  // Always use the canonical URL for production
+  // This ensures that even if the client forgets to pass a redirect, 
+  // Auth knows where to send users after verifying the token
   if (PUBLIC_SITE_URL) return `${PUBLIC_SITE_URL}/auth/callback`;
 
   const origin = req.headers.get("origin");

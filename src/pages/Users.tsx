@@ -14,7 +14,7 @@ type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER'
 type Status = 'invited' | 'active' | 'disabled'
 
 type Member = {
-  email: string
+  email: string | null
   user_id: string | null
   role: Role
   status: Status
@@ -77,7 +77,9 @@ export default function Users() {
           null
         )
         // Best-effort: link any pending invites for this account
-        await supabase.rpc('sync_invites_for_me')
+        if (sessionData.session?.access_token) {
+          try { await supabase.rpc('sync_invites_for_me') } catch {}
+        }
       } catch {
         // non-fatal
       }
@@ -226,6 +228,7 @@ export default function Users() {
   }
 
   async function reinvite(email: string) {
+    if (!email) return toast.error('No email on record for this member.')
     if (!companyId) return
     if (!canManageUsers) return toast.error('You do not have permission to reinvite.')
     try {
@@ -265,6 +268,7 @@ export default function Users() {
   }
 
   async function updateMember(email: string, next: Partial<Pick<Member, 'role' | 'status'>>, currentRowRole: Role) {
+    if (!email) return toast.error('No email on record for this member.')
     if (!companyId) return
     if (!canManageUsers) return toast.error('You do not have permission to update members.')
 
@@ -294,6 +298,7 @@ export default function Users() {
   }
 
   async function removeMember(email: string, targetRole: Role) {
+    if (!email) return toast.error('No email on record for this member.')
     if (!companyId) return
     if (!canManageUsers) return toast.error('You do not have permission to remove members.')
     if (myEmail && email.toLowerCase() === myEmail.toLowerCase()) {
@@ -423,25 +428,25 @@ export default function Users() {
               </thead>
               <tbody>
                 {sorted.map((m) => {
-                  const isSelf = myEmail && m.email.toLowerCase() === myEmail.toLowerCase()
+                  const isSelf = !!myEmail && !!m.email && m.email.toLowerCase() === myEmail.toLowerCase()
                   const isHigher = higherThanMe(m.role)
                   const removeDisabled = !canManageUsers || !!isSelf || isHigher
                   const removeTitle = !canManageUsers
-                    ? 'No permission'
+                    ? t('common.noPermission') // Add this key to translations
                     : isSelf
-                      ? 'You cannot remove yourself'
+                      ? t('users.cannotRemoveSelf')
                       : isHigher
-                        ? 'You cannot remove a higher role'
-                        : 'Remove member'
+                        ? t('users.cannotRemoveHigherRole')
+                        : t('users.removeMember')
 
                   return (
-                    <tr key={m.email} className="border-b">
-                      <td className="py-2 pr-2">{m.email}</td>
+                    <tr key={m.user_id || m.email || `${m.role}-${m.status}-${m.created_at}`} className="border-b">
+                      <td className="py-2 pr-2">{m.email || t('common.dash')}</td>
                       <td className="py-2 pr-2">
                         <Select
                           value={m.role}
-                          onValueChange={(v) => updateMember(m.email, { role: v as Role }, m.role)}
-                          disabled={!canManageUsers || isHigher}
+                          onValueChange={(v) => m.email && updateMember(m.email, { role: v as Role }, m.role)}
+                          disabled={!canManageUsers || isHigher || !m.email}
                         >
                           <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -463,8 +468,8 @@ export default function Users() {
                       <td className="py-2 pr-2">
                         <Select
                           value={m.status}
-                          onValueChange={(v) => updateMember(m.email, { status: v as Status }, m.role)}
-                          disabled={!canManageUsers || isHigher}
+                          onValueChange={(v) => m.email && updateMember(m.email, { status: v as Status }, m.role)}
+                          disabled={!canManageUsers || isHigher || !m.email}
                         >
                           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -475,19 +480,19 @@ export default function Users() {
                         </Select>
                       </td>
                       <td className="py-2 pr-2">
-                        {m.email_confirmed_at ? new Date(m.email_confirmed_at).toLocaleString() : '—'}
+                        {m.email_confirmed_at ? new Date(m.email_confirmed_at).toLocaleString() : t('common.dash')}
                       </td>
                       <td className="py-2 pr-2">
-                        {m.last_sign_in_at ? new Date(m.last_sign_in_at).toLocaleString() : '—'}
+                        {m.last_sign_in_at ? new Date(m.last_sign_in_at).toLocaleString() : t('common.dash')}
                       </td>
                       <td className="py-2 pr-2">
                         <div className="flex flex-col items-end gap-1">
                           <div className="flex gap-2">
-                            {m.status === 'invited' && (
+                            {m.status === 'invited' && m.email && (
                               <>
                                 <Button
                                   variant="outline"
-                                  onClick={() => reinvite(m.email)}
+                                  onClick={() => reinvite(m.email!)}
                                   disabled={!canManageUsers || isHigher}
                                   title={isHigher ? t('users.higherRole') : t('users.resendEmail')}
                                 >
@@ -496,7 +501,7 @@ export default function Users() {
                                 <Button
                                   variant="outline"
                                   onClick={async () => {
-                                    if (!canManageUsers || isHigher) return
+                                    if (!canManageUsers || isHigher || !m.email) return
                                     try {
                                       const { data: token, error } = await supabase.rpc('reinvite_company_member', {
                                         p_company: companyId!,
@@ -507,10 +512,10 @@ export default function Users() {
                                       await navigator.clipboard.writeText(link)
                                       toast.success(t('users.copyInviteLink'))
                                     } catch (e: any) {
-                                      toast.error(e?.message || 'Could not copy link')
+                                      toast.error(e?.message || t('users.couldNotCopyLink'))
                                     }
                                   }}
-                                  disabled={!canManageUsers || isHigher}
+                                  disabled={!canManageUsers || isHigher || !m.email}
                                   title={isHigher ? t('users.higherRole') : t('users.copyInviteLink')}
                                 >
                                   {t('users.copyLink')}
@@ -519,8 +524,8 @@ export default function Users() {
                             )}
                             <Button
                               variant="outline"
-                              onClick={() => removeMember(m.email, m.role)}
-                              disabled={removeDisabled}
+                              onClick={() => m.email && removeMember(m.email, m.role)}
+                              disabled={removeDisabled || !m.email}
                               title={removeTitle}
                             >
                               {t('common.remove')}
