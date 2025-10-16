@@ -1,76 +1,20 @@
 // src/lib/roles.ts
-export type CompanyRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER';
+// Compatibility shim so legacy imports keep working.
+// We rely on the canonical definitions in permissions.ts.
 
-export const RoleRank: Record<CompanyRole, number> = {
-  OWNER: 40,
-  ADMIN: 30,
-  MANAGER: 20,
-  OPERATOR: 10,
-  VIEWER: 0,
-};
+export type { CompanyRole } from './permissions';
+export { hasRole, hasMinRole } from './permissions';
 
-// Sorted low→high helps when you want ordered UI lists, etc.
-export const AllRoles: CompanyRole[] = ['VIEWER', 'OPERATOR', 'MANAGER', 'ADMIN', 'OWNER'];
-
-// Utility: build a list of roles at/above a minimum
-export function rolesAtOrAbove(min: CompanyRole): CompanyRole[] {
-  return AllRoles.filter(r => RoleRank[r] >= RoleRank[min]);
-}
-
-/** True if current role meets/exceeds the minimum role */
-export function hasMinRole(current: CompanyRole | null | undefined, min: CompanyRole) {
-  const cur = current ?? 'VIEWER';
-  return RoleRank[cur] >= RoleRank[min];
-}
-
-/** Flexible checker:
- *  - hasRole(current, 'MANAGER') -> rank comparison
- *  - hasRole(current, ['OWNER','ADMIN','MANAGER']) -> membership in list
- */
-export function hasRole(
-  current: CompanyRole | null | undefined,
-  guard: CompanyRole | readonly CompanyRole[]
-): boolean {
-  const cur = current ?? 'VIEWER';
-  return Array.isArray(guard)
-    ? (guard as readonly CompanyRole[]).includes(cur)
-    : RoleRank[cur] >= RoleRank[guard as CompanyRole];
-}
-
-// ---------- Policy “minimums” derived from your spec ----------
-export const CanAccessUsersPageMin: CompanyRole   = 'MANAGER';  // MANAGER+
-export const CanInviteMembersMin: CompanyRole     = 'MANAGER';  // MANAGER+ can invite (with role bounds)
-export const CanInviteAdminsMin: CompanyRole      = 'ADMIN';    // ADMIN+ can invite ADMIN (not OWNER)
-export const CanInviteOwnersMin: CompanyRole      = 'OWNER';    // only OWNER can invite OWNER
-export const CanDoAdjustmentsMin: CompanyRole     = 'MANAGER';  // MANAGER+
-export const CanCreateMasterMin: CompanyRole      = 'OPERATOR'; // OPERATOR+
-export const CanDeleteMasterMin: CompanyRole      = 'MANAGER';  // MANAGER+
-export const CanCreateItemMin: CompanyRole        = 'OPERATOR';
-export const CanDeleteItemMin: CompanyRole        = 'MANAGER';
-
-// ---------- Array forms (for <RequireOrgRole allowed={...}> etc.) ----------
-export const CanAccessUsersPage   = rolesAtOrAbove(CanAccessUsersPageMin);
-export const CanInviteMembers     = rolesAtOrAbove(CanInviteMembersMin);
-export const CanInviteAdmins      = rolesAtOrAbove(CanInviteAdminsMin);
-export const CanInviteOwners      = rolesAtOrAbove(CanInviteOwnersMin);
-export const CanDoAdjustments     = rolesAtOrAbove(CanDoAdjustmentsMin);
-export const CanCreateMaster      = rolesAtOrAbove(CanCreateMasterMin);
-export const CanDeleteMaster      = rolesAtOrAbove(CanDeleteMasterMin);
-export const CanCreateItem        = rolesAtOrAbove(CanCreateItemMin);
-export const CanDeleteItem        = rolesAtOrAbove(CanDeleteItemMin);
-
-// Convenience helpers
-export function isManagerPlus(r: CompanyRole | null | undefined)  { return hasMinRole(r, 'MANAGER'); }
-export function isAdminPlus(r: CompanyRole | null | undefined)    { return hasMinRole(r, 'ADMIN'); }
-export function isOperatorPlus(r: CompanyRole | null | undefined) { return hasMinRole(r, 'OPERATOR'); }
+// Re-export additional functions needed by Users.tsx
+import { hasMinRole as _hasMinRole, type CompanyRole } from './permissions';
 
 // Role bound checks for user management flows
 export function canAssignRole(actor: CompanyRole | null | undefined, target: CompanyRole): boolean {
   const a = actor ?? 'VIEWER';
   // Owner can assign anything
   if (a === 'OWNER') return true;
-  if (a === 'ADMIN') return RoleRank[target] <= RoleRank['ADMIN'];   // up to ADMIN
-  if (a === 'MANAGER') return RoleRank[target] <= RoleRank['MANAGER']; // up to MANAGER
+  if (a === 'ADMIN') return ['VIEWER', 'OPERATOR', 'MANAGER', 'ADMIN'].includes(target);
+  if (a === 'MANAGER') return ['VIEWER', 'OPERATOR', 'MANAGER'].includes(target);
   return false;
 }
 
@@ -78,3 +22,10 @@ export function canInviteRole(actor: CompanyRole | null | undefined, target: Com
   // same logic as assignment
   return canAssignRole(actor, target);
 }
+
+// MANAGER+ can manage users, per your policy model
+export const CanManageUsers: readonly ('MANAGER' | 'ADMIN' | 'OWNER')[] = [
+  'MANAGER',
+  'ADMIN',
+  'OWNER',
+];
