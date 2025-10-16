@@ -9,8 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import toast from 'react-hot-toast'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
-// imports
-import { hasMinRole, canInviteRole, canAssignRole } from '../lib/roles';
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER'
 type Status = 'invited' | 'active' | 'disabled'
@@ -48,21 +46,6 @@ export default function Users() {
   const { companyId, companyName, myRole } = useOrg()
   const { t } = useI18n()
 
-  // Derived perms (use shared helpers)
-  const canAccessUsersPage = hasMinRole(myRole, 'MANAGER');   // OPERATOR cannot view this page
-  const canManageUsers     = canAccessUsersPage;              // MANAGER+
-  const canInviteAdmins    = hasMinRole(myRole, 'ADMIN');     // ADMIN+ can invite ADMIN
-  const canInviteOwners    = hasMinRole(myRole, 'OWNER');     // only OWNER can invite OWNER
-
-  // Early exit / guard
-  if (!canAccessUsersPage) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        {t('users.noPermission')}
-      </div>
-    );
-  }
-
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -76,6 +59,8 @@ export default function Users() {
   const [myName, setMyName] = useState<string | null>(null)
 
   // derived perms (computed locally from myRole)
+  const canManageUsers = !!myRole && (myRole === 'OWNER' || myRole === 'ADMIN' || myRole === 'MANAGER')
+  const canInviteAdmins = !!myRole && (myRole === 'OWNER' || myRole === 'ADMIN')
   const higherThanMe = (r: Role) => (myRole ? roleRank(r) < roleRank(myRole) : false)
 
   // Resolve session (email, id, display name), sync invites once
@@ -165,13 +150,11 @@ export default function Users() {
 
   async function invite() {
     if (!companyId) return
-    if (!canManageUsers) return toast.error(t('users.noPermissionToInvite'))
+    if (!canManageUsers) return toast.error('You do not have permission to invite users.')
     const email = inviteEmail.trim().toLowerCase()
-    if (!email) return toast.error(t('users.emailRequired'))
-    
-    // invite(): guard role
-    if (!canInviteRole(myRole as import('../lib/roles').CompanyRole, inviteRole)) {
-      return toast.error(t('users.cannotInviteRole'))
+    if (!email) return toast.error('Email is required')
+    if (!canInviteAdmins && (inviteRole === 'OWNER' || inviteRole === 'ADMIN')) {
+      return toast.error('You cannot invite owners/admins.')
     }
 
     try {
@@ -202,12 +185,12 @@ export default function Users() {
       if (!res.ok) {
         try {
           await navigator.clipboard.writeText(link)
-          toast.error(t('users.emailSendFailed'))
+          toast.error('Email send failed; invite link copied to clipboard.')
         } catch {
-          toast.error(t('users.couldNotCopyLink'))
+          toast.error('Email send failed; could not copy link.')
         }
       } else {
-        toast.success(t('users.inviteSent', { email }))
+        toast.success(`Invite sent to ${email}.`)
       }
 
       setInviteEmail('')
@@ -285,23 +268,18 @@ export default function Users() {
   }
 
   async function updateMember(email: string, next: Partial<Pick<Member, 'role' | 'status'>>, currentRowRole: Role) {
-    if (!email) return toast.error(t('users.noEmailRecord'))
+    if (!email) return toast.error('No email on record for this member.')
     if (!companyId) return
-    if (!canManageUsers) return toast.error(t('users.noPermissionToUpdate'))
+    if (!canManageUsers) return toast.error('You do not have permission to update members.')
 
     // Block changes to users with higher role than me
     if (higherThanMe(currentRowRole)) {
-      return toast.error(t('users.cannotModifyHigherRole'))
+      return toast.error('You cannot modify a member with a higher role than yours.')
     }
 
-    // updateMember(): guard new role if present
-    if (next.role && !canAssignRole(myRole as import('../lib/roles').CompanyRole, next.role)) {
-      return toast.error(t('users.cannotAssignRole'))
-    }
-
-    // Additional guard: block assigning OWNER/ADMIN if you aren't allowed
+    // Additional guard: block assigning OWNER/ADMIN if you aren’t allowed
     if (!canInviteAdmins && (next.role === 'OWNER' || next.role === 'ADMIN')) {
-      return toast.error(t('users.cannotAssignOwnerAdmin'))
+      return toast.error('You cannot assign owners/admins.')
     }
 
     try {
@@ -311,11 +289,11 @@ export default function Users() {
         .eq('company_id', companyId)
         .eq('email', email)
       if (error) throw error
-      toast.success(t('users.memberUpdated'))
+      toast.success('Member updated')
       await refreshMembers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || t('users.failedToUpdateMember'))
+      toast.error(e?.message || 'Failed to update member')
     }
   }
 
@@ -346,9 +324,7 @@ export default function Users() {
     }
   }
 
-  // Role options: actor-limited
-  const roleOptions: Role[] = (['OWNER','ADMIN','MANAGER','OPERATOR','VIEWER'] as Role[])
-    .filter(r => canInviteRole(myRole as import('../lib/roles').CompanyRole, r));
+  const roleOptions: Role[] = ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER']
 
   const sorted = useMemo(
     () =>
@@ -478,7 +454,10 @@ export default function Users() {
                               <SelectItem
                                 key={r}
                                 value={r}
-                                disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, r) || isHigher}
+                                disabled={
+                                  (!canInviteAdmins && (r === 'OWNER' || r === 'ADMIN')) ||
+                                  isHigher // cannot change higher role rows at all
+                                }
                               >
                                 {r}
                               </SelectItem>
