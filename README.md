@@ -34,7 +34,7 @@ npm run tauri:dev  # Run Tauri development version
 npm run tauri:build # Build Tauri application for distribution
 ```
 
-For detailed Tauri setup and usage instructions, see [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md).
+For detailed Tauri setup and usage instructions, see [Tauri Desktop Guide](docs/TAURI_DESKTOP_GUIDE.md).
 
 > **Note for Windows users**: If you encounter PATH issues with Rust after installation, try running `scripts\add-rust-to-path.bat` or restart your terminal/command prompt.
 
@@ -96,7 +96,14 @@ Comprehensive documentation is available in the [docs](docs/) directory:
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Contributing Guide](docs/CONTRIBUTING.md)
+- [Code of Conduct](docs/CODE_OF_CONDUCT.md)
 - [Mobile Optimization Guide](docs/MOBILE_OPTIMIZATION.md)
-- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md)
+- [Tauri Desktop Guide](docs/TAURI_DESKTOP_GUIDE.md)
+- [Executive Summary](docs/STOCKWISE_EXECUTIVE_SUMMARY.md)
+- [Features Overview](docs/STOCKWISE_FEATURES_OVERVIEW.md)
+- [Technical Specification](docs/STOCKWISE_TECHNICAL_SPECIFICATION.md)
+- [User Guide](docs/STOCKWISE_USER_GUIDE.md)
+- [Deployment Guide](docs/STOCKWISE_DEPLOYMENT_GUIDE.md)
+- [Database Schema](docs/STOCKWISE_DATABASE_SCHEMA.md)
 
 For detailed information about the Stockwise inventory management system, please refer to the documentation files.

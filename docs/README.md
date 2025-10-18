@@ -32,6 +32,15 @@ If you're new to Stockwise, start here:
 - [Mobile Improvements Summary](MOBILE_IMPROVEMENTS_SUMMARY.md) - Summary of implemented mobile improvements
 - [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md) - Tauri desktop application guide
 
+## System Documentation
+
+- [Executive Summary](STOCKWISE_EXECUTIVE_SUMMARY.md) - High-level overview of the system
+- [Features Overview](STOCKWISE_FEATURES_OVERVIEW.md) - Comprehensive feature documentation
+- [Technical Specification](STOCKWISE_TECHNICAL_SPECIFICATION.md) - Detailed technical architecture
+- [User Guide](STOCKWISE_USER_GUIDE.md) - End-user documentation
+- [Deployment Guide](STOCKWISE_DEPLOYMENT_GUIDE.md) - Deployment and maintenance instructions
+- [Database Schema](STOCKWISE_DATABASE_SCHEMA.md) - Detailed database structure
+
 ## Deployment & Operations
 
 - [Deployment Guide](DEPLOYMENT.md) - Deployment procedures
