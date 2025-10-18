@@ -1,13 +1,14 @@
+// src/components/notifications/NotificationCenter.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, CheckCheck, Loader2, RefreshCw } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, createAuthedChannel } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { Button } from '../ui/button'
 import { useI18n } from '../../lib/i18n'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 type AnyRow = Record<string, any>
-
 type Notif = {
   id: string
   title: string
@@ -49,6 +50,10 @@ export function NotificationCenter() {
   const [rows, setRows] = useState<Notif[]>([])
   const [subscribing, setSubscribing] = useState(false)
 
+  // StrictMode-safe: hold one channel per company; don’t double-subscribe.
+  const chanRef = useRef<RealtimeChannel | null>(null)
+  const activeCompanyRef = useRef<string | null>(null)
+
   const unreadCount = useMemo(() => rows.filter(r => !r.readAt).length, [rows])
 
   async function fetchLatest() {
@@ -66,7 +71,7 @@ export function NotificationCenter() {
       if (error) throw error
       setRows((data ?? []).map(mapRow))
     } catch (e) {
-      console.warn('Notification fetch failed:', e)
+      console.warn('[NotificationCenter] Notification fetch failed:', e)
     } finally {
       setLoading(false)
     }
@@ -86,39 +91,95 @@ export function NotificationCenter() {
       if (error) throw error
       setRows(prev => prev.map(r => (r.readAt ? r : { ...r, readAt: now })))
     } catch (e) {
-      console.warn('Mark all read failed:', e)
+      console.warn('[NotificationCenter] Mark all read failed:', e)
     }
   }
 
-  // Realtime: rely on payload.new (no `.record`)
+  // Realtime: rely on payload.new
   useEffect(() => {
-    if (!companyId) return
-    setSubscribing(true)
-    const channel = supabase
-      .channel('public:notifications')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` },
-        (payload) => {
-          const rec = (payload as any).new as AnyRow | undefined
-          if (!rec) return
-          const recCompany = pick(rec, ['company_id', 'companyId'], null)
-          if (String(recCompany) !== String(companyId)) return
-          const recUser = pick(rec, ['user_id', 'userId'], null)
-          if (userId && recUser && String(recUser) !== String(userId)) return
-          const mapped = mapRow(rec)
-          setRows(prev => {
-            const idx = prev.findIndex(x => x.id === mapped.id)
-            if (idx >= 0) { const copy = prev.slice(); copy[idx] = mapped; return copy }
-            return [mapped, ...prev].slice(0, 50)
-          })
+    if (!companyId) {
+      console.log('[NotificationCenter] No companyId, skipping subscription')
+      return
+    }
+
+    let cancelled = false
+
+    ;(async () => {
+      // If we already have a channel for this company, skip.
+      if (chanRef.current && activeCompanyRef.current === companyId) {
+        console.log('[NotificationCenter] Channel already active for company', { companyId })
+        return
+      }
+
+      // Clean up any previous channel.
+      if (chanRef.current) {
+        try {
+          console.log('[NotificationCenter] Removing previous channel', { prevCompany: activeCompanyRef.current })
+          await supabase.removeChannel(chanRef.current)
+        } catch (err) {
+          console.warn('[NotificationCenter] Error removing previous channel', err)
         }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') setSubscribing(false)
-      })
-    return () => { try { supabase.removeChannel(channel) } catch {} }
+        chanRef.current = null
+        activeCompanyRef.current = null
+      }
+
+      console.log('[NotificationCenter] Setting up realtime subscription for company', { companyId, userId })
+      setSubscribing(true)
+      try {
+        const chan = await createAuthedChannel(`notifications:company:${companyId}`)
+        console.log('[NotificationCenter] Channel created, setting up listener')
+
+        chan
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` },
+            (payload) => {
+              console.log('[NotificationCenter] Received realtime payload', payload)
+              const rec = (payload as any).new as AnyRow | undefined
+              if (!rec) return
+              if (String(rec.company_id ?? rec.companyId) !== String(companyId)) return
+              const recUser = rec.user_id ?? rec.userId
+              if (userId && recUser && String(recUser) !== String(userId)) return
+              const mapped = mapRow(rec)
+              setRows(prev => {
+                const i = prev.findIndex(x => x.id === mapped.id)
+                if (i >= 0) { const copy = prev.slice(); copy[i] = mapped; return copy }
+                return [mapped, ...prev].slice(0, 50)
+              })
+            }
+          )
+          .subscribe((status) => {
+            console.log('[NotificationCenter] Subscription status changed', { status, companyId })
+            if (status === 'SUBSCRIBED') setSubscribing(false)
+          })
+
+        chanRef.current = chan
+        activeCompanyRef.current = companyId
+      } catch (error) {
+        console.error('[NotificationCenter] Error setting up realtime subscription', error)
+        setSubscribing(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      // Note: do not auto-remove here; we keep the channel until company changes or unmount.
+    }
   }, [companyId, userId])
+
+  // On unmount, remove channel.
+  useEffect(() => {
+    return () => {
+      if (chanRef.current) {
+        console.log('[NotificationCenter] Unmount: removing channel', { companyId: activeCompanyRef.current })
+        supabase.removeChannel(chanRef.current).catch((error) => {
+          console.error('[NotificationCenter] Error removing channel on unmount', error)
+        })
+        chanRef.current = null
+        activeCompanyRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     fetchLatest()
@@ -152,7 +213,7 @@ export function NotificationCenter() {
         variant="ghost"
         size="sm"
         data-role="notif-btn"
-        aria-label={t("notifications.title")}
+        aria-label={t('notifications.title')}
         onClick={() => { setOpen(v => !v); if (!rows.length) void fetchLatest() }}
         className="relative"
       >
@@ -169,15 +230,15 @@ export function NotificationCenter() {
           data-role="notif-panel"
           className="fixed right-4 top-16 w-96 max-w-[95vw] rounded-md border bg-popover text-popover-foreground shadow-lg z-[99999]"
           role="dialog"
-          aria-label={t("notifications.title")}
+          aria-label={t('notifications.title')}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b">
-            <div className="text-sm font-medium">{t("notifications.title")}</div>
+            <div className="text-sm font-medium">{t('notifications.title')}</div>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={fetchLatest} title={t("common.refresh")}>
+              <Button variant="ghost" size="sm" onClick={fetchLatest} title={t('common.refresh')}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="sm" onClick={markAllRead} title={t("notifications.markAllRead")}>
+              <Button variant="ghost" size="sm" onClick={markAllRead} title={t('notifications.markAllRead')}>
                 <CheckCheck className="h-4 w-4" />
               </Button>
             </div>
@@ -185,7 +246,7 @@ export function NotificationCenter() {
 
           <div className="max-h-[60vh] overflow-auto">
             {rows.length === 0 && (
-              <div className="p-4 text-sm text-muted-foreground">{t("notifications.noNotifications")}</div>
+              <div className="p-4 text-sm text-muted-foreground">{t('notifications.noNotifications')}</div>
             )}
             {rows.map((n) => (
               <div key={n.id} className="px-3 py-2 border-b last:border-b-0">
@@ -202,7 +263,7 @@ export function NotificationCenter() {
                 {n.actionUrl && (
                   <div className="mt-2">
                     <a href={n.actionUrl} className="text-xs underline text-primary" target="_blank" rel="noreferrer">
-                      {t("notifications.open")}
+                      {t('notifications.open')}
                     </a>
                   </div>
                 )}
@@ -211,8 +272,10 @@ export function NotificationCenter() {
           </div>
 
           <div className="px-3 py-2 text-[11px] text-muted-foreground border-t flex items-center justify-between">
-            <span>{t("notifications.realtime.connecting")}: {subscribing ? t("notifications.realtime.connecting") : t("notifications.realtime.on")}</span>
-            <span>{t("notifications.showingLatest", { count: rows.length })}</span>
+            <span>
+              {t('notifications.realtime.connecting')}: {subscribing ? t('notifications.realtime.connecting') : t('notifications.realtime.on')}
+            </span>
+            <span>{t('notifications.showingLatest', { count: rows.length })}</span>
           </div>
         </div>
       )}

@@ -35,9 +35,6 @@ import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 import CompanySwitcher from '../CompanySwitcher'
 import { useI18n } from '../../lib/i18n'
-// Note: useIsMobile is imported but not currently used in this component
-// It's kept for potential future use or debugging
-import { useIsMobile } from '../../hooks/use-mobile'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -99,11 +96,9 @@ export function AppLayout({ user, children }: Props) {
   const { t } = useI18n()
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
-  // Note: useIsMobile is imported but not currently used in this component
-  // It's kept for potential future use or debugging
 
   const nav = useMemo(() => {
-    const canManage = hasRole(myRole, CanManageUsers)
+    const canManage = hasRole(myRole, [...CanManageUsers])
     const base = buildNavLabels(t)
     return base.filter(item => !(item.to === '/users' && !canManage))
   }, [myRole, t])
