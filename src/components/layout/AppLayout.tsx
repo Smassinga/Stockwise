@@ -95,7 +95,6 @@ export function AppLayout({ user, children }: Props) {
   const { companyName, myRole } = useOrg()
   const { t } = useI18n()
   const [searchQuery, setSearchQuery] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
 
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, [...CanManageUsers])
@@ -172,11 +171,8 @@ export function AppLayout({ user, children }: Props) {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
-    
-    setIsSearching(true)
     // Navigate to search results page with query parameter
     navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
-    setIsSearching(false)
   }
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -353,3 +349,4 @@ export function AppLayout({ user, children }: Props) {
 }
 
 export default AppLayout
+

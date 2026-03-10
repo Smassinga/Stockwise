@@ -102,8 +102,6 @@ export function NotificationCenter() {
       return
     }
 
-    let cancelled = false
-
     ;(async () => {
       // If we already have a channel for this company, skip.
       if (chanRef.current && activeCompanyRef.current === companyId) {
@@ -162,7 +160,6 @@ export function NotificationCenter() {
     })()
 
     return () => {
-      cancelled = true
       // Note: do not auto-remove here; we keep the channel until company changes or unmount.
     }
   }, [companyId, userId])
@@ -284,3 +281,4 @@ export function NotificationCenter() {
 }
 
 export default NotificationCenter
+

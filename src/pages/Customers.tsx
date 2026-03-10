@@ -173,12 +173,6 @@ export default function Customers() {
       if (dup.error) throw dup.error
       if (dup.data && dup.data.length) return toast.error('Code must be unique in this company')
 
-      // NEW: Determine effective payment terms
-      const CUSTOM = "__custom__"
-      // Remove the effectiveTerms logic since we're now using payment_terms_id
-      // const effectiveTerms = 
-      //   paymentTerms === CUSTOM ? (customPaymentTerms.trim() || null) : paymentTerms
-
       const payload: Partial<CustomerRow> = {
         company_id: companyId,
         code: c,
@@ -382,3 +376,4 @@ export default function Customers() {
     </div>
   )
 }
+

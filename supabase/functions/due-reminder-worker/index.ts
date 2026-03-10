@@ -299,6 +299,7 @@ function authorized(req: Request) {
 }
 
 serve(async (req) => {
+  let claimedJobId: number | null = null;
   try {
     if (!authorized(req)) return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401 });
 
@@ -315,6 +316,7 @@ serve(async (req) => {
     if (!jobs?.length) return new Response(JSON.stringify({ ok: true, message: "no pending jobs", mode: DRY_RUN ? "dry" : "live" }), { status: 200 });
 
     const job = jobs[0] as QueueRow;
+    claimedJobId = job.id;
 
     // claim
     const { error: claimErr } = await sb.from("due_reminder_queue")
@@ -461,12 +463,17 @@ serve(async (req) => {
     try {
       const sb = supa();
       const nowIso = new Date().toISOString();
-      await sb.from("due_reminder_queue")
-        .update({ status: "pending", next_attempt_at: nowIso })
-        .eq("status", "processing");
+      if (claimedJobId !== null) {
+        await sb.from("due_reminder_queue")
+          .update({ status: "pending", next_attempt_at: nowIso })
+          .eq("id", claimedJobId)
+          .eq("status", "processing");
+      }
     } catch {}
     const msg = e instanceof Error ? e.message : safeErr(e);
     if (DEBUG_LOG) console.error("[error]", msg);
     return new Response(JSON.stringify({ ok: false, error: msg }), { status: 500 });
   }
 });
+
+

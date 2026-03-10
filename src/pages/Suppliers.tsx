@@ -170,12 +170,6 @@ export default function Suppliers() {
       if (dup.error) throw dup.error
       if ((dup.count ?? 0) > 0) return toast.error('Code must be unique (per company)')
 
-      // Determine effective payment terms
-      const CUSTOM = "__custom__"
-      // Remove the effectiveTerms logic since we're now using payment_terms_id
-      // const effectiveTerms = 
-      //   paymentTerms === CUSTOM ? (customPaymentTerms.trim() || null) : paymentTerms
-
       const payload: any = {
         company_id: companyId,          // tenant key
         code: code.trim(),
@@ -419,3 +413,4 @@ export default function Suppliers() {
     </div>
   )
 }
+

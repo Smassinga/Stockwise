@@ -88,7 +88,7 @@ function RootDecider() {
 }
 
 /** Extra guard for org role (e.g., Users page) */
-function RequireOrgRole({ allowed }: { allowed: string[] }) {
+function RequireOrgRole({ allowed }: { allowed: readonly string[] }) {
   const { loading, myRole } = useOrg();
   if (loading) return <LoadingSplash />;
   if (!myRole || !allowed.includes(myRole)) return <Navigate to="/dashboard" replace />;
@@ -160,3 +160,4 @@ export default function App() {
     </OrgProvider>
   );
 }
+

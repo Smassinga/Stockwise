@@ -52,16 +52,7 @@ export default function Users() {
   const canAccessUsersPage = hasMinRole(myRole, 'MANAGER');   // OPERATOR cannot view this page
   const canManageUsers     = canAccessUsersPage;              // MANAGER+
   const canInviteAdmins    = hasMinRole(myRole, 'ADMIN');     // ADMIN+ can invite ADMIN
-  const canInviteOwners    = hasMinRole(myRole, 'OWNER');     // only OWNER can invite OWNER
 
-  // Early exit / guard
-  if (!canAccessUsersPage) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        {t('users.noPermission')}
-      </div>
-    );
-  }
 
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
@@ -360,6 +351,15 @@ export default function Users() {
       }),
     [members]
   )
+
+  if (!canAccessUsersPage) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        {t('users.noPermission')}
+      </div>
+    )
+  }
+
 
   return (
     <div className="space-y-6">

@@ -26,20 +26,6 @@ import {
   type CompanyProfile as DBCompanyProfile,
 } from '../../lib/companyProfile'
 
-type AppSettings = {
-  sales?: {
-    allowLineShip?: boolean
-    autoCompleteWhenShipped?: boolean
-    defaultFulfilWarehouseId?: string
-  }
-  // possible branding shapes; we probe defensively
-  branding?: { companyName?: string; logoUrl?: string }
-  brand?: { logoUrl?: string }
-  logoUrl?: string
-  companyName?: string
-  company?: { name?: string; logoUrl?: string }
-} & Record<string, any>
-
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string; family?: string }
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
@@ -143,7 +129,6 @@ const mapDBProfile = (p?: DBCompanyProfile | null): CompanyProfileUI => {
   }
 }
 
-const nowISO = () => new Date().toISOString()
 const n = (v: string | number | null | undefined, d = 0) =>
   Number.isFinite(Number(v)) ? Number(v) : d
 const fmtAcct = (v: number) => {
@@ -209,7 +194,6 @@ export default function SalesOrders() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
-  const [app, setApp] = useState<AppSettings | null>(null)
 
   // branding (for print header)
   const [brandName, setBrandName] = useState<string>('')
@@ -417,12 +401,10 @@ export default function SalesOrders() {
   useEffect(() => {
     ;(async () => {
       try {
-        const [it, uu, appRes] = await Promise.all([
+        const [it, uu] = await Promise.all([
           db.items.list({ orderBy: { name: 'asc' } }),
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
-          supabase.from('app_settings').select('data').eq('id', 'app').maybeSingle(),
         ])
-        setApp((appRes.data as any)?.data ?? {})
 
         setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
         if (uu.error) throw uu.error
@@ -449,7 +431,7 @@ export default function SalesOrders() {
             supabase.from('app_settings').select('data').eq('id', 'brand').maybeSingle(),
             supabase.from('app_settings').select('data').eq('id', 'company').maybeSingle(),
           ])
-          const a = (appRes.data as any)?.data ?? {}
+          const a = {} as any
           const brand = (brandRes.data as any)?.data ?? {}
           const company = (companyRes.data as any)?.data ?? {}
           const nameGuess =
@@ -1736,3 +1718,8 @@ export default function SalesOrders() {
     </div>
   )
 }
+
+
+
+
+

@@ -31,10 +31,11 @@ entrypoint = "./functions/schema-snapshot-cron/index.ts"
 
 [functions.mailer-invite]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 entrypoint = "./functions/mailer-invite/index.ts"
 
 [functions.admin-users]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 entrypoint = "./functions/admin-users/index.ts"
+

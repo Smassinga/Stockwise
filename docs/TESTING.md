@@ -2,6 +2,8 @@
 
 This document outlines the testing approach for Stockwise, including unit tests, integration tests, end-to-end tests, and quality assurance processes.
 
+> Status note (current repo): Jest/Cypress test suites are planned but not yet present in this codebase. This document contains target-state guidance plus examples.
+
 ## Testing Philosophy
 
 Stockwise follows a comprehensive testing approach that includes:
@@ -337,10 +339,12 @@ export const createCompany = (overrides = {}) => ({
 
 ### Running Tests
 
-1. **Unit Tests**: `npm test`
-2. **Unit Tests (Watch Mode)**: `npm test -- --watch`
-3. **Coverage Report**: `npm test -- --coverage`
-4. **E2E Tests**: `npm run cypress:open`
+1. **Type Check**: `npx tsc --noEmit -p tsconfig.json`
+2. **Lint**: `npm run lint`
+3. **Web Build**: `npm run build`
+4. **Tauri Check**: `cargo check` (from `src-tauri`)
+
+Jest/Cypress commands in this document are future-state examples and should be added together with actual test setup.
 
 ### Continuous Integration
 
@@ -467,3 +471,5 @@ Using husky and lint-staged:
 4. **Isolate Tests**: Ensure tests don't depend on each other
 
 This testing strategy ensures Stockwise maintains high quality and reliability while enabling rapid development and confident deployments.
+
+

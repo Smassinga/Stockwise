@@ -15,7 +15,7 @@ export function hasMinRole(role: CompanyRole | null | undefined, min: CompanyRol
   return RoleRank[role] <= RoleRank[min]
 }
 
-export function hasRole(role: CompanyRole | null | undefined, allowed: CompanyRole[]): boolean {
+export function hasRole(role: CompanyRole | null | undefined, allowed: readonly CompanyRole[]): boolean {
   if (!role) return false
   return allowed.includes(role)
 }
@@ -38,3 +38,4 @@ export const can = {
   manageUsers:      (r: CompanyRole | null | undefined) => hasMinRole(r, 'MANAGER'),
   manageWarehouses: (r: CompanyRole | null | undefined) => hasMinRole(r, 'MANAGER'),
 }
+
