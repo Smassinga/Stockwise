@@ -19,7 +19,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <I18nProvider>
       <SEOProvider
-        siteName="Stockwise"
+        siteName="StockWise"
         baseUrl={import.meta.env.VITE_SITE_URL || 'https://stockwiseapp.com'}
       >
         <BrowserRouter>

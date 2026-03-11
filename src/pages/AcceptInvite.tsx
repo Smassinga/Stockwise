@@ -55,7 +55,7 @@ export default function AcceptInvite() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
       <div className="text-center text-sm text-muted-foreground">{msg}</div>
-      {showAuthBtn && <Button onClick={() => nav('/auth', { replace: true })}>Go to sign-in</Button>}
+      {showAuthBtn && <Button onClick={() => nav('/login', { replace: true })}>Go to sign-in</Button>}
     </div>
   )
 }
@@ -84,7 +84,7 @@ async function routeByMembership(nav: ReturnType<typeof useNavigate>) {
   )
   const userId = session?.user?.id
   if (!userId) {
-    nav('/auth', { replace: true })
+    nav('/login', { replace: true })
     return
   }
 

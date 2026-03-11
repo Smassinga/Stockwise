@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'
+import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
 
@@ -86,14 +87,17 @@ export default function AuthCallback() {
           window.history.replaceState({}, '', clean)
         } catch {}
 
-        try {
-          await withTimeout(
-            supabase.functions.invoke('admin-users/sync', { body: {} }),
-            BEST_EFFORT_SYNC_TIMEOUT_MS,
-            'admin user sync'
-          )
-        } catch (e) {
-          console.warn('admin user sync failed during auth callback:', e)
+        const syncedUserId = (await supabase.auth.getSession()).data.session?.user?.id
+        if (syncedUserId) {
+          try {
+            await withTimeout(
+              runAdminUserSyncIfNeeded(syncedUserId),
+              BEST_EFFORT_SYNC_TIMEOUT_MS,
+              'admin user sync'
+            )
+          } catch (e) {
+            console.warn('admin user sync failed during auth callback:', e)
+          }
         }
 
         await maybeRedeemInviteToken()
@@ -113,7 +117,7 @@ export default function AuthCallback() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
       <div className="text-center text-sm text-muted-foreground">{msg}</div>
-      {showHomeBtn && <Button onClick={() => location.assign('/auth')}>Back to sign-in</Button>}
+      {showHomeBtn && <Button onClick={() => location.assign('/login')}>Back to sign-in</Button>}
     </div>
   )
 }
@@ -144,7 +148,7 @@ async function routeByMembership(nav: ReturnType<typeof useNavigate>) {
   )
   const userId = session?.user?.id
   if (!userId) {
-    nav('/auth', { replace: true })
+    nav('/login', { replace: true })
     return
   }
 

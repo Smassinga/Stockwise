@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -86,9 +87,12 @@ async function ensureCompanyClaim(id: string | null) {
 }
 
 async function syncActiveCompanyContext(id: string) {
+  let ok = true;
+
   try {
     await withTimeout(ensureCompanyClaim(id), ACTIVE_COMPANY_SYNC_TIMEOUT_MS, "ensureCompanyClaim");
   } catch (e) {
+    ok = false;
     console.warn("[Org] ensureCompanyClaim background sync failed:", e);
   }
 
@@ -98,10 +102,16 @@ async function syncActiveCompanyContext(id: string) {
       ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
       "set_active_company"
     );
-    if (rpcErr) console.warn("[Org] set_active_company RPC failed:", rpcErr);
+    if (rpcErr) {
+      ok = false;
+      console.warn("[Org] set_active_company RPC failed:", rpcErr);
+    }
   } catch (e) {
+    ok = false;
     console.warn("[Org] set_active_company background sync failed:", e);
   }
+
+  return ok;
 }
 
 export function OrgProvider({ children }: { children: ReactNode }) {
@@ -113,6 +123,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const [memberStatus, setMemberStatus] = useState<MemberStatus | null>(null);
   const [switching, setSwitching] = useState(false);
   const { toast } = useToast();
+  const lastResolvedUserRef = useRef<string | null>(null);
+  const lastSyncedContextRef = useRef<string | null>(null);
+  const syncInFlightRef = useRef<string | null>(null);
 
   function pickBest(
     rows: Array<{ company_id: string; role: MemberRole; status: MemberStatus; created_at?: string; user_id?: string | null }>
@@ -144,6 +157,30 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     return new Map(Object.entries(norm).map(([k, v]) => [k, v]));
   }
 
+  const maybeSyncCompanyContext = async (
+    userId: string,
+    id: string,
+    options?: { force?: boolean }
+  ) => {
+    const key = `${userId}:${id}`;
+    const force = options?.force === true;
+
+    if (!force && (lastSyncedContextRef.current === key || syncInFlightRef.current === key)) {
+      return;
+    }
+
+    syncInFlightRef.current = key;
+
+    try {
+      const ok = await syncActiveCompanyContext(id);
+      if (ok) lastSyncedContextRef.current = key;
+    } finally {
+      if (syncInFlightRef.current === key) {
+        syncInFlightRef.current = null;
+      }
+    }
+  };
+
   const resolve = async () => {
     const {
       data: { session },
@@ -151,6 +188,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     const user = session?.user;
 
     if (!user) {
+      lastResolvedUserRef.current = null;
+      lastSyncedContextRef.current = null;
+      syncInFlightRef.current = null;
       setCompanies([]);
       setCompanyId(null);
       setCompanyName(null);
@@ -159,21 +199,45 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Load memberships for the current user (explicit eq for clarity; RLS should enforce anyway)
-    let mems: any[] | null = null;
+    if (lastResolvedUserRef.current !== user.id) {
+      lastResolvedUserRef.current = user.id;
+      lastSyncedContextRef.current = null;
+      syncInFlightRef.current = null;
+    }
+
+    let memsByUser: any[] | null = null;
+    let memsByEmail: any[] | null = null;
     let memErr: unknown = null;
     try {
-      const result = await withTimeout(
+      const byUser = await withTimeout(
         supabase
           .from("company_members")
           .select("company_id, role, status, created_at, user_id")
+          .eq("user_id", user.id)
           .in("status", ["active", "invited"] as MemberStatus[])
-          .or(`user_id.eq.${user.id},email.eq.${user.email}`),
+          .order("created_at", { ascending: true }),
         ORG_QUERY_TIMEOUT_MS,
-        "company membership lookup"
+        "company membership lookup by user"
       );
-      mems = result.data ?? null;
-      memErr = result.error ?? null;
+      memsByUser = byUser.data ?? null;
+      memErr = byUser.error ?? null;
+      if (memErr) throw memErr;
+
+      if (user.email) {
+        const byEmail = await withTimeout(
+          supabase
+            .from("company_members")
+            .select("company_id, role, status, created_at, user_id")
+            .is("user_id", null)
+            .eq("email", user.email)
+            .in("status", ["active", "invited"] as MemberStatus[])
+            .order("created_at", { ascending: true }),
+          ORG_QUERY_TIMEOUT_MS,
+          "company membership lookup by email"
+        );
+        memsByEmail = byEmail.data ?? null;
+        memErr = byEmail.error ?? null;
+      }
     } catch (e) {
       memErr = e;
     }
@@ -193,7 +257,8 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const meta = pickBest((mems ?? []) as any);
+    const mergedMemberships = [...(memsByUser ?? []), ...(memsByEmail ?? [])];
+    const meta = pickBest(mergedMemberships as any);
     const ids = Array.from(meta.keys());
     if (ids.length === 0) {
       setCompanies([]);
@@ -262,8 +327,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
     if (chosen?.id) {
       localStorage.setItem(userSpecificKey, chosen.id);
-      // Do not block route resolution on claim/RPC propagation.
-      void syncActiveCompanyContext(chosen.id);
+      void maybeSyncCompanyContext(user.id, chosen.id);
     }
   };
 
@@ -297,9 +361,8 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       if (mounted) await refresh();
     })();
 
-    // Re-resolve on auth changes (login, logout, token refresh)
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      // Do not await to avoid blocking the callback
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (!["SIGNED_IN", "SIGNED_OUT", "INITIAL_SESSION"].includes(event)) return;
       refresh();
     });
 
@@ -375,6 +438,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         if (userId && isBrowser) {
           const userSpecificKey = LAST_COMPANY_KEY(userId);
           localStorage.setItem(userSpecificKey, id);
+          lastResolvedUserRef.current = userId;
+          lastSyncedContextRef.current = `${userId}:${id}`;
+          syncInFlightRef.current = null;
         }
         
         await refresh(); // only after success

@@ -1,134 +1,136 @@
-// src/App.tsx
-import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
-import { useAuth } from './hooks/useAuth';
-import { AppLayout } from './components/layout/AppLayout';
+import { lazy, Suspense } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import RouteMetadata from './components/RouteMetadata'
+import { AppLayout } from './components/layout/AppLayout'
+import { useAuth } from './hooks/useAuth'
+import { OrgProvider, useOrg } from './hooks/useOrg'
+import { CanManageUsers } from './lib/roles'
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Items = lazy(() => import('./pages/Items'));
-const StockMovements = lazy(() => import('./pages/StockMovements'));
-const Reports = lazy(() => import('./pages/Reports'));
-const Warehouses = lazy(() => import('./pages/Warehouses').then(m => ({ default: m.Warehouses })));
-const Users = lazy(() => import('./pages/Users'));
-const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
-const Orders = lazy(() => import('./pages/Orders'));
-const StockLevels = lazy(() => import('./pages/StockLevels'));
-const CurrencyPage = lazy(() => import('./pages/Currency'));
-const CustomersPage = lazy(() => import('./pages/Customers'));
-const SuppliersPage = lazy(() => import('./pages/Suppliers'));
-const BOMPage = lazy(() => import('./pages/BOM'));
-const Auth = lazy(() => import('./pages/Auth'));
-const UomSettings = lazy(() => import('./pages/UomSettings'));
-const AuthCallback = lazy(() => import('./pages/AuthCallback'));
-const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
-const Onboarding = lazy(() => import('./pages/Onboarding'));
-const Transactions = lazy(() => import('./pages/Transactions'));
-const Cash = lazy(() => import('./pages/Cash'));
-const Banks = lazy(() => import('./pages/Banks'));
-const BankDetail = lazy(() => import('./pages/BankDetail'));
-const ResponsiveDemo = lazy(() => import('./pages/ResponsiveDemo'));
-const Profile = lazy(() => import('./pages/Profile')); // Add this line
-const SearchResults = lazy(() => import('./pages/SearchResults')); // Add this line
-import { OrgProvider, useOrg } from './hooks/useOrg';
-import { CanManageUsers } from './lib/roles';
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Items = lazy(() => import('./pages/Items'))
+const StockMovements = lazy(() => import('./pages/StockMovements'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Warehouses = lazy(() => import('./pages/Warehouses').then((m) => ({ default: m.Warehouses })))
+const Users = lazy(() => import('./pages/Users'))
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })))
+const Orders = lazy(() => import('./pages/Orders'))
+const StockLevels = lazy(() => import('./pages/StockLevels'))
+const CurrencyPage = lazy(() => import('./pages/Currency'))
+const CustomersPage = lazy(() => import('./pages/Customers'))
+const SuppliersPage = lazy(() => import('./pages/Suppliers'))
+const BOMPage = lazy(() => import('./pages/BOM'))
+const Auth = lazy(() => import('./pages/Auth'))
+const UomSettings = lazy(() => import('./pages/UomSettings'))
+const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite'))
+const Onboarding = lazy(() => import('./pages/Onboarding'))
+const Transactions = lazy(() => import('./pages/Transactions'))
+const Cash = lazy(() => import('./pages/Cash'))
+const Banks = lazy(() => import('./pages/Banks'))
+const BankDetail = lazy(() => import('./pages/BankDetail'))
+const ResponsiveDemo = lazy(() => import('./pages/ResponsiveDemo'))
+const Profile = lazy(() => import('./pages/Profile'))
+const SearchResults = lazy(() => import('./pages/SearchResults'))
 
 function LoadingSplash() {
   return (
-    <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-      Loading…
+    <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+      Loading...
     </div>
-  );
+  )
 }
 
-/** Route guard for private areas (only checks auth) */
 function RequireAuth() {
-  const { user, loading } = useAuth();
-  const location = useLocation();
-  if (loading) return <LoadingSplash />;
-  if (!user) return <Navigate to="/auth" replace state={{ from: location }} />;
-  return <Outlet />;
+  const { user, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) return <LoadingSplash />
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  return <Outlet />
 }
 
-/** NEW: Require org membership before mounting the main app shell */
-function RequireMembership() {
-  const { user, loading: authLoading } = useAuth();
-  const { myRole, loading: orgLoading } = useOrg();
-
-  if (authLoading || orgLoading) return <LoadingSplash />;
-  if (!user) return <Navigate to="/auth" replace />;
-  if (!myRole) return <Navigate to="/onboarding" replace />; // not a member yet
-  return <Outlet />;
-}
-
-/** Public-only guard — but membership-aware */
 function PublicOnly() {
-  const { user, loading: authLoading } = useAuth();
-  const { myRole, loading: orgLoading } = useOrg();
+  const { user, loading } = useAuth()
 
-  if (authLoading) return <LoadingSplash />;
-
-  // Not logged in → allow public routes (Auth)
-  if (!user) return <Outlet />;
-
-  // Logged in → wait org status, then route correctly
-  if (orgLoading) return <LoadingSplash />;
-  return <Navigate to={myRole ? '/dashboard' : '/onboarding'} replace />;
+  if (loading) return <LoadingSplash />
+  if (user) return <Navigate to="/dashboard" replace />
+  return <Outlet />
 }
 
-/** Root decider: logged-out -> /auth; logged-in+no company -> /onboarding; else /dashboard */
-function RootDecider() {
-  const { user, loading: authLoading } = useAuth();
-  const { myRole, loading: orgLoading } = useOrg();
+function RequireMembership() {
+  const { user, loading: authLoading } = useAuth()
+  const { myRole, loading: orgLoading } = useOrg()
 
-  if (authLoading) return <LoadingSplash />;
-  if (!user) return <Navigate to="/auth" replace />;
-  if (orgLoading) return <LoadingSplash />;
-  if (!myRole) return <Navigate to="/onboarding" replace />;
-  return <Navigate to="/dashboard" replace />;
+  if (authLoading || orgLoading) return <LoadingSplash />
+  if (!user) return <Navigate to="/login" replace />
+  if (!myRole) return <Navigate to="/onboarding" replace />
+  return <Outlet />
 }
 
-/** Extra guard for org role (e.g., Users page) */
 function RequireOrgRole({ allowed }: { allowed: readonly string[] }) {
-  const { loading, myRole } = useOrg();
-  if (loading) return <LoadingSplash />;
-  if (!myRole || !allowed.includes(myRole)) return <Navigate to="/dashboard" replace />;
-  return <Outlet />;
+  const { loading, myRole } = useOrg()
+
+  if (loading) return <LoadingSplash />
+  if (!myRole || !allowed.includes(myRole)) return <Navigate to="/dashboard" replace />
+  return <Outlet />
+}
+
+function ProtectedOrgArea() {
+  return (
+    <OrgProvider>
+      <RequireMembership />
+    </OrgProvider>
+  )
+}
+
+function AppShellRoute() {
+  const { user } = useAuth()
+
+  if (!user) return <LoadingSplash />
+  return (
+    <AppLayout user={user}>
+      <Outlet />
+    </AppLayout>
+  )
+}
+
+function FallbackRoute() {
+  const { user, loading } = useAuth()
+
+  if (loading) return <LoadingSplash />
+  return <Navigate to={user ? '/dashboard' : '/'} replace />
 }
 
 export default function App() {
-  const { user } = useAuth();
-
   return (
-    <OrgProvider>
+    <>
+      <RouteMetadata />
       <Routes>
-        {/* Public (but if logged, route to onboarding or dashboard) */}
-        <Route path="/auth" element={<PublicOnly />}>
+        <Route path="/" element={<Suspense fallback={<LoadingSplash />}><LandingPage /></Suspense>} />
+
+        <Route path="/login" element={<PublicOnly />}>
           <Route index element={<Suspense fallback={<LoadingSplash />}><Auth /></Suspense>} />
         </Route>
+        <Route path="/auth" element={<Navigate to="/login" replace />} />
+
         <Route path="/auth/callback" element={<Suspense fallback={<LoadingSplash />}><AuthCallback /></Suspense>} />
-        
-        {/* Public: invite landing — stores token & handles auth/redirect */}
         <Route path="/accept-invite" element={<Suspense fallback={<LoadingSplash />}><AcceptInvite /></Suspense>} />
-        
-        {/* Private area (must be logged in) */}
+
         <Route element={<RequireAuth />}>
-          {/* Onboarding is private but outside the app shell */}
           <Route path="/onboarding" element={<Suspense fallback={<LoadingSplash />}><Onboarding /></Suspense>} />
 
-          {/* Main app requires membership before mounting */}
-          <Route element={<RequireMembership />}>
-            <Route element={<AppLayout user={user!}><Outlet /></AppLayout>}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route element={<ProtectedOrgArea />}>
+            <Route element={<AppShellRoute />}>
               <Route path="/dashboard" element={<Suspense fallback={<LoadingSplash />}><Dashboard /></Suspense>} />
               <Route path="/items" element={<Suspense fallback={<LoadingSplash />}><Items /></Suspense>} />
               <Route path="/movements" element={<Suspense fallback={<LoadingSplash />}><StockMovements /></Suspense>} />
               <Route path="/warehouses" element={<Suspense fallback={<LoadingSplash />}><Warehouses /></Suspense>} />
               <Route path="/transactions" element={<Suspense fallback={<LoadingSplash />}><Transactions /></Suspense>} />
-              <Route path="/cash" element={<Suspense fallback={<LoadingSplash />}><Cash /></Suspense>} /> {/* NEW */}
-              <Route path="/banks" element={<Suspense fallback={<LoadingSplash />}><Banks /></Suspense>} />              {/* NEW */}
+              <Route path="/cash" element={<Suspense fallback={<LoadingSplash />}><Cash /></Suspense>} />
+              <Route path="/banks" element={<Suspense fallback={<LoadingSplash />}><Banks /></Suspense>} />
               <Route path="/banks/:bankId" element={<Suspense fallback={<LoadingSplash />}><BankDetail /></Suspense>} />
 
-              {/* Only OWNER/ADMIN/MANAGER can access Users */}
               <Route element={<RequireOrgRole allowed={CanManageUsers} />}>
                 <Route path="/users" element={<Suspense fallback={<LoadingSplash />}><Users /></Suspense>} />
               </Route>
@@ -141,23 +143,17 @@ export default function App() {
               <Route path="/suppliers" element={<Suspense fallback={<LoadingSplash />}><SuppliersPage /></Suspense>} />
               <Route path="/settings" element={<Suspense fallback={<LoadingSplash />}><Settings /></Suspense>} />
               <Route path="/settings/uoms" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
-              {/* Friendly top-level path for sidebar */}
               <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
               <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
-              {/* Responsive demo page */}
               <Route path="/responsive-demo" element={<Suspense fallback={<LoadingSplash />}><ResponsiveDemo /></Suspense>} />
-              {/* Profile page */}
               <Route path="/profile" element={<Suspense fallback={<LoadingSplash />}><Profile /></Suspense>} />
-              {/* Search results page */}
               <Route path="/search" element={<Suspense fallback={<LoadingSplash />}><SearchResults /></Suspense>} />
             </Route>
           </Route>
         </Route>
 
-        {/* Fallback uses the decider */}
-        <Route path="*" element={<RootDecider />} />
+        <Route path="*" element={<FallbackRoute />} />
       </Routes>
-    </OrgProvider>
-  );
+    </>
+  )
 }
-

@@ -35,6 +35,8 @@ import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 import CompanySwitcher from '../CompanySwitcher'
 import { useI18n } from '../../lib/i18n'
+import BrandLockup from '../brand/BrandLockup'
+import LocaleToggle from '../LocaleToggle'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -129,14 +131,7 @@ export function AppLayout({ user, children }: Props) {
     () => (
       <aside className="hidden md:flex md:w-64 md:flex-col md:border-r">
         <div className="flex h-16 items-center gap-2 px-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-              <path d="m3.3 7 8.7 5 8.7-5" />
-              <path d="M12 22V12" />
-            </svg>
-          </div>
-          <div className="text-lg font-bold truncate">StockWise</div>
+          <BrandLockup compact subtitle="" />
           <div className="ml-2 shrink-0">
             <ThemeToggle />
           </div>
@@ -152,7 +147,7 @@ export function AppLayout({ user, children }: Props) {
           <CompanySwitcher className="mb-2" />
           {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
           <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
-          <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
+          <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
           <Button
             variant="ghost"
             size="sm"
@@ -206,14 +201,7 @@ export function AppLayout({ user, children }: Props) {
       >
         <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                <path d="m3.3 7 8.7 5 8.7-5" />
-                <path d="M12 22V12" />
-              </svg>
-            </div>
-            <div className="text-lg font-bold">StockWise</div>
+            <BrandLockup compact subtitle="" />
             <div className="ml-2 shrink-0">
               <ThemeToggle compact />
             </div>
@@ -239,7 +227,7 @@ export function AppLayout({ user, children }: Props) {
         <div className="mt-auto border-t p-3">
           {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
           <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
-          <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
+          <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
           <Button
             variant="ghost"
             size="sm"
@@ -293,12 +281,13 @@ export function AppLayout({ user, children }: Props) {
           </div>
           
           <div className="ml-auto flex items-center gap-2">
+            <LocaleToggle className="hidden sm:inline-flex" />
             <NotificationCenter />
             <CompanySwitcher className="hidden md:block" />
             <div className="hidden text-right md:block">
               {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
               <div className="text-sm font-semibold leading-tight truncate">{user.name || user.email}</div>
-              <div className="text-xs text-muted-foreground">{myRole ?? '—'}</div>
+              <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
             </div>
 
             <div className="relative ml-2 hidden md:block" ref={menuRef}>
@@ -349,4 +338,5 @@ export function AppLayout({ user, children }: Props) {
 }
 
 export default AppLayout
+
 

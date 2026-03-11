@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
+import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
@@ -75,7 +76,7 @@ export default function Onboarding() {
         )
         const user = session?.user
         if (!user) {
-          nav('/auth', { replace: true })
+          nav('/login', { replace: true })
           return
         }
 
@@ -91,7 +92,7 @@ export default function Onboarding() {
 
         try {
           await withTimeout(
-            supabase.functions.invoke('admin-users/sync', { body: {} }),
+            runAdminUserSyncIfNeeded(user.id),
             BEST_EFFORT_SYNC_TIMEOUT_MS,
             'admin user sync'
           )
@@ -219,7 +220,7 @@ export default function Onboarding() {
             </p>
             <div className="flex gap-2">
               <Button onClick={() => window.location.reload()}>Retry</Button>
-              <Button variant="secondary" onClick={() => location.assign('/auth')}>
+              <Button variant="secondary" onClick={() => location.assign('/login')}>
                 Back to sign-in
               </Button>
             </div>
@@ -245,7 +246,7 @@ export default function Onboarding() {
                 <Mail className="h-4 w-4 mr-2" />
                 {resending ? t('actions.saving') : t('onboarding.resend')}
               </Button>
-              <Button variant="secondary" onClick={() => location.assign('/auth')}>
+              <Button variant="secondary" onClick={() => location.assign('/login')}>
                 {t('onboarding.useDifferent')}
               </Button>
             </div>

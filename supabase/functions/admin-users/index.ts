@@ -397,36 +397,42 @@ serve(async (req) => {
         .eq("status", "invited" as Status)
         .select("*", { count: "exact", head: true });
 
-      try {
-        const { data: nowActive } = await admin
-          .from("company_members")
-          .select("company_id, role")
-          .eq("user_id", userId)
-          .eq("status", "active");
+      if (actErr) return json({ ok: true, linked: data ?? 0, activated: 0, warning: actErr.message });
 
-        const displayName =
-          (userData.user.user_metadata?.name as string) ||
-          (userData.user.email?.split("@")[0] as string) ||
-          "New member";
+      const linkedCount = Number(data ?? 0);
+      const activated = Number(activatedCount ?? 0);
 
-        const rows = (nowActive ?? []).map((m) => ({
-          company_id: m.company_id,
-          user_id: null,
-          level: "info",
-          title: "New team member joined",
-          body: `${displayName} joined the company${m.role ? ` as ${m.role}` : ""}.`,
-          url: "/users",
-          icon: null,
-          meta: null,
-        }));
+      if (activated > 0) {
+        try {
+          const { data: nowActive } = await admin
+            .from("company_members")
+            .select("company_id, role")
+            .eq("user_id", userId)
+            .eq("status", "active");
 
-        if (rows.length) await admin.from("notifications").insert(rows);
-      } catch {
-        // notification write is best-effort
+          const displayName =
+            (userData.user.user_metadata?.name as string) ||
+            (userData.user.email?.split("@")[0] as string) ||
+            "New member";
+
+          const rows = (nowActive ?? []).map((m) => ({
+            company_id: m.company_id,
+            user_id: null,
+            level: "info",
+            title: "New team member joined",
+            body: `${displayName} joined the company${m.role ? ` as ${m.role}` : ""}.`,
+            url: "/users",
+            icon: null,
+            meta: null,
+          }));
+
+          if (rows.length) await admin.from("notifications").insert(rows);
+        } catch {
+          // notification write is best-effort
+        }
       }
 
-      if (actErr) return json({ ok: true, linked: data ?? 0, activated: 0, warning: actErr.message });
-      return json({ ok: true, linked: data ?? 0, activated: activatedCount ?? 0 });
+      return json({ ok: true, linked: linkedCount, activated });
     }
 
     return json({ error: "not found" }, 404);

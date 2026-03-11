@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useI18n } from '../lib/i18n'
 import toast from 'react-hot-toast'
+import { buildAuthCallbackUrl } from '../lib/authRedirect'
 
 export default function Profile() {
   const { user, requestPasswordReset } = useAuth()
@@ -82,7 +83,7 @@ export default function Profile() {
     try {
       // For Supabase, we need to use the reset password flow for existing users
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/auth`
+        redirectTo: buildAuthCallbackUrl()
       })
       
       if (error) throw error

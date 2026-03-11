@@ -1,7 +1,7 @@
 /**
- * Tauri API Integration for Stockwise
+ * Tauri API Integration for StockWise
  * 
- * This file provides a wrapper around Tauri APIs for use in the Stockwise application.
+ * This file provides a wrapper around Tauri APIs for use in the StockWise application.
  * It includes graceful fallbacks for when running in a web browser environment.
  */
 
