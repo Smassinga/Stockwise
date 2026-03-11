@@ -9,6 +9,7 @@ import {
 import { supabase } from "../lib/supabase";
 import type { CompanyRole } from "../lib/roles";
 import type { MemberRole, MemberStatus } from "../lib/enums";
+import { withTimeout } from "../lib/withTimeout";
 import { useToast } from "./use-toast";
 
 type OrgCompany = { id: string; name: string | null };
@@ -39,6 +40,9 @@ const OrgContext = createContext<OrgState>({
 
 const LAST_COMPANY_KEY = (userId: string | undefined) =>
   `sw:lastCompanyId:${userId ?? 'anon'}`;
+
+const ORG_QUERY_TIMEOUT_MS = 8000;
+const ACTIVE_COMPANY_SYNC_TIMEOUT_MS = 6000;
 
 function statusRank(s: MemberStatus) {
   return { active: 0, invited: 1, disabled: 2 }[s] ?? 3;
@@ -78,6 +82,25 @@ async function ensureCompanyClaim(id: string | null) {
     if (refErr) console.warn("[Org] refreshSession failed:", refErr);
   } catch (e) {
     console.warn("[Org] ensureCompanyClaim failed:", e);
+  }
+}
+
+async function syncActiveCompanyContext(id: string) {
+  try {
+    await withTimeout(ensureCompanyClaim(id), ACTIVE_COMPANY_SYNC_TIMEOUT_MS, "ensureCompanyClaim");
+  } catch (e) {
+    console.warn("[Org] ensureCompanyClaim background sync failed:", e);
+  }
+
+  try {
+    const { error: rpcErr } = await withTimeout(
+      supabase.rpc("set_active_company", { p_company_id: id }),
+      ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
+      "set_active_company"
+    );
+    if (rpcErr) console.warn("[Org] set_active_company RPC failed:", rpcErr);
+  } catch (e) {
+    console.warn("[Org] set_active_company background sync failed:", e);
   }
 }
 
@@ -124,7 +147,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const resolve = async () => {
     const {
       data: { session },
-    } = await supabase.auth.getSession();
+    } = await withTimeout(supabase.auth.getSession(), ORG_QUERY_TIMEOUT_MS, "auth session lookup");
     const user = session?.user;
 
     if (!user) {
@@ -137,11 +160,23 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     }
 
     // Load memberships for the current user (explicit eq for clarity; RLS should enforce anyway)
-    const { data: mems, error: memErr } = await supabase
-      .from("company_members")
-      .select("company_id, role, status, created_at, user_id")
-      .in("status", ["active", "invited"] as MemberStatus[])
-      .or(`user_id.eq.${user.id},email.eq.${user.email}`);
+    let mems: any[] | null = null;
+    let memErr: unknown = null;
+    try {
+      const result = await withTimeout(
+        supabase
+          .from("company_members")
+          .select("company_id, role, status, created_at, user_id")
+          .in("status", ["active", "invited"] as MemberStatus[])
+          .or(`user_id.eq.${user.id},email.eq.${user.email}`),
+        ORG_QUERY_TIMEOUT_MS,
+        "company membership lookup"
+      );
+      mems = result.data ?? null;
+      memErr = result.error ?? null;
+    } catch (e) {
+      memErr = e;
+    }
 
     if (memErr) {
       console.error("[Org] load memberships:", memErr);
@@ -170,10 +205,22 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     }
 
     // company names
-    const { data: rows, error: compErr } = await supabase
-      .from("companies")
-      .select("id,name")
-      .in("id", ids);
+    let rows: Array<{ id: string; name: string | null }> | null = null;
+    let compErr: unknown = null;
+    try {
+      const result = await withTimeout(
+        supabase
+          .from("companies")
+          .select("id,name")
+          .in("id", ids),
+        ORG_QUERY_TIMEOUT_MS,
+        "company lookup"
+      );
+      rows = (result.data as Array<{ id: string; name: string | null }> | null) ?? null;
+      compErr = result.error ?? null;
+    } catch (e) {
+      compErr = e;
+    }
     if (compErr) {
       console.error("[Org] load companies:", compErr);
       toast({
@@ -183,7 +230,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    const list: OrgCompany[] = (rows ?? []).map((r) => ({
+    const list: OrgCompany[] = (rows ?? ids.map((id) => ({ id, name: null }))).map((r) => ({
       id: r.id,
       name: r.name ?? null,
     }));
@@ -215,15 +262,8 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
     if (chosen?.id) {
       localStorage.setItem(userSpecificKey, chosen.id);
-
-      // 1) Put company_id in JWT (RLS reads this first)
-      await ensureCompanyClaim(chosen.id);
-
-      // 2) Also set DB session GUC via RPC (helps pooled/server contexts)
-      const { error: rpcErr } = await supabase.rpc("set_active_company", {
-        p_company_id: chosen.id,
-      });
-      if (rpcErr) console.warn("[Org] set_active_company RPC failed:", rpcErr);
+      // Do not block route resolution on claim/RPC propagation.
+      void syncActiveCompanyContext(chosen.id);
     }
   };
 
@@ -231,6 +271,13 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await resolve();
+    } catch (e) {
+      console.error("[Org] refresh failed:", e);
+      setCompanies([]);
+      setCompanyId(null);
+      setCompanyName(null);
+      setMyRole(null);
+      setMemberStatus(null);
     } finally {
       setLoading(false);
     }
@@ -300,18 +347,26 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     setSwitching(true);
     (async () => {
       try {
-        await ensureCompanyClaim(id);
+        await withTimeout(ensureCompanyClaim(id), ACTIVE_COMPANY_SYNC_TIMEOUT_MS, "ensureCompanyClaim");
 
         // NEW: promote invited/email membership -> active user_id membership
-        const { error: acceptErr } = await supabase.rpc('accept_my_invite', {
-          p_company_id: id,
-        });
+        const { error: acceptErr } = await withTimeout(
+          supabase.rpc('accept_my_invite', {
+            p_company_id: id,
+          }),
+          ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
+          'accept_my_invite'
+        );
         if (acceptErr) console.warn('[Org] accept_my_invite failed:', acceptErr);
 
         // Existing DB session context
-        const { error: rpcErr } = await supabase.rpc('set_active_company', {
-          p_company_id: id,
-        });
+        const { error: rpcErr } = await withTimeout(
+          supabase.rpc('set_active_company', {
+            p_company_id: id,
+          }),
+          ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
+          'set_active_company'
+        );
         if (rpcErr) throw rpcErr;
         
         // After successful RPC call, also update the user-specific key

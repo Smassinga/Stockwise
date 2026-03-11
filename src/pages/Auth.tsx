@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '../components/ui/alert'
 import { Eye, EyeOff, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { supabase } from '../lib/supabase'
 import Logo from '../components/brand/Logo'
 import ThemeToggle from '../components/ThemeToggle'
@@ -100,15 +101,10 @@ export default function Auth() {
     if (!awaitingVerification?.email) return
     try {
       setResending(true)
-      // Use the same redirect URL building logic as in useAuth hook
-      const APP_ORIGIN =
-        (import.meta as any)?.env?.VITE_SITE_URL ?? window.location.origin;
-      const AUTH_CALLBACK = `${APP_ORIGIN.replace(/\/\//, "")}/auth/callback`;
-      
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: awaitingVerification.email,
-        options: { emailRedirectTo: AUTH_CALLBACK },
+        options: { emailRedirectTo: buildAuthCallbackUrl() },
       })
       if (error) toast.error(error.message)
       else toast.success('Verification email resent.')

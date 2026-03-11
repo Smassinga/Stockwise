@@ -1,16 +1,16 @@
-// src/pages/AuthCallback.tsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { Button } from '../components/ui/button'
+import { supabase } from '../lib/supabase'
+import { withTimeout } from '../lib/withTimeout'
 
-/** LocalStorage key used by /accept-invite to cache the pending token */
 const LS_INVITE_KEY = 'sw:inviteToken'
+const SESSION_LOOKUP_TIMEOUT_MS = 5000
+const AUTH_FINISH_TIMEOUT_MS = 15000
+const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
+const BEST_EFFORT_SYNC_TIMEOUT_MS = 5000
+const INVITE_REDEEM_TIMEOUT_MS = 6000
 
-/**
- * Support both PKCE magic-link (?code=...) and hash-style callbacks
- * (#access_token=...&refresh_token=...).
- */
 function parseHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
   return {
@@ -23,20 +23,24 @@ function parseHash() {
 
 export default function AuthCallback() {
   const nav = useNavigate()
-  const [msg, setMsg] = useState('Finishing sign-in…')
+  const [msg, setMsg] = useState('Finishing sign-in...')
   const [showHomeBtn, setShowHomeBtn] = useState(false)
 
   useEffect(() => {
     const run = async () => {
       try {
-        // If a session already exists (e.g., user refreshed), route immediately.
-        {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.user) {
-            await maybeRedeemInviteToken()
-            await routeByMembership(nav)
-            return
-          }
+        const {
+          data: { session },
+        } = await withTimeout(
+          supabase.auth.getSession(),
+          SESSION_LOOKUP_TIMEOUT_MS,
+          'auth callback session lookup'
+        )
+
+        if (session?.user) {
+          await maybeRedeemInviteToken()
+          await routeByMembership(nav)
+          return
         }
 
         const url = new URL(window.location.href)
@@ -50,41 +54,51 @@ export default function AuthCallback() {
           return
         }
 
-        // 1) PKCE / magic link first (?code=…)
         let authed = false
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
+          const { error } = await withTimeout(
+            supabase.auth.exchangeCodeForSession(window.location.href),
+            AUTH_FINISH_TIMEOUT_MS,
+            'magic link exchange'
+          )
           if (!error) authed = true
         }
 
-        // 2) Hash tokens fallback
         if (!authed && access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+          const { error } = await withTimeout(
+            supabase.auth.setSession({ access_token, refresh_token }),
+            AUTH_FINISH_TIMEOUT_MS,
+            'auth session restore'
+          )
           if (!error) authed = true
         }
 
-        // 3) Give up with a helpful message
         if (!authed) {
           setMsg(
-            'Could not complete sign-in. Open the link in the SAME browser/profile where you started, or resend the email and try again.'
+            'Could not complete sign-in. Open the link in the same browser/profile where you started, or resend the email and try again.'
           )
           setShowHomeBtn(true)
           return
         }
 
-        // Clean the URL (prevents refresh loops)
         try {
           const clean = `${window.location.origin}/auth/callback`
           window.history.replaceState({}, '', clean)
         } catch {}
 
-        // Best-effort: link pending invites to this user (ignore failures)
-        try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
+        try {
+          await withTimeout(
+            supabase.functions.invoke('admin-users/sync', { body: {} }),
+            BEST_EFFORT_SYNC_TIMEOUT_MS,
+            'admin user sync'
+          )
+        } catch (e) {
+          console.warn('admin user sync failed during auth callback:', e)
+        }
 
-        // If user arrived via /accept-invite then /auth, redeem the cached token now
         await maybeRedeemInviteToken()
 
-        setMsg('Signed in. Redirecting…')
+        setMsg('Signed in. Redirecting...')
         await routeByMembership(nav)
       } catch (e: any) {
         setMsg(e?.message || 'Unexpected error while finishing sign-in')
@@ -99,19 +113,20 @@ export default function AuthCallback() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
       <div className="text-center text-sm text-muted-foreground">{msg}</div>
-      {showHomeBtn && (
-        <Button onClick={() => location.assign('/auth')}>Back to sign-in</Button>
-      )}
+      {showHomeBtn && <Button onClick={() => location.assign('/auth')}>Back to sign-in</Button>}
     </div>
   )
 }
 
-/** Try to redeem a cached invite token created by /accept-invite. */
 async function maybeRedeemInviteToken() {
   const token = localStorage.getItem(LS_INVITE_KEY)
   if (!token) return
   try {
-    await supabase.rpc('accept_invite_with_token', { p_token: token })
+    await withTimeout(
+      supabase.rpc('accept_invite_with_token', { p_token: token }),
+      INVITE_REDEEM_TIMEOUT_MS,
+      'invite redeem'
+    )
   } catch (e) {
     console.warn('invite token redeem failed (callback):', (e as any)?.message || e)
   } finally {
@@ -119,25 +134,38 @@ async function maybeRedeemInviteToken() {
   }
 }
 
-/** After auth, decide where to send the user. */
 async function routeByMembership(nav: ReturnType<typeof useNavigate>) {
-  const { data: { session } } = await supabase.auth.getSession()
+  const {
+    data: { session },
+  } = await withTimeout(
+    supabase.auth.getSession(),
+    SESSION_LOOKUP_TIMEOUT_MS,
+    'membership session lookup'
+  )
   const userId = session?.user?.id
   if (!userId) {
     nav('/auth', { replace: true })
     return
   }
 
-  // Prefer active membership; if none, go to onboarding (which handles verify-gate)
-  const { data: membership } = await supabase
-    .from('company_members')
-    .select('company_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
+  try {
+    const { data: membership } = await withTimeout(
+      supabase
+        .from('company_members')
+        .select('company_id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      MEMBERSHIP_LOOKUP_TIMEOUT_MS,
+      'membership lookup'
+    )
 
-  if (membership?.company_id) nav('/dashboard', { replace: true })
-  else nav('/onboarding', { replace: true })
+    if (membership?.company_id) nav('/dashboard', { replace: true })
+    else nav('/onboarding', { replace: true })
+  } catch (e) {
+    console.warn('membership lookup failed during auth callback:', e)
+    nav('/onboarding', { replace: true })
+  }
 }

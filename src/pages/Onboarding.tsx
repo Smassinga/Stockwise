@@ -1,35 +1,51 @@
-// src/pages/Onboarding.tsx
+import { Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import toast from 'react-hot-toast'
-import { Mail } from 'lucide-react'
+import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { useI18n } from '../lib/i18n'
+import { supabase } from '../lib/supabase'
+import { withTimeout } from '../lib/withTimeout'
 
-/** LocalStorage key shared with /accept-invite and AuthCallback */
 const LS_INVITE_KEY = 'sw:inviteToken'
+const SESSION_LOOKUP_TIMEOUT_MS = 5000
+const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
+const BEST_EFFORT_SYNC_TIMEOUT_MS = 5000
+const INVITE_REDEEM_TIMEOUT_MS = 6000
+const CREATE_COMPANY_TIMEOUT_MS = 15000
 
-/** Polls for a newly-created membership to become visible through RLS. */
 async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
-  const t0 = Date.now()
-  while (Date.now() - t0 < timeoutMs) {
-    const { data: { session } } = await supabase.auth.getSession()
-    const uid = session?.user?.id
-    if (!uid) return null
-    const { data } = await supabase
-      .from('company_members')
-      .select('company_id')
-      .eq('user_id', uid)
-      .eq('status', 'active')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    const {
+      data: { session },
+    } = await withTimeout(
+      supabase.auth.getSession(),
+      SESSION_LOOKUP_TIMEOUT_MS,
+      'membership poll session lookup'
+    )
+    const userId = session?.user?.id
+    if (!userId) return null
+
+    const { data } = await withTimeout(
+      supabase
+        .from('company_members')
+        .select('company_id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      MEMBERSHIP_LOOKUP_TIMEOUT_MS,
+      'membership poll'
+    )
+
     if (data?.company_id) return data.company_id
-    await new Promise(r => setTimeout(r, stepMs))
+    await new Promise((resolve) => setTimeout(resolve, stepMs))
   }
   return null
 }
@@ -42,22 +58,30 @@ export default function Onboarding() {
   const [companyName, setCompanyName] = useState('')
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [resending, setResending] = useState(false)
+  const [startupError, setStartupError] = useState<string | null>(null)
 
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
         setLoading(true)
-        const { data: { session } } = await supabase.auth.getSession()
-        const user = session?.user
-        if (!user) { nav('/auth', { replace: true }); return }
+        setStartupError(null)
 
-        // If email not confirmed, show verify-gate here.
-        // Works for both classic email + SSO identity cases.
+        const {
+          data: { session },
+        } = await withTimeout(
+          supabase.auth.getSession(),
+          SESSION_LOOKUP_TIMEOUT_MS,
+          'onboarding session lookup'
+        )
+        const user = session?.user
+        if (!user) {
+          nav('/auth', { replace: true })
+          return
+        }
+
         const confirmed =
-          // classic field
           (user as any)?.email_confirmed_at ||
-          // some providers expose confirm on identity_data
-          user?.identities?.some?.(i => (i as any)?.identity_data?.email_confirmed_at)
+          user?.identities?.some?.((identity) => (identity as any)?.identity_data?.email_confirmed_at)
 
         if (!confirmed) {
           setUnverifiedEmail(user.email ?? 'your email')
@@ -65,36 +89,54 @@ export default function Onboarding() {
           return
         }
 
-        // Best-effort: link pending invites to this user (ignore failures)
-        try { await supabase.functions.invoke('admin-users/sync', { body: {} }) } catch {}
+        try {
+          await withTimeout(
+            supabase.functions.invoke('admin-users/sync', { body: {} }),
+            BEST_EFFORT_SYNC_TIMEOUT_MS,
+            'admin user sync'
+          )
+        } catch (e) {
+          console.warn('admin user sync failed during onboarding:', e)
+        }
 
-        // Optional: if user came via invite then verified, redeem cached token here too
         try {
           const token = localStorage.getItem(LS_INVITE_KEY)
           if (token) {
-            await supabase.rpc('accept_invite_with_token', { p_token: token })
+            await withTimeout(
+              supabase.rpc('accept_invite_with_token', { p_token: token }),
+              INVITE_REDEEM_TIMEOUT_MS,
+              'invite redeem'
+            )
             localStorage.removeItem(LS_INVITE_KEY)
           }
         } catch (e) {
           console.warn('invite token redeem failed (onboarding):', (e as any)?.message || e)
         }
 
-        // If already an active member, head to dashboard.
-        const active = await supabase
-          .from('company_members')
-          .select('company_id')
-          .eq('user_id', user.id)
-          .eq('status', 'active')
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle()
+        const active = await withTimeout(
+          supabase
+            .from('company_members')
+            .select('company_id')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle(),
+          MEMBERSHIP_LOOKUP_TIMEOUT_MS,
+          'active membership lookup'
+        )
 
-        if (active.data?.company_id) { nav('/dashboard', { replace: true }); return }
+        if (active.data?.company_id) {
+          nav('/dashboard', { replace: true })
+          return
+        }
 
         setLoading(false)
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || t('common.headsUp'))
+        const message = e?.message || t('common.headsUp')
+        setStartupError(message)
+        toast.error(message)
         setLoading(false)
       }
     })()
@@ -108,7 +150,7 @@ export default function Onboarding() {
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: unverifiedEmail,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        options: { emailRedirectTo: buildAuthCallbackUrl() },
       })
       if (error) toast.error(error.message)
       else toast.success(t('auth.toast.resetSent'))
@@ -119,20 +161,32 @@ export default function Onboarding() {
 
   async function createCompany() {
     const name = companyName.trim()
-    if (!name) { toast.error('Please enter a company name'); return }
+    if (!name) {
+      toast.error('Please enter a company name')
+      return
+    }
 
     try {
       setCreating(true)
-      const { error } = await supabase.rpc('create_company_and_bootstrap', { p_name: name })
-      if (error) { toast.error(error.message); return }
+      const { error } = await withTimeout(
+        supabase.rpc('create_company_and_bootstrap', { p_name: name }),
+        CREATE_COMPANY_TIMEOUT_MS,
+        'create company'
+      )
+      if (error) {
+        toast.error(error.message)
+        return
+      }
 
-      // Refresh auth (some RLS paths rely on fresh claims)
-      await supabase.auth.refreshSession()
+      await withTimeout(
+        supabase.auth.refreshSession(),
+        SESSION_LOOKUP_TIMEOUT_MS,
+        'refresh session'
+      )
 
-      // Wait briefly for RLS to reflect membership then go.
       setLoading(true)
-      const cid = await waitForMembership(8000, 400)
-      if (!cid) console.warn('Membership not visible yet; navigating anyway.')
+      const companyId = await waitForMembership(8000, 400)
+      if (!companyId) console.warn('Membership not visible yet; navigating anyway.')
       nav('/dashboard', { replace: true })
     } catch (e: any) {
       console.error(e)
@@ -151,12 +205,37 @@ export default function Onboarding() {
     )
   }
 
-  // Verify-email screen for unverified accounts
+  if (startupError) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <Card>
+          <CardHeader>
+            <CardTitle>Could not finish sign-in</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">{startupError}</p>
+            <p className="text-sm text-muted-foreground">
+              Authentication completed, but company membership data is temporarily unavailable.
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => window.location.reload()}>Retry</Button>
+              <Button variant="secondary" onClick={() => location.assign('/auth')}>
+                Back to sign-in
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   if (unverifiedEmail) {
     return (
       <div className="max-w-lg mx-auto">
         <Card>
-          <CardHeader><CardTitle>{t('onboarding.verifyTitle')}</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>{t('onboarding.verifyTitle')}</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               {t('onboarding.verifyDesc', { email: unverifiedEmail })}
@@ -170,24 +249,21 @@ export default function Onboarding() {
                 {t('onboarding.useDifferent')}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t('onboarding.already')}
-            </p>
+            <p className="text-xs text-muted-foreground">{t('onboarding.already')}</p>
           </CardContent>
         </Card>
       </div>
     )
   }
 
-  // Normal onboarding when verified & not yet in a company
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
-        <CardHeader><CardTitle>{t('onboarding.createCompanyTitle')}</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>{t('onboarding.createCompanyTitle')}</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {t('onboarding.notInCompany')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('onboarding.notInCompany')}</p>
           <div className="grid sm:grid-cols-3 items-end gap-3">
             <div className="sm:col-span-2">
               <Label htmlFor="companyName">{t('onboarding.companyName')}</Label>
@@ -205,7 +281,7 @@ export default function Onboarding() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            If you were invited by someone, you’ll be routed straight to their company after signing in.
+            If you were invited by someone, you&apos;ll be routed straight to their company after signing in.
           </p>
         </CardContent>
       </Card>

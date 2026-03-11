@@ -50,6 +50,7 @@ const SERVICE_ROLE_KEY       = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get(
 const DIGEST_HOOK_SECRET     = Deno.env.get("DIGEST_HOOK_SECRET") ?? "";
 const DEBUG_ACCEPT_QUERY_KEY = (Deno.env.get("DEBUG_ACCEPT_QUERY_KEY") ?? "false").toLowerCase() === "true";
 const DEBUG_LOG              = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
+const MAX_ATTEMPTS           = Number(Deno.env.get("DIGEST_MAX_ATTEMPTS") ?? "5");
 
 function supa() {
   if (!SERVICE_ROLE_KEY) throw new Error("SERVICE_ROLE_KEY not set");
@@ -201,6 +202,9 @@ function authorized(req: Request): boolean {
 }
 
 serve(async (req: Request) => {
+  let claimedJobId: number | null = null;
+  let claimedCompanyId: string | null = null;
+  let claimedAttempts = 0;
   try {
     if (!authorized(req)) {
       return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
@@ -224,22 +228,23 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, mode: DRY_RUN ? "dry" : "live", message: "no pending jobs" }), { status: 200 });
     }
 
-    const job = jobs[0] as DigestQueueRow;
-    log("[job] picked", { id: job.id, company: job.company_id });
-
     // Claim atomically
-    const { error: claimErr } = await supabase
+    const candidate = jobs[0] as DigestQueueRow;
+    const { data: job, error: claimErr } = await supabase
       .from("digest_queue")
       .update({ status: "processing" })
-      .eq("id", job.id)
-      .eq("status", "pending");
+      .eq("id", candidate.id)
+      .eq("status", "pending")
+      .select("*")
+      .maybeSingle();
     if (claimErr) return new Response(JSON.stringify({ ok: false, error: claimErr.message }), { status: 500 });
-
-    // Verify claim
-    const { data: claimed } = await supabase.from("digest_queue").select("status").eq("id", job.id).limit(1);
-    if (!claimed || claimed[0]?.status !== "processing") {
+    if (!job) {
       return new Response(JSON.stringify({ ok: true, message: "job already taken" }), { status: 200 });
     }
+    claimedJobId = job.id;
+    claimedCompanyId = job.company_id;
+    claimedAttempts = Number(job.attempts ?? 0);
+    log("[job] claimed", { id: job.id, company: job.company_id, attempts: claimedAttempts });
 
     // Build digest payload via SQL
     const { data: payload, error: rpcErr } = await supabase.rpc("build_daily_digest_payload", {
@@ -276,7 +281,7 @@ serve(async (req: Request) => {
     }
 
     await supabase.from("digest_queue")
-      .update({ status: "done", processed_at: new Date().toISOString(), error: null })
+      .update({ status: "done", processed_at: new Date().toISOString(), error: null, next_attempt_at: null })
       .eq("id", job.id);
 
     await supabase.from("company_digest_state")
@@ -288,6 +293,33 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    try {
+      if (claimedJobId !== null) {
+        const sb = supa();
+        const nextAttempts = claimedAttempts + 1;
+        const shouldFail = nextAttempts >= MAX_ATTEMPTS;
+        const backoffMinutes = Math.min(60, Math.max(2, 2 ** Math.min(nextAttempts, 6)));
+        const nextAttemptAt = new Date(Date.now() + backoffMinutes * 60_000).toISOString();
+
+        await sb.from("digest_queue")
+          .update({
+            status: shouldFail ? "failed" : "pending",
+            attempts: nextAttempts,
+            next_attempt_at: shouldFail ? null : nextAttemptAt,
+            error: msg,
+          })
+          .eq("id", claimedJobId)
+          .eq("status", "processing");
+
+        if (claimedCompanyId) {
+          await sb.from("company_digest_state")
+            .update({ last_status: "failed", last_error: msg, last_attempt_at: new Date().toISOString() })
+            .eq("company_id", claimedCompanyId);
+        }
+      }
+    } catch (recoverErr) {
+      log("[recover] failed to update digest queue", recoverErr);
+    }
     return new Response(JSON.stringify({ ok: false, error: msg }), {
       status: 500, headers: { "content-type": "application/json" },
     });

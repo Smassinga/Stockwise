@@ -8,7 +8,9 @@ import {
   type ReactNode,
 } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
+import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { supabase } from '../lib/supabase'
+import { withTimeout } from '../lib/withTimeout'
 
 export type AppUser = {
   id: string
@@ -33,24 +35,13 @@ type AuthContextValue = {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+const AUTH_REQUEST_TIMEOUT_MS = 15000
 
 function mapUser(u: User): AppUser {
   const name =
     (u.user_metadata?.name as string) ||
     (u.email ? u.email.split('@')[0] : 'User')
   return { id: u.id, email: u.email || '', name }
-}
-
-/** Build the redirect used in magic/verify emails. Must be on your allowlist. */
-function buildEmailRedirect(): string {
-  // Prefer explicit env if you set one (e.g. in Vite)
-  // VITE_SITE_URL should be like https://stockwiseapp.com
-  const env = (import.meta as any)?.env?.VITE_SITE_URL as string | undefined
-  const base =
-    (env && env.trim()) ||
-    // fallback to current origin for local dev / preview
-    window.location.origin
-  return `${base.replace(/\/$/, '')}/auth/callback`
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -67,7 +58,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     ;(async () => {
       try {
-        const { data, error } = await supabase.auth.getSession()
+        const { data, error } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_REQUEST_TIMEOUT_MS,
+          'auth session lookup'
+        )
         if (!cancelled) {
           if (error) setUser(null)
           else applySession(data.session)
@@ -94,11 +89,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, password: string) {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        AUTH_REQUEST_TIMEOUT_MS,
+        'sign in'
+      )
       if (error) return { success: false, error: error.message }
 
       // If signIn succeeds we already have a session; map the user
-      const u = data.user ?? (await supabase.auth.getUser()).data.user
+      const u =
+        data.user ??
+        (
+          await withTimeout(
+            supabase.auth.getUser(),
+            AUTH_REQUEST_TIMEOUT_MS,
+            'current user lookup'
+          )
+        ).data.user
       if (u) setUser(mapUser(u))
       return { success: true }
     } catch (e: any) {
@@ -113,14 +120,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   async function register(name: string, email: string, password: string, _role?: unknown) {
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name },
-          emailRedirectTo: buildEmailRedirect(), // must be on your Supabase allowlist
-        },
-      })
+      const { error } = await withTimeout(
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name },
+            emailRedirectTo: buildAuthCallbackUrl(), // must be on your Supabase allowlist
+          },
+        }),
+        AUTH_REQUEST_TIMEOUT_MS,
+        'sign up'
+      )
       if (error) return { success: false, error: error.message }
 
       // Do not setUser here; we want them to verify first.
@@ -132,9 +143,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function requestPasswordReset(email: string) {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: buildEmailRedirect(), // send them back to auth callback after reset
-      })
+      const { error } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: buildAuthCallbackUrl(), // send them back to auth callback after reset
+        }),
+        AUTH_REQUEST_TIMEOUT_MS,
+        'password reset'
+      )
       if (error) return { success: false, error: error.message }
       return { success: true }
     } catch (e: any) {

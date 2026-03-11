@@ -55,6 +55,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPAB
 const REMINDER_HOOK_SECRET = Deno.env.get("REMINDER_HOOK_SECRET") ?? "";
 const DEBUG_LOG            = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
 const DRY_RUN              = (Deno.env.get("DRY_RUN") ?? "false").toLowerCase() === "true";
+const MAX_ATTEMPTS         = Number(Deno.env.get("DUE_REMINDER_MAX_ATTEMPTS") ?? "8");
 
 type Lang = "en" | "pt";
 
@@ -300,6 +301,7 @@ function authorized(req: Request) {
 
 serve(async (req) => {
   let claimedJobId: number | null = null;
+  let claimedAttempts = 0;
   try {
     if (!authorized(req)) return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401 });
 
@@ -309,26 +311,27 @@ serve(async (req) => {
     // pick one eligible pending job
     const { data: jobs, error: qErr } = await sb.from("due_reminder_queue")
       .select("*")
-      .or(`and(status.eq.pending,next_attempt_at.is.null),and(status.eq.pending,next_attempt_at.lte.${nowIso})`)
+      .eq("status", "pending")
+      .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
       .order("created_at", { ascending: true })
       .limit(1);
     if (qErr) throw new Error(`queue.select: ${safeErr(qErr)}`);
     if (!jobs?.length) return new Response(JSON.stringify({ ok: true, message: "no pending jobs", mode: DRY_RUN ? "dry" : "live" }), { status: 200 });
 
-    const job = jobs[0] as QueueRow;
-    claimedJobId = job.id;
-
-    // claim
-    const { error: claimErr } = await sb.from("due_reminder_queue")
+    // claim atomically
+    const candidate = jobs[0] as QueueRow;
+    const { data: job, error: claimErr } = await sb.from("due_reminder_queue")
       .update({ status: "processing" })
-      .eq("id", job.id)
-      .eq("status", "pending");
+      .eq("id", candidate.id)
+      .eq("status", "pending")
+      .select("*")
+      .maybeSingle();
     if (claimErr) throw new Error(`queue.claim: ${safeErr(claimErr)}`);
-
-    const { data: verify } = await sb.from("due_reminder_queue").select("status").eq("id", job.id).limit(1);
-    if (!verify || verify[0]?.status !== "processing") {
+    if (!job) {
       return new Response(JSON.stringify({ ok: true, message: "job already taken" }), { status: 200 });
     }
+    claimedJobId = job.id;
+    claimedAttempts = Number(job.attempts ?? 0);
 
     const leadDays = job.payload?.lead_days?.length ? job.payload.lead_days : [3,1,0,-3];
     const { data: batch, error: rpcErr } = await sb.rpc("build_due_reminder_batch", {
@@ -373,7 +376,7 @@ serve(async (req) => {
 
     if (!b?.reminders?.length) {
       await sb.from("due_reminder_queue")
-        .update({ status: "done", processed_at: new Date().toISOString() })
+        .update({ status: "done", processed_at: new Date().toISOString(), next_attempt_at: null })
         .eq("id", job.id);
       return new Response(JSON.stringify({ ok: true, message: "no reminders for window" }), { status: 200 });
     }
@@ -454,7 +457,7 @@ serve(async (req) => {
     }
 
     await sb.from("due_reminder_queue")
-      .update({ status: "done", processed_at: new Date().toISOString() })
+      .update({ status: "done", processed_at: new Date().toISOString(), next_attempt_at: null })
       .eq("id", job.id);
 
     return new Response(JSON.stringify({ ok: true, sent, mode: DRY_RUN ? "dry" : "live" }), { status: 200 });
@@ -462,10 +465,17 @@ serve(async (req) => {
     // best-effort: unstick
     try {
       const sb = supa();
-      const nowIso = new Date().toISOString();
       if (claimedJobId !== null) {
+        const nextAttempts = claimedAttempts + 1;
+        const shouldFail = nextAttempts >= MAX_ATTEMPTS;
+        const backoffMinutes = Math.min(60, Math.max(1, 2 ** Math.min(nextAttempts, 6)));
+        const nextAttemptAt = new Date(Date.now() + backoffMinutes * 60_000).toISOString();
         await sb.from("due_reminder_queue")
-          .update({ status: "pending", next_attempt_at: nowIso })
+          .update({
+            attempts: nextAttempts,
+            status: shouldFail ? "failed" : "pending",
+            next_attempt_at: shouldFail ? null : nextAttemptAt,
+          })
           .eq("id", claimedJobId)
           .eq("status", "processing");
       }
