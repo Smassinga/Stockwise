@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { Badge } from '../components/ui/badge'
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { getBaseCurrencyCode } from '../lib/currency'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { buildLandedCostPreview, type LandedCostMethod, type LandedCostReceiptBucket } from '../lib/landedCost'
 import { supabase } from '../lib/supabase'
 
@@ -73,21 +73,28 @@ const isMissingSchema = (error: any) => {
     || msg.includes('relation')
     || msg.includes('function')
 }
+const isPermissionDenied = (error: any) => {
+  const code = String(error?.code || '')
+  const msg = String(error?.message || '').toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  return code === '42501' || status === 403 || msg.includes('permission denied')
+}
 
 export default function LandedCostPage() {
   const { companyId } = useOrg()
   const { user } = useAuth()
   const { t, lang } = useI18n()
-  const tt = (key: string, fallback: string) => {
-    const value = t(key)
-    return value === key ? fallback : value
-  }
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const [loading, setLoading] = useState(true)
   const [applying, setApplying] = useState(false)
   const [schemaReady, setSchemaReady] = useState(true)
   const [detailVersion, setDetailVersion] = useState(0)
   const [baseCurrencyCode, setBaseCurrencyCode] = useState('BASE')
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [historyAccessDenied, setHistoryAccessDenied] = useState(false)
+  const detailErrorToastRef = useRef('')
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -121,6 +128,8 @@ export default function LandedCostPage() {
       setPurchaseOrders([])
       setReceiptBuckets([])
       setHistoryRuns([])
+      setDetailError(null)
+      setHistoryAccessDenied(false)
       return
     }
 
@@ -172,12 +181,17 @@ export default function LandedCostPage() {
     if (!purchaseOrderId || !companyId) {
       setReceiptBuckets([])
       setHistoryRuns([])
+      setDetailError(null)
+      setHistoryAccessDenied(false)
       return
     }
 
     let cancelled = false
     ;(async () => {
       try {
+        setDetailError(null)
+        setHistoryAccessDenied(false)
+        detailErrorToastRef.current = ''
         const receiptRes = await supabase
           .from('stock_movements')
           .select('item_id,ref_line_id,qty_base,total_value,warehouse_to_id,bin_to_id')
@@ -212,11 +226,14 @@ export default function LandedCostPage() {
         if (runRes.error) {
           if (isMissingSchema(runRes.error)) {
             setSchemaReady(false)
+          } else if (isPermissionDenied(runRes.error)) {
+            setHistoryAccessDenied(true)
           } else {
             throw runRes.error
           }
         } else {
           setSchemaReady(true)
+          setHistoryAccessDenied(false)
           runs = (runRes.data || []) as LandedCostRun[]
         }
 
@@ -266,7 +283,15 @@ export default function LandedCostPage() {
         setHistoryRuns(runs)
       } catch (error: any) {
         console.error(error)
-        if (!cancelled) toast.error(error?.message || tt('landedCost.prefillFailed', 'Failed to load the purchase order receipts'))
+        if (!cancelled) {
+          const message = error?.message || tt('landedCost.prefillFailed', 'Failed to load the purchase order receipts')
+          setDetailError(message)
+          const errorKey = `${purchaseOrderId}:${String(error?.code || '')}:${message}`
+          if (detailErrorToastRef.current !== errorKey) {
+            toast.error(message)
+            detailErrorToastRef.current = errorKey
+          }
+        }
       }
     })()
 
@@ -397,6 +422,14 @@ export default function LandedCostPage() {
         <Card className="border-dashed border-amber-400/60 bg-amber-50/40 shadow-none dark:bg-amber-500/10">
           <CardContent className="p-4 text-sm text-muted-foreground">
             {tt('landedCost.migrationHint', 'Posting is disabled until the landed cost migration is applied. Preview remains available, but inventory revaluation will not post yet.')}
+          </CardContent>
+        </Card>
+      )}
+
+      {detailError && (
+        <Card className="border-dashed border-rose-400/60 bg-rose-50/40 shadow-none dark:bg-rose-500/10">
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            {detailError}
           </CardContent>
         </Card>
       )}
@@ -582,6 +615,11 @@ export default function LandedCostPage() {
               <CardDescription>{tt('landedCost.historyHelp', 'Every posted landed cost run keeps a PO-level audit trail with the applied and unapplied value split.')}</CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
+              {historyAccessDenied && (
+                <div className="mb-4 rounded-xl border border-dashed border-amber-400/60 bg-amber-50/40 p-3 text-sm text-muted-foreground dark:bg-amber-500/10">
+                  {tt('landedCost.historyAccessDenied', 'Applied-run history is temporarily unavailable for this company account. Posting still uses company-scoped permissions once the landed cost access migration is in place.')}
+                </div>
+              )}
               <table className="w-full min-w-[620px] text-sm">
                 <thead>
                   <tr className="border-b text-left">

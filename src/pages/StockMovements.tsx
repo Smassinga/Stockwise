@@ -1405,10 +1405,10 @@ export default function StockMovements() {
                 <SelectContent>
                   {movementType === 'issue' && <SelectItem value="SO">{tt('movements.refType.SO', 'SO (Sale)')}</SelectItem>}
                   {movementType === 'receive' && <SelectItem value="PO">{tt('movements.refType.PO', 'PO (Purchase)')}</SelectItem>}
-                  <SelectItem value="ADJUST">ADJUST</SelectItem>
-                  <SelectItem value="TRANSFER">TRANSFER</SelectItem>
-                  <SelectItem value="WRITE_OFF">WRITE_OFF</SelectItem>
-                  <SelectItem value="INTERNAL_USE">INTERNAL_USE</SelectItem>
+                  <SelectItem value="ADJUST">{tt('ref.adjust', 'Adjust')}</SelectItem>
+                  <SelectItem value="TRANSFER">{tt('ref.transfer', 'Transfer')}</SelectItem>
+                  <SelectItem value="WRITE_OFF">{tt('ref.writeOff', 'Write off')}</SelectItem>
+                  <SelectItem value="INTERNAL_USE">{tt('ref.internalUse', 'Internal use')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1509,10 +1509,10 @@ export default function StockMovements() {
                   <SelectItem value="ALL">{tt('filters.ref.all', 'All refs')}</SelectItem>
                   <SelectItem value="SO">SO</SelectItem>
                   <SelectItem value="PO">PO</SelectItem>
-                  <SelectItem value="ADJUST">ADJUST</SelectItem>
-                  <SelectItem value="TRANSFER">TRANSFER</SelectItem>
-                  <SelectItem value="WRITE_OFF">WRITE_OFF</SelectItem>
-                  <SelectItem value="INTERNAL_USE">INTERNAL_USE</SelectItem>
+                  <SelectItem value="ADJUST">{tt('ref.adjust', 'Adjust')}</SelectItem>
+                  <SelectItem value="TRANSFER">{tt('ref.transfer', 'Transfer')}</SelectItem>
+                  <SelectItem value="WRITE_OFF">{tt('ref.writeOff', 'Write off')}</SelectItem>
+                  <SelectItem value="INTERNAL_USE">{tt('ref.internalUse', 'Internal use')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1529,7 +1529,7 @@ export default function StockMovements() {
               </Select>
             </div>
             <div>
-              <Label>{tt('orders.warehouse', 'Warehouse')}</Label>
+              <Label>{tt('filters.warehouse.label', 'Warehouse')}</Label>
               <Select value={movementWarehouseFilter} onValueChange={setMovementWarehouseFilter}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1625,7 +1625,7 @@ export default function StockMovements() {
                               </div>
                               <div>
                                 <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.referenceTrace', 'Reference trace')}</div>
-                                <div className="mt-1 text-muted-foreground">{row.ref_type || '—'} {row.ref_id || ''}</div>
+                                <div className="mt-1 text-muted-foreground">{refLabel(row)}</div>
                               </div>
                             </div>
                           </td>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -28,6 +28,7 @@ import {
   salesOrderAmounts,
   toIsoDate,
 } from '../lib/orderFinance'
+import { buildSettlementMemo } from '../lib/orderRefs'
 
 type SalesOrder = {
   id: string
@@ -180,10 +181,8 @@ export default function SettlementsPage() {
   const { companyId, companyName } = useOrg()
   const { t, lang } = useI18n()
   const navigate = useNavigate()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
-    const value = t(key, vars)
-    return value === key ? fallback : value
-  }
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -486,11 +485,10 @@ export default function SettlementsPage() {
     setSettleMethod('cash')
     setSettleAmount(row.outstandingBase.toFixed(2))
     setSettleDate(todayISO())
-    setSettleMemo(
-      row.kind === 'SO'
-        ? tt('settlements.defaultReceiveMemo', 'Receipt for {orderNo}', { orderNo: row.orderNo })
-        : tt('settlements.defaultPayMemo', 'Payment for {orderNo}', { orderNo: row.orderNo }),
-    )
+    setSettleMemo(buildSettlementMemo(row.kind, row.orderNo, {
+      receive: tt('settlements.defaultReceiveMemo', 'Receipt for {orderNo}'),
+      pay: tt('settlements.defaultPayMemo', 'Payment for {orderNo}'),
+    }))
     setSettleBankId(banks[0]?.id || '')
   }
 

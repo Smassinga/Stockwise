@@ -15,7 +15,8 @@ import {
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../lib/roles'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
+import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 
 type Bank = {
   id: string
@@ -138,13 +139,16 @@ export default function BankDetail() {
   const { t } = useI18n()
   const { bankId: bankIdA, id: bankIdB } = useParams()
   const bankId = bankIdA ?? bankIdB
-  const { myRole } = useOrg()
+  const { myRole, companyId } = useOrg()
+  const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const canEditBank = hasRole(myRole, CanManageUsers)
 
   const [bank, setBank] = useState<Bank | null>(null)
   const [from, setFrom] = useState<string>(monthStartISO())
   const [to, setTo] = useState<string>(todayISO())
   const [rows, setRows] = useState<Tx[]>([])
+  const [orderRefByKey, setOrderRefByKey] = useState<Record<string, string>>({})
   const [onlyUnreconciled, setOnlyUnreconciled] = useState<boolean>(false)
   const [statements, setStatements] = useState<Statement[]>([])
   const [bookBalance, setBookBalance] = useState<number>(0)
@@ -203,7 +207,7 @@ export default function BankDetail() {
     loadStatements()
     loadBookBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bankId, from, to])
+  }, [bankId, from, to, onlyUnreconciled])
 
   async function loadBank() {
     const { data, error } = await supabase
@@ -228,10 +232,10 @@ export default function BankDetail() {
       }
       const { error } = await supabase.from('bank_accounts').update(payload).eq('id', bank.id)
       if (error) throw error
-      toast.success('Bank details saved')
+      toast.success(tf('bank.toast.saved', 'Bank details saved'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to save bank details (DB not ready)')
+      toast.error(e?.message || tf('bank.toast.saveFailed', 'Failed to save bank details'))
     }
   }
 
@@ -273,10 +277,17 @@ export default function BankDetail() {
       error = fallback.error
     }
     if (myReq !== latestTxReq.current) return
-    if (error) { console.warn('bank_transactions not ready:', error.message); setRows([]); return }
+    if (error) { console.warn('bank_transactions not ready:', error.message); setRows([]); setOrderRefByKey({}); return }
     let list = (data as Tx[]) || []
     if (onlyUnreconciled) list = list.filter(r => !r.reconciled)
     setRows(list)
+    try {
+      const activeCompanyId = bank?.company_id || companyId
+      setOrderRefByKey(await fetchOrderReferenceMap(supabase, activeCompanyId, list))
+    } catch (lookupError) {
+      console.warn('Failed to resolve bank transaction order references:', lookupError)
+      setOrderRefByKey({})
+    }
   }
 
   async function loadStatements() {
@@ -357,10 +368,10 @@ export default function BankDetail() {
       setStDate(todayISO()); setStClosing('0'); setStFile(null)
       await loadBookBalance()
       await loadStatements()
-      toast.success('Statement saved')
+      toast.success(tf('bank.toast.statementSaved', 'Statement saved'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Could not save statement')
+      toast.error(e?.message || tf('bank.toast.statementSaveFailed', 'Could not save statement'))
     } finally {
       setUploading(false)
     }
@@ -387,7 +398,7 @@ export default function BankDetail() {
 
   async function deleteStatement(s: Statement) {
     if (s.reconciled) {
-      toast.error('Reconciled statements cannot be deleted')
+      toast.error(tf('bank.toast.statementLocked', 'Reconciled statements cannot be deleted'))
       return
     }
     setStatements(prev => prev.filter(x => x.id !== s.id))
@@ -412,12 +423,12 @@ export default function BankDetail() {
 
   // ----- CSV import (DD/MM/YYYY) -----
   async function importCsv() {
-    if (!bankId || !csvFile) { toast.error('Choose a CSV file first'); return }
+    if (!bankId || !csvFile) { toast.error(tf('bank.toast.csvChoose', 'Choose a CSV file first')); return }
     setImporting(true)
     try {
       const text = await csvFile.text()
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-      if (lines.length === 0) { toast.error('Empty CSV'); return }
+      if (lines.length === 0) { toast.error(tf('bank.toast.csvEmpty', 'Empty CSV')); return }
 
       const delim = detectDelimiter(lines[0])
       let start = 0
@@ -438,18 +449,18 @@ export default function BankDetail() {
           reconciled: false,
         })
       }
-      if (!payload.length) { toast.error('No valid rows to import'); return }
+      if (!payload.length) { toast.error(tf('bank.toast.csvNoRows', 'No valid rows to import')); return }
 
       const { error } = await supabase.from('bank_transactions').insert(payload)
       if (error) throw error
 
-      toast.success(`Imported ${payload.length} rows`)
+      toast.success(tf('bank.toast.csvImported', 'Imported {count} rows', { count: payload.length }))
       setCsvFile(null)
       await loadTx()
       await loadBookBalance()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Import failed')
+      toast.error(e?.message || tf('bank.toast.csvImportFailed', 'Import failed'))
     } finally {
       setImporting(false)
     }
@@ -459,7 +470,7 @@ export default function BankDetail() {
   async function addTx() {
     if (!bankId) return
     const amt = Number(txAmt)
-    if (Number.isNaN(amt) || amt === 0) { toast.error('Amount must be a non-zero number'); return }
+    if (Number.isNaN(amt) || amt === 0) { toast.error(tf('bank.toast.amountNonZero', 'Amount must be a non-zero number')); return }
     setAddingTx(true)
     try {
       const { error } = await supabase.from('bank_transactions').insert({
@@ -473,10 +484,10 @@ export default function BankDetail() {
       setTxMemo(''); setTxAmt('0'); setTxDate(todayISO())
       await loadTx()
       await loadBookBalance()
-      toast.success('Transaction added')
+      toast.success(tf('bank.toast.txAdded', 'Transaction added'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to add transaction')
+      toast.error(e?.message || tf('bank.toast.txAddFailed', 'Failed to add transaction'))
     } finally {
       setAddingTx(false)
     }
@@ -506,7 +517,7 @@ export default function BankDetail() {
             type="checkbox"
             className="h-4 w-4"
             checked={onlyUnreconciled}
-            onChange={e => { setOnlyUnreconciled(e.target.checked); loadTx() }}
+            onChange={e => setOnlyUnreconciled(e.target.checked)}
           />
           <Label htmlFor="unrec">{t('bank.notReconciled')}</Label>
         </div>
@@ -523,7 +534,7 @@ export default function BankDetail() {
               value={bank?.name ?? ''}
               onChange={e => setBank(b => (b ? { ...b, name: e.target.value } : b))}
               disabled={!canEditBank}
-              placeholder="e.g., Main MZN Account"
+              placeholder={tf('banks.placeholder.nickname', 'e.g., Main MZN Account')}
             />
           </div>
 
@@ -533,7 +544,7 @@ export default function BankDetail() {
               value={bank?.bank_name ?? ''}
               onChange={e => setBank(b => (b ? { ...b, bank_name: e.target.value } : b))}
               disabled={!canEditBank}
-              placeholder="e.g., Standard Bank"
+              placeholder={tf('banks.placeholder.bankName', 'e.g., Standard Bank')}
             />
           </div>
           <div>
@@ -542,7 +553,7 @@ export default function BankDetail() {
               value={bank?.account_number ?? ''}
               onChange={e => setBank(b => (b ? { ...b, account_number: e.target.value } : b))}
               disabled={!canEditBank}
-              placeholder="########"
+              placeholder={tf('banks.placeholder.accountNumber', '########')}
             />
           </div>
           <div>
@@ -555,30 +566,30 @@ export default function BankDetail() {
             />
           </div>
           <div>
-            <Label>SWIFT</Label>
+            <Label>{t('banks.swift')}</Label>
             <Input
               value={bank?.swift ?? ''}
               onChange={e => setBank(b => (b ? { ...b, swift: e.target.value.toUpperCase() } : b))}
               disabled={!canEditBank}
-              placeholder="e.g., SBICMZMX"
+              placeholder={tf('banks.placeholder.swift', 'e.g., SBICMZMX')}
             />
           </div>
           <div>
-            <Label>NIB / BIN</Label>
+            <Label>{t('banks.nib')}</Label>
             <Input
               value={bank?.nib ?? ''}
               onChange={e => setBank(b => (b ? { ...b, nib: e.target.value } : b))}
               disabled={!canEditBank}
-              placeholder="e.g., 0003.0101.00014850100852"
+              placeholder={tf('banks.placeholder.nib', 'e.g., 0003.0101.00014850100852')}
             />
           </div>
           <div>
-            <Label>Tax number (NUIT)</Label>
+            <Label>{t('banks.taxNumber')}</Label>
             <Input
               value={bank?.tax_number ?? ''}
               onChange={e => setBank(b => (b ? { ...b, tax_number: e.target.value } : b))}
               disabled={!canEditBank}
-              placeholder="e.g., 400073414"
+              placeholder={tf('banks.placeholder.taxNumber', 'e.g., 400073414')}
             />
           </div>
 
@@ -624,11 +635,11 @@ export default function BankDetail() {
               </div>
               <div>
                 <Label>{t('bank.memo')}</Label>
-                <Input value={txMemo} onChange={e => setTxMemo(e.target.value)} placeholder="e.g., Bank fee" />
+                <Input value={txMemo} onChange={e => setTxMemo(e.target.value)} placeholder={tf('bank.placeholder.memo', 'e.g., Bank fee')} />
               </div>
               <div>
                 <Label>{t('bank.amount', { code: currency })}</Label>
-                <Input inputMode="decimal" value={txAmt} onChange={e => setTxAmt(e.target.value)} placeholder="-120.00" />
+                <Input inputMode="decimal" value={txAmt} onChange={e => setTxAmt(e.target.value)} placeholder={tf('bank.placeholder.amount', '-120.00')} />
               </div>
               <Button onClick={addTx} disabled={addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
             </div>
@@ -636,7 +647,7 @@ export default function BankDetail() {
             {/* CSV import */}
             <div className="flex items-end gap-2">
               <div>
-                <Label className="block">CSV</Label>
+                <Label className="block">{t('bank.csv.fileLabel')}</Label>
                 <Input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files?.[0] ?? null)} />
               </div>
               <Button onClick={importCsv} disabled={importing || !csvFile}>
@@ -682,7 +693,7 @@ export default function BankDetail() {
               {rows.map(r => (
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
-                  <td className="py-2 pr-3">{r.ref_type ? `${r.ref_type}${r.ref_id ? `:${r.ref_id.slice(0, 8)}…` : ''}` : t('common.dash')}</td>
+                  <td className="py-2 pr-3">{formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}</td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right">
@@ -757,7 +768,7 @@ export default function BankDetail() {
                           onClick={async () => {
                             const { error } = await supabase.from('bank_statements')
                               .update({ reconciled: !s.reconciled }).eq('id', s.id)
-                            if (error) { toast.error('Failed to toggle'); return }
+                            if (error) { toast.error(t('bank.toast.toggleFailed')); return }
                             setStatements(prev => prev.map(x => x.id === s.id ? { ...x, reconciled: !x.reconciled } : x))
                             await loadBookBalance()
                           }}

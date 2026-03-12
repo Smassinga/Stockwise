@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from '../components/ui/sheet'
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
+import { buildSettlementMemo, fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 
 type CashSummary = { beginning: number; inflows: number; outflows: number; net: number; ending: number }
 type CashTx = {
@@ -54,11 +55,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export default function CashPage() {
   const { t } = useI18n()
   const { companyId } = useOrg()
+  const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const [from, setFrom] = useState<string>(monthStartISO())
   const [to, setTo] = useState<string>(todayISO())
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [summary, setSummary] = useState<CashSummary | null>(null)
   const [rows, setRows] = useState<CashTx[]>([])
+  const [orderRefByKey, setOrderRefByKey] = useState<Record<string, string>>({})
   const [book, setBook] = useState<CashBook | null>(null)
   const [openAdd, setOpenAdd] = useState(false)
   const [savingBeg, setSavingBeg] = useState(false)
@@ -159,11 +163,18 @@ export default function CashPage() {
     if (e2) {
       console.warn('cash_ledger not ready:', e2.message)
       setRows([])
+      setOrderRefByKey({})
       return
     }
     let list = (ledger as CashTx[]) || []
     if (typeFilter !== 'all') list = list.filter((r) => r.type === typeFilter)
     setRows(list)
+    try {
+      setOrderRefByKey(await fetchOrderReferenceMap(supabase, companyId, list))
+    } catch (error) {
+      console.warn('Failed to resolve cash order references:', error)
+      setOrderRefByKey({})
+    }
   }
 
   async function loadQueue() {
@@ -199,7 +210,7 @@ export default function CashPage() {
           })
           .eq('id', book.id)
         if (error) throw error
-        toast.success('Beginning balance updated')
+        toast.success(tf('cash.toast.beginningUpdated', 'Beginning balance updated'))
       } else {
         const { data, error } = await supabase
           .from('cash_books')
@@ -212,11 +223,11 @@ export default function CashPage() {
           .single()
         if (error) throw error
         setBook(data as CashBook)
-        toast.success('Beginning balance created')
+        toast.success(tf('cash.toast.beginningCreated', 'Beginning balance created'))
       }
       await loadData()
     } catch (err: any) {
-      toast.error('Failed to save beginning balance')
+      toast.error(tf('cash.toast.beginningSaveFailed', 'Failed to save beginning balance'))
       console.error(err)
     } finally {
       setSavingBeg(false)
@@ -227,7 +238,7 @@ export default function CashPage() {
     if (!companyId) return
     const amt = Number(addForm.amount)
     if (!Number.isFinite(amt) || amt === 0) {
-      toast.error('Amount must be non-zero')
+      toast.error(tf('cash.toast.amountNonZero', 'Amount must be non-zero'))
       return
     }
 
@@ -236,11 +247,11 @@ export default function CashPage() {
     const disallowRef = addForm.refType === 'ADJ'
 
     if (needsRef && !UUID_RE.test(addForm.refId)) {
-      toast.error('Provide a valid UUID for the selected reference (SO/PO).')
+      toast.error(tf('cash.toast.invalidRefUuid', 'Provide a valid internal reference ID (UUID) for the selected order.'))
       return
     }
     if (disallowRef && addForm.refId.trim()) {
-      toast.error('Adjustments (ADJ) must not carry a reference ID.')
+      toast.error(tf('cash.toast.adjustmentNoRef', 'Adjustments (ADJ) must not carry a reference ID.'))
       return
     }
 
@@ -259,12 +270,12 @@ export default function CashPage() {
     try {
       const { error } = await supabase.from('cash_transactions').insert(payload)
       if (error) throw error
-      toast.success('Transaction added')
+      toast.success(tf('cash.toast.added', 'Transaction added'))
       setOpenAdd(false)
       setAddForm({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
       await Promise.all([loadData(), loadQueue()])
     } catch (err: any) {
-      toast.error('Could not add (check permissions)')
+      toast.error(tf('cash.toast.addFailed', 'Could not add transaction'))
       console.error(err)
     } finally {
       setSavingTx(false)
@@ -279,16 +290,24 @@ export default function CashPage() {
   function approveRow(r: QueueRow) {
     const isSO = r.kind === 'SO'
     const signedAmt = isSO ? r.suggested_amount_base : -r.suggested_amount_base
-    const memoBase = isSO ? 'Collect for' : 'Pay for'
     setAddForm({
       date: todayISO(),
       type: isSO ? 'sale_receipt' : 'purchase_payment',
       amount: String(signedAmt),
-      memo: `${memoBase} ${r.order_no}`,
+      memo: buildSettlementMemo(r.kind, r.order_no, {
+        receive: tf('cash.receiveMemo', 'Receipt for {orderNo}'),
+        pay: tf('cash.payMemo', 'Payment for {orderNo}'),
+      }),
       refType: r.kind,
       refId: r.ref_id,
     })
     setOpenAdd(true)
+  }
+
+  const cashTypeLabel = (type: CashTx['type']) => {
+    if (type === 'sale_receipt') return t('cash.saleReceipt')
+    if (type === 'purchase_payment') return t('cash.purchasePayment')
+    return t('cash.adjustment')
   }
 
   return (
@@ -352,7 +371,7 @@ export default function CashPage() {
                   <Label>{t('cash.amount', { code: baseCurrency || 'MZN' })}</Label>
                   <Input
                     inputMode="decimal"
-                    placeholder="e.g. 1500 or -450"
+                    placeholder={tf('cash.placeholder.amount', 'e.g. 1500 or -450')}
                     value={addForm.amount}
                     onChange={(e) => setAddForm((v) => ({ ...v, amount: e.target.value }))}
                   />
@@ -379,7 +398,7 @@ export default function CashPage() {
                   <div className="col-span-2">
                     <Label>{t('movements.refId')}</Label>
                     <Input
-                      placeholder="UUID"
+                      placeholder={tf('cash.placeholder.refId', 'Internal reference ID (UUID)')}
                       value={addForm.refId}
                       onChange={(e) => setAddForm((v) => ({ ...v, refId: e.target.value }))}
                     />
@@ -500,7 +519,7 @@ export default function CashPage() {
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(q.cash_posted_base)}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(q.balance_due_base)}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(q.suggested_amount_base)}</td>
-                  <td className="py-2 pr-3">{q.last_activity_at ?? '—'}</td>
+                  <td className="py-2 pr-3">{q.last_activity_at ?? t('common.dash')}</td>
                   <td className="py-2 pr-0 text-right">
                     <Button size="sm" onClick={() => approveRow(q)}>{t('cash.approve')}</Button>
                   </td>
@@ -539,8 +558,8 @@ export default function CashPage() {
               {rows.map((r) => (
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
-                  <td className="py-2 pr-3">{r.type}</td>
-                  <td className="py-2 pr-3">{r.ref_type ? `${r.ref_type}${r.ref_id ? `:${r.ref_id.slice(0, 8)}…` : ''}` : t('common.dash')}</td>
+                  <td className="py-2 pr-3">{cashTypeLabel(r.type)}</td>
+                  <td className="py-2 pr-3">{formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}</td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right font-medium">{formatMoneyBase(r.running_balance)}</td>

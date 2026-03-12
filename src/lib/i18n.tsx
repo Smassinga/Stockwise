@@ -15,6 +15,24 @@ type Ctx = {
   setLang: (next: Locale) => void
 }
 
+export function interpolateMessage(template: string, vars?: Record<string, string | number>) {
+  let s = template
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v))
+  }
+  return s
+}
+
+export function withI18nFallback(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  key: string,
+  fallback: string,
+  vars?: Record<string, string | number>,
+) {
+  const value = t(key, vars)
+  return value === key ? interpolateMessage(fallback, vars) : value
+}
+
 const I18nContext = createContext<Ctx>({
   lang: 'en',
   t: (k: string) => k,
@@ -35,8 +53,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const t = useMemo(
     () => (key: string, vars?: Record<string, string | number>) => {
       let s = (dict as any)[lang]?.[key] ?? (dict as any).en?.[key] ?? key
-      if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v))
-      return s
+      return interpolateMessage(s, vars)
     },
     [lang]
   )

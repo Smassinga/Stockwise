@@ -17,7 +17,7 @@ import {
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg' // <- source of truth for company id
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 
 type BankAccount = {
   id: string
@@ -37,6 +37,8 @@ type BalanceRow = { bank_id: string; balance_base: number }
 
 export default function Banks() {
   const { t } = useI18n()
+  const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const { companyId } = useOrg() // no changes to useOrg needed
   const [rows, setRows] = useState<BankAccount[]>([])
   const [balances, setBalances] = useState<Record<string, number>>({})
@@ -163,9 +165,8 @@ export default function Banks() {
             <SheetContent>
               <SheetHeader>
                 <SheetTitle>{t('banks.addTitle')}</SheetTitle>
-                {/* a11y: provide description so DialogContent stops warning */}
                 <SheetDescription className="sr-only">
-                  {t('actions.save')}
+                  {tf('banks.addDescription', 'Add a bank account with a nickname, account number, and currency.')}
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-3 mt-4">
@@ -189,7 +190,7 @@ export default function Banks() {
                   <Input
                     value={form.currency_code}
                     onChange={(e) => setForm((f) => ({ ...f, currency_code: e.target.value.toUpperCase() }))}
-                    placeholder={baseCurrency || 'MZN'}
+                    placeholder={tf('banks.placeholder.currencyCode', baseCurrency || 'MZN')}
                   />
                 </div>
                 <Button onClick={addBank} disabled={saving}>
@@ -220,17 +221,17 @@ export default function Banks() {
                 <div className="mb-2 text-xs text-muted-foreground space-y-1">
                   {b.swift && (
                     <div>
-                      SWIFT: <span className="font-mono">{b.swift}</span>
+                      {t('banks.swift')}: <span className="font-mono">{b.swift}</span>
                     </div>
                   )}
                   {b.nib && (
                     <div>
-                      NIB/BIN: <span className="font-mono">{b.nib}</span>
+                      {t('banks.nib')}: <span className="font-mono">{b.nib}</span>
                     </div>
                   )}
                   {b.tax_number && (
                     <div>
-                      NUIT: <span className="font-mono">{b.tax_number}</span>
+                      {t('banks.taxNumberShort')}: <span className="font-mono">{b.tax_number}</span>
                     </div>
                   )}
                 </div>
