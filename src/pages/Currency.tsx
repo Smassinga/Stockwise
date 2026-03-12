@@ -105,7 +105,7 @@ export default function CurrencyPage() {
         if (sErr) throw sErr
         const currentBase = s?.base_currency_code || 'MZN'
         setBase(currentBase)
-        setBaseCurrencyCode(currentBase)
+        setBaseCurrencyCode(currentBase, companyId)
 
         // 4) FX rates – company scoped
         const { data: fxRows, error: fxErr } = await supabase
@@ -137,7 +137,7 @@ export default function CurrencyPage() {
       if (!allowedCodes.has(base)) return toast.error('Base currency must be enabled for this company')
       const { error } = await supabase.rpc('set_base_currency_for_current_company', { p_code: base })
       if (error) throw error
-      setBaseCurrencyCode(base)
+      setBaseCurrencyCode(base, companyId)
       toast.success('Base currency saved for this company')
     } catch (e: any) {
       console.error(e)

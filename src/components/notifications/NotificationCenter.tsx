@@ -62,7 +62,7 @@ export function NotificationCenter() {
       setLoading(true)
       let q = supabase
         .from('notifications')
-        .select('*')
+        .select('id,title,body,created_at,read_at,action_url,user_id,company_id')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
         .limit(50)
@@ -180,8 +180,6 @@ export function NotificationCenter() {
 
   useEffect(() => {
     fetchLatest()
-    const t = setInterval(fetchLatest, 60_000)
-    return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, userId])
 

@@ -4,14 +4,15 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useI18n } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Button } from '../components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet'
+import { Badge } from '../components/ui/badge'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 
 // per-icon imports to avoid lucide bundle resolution issues
-import { Package, DollarSign, Coins, AlertTriangle, TrendingUp, TrendingDown, Calendar } from 'lucide-react'
+import { Package, DollarSign, Coins, AlertTriangle, TrendingUp, TrendingDown, Calendar, Building2, ArrowUpRight } from 'lucide-react'
 
 type Item = { id: string; name: string; sku: string; minStock?: number | null }
 type StockRow = { id: string; item_id: string; warehouse_id: string; bin_id: string | null; qty: number | null; avg_cost: number | null; updated_at?: string | null }
@@ -62,7 +63,6 @@ type MovementCostRow = {
 }
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
-const withinWindow = (iso: string | null | undefined, sinceMs: number) => !!iso && new Date(iso).getTime() >= sinceMs
 const shippedLike = (s: string) => ['shipped', 'completed', 'delivered', 'closed'].includes(String(s).toLowerCase())
 
 // tiny i18n fallback helper (avoids showing raw keys)
@@ -91,14 +91,16 @@ const movementCost = (mv?: MovementCostRow, fallbackQty?: number | null) => {
 
 export default function Dashboard() {
   const { t, lang } = useI18n()
-  const { companyId } = useOrg()
+  const { companyId, companyName } = useOrg()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => withFallback(t, key, fallback, vars)
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
+  const [windowLoading, setWindowLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [baseCode, setBaseCode] = useState<string>('MZN')
+  const money = (amount: number) => formatMoneyBase(amount, baseCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')
 
   // filters
   const [windowDays, setWindowDays] = useState<number>(30)
@@ -138,14 +140,15 @@ export default function Dashboard() {
         if (!companyId) {
           // no company yet -> empty state
           setWarehouses([]); setItems([]); setStock([]); setMoves([]); setSOs([]); setSOL([])
-          setBaseCode((await getBaseCurrencyCode()) || 'MZN')
+          setShipmentsWin([]); setMvByIdWin(new Map())
+          setBaseCode('MZN')
           return
         }
 
-        const base = await getBaseCurrencyCode()
+        const base = await getBaseCurrencyCode(companyId)
 
         // All reads explicitly fenced by company_id
-        const [whRes, itRes, slRes, mvRes, soRes] = await Promise.all([
+        const [whRes, itRes, slRes, mvRes] = await Promise.all([
           supabase.from('warehouses').select('id,name').eq('company_id', companyId).order('name', { ascending: true }),
           // IMPORTANT: base table + snake_case column
           supabase.from('items').select('id,sku,name,min_stock').eq('company_id', companyId),
@@ -155,15 +158,8 @@ export default function Dashboard() {
             .select('id,item_id,qty_base,type,created_at,unit_cost,total_value,warehouse_from_id,warehouse_to_id,ref_type,ref_id,ref_line_id')
             .eq('company_id', companyId)
             .order('created_at', { ascending: false })
-            .limit(2000),
-          supabase.from('sales_orders').select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at').eq('company_id', companyId),
+            .limit(5),
         ])
-
-        const { data: lineRows, error: lineErr } = await supabase
-          .from('sales_order_lines')
-          .select('so_id,item_id,uom_id,qty,unit_price,line_total')
-          .eq('company_id', companyId)
-        if (lineErr) throw lineErr
 
         if (!cancelled) {
           setBaseCode(base || 'MZN')
@@ -176,8 +172,6 @@ export default function Dashboard() {
           })))
           setStock((slRes.data || []) as StockRow[])
           setMoves((mvRes.data || []) as MovementRow[])
-          setSOs((soRes.data || []) as SO[])
-          setSOL((lineRows || []) as SOL[])
           if (!whRes.data?.length) setWarehouseId('ALL')
         }
       } catch (e: any) {
@@ -192,65 +186,113 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [companyId])
 
-  // ----- filter helpers
-  const now = Date.now()
-  const since = now - windowDays * 24 * 60 * 60 * 1000
+  const windowStartMs = useMemo(() => Date.now() - windowDays * 24 * 60 * 60 * 1000, [windowDays])
+  const windowStartISO = useMemo(() => new Date(windowStartMs).toISOString(), [windowStartMs])
 
-  // --- NEW: fetch shipments inside the KPI window + their SO/issue movements
+  // Window-scoped reads for KPIs, top products, and the daily sheet.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      if (!companyId) { setShipmentsWin([]); setMvByIdWin(new Map()); return }
-
-      const startISO = new Date(since).toISOString()
-      const endISO = new Date().toISOString()
+      if (!companyId) {
+        setSOs([])
+        setSOL([])
+        setShipmentsWin([])
+        setMvByIdWin(new Map())
+        return
+      }
 
       try {
-        // 1) shipments for this company within window
-        const { data: shipRows, error: shipErr } = await supabase
-          .from('sales_shipments')
-          .select('id,so_id,item_id,qty_base,created_at,company_id,movement_id')
-          .eq('company_id', companyId)
-          .gte('created_at', startISO)
-          .lte('created_at', endISO)
-        if (shipErr) throw shipErr
-        const ships = (shipRows || []) as ShipmentRowDash[]
+        setWindowLoading(true)
+        const windowEndISO = new Date().toISOString()
 
-        // 2) fetch ONLY the movements they link to (SO issues)
+        const [updatedOrdersRes, createdOrdersRes, shipRowsRes] = await Promise.all([
+          supabase
+            .from('sales_orders')
+            .select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at')
+            .eq('company_id', companyId)
+            .gte('updated_at', windowStartISO),
+          supabase
+            .from('sales_orders')
+            .select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at')
+            .eq('company_id', companyId)
+            .is('updated_at', null)
+            .gte('created_at', windowStartISO),
+          supabase
+            .from('sales_shipments')
+            .select('id,so_id,item_id,qty_base,created_at,company_id,movement_id')
+            .eq('company_id', companyId)
+            .gte('created_at', windowStartISO)
+            .lte('created_at', windowEndISO),
+        ])
+
+        if (updatedOrdersRes.error) throw updatedOrdersRes.error
+        if (createdOrdersRes.error) throw createdOrdersRes.error
+        if (shipRowsRes.error) throw shipRowsRes.error
+
+        const mergedOrders = new Map<string, SO>()
+        for (const order of (updatedOrdersRes.data || []) as SO[]) mergedOrders.set(order.id, order)
+        for (const order of (createdOrdersRes.data || []) as SO[]) mergedOrders.set(order.id, order)
+
+        const shippedOrders = Array.from(mergedOrders.values()).filter(order => shippedLike(order.status))
+        const ships = (shipRowsRes.data || []) as ShipmentRowDash[]
+        const soIds = shippedOrders.map(order => order.id)
         const mvIds = Array.from(new Set(ships.map(s => s.movement_id).filter(Boolean))) as string[]
         const mvMap = new Map<string, MovementCostRow>()
-        if (mvIds.length) {
-          const { data: mvRows, error: mvErr } = await supabase
-            .from('stock_movements')
-            .select('id,qty_base,unit_cost,total_value,ref_type,type,company_id')
-            .in('id', mvIds)
-            .eq('company_id', companyId)
-            .eq('ref_type', 'SO')
-            .eq('type', 'issue')
-          if (mvErr) throw mvErr
-          for (const r of (mvRows || []) as MovementCostRow[]) mvMap.set(r.id, r)
-        }
+        const [lineRowsRes, mvRowsRes] = await Promise.all([
+          soIds.length
+            ? supabase
+                .from('sales_order_lines')
+                .select('so_id,item_id,uom_id,qty,unit_price,line_total')
+                .eq('company_id', companyId)
+                .in('so_id', soIds)
+            : Promise.resolve({ data: [], error: null }),
+          mvIds.length
+            ? supabase
+                .from('stock_movements')
+                .select('id,qty_base,unit_cost,total_value,ref_type,type,company_id')
+                .in('id', mvIds)
+                .eq('company_id', companyId)
+                .eq('ref_type', 'SO')
+                .eq('type', 'issue')
+            : Promise.resolve({ data: [], error: null }),
+        ])
 
-        if (!cancelled) { setShipmentsWin(ships); setMvByIdWin(mvMap) }
-      } catch (e) {
+        if (lineRowsRes.error) throw lineRowsRes.error
+        if (mvRowsRes.error) throw mvRowsRes.error
+
+        for (const movement of (mvRowsRes.data || []) as MovementCostRow[]) mvMap.set(movement.id, movement)
+
+        if (!cancelled) {
+          setSOs(shippedOrders)
+          setSOL((lineRowsRes.data || []) as SOL[])
+          setShipmentsWin(ships)
+          setMvByIdWin(mvMap)
+        }
+      } catch (e: any) {
         console.error(e)
-        if (!cancelled) { setShipmentsWin([]); setMvByIdWin(new Map()) }
+        if (!cancelled) {
+          setError(e?.message || 'Failed to refresh dashboard metrics')
+          setSOs([])
+          setSOL([])
+          setShipmentsWin([])
+          setMvByIdWin(new Map())
+        }
+      } finally {
+        if (!cancelled) setWindowLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [companyId, since, windowDays])
+  }, [companyId, windowStartISO])
 
   // stock filtered by warehouse
   const stockFiltered = useMemo(() => (warehouseId === 'ALL' ? stock : stock.filter(r => r.warehouse_id === warehouseId)), [stock, warehouseId])
 
   // Inventory value
   const inventoryValue = useMemo(() => stockFiltered.reduce((s, r) => s + num(r.qty) * num(r.avg_cost), 0), [stockFiltered])
+  const inventoryUnits = useMemo(() => stockFiltered.reduce((s, r) => s + num(r.qty), 0), [stockFiltered])
 
-  // Shipped SOs in window and FX
-  const shippedInWindow = useMemo(
-    () => new Set(sos.filter(s => shippedLike(s.status) && withinWindow(s.updated_at ?? s.created_at ?? null, since)).map(s => s.id)),
-    [sos, since]
-  )
+  // Shipped SOs in the active window and FX
+  const shippedInWindow = useMemo(() => new Set(sos.map(s => s.id)), [sos])
   const fxBySO = useMemo(() => {
     const m = new Map<string, number>()
     for (const s of sos) m.set(s.id, num(s.fx_to_base, 1))
@@ -303,6 +345,8 @@ export default function Dashboard() {
   // Gross margin
   const grossMargin = revenueWindow - cogsWindow
   const grossMarginPct = revenueWindow > 0 ? (grossMargin / revenueWindow) : 0
+  const hasRevenueData = revenueWindow > 0 || shippedInWindow.size > 0
+  const hasShipmentData = cogsWindow > 0 || shipmentsWin.length > 0
 
   // Low stock list
   const lowStock = useMemo(() => {
@@ -310,9 +354,24 @@ export default function Dashboard() {
     for (const r of stockFiltered) totals.set(r.item_id, (totals.get(r.item_id) || 0) + num(r.qty))
     return items
       .filter(i => typeof i.minStock === 'number')
-      .map(i => ({ item: i, onHand: totals.get(i.id) || 0, min: Number(i.minStock) }))
+      .map(i => {
+        const onHand = totals.get(i.id) || 0
+        const min = Number(i.minStock)
+        const ratio = min > 0 ? onHand / min : 1
+        return {
+          item: i,
+          onHand,
+          min,
+          shortage: Math.max(0, min - onHand),
+          severity: onHand <= 0 ? 'critical' : ratio <= 0.5 ? 'high' : 'medium',
+        }
+      })
       .filter(x => x.onHand < x.min)
-      .slice(0, 5)
+      .sort((a, b) => {
+        const order = { critical: 0, high: 1, medium: 2 }
+        return order[a.severity as keyof typeof order] - order[b.severity as keyof typeof order] || b.shortage - a.shortage
+      })
+      .slice(0, 6)
   }, [items, stockFiltered])
 
   // ---------- Top Products by GM (shipment-linked costs) ----------
@@ -320,10 +379,11 @@ export default function Dashboard() {
     // revenue distribution (same logic as before)
     const lineRevBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> rev)
     const linesRevSO = new Map<string, number>()                    // soId -> rev sum
+    const shippedSet = new Set(sos.map(s => s.id))
     for (const l of sol) {
       const soId = l.so_id
       if (!soId) continue
-      if (!sos.find(s => s.id === soId && shippedLike(s.status))) continue
+      if (!shippedSet.has(soId)) continue
       const fx = fxBySO.get(soId) ?? 1
       const r = num(l.line_total) * fx
       if (!lineRevBySOItem.has(soId)) lineRevBySOItem.set(soId, new Map())
@@ -348,7 +408,6 @@ export default function Dashboard() {
 
     // per-item revenue allocation (unchanged, but can fall back to cost weights)
     const perItemRevenue = new Map<string, number>()
-    const shippedSet = new Set(sos.filter(s => shippedLike(s.status)).map(s => s.id))
     for (const soId of shippedSet) {
       const orderRev = revenueBaseBySO.get(soId) || 0
       if (orderRev <= 0) continue
@@ -410,13 +469,13 @@ export default function Dashboard() {
       const y = new Date(d).getFullYear()
       if (!Number.isNaN(y)) set.add(y)
     }
-    for (const m of moves) {
-      const y = new Date(m.created_at).getFullYear()
+    for (const shipment of shipmentsWin) {
+      const y = new Date(shipment.created_at).getFullYear()
       if (!Number.isNaN(y)) set.add(y)
     }
     const arr = Array.from(set).sort((a, b) => a - b)
     return arr.length ? arr : [nowDate.getFullYear()]
-  }, [sos, moves])
+  }, [sos, shipmentsWin, nowDate])
 
   // month days without UTC shift
   const monthDaysISO = useMemo(() => {
@@ -486,10 +545,9 @@ export default function Dashboard() {
     }))
   }, [sos, revenueBaseBySO, shipmentsWin, mvByIdWin, dailyYear, dailyMonth, monthDaysISO])
 
-  // recent movements (5)
-  const recentMoves = useMemo(() => moves.slice(0, 5), [moves])
+  const recentMoves = moves
 
-  if (loading) {
+  if (loading || (windowLoading && !sos.length && !shipmentsWin.length)) {
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">{t('dashboard.title')}</h1>
@@ -523,331 +581,453 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h1 className="text-2xl sm:text-3xl font-bold">{t('dashboard.title')}</h1>
-
-        <div className="flex flex-wrap gap-2">
-          {/* Date window (KPIs/top products) */}
-          <div className="w-full sm:w-40">
-            <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))}>
-              <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.window.label')} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="30">{t('window.30')}</SelectItem>
-                <SelectItem value="60">{t('window.60')}</SelectItem>
-                <SelectItem value="90">{t('window.90')}</SelectItem>
-                <SelectItem value="180">{t('window.180')}</SelectItem>
-              </SelectContent>
-            </Select>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/5 px-2.5 py-1 text-primary">
+                <Building2 className="h-3.5 w-3.5" />
+                <span className="truncate">{companyName || tt('company.selectCompany', 'Company')}</span>
+              </Badge>
+              <Badge variant="outline" className="px-2.5 py-1">
+                {tt('filters.warehouse.label', 'Warehouse')}: {warehouseId === 'ALL' ? t('filters.warehouse.all') : warehouses.find(w => w.id === warehouseId)?.name || tt('filters.warehouse.label', 'Warehouse')}
+              </Badge>
+              {windowLoading && (
+                <Badge variant="outline" className="px-2.5 py-1 text-primary">
+                  {tt('common.refresh', 'Refreshing')}...
+                </Badge>
+              )}
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('dashboard.title')}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tt('dashboard.subtitle', 'Operational overview for the active company, time window, and warehouse selection.')}
+              </p>
+            </div>
           </div>
+        </div>
 
-          {/* Warehouse filter */}
-          <div className="w-full sm:w-56">
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
-              <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.warehouse.label')} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">{t('filters.warehouse.all')}</SelectItem>
-                {warehouses.map(w => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{tt('reports.filters', 'Filters')}</CardTitle>
+            <CardDescription>
+              {tt('dashboard.filtersHelp', 'Adjust the date window and warehouse without losing context. The daily breakdown follows the current window.')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            {/* Date window (KPIs/top products) */}
+            <div className="w-full sm:w-40">
+              <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))} disabled={windowLoading}>
+                <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.window.label')} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">{t('window.30')}</SelectItem>
+                  <SelectItem value="60">{t('window.60')}</SelectItem>
+                  <SelectItem value="90">{t('window.90')}</SelectItem>
+                  <SelectItem value="180">{t('window.180')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Daily sheet */}
-          <Sheet open={dailyOpen} onOpenChange={setDailyOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" className="w-full sm:w-auto">
-                <Calendar className="w-4 h-4 mr-2" />
-                {t('daily.button')}
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-              <SheetHeader className="px-4 md:px-0 pt-4 md:pt-0">
-                <SheetTitle>{t('daily.title')}</SheetTitle>
-                <SheetDescription className="sr-only">{t('daily.desc')}</SheetDescription>
-              </SheetHeader>
+            {/* Warehouse filter */}
+            <div className="w-full sm:w-56">
+              <Select value={warehouseId} onValueChange={setWarehouseId}>
+                <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.warehouse.label')} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{t('filters.warehouse.all')}</SelectItem>
+                  {warehouses.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-              {/* Date controls */}
-              <div className="px-4 md:px-0 mt-2 mb-4 flex flex-wrap items-center gap-2">
-                <div className="w-full sm:w-48">
-                  <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
-                    <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 12 }).map((_, i) => (
-                        <SelectItem key={i} value={String(i)} className="capitalize">
-                          {monthName(i)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-full sm:w-32">
-                  <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
-                    <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
-                    <SelectContent>
-                      {availableYears.map(y => (
-                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    const d = new Date()
-                    setDailyYear(d.getFullYear())
-                    setDailyMonth(d.getMonth())
-                  }}
-                  className="w-full sm:w-auto"
-                >
-                  {tt('common.thisMonth', 'This month')}
+            {/* Daily sheet */}
+            <Sheet open={dailyOpen} onOpenChange={setDailyOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" className="w-full sm:w-auto">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  {t('daily.button')}
                 </Button>
-              </div>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+                <SheetHeader className="px-4 md:px-0 pt-4 md:pt-0">
+                  <SheetTitle>{t('daily.title')}</SheetTitle>
+                  <SheetDescription>{tt('daily.desc', 'Daily totals for the selected window')}</SheetDescription>
+                </SheetHeader>
 
-              {/* SCROLLABLE daily table */}
-              <div className="mt-2 px-4 md:px-0">
-                <div className="max-h-[360px] overflow-auto overscroll-contain rounded-md border">
-                  <div className="min-w-[560px] md:min-w-0 overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left border-b">
-                          <th className="py-2 pr-2">{t('table.date')}</th>
-                          <th className="py-2 pr-2">{t('table.revenue')}</th>
-                          <th className="py-2 pr-2">{t('table.cogs')}</th>
-                          <th className="py-2 pr-2">{t('table.grossMargin')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dailyRows.map(r => (
-                          <tr key={r.date} className="border-b">
-                            <td className="py-2 pr-2">{r.date}</td>
-                            <td className="py-2 pr-2">{formatMoneyBase(r.revenue, baseCode)}</td>
-                            <td className="py-2 pr-2">{formatMoneyBase(r.cogs, baseCode)}</td>
-                            <td className="py-2 pr-2">{formatMoneyBase(r.revenue - r.cogs, baseCode)}</td>
-                          </tr>
+                {/* Date controls */}
+                <div className="px-4 md:px-0 mt-2 mb-4 flex flex-wrap items-center gap-2">
+                  <div className="w-full sm:w-48">
+                    <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
+                      <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 12 }).map((_, i) => (
+                          <SelectItem key={i} value={String(i)} className="capitalize">
+                            {monthName(i)}
+                          </SelectItem>
                         ))}
-                      </tbody>
-                    </table>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-full sm:w-32">
+                    <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
+                      <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
+                      <SelectContent>
+                        {availableYears.map(y => (
+                          <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      const d = new Date()
+                      setDailyYear(d.getFullYear())
+                      setDailyMonth(d.getMonth())
+                    }}
+                    className="w-full sm:w-auto"
+                  >
+                    {tt('common.thisMonth', 'This month')}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
+                  </span>
+                </div>
+
+                {/* SCROLLABLE daily table */}
+                <div className="mt-2 px-4 md:px-0">
+                  <div className="max-h-[360px] overflow-auto overscroll-contain rounded-md border">
+                    <div className="min-w-[560px] md:min-w-0 overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left border-b">
+                            <th className="py-2 pr-2">{t('table.date')}</th>
+                            <th className="py-2 pr-2">{t('table.revenue')}</th>
+                            <th className="py-2 pr-2">{t('table.cogs')}</th>
+                            <th className="py-2 pr-2">{t('table.grossMargin')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dailyRows.map(r => (
+                            <tr key={r.date} className="border-b">
+                              <td className="py-2 pr-2">{r.date}</td>
+                              <td className="py-2 pr-2">{money(r.revenue)}</td>
+                              <td className="py-2 pr-2">{money(r.cogs)}</td>
+                              <td className="py-2 pr-2">{money(r.revenue - r.cogs)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
+              </SheetContent>
+            </Sheet>
+          </CardContent>
+        </Card>
       </div>
 
       {error && (
-        <Card>
+        <Card className="border-red-200 bg-red-50/70 shadow-sm dark:border-red-500/30 dark:bg-red-500/10">
           <CardHeader><CardTitle>{t('common.headsUp')}</CardTitle></CardHeader>
           <CardContent><p className="text-sm text-red-600">{error}</p></CardContent>
         </Card>
       )}
 
-      {/* KPI row - responsive grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-sky-50 to-transparent">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Chip className="bg-sky-100 text-sky-700"><Package size={18} /></Chip>
-              <span className="text-sm sm:text-base">{t('kpi.inventoryValue.title')}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl font-semibold">
-              {formatMoneyBase(inventoryValue, baseCode)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
-              {t('kpi.inventoryValue.help')}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.executiveSection', 'Executive KPIs')}</h2>
+          <p className="text-sm text-muted-foreground">
+            {tt('dashboard.executiveHelp', 'Primary metrics remain compact, while the supporting text clarifies what drives each number.')}
+          </p>
+        </div>
 
-        <Card className="bg-gradient-to-br from-emerald-50 to-transparent">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Chip className="bg-emerald-100 text-emerald-700"><DollarSign size={18} /></Chip>
-              <span className="text-sm sm:text-base">{t('kpi.revenue.title', { days: windowDays })}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl font-semibold">
-              {formatMoneyBase(revenueWindow, baseCode)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
-              {t('kpi.revenue.help')}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.inventoryValue.title')}</CardDescription>
+                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(inventoryValue)}</CardTitle>
+                </div>
+                <Chip className="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Package size={18} /></Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="text-sm font-medium">
+                {lowStock.length
+                  ? tt('dashboard.inventoryAttention', '{count} items are below minimum stock.', { count: lowStock.length })
+                  : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.')}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {inventoryUnits.toLocaleString(lang === 'pt' ? 'pt-MZ' : 'en-MZ')} {tt('dashboard.inventoryUnits', 'units on hand')} • {t('kpi.inventoryValue.help')}
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card className="bg-gradient-to-br from-amber-50 to-transparent">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Chip className="bg-amber-100 text-amber-700"><Coins size={18} /></Chip>
-              <span className="text-sm sm:text-base">{t('kpi.cogs.title', { days: windowDays })}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl font-semibold">
-              {formatMoneyBase(cogsWindow, baseCode)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
-              {t('kpi.cogs.help')}
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.revenue.title', { days: windowDays })}</CardDescription>
+                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(revenueWindow)}</CardTitle>
+                </div>
+                <Chip className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"><DollarSign size={18} /></Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="text-sm font-medium">
+                {hasRevenueData
+                  ? tt('dashboard.revenueOrders', '{count} finalized orders contributed to revenue.', { count: shippedInWindow.size })
+                  : tt('dashboard.revenueEmpty', 'No finalized sales are available in the selected window.')}
+              </div>
+              <div className="text-xs text-muted-foreground">{t('kpi.revenue.help')}</div>
+            </CardContent>
+          </Card>
 
-        <Card className="bg-gradient-to-br from-indigo-50 to-transparent">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Chip className={grossMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}>
-                {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-              </Chip>
-              <span className="text-sm sm:text-base">{t('kpi.grossMargin.title')}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl font-semibold">
-              {formatMoneyBase(grossMargin, baseCode)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
-              {revenueWindow > 0 ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}` : t('common.dash')}
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.cogs.title', { days: windowDays })}</CardDescription>
+                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(cogsWindow)}</CardTitle>
+                </div>
+                <Chip className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><Coins size={18} /></Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="text-sm font-medium">
+                {hasShipmentData
+                  ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsWin.length })
+                  : tt('dashboard.cogsEmpty', 'No shipped issue movements were found in the selected window.')}
+              </div>
+              <div className="text-xs text-muted-foreground">{t('kpi.cogs.help')}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.grossMargin.title')}</CardDescription>
+                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(grossMargin)}</CardTitle>
+                </div>
+                <Chip className={grossMargin >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'}>
+                  {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                </Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className={`text-sm font-medium ${grossMargin < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>
+                {revenueWindow > 0
+                  ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`
+                  : tt('dashboard.marginEmpty', 'Margin will appear once revenue posts in the selected window.')}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {grossMargin >= 0
+                  ? tt('dashboard.marginPositive', 'Revenue remains ahead of COGS in the active window.')
+                  : tt('dashboard.marginNegative', 'COGS is currently higher than revenue in the active window.')}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      {/* Low stock */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
-            <span className="text-lg">{t('lowStock.title')} {warehouseId !== 'ALL' ? t('lowStock.warehouseOnly') : ''}</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {lowStock.length === 0 ? (
-            <p className="text-muted-foreground">{t('lowStock.empty')}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.actionSection', 'Action needed')}</h2>
+          <p className="text-sm text-muted-foreground">
+            {lowStock.length
+              ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
+              : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.')}
+          </p>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  <span>{t('lowStock.title')}</span>
+                </CardTitle>
+                <CardDescription>
+                  {warehouseId !== 'ALL'
+                    ? `${t('lowStock.warehouseOnly')} ${warehouses.find(w => w.id === warehouseId)?.name || ''}`
+                    : tt('dashboard.lowStockHelp', 'Items shown here are below their configured minimum stock level.')}
+                </CardDescription>
+              </div>
+              <Badge variant="outline" className="w-fit px-2.5 py-1">
+                {lowStock.length} {tt('dashboard.itemsLabel', 'items')}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              {lowStock.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {tt('dashboard.lowStockClear', 'Everything in the current view is at or above minimum stock.')}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left border-b">
+                        <th className="py-2 pr-2">{t('table.item')}</th>
+                        <th className="py-2 pr-2">{t('table.sku')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.onHand')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.minStock')}</th>
+                        <th className="py-2 pr-2 text-right">{tt('dashboard.shortfall', 'Shortfall')}</th>
+                        <th className="py-2 pr-2">{tt('dashboard.urgency', 'Urgency')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lowStock.map(({ item, onHand, min, shortage, severity }) => (
+                        <tr key={item.id} className="border-b">
+                          <td className="py-2 pr-2 max-w-[180px] truncate font-medium">{item.name}</td>
+                          <td className="py-2 pr-2">{item.sku}</td>
+                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{onHand}</td>
+                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{min}</td>
+                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{shortage}</td>
+                          <td className="py-2 pr-2">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                severity === 'critical'
+                                  ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+                                  : severity === 'high'
+                                    ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+                                    : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+                              }`}
+                            >
+                              {severity === 'critical'
+                                ? tt('dashboard.urgencyCritical', 'Out of stock')
+                                : severity === 'high'
+                                  ? tt('dashboard.urgencyHigh', 'Critical')
+                                  : tt('dashboard.urgencyMedium', 'Low')}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-lg">{t('recentMovements.title')}</CardTitle>
+                  <CardDescription>
+                    {tt('dashboard.recentActivityHelp', 'The latest warehouse activity helps confirm that the tenant and warehouse context are aligned.')}
+                  </CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => navigate('/transactions')} className="w-full sm:w-auto">
+                  <ArrowUpRight className="mr-2 h-4 w-4" />
+                  {tt('recentMovements.all', 'All Transactions')}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {recentMoves.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('recentMovements.empty')}</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left border-b">
+                        <th className="py-2 pr-2">{t('table.date')}</th>
+                        <th className="py-2 pr-2">{t('table.type')}</th>
+                        <th className="py-2 pr-2">{t('table.item')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.qtyBase')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.value')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentMoves.map(m => {
+                        const it = itemById.get(m.item_id)
+                        const label = it ? `${it.name} (${it.sku})` : m.item_id
+                        const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
+                        return (
+                          <tr key={m.id} className="border-b">
+                            <td className="py-2 pr-2 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleDateString(lang)}</td>
+                            <td className="py-2 pr-2 capitalize">{movementLabel(m.type)}</td>
+                            <td className="py-2 pr-2 max-w-[160px] truncate">{label}</td>
+                            <td className="py-2 pr-2 text-right font-mono tabular-nums">{num(m.qty_base)}</td>
+                            <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(val)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.insightsSection', 'Performance insights')}</h2>
+          <p className="text-sm text-muted-foreground">
+            {topGM.length
+              ? tt('dashboard.insightsHelp', 'Revenue is attributed per item using line totals first, then shipment-linked COGS when line detail is missing.')
+              : tt('dashboard.insightsEmpty', 'No shipped sales were found in the active window, so the margin table is intentionally empty.')}
+          </p>
+        </div>
+
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">{t('topProducts.title', { days: windowDays })}</CardTitle>
+            <CardDescription>
+              {topGM.length
+                ? tt('dashboard.topProductsHelp', 'Use this table to see which shipped products are creating or destroying margin in the selected window.')
+                : t('topProducts.empty')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            {topGM.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('topProducts.empty')}</p>
+            ) : (
+              <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="text-left border-b">
+                    <th className="py-2 pr-2">{tt('dashboard.rank', 'Rank')}</th>
                     <th className="py-2 pr-2">{t('table.item')}</th>
                     <th className="py-2 pr-2">{t('table.sku')}</th>
-                    <th className="py-2 pr-2">{t('table.onHand')}</th>
-                    <th className="py-2 pr-2">{t('table.minStock')}</th>
+                    <th className="py-2 pr-2 text-right">{t('table.revenue')}</th>
+                    <th className="py-2 pr-2 text-right">{t('table.cogs')}</th>
+                    <th className="py-2 pr-2 text-right">{t('table.grossMargin')}</th>
+                    <th className="py-2 pr-2 text-right">{t('table.gmPct')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {lowStock.map(({ item, onHand, min }) => (
-                    <tr key={item.id} className="border-b">
-                      <td className="py-2 pr-2 max-w-[120px] truncate">{item.name}</td>
-                      <td className="py-2 pr-2">{item.sku}</td>
-                      <td className={`py-2 pr-2 ${onHand < min ? 'text-rose-600 font-medium' : ''}`}>{onHand}</td>
-                      <td className="py-2 pr-2">{min}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Top products by GM */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">{t('topProducts.title', { days: windowDays })}</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          {topGM.length === 0 ? (
-            <p className="text-muted-foreground">{t('topProducts.empty')}</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-2">{t('table.item')}</th>
-                  <th className="py-2 pr-2">{t('table.sku')}</th>
-                  <th className="py-2 pr-2">{t('table.revenue')}</th>
-                  <th className="py-2 pr-2">{t('table.cogs')}</th>
-                  <th className="py-2 pr-2">{t('table.grossMargin')}</th>
-                  <th className="py-2 pr-2">{t('table.gmPct')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topGM.map(row => {
-                  const pctStr = row.revenue > 0 ? (row.pct * 100).toFixed(1) + '%' : t('common.dash')
-                  const pctClass = row.revenue > 0 && row.pct < 0 ? 'text-rose-600' : ''
-                  return (
-                    <tr key={row.itemId} className="border-b">
-                      <td className="py-2 pr-2 max-w-[100px] truncate">{row.name}</td>
-                      <td className="py-2 pr-2">{row.sku}</td>
-                      <td className="py-2 pr-2">{formatMoneyBase(row.revenue, baseCode)}</td>
-                      <td className="py-2 pr-2">{formatMoneyBase(row.cogs, baseCode)}</td>
-                      <td className={`py-2 pr-2 ${row.gm < 0 ? 'text-rose-600' : ''}`}>{formatMoneyBase(row.gm, baseCode)}</td>
-                      <td className={`py-2 pr-2 ${pctClass}`}>{pctStr}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-          <div className="text-xs text-muted-foreground mt-2 hidden sm:block">
-            {t('topProducts.footnote')}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recent movements (5) + "All Transactions" button */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              {t('recentMovements.title')}
-            </CardTitle>
-            <Button size="sm" variant="outline" onClick={() => navigate('/transactions')} className="w-full sm:w-auto">
-              {tt('recentMovements.all', 'All Transactions')}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {recentMoves.length === 0 ? (
-            <p className="text-muted-foreground">{t('recentMovements.empty')}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b">
-                    <th className="py-2 pr-2">{t('table.date')}</th>
-                    <th className="py-2 pr-2">{t('table.type')}</th>
-                    <th className="py-2 pr-2">{t('table.item')}</th>
-                    <th className="py-2 pr-2">{t('table.qtyBase')}</th>
-                    <th className="py-2 pr-2">{t('table.value')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentMoves.map(m => {
-                    const it = itemById.get(m.item_id)
-                    const label = it ? `${it.name} (${it.sku})` : m.item_id
-                    const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
+                  {topGM.map((row, index) => {
+                    const pctStr = row.revenue > 0 ? (row.pct * 100).toFixed(1) + '%' : t('common.dash')
+                    const pctClass = row.revenue > 0 && row.pct < 0 ? 'text-rose-600 dark:text-rose-300' : ''
                     return (
-                      <tr key={m.id} className="border-b">
-                        <td className="py-2 pr-2 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleDateString(lang)}</td>
-                        <td className="py-2 pr-2 capitalize">
-                          {movementLabel(m.type)}
-                        </td>
-                        <td className="py-2 pr-2 max-w-[100px] truncate">{label}</td>
-                        <td className="py-2 pr-2">{num(m.qty_base)}</td>
-                        <td className="py-2 pr-2">{formatMoneyBase(val, baseCode)}</td>
+                      <tr key={row.itemId} className="border-b">
+                        <td className="py-2 pr-2 text-muted-foreground">#{index + 1}</td>
+                        <td className="py-2 pr-2 max-w-[160px] truncate font-medium">{row.name}</td>
+                        <td className="py-2 pr-2">{row.sku}</td>
+                        <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(row.revenue)}</td>
+                        <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(row.cogs)}</td>
+                        <td className={`py-2 pr-2 text-right font-mono tabular-nums ${row.gm < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>{money(row.gm)}</td>
+                        <td className={`py-2 pr-2 text-right font-mono tabular-nums ${pctClass}`}>{pctStr}</td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
+            )}
+            <div className="text-xs text-muted-foreground mt-3 hidden sm:block">
+              {t('topProducts.footnote')}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

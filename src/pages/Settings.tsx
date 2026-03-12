@@ -278,6 +278,7 @@ function Settings() {
           supabase
             .from("warehouses")
             .select("id,name")
+            .eq("company_id", companyId)
             .order("name", { ascending: true }),
         ]);
 

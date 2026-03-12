@@ -9,6 +9,7 @@ import { toast } from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
+import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 
 interface Item {
   id: string
@@ -47,6 +48,7 @@ export function StockLevels() {
   const [stockLevels, setStockLevels] = useState<StockLevel[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [baseCode, setBaseCode] = useState('MZN')
 
   const [search, setSearch] = useState('')
   const [itemFilter, setItemFilter] = useState<string>('all')
@@ -54,6 +56,9 @@ export function StockLevels() {
 
   useEffect(() => {
     if (!companyId) return
+    getBaseCurrencyCode(companyId)
+      .then((code) => setBaseCode(code || 'MZN'))
+      .catch(() => setBaseCode('MZN'))
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
@@ -92,6 +97,7 @@ export function StockLevels() {
         const { data: slData, error: sErr } = await supabase
           .from('stock_levels')
           .select('id,item_id,warehouse_id,qty,avg_cost')
+          .eq('company_id', companyId)
           .in('warehouse_id', whIds)
 
         if (sErr) throw sErr
@@ -154,8 +160,7 @@ export function StockLevels() {
     return { qty, value }
   }, [rows])
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' }).format(n)
+  const formatCurrency = (n: number) => formatMoneyBase(n, baseCode)
 
   const downloadCSV = (data: typeof rows, filename: string) => {
     if (!data.length) {
