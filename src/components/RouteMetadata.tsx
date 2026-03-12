@@ -159,11 +159,6 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
       description: t.appDescription,
       noindex: true,
     },
-    '/responsive-demo': {
-      title: 'Responsive Demo | StockWise',
-      description: t.appDescription,
-      noindex: true,
-    },
   }
 
   if (exact[pathname]) return exact[pathname]

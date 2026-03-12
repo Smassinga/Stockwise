@@ -1,89 +1,165 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/db'
-import { useOrg } from '../hooks/useOrg'
-import { useI18n } from '../lib/i18n'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { useAuth } from '../hooks/useAuth'
+import { useOrg } from '../hooks/useOrg'
+import { getBaseCurrencyCode } from '../lib/currency'
+import { useI18n } from '../lib/i18n'
+import { buildLandedCostPreview, type LandedCostMethod, type LandedCostReceiptBucket } from '../lib/landedCost'
+import { supabase } from '../lib/supabase'
 
 type Supplier = { id: string; code?: string | null; name: string }
 type Item = { id: string; sku?: string | null; name: string }
-type PurchaseOrder = { id: string; order_no?: string | null; supplier_id?: string | null; currency_code?: string | null; created_at?: string | null }
-type PurchaseOrderLine = { po_id: string; item_id: string; qty?: number | null; unit_price?: number | null }
-
+type Warehouse = { id: string; name: string; code?: string | null }
+type Bin = { id: string; code: string; name: string; warehouseId: string }
+type PurchaseOrder = {
+  id: string
+  order_no?: string | null
+  supplier_id?: string | null
+  currency_code?: string | null
+  fx_to_base?: number | null
+  created_at?: string | null
+  status?: string | null
+}
+type ReceiptMovement = {
+  item_id: string
+  ref_line_id?: string | null
+  qty_base?: number | null
+  total_value?: number | null
+  warehouse_to_id?: string | null
+  bin_to_id?: string | null
+}
+type StockLevel = {
+  id: string
+  item_id: string
+  warehouse_id: string
+  bin_id?: string | null
+  qty?: number | null
+  avg_cost?: number | null
+}
+type LandedCostRun = {
+  id: string
+  created_at?: string | null
+  allocation_method?: string | null
+  total_extra_cost?: number | null
+  total_applied_value?: number | null
+  total_unapplied_value?: number | null
+  currency_code?: string | null
+  notes?: string | null
+}
 type CostLine = { id: string; label: string; amount: string }
-type ItemLine = { id: string; itemId: string; qty: string; unitCost: string }
 
+const uid = () => Math.random().toString(36).slice(2, 10)
 const n = (value: unknown, fallback = 0) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
 }
-
-const uid = () => Math.random().toString(36).slice(2, 10)
+const round = (value: number, precision = 6) => {
+  const factor = 10 ** precision
+  return Math.round(n(value) * factor) / factor
+}
+const fmt = (value: number, digits = 2) =>
+  n(value).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })
+const isMissingSchema = (error: any) => {
+  const code = String(error?.code || '')
+  const msg = String(error?.message || '').toLowerCase()
+  return ['42P01', '42883', 'PGRST202', 'PGRST205'].includes(code)
+    || msg.includes('relation')
+    || msg.includes('function')
+}
 
 export default function LandedCostPage() {
   const { companyId } = useOrg()
-  const { t } = useI18n()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
-    const value = t(key, vars)
+  const { user } = useAuth()
+  const { t, lang } = useI18n()
+  const tt = (key: string, fallback: string) => {
+    const value = t(key)
     return value === key ? fallback : value
   }
 
   const [loading, setLoading] = useState(true)
+  const [applying, setApplying] = useState(false)
+  const [schemaReady, setSchemaReady] = useState(true)
+  const [detailVersion, setDetailVersion] = useState(0)
+  const [baseCurrencyCode, setBaseCurrencyCode] = useState('BASE')
+
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [items, setItems] = useState<Item[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [bins, setBins] = useState<Bin[]>([])
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
+  const [historyRuns, setHistoryRuns] = useState<LandedCostRun[]>([])
+  const [receiptBuckets, setReceiptBuckets] = useState<LandedCostReceiptBucket[]>([])
 
-  const [supplierId, setSupplierId] = useState('')
   const [purchaseOrderId, setPurchaseOrderId] = useState('')
-  const [currencyCode, setCurrencyCode] = useState('USD')
-  const [allocationMethod, setAllocationMethod] = useState<'quantity' | 'value' | 'equal'>('quantity')
-
-  const [itemLines, setItemLines] = useState<ItemLine[]>([{ id: uid(), itemId: '', qty: '', unitCost: '' }])
+  const [allocationMethod, setAllocationMethod] = useState<LandedCostMethod>('quantity')
   const [freightCost, setFreightCost] = useState('')
   const [customsCost, setCustomsCost] = useState('')
   const [handlingCost, setHandlingCost] = useState('')
   const [packagingCost, setPackagingCost] = useState('')
+  const [notes, setNotes] = useState('')
   const [extraCosts, setExtraCosts] = useState<CostLine[]>([])
+
+  const supplierById = useMemo(() => new Map(suppliers.map(row => [row.id, row])), [suppliers])
+  const itemById = useMemo(() => new Map(items.map(row => [row.id, row])), [items])
+  const warehouseById = useMemo(() => new Map(warehouses.map(row => [row.id, row])), [warehouses])
+  const binById = useMemo(() => new Map(bins.map(row => [row.id, row])), [bins])
+  const selectedOrder = useMemo(
+    () => purchaseOrders.find(row => row.id === purchaseOrderId) || null,
+    [purchaseOrderId, purchaseOrders],
+  )
 
   useEffect(() => {
     if (!companyId) {
       setLoading(false)
+      setPurchaseOrders([])
+      setReceiptBuckets([])
+      setHistoryRuns([])
       return
     }
 
     let cancelled = false
-
     ;(async () => {
       try {
         setLoading(true)
-        const [supplierRes, itemRes, poRes] = await Promise.all([
+        const [supplierRes, itemRes, warehouseRes, binRes, poRes] = await Promise.all([
           supabase.from('suppliers').select('id,code,name').eq('company_id', companyId).order('name', { ascending: true }),
           supabase.from('items').select('id,sku,name').eq('company_id', companyId).order('name', { ascending: true }),
+          supabase.from('warehouses').select('id,name,code').eq('company_id', companyId).order('name', { ascending: true }),
+          supabase.from('bins').select('id,code,name,warehouseId').order('code', { ascending: true }),
           supabase
             .from('purchase_orders')
-            .select('id,order_no,supplier_id,currency_code,created_at')
+            .select('id,order_no,supplier_id,currency_code,fx_to_base,created_at,status')
             .eq('company_id', companyId)
             .order('created_at', { ascending: false })
-            .limit(100),
+            .limit(150),
         ])
 
         if (supplierRes.error) throw supplierRes.error
         if (itemRes.error) throw itemRes.error
+        if (warehouseRes.error) throw warehouseRes.error
+        if (binRes.error) throw binRes.error
         if (poRes.error) throw poRes.error
 
-        if (!cancelled) {
-          setSuppliers((supplierRes.data || []) as Supplier[])
-          setItems((itemRes.data || []) as Item[])
-          setPurchaseOrders((poRes.data || []) as PurchaseOrder[])
-        }
+        if (cancelled) return
+        const warehouseIds = new Set(((warehouseRes.data || []) as Warehouse[]).map(row => row.id))
+        setSuppliers((supplierRes.data || []) as Supplier[])
+        setItems((itemRes.data || []) as Item[])
+        setWarehouses((warehouseRes.data || []) as Warehouse[])
+        setBins(((binRes.data || []) as Bin[]).filter(row => warehouseIds.has(row.warehouseId)))
+        setPurchaseOrders((poRes.data || []) as PurchaseOrder[])
+        getBaseCurrencyCode().then((code) => {
+          if (!cancelled && code) setBaseCurrencyCode(code)
+        }).catch(() => {})
       } catch (error: any) {
         console.error(error)
-        if (!cancelled) toast.error(error?.message || tt('landedCost.loadFailed', 'Failed to load landed cost inputs'))
+        if (!cancelled) toast.error(error?.message || tt('landedCost.loadFailed', 'Failed to load landed cost workspace'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -93,44 +169,109 @@ export default function LandedCostPage() {
   }, [companyId])
 
   useEffect(() => {
-    if (!purchaseOrderId || !companyId) return
+    if (!purchaseOrderId || !companyId) {
+      setReceiptBuckets([])
+      setHistoryRuns([])
+      return
+    }
 
     let cancelled = false
-
     ;(async () => {
       try {
-        const selectedOrder = purchaseOrders.find(order => order.id === purchaseOrderId)
-        if (selectedOrder?.supplier_id) setSupplierId(selectedOrder.supplier_id)
-        if (selectedOrder?.currency_code) setCurrencyCode(selectedOrder.currency_code)
-
-        const { data, error } = await supabase
-          .from('purchase_order_lines')
-          .select('po_id,item_id,qty,unit_price')
+        const receiptRes = await supabase
+          .from('stock_movements')
+          .select('item_id,ref_line_id,qty_base,total_value,warehouse_to_id,bin_to_id')
           .eq('company_id', companyId)
-          .eq('po_id', purchaseOrderId)
+          .eq('type', 'receive')
+          .eq('ref_type', 'PO')
+          .eq('ref_id', purchaseOrderId)
 
-        if (error) throw error
-        if (!cancelled && data?.length) {
-          setItemLines(data.map((line: PurchaseOrderLine) => ({
-            id: uid(),
-            itemId: line.item_id,
-            qty: String(n(line.qty)),
-            unitCost: String(n(line.unit_price)),
-          })))
+        if (receiptRes.error) throw receiptRes.error
+
+        const receipts = (receiptRes.data || []) as ReceiptMovement[]
+        const itemIds = Array.from(new Set(receipts.map(row => row.item_id).filter(Boolean)))
+
+        let levels: StockLevel[] = []
+        if (itemIds.length) {
+          const levelRes = await supabase
+            .from('stock_levels')
+            .select('id,item_id,warehouse_id,bin_id,qty,avg_cost')
+            .eq('company_id', companyId)
+            .in('item_id', itemIds)
+          if (levelRes.error) throw levelRes.error
+          levels = (levelRes.data || []) as StockLevel[]
         }
+
+        let runs: LandedCostRun[] = []
+        const runRes = await supabase
+          .from('landed_cost_runs')
+          .select('id,created_at,allocation_method,total_extra_cost,total_applied_value,total_unapplied_value,currency_code,notes')
+          .eq('company_id', companyId)
+          .eq('purchase_order_id', purchaseOrderId)
+          .order('created_at', { ascending: false })
+        if (runRes.error) {
+          if (isMissingSchema(runRes.error)) {
+            setSchemaReady(false)
+          } else {
+            throw runRes.error
+          }
+        } else {
+          setSchemaReady(true)
+          runs = (runRes.data || []) as LandedCostRun[]
+        }
+
+        if (cancelled) return
+
+        const levelByBucket = new Map(
+          levels.map(level => [
+            `${level.item_id}|${level.warehouse_id || ''}|${level.bin_id || ''}`,
+            level,
+          ]),
+        )
+
+        const bucketMap = new Map<string, LandedCostReceiptBucket>()
+        for (const receipt of receipts) {
+          const key = `${receipt.item_id}|${receipt.warehouse_to_id || ''}|${receipt.bin_to_id || ''}`
+          const stock = levelByBucket.get(key)
+          const item = itemById.get(receipt.item_id)
+          const warehouse = receipt.warehouse_to_id ? warehouseById.get(receipt.warehouse_to_id) : null
+          const bin = receipt.bin_to_id ? binById.get(receipt.bin_to_id) : null
+          const existing = bucketMap.get(key)
+
+          if (existing) {
+            existing.receivedQtyBase += n(receipt.qty_base)
+            existing.receiptValueBase += n(receipt.total_value)
+            if (!existing.poLineId && receipt.ref_line_id) existing.poLineId = receipt.ref_line_id
+            continue
+          }
+
+          bucketMap.set(key, {
+            key,
+            itemId: receipt.item_id,
+            itemLabel: item ? `${item.name}${item.sku ? ` (${item.sku})` : ''}` : receipt.item_id,
+            poLineId: receipt.ref_line_id || null,
+            warehouseId: receipt.warehouse_to_id || null,
+            warehouseLabel: warehouse ? warehouse.name : null,
+            binId: receipt.bin_to_id || null,
+            binLabel: bin ? `${bin.code} - ${bin.name}` : null,
+            stockLevelId: stock?.id || null,
+            receivedQtyBase: n(receipt.qty_base),
+            receiptValueBase: n(receipt.total_value),
+            onHandQtyBase: n(stock?.qty),
+            previousAvgCost: n(stock?.avg_cost),
+          })
+        }
+
+        setReceiptBuckets(Array.from(bucketMap.values()).sort((a, b) => a.itemLabel.localeCompare(b.itemLabel)))
+        setHistoryRuns(runs)
       } catch (error: any) {
         console.error(error)
-        if (!cancelled) toast.error(error?.message || tt('landedCost.prefillFailed', 'Failed to load the purchase order lines'))
+        if (!cancelled) toast.error(error?.message || tt('landedCost.prefillFailed', 'Failed to load the purchase order receipts'))
       }
     })()
 
     return () => { cancelled = true }
-  }, [companyId, purchaseOrderId, purchaseOrders])
-
-  const visiblePurchaseOrders = useMemo(
-    () => purchaseOrders.filter(order => !supplierId || order.supplier_id === supplierId),
-    [purchaseOrders, supplierId],
-  )
+  }, [companyId, purchaseOrderId, detailVersion, itemById, warehouseById, binById])
 
   const commonCosts = useMemo(() => ([
     { label: tt('landedCost.freight', 'Freight / transport'), amount: n(freightCost) },
@@ -140,118 +281,141 @@ export default function LandedCostPage() {
     ...extraCosts
       .map(row => ({ label: row.label.trim() || tt('landedCost.otherCost', 'Other cost'), amount: n(row.amount) }))
       .filter(row => row.amount !== 0),
-  ]), [customsCost, extraCosts, freightCost, handlingCost, packagingCost, tt])
+  ]), [customsCost, extraCosts, freightCost, handlingCost, packagingCost])
 
-  const totals = useMemo(() => {
-    const rows = itemLines
-      .map(line => {
-        const qty = n(line.qty)
-        const unitCost = n(line.unitCost)
-        return {
-          ...line,
-          qty,
-          unitCost,
-          baseAmount: qty * unitCost,
-        }
+  const extraCostTotal = useMemo(
+    () => round(commonCosts.reduce((sum, row) => sum + row.amount, 0)),
+    [commonCosts],
+  )
+  const fxToBase = n(selectedOrder?.fx_to_base, 1)
+  const chargePayload = useMemo(
+    () => commonCosts.filter(row => row.amount !== 0).map(row => ({
+      label: row.label,
+      amount: round(row.amount),
+      amount_base: round(row.amount * fxToBase),
+    })),
+    [commonCosts, fxToBase],
+  )
+
+  const previewState = useMemo(
+    () => buildLandedCostPreview({
+      buckets: receiptBuckets,
+      charges: chargePayload.map(row => ({ label: row.label, amount: row.amount_base })),
+      method: allocationMethod,
+    }),
+    [allocationMethod, chargePayload, receiptBuckets],
+  )
+
+  async function applyLandedCost() {
+    if (!companyId || !purchaseOrderId || !selectedOrder) return
+    if (!schemaReady) return toast.error(tt('landedCost.migrationNeeded', 'Apply the landed cost migration before posting revaluation runs'))
+    if (!chargePayload.length || extraCostTotal <= 0) return toast.error(tt('landedCost.enterCosts', 'Enter at least one landed cost'))
+    if (!previewState.preview.length) return toast.error(tt('landedCost.noReceipts', 'Receive the purchase order before applying landed cost'))
+
+    try {
+      setApplying(true)
+      const { data, error } = await supabase.rpc('apply_landed_cost_run', {
+        p_company_id: companyId,
+        p_purchase_order_id: purchaseOrderId,
+        p_supplier_id: selectedOrder.supplier_id || null,
+        p_applied_by: user?.id || null,
+        p_currency_code: (selectedOrder.currency_code || 'USD').toUpperCase(),
+        p_fx_to_base: fxToBase,
+        p_allocation_method: allocationMethod,
+        p_total_extra_cost: extraCostTotal,
+        p_notes: notes.trim() || null,
+        p_charges: chargePayload,
+        p_lines: previewState.preview.map(row => ({
+          item_id: row.itemId,
+          item_label: row.itemLabel,
+          po_line_id: row.poLineId,
+          warehouse_id: row.warehouseId,
+          bin_id: row.binId,
+          stock_level_id: row.stockLevelId,
+          received_qty_base: round(row.receivedQtyBase),
+          impacted_qty_base: round(row.impactedQtyBase),
+          on_hand_qty_base: round(row.onHandQtyBase),
+          allocated_extra: round(row.allocatedExtra),
+          applied_revaluation: round(row.appliedRevaluation),
+          unapplied_value: round(row.unappliedValue),
+          previous_avg_cost: round(row.previousAvgCost),
+          new_avg_cost: round(row.newAvgCost),
+        })),
       })
-      .filter(line => line.itemId && line.qty > 0)
 
-    const baseItemCost = rows.reduce((sum, line) => sum + line.baseAmount, 0)
-    const totalQty = rows.reduce((sum, line) => sum + line.qty, 0)
-    const landedExtras = commonCosts.reduce((sum, row) => sum + row.amount, 0)
-    const totalLandedCost = baseItemCost + landedExtras
-    const landedUnitCost = totalQty > 0 ? totalLandedCost / totalQty : 0
-
-    const preview = rows.map((line, index) => {
-      const quantityShare = totalQty > 0 ? line.qty / totalQty : 0
-      const valueShare = baseItemCost > 0 ? line.baseAmount / baseItemCost : 0
-      const equalShare = rows.length > 0 ? 1 / rows.length : 0
-      const share = allocationMethod === 'quantity'
-        ? quantityShare
-        : allocationMethod === 'value'
-          ? valueShare
-          : equalShare
-      const allocatedExtra = landedExtras * share
-      const finalTotal = line.baseAmount + allocatedExtra
-      const finalUnitCost = line.qty > 0 ? finalTotal / line.qty : 0
-      return {
-        id: line.id || `${index}`,
-        itemId: line.itemId,
-        qty: line.qty,
-        baseAmount: line.baseAmount,
-        allocatedExtra,
-        finalTotal,
-        finalUnitCost,
+      if (error) throw error
+      const run = Array.isArray(data) ? data[0] : data
+      toast.success(
+        `${tt('landedCost.applied', 'Landed cost applied')}: ${fmt(n(run?.total_applied_value))} ${baseCurrencyCode}`,
+      )
+      setFreightCost('')
+      setCustomsCost('')
+      setHandlingCost('')
+      setPackagingCost('')
+      setNotes('')
+      setExtraCosts([])
+      setDetailVersion(version => version + 1)
+    } catch (error: any) {
+      console.error(error)
+      if (isMissingSchema(error)) {
+        setSchemaReady(false)
+        toast.error(tt('landedCost.migrationNeeded', 'Apply the landed cost migration before posting revaluation runs'))
+      } else {
+        toast.error(error?.message || tt('landedCost.applyFailed', 'Failed to apply landed cost'))
       }
-    })
-
-    return { rows, baseItemCost, totalQty, landedExtras, totalLandedCost, landedUnitCost, preview }
-  }, [allocationMethod, commonCosts, itemLines])
-
-  const itemById = useMemo(() => new Map(items.map(item => [item.id, item])), [items])
+    } finally {
+      setApplying(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('landedCost.eyebrow', 'Bulk costing')}
+            {tt('landedCost.eyebrow', 'Purchase valuation')}
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('landedCost.title', 'Landed Cost')}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('landedCost.subtitle', 'Use this page to calculate true unit cost for bulk buys, imports, and freight-heavy purchases. Assembly and build logic stays separate.')}
+              {tt('landedCost.subtitle', 'Attach extra freight, customs, and handling to a received purchase order. The posted run revalues on-hand inventory through the same weighted-average stock logic used by PO receipts.')}
             </p>
           </div>
         </div>
 
-        <Button asChild variant="outline">
-          <Link to="/bom">{tt('landedCost.goToAssembly', 'Go to Assembly')}</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link to="/orders?tab=purchase">{tt('orders.title', 'Orders')}</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/bom">{tt('nav.bom', 'Assembly')}</Link>
+          </Button>
+        </div>
       </div>
 
-      {loading && (
-        <div className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</div>
+      {!schemaReady && (
+        <Card className="border-dashed border-amber-400/60 bg-amber-50/40 shadow-none dark:bg-amber-500/10">
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            {tt('landedCost.migrationHint', 'Posting is disabled until the landed cost migration is applied. Preview remains available, but inventory revaluation will not post yet.')}
+          </CardContent>
+        </Card>
       )}
 
-      <Card className="border-dashed border-border/80 shadow-none">
-        <CardContent className="flex flex-col gap-1 p-4 text-sm">
-          <div className="font-medium">{tt('landedCost.previewOnlyTitle', 'Preview only for now')}</div>
-          <p className="text-muted-foreground">
-            {tt('landedCost.previewOnlyBody', 'This page calculates landed cost and final unit cost, but it does not automatically revalue inventory or post into Assembly. Use the result as a costing reference until a dedicated posting flow is added.')}
-          </p>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
         <div className="space-y-4">
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
-              <CardTitle>{tt('landedCost.source', 'Source details')}</CardTitle>
-              <CardDescription>{tt('landedCost.sourceHelp', 'Pick a supplier or purchase order to prefill the lines, then choose how extra costs should be allocated.')}</CardDescription>
+              <CardTitle>{tt('landedCost.source', 'Purchase source')}</CardTitle>
+              <CardDescription>{tt('landedCost.sourceHelp', 'Pick a purchase order that already has received stock. Landed cost will be allocated across those receipt buckets and revalue the matching on-hand inventory.')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               <div>
-                <Label>{tt('orders.supplier', 'Supplier')}</Label>
-                <Select value={supplierId || 'NONE'} onValueChange={(value) => setSupplierId(value === 'NONE' ? '' : value)}>
-                  <SelectTrigger><SelectValue placeholder={tt('orders.selectSupplier', 'Select supplier')} /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE">{tt('common.none', 'None')}</SelectItem>
-                    {suppliers.map(supplier => (
-                      <SelectItem key={supplier.id} value={supplier.id}>
-                        {(supplier.code ? `${supplier.code} - ` : '') + supplier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
                 <Label>{tt('orders.po', 'PO')}</Label>
                 <Select value={purchaseOrderId || 'NONE'} onValueChange={(value) => setPurchaseOrderId(value === 'NONE' ? '' : value)}>
-                  <SelectTrigger><SelectValue placeholder={tt('landedCost.selectPO', 'Optional purchase order')} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={tt('landedCost.selectPO', 'Select purchase order')} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="NONE">{tt('common.none', 'None')}</SelectItem>
-                    {visiblePurchaseOrders.map(order => (
+                    {purchaseOrders.map(order => (
                       <SelectItem key={order.id} value={order.id}>
                         {order.order_no || order.id}
                       </SelectItem>
@@ -260,12 +424,8 @@ export default function LandedCostPage() {
                 </Select>
               </div>
               <div>
-                <Label>{tt('orders.currency', 'Currency')}</Label>
-                <Input value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} />
-              </div>
-              <div>
                 <Label>{tt('landedCost.allocationMethod', 'Allocation method')}</Label>
-                <Select value={allocationMethod} onValueChange={(value) => setAllocationMethod(value as typeof allocationMethod)}>
+                <Select value={allocationMethod} onValueChange={(value) => setAllocationMethod(value as LandedCostMethod)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="quantity">{tt('landedCost.byQuantity', 'By quantity')}</SelectItem>
@@ -274,97 +434,42 @@ export default function LandedCostPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {selectedOrder && (
+                <>
+                  <div className="rounded-xl border bg-muted/30 p-3">
+                    <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.supplier', 'Supplier')}</div>
+                    <div className="mt-2 font-medium">{supplierById.get(selectedOrder.supplier_id || '')?.name || tt('common.none', 'None')}</div>
+                  </div>
+                  <div className="rounded-xl border bg-muted/30 p-3">
+                    <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.currency', 'Currency')}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 font-medium">
+                      <span>{(selectedOrder.currency_code || 'USD').toUpperCase()}</span>
+                      <Badge variant="outline">{tt('orders.fxToBaseShort', 'FX to Base')}: {fmt(fxToBase, 4)}</Badge>
+                      {selectedOrder.status && <Badge variant="secondary" className="capitalize">{selectedOrder.status}</Badge>}
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('landedCost.items', 'Purchased items')}</CardTitle>
-              <CardDescription>{tt('landedCost.itemsHelp', 'Enter the bulk quantity and base unit cost for each line. If you picked a PO, these lines are prefilled from it.')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="py-2 pr-3">{tt('table.item', 'Item')}</th>
-                      <th className="py-2 pr-3 text-right">{tt('orders.qty', 'Qty')}</th>
-                      <th className="py-2 pr-3 text-right">{tt('landedCost.baseUnitCost', 'Base unit cost')}</th>
-                      <th className="py-2 pr-3 text-right">{tt('orders.subtotal', 'Subtotal')}</th>
-                      <th className="py-2 text-right">{tt('orders.actions', 'Actions')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itemLines.map(line => {
-                      const item = itemById.get(line.itemId)
-                      const qty = n(line.qty)
-                      const unitCost = n(line.unitCost)
-                      return (
-                        <tr key={line.id} className="border-b">
-                          <td className="py-2 pr-3">
-                            <Select value={line.itemId} onValueChange={(value) => setItemLines(prev => prev.map(row => row.id === line.id ? { ...row, itemId: value } : row))}>
-                              <SelectTrigger><SelectValue placeholder={tt('movements.selectItem', 'Select item')} /></SelectTrigger>
-                              <SelectContent>
-                                {items.map(option => (
-                                  <SelectItem key={option.id} value={option.id}>
-                                    {(option.sku ? `${option.sku} - ` : '') + option.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {item && <div className="mt-1 text-xs text-muted-foreground">{item.name}</div>}
-                          </td>
-                          <td className="py-2 pr-3"><Input className="text-right" inputMode="decimal" value={line.qty} onChange={(event) => setItemLines(prev => prev.map(row => row.id === line.id ? { ...row, qty: event.target.value } : row))} /></td>
-                          <td className="py-2 pr-3"><Input className="text-right" inputMode="decimal" value={line.unitCost} onChange={(event) => setItemLines(prev => prev.map(row => row.id === line.id ? { ...row, unitCost: event.target.value } : row))} /></td>
-                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{(qty * unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</td>
-                          <td className="py-2 text-right">
-                            <Button variant="ghost" size="sm" onClick={() => setItemLines(prev => prev.length === 1 ? prev : prev.filter(row => row.id !== line.id))}>
-                              {tt('common.remove', 'Remove')}
-                            </Button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <Button variant="outline" onClick={() => setItemLines(prev => [...prev, { id: uid(), itemId: '', qty: '', unitCost: '' }])}>
-                {tt('landedCost.addItemLine', 'Add item line')}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.extraCosts', 'Additional landed costs')}</CardTitle>
-              <CardDescription>{tt('landedCost.extraCostsHelp', 'Capture freight, customs, clearing, packaging, or any other landed charges that need to be absorbed into unit cost.')}</CardDescription>
+              <CardDescription>{tt('landedCost.extraCostsHelp', 'Enter the extra charges in the PO currency. Stock revaluation is posted in base value using the purchase order FX rate.')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <Label>{tt('landedCost.freight', 'Freight / transport')}</Label>
-                  <Input inputMode="decimal" value={freightCost} onChange={(event) => setFreightCost(event.target.value)} />
-                </div>
-                <div>
-                  <Label>{tt('landedCost.customs', 'Customs / duty')}</Label>
-                  <Input inputMode="decimal" value={customsCost} onChange={(event) => setCustomsCost(event.target.value)} />
-                </div>
-                <div>
-                  <Label>{tt('landedCost.handling', 'Handling / clearing')}</Label>
-                  <Input inputMode="decimal" value={handlingCost} onChange={(event) => setHandlingCost(event.target.value)} />
-                </div>
-                <div>
-                  <Label>{tt('landedCost.packaging', 'Packaging / delivery')}</Label>
-                  <Input inputMode="decimal" value={packagingCost} onChange={(event) => setPackagingCost(event.target.value)} />
-                </div>
+                <div><Label>{tt('landedCost.freight', 'Freight / transport')}</Label><Input inputMode="decimal" value={freightCost} onChange={(event) => setFreightCost(event.target.value)} /></div>
+                <div><Label>{tt('landedCost.customs', 'Customs / duty')}</Label><Input inputMode="decimal" value={customsCost} onChange={(event) => setCustomsCost(event.target.value)} /></div>
+                <div><Label>{tt('landedCost.handling', 'Handling / clearing')}</Label><Input inputMode="decimal" value={handlingCost} onChange={(event) => setHandlingCost(event.target.value)} /></div>
+                <div><Label>{tt('landedCost.packaging', 'Packaging / delivery')}</Label><Input inputMode="decimal" value={packagingCost} onChange={(event) => setPackagingCost(event.target.value)} /></div>
               </div>
 
               <div className="space-y-2">
                 {extraCosts.map(cost => (
-                  <div key={cost.id} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_auto]">
+                  <div key={cost.id} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px_auto]">
                     <Input value={cost.label} onChange={(event) => setExtraCosts(prev => prev.map(row => row.id === cost.id ? { ...row, label: event.target.value } : row))} placeholder={tt('landedCost.otherCostLabel', 'Other cost label')} />
                     <Input inputMode="decimal" value={cost.amount} onChange={(event) => setExtraCosts(prev => prev.map(row => row.id === cost.id ? { ...row, amount: event.target.value } : row))} placeholder="0.00" />
                     <Button variant="ghost" onClick={() => setExtraCosts(prev => prev.filter(row => row.id !== cost.id))}>{tt('common.remove', 'Remove')}</Button>
@@ -374,68 +479,136 @@ export default function LandedCostPage() {
                   {tt('landedCost.addCostRow', 'Add another cost')}
                 </Button>
               </div>
+
+              <div>
+                <Label>{tt('orders.notes', 'Notes')}</Label>
+                <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={tt('landedCost.notesPlaceholder', 'Optional note for this landed cost run')} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle>{tt('landedCost.summary', 'Revaluation summary')}</CardTitle>
+              <CardDescription>{tt('landedCost.summaryHelp', 'Before posting, review how much value will be applied to current stock and how much remains unapplied because the received units are no longer on hand.')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border bg-muted/30 p-4"><div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.totalEntered', 'Entered extra cost')}</div><div className="mt-2 text-2xl font-semibold tracking-tight">{fmt(extraCostTotal)} {(selectedOrder?.currency_code || 'USD').toUpperCase()}</div></div>
+                <div className="rounded-xl border bg-muted/30 p-4"><div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.totalEnteredBase', 'Entered extra in base')}</div><div className="mt-2 text-2xl font-semibold tracking-tight">{fmt(extraCostTotal * fxToBase)} {baseCurrencyCode}</div></div>
+                <div className="rounded-xl border bg-muted/30 p-4"><div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.appliedValue', 'Applied to inventory')}</div><div className="mt-2 text-2xl font-semibold tracking-tight">{fmt(previewState.totalAppliedValue)} {baseCurrencyCode}</div></div>
+                <div className="rounded-xl border bg-muted/30 p-4"><div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.unappliedValue', 'Not applied to current stock')}</div><div className="mt-2 text-2xl font-semibold tracking-tight">{fmt(previewState.totalUnappliedValue)} {baseCurrencyCode}</div></div>
+              </div>
+
+              <div className="grid gap-3 rounded-xl border p-4 md:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.currentAffectedValue', 'Current affected inventory value')}</div>
+                  <div className="mt-2 text-lg font-semibold tracking-tight">{fmt(previewState.totalCurrentValue)} {baseCurrencyCode}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.newAffectedValue', 'New affected inventory value')}</div>
+                  <div className="mt-2 text-lg font-semibold tracking-tight">{fmt(previewState.totalNewValue)} {baseCurrencyCode}</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-medium">{tt('landedCost.preview', 'Allocation preview')}</div>
+                    <div className="text-xs text-muted-foreground">{tt('landedCost.previewNote', 'The current valuation model is weighted average per stock bucket. Revaluation updates the affected stock level average cost rather than isolated receipt layers.')}</div>
+                  </div>
+                  {selectedOrder && <Button asChild variant="ghost" size="sm"><Link to={`/orders?tab=purchase&orderId=${selectedOrder.id}`}>{tt('landedCost.viewOrder', 'View order')}</Link></Button>}
+                </div>
+
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[880px] text-sm">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-2 pr-3">{tt('table.item', 'Item')}</th>
+                        <th className="py-2 pr-3">{tt('orders.toWarehouse', 'Warehouse')}</th>
+                        <th className="py-2 pr-3 text-right">{tt('landedCost.receivedQty', 'Received')}</th>
+                        <th className="py-2 pr-3 text-right">{tt('landedCost.onHandQty', 'On hand')}</th>
+                        <th className="py-2 pr-3 text-right">{tt('movements.avgCost', 'Avg Cost')}</th>
+                        <th className="py-2 pr-3 text-right">{tt('landedCost.allocatedExtra', 'Allocated extra')}</th>
+                        <th className="py-2 pr-3 text-right">{tt('landedCost.appliedValue', 'Applied')}</th>
+                        <th className="py-2 text-right">{tt('landedCost.newAvgCost', 'New Avg Cost')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewState.preview.map(row => (
+                        <tr key={row.key} className="border-b align-top">
+                          <td className="py-2 pr-3">
+                            <div className="font-medium">{row.itemLabel}</div>
+                            <div className="text-xs text-muted-foreground">{row.binLabel || tt('common.none', 'None')}</div>
+                          </td>
+                          <td className="py-2 pr-3 text-muted-foreground">{row.warehouseLabel || tt('common.none', 'None')}</td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(row.receivedQtyBase, 3)}</td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(row.onHandQtyBase, 3)}</td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(row.previousAvgCost)}</td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(row.allocatedExtra)}</td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(row.appliedRevaluation)}</td>
+                          <td className="py-2 text-right">
+                            <div className="font-mono tabular-nums">{fmt(row.newAvgCost)}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {row.unappliedValue > 0
+                                ? `${tt('landedCost.unappliedShort', 'Unapplied')}: ${fmt(row.unappliedValue)}`
+                                : tt('landedCost.fullyApplied', 'Fully applied')}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {!previewState.preview.length && (
+                        <tr><td colSpan={8} className="py-6 text-center text-muted-foreground">{loading ? tt('loading', 'Loading') : tt('landedCost.noReceipts', 'Receive the purchase order first to generate revaluable stock buckets.')}</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                  <Button variant="outline" onClick={() => setDetailVersion(version => version + 1)}>{tt('common.refresh', 'Refresh')}</Button>
+                  <Button onClick={applyLandedCost} disabled={applying || !schemaReady || !previewState.preview.length || extraCostTotal <= 0}>
+                    {applying ? tt('landedCost.applying', 'Applying...') : tt('landedCost.apply', 'Apply landed cost')}
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
-              <CardTitle>{tt('landedCost.summary', 'Cost summary')}</CardTitle>
-              <CardDescription>{tt('landedCost.summaryHelp', 'Preview the blended landed value before you receive or reprice stock.')}</CardDescription>
+              <CardTitle>{tt('landedCost.history', 'Applied runs')}</CardTitle>
+              <CardDescription>{tt('landedCost.historyHelp', 'Every posted landed cost run keeps a PO-level audit trail with the applied and unapplied value split.')}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border bg-muted/30 p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.baseItemCost', 'Base item cost')}</div>
-                  <div className="mt-2 text-2xl font-semibold tracking-tight">{totals.baseItemCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</div>
-                </div>
-                <div className="rounded-xl border bg-muted/30 p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.landedExtras', 'Landed extras')}</div>
-                  <div className="mt-2 text-2xl font-semibold tracking-tight">{totals.landedExtras.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</div>
-                </div>
-                <div className="rounded-xl border bg-muted/30 p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.totalLandedCost', 'Total landed cost')}</div>
-                  <div className="mt-2 text-2xl font-semibold tracking-tight">{totals.totalLandedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</div>
-                </div>
-                <div className="rounded-xl border bg-muted/30 p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('landedCost.unitLandedCost', 'Landed cost per unit')}</div>
-                  <div className="mt-2 text-2xl font-semibold tracking-tight">{totals.landedUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border p-4">
-                <div className="text-sm font-medium">{tt('landedCost.preview', 'Allocation preview')}</div>
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-sm">
-                    <thead>
-                      <tr className="border-b text-left">
-                        <th className="py-2 pr-3">{tt('table.item', 'Item')}</th>
-                        <th className="py-2 pr-3 text-right">{tt('orders.qty', 'Qty')}</th>
-                        <th className="py-2 pr-3 text-right">{tt('landedCost.allocatedExtra', 'Allocated extra')}</th>
-                        <th className="py-2 pr-3 text-right">{tt('landedCost.finalUnitCost', 'Final unit cost')}</th>
-                        <th className="py-2 text-right">{tt('landedCost.totalLandedCost', 'Total landed cost')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {totals.preview.map(row => (
-                        <tr key={row.id} className="border-b">
-                          <td className="py-2 pr-3">{itemById.get(row.itemId)?.name || tt('common.none', 'None')}</td>
-                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{row.qty}</td>
-                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{row.allocatedExtra.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</td>
-                          <td className="py-2 pr-3 text-right font-mono tabular-nums">{row.finalUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</td>
-                          <td className="py-2 text-right font-mono tabular-nums">{row.finalTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode}</td>
-                        </tr>
-                      ))}
-                      {totals.preview.length === 0 && (
-                        <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('landedCost.previewEmpty', 'Add at least one valid item line to see the cost allocation preview.')}</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                {tt('landedCost.note', 'This page is intentionally separate from Assembly. Use it to calculate landed unit cost before receiving or repricing stock, not to define build recipes.')}
-              </div>
+            <CardContent className="overflow-x-auto">
+              <table className="w-full min-w-[620px] text-sm">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="py-2 pr-3">{tt('table.date', 'Date')}</th>
+                    <th className="py-2 pr-3">{tt('landedCost.method', 'Method')}</th>
+                    <th className="py-2 pr-3 text-right">{tt('landedCost.totalEntered', 'Entered extra')}</th>
+                    <th className="py-2 pr-3 text-right">{tt('landedCost.appliedValue', 'Applied')}</th>
+                    <th className="py-2 pr-3 text-right">{tt('landedCost.unappliedValue', 'Unapplied')}</th>
+                    <th className="py-2">{tt('orders.notes', 'Notes')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyRuns.map(run => (
+                    <tr key={run.id} className="border-b">
+                      <td className="py-2 pr-3 whitespace-nowrap">{run.created_at ? new Date(run.created_at).toLocaleString(lang) : '—'}</td>
+                      <td className="py-2 pr-3 capitalize">{run.allocation_method || '—'}</td>
+                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(n(run.total_extra_cost))} {(run.currency_code || selectedOrder?.currency_code || 'USD').toUpperCase()}</td>
+                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(n(run.total_applied_value))} {baseCurrencyCode}</td>
+                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(n(run.total_unapplied_value))} {baseCurrencyCode}</td>
+                      <td className="py-2 text-muted-foreground">{run.notes || '—'}</td>
+                    </tr>
+                  ))}
+                  {!historyRuns.length && (
+                    <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('landedCost.historyEmpty', 'No landed cost runs have been applied to this purchase order yet.')}</td></tr>
+                  )}
+                </tbody>
+              </table>
             </CardContent>
           </Card>
         </div>

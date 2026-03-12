@@ -6,6 +6,7 @@
 // • Fix: In transfer mode, selecting From/To bin no longer clears the other; Item is enabled after selecting From Bin.
 
 import { useEffect, useMemo, useState, Fragment } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase' // ← use the same client as Warehouses/StockLevels
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
@@ -56,8 +57,31 @@ type StockLevel = {
 
 type MovementType = 'receive' | 'issue' | 'transfer' | 'adjust'
 type RefType = 'SO' | 'PO' | 'ADJUST' | 'TRANSFER' | 'WRITE_OFF' | 'INTERNAL_USE' | ''
+type MovementLogRow = {
+  id: string
+  item_id: string
+  type: MovementType
+  qty_base?: number | null
+  unit_cost?: number | null
+  total_value?: number | null
+  warehouse_from_id?: string | null
+  warehouse_to_id?: string | null
+  bin_from_id?: string | null
+  bin_to_id?: string | null
+  ref_type?: string | null
+  ref_id?: string | null
+  notes?: string | null
+  created_at: string
+}
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const today = () => ymd(new Date())
+const startOf30Ago = () => {
+  const d = new Date()
+  d.setDate(d.getDate() - 29)
+  return ymd(d)
+}
 const fmtAcct = (v: number) => {
   const n = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return v < 0 ? `(${n})` : n
@@ -88,6 +112,7 @@ export default function StockMovements() {
   const [movementType, setMovementType] = useState<MovementType>('transfer')
   const [warehouseFromId, setWarehouseFromId] = useState<string>('')
   const [warehouseToId, setWarehouseToId] = useState<string>('')
+  const [allBins, setAllBins] = useState<Bin[]>([])
 
   // Bins & stock per warehouse
   const [binsFrom, setBinsFrom] = useState<Bin[]>([])
@@ -114,6 +139,19 @@ export default function StockMovements() {
   const [saleCurrency, setSaleCurrency] = useState<string>('')
   const [saleFx, setSaleFx] = useState<string>('1')
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
+  const [movementRows, setMovementRows] = useState<MovementLogRow[]>([])
+  const [movementsLoading, setMovementsLoading] = useState(false)
+  const [movementLogVersion, setMovementLogVersion] = useState(0)
+  const [movementSearch, setMovementSearch] = useState('')
+  const [movementDateFrom, setMovementDateFrom] = useState(startOf30Ago())
+  const [movementDateTo, setMovementDateTo] = useState(today())
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'ALL' | MovementType>('ALL')
+  const [movementRefFilter, setMovementRefFilter] = useState<'ALL' | RefType>('ALL')
+  const [movementItemFilter, setMovementItemFilter] = useState<string>('ALL')
+  const [movementWarehouseFilter, setMovementWarehouseFilter] = useState<string>('ALL')
+  const [expandedMovementId, setExpandedMovementId] = useState<string>('')
+  const [soNoById, setSoNoById] = useState<Record<string, string>>({})
+  const [poNoById, setPoNoById] = useState<Record<string, string>>({})
 
   // Maps
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
@@ -126,7 +164,7 @@ export default function StockMovements() {
         // Reset if no company yet
         if (!companyId) {
           setWarehouses([]); setItems([]); setCustomers([])
-          setBinsFrom([]); setBinsTo([]); setStockFrom([]); setStockTo([])
+          setBinsFrom([]); setBinsTo([]); setStockFrom([]); setStockTo([]); setAllBins([])
           setWarehouseFromId(''); setWarehouseToId(''); setFromBin(''); setToBin('')
           return
         }
@@ -150,6 +188,19 @@ export default function StockMovements() {
 
         if (itResRaw.error) throw itResRaw.error
         setItems(((itResRaw.data || []) as any[]).map(x => ({ id: x.id, name: x.name, sku: x.sku ?? null, baseUomId: x.base_uom_id ?? null })))
+
+        const warehouseIds = ((whRes.data || []) as any[]).map(w => w.id).filter(Boolean)
+        if (warehouseIds.length) {
+          const allBinsRes = await supabase
+            .from('bins')
+            .select('id,code,name,warehouseId')
+            .in('warehouseId', warehouseIds)
+            .order('code', { ascending: true })
+          if (allBinsRes.error) throw allBinsRes.error
+          setAllBins((allBinsRes.data || []) as Bin[])
+        } else {
+          setAllBins([])
+        }
 
         // Default both selectors to first warehouse (if any) to preserve prior UX
         const first = (whRes.data || [])[0]
@@ -249,6 +300,65 @@ export default function StockMovements() {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouseToId, movementType, companyId])
+
+  useEffect(() => {
+    if (!companyId) {
+      setMovementRows([])
+      setSoNoById({})
+      setPoNoById({})
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        setMovementsLoading(true)
+        let q = supabase
+          .from('stock_movements')
+          .select('id,item_id,type,qty_base,unit_cost,total_value,warehouse_from_id,warehouse_to_id,bin_from_id,bin_to_id,ref_type,ref_id,notes,created_at')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false })
+          .gte('created_at', `${movementDateFrom}T00:00:00`)
+          .lte('created_at', `${movementDateTo}T23:59:59`)
+          .limit(250)
+
+        if (movementTypeFilter !== 'ALL') q = q.eq('type', movementTypeFilter)
+        if (movementRefFilter !== 'ALL') q = q.eq('ref_type', movementRefFilter)
+        if (movementItemFilter !== 'ALL') q = q.eq('item_id', movementItemFilter)
+        if (movementWarehouseFilter !== 'ALL') {
+          q = q.or(`warehouse_from_id.eq.${movementWarehouseFilter},warehouse_to_id.eq.${movementWarehouseFilter}`)
+        }
+
+        const { data, error } = await q
+        if (error) throw error
+
+        const rows = (data || []) as MovementLogRow[]
+        const soIds = Array.from(new Set(rows.filter(row => row.ref_type === 'SO' && row.ref_id).map(row => row.ref_id!)))
+        const poIds = Array.from(new Set(rows.filter(row => row.ref_type === 'PO' && row.ref_id).map(row => row.ref_id!)))
+
+        const [soRes, poRes] = await Promise.all([
+          soIds.length
+            ? supabase.from('sales_orders').select('id,order_no').eq('company_id', companyId).in('id', soIds)
+            : Promise.resolve({ data: [], error: null } as any),
+          poIds.length
+            ? supabase.from('purchase_orders').select('id,order_no').eq('company_id', companyId).in('id', poIds)
+            : Promise.resolve({ data: [], error: null } as any),
+        ])
+
+        if (cancelled) return
+        setMovementRows(rows)
+        setSoNoById(Object.fromEntries(((soRes.data || []) as any[]).map(row => [row.id, row.order_no || row.id])))
+        setPoNoById(Object.fromEntries(((poRes.data || []) as any[]).map(row => [row.id, row.order_no || row.id])))
+      } catch (e: any) {
+        console.error(e)
+        if (!cancelled) toast.error(tt('movements.logLoadFailed', 'Failed to load recent movements'))
+      } finally {
+        if (!cancelled) setMovementsLoading(false)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [companyId, movementDateFrom, movementDateTo, movementTypeFilter, movementRefFilter, movementItemFilter, movementWarehouseFilter, movementLogVersion])
 
   // UoM helpers
   const uomIdFromIdOrCode = (v?: string | null): string => {
@@ -561,6 +671,7 @@ export default function StockMovements() {
       .eq('company_id', companyId)
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
+    setMovementLogVersion(v => v + 1)
     setQtyEntered(''); setUnitCost(''); setRefId(''); setRefLineId(''); setNotes('')
     toast.success(tt('movements.received', 'Received'))
   }
@@ -611,6 +722,7 @@ export default function StockMovements() {
           .eq('company_id', companyId)
           .eq('warehouse_id', warehouseFromId)
         setStockFrom((fresh || []).map(mapSL))
+        setMovementLogVersion(v => v + 1)
 
         setQtyEntered('')
         setRefId(''); setRefLineId(''); setNotes('')
@@ -655,6 +767,7 @@ export default function StockMovements() {
       .eq('company_id', companyId)
       .eq('warehouse_id', warehouseFromId)
     setStockFrom((fresh || []).map(mapSL))
+    setMovementLogVersion(v => v + 1)
 
     setQtyEntered('')
     setRefId(''); setRefLineId(''); setNotes('')
@@ -703,6 +816,7 @@ export default function StockMovements() {
     ])
     setStockFrom((freshFrom.data || []).map(mapSL))
     setStockTo((freshTo.data || []).map(mapSL))
+    setMovementLogVersion(v => v + 1)
     setQtyEntered('')
     toast.success(tt('movements.transferCompleted', 'Transfer completed'))
   }
@@ -776,6 +890,7 @@ export default function StockMovements() {
       .eq('company_id', companyId)
       .eq('warehouse_id', warehouseToId)
     setStockTo((fresh || []).map(mapSL))
+    setMovementLogVersion(v => v + 1)
     setQtyEntered(''); setUnitCost('')
     toast.success(tt('movements.adjusted', 'Adjusted'))
   }
@@ -856,6 +971,61 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
+  const movementTypeCards: Array<{ type: MovementType; title: string; description: string }> = [
+    { type: 'receive', title: tt('movement.receive', 'Receive'), description: tt('movements.receiveHint', 'Add stock into a warehouse bin and capture supplier-side cost.') },
+    { type: 'issue', title: tt('movement.issue', 'Issue'), description: tt('movements.issueHint', 'Remove stock for sales, internal use, or write-offs.') },
+    { type: 'transfer', title: tt('movement.transfer', 'Transfer'), description: tt('movements.transferHint', 'Move stock between warehouses or bins without changing ownership.') },
+    { type: 'adjust', title: tt('movement.adjust', 'Adjust'), description: tt('movements.adjustHint', 'Correct on-hand stock when the physical count differs from the system.') },
+  ]
+
+  const movementRowsFiltered = useMemo(() => {
+    const term = movementSearch.trim().toLowerCase()
+    if (!term) return movementRows
+    return movementRows.filter(row => {
+      const item = items.find(entry => entry.id === row.item_id)
+      const sourceWh = warehouses.find(entry => entry.id === row.warehouse_from_id)
+      const destWh = warehouses.find(entry => entry.id === row.warehouse_to_id)
+      const sourceBin = allBins.find(entry => entry.id === row.bin_from_id)
+      const destBin = allBins.find(entry => entry.id === row.bin_to_id)
+      const hay = [
+        row.type,
+        row.ref_type,
+        row.ref_id,
+        row.notes,
+        item?.name,
+        item?.sku,
+        sourceWh?.name,
+        destWh?.name,
+        sourceBin?.code,
+        destBin?.code,
+      ].join(' ').toLowerCase()
+      return hay.includes(term)
+    })
+  }, [movementSearch, movementRows, items, warehouses, allBins])
+
+  const movementTypeBadge = (type: MovementType) => {
+    const base = 'inline-flex rounded-full px-2.5 py-1 text-xs font-medium'
+    if (type === 'receive') return <span className={`${base} bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300`}>{tt('movement.receive', 'Receive')}</span>
+    if (type === 'issue') return <span className={`${base} bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300`}>{tt('movement.issue', 'Issue')}</span>
+    if (type === 'transfer') return <span className={`${base} bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300`}>{tt('movement.transfer', 'Transfer')}</span>
+    return <span className={`${base} bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300`}>{tt('movement.adjust', 'Adjust')}</span>
+  }
+
+  const warehouseLabel = (warehouseId?: string | null, binId?: string | null) => {
+    const warehouse = warehouses.find(entry => entry.id === warehouseId)
+    const bin = allBins.find(entry => entry.id === binId)
+    if (!warehouse && !bin) return '—'
+    return `${warehouse?.name || tt('common.none', 'None')}${bin ? ` / ${bin.code}` : ''}`
+  }
+
+  const refLabel = (row: MovementLogRow) => {
+    const refTypeValue = String(row.ref_type || '')
+    const refIdValue = row.ref_id || ''
+    if (!refIdValue) return refTypeValue || '—'
+    if (refTypeValue === 'SO') return `SO ${soNoById[refIdValue] || refIdValue.slice(0, 8)}`
+    if (refTypeValue === 'PO') return `PO ${poNoById[refIdValue] || refIdValue.slice(0, 8)}`
+    return `${refTypeValue} ${refIdValue.slice(0, 8)}`
+  }
 
   // ------------------------------- UI ----------------------------------------
   return (
@@ -880,12 +1050,68 @@ export default function StockMovements() {
         )}
       </div>
 
+      <div className="grid gap-3 lg:grid-cols-4">
+        {movementTypeCards.map(card => (
+          <button
+            key={card.type}
+            type="button"
+            onClick={() => {
+              setMovementType(card.type)
+              setRefType(DEFAULT_REF_BY_MOVE[card.type])
+              setFromBin(''); setToBin(''); setItemId(''); setQtyEntered(''); setUnitCost(''); setNotes('')
+              setMovementUomId('')
+            }}
+            className={`rounded-2xl border p-4 text-left transition-colors ${
+              movementType === card.type
+                ? 'border-primary/60 bg-primary/5 shadow-sm'
+                : 'border-border/80 bg-card hover:border-primary/30 hover:bg-muted/30'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold">{card.title}</div>
+              {movementTypeBadge(card.type)}
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{card.description}</p>
+          </button>
+        ))}
+      </div>
+
+      <Card className="border-border/80 shadow-sm">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.currentAction', 'Current action')}</div>
+            <div className="mt-2 font-medium">{movementTypeCards.find(card => card.type === movementType)?.title}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.item', 'Item')}</div>
+            <div className="mt-2 font-medium">{currentItem ? `${currentItem.name}${currentItem.sku ? ` (${currentItem.sku})` : ''}` : tt('movements.pickItemFirst', 'Pick item first')}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.sourceDest', 'Route')}</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              {showFromWH ? warehouseLabel(warehouseFromId, fromBin) : tt('movements.noSource', 'No source')}
+              {'  '}→{'  '}
+              {showToWH ? warehouseLabel(warehouseToId, toBin) : tt('movements.noDestination', 'No destination')}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.quantityPreview', 'Quantity preview')}</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              {preview
+                ? `${fmtAcct(preview.entered)} ${(uomById.get(preview.uomEntered)?.code || '').toUpperCase()} → ${fmtAcct(preview.base)} ${(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}`
+                : tt('movements.enterQtyToPreview', 'Enter a quantity to preview the base-unit impact')}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Movement type + warehouses */}
       <div className="grid grid-cols-12 gap-3 items-end">
         <div className={`col-span-12 ${showFromWH && showToWH ? 'md:col-span-3' : 'md:col-span-4'}`}>
           <Label>{tt('movements.movementType', 'Movement Type')}</Label>
           <Select value={movementType} onValueChange={(v: MovementType) => {
             setMovementType(v)
+            setRefType(DEFAULT_REF_BY_MOVE[v])
             setFromBin(''); setToBin(''); setItemId(''); setQtyEntered(''); setUnitCost(''); setNotes('')
             setMovementUomId('')
           }}>
@@ -1244,6 +1470,172 @@ export default function StockMovements() {
               {movementType === 'transfer' && tt('movements.btn.transfer', 'Transfer')}
               {movementType === 'adjust'   && tt('movements.btn.adjust',   'Adjust')}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader>
+          <CardTitle>{tt('movements.logTitle', 'Recent movement log')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div>
+              <Label>{tt('filters.from', 'From')}</Label>
+              <Input type="date" value={movementDateFrom} onChange={e => setMovementDateFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>{tt('filters.to', 'To')}</Label>
+              <Input type="date" value={movementDateTo} onChange={e => setMovementDateTo(e.target.value)} />
+            </div>
+            <div>
+              <Label>{tt('filters.type', 'Type')}</Label>
+              <Select value={movementTypeFilter} onValueChange={(v: 'ALL' | MovementType) => setMovementTypeFilter(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{tt('filters.type.all', 'All types')}</SelectItem>
+                  <SelectItem value="receive">{tt('movement.receive', 'Receive')}</SelectItem>
+                  <SelectItem value="issue">{tt('movement.issue', 'Issue')}</SelectItem>
+                  <SelectItem value="transfer">{tt('movement.transfer', 'Transfer')}</SelectItem>
+                  <SelectItem value="adjust">{tt('movement.adjust', 'Adjust')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{tt('filters.ref', 'Reference')}</Label>
+              <Select value={movementRefFilter} onValueChange={(v: 'ALL' | RefType) => setMovementRefFilter(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{tt('filters.ref.all', 'All refs')}</SelectItem>
+                  <SelectItem value="SO">SO</SelectItem>
+                  <SelectItem value="PO">PO</SelectItem>
+                  <SelectItem value="ADJUST">ADJUST</SelectItem>
+                  <SelectItem value="TRANSFER">TRANSFER</SelectItem>
+                  <SelectItem value="WRITE_OFF">WRITE_OFF</SelectItem>
+                  <SelectItem value="INTERNAL_USE">INTERNAL_USE</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{tt('orders.item', 'Item')}</Label>
+              <Select value={movementItemFilter} onValueChange={setMovementItemFilter}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                  {items.map(item => (
+                    <SelectItem key={item.id} value={item.id}>{item.name}{item.sku ? ` (${item.sku})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{tt('orders.warehouse', 'Warehouse')}</Label>
+              <Select value={movementWarehouseFilter} onValueChange={setMovementWarehouseFilter}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                  {warehouses.map(warehouse => (
+                    <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label>{tt('common.search', 'Search')}</Label>
+            <Input value={movementSearch} onChange={e => setMovementSearch(e.target.value)} placeholder={tt('movements.searchPlaceholder', 'Search by item, note, warehouse, or reference')} />
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border">
+            <table className="w-full min-w-[960px] text-sm">
+              <thead className="bg-muted/40">
+                <tr className="border-b text-left">
+                  <th className="py-2 px-3">{tt('table.date', 'Date')}</th>
+                  <th className="py-2 px-3">{tt('table.type', 'Type')}</th>
+                  <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                  <th className="py-2 px-3">{tt('movements.route', 'Route')}</th>
+                  <th className="py-2 px-3 text-right">{tt('table.qtyBase', 'Qty (base)')}</th>
+                  <th className="py-2 px-3 text-right">{tt('movements.avgCost', 'Unit Cost')}</th>
+                  <th className="py-2 px-3">{tt('table.ref', 'Ref')}</th>
+                  <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!movementsLoading && movementRowsFiltered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">
+                      {tt('movements.logEmpty', 'No movements match the current filters.')}
+                    </td>
+                  </tr>
+                )}
+                {movementsLoading && (
+                  <tr>
+                    <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">{tt('loading', 'Loading')}</td>
+                  </tr>
+                )}
+                {movementRowsFiltered.map(row => {
+                  const item = items.find(entry => entry.id === row.item_id)
+                  const detailsOpen = expandedMovementId === row.id
+                  const orderHref = row.ref_type === 'SO' && row.ref_id
+                    ? `/orders?tab=sales&orderId=${row.ref_id}`
+                    : row.ref_type === 'PO' && row.ref_id
+                      ? `/orders?tab=purchase&orderId=${row.ref_id}`
+                      : ''
+                  return (
+                    <Fragment key={row.id}>
+                      <tr className="border-b align-top">
+                        <td className="py-2 px-3 whitespace-nowrap">{new Date(row.created_at).toLocaleString(lang)}</td>
+                        <td className="py-2 px-3">{movementTypeBadge(row.type)}</td>
+                        <td className="py-2 px-3">
+                          <div className="font-medium">{item?.name || row.item_id}</div>
+                          <div className="text-xs text-muted-foreground">{item?.sku || ''}</div>
+                        </td>
+                        <td className="py-2 px-3 text-muted-foreground">
+                          <div>{warehouseLabel(row.warehouse_from_id, row.bin_from_id)}</div>
+                          <div className="text-xs">→ {warehouseLabel(row.warehouse_to_id, row.bin_to_id)}</div>
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.qty_base, 0))}</td>
+                        <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.unit_cost, 0))}</td>
+                        <td className="py-2 px-3 font-medium">{refLabel(row)}</td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            {orderHref ? (
+                              <Button asChild size="sm" variant="ghost">
+                                <Link to={orderHref}>{tt('movements.viewSource', 'View source')}</Link>
+                              </Button>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                            <Button size="sm" variant="outline" onClick={() => setExpandedMovementId(detailsOpen ? '' : row.id)}>
+                              {detailsOpen ? tt('common.hide', 'Hide') : tt('common.details', 'Details')}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {detailsOpen && (
+                        <tr className="border-b bg-muted/20">
+                          <td colSpan={8} className="px-3 py-3 text-sm">
+                            <div className="grid gap-3 md:grid-cols-3">
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.notes', 'Notes')}</div>
+                                <div className="mt-1 text-muted-foreground">{row.notes || '—'}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.value', 'Value')}</div>
+                                <div className="mt-1 font-mono tabular-nums">{fmtAcct(num(row.total_value, 0))}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.referenceTrace', 'Reference trace')}</div>
+                                <div className="mt-1 text-muted-foreground">{row.ref_type || '—'} {row.ref_id || ''}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>

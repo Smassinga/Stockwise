@@ -630,6 +630,26 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
       const wh = resolveWarehouse(m, dir); if (!wh) continue
       const k = keyOf(wh, m.itemId)
+      const revaluationOnly = nt === 'ADJ' && qty === 0 && n(m.totalValue, 0) !== 0
+
+      if (revaluationOnly) {
+        const deltaValue = n(m.totalValue, 0)
+        if (costMethod === 'FIFO') {
+          const layers = getFIFO(k)
+          const onHand = layers.reduce((sum, layer) => sum + layer.qty, 0)
+          if (onHand > 0) {
+            const deltaPerUnit = deltaValue / onHand
+            fifo.set(k, layers.map(layer => ({ ...layer, cost: layer.cost + deltaPerUnit })))
+          }
+        } else {
+          const s = getWA(k)
+          if (s.qty > 0) {
+            s.avgCost += deltaValue / s.qty
+            wa.set(k, s)
+          }
+        }
+        continue
+      }
 
       if (dir === 'IN') {
         if (costMethod === 'FIFO') {

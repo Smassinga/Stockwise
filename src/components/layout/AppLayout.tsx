@@ -23,7 +23,6 @@ import {
   Calculator,      // Landed cost icon
   Ruler,           // UoM
   ClipboardList,   // Stock Levels
-  Monitor,         // Responsive demo
   X,
   Search
 } from 'lucide-react'
@@ -68,7 +67,6 @@ function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
     { label: t('nav.suppliers'),    to: '/suppliers',    icon: Truck },
     { label: t('nav.currency'),     to: '/currency',     icon: Coins },
     { label: t('nav.uom'),          to: '/uom',          icon: Ruler },
-    { label: 'Responsive Demo',     to: '/responsive-demo', icon: Monitor },
     { label: t('nav.settings'),     to: '/settings',     icon: SettingsIcon },
   ]
 }

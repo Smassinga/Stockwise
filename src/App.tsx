@@ -31,7 +31,6 @@ const Transactions = lazy(() => import('./pages/Transactions'))
 const Cash = lazy(() => import('./pages/Cash'))
 const Banks = lazy(() => import('./pages/Banks'))
 const BankDetail = lazy(() => import('./pages/BankDetail'))
-const ResponsiveDemo = lazy(() => import('./pages/ResponsiveDemo'))
 const Profile = lazy(() => import('./pages/Profile'))
 const SearchResults = lazy(() => import('./pages/SearchResults'))
 
@@ -149,7 +148,6 @@ export default function App() {
               <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
               <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
               <Route path="/landed-cost" element={<Suspense fallback={<LoadingSplash />}><LandedCostPage /></Suspense>} />
-              <Route path="/responsive-demo" element={<Suspense fallback={<LoadingSplash />}><ResponsiveDemo /></Suspense>} />
               <Route path="/profile" element={<Suspense fallback={<LoadingSplash />}><Profile /></Suspense>} />
               <Route path="/search" element={<Suspense fallback={<LoadingSplash />}><SearchResults /></Suspense>} />
             </Route>
