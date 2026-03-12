@@ -7,6 +7,11 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
+import {
+  getBankTransactionRefSupport,
+  isMissingBankTransactionRefColumns,
+  setBankTransactionRefSupport,
+} from '../lib/bankTransactionRefs'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../lib/roles'
@@ -232,15 +237,30 @@ export default function BankDetail() {
 
   async function loadTx() {
     const myReq = ++latestTxReq.current
-    let { data, error } = await supabase
-      .from('bank_transactions')
-      .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at, ref_type, ref_id')
-      .eq('bank_id', bankId)
-      .gte('happened_at', from)
-      .lte('happened_at', to)
-      .order('happened_at', { ascending: true })
-      .order('created_at', { ascending: true })
-    if (error && ['42703', 'PGRST204'].includes(String(error.code || ''))) {
+    let data: any[] | null = null
+    let error: any = null
+
+    if (getBankTransactionRefSupport() !== false) {
+      const withRefs = await supabase
+        .from('bank_transactions')
+        .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at, ref_type, ref_id')
+        .eq('bank_id', bankId)
+        .gte('happened_at', from)
+        .lte('happened_at', to)
+        .order('happened_at', { ascending: true })
+        .order('created_at', { ascending: true })
+
+      data = withRefs.data || null
+      error = withRefs.error
+
+      if (!error) {
+        setBankTransactionRefSupport(true)
+      } else if (isMissingBankTransactionRefColumns(error)) {
+        setBankTransactionRefSupport(false)
+      }
+    }
+
+    if (getBankTransactionRefSupport() === false) {
       const fallback = await supabase
         .from('bank_transactions')
         .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at')

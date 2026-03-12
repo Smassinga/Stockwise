@@ -578,25 +578,17 @@ export default function BOMPage() {
     <div className="p-6 space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">{t('bom.title')}</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          {t('bom.subtitle') === 'bom.subtitle'
-            ? 'Use Assembly for build recipes and stock consumption. Landed-cost allocation now has its own workflow.'
-            : t('bom.subtitle')}
-        </p>
+        <p className="max-w-3xl text-sm text-muted-foreground">{t('bom.subtitle')}</p>
       </div>
 
       <Card className="border-border/80 shadow-sm">
         <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="text-sm font-medium">{t('bom.helperTitle') === 'bom.helperTitle' ? 'Assembly stays separate from landed cost.' : t('bom.helperTitle')}</div>
-            <div className="text-sm text-muted-foreground">
-              {t('bom.helperBody') === 'bom.helperBody'
-                ? 'Use this page for product builds and component consumption. Use Landed Cost when you need to absorb freight, customs, or other bulk-buy costs into unit value.'
-                : t('bom.helperBody')}
-            </div>
+            <div className="text-sm font-medium">{t('bom.helperTitle')}</div>
+            <div className="text-sm text-muted-foreground">{t('bom.helperBody')}</div>
           </div>
           <Button asChild variant="outline">
-            <Link to="/landed-cost">{t('landedCost.title') === 'landedCost.title' ? 'Landed Cost' : t('landedCost.title')}</Link>
+            <Link to="/landed-cost">{t('landedCost.title')}</Link>
           </Button>
         </CardContent>
       </Card>

@@ -214,6 +214,15 @@ export default function LandedCostPage() {
         <div className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</div>
       )}
 
+      <Card className="border-dashed border-border/80 shadow-none">
+        <CardContent className="flex flex-col gap-1 p-4 text-sm">
+          <div className="font-medium">{tt('landedCost.previewOnlyTitle', 'Preview only for now')}</div>
+          <p className="text-muted-foreground">
+            {tt('landedCost.previewOnlyBody', 'This page calculates landed cost and final unit cost, but it does not automatically revalue inventory or post into Assembly. Use the result as a costing reference until a dedicated posting flow is added.')}
+          </p>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="space-y-4">
           <Card className="border-border/80 shadow-sm">

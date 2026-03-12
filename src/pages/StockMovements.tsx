@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import { supabase } from '../lib/supabase' // ← use the same client as Warehouses/StockLevels
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -72,7 +73,7 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 export default function StockMovements() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
-  const { companyId } = useOrg()
+  const { companyId, companyName } = useOrg()
 
   // Master data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -859,6 +860,26 @@ export default function StockMovements() {
   // ------------------------------- UI ----------------------------------------
   return (
     <div className="space-y-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
+            {tt('movements.eyebrow', 'Warehouse control')}
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">{tt('nav.movements', 'Movements')}</h1>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              {tt('movements.subtitle', 'Receive, issue, transfer, and adjust stock with full warehouse and bin context. Use issue with an SO reference when the movement should also create a cash-sale trace.')}
+            </p>
+          </div>
+        </div>
+
+        {companyName && (
+          <Badge variant="outline" className="w-fit px-3 py-1 text-xs">
+            {companyName}
+          </Badge>
+        )}
+      </div>
+
       {/* Movement type + warehouses */}
       <div className="grid grid-cols-12 gap-3 items-end">
         <div className={`col-span-12 ${showFromWH && showToWH ? 'md:col-span-3' : 'md:col-span-4'}`}>

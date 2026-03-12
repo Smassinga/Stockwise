@@ -12,6 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
+import {
+  getBankTransactionRefSupport,
+  isMissingBankTransactionRefColumns,
+  setBankTransactionRefSupport,
+} from '../lib/bankTransactionRefs'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import {
   SettlementKind,
@@ -186,6 +191,7 @@ export default function SettlementsPage() {
   const [baseCode, setBaseCode] = useState('MZN')
   const [rows, setRows] = useState(emptyRows)
   const [banks, setBanks] = useState<BankAccount[]>([])
+  const [bankRefsSupported, setBankRefsSupported] = useState<boolean | null>(() => getBankTransactionRefSupport())
 
   const [tab, setTab] = useState<'receive' | 'pay'>('receive')
   const [search, setSearch] = useState('')
@@ -205,6 +211,12 @@ export default function SettlementsPage() {
   const [settleBankId, setSettleBankId] = useState('')
 
   const money = (amount: number) => formatMoneyBase(amount, baseCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')
+
+  useEffect(() => {
+    if (bankRefsSupported === false && settleMethod === 'bank') {
+      setSettleMethod('cash')
+    }
+  }, [bankRefsSupported, settleMethod])
 
   useEffect(() => {
     if (!banks.length) return
@@ -227,13 +239,22 @@ export default function SettlementsPage() {
     async function fetchBankTransactions(bankIds: string[]) {
       if (!bankIds.length) return [] as BankTx[]
 
-      const withRefs = await supabase
-        .from('bank_transactions')
-        .select('id,bank_id,happened_at,memo,amount_base,created_at,ref_type,ref_id')
-        .in('bank_id', bankIds)
+      if (getBankTransactionRefSupport() !== false) {
+        const withRefs = await supabase
+          .from('bank_transactions')
+          .select('id,bank_id,happened_at,memo,amount_base,created_at,ref_type,ref_id')
+          .in('bank_id', bankIds)
 
-      if (!withRefs.error) return (withRefs.data || []) as BankTx[]
-      if (!['42703', 'PGRST204'].includes(String(withRefs.error.code || ''))) throw withRefs.error
+        if (!withRefs.error) {
+          setBankTransactionRefSupport(true)
+          if (!cancelled) setBankRefsSupported(true)
+          return (withRefs.data || []) as BankTx[]
+        }
+        if (!isMissingBankTransactionRefColumns(withRefs.error)) throw withRefs.error
+
+        setBankTransactionRefSupport(false)
+        if (!cancelled) setBankRefsSupported(false)
+      }
 
       const fallback = await supabase
         .from('bank_transactions')
@@ -506,6 +527,10 @@ export default function SettlementsPage() {
           toast.error(tt('settlements.bankRequired', 'Choose a bank account before posting a bank settlement'))
           return
         }
+        if (bankRefsSupported === false) {
+          toast.error(tt('settlements.bankMigrationNeeded', 'Bank-linked settlements need the latest migration before they can be posted'))
+          return
+        }
 
         const { error } = await supabase.from('bank_transactions').insert({
           bank_id: settleBankId,
@@ -518,7 +543,9 @@ export default function SettlementsPage() {
         })
 
         if (error) {
-          if (['42703', 'PGRST204'].includes(String(error.code || ''))) {
+          if (isMissingBankTransactionRefColumns(error)) {
+            setBankTransactionRefSupport(false)
+            setBankRefsSupported(false)
             throw new Error(tt('settlements.bankMigrationNeeded', 'Bank-linked settlements need the latest migration before they can be posted'))
           }
           throw error
@@ -821,9 +848,14 @@ export default function SettlementsPage() {
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="cash">{tt('settlements.cashMethod', 'Cash')}</SelectItem>
-                          <SelectItem value="bank">{tt('settlements.bankMethod', 'Bank')}</SelectItem>
+                          <SelectItem value="bank" disabled={bankRefsSupported === false}>{tt('settlements.bankMethod', 'Bank')}</SelectItem>
                         </SelectContent>
                       </Select>
+                      {bankRefsSupported === false && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {tt('settlements.bankMigrationHint', 'Bank settlements stay disabled until the bank transaction reference migration is applied and the page is refreshed.')}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label>{tt('settlements.amountBase', 'Amount ({code})', { code: baseCode })}</Label>
