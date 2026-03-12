@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/db'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -8,6 +9,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n } from '../lib/i18n'
+import { useOrg } from '../hooks/useOrg'
 
 type Item = { id: string; name: string; sku?: string | null; base_uom_id?: string | null }
 type Uom  = { id: string; code: string; name: string; family?: string }
@@ -20,21 +22,6 @@ type ComponentRow = { id: string; component_item_id: string; qty_per: number; sc
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || ''))
 
-async function resolveActiveCompanyId(): Promise<string> {
-  // Prefer server-side setting; fallback to earliest active membership
-  const g = await supabase.rpc('get_active_company')
-  if (!g.error && g.data) return String(g.data)
-  const { data } = await supabase
-    .from('company_members')
-    .select('company_id')
-    .eq('status', 'active')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .single()
-  if (!data?.company_id) throw new Error('No active company membership found')
-  return String(data.company_id)
-}
-
 type OutputSplit = { id: string; warehouseId: string; binId: string; qty: string }
 type ComponentSourceRow = { id: string; warehouseId: string; binId: string; sharePct: string }
 
@@ -46,8 +33,8 @@ type OutputSplitsPayload = Array<{ warehouse_id: string; bin_id: string; qty: nu
 
 export default function BOMPage() {
   const { t } = useI18n()
+  const { companyId } = useOrg()
   const [loading, setLoading] = useState(true)
-  const [companyId, setCompanyId] = useState<string>('')
 
   // Masters
   const [items, setItems] = useState<Item[]>([])
@@ -104,17 +91,24 @@ export default function BOMPage() {
 
   // Initial load
   useEffect(() => {
+    if (!companyId) {
+      setItems([])
+      setBoms([])
+      setComponents([])
+      setWarehouses([])
+      setLoading(false)
+      return
+    }
+
     (async () => {
       try {
         setLoading(true)
-        const cid = await resolveActiveCompanyId()
-        setCompanyId(cid)
 
         // Items for this company (ensures names, no UUIDs shown)
         const it = await supabase
           .from('items')
           .select('id,name,sku,base_uom_id')
-          .eq('company_id', cid)
+          .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (it.error) throw it.error
         setItems((it.data || []) as Item[])
@@ -135,7 +129,7 @@ export default function BOMPage() {
         const bm = await supabase
           .from('boms')
           .select('id,product_id,name,version,is_active')
-          .eq('company_id', cid)
+          .eq('company_id', companyId)
           .order('created_at', { ascending: true })
         if (bm.error) throw bm.error
         const list = ((bm.data || []) as any[]).map(b => ({ ...b, version: String(b.version ?? 'v1') })) as Bom[]
@@ -144,7 +138,7 @@ export default function BOMPage() {
         const wh = await supabase
           .from('warehouses')
           .select('id,name')
-          .eq('company_id', cid)
+          .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (wh.error) throw wh.error
         setWarehouses((wh.data || []) as Warehouse[])
@@ -159,7 +153,7 @@ export default function BOMPage() {
         setLoading(false)
       }
     })()
-  }, [])
+  }, [companyId])
 
   // Bins per warehouse
   useEffect(() => {
@@ -582,7 +576,30 @@ export default function BOMPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">{t('bom.title')}</h1>
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold">{t('bom.title')}</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          {t('bom.subtitle') === 'bom.subtitle'
+            ? 'Use Assembly for build recipes and stock consumption. Landed-cost allocation now has its own workflow.'
+            : t('bom.subtitle')}
+        </p>
+      </div>
+
+      <Card className="border-border/80 shadow-sm">
+        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-medium">{t('bom.helperTitle') === 'bom.helperTitle' ? 'Assembly stays separate from landed cost.' : t('bom.helperTitle')}</div>
+            <div className="text-sm text-muted-foreground">
+              {t('bom.helperBody') === 'bom.helperBody'
+                ? 'Use this page for product builds and component consumption. Use Landed Cost when you need to absorb freight, customs, or other bulk-buy costs into unit value.'
+                : t('bom.helperBody')}
+            </div>
+          </div>
+          <Button asChild variant="outline">
+            <Link to="/landed-cost">{t('landedCost.title') === 'landedCost.title' ? 'Landed Cost' : t('landedCost.title')}</Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Create a BOM */}
       <Card>

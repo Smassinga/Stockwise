@@ -1,6 +1,7 @@
 // src/pages/Orders/PurchaseOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/db'
+import { useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -10,6 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
+import { discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
@@ -137,6 +139,7 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
 
 export default function PurchaseOrders() {
   const { t } = useI18n()
+  const [searchParams, setSearchParams] = useSearchParams()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars); return s === key ? fallback : s
   }
@@ -251,6 +254,7 @@ export default function PurchaseOrders() {
   const poNo = (p: any) => p?.orderNo ?? p?.order_no ?? p?.id
   const fxPO = (p: PO) => n((p as any).fx_to_base ?? (p as any).fxToBase, 1)
   const curPO = (p: PO) => (p as any).currency_code ?? (p as any).currencyCode
+  const amountPO = (p: PO) => purchaseOrderAmounts(p, polines.filter(l => l.po_id === p.id))
   const poSupplierLabel = (p: PO) =>
     p.supplier_name ?? p.supplier ?? (p.supplier_id ? (suppliers.find(s => s.id === p.supplier_id)?.name ?? p.supplier_id) : tt('none', '(none)'))
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
@@ -467,7 +471,7 @@ export default function PurchaseOrders() {
       const fx = n(poFx, 1)
       const supp = suppliers.find(s => s.id === poSupplierId)
 
-      const subtotal = cleanLines.reduce((s, l) => s + l.qty * l.unitPrice * (1 - l.discountPct/100), 0)
+      const subtotal = cleanLines.reduce((s, l) => s + discountedLineTotal(l.qty, l.unitPrice, l.discountPct), 0)
       const tax_total = subtotal * (n(poTaxPct, 0) / 100)
       const total = subtotal + tax_total
 
@@ -491,7 +495,7 @@ export default function PurchaseOrders() {
 
       for (let i = 0; i < cleanLines.length; i++) {
         const l = cleanLines[i]
-        const lineTotal = l.qty * l.unitPrice * (1 - l.discountPct / 100)
+        const lineTotal = discountedLineTotal(l.qty, l.unitPrice, l.discountPct)
         const { error: lineErr } = await supabase.from('purchase_order_lines').insert({
           company_id: companyId,
           po_id: poId, item_id: l.itemId, uom_id: l.uomId, line_no: i + 1,
@@ -531,8 +535,14 @@ export default function PurchaseOrders() {
   async function refreshPOData() {
     if (!companyId) return
     const [poRes, polRes] = await Promise.all([
-      supabase.from('purchase_orders').select('*').eq('company_id', companyId),
-      supabase.from('purchase_order_lines').select('*').eq('company_id', companyId),
+      supabase
+        .from('purchase_orders')
+        .select('id,status,currency_code,fx_to_base,total,subtotal,tax_total,updated_at,created_at,order_no,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
+        .eq('company_id', companyId),
+      supabase
+        .from('purchase_order_lines')
+        .select('id,po_id,item_id,uom_id,line_no,qty,unit_price,discount_pct,line_total')
+        .eq('company_id', companyId),
     ])
     setPOs(((poRes.data || []) as PO[]).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
     setPOLines((polRes.data || []) as POL[])
@@ -740,6 +750,26 @@ export default function PurchaseOrders() {
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const poTax = poSubtotal * (n(poTaxPct, 0) / 100)
+  const openPurchaseBase = useMemo(() => poOutstanding.reduce((sum, po) => sum + amountPO(po).totalBase, 0), [poOutstanding, polines])
+  const draftPurchaseCount = useMemo(() => poOutstanding.filter(po => String(po.status).toLowerCase() === 'draft').length, [poOutstanding])
+  const receivingPurchaseCount = useMemo(() => poOutstanding.filter(po => ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(po.status).toLowerCase())).length, [poOutstanding])
+
+  function purchaseStatusClass(status?: string) {
+    const value = String(status || '').toLowerCase()
+    if (value === 'draft') return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+    if (value === 'cancelled' || value === 'canceled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    if (value === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+  }
+
+  useEffect(() => {
+    const orderId = searchParams.get('orderId')
+    if (!orderId) return
+    const match = pos.find(po => po.id === orderId)
+    if (!match) return
+    setSelectedPO(match)
+    setPoViewOpen(true)
+  }, [searchParams, pos])
 
   useEffect(() => {
     if (!browserOpen) return
@@ -844,7 +874,7 @@ export default function PurchaseOrders() {
       const it = itemById.get(l.item_id)
       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
       const disc = n(l.discount_pct, 0)
-      const lineTotal = n(l.qty) * n(l.unit_price) * (1 - disc/100)
+      const lineTotal = discountedLineTotal(n(l.qty), n(l.unit_price), disc)
       return `<tr>
         <td>${it?.name || l.item_id}</td>
         <td>${it?.sku || ''}</td>
@@ -856,9 +886,10 @@ export default function PurchaseOrders() {
       </tr>`
     }).join('')
 
-    const subtotal = (po.subtotal ?? lines.reduce((s, l) => s + n(l.qty) * n(l.unit_price) * (1 - n(l.discount_pct,0)/100), 0))
-    const tax = (po.tax_total ?? 0)
-    const total = (po.total ?? (subtotal + tax))
+    const amounts = amountPO(po)
+    const subtotal = amounts.subtotal
+    const tax = amounts.tax
+    const total = amounts.total
     const number = poNo(po)
     const printedAt = new Date().toLocaleString()
 
@@ -1044,7 +1075,37 @@ export default function PurchaseOrders() {
   }
 
   return (
-    <div className="mobile-container w-full max-w-full overflow-x-hidden">
+    <div className="mobile-container w-full max-w-full space-y-6 overflow-x-hidden">
+      <div className="grid gap-3 md:grid-cols-3">
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchases', 'Open purchase orders')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold tracking-tight">{poOutstanding.length}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openPurchasesHelp', 'Draft, approved, and partially received orders stay visible until operationally complete.')}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchaseValue', 'Open purchase value')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold tracking-tight">{formatMoneyBase(openPurchaseBase, baseCode)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openPurchaseValueHelp', 'Gross order value in base currency, including tax.')}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.purchaseReadiness', 'Receiving readiness')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <div className="text-sm font-medium">{tt('orders.purchaseReadyCount', '{count} orders are approved or in receiving.', { count: receivingPurchaseCount })}</div>
+            <p className="text-xs text-muted-foreground">{tt('orders.purchaseDrafts', '{count} drafts still need review before stock can be received.', { count: draftPurchaseCount })}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Outstanding + Create PO */}
       <Card className="border-dashed">
         <CardHeader>
@@ -1207,15 +1268,18 @@ export default function PurchaseOrders() {
             <tbody>
               {poOutstanding.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
               {poOutstanding.map(po => {
-                const totalInCurrency = (po.total ?? (polines.filter(l => l.po_id === po.id).reduce((s, l) => s + n(l.line_total), 0)))
-                const totalBase = totalInCurrency * fxPO(po)
+                const amounts = amountPO(po)
                 return (
-                  <tr key={po.id} className="border-b">
-                    <td className="py-2 pr-2">{poNo(po)}</td>
-                    <td className="py-2 pr-2">{poSupplierLabel(po)}</td>
-                    <td className="py-2 pr-2 capitalize">{po.status}</td>
-                    <td className="py-2 pr-2">{formatMoneyBase(totalBase, baseCode)}</td>
-                    <td className="py-2 pr-2">
+                  <tr key={po.id} className="border-b align-top">
+                    <td className="py-3 pr-2 font-medium">{poNo(po)}</td>
+                    <td className="py-3 pr-2">{poSupplierLabel(po)}</td>
+                    <td className="py-3 pr-2">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${purchaseStatusClass(po.status)}`}>
+                        {String(po.status).replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
+                    <td className="py-3 pr-2">
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => { setSelectedPO(po); setPoViewOpen(true) }}>{tt('orders.view', 'View')}</Button>
                         <Button size="sm" variant="outline" onClick={() => printPO(po)}>{tt('orders.print', 'Print')}</Button>
@@ -1250,15 +1314,18 @@ export default function PurchaseOrders() {
             <tbody>
               {pos.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</td></tr>}
               {pos.map(po => {
-                const totalInCurrency = (po.total ?? (polines.filter(l => l.po_id === po.id).reduce((s, l) => s + n(l.line_total), 0)))
-                const totalBase = totalInCurrency * fxPO(po)
+                const amounts = amountPO(po)
                 return (
-                  <tr key={po.id} className="border-b">
-                    <td className="py-2 pr-2">{poNo(po)}</td>
-                    <td className="py-2 pr-2">{poSupplierLabel(po)}</td>
-                    <td className="py-2 pr-2 capitalize">{po.status}</td>
-                    <td className="py-2 pr-2">{curPO(po)}</td>
-                    <td className="py-2 pr-2">{formatMoneyBase(totalBase, baseCode)}</td>
+                  <tr key={po.id} className="border-b align-top">
+                    <td className="py-3 pr-2 font-medium">{poNo(po)}</td>
+                    <td className="py-3 pr-2">{poSupplierLabel(po)}</td>
+                    <td className="py-3 pr-2">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${purchaseStatusClass(po.status)}`}>
+                        {String(po.status).replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-2">{curPO(po)}</td>
+                    <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                   </tr>
                 )
               })}
@@ -1268,7 +1335,19 @@ export default function PurchaseOrders() {
       </Card>
 
       {/* View/Receive Sheet */}
-      <Sheet open={poViewOpen} onOpenChange={(o) => { if (!o) { setSelectedPO(null); setReceivePlan({}); setReceivedMap({}) } setPoViewOpen(o) }}>
+      <Sheet open={poViewOpen} onOpenChange={(o) => {
+        if (!o) {
+          setSelectedPO(null)
+          setReceivePlan({})
+          setReceivedMap({})
+          if (searchParams.get('orderId')) {
+            const next = new URLSearchParams(searchParams)
+            next.delete('orderId')
+            setSearchParams(next, { replace: true })
+          }
+        }
+        setPoViewOpen(o)
+      }}>
         <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
           <SheetHeader>
             <SheetTitle>{tt('orders.poDetails', 'PO Details')}</SheetTitle>
@@ -1490,16 +1569,19 @@ export default function PurchaseOrders() {
                   <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noResults', 'No results')}</td></tr>
                 )}
                 {browserRows.map(po => {
-                  const totalInCurrency = (po.total ?? (polines.filter(l => l.po_id === po.id).reduce((s, l) => s + n(l.line_total), 0)))
-                  const totalBase = totalInCurrency * fxPO(po)
+                  const amounts = amountPO(po)
                   const updated = (po.updated_at || po.created_at || '').slice(0, 19).replace('T', ' ')
                   return (
                     <tr key={po.id} className="border-t">
                       <td className="py-2 px-3">{poNo(po)}</td>
                       <td className="py-2 px-3">{poSupplierLabel(po)}</td>
-                      <td className="py-2 px-3 capitalize">{po.status}</td>
+                      <td className="py-2 px-3">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${purchaseStatusClass(po.status)}`}>
+                          {String(po.status).replace('_', ' ')}
+                        </span>
+                      </td>
                       <td className="py-2 px-3">{updated || '—'}</td>
-                      <td className="py-2 px-3">{formatMoneyBase(totalBase, baseCode)}</td>
+                      <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                       <td className="py-2 px-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => printPO(po)}>

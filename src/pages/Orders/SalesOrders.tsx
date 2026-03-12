@@ -1,6 +1,7 @@
 // src/pages/Orders/SalesOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { db, supabase } from '../../lib/db'
+import { useSearchParams } from 'react-router-dom'
 
 
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
@@ -15,6 +16,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
+import { discountedLineTotal, salesOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
@@ -57,6 +59,7 @@ type SO = {
   notes?: string | null
   total_amount?: number | null
   tax_total?: number | null
+  due_date?: string | null
   payment_terms?: string | null
   bill_to_name?: string | null
   bill_to_email?: string | null
@@ -181,6 +184,7 @@ type OnHandByBin = { bin_id: string | null; qty: number }
 export default function SalesOrders() {
   const { t } = useI18n()
   const { companyId } = useOrg()
+  const [searchParams, setSearchParams] = useSearchParams()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars)
     return s === key ? fallback : s
@@ -302,7 +306,7 @@ export default function SalesOrders() {
 
     let q = supabase
       .from('sales_orders')
-      .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,updated_at,created_at,order_no,bill_to_name')
+      .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,tax_total,due_date,updated_at,created_at,order_no,bill_to_name')
       .eq('company_id', companyId)
       .in('status', statuses as SoStatus[])
       .order('updated_at', { ascending: false })
@@ -387,6 +391,7 @@ export default function SalesOrders() {
   const soNo = (s: any) => s?.orderNo ?? s?.order_no ?? s?.id
   const fxSO = (s: SO) => n((s as any).fx_to_base ?? (s as any).fxToBase, 1)
   const curSO = (s: SO) => (s as any).currency_code ?? (s as any).currencyCode
+  const amountSO = (s: SO) => salesOrderAmounts(s, solines.filter(l => l.so_id === s.id))
 
   // Prefer bill_to_name; if we can resolve a customer row, show CODE — Name
   const soCustomerLabel = (s: SO) => {
@@ -397,16 +402,43 @@ export default function SalesOrders() {
 
   const remaining = (l: SOL) => Math.max(n(l.qty) - n(l.shipped_qty), 0)
 
+  async function refreshSalesData(activeCompanyId = companyId) {
+    if (!activeCompanyId) {
+      setSOs([])
+      setSOLines([])
+      return
+    }
+
+    const [soRes, solRes] = await Promise.all([
+      supabase
+        .from('sales_orders')
+        .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,tax_total,due_date,payment_terms,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,notes,created_at,updated_at,order_no,company_id')
+        .eq('company_id', activeCompanyId),
+      supabase
+        .from('sales_order_lines')
+        .select('id,so_id,item_id,uom_id,line_no,qty,unit_price,discount_pct,line_total,is_shipped,shipped_at,shipped_qty')
+        .eq('company_id', activeCompanyId),
+    ])
+
+    if (soRes.error) throw soRes.error
+    if (solRes.error) throw solRes.error
+
+    const withFlags = (solRes.data || []).map((line: any) => ({
+      ...line,
+      is_shipped: line.is_shipped ?? false,
+      shipped_at: line.shipped_at ?? null,
+      shipped_qty: Number.isFinite(Number(line.shipped_qty)) ? Number(line.shipped_qty) : 0,
+    })) as SOL[]
+
+    setSOs(((soRes.data || []) as SO[]).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
+    setSOLines(withFlags)
+  }
+
   // load masters, conversions, settings, lists, defaults, (global) branding fallbacks
   useEffect(() => {
     ;(async () => {
       try {
-        const [it, uu] = await Promise.all([
-          db.items.list({ orderBy: { name: 'asc' } }),
-          supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
-        ])
-
-        setItems((it || []).map((x: any) => ({ ...x, baseUomId: x.baseUomId ?? x.base_uom_id ?? '' })))
+        const uu = await supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true })
         if (uu.error) throw uu.error
         setUoms(((uu.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
 
@@ -414,16 +446,6 @@ export default function SalesOrders() {
           .from('uom_conversions')
           .select('from_uom_id,to_uom_id,factor')
         setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))
-
-        const [so, sol] = await Promise.all([ db.salesOrders.list(), db.salesOrderLines.list() ])
-        const withFlags = (sol || []).map((l: any) => ({
-          ...l,
-          is_shipped: l.is_shipped ?? false,
-          shipped_at: l.shipped_at ?? null,
-          shipped_qty: Number.isFinite(Number(l.shipped_qty)) ? Number(l.shipped_qty) : 0,
-        })) as SOL[]
-        setSOs((so || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-        setSOLines(withFlags)
 
         // GLOBAL fallbacks for brand (used only if company_settings doesn't provide one)
         try {
@@ -513,6 +535,8 @@ export default function SalesOrders() {
         if (bns.error) throw bns.error
         setBins(((bns.data || []) as any[]).map(b => ({ id:b.id, code:b.code, name:b.name, warehouseId:b.warehouseId })))
 
+        await refreshSalesData(companyId)
+
         // 6) default WH (for the global override)
         const fromSettings = (await supabase
           .from('app_settings').select('data').eq('id', 'app').maybeSingle()
@@ -561,6 +585,15 @@ export default function SalesOrders() {
     const exists = currencies.some(c => c.code === soCurrency)
     if (!exists) setSoCurrency(currencies[0].code)
   }, [currencies])
+
+  useEffect(() => {
+    const orderId = searchParams.get('orderId')
+    if (!orderId) return
+    const match = sos.find(so => so.id === orderId)
+    if (!match) return
+    setSelectedSO(match)
+    setSoViewOpen(true)
+  }, [searchParams, sos])
 
   // Initialize per-line warehouse and bin when opening View
   useEffect(() => {
@@ -651,7 +684,9 @@ export default function SalesOrders() {
   async function tryUpdateStatus(id: string, candidates: SoStatus[]) {
     for (const status of candidates) {
       if (!VALID_SO_STATUSES.includes(status)) continue
-      const { error } = await supabase.from('sales_orders').update({ status }).eq('id', id)
+      let query = supabase.from('sales_orders').update({ status }).eq('id', id)
+      if (companyId) query = query.eq('company_id', companyId)
+      const { error } = await query
       if (!error) return status
       if (!String(error?.message || '').toLowerCase().includes('violates')) console.warn('Status update error:', error)
     }
@@ -659,10 +694,11 @@ export default function SalesOrders() {
   }
 
   const calcFormSubtotal = (rows: Array<{ qty: string; unitPrice: string; discountPct: string }>) =>
-    rows.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct, 0) / 100), 0)
+    rows.reduce((s, r) => s + discountedLineTotal(n(r.qty), n(r.unitPrice), n(r.discountPct, 0)), 0)
 
   async function createSO() {
     try {
+      if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
       if (!soCustomerId) return toast.error(tt('orders.customerRequired', 'Customer is required'))
       const cleanLines = soLinesForm
         .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct) } ))
@@ -675,11 +711,12 @@ export default function SalesOrders() {
 
       const fx = n(soFx, 1)
       const cust = customers.find(c => c.id === soCustomerId)
-      const headerSubtotal = calcFormSubtotal(soLinesForm)
+      const headerSubtotal = cleanLines.reduce((sum, line) => sum + discountedLineTotal(line.qty, line.unitPrice, line.discountPct), 0)
 
       const inserted: any = await supabase
         .from('sales_orders')
         .insert({
+          company_id: companyId,
           customer_id: soCustomerId,
           status: 'draft',
           currency_code: chosenCurrency,
@@ -704,8 +741,9 @@ export default function SalesOrders() {
 
       for (let i = 0; i < cleanLines.length; i++) {
         const l = cleanLines[i]; const lineNo = i + 1
-        const lineTotal = l.qty * l.unitPrice * (1 - l.discountPct / 100)
+        const lineTotal = discountedLineTotal(l.qty, l.unitPrice, l.discountPct)
         await db.salesOrderLines.create({
+          company_id: companyId,
           so_id: soId,
           item_id: l.itemId,
           uom_id: l.uomId,
@@ -730,15 +768,7 @@ export default function SalesOrders() {
       setSoLinesForm([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
       setSoOpen(false)
 
-      const [so, sol] = await Promise.all([ db.salesOrders.list(), db.salesOrderLines.list() ])
-      const withFlags = (sol || []).map((l: any) => ({
-        ...l,
-        is_shipped: l.is_shipped ?? false,
-        shipped_at: l.shipped_at ?? null,
-        shipped_qty: Number.isFinite(Number(l.shipped_qty)) ? Number(l.shipped_qty) : 0,
-      })) as SOL[]
-      setSOs((so || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-      setSOLines(withFlags)
+      await refreshSalesData(companyId)
     } catch (err: any) {
       console.error(err)
       toast.error(err?.message || tt('orders.soCreateFailed', 'Failed to create SO'))
@@ -751,7 +781,9 @@ export default function SalesOrders() {
       const subtotal = lines.reduce((s, l) => s + n(l.line_total), 0)
 
       const updated = await tryUpdateStatus(soId, ['confirmed'])
-      await supabase.from('sales_orders').update({ total_amount: subtotal }).eq('id', soId)
+      let query = supabase.from('sales_orders').update({ total_amount: subtotal }).eq('id', soId)
+      if (companyId) query = query.eq('company_id', companyId)
+      await query
 
       setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated || s.status, total_amount: subtotal } : s)))
       toast.success(tt('orders.soConfirmed', 'SO confirmed'))
@@ -881,11 +913,20 @@ export default function SalesOrders() {
   )
   const soSubtotal = soLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const soTax = soSubtotal * (n(soTaxPct, 0) / 100)
+  const openSalesBase = useMemo(() => soOutstanding.reduce((sum, so) => sum + amountSO(so).totalBase, 0), [soOutstanding, solines])
+  const draftSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'draft').length, [soOutstanding])
+  const confirmedSalesCount = useMemo(() => soOutstanding.filter(so => ['confirmed', 'allocated', 'submitted'].includes(String(so.status).toLowerCase())).length, [soOutstanding])
 
   function soHeaderSubtotal(so: SO): number {
-    const header = n((so as any).total_amount, NaN)
-    if (Number.isFinite(header)) return header
-    return solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
+    return amountSO(so).subtotal
+  }
+
+  function salesStatusClass(status?: string) {
+    const value = String(status || '').toLowerCase()
+    if (value === 'draft') return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+    if (value === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    if (value === 'shipped' || value === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
   }
 
   // ---- Print: uses companies profile (preferred), then company_settings brand as fallback
@@ -898,7 +939,7 @@ export default function SalesOrders() {
       const it = itemById.get(l.item_id)
       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
       const disc = n(l.discount_pct, 0)
-      const lineTotal = n(l.qty) * n(l.unit_price) * (1 - disc/100)
+      const lineTotal = discountedLineTotal(n(l.qty), n(l.unit_price), disc)
       const shippedBadge = (n(l.shipped_qty) >= n(l.qty)) || l.is_shipped
         ? ' <span class="pill pill-ok">shipped</span>' : ''
       return `<tr>
@@ -912,9 +953,10 @@ export default function SalesOrders() {
       </tr>`
     }).join('')
 
-    const subtotal = soHeaderSubtotal(so)
-    const tax = n((so as any).tax_total, 0)
-    const total = subtotal + tax
+    const amounts = amountSO(so)
+    const subtotal = amounts.subtotal
+    const tax = amounts.tax
+    const total = amounts.total
     const number = soNo(so)
     const printedAt = new Date().toLocaleString()
 
@@ -1142,7 +1184,37 @@ export default function SalesOrders() {
   }
 
   return (
-    <div className="mobile-container w-full max-w-full overflow-x-hidden">
+    <div className="mobile-container w-full max-w-full space-y-6 overflow-x-hidden">
+      <div className="grid gap-3 md:grid-cols-3">
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSales', 'Open sales orders')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold tracking-tight">{soOutstanding.length}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesHelp', 'Draft, submitted, confirmed, and allocated orders still need attention.')}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSalesValue', 'Open sales value')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold tracking-tight">{formatMoneyBase(openSalesBase, baseCode)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesValueHelp', 'Gross order value in base currency, including tax.')}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.salesReadiness', 'Order readiness')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <div className="text-sm font-medium">{tt('orders.confirmedReady', '{count} confirmed or allocated', { count: confirmedSalesCount })}</div>
+            <p className="text-xs text-muted-foreground">{tt('orders.salesDrafts', '{count} drafts still need review before fulfilment.', { count: draftSalesCount })}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Outstanding + Create SO */}
       <Card className="border-dashed">
         <CardHeader>
@@ -1365,17 +1437,18 @@ export default function SalesOrders() {
             <tbody>
               {soOutstanding.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
               {soOutstanding.map(so => {
-                const header = n((so as any).total_amount, NaN)
-                const sumLines = solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
-                const orderSubtotal = Number.isFinite(header) ? header : sumLines
-                const totalBase = orderSubtotal * fxSO(so)
+                const amounts = amountSO(so)
                 return (
-                  <tr key={so.id} className="border-b">
-                    <td className="py-2 pr-2">{soNo(so)}</td>
-                    <td className="py-2 pr-2">{soCustomerLabel(so)}</td>
-                    <td className="py-2 pr-2 capitalize">{so.status}</td>
-                    <td className="py-2 pr-2">{formatMoneyBase(totalBase, baseCode)}</td>
-                    <td className="py-2 pr-2">
+                  <tr key={so.id} className="border-b align-top">
+                    <td className="py-3 pr-2 font-medium">{soNo(so)}</td>
+                    <td className="py-3 pr-2">{soCustomerLabel(so)}</td>
+                    <td className="py-3 pr-2">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
+                        {String(so.status).replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
+                    <td className="py-3 pr-2">
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => { setSelectedSO(so); setSoViewOpen(true) }}>{tt('orders.view', 'View')}</Button>
                         <Button size="sm" variant="outline" onClick={() => printSO(so)}>{tt('orders.print', 'Print')}</Button>
@@ -1411,17 +1484,18 @@ export default function SalesOrders() {
             <tbody>
               {sos.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.noSOsYet', 'No SOs yet.')}</td></tr>}
               {sos.map(so => {
-                const header = n((so as any).total_amount, NaN)
-                const sumLines = solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
-                const orderSubtotal = Number.isFinite(header) ? header : sumLines
-                const totalBase = orderSubtotal * fxSO(so)
+                const amounts = amountSO(so)
                 return (
-                  <tr key={so.id} className="border-b">
-                    <td className="py-2 pr-2">{soNo(so)}</td>
-                    <td className="py-2 pr-2">{soCustomerLabel(so)}</td>
-                    <td className="py-2 pr-2 capitalize">{so.status}</td>
-                    <td className="py-2 pr-2">{curSO(so)}</td>
-                    <td className="py-2 pr-2">{formatMoneyBase(totalBase, baseCode)}</td>
+                  <tr key={so.id} className="border-b align-top">
+                    <td className="py-3 pr-2 font-medium">{soNo(so)}</td>
+                    <td className="py-3 pr-2">{soCustomerLabel(so)}</td>
+                    <td className="py-3 pr-2">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
+                        {String(so.status).replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-2">{curSO(so)}</td>
+                    <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                   </tr>
                 )
               })}
@@ -1431,7 +1505,17 @@ export default function SalesOrders() {
       </Card>
 
       {/* SO View / Ship */}
-      <Sheet open={soViewOpen} onOpenChange={(o) => { if (!o) { setSelectedSO(null) } setSoViewOpen(o) }}>
+      <Sheet open={soViewOpen} onOpenChange={(o) => {
+        if (!o) {
+          setSelectedSO(null)
+          if (searchParams.get('orderId')) {
+            const next = new URLSearchParams(searchParams)
+            next.delete('orderId')
+            setSearchParams(next, { replace: true })
+          }
+        }
+        setSoViewOpen(o)
+      }}>
         <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
           <SheetHeader>
             <SheetTitle>{tt('orders.soDetails', 'SO Details')}</SheetTitle>
@@ -1673,18 +1757,19 @@ export default function SalesOrders() {
                   <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noResults', 'No results')}</td></tr>
                 )}
                 {shippedRows.map(so => {
-                  const header = n((so as any).total_amount, NaN)
-                  const sumLines = solines.filter(l => l.so_id === so.id).reduce((s, l) => s + n(l.line_total), 0)
-                  const orderSubtotal = Number.isFinite(header) ? header : sumLines
-                  const totalBase = orderSubtotal * fxSO(so)
+                  const amounts = amountSO(so)
                   const updated = (so.updated_at || so.created_at || '').slice(0, 19).replace('T', ' ')
                   return (
                     <tr key={so.id} className="border-t">
                       <td className="py-2 px-3">{soNo(so)}</td>
                       <td className="py-2 px-3">{soCustomerLabel(so)}</td>
-                      <td className="py-2 px-3 capitalize">{so.status}</td>
+                      <td className="py-2 px-3">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
+                          {String(so.status).replace('_', ' ')}
+                        </span>
+                      </td>
                       <td className="py-2 px-3">{updated || '—'}</td>
-                      <td className="py-2 px-3">{formatMoneyBase(totalBase, baseCode)}</td>
+                      <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                       <td className="py-2 px-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => printSO(so)}>

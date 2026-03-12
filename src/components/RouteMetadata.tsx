@@ -79,6 +79,11 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
       description: t.appDescription,
       noindex: true,
     },
+    '/settlements': {
+      title: 'Receivables & Payables | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
     '/reports': {
       title: 'Reports | StockWise',
       description: t.appDescription,
@@ -115,7 +120,12 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
       noindex: true,
     },
     '/bom': {
-      title: 'BOM | StockWise',
+      title: 'Assembly | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
+    '/landed-cost': {
+      title: 'Landed Cost | StockWise',
       description: t.appDescription,
       noindex: true,
     },

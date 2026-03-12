@@ -19,6 +19,8 @@ import {
   Receipt,         // Transactions icon
   Wallet,          // Cash icon
   Banknote,        // Banks icon
+  CreditCard,      // Settlements icon
+  Calculator,      // Landed cost icon
   Ruler,           // UoM
   ClipboardList,   // Stock Levels
   Monitor,         // Responsive demo
@@ -56,6 +58,8 @@ function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
     { label: t('nav.cash'),         to: '/cash',         icon: Wallet },
     { label: t('nav.banks'),        to: '/banks',        icon: Banknote },
     { label: t('nav.orders'),       to: '/orders',       icon: ShoppingCart },
+    { label: t('nav.settlements'),  to: '/settlements',  icon: CreditCard },
+    { label: t('nav.landedCost'),   to: '/landed-cost',  icon: Calculator },
     { label: t('nav.reports'),      to: '/reports',      icon: BarChart3 },
     { label: t('nav.stockLevels'),  to: '/stock-levels', icon: ClipboardList },
     { label: t('nav.warehouses'),   to: '/warehouses',   icon: Boxes },

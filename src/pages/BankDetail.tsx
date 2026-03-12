@@ -32,6 +32,8 @@ type Tx = {
   amount_base: number
   reconciled: boolean
   created_at: string
+  ref_type?: 'SO' | 'PO' | null
+  ref_id?: string | null
 }
 
 type Statement = {
@@ -230,14 +232,26 @@ export default function BankDetail() {
 
   async function loadTx() {
     const myReq = ++latestTxReq.current
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('bank_transactions')
-      .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at')
+      .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at, ref_type, ref_id')
       .eq('bank_id', bankId)
       .gte('happened_at', from)
       .lte('happened_at', to)
       .order('happened_at', { ascending: true })
       .order('created_at', { ascending: true })
+    if (error && ['42703', 'PGRST204'].includes(String(error.code || ''))) {
+      const fallback = await supabase
+        .from('bank_transactions')
+        .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at')
+        .eq('bank_id', bankId)
+        .gte('happened_at', from)
+        .lte('happened_at', to)
+        .order('happened_at', { ascending: true })
+        .order('created_at', { ascending: true })
+      data = (fallback.data || []).map((row: any) => ({ ...row, ref_type: null, ref_id: null }))
+      error = fallback.error
+    }
     if (myReq !== latestTxReq.current) return
     if (error) { console.warn('bank_transactions not ready:', error.message); setRows([]); return }
     let list = (data as Tx[]) || []
@@ -638,6 +652,7 @@ export default function BankDetail() {
             <thead className="text-left sticky top-0 bg-background">
               <tr>
                 <th className="py-2 pr-3">{t('table.date')}</th>
+                <th className="py-2 pr-3">{t('table.ref')}</th>
                 <th className="py-2 pr-3">{t('bank.memo')}</th>
                 <th className="py-2 pr-3 text-right">{t('bank.amount', { code: currency })}</th>
                 <th className="py-2 pl-3 text-right">{t('bank.reconciled')}</th>
@@ -647,6 +662,7 @@ export default function BankDetail() {
               {rows.map(r => (
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
+                  <td className="py-2 pr-3">{r.ref_type ? `${r.ref_type}${r.ref_id ? `:${r.ref_id.slice(0, 8)}…` : ''}` : t('common.dash')}</td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right">
@@ -662,7 +678,7 @@ export default function BankDetail() {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td className="py-6 text-muted-foreground" colSpan={4}>{t('bank.noTx')}</td></tr>
+                <tr><td className="py-6 text-muted-foreground" colSpan={5}>{t('bank.noTx')}</td></tr>
               )}
             </tbody>
           </table>

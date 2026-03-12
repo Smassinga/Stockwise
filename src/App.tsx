@@ -15,11 +15,13 @@ const Warehouses = lazy(() => import('./pages/Warehouses').then((m) => ({ defaul
 const Users = lazy(() => import('./pages/Users'))
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })))
 const Orders = lazy(() => import('./pages/Orders'))
+const Settlements = lazy(() => import('./pages/Settlements'))
 const StockLevels = lazy(() => import('./pages/StockLevels'))
 const CurrencyPage = lazy(() => import('./pages/Currency'))
 const CustomersPage = lazy(() => import('./pages/Customers'))
 const SuppliersPage = lazy(() => import('./pages/Suppliers'))
 const BOMPage = lazy(() => import('./pages/BOM'))
+const LandedCostPage = lazy(() => import('./pages/LandedCost'))
 const Auth = lazy(() => import('./pages/Auth'))
 const UomSettings = lazy(() => import('./pages/UomSettings'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
@@ -137,6 +139,7 @@ export default function App() {
 
               <Route path="/reports" element={<Suspense fallback={<LoadingSplash />}><Reports /></Suspense>} />
               <Route path="/orders" element={<Suspense fallback={<LoadingSplash />}><Orders /></Suspense>} />
+              <Route path="/settlements" element={<Suspense fallback={<LoadingSplash />}><Settlements /></Suspense>} />
               <Route path="/stock-levels" element={<Suspense fallback={<LoadingSplash />}><StockLevels /></Suspense>} />
               <Route path="/currency" element={<Suspense fallback={<LoadingSplash />}><CurrencyPage /></Suspense>} />
               <Route path="/customers" element={<Suspense fallback={<LoadingSplash />}><CustomersPage /></Suspense>} />
@@ -145,6 +148,7 @@ export default function App() {
               <Route path="/settings/uoms" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
               <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
               <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
+              <Route path="/landed-cost" element={<Suspense fallback={<LoadingSplash />}><LandedCostPage /></Suspense>} />
               <Route path="/responsive-demo" element={<Suspense fallback={<LoadingSplash />}><ResponsiveDemo /></Suspense>} />
               <Route path="/profile" element={<Suspense fallback={<LoadingSplash />}><Profile /></Suspense>} />
               <Route path="/search" element={<Suspense fallback={<LoadingSplash />}><SearchResults /></Suspense>} />
