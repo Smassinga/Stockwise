@@ -1,6 +1,12 @@
 // src/lib/supabase.ts
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js'
 
+const isDev = import.meta.env.DEV
+
+function debugLog(...args: unknown[]) {
+  if (isDev) console.log(...args)
+}
+
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL!,
   import.meta.env.VITE_SUPABASE_ANON_KEY!,
@@ -27,7 +33,7 @@ export const realtimeReady = new Promise((res) => { _resolveReady = res })
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token ?? ''
   supabase.realtime.setAuth(token)
-  console.log('[Supabase] Initial token set for realtime', { hasToken: !!token, userId: session?.user?.id })
+  debugLog('[Supabase] Initial token set for realtime', { hasToken: !!token, userId: session?.user?.id })
   _resolveReady(null)
 })()
 
@@ -35,7 +41,7 @@ export const realtimeReady = new Promise((res) => { _resolveReady = res })
 supabase.auth.onAuthStateChange((_event, session) => {
   const token = session?.access_token ?? ''
   supabase.realtime.setAuth(token)
-  console.log('[Supabase] Auth state changed, updating realtime token', { 
+  debugLog('[Supabase] Auth state changed, updating realtime token', {
     event: _event, 
     hasToken: !!token, 
     userId: session?.user?.id 
@@ -52,7 +58,7 @@ export async function createAuthedChannel(
   const token = session?.access_token ?? ''
   // defensive: set it on the shared socket
   supabase.realtime.setAuth(token)
-  console.log('[Supabase] Creating authed channel', { 
+  debugLog('[Supabase] Creating authed channel', {
     name, 
     hasToken: !!token, 
     userId: session?.user?.id 
