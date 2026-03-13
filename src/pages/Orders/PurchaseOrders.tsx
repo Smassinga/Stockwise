@@ -8,6 +8,7 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
+import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
@@ -15,6 +16,7 @@ import { discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinanc
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
+import { useAuth } from '../../hooks/useAuth'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -79,10 +81,18 @@ type Bin = { id: string; code: string; name: string; warehouseId: string }
 type PO = {
   id: string
   status: string
+  order_date?: string | null
   currency_code?: string
   fx_to_base?: number
+  due_date?: string | null
   expected_date?: string|null
+  reference_no?: string | null
+  delivery_terms?: string | null
   notes?: string|null
+  internal_notes?: string | null
+  prepared_by?: string | null
+  approved_by?: string | null
+  received_by?: string | null
   supplier?: string
   supplier_id?: string
   supplier_name?: string|null
@@ -94,6 +104,8 @@ type PO = {
   tax_total?: number|null
   total?: number|null
   order_no?: string|null
+  public_id?: string | null
+  created_by?: string | null
   updated_at?: string|null
   created_at?: string|null
 }
@@ -103,6 +115,7 @@ type POL = {
   po_id: string
   item_id: string
   uom_id: string
+  description?: string | null
   line_no?: number
   qty: number
   unit_price: number
@@ -122,6 +135,67 @@ const initials = (s?: string | null) => {
   const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
   return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
 }
+
+type PurchaseLineDraft = {
+  itemId: string
+  uomId: string
+  description: string
+  qty: string
+  unitPrice: string
+  discountPct: string
+}
+
+type PoMetaDraft = {
+  orderDate: string
+  expectedDate: string
+  dueDate: string
+  paymentTerms: string
+  deliveryTerms: string
+  referenceNo: string
+  notes: string
+  internalNotes: string
+  preparedBy: string
+  approvedBy: string
+  receivedBy: string
+}
+
+const todayYmd = () => new Date().toISOString().slice(0, 10)
+const blankPurchaseLine = (): PurchaseLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0' })
+const emptyPoMetaDraft = (): PoMetaDraft => ({
+  orderDate: todayYmd(),
+  expectedDate: todayYmd(),
+  dueDate: todayYmd(),
+  paymentTerms: '',
+  deliveryTerms: '',
+  referenceNo: '',
+  notes: '',
+  internalNotes: '',
+  preparedBy: '',
+  approvedBy: '',
+  receivedBy: '',
+})
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+const docText = (value: unknown, fallback = '—') => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text) : fallback
+}
+const docMultiline = (value: unknown, fallback = '—') => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text).replace(/\r?\n/g, '<br/>') : fallback
+}
+const docDate = (value: unknown, fallback = '—') => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text.slice(0, 10)) : fallback
+}
+const docName = (value: unknown) => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text) : '&nbsp;'
+}
 async function fetchDataUrl(src?: string | null): Promise<string | null> {
   if (!src || !src.trim()) return null
   try {
@@ -140,6 +214,7 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
 export default function PurchaseOrders() {
   const { t } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
+  const { user } = useAuth()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars); return s === key ? fallback : s
   }
@@ -175,15 +250,24 @@ export default function PurchaseOrders() {
   const [poSupplierId, setPoSupplierId] = useState('')
   const [poCurrency, setPoCurrency] = useState('MZN')
   const [poFx, setPoFx] = useState('1')
-  const [poDate, setPoDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [poOrderDate, setPoOrderDate] = useState<string>(() => todayYmd())
+  const [poDate, setPoDate] = useState<string>(() => todayYmd())
+  const [poDueDate, setPoDueDate] = useState<string>(() => todayYmd())
   const [poTaxPct, setPoTaxPct] = useState<string>('0')
-  const [poLinesForm, setPoLinesForm] = useState<Array<{ itemId: string; uomId: string; qty: string; unitPrice: string; discountPct: string }>>([
-    { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }
-  ])
+  const [poPaymentTerms, setPoPaymentTerms] = useState('')
+  const [poDeliveryTerms, setPoDeliveryTerms] = useState('')
+  const [poReferenceNo, setPoReferenceNo] = useState('')
+  const [poNotes, setPoNotes] = useState('')
+  const [poInternalNotes, setPoInternalNotes] = useState('')
+  const [poPreparedBy, setPoPreparedBy] = useState('')
+  const [poApprovedBy, setPoApprovedBy] = useState('')
+  const [poReceivedBy, setPoReceivedBy] = useState('')
+  const [poLinesForm, setPoLinesForm] = useState<PurchaseLineDraft[]>([blankPurchaseLine()])
 
   // view + receive
   const [poViewOpen, setPoViewOpen] = useState(false)
   const [selectedPO, setSelectedPO] = useState<PO | null>(null)
+  const [selectedPoMeta, setSelectedPoMeta] = useState<PoMetaDraft>(emptyPoMetaDraft())
 
   // defaults for receiving
   const [defaultReceiveWhId, setDefaultReceiveWhId] = useState<string>('')
@@ -192,6 +276,16 @@ export default function PurchaseOrders() {
   // per-line plan and receipts map
   const [receivePlan, setReceivePlan] = useState<Record<string, { qty: string; whId: string; binId: string }>>({})
   const [receivedMap, setReceivedMap] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (user?.name && !poPreparedBy.trim()) setPoPreparedBy(user.name)
+  }, [user?.name, poPreparedBy])
+
+  useEffect(() => {
+    const supp = suppliers.find(s => s.id === poSupplierId)
+    if (!supp) return
+    setPoPaymentTerms(supp.payment_terms ?? '')
+  }, [poSupplierId, suppliers])
 
   // --- Closed/Received POs browser state
   const [browserOpen, setBrowserOpen] = useState(false)
@@ -251,12 +345,28 @@ export default function PurchaseOrders() {
     try { return Number(convertQty(qty, from, to, convGraph)) } catch { return null }
   }
 
-  const poNo = (p: any) => p?.orderNo ?? p?.order_no ?? p?.id
+  const poNo = (p: any) => p?.orderNo ?? p?.order_no ?? p?.public_id ?? p?.id
   const fxPO = (p: PO) => n((p as any).fx_to_base ?? (p as any).fxToBase, 1)
   const curPO = (p: PO) => (p as any).currency_code ?? (p as any).currencyCode
   const amountPO = (p: PO) => purchaseOrderAmounts(p, polines.filter(l => l.po_id === p.id))
   const poSupplierLabel = (p: PO) =>
     p.supplier_name ?? p.supplier ?? (p.supplier_id ? (suppliers.find(s => s.id === p.supplier_id)?.name ?? p.supplier_id) : tt('none', '(none)'))
+  const buildPoMetaDraft = (po?: PO | null): PoMetaDraft => {
+    if (!po) return emptyPoMetaDraft()
+    return {
+      orderDate: String((po as any).order_date ?? '').slice(0, 10) || todayYmd(),
+      expectedDate: String((po as any).expected_date ?? '').slice(0, 10) || '',
+      dueDate: String((po as any).due_date ?? '').slice(0, 10) || '',
+      paymentTerms: String(po.payment_terms ?? ''),
+      deliveryTerms: String((po as any).delivery_terms ?? ''),
+      referenceNo: String((po as any).reference_no ?? ''),
+      notes: String(po.notes ?? ''),
+      internalNotes: String((po as any).internal_notes ?? ''),
+      preparedBy: String((po as any).prepared_by ?? ''),
+      approvedBy: String((po as any).approved_by ?? ''),
+      receivedBy: String((po as any).received_by ?? ''),
+    }
+  }
   const binsForWH = (whId: string) => bins.filter(b => b.warehouseId === whId)
 
   // load masters, lists, conversions, defaults, brand fallbacks
@@ -295,10 +405,10 @@ export default function PurchaseOrders() {
         // POs + lines for this company
         const [poRes, polRes] = await Promise.all([
           supabase.from('purchase_orders')
-            .select('id,status,currency_code,fx_to_base,total,subtotal,tax_total,updated_at,created_at,order_no,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
+            .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
             .eq('company_id', companyId),
           supabase.from('purchase_order_lines')
-            .select('id,po_id,item_id,uom_id,line_no,qty,unit_price,discount_pct,line_total')
+            .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
             .eq('company_id', companyId),
         ])
         const poRows = (poRes.data || []) as PO[]
@@ -464,7 +574,7 @@ export default function PurchaseOrders() {
       if (!companyId) { toast.error('No company selected. Please sign in again or select a company.'); return }
 
       const cleanLines = poLinesForm
-        .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct) }))
+        .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct), description: (l.description || '').trim() }))
         .filter(l => l.itemId && l.uomId && l.qty > 0 && l.unitPrice >= 0 && l.discountPct >= 0 && l.discountPct <= 100)
       if (!cleanLines.length) return toast.error(tt('orders.addOneLine', 'Add at least one valid line'))
 
@@ -479,11 +589,19 @@ export default function PurchaseOrders() {
         company_id: companyId,
         supplier_id: poSupplierId,
         status: 'draft',
+        order_date: poOrderDate || null,
         currency_code: (poCurrency || '').toUpperCase().slice(0, 3),
         fx_to_base: fx,
+        due_date: poDueDate || null,
         expected_date: poDate || null,
-        notes: null,
-        payment_terms: supp?.payment_terms ?? null,
+        notes: poNotes.trim() || null,
+        internal_notes: poInternalNotes.trim() || null,
+        payment_terms: poPaymentTerms.trim() || supp?.payment_terms || null,
+        delivery_terms: poDeliveryTerms.trim() || null,
+        reference_no: poReferenceNo.trim() || null,
+        prepared_by: (poPreparedBy.trim() || user?.name || '') || null,
+        approved_by: poApprovedBy.trim() || null,
+        received_by: poReceivedBy.trim() || null,
         supplier_name: supp?.name ?? null,
         supplier_email: supp?.email ?? null,
         supplier_phone: supp?.phone ?? null,
@@ -498,7 +616,7 @@ export default function PurchaseOrders() {
         const lineTotal = discountedLineTotal(l.qty, l.unitPrice, l.discountPct)
         const { error: lineErr } = await supabase.from('purchase_order_lines').insert({
           company_id: companyId,
-          po_id: poId, item_id: l.itemId, uom_id: l.uomId, line_no: i + 1,
+          po_id: poId, item_id: l.itemId, uom_id: l.uomId, description: l.description || null, line_no: i + 1,
           qty: l.qty, unit_price: l.unitPrice, discount_pct: l.discountPct, line_total: lineTotal
         } as any)
         if (lineErr) throw lineErr
@@ -506,7 +624,10 @@ export default function PurchaseOrders() {
 
       toast.success(tt('orders.poCreated', 'Purchase Order created'))
       setPoSupplierId(''); setPoCurrency(baseCode); setPoFx('1'); setPoTaxPct('0')
-      setPoLinesForm([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
+      setPoOrderDate(() => todayYmd()); setPoDate(() => todayYmd()); setPoDueDate(() => todayYmd())
+      setPoPaymentTerms(''); setPoDeliveryTerms(''); setPoReferenceNo(''); setPoNotes(''); setPoInternalNotes('')
+      setPoPreparedBy(user?.name || ''); setPoApprovedBy(''); setPoReceivedBy('')
+      setPoLinesForm([blankPurchaseLine()])
       setPoOpen(false)
 
       await refreshPOData()
@@ -516,7 +637,8 @@ export default function PurchaseOrders() {
   async function approvePO(poId: string) {
     try {
       const updated = await tryUpdateStatus(poId, ['approved', 'open', 'authorised', 'authorized'])
-      if (updated) setPOs(prev => prev.map(p => (p.id === poId ? { ...p, status: updated } : p)))
+      if (user?.name) await supabase.from('purchase_orders').update({ approved_by: user.name }).eq('id', poId).eq('company_id', companyId!)
+      if (updated) setPOs(prev => prev.map(p => (p.id === poId ? { ...p, status: updated, approved_by: user?.name || p.approved_by } : p)))
       toast.success(tt('orders.poApproved', 'PO approved'))
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poApproveFailed', 'Failed to approve PO')) }
   }
@@ -529,6 +651,34 @@ export default function PurchaseOrders() {
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCancelFailed', 'Failed to cancel PO')) }
   }
 
+  async function saveSelectedPOMeta() {
+    if (!selectedPO || !companyId) return
+    try {
+      const patch: Partial<PO> & Record<string, any> = {
+        order_date: selectedPoMeta.orderDate || null,
+        expected_date: selectedPoMeta.expectedDate || null,
+        due_date: selectedPoMeta.dueDate || null,
+        payment_terms: selectedPoMeta.paymentTerms.trim() || null,
+        delivery_terms: selectedPoMeta.deliveryTerms.trim() || null,
+        reference_no: selectedPoMeta.referenceNo.trim() || null,
+        notes: selectedPoMeta.notes.trim() || null,
+        internal_notes: selectedPoMeta.internalNotes.trim() || null,
+        prepared_by: selectedPoMeta.preparedBy.trim() || null,
+        approved_by: selectedPoMeta.approvedBy.trim() || null,
+        received_by: selectedPoMeta.receivedBy.trim() || null,
+      }
+      const { error } = await supabase.from('purchase_orders').update(patch).eq('id', selectedPO.id).eq('company_id', companyId)
+      if (error) throw error
+      const merged = { ...selectedPO, ...patch } as PO
+      setSelectedPO(merged)
+      setPOs(prev => prev.map(po => po.id === merged.id ? merged : po))
+      toast.success(tt('orders.detailsSaved', 'Order details saved'))
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err?.message || tt('orders.detailsSaveFailed', 'Failed to save order details'))
+    }
+  }
+
   // ---------------- NEW HELPERS ----------------
 
   // Refresh all PO + POL company-scoped lists
@@ -537,11 +687,11 @@ export default function PurchaseOrders() {
     const [poRes, polRes] = await Promise.all([
       supabase
         .from('purchase_orders')
-        .select('id,status,currency_code,fx_to_base,total,subtotal,tax_total,updated_at,created_at,order_no,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
+        .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
         .eq('company_id', companyId),
       supabase
         .from('purchase_order_lines')
-        .select('id,po_id,item_id,uom_id,line_no,qty,unit_price,discount_pct,line_total')
+        .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
         .eq('company_id', companyId),
     ])
     setPOs(((poRes.data || []) as PO[]).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
@@ -654,6 +804,9 @@ export default function PurchaseOrders() {
 
       await refreshPOData()
       await loadReceiptsMap(po.id)
+      if (user?.name) {
+        await supabase.from('purchase_orders').update({ received_by: user.name }).eq('id', po.id).eq('company_id', companyId)
+      }
       if (closed) {
         toast.success(tt('orders.poClosed', 'PO closed — all items received'))
         setPoViewOpen(false)
@@ -725,6 +878,9 @@ export default function PurchaseOrders() {
 
       await refreshPOData()
       await loadReceiptsMap(po.id)
+      if (user?.name) {
+        await supabase.from('purchase_orders').update({ received_by: user.name }).eq('id', po.id).eq('company_id', companyId)
+      }
 
       if (closed) {
         toast.success(tt('orders.poClosed', 'PO closed — all items received'))
@@ -770,6 +926,10 @@ export default function PurchaseOrders() {
     setSelectedPO(match)
     setPoViewOpen(true)
   }, [searchParams, pos])
+
+  useEffect(() => {
+    setSelectedPoMeta(buildPoMetaDraft(selectedPO))
+  }, [selectedPO])
 
   useEffect(() => {
     if (!browserOpen) return
@@ -875,11 +1035,12 @@ export default function PurchaseOrders() {
       const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
       const disc = n(l.discount_pct, 0)
       const lineTotal = discountedLineTotal(n(l.qty), n(l.unit_price), disc)
+      const detail = (l.description || '').trim()
       return `<tr>
-        <td>${it?.name || l.item_id}</td>
-        <td>${it?.sku || ''}</td>
+        <td><div class="item-name">${docText(it?.name || l.item_id)}</div>${detail ? `<div class="item-detail">${docMultiline(detail, '')}</div>` : ''}</td>
+        <td>${docText(it?.sku || '', '')}</td>
         <td class="right">${fmtAcct(n(l.qty))}</td>
-        <td>${uomCode}</td>
+        <td>${docText(uomCode)}</td>
         <td class="right">${fmtAcct(n(l.unit_price))}</td>
         <td class="right">${fmtAcct(disc)}</td>
         <td class="right">${fmtAcct(lineTotal)}</td>
@@ -901,6 +1062,12 @@ export default function PurchaseOrders() {
       tax_id: po.supplier_tax_id ?? live.tax_id ?? '—',
       terms: po.payment_terms ?? live.payment_terms ?? '—',
     }
+    ;(supp as any).referenceNo = (po as any).reference_no ?? ''
+    ;(supp as any).deliveryTerms = (po as any).delivery_terms ?? ''
+    ;(supp as any).preparedBy = (po as any).prepared_by ?? ''
+    ;(supp as any).approvedBy = (po as any).approved_by ?? ''
+    ;(supp as any).receivedBy = (po as any).received_by ?? ''
+    ;(supp as any).notes = po.notes ?? ''
 
     // Brand & company details
     const companyName = (brandName
@@ -913,7 +1080,7 @@ export default function PurchaseOrders() {
     const init = initials(companyName || companyProfile.tradeName || companyProfile.legalName)
 
     const css = `
-      @page { margin: 20mm; }
+      @page { size: A4; margin: 20mm; }
       * { box-sizing: border-box; }
       body{
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -946,6 +1113,11 @@ export default function PurchaseOrders() {
       .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
       .kv .k { color: #64748b; }
       .addr { white-space: pre-wrap; }
+      .section { margin-top: 14px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
+      .section-head { padding: 10px 12px; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .section-body { padding: 12px; }
+      .item-name { font-weight: 600; }
+      .item-detail { margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
 
       table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
       th, td { border-bottom: 1px solid #eef2f7; padding: 8px 6px; text-align: left; }
@@ -964,13 +1136,25 @@ export default function PurchaseOrders() {
       .totals .label { color: #475569; }
       .totals .grand { font-weight: 800; }
       .totals .muted { color: #64748b; }
+      .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; min-height: 100px; }
+      .terms-box h4 { margin: 0 0 8px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .signatures { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; page-break-inside: avoid; }
+      .sig { padding-top: 32px; }
+      .sig-line { border-top: 1px solid #94a3b8; height: 1px; }
+      .sig-label { margin-top: 8px; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+      .sig-name { margin-top: 6px; min-height: 16px; font-size: 12px; font-weight: 600; }
 
       .footnote {
         margin-top: 18px; padding-top: 8px; border-top: 1px dashed #e5e7eb;
         color: #475569; font-size: 11px;
       }
 
-      @media print { .wrap { padding: 0; } }
+      @media print {
+        .wrap { padding: 0; }
+        thead { display: table-header-group; }
+        tr, .section, .terms-box { page-break-inside: avoid; }
+      }
     `
 
     const headerBrand = logoDataUrl
@@ -1045,10 +1229,33 @@ export default function PurchaseOrders() {
 
         ${supplierCard}
 
+        <div class="section">
+          <div class="section-head">${tt('orders.commercialTerms', 'Commercial terms')}</div>
+          <div class="section-body">
+            <div class="terms-grid">
+              <div class="terms-box">
+                <h4>${tt('orders.commercialTerms', 'Commercial terms')}</h4>
+                <div class="kv">
+                  <div class="k">${tt('orders.orderDate', 'Order Date')}</div><div>${docDate((po as any).order_date)}</div>
+                  <div class="k">${tt('orders.dueDate', 'Due Date')}</div><div>${docDate((po as any).due_date)}</div>
+                  <div class="k">${tt('orders.expectedDate', 'Expected Date')}</div><div>${docDate((po as any).expected_date)}</div>
+                  <div class="k">${tt('orders.referenceNo', 'Reference')}</div><div>${docText((supp as any).referenceNo)}</div>
+                  <div class="k">${tt('orders.paymentTerms', 'Payment Terms')}</div><div>${docText(supp.terms)}</div>
+                  <div class="k">${tt('orders.deliveryTerms', 'Delivery Terms')}</div><div>${docText((supp as any).deliveryTerms)}</div>
+                </div>
+              </div>
+              <div class="terms-box">
+                <h4>${tt('orders.notes', 'Notes')}</h4>
+                <div>${docMultiline((supp as any).notes)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <table>
           <thead>
             <tr>
-              <th>${tt('table.item', 'Item')}</th><th>${tt('table.sku', 'SKU')}</th><th class="right">${tt('orders.qty', 'Qty')}</th><th>${tt('orders.uom', 'UoM')}</th>
+              <th>${tt('orders.itemOrService', 'Item / Service')}</th><th>${tt('table.sku', 'SKU')}</th><th class="right">${tt('orders.qty', 'Qty')}</th><th>${tt('orders.uom', 'UoM')}</th>
               <th class="right">${tt('orders.unitPrice', 'Unit Price')}</th><th class="right">${tt('orders.discountPct', 'Disc %')}</th><th class="right">${tt('orders.lineTotal', 'Line Total')} (${currency})</th>
             </tr>
           </thead>
@@ -1061,6 +1268,24 @@ export default function PurchaseOrders() {
           <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
           <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
           <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
+        </div>
+
+        <div class="signatures">
+          <div class="sig">
+            <div class="sig-line"></div>
+            <div class="sig-label">${tt('orders.preparedBy', 'Prepared by')}</div>
+            <div class="sig-name">${docName((supp as any).preparedBy)}</div>
+          </div>
+          <div class="sig">
+            <div class="sig-line"></div>
+            <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
+            <div class="sig-name">${docName((supp as any).approvedBy)}</div>
+          </div>
+          <div class="sig">
+            <div class="sig-line"></div>
+            <div class="sig-label">${tt('orders.receivedBy', 'Received by')}</div>
+            <div class="sig-name">${docName((supp as any).receivedBy)}</div>
+          </div>
         </div>
       </div>
     `
@@ -1157,14 +1382,85 @@ export default function PurchaseOrders() {
                     </div>
                   </div>
 
+                  <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                      <div className="flex flex-col gap-1 pb-3">
+                        <h3 className="text-sm font-semibold">{tt('orders.documentSetup', 'Document setup')}</h3>
+                        <p className="text-xs text-muted-foreground">{tt('orders.purchaseSetupHelp', 'Capture supplier terms, due dates, and sign-off names before you add the received goods or service lines below.')}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <Label>{tt('orders.orderDate', 'Order Date')}</Label>
+                          <Input type="date" value={poOrderDate} onChange={e => setPoOrderDate(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.dueDate', 'Due Date')}</Label>
+                          <Input type="date" value={poDueDate} onChange={e => setPoDueDate(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.referenceNo', 'Reference')}</Label>
+                          <Input value={poReferenceNo} onChange={e => setPoReferenceNo(e.target.value)} placeholder={tt('orders.referencePlaceholderPO', 'Supplier quote, tender, or procurement reference')} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
+                          <Input value={poPaymentTerms} onChange={e => setPoPaymentTerms(e.target.value)} placeholder={tt('orders.paymentTermsPlaceholder', '30 days, advance, milestone, etc.')} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
+                          <Input value={poDeliveryTerms} onChange={e => setPoDeliveryTerms(e.target.value)} placeholder={tt('orders.deliveryTermsPlaceholderPO', 'Incoterms, supplier delivery mode, collection, etc.')} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                      <div className="flex flex-col gap-1 pb-3">
+                        <h3 className="text-sm font-semibold">{tt('orders.responsibilityFields', 'Responsibility fields')}</h3>
+                        <p className="text-xs text-muted-foreground">{tt('orders.purchaseResponsibilityHelp', 'Prepared, approved, and received names keep the PO usable for both procurement and warehouse control.')}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
+                          <Input value={poPreparedBy} onChange={e => setPoPreparedBy(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                          <Input value={poApprovedBy} onChange={e => setPoApprovedBy(e.target.value)} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label>{tt('orders.receivedBy', 'Received by')}</Label>
+                          <Input value={poReceivedBy} onChange={e => setPoReceivedBy(e.target.value)} placeholder={tt('orders.receivedByPlaceholder', 'Warehouse or site receiver')} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                    <div className="flex flex-col gap-1 pb-3">
+                      <h3 className="text-sm font-semibold">{tt('orders.notesAndInstructions', 'Notes and instructions')}</h3>
+                      <p className="text-xs text-muted-foreground">{tt('orders.notesAndInstructionsHelp', 'Use notes for supplier-facing instructions and internal notes for procurement or receiving remarks that should stay off the printed document.')}</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <Label>{tt('orders.notes', 'Notes')}</Label>
+                        <Textarea className="min-h-[92px]" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder={tt('orders.purchaseNotesPlaceholder', 'Visible on the supplier-facing document. Use this for delivery instructions or procurement scope.')} />
+                      </div>
+                      <div>
+                        <Label>{tt('orders.internalNotes', 'Internal Notes')}</Label>
+                        <Textarea className="min-h-[92px]" value={poInternalNotes} onChange={e => setPoInternalNotes(e.target.value)} placeholder={tt('orders.internalNotesPlaceholder', 'Internal remarks for operations or finance. This stays off the printed document.')} />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Lines */}
                   <div className="mt-6">
-                    <Label>{tt('orders.lines', 'Lines')}</Label>
+                    <div className="flex flex-col gap-1">
+                      <Label>{tt('orders.lines', 'Lines')}</Label>
+                      <p className="text-xs text-muted-foreground">{tt('orders.linesHelp', 'Use the description field for service scope, project detail, or product specifics. Quantity and UoM still support stock and non-stock work.')}</p>
+                    </div>
                     <div className="mt-2 border rounded-lg overflow-x-auto w-full">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50">
                           <tr className="text-left">
-                            <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                            <th className="py-2 px-3">{tt('orders.itemOrService', 'Item / Service')}</th>
                             <th className="py-2 px-3 w-24">{tt('orders.uom', 'UoM')}</th>
                             <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
                             <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
@@ -1177,7 +1473,7 @@ export default function PurchaseOrders() {
                           {poLinesForm.map((ln, idx) => {
                             const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
                             return (
-                              <tr key={idx} className="border-t">
+                              <tr key={idx} className="border-t align-top">
                                 <td className="py-2 px-3">
                                   <Select
                                     value={ln.itemId}
@@ -1192,6 +1488,12 @@ export default function PurchaseOrders() {
                                       {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>)}
                                     </SelectContent>
                                   </Select>
+                                  <Textarea
+                                    className="mt-2 min-h-[74px]"
+                                    value={ln.description}
+                                    onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
+                                    placeholder={tt('orders.lineDescriptionPlaceholder', 'Optional line description for service scope, specifications, or deliverables')}
+                                  />
                                 </td>
                                 <td className="py-2 px-3">
                                   <Select value={ln.uomId} onValueChange={(v) => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, uomId: v } : x))}>
@@ -1221,7 +1523,7 @@ export default function PurchaseOrders() {
                       </table>
                       <div className="p-2">
                         <MobileAddLineButton
-                          onAdd={() => setPoLinesForm(prev => [...prev, { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])}
+                          onAdd={() => setPoLinesForm(prev => [...prev, blankPurchaseLine()])}
                           label={tt('orders.addLine', 'Add Line')}
                         />
                       </div>
@@ -1363,9 +1665,67 @@ export default function PurchaseOrders() {
                 <div><Label>{tt('orders.po', 'PO')}</Label><div>{poNo(selectedPO)}</div></div>
                 <div><Label>{tt('orders.supplier', 'Supplier')}</Label><div>{poSupplierLabel(selectedPO)}</div></div>
                 <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedPO.status}</div></div>
+                <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedPO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curPO(selectedPO)}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxPO(selectedPO))}</div></div>
                 <div><Label>{tt('orders.expectedDate', 'Expected Date')}</Label><div>{(selectedPO as any).expected_date || tt('none', '(none)')}</div></div>
+                <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedPO as any).due_date || tt('none', '(none)')}</div></div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.documentDetails', 'Document details')}</h3>
+                  <p className="text-xs text-muted-foreground">{tt('orders.purchaseDocumentDetailsHelp', 'Update supplier-facing notes and receiving sign-off details without changing quantities, costs, or receiving logic.')}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <Label>{tt('orders.orderDate', 'Order Date')}</Label>
+                    <Input type="date" value={selectedPoMeta.orderDate} onChange={e => setSelectedPoMeta(prev => ({ ...prev, orderDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.expectedDate', 'Expected Date')}</Label>
+                    <Input type="date" value={selectedPoMeta.expectedDate} onChange={e => setSelectedPoMeta(prev => ({ ...prev, expectedDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.dueDate', 'Due Date')}</Label>
+                    <Input type="date" value={selectedPoMeta.dueDate} onChange={e => setSelectedPoMeta(prev => ({ ...prev, dueDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.referenceNo', 'Reference')}</Label>
+                    <Input value={selectedPoMeta.referenceNo} onChange={e => setSelectedPoMeta(prev => ({ ...prev, referenceNo: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
+                    <Input value={selectedPoMeta.paymentTerms} onChange={e => setSelectedPoMeta(prev => ({ ...prev, paymentTerms: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
+                    <Input value={selectedPoMeta.deliveryTerms} onChange={e => setSelectedPoMeta(prev => ({ ...prev, deliveryTerms: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
+                    <Input value={selectedPoMeta.preparedBy} onChange={e => setSelectedPoMeta(prev => ({ ...prev, preparedBy: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                    <Input value={selectedPoMeta.approvedBy} onChange={e => setSelectedPoMeta(prev => ({ ...prev, approvedBy: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.receivedBy', 'Received by')}</Label>
+                    <Input value={selectedPoMeta.receivedBy} onChange={e => setSelectedPoMeta(prev => ({ ...prev, receivedBy: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Label>{tt('orders.notes', 'Notes')}</Label>
+                    <Textarea className="min-h-[92px]" value={selectedPoMeta.notes} onChange={e => setSelectedPoMeta(prev => ({ ...prev, notes: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Label>{tt('orders.internalNotes', 'Internal Notes')}</Label>
+                    <Textarea className="min-h-[92px]" value={selectedPoMeta.internalNotes} onChange={e => setSelectedPoMeta(prev => ({ ...prev, internalNotes: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3 flex justify-end">
+                    <Button variant="secondary" onClick={saveSelectedPOMeta}>{tt('orders.saveDetails', 'Save details')}</Button>
+                  </div>
+                </div>
               </div>
 
               {/* Defaults row */}
@@ -1404,7 +1764,7 @@ export default function PurchaseOrders() {
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr className="text-left">
-                      <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                      <th className="py-2 px-3">{tt('orders.itemOrService', 'Item / Service')}</th>
                       <th className="py-2 px-3">{tt('table.sku', 'SKU')}</th>
                       <th className="py-2 px-3">{tt('orders.ordered', 'Ordered')}</th>
                       <th className="py-2 px-3">{tt('orders.received', 'Received')}</th>
@@ -1431,8 +1791,11 @@ export default function PurchaseOrders() {
                       const valueBase = n(l.unit_price) * qtyPlan * (1 - disc/100) * fxPO(selectedPO)
 
                       return (
-                        <tr key={key} className="border-t">
-                          <td className="py-2 px-3">{it?.name || l.item_id}</td>
+                        <tr key={key} className="border-t align-top">
+                          <td className="py-2 px-3">
+                            <div className="font-medium">{it?.name || l.item_id}</div>
+                            {!!l.description && <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{l.description}</div>}
+                          </td>
                           <td className="py-2 px-3">{it?.sku || '—'}</td>
                           <td className="py-2 px-3">{fmtAcct(ordered)} {uomCode}</td>
                           <td className="py-2 px-3">{fmtAcct(received)} {uomCode}</td>

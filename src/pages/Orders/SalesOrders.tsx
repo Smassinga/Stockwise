@@ -13,6 +13,7 @@ import {
   SelectGroup, SelectLabel
 } from '../../components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
+import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
@@ -20,6 +21,7 @@ import { discountedLineTotal, salesOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
+import { useAuth } from '../../hooks/useAuth'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -53,20 +55,29 @@ type SO = {
   customer?: string
   customer_id?: string
   status: SoStatus | string
+  order_date?: string | null
   currency_code?: string
   fx_to_base?: number
   expected_ship_date?: string | null
+  reference_no?: string | null
+  delivery_terms?: string | null
   notes?: string | null
+  internal_notes?: string | null
   total_amount?: number | null
   tax_total?: number | null
   due_date?: string | null
   payment_terms?: string | null
+  prepared_by?: string | null
+  approved_by?: string | null
+  confirmed_by?: string | null
   bill_to_name?: string | null
   bill_to_email?: string | null
   bill_to_phone?: string | null
   bill_to_tax_id?: string | null
   bill_to_billing_address?: string | null
   bill_to_shipping_address?: string | null
+  created_by?: string | null
+  public_id?: string | null
 
   // browser-only
   order_no?: string | null
@@ -80,6 +91,7 @@ type SOL = {
   so_id: string
   item_id: string
   uom_id: string
+  description?: string | null
   line_no?: number
   qty: number
   unit_price: number
@@ -181,9 +193,83 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
 // --- NEW: per-line on-hand state
 type OnHandByBin = { bin_id: string | null; qty: number }
 
+type SalesLineDraft = {
+  itemId: string
+  uomId: string
+  description: string
+  qty: string
+  unitPrice: string
+  discountPct: string
+}
+
+type SoMetaDraft = {
+  orderDate: string
+  expectedShipDate: string
+  dueDate: string
+  paymentTerms: string
+  deliveryTerms: string
+  referenceNo: string
+  notes: string
+  internalNotes: string
+  preparedBy: string
+  approvedBy: string
+  confirmedBy: string
+  billToName: string
+  billToEmail: string
+  billToPhone: string
+  billToTaxId: string
+  billToBillingAddress: string
+  billToShippingAddress: string
+}
+
+const todayYmd = () => new Date().toISOString().slice(0, 10)
+const blankSalesLine = (): SalesLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0' })
+const emptySoMetaDraft = (): SoMetaDraft => ({
+  orderDate: todayYmd(),
+  expectedShipDate: todayYmd(),
+  dueDate: todayYmd(),
+  paymentTerms: '',
+  deliveryTerms: '',
+  referenceNo: '',
+  notes: '',
+  internalNotes: '',
+  preparedBy: '',
+  approvedBy: '',
+  confirmedBy: '',
+  billToName: '',
+  billToEmail: '',
+  billToPhone: '',
+  billToTaxId: '',
+  billToBillingAddress: '',
+  billToShippingAddress: '',
+})
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+const docText = (value: unknown, fallback = '—') => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text) : fallback
+}
+const docMultiline = (value: unknown, fallback = '—') => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text).replace(/\r?\n/g, '<br/>') : fallback
+}
+const docDate = (value: unknown, fallback = '—') => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text.slice(0, 10)) : fallback
+}
+const docName = (value: unknown) => {
+  const text = String(value ?? '').trim()
+  return text ? escapeHtml(text) : '&nbsp;'
+}
+
 export default function SalesOrders() {
   const { t } = useI18n()
   const { companyId } = useOrg()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
     const s = t(key, vars)
@@ -220,12 +306,25 @@ export default function SalesOrders() {
   const [soCustomerId, setSoCustomerId] = useState('')
   const [soCurrency, setSoCurrency] = useState('MZN')
   const [soFx, setSoFx] = useState('1')
-  const [soDate, setSoDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
-  const [soDueDate, setSoDueDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [soOrderDate, setSoOrderDate] = useState<string>(() => todayYmd())
+  const [soDate, setSoDate] = useState<string>(() => todayYmd())
+  const [soDueDate, setSoDueDate] = useState<string>(() => todayYmd())
   const [soTaxPct, setSoTaxPct] = useState<string>('0')
-  const [soLinesForm, setSoLinesForm] = useState<
-    Array<{ itemId: string; uomId: string; qty: string; unitPrice: string; discountPct: string }>
-  >([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
+  const [soPaymentTerms, setSoPaymentTerms] = useState('')
+  const [soDeliveryTerms, setSoDeliveryTerms] = useState('')
+  const [soReferenceNo, setSoReferenceNo] = useState('')
+  const [soNotes, setSoNotes] = useState('')
+  const [soInternalNotes, setSoInternalNotes] = useState('')
+  const [soPreparedBy, setSoPreparedBy] = useState('')
+  const [soApprovedBy, setSoApprovedBy] = useState('')
+  const [soConfirmedBy, setSoConfirmedBy] = useState('')
+  const [soBillToName, setSoBillToName] = useState('')
+  const [soBillToEmail, setSoBillToEmail] = useState('')
+  const [soBillToPhone, setSoBillToPhone] = useState('')
+  const [soBillToTaxId, setSoBillToTaxId] = useState('')
+  const [soBillToBillingAddress, setSoBillToBillingAddress] = useState('')
+  const [soBillToShippingAddress, setSoBillToShippingAddress] = useState('')
+  const [soLinesForm, setSoLinesForm] = useState<SalesLineDraft[]>([blankSalesLine()])
 
   // Auto-fetch FX rate when currency changes
   useEffect(() => {
@@ -266,9 +365,26 @@ export default function SalesOrders() {
     fetchFxRate()
   }, [soCurrency, baseCode, companyId])
 
+  useEffect(() => {
+    if (user?.name && !soPreparedBy.trim()) setSoPreparedBy(user.name)
+  }, [user?.name, soPreparedBy])
+
+  useEffect(() => {
+    const cust = customers.find(c => c.id === soCustomerId)
+    if (!cust) return
+    setSoPaymentTerms(cust.payment_terms ?? '')
+    setSoBillToName(cust.name ?? '')
+    setSoBillToEmail(cust.email ?? '')
+    setSoBillToPhone(cust.phone ?? '')
+    setSoBillToTaxId(cust.tax_id ?? '')
+    setSoBillToBillingAddress(cust.billing_address ?? '')
+    setSoBillToShippingAddress(cust.shipping_address ?? '')
+  }, [customers, soCustomerId])
+
   // view+ship
   const [soViewOpen, setSoViewOpen] = useState(false)
   const [selectedSO, setSelectedSO] = useState<SO | null>(null)
+  const [selectedSoMeta, setSelectedSoMeta] = useState<SoMetaDraft>(emptySoMetaDraft())
 
   // GLOBAL override/default warehouse (optional UX)
   const [shipWhId, setShipWhId] = useState<string>('')
@@ -388,10 +504,34 @@ export default function SalesOrders() {
     return out
   }
 
-  const soNo = (s: any) => s?.orderNo ?? s?.order_no ?? s?.id
+  const soNo = (s: any) => s?.orderNo ?? s?.order_no ?? s?.public_id ?? s?.id
   const fxSO = (s: SO) => n((s as any).fx_to_base ?? (s as any).fxToBase, 1)
   const curSO = (s: SO) => (s as any).currency_code ?? (s as any).currencyCode
   const amountSO = (s: SO) => salesOrderAmounts(s, solines.filter(l => l.so_id === s.id))
+
+  const buildSoMetaDraft = (so?: SO | null): SoMetaDraft => {
+    if (!so) return emptySoMetaDraft()
+    const cust = so.customer_id ? customers.find(c => c.id === so.customer_id) : undefined
+    return {
+      orderDate: String((so as any).order_date ?? '').slice(0, 10) || todayYmd(),
+      expectedShipDate: String((so as any).expected_ship_date ?? '').slice(0, 10) || '',
+      dueDate: String((so as any).due_date ?? '').slice(0, 10) || '',
+      paymentTerms: String(so.payment_terms ?? cust?.payment_terms ?? ''),
+      deliveryTerms: String((so as any).delivery_terms ?? ''),
+      referenceNo: String((so as any).reference_no ?? ''),
+      notes: String(so.notes ?? ''),
+      internalNotes: String((so as any).internal_notes ?? ''),
+      preparedBy: String((so as any).prepared_by ?? ''),
+      approvedBy: String((so as any).approved_by ?? ''),
+      confirmedBy: String((so as any).confirmed_by ?? ''),
+      billToName: String(so.bill_to_name ?? cust?.name ?? so.customer ?? ''),
+      billToEmail: String(so.bill_to_email ?? cust?.email ?? ''),
+      billToPhone: String(so.bill_to_phone ?? cust?.phone ?? ''),
+      billToTaxId: String(so.bill_to_tax_id ?? cust?.tax_id ?? ''),
+      billToBillingAddress: String(so.bill_to_billing_address ?? cust?.billing_address ?? ''),
+      billToShippingAddress: String(so.bill_to_shipping_address ?? cust?.shipping_address ?? ''),
+    }
+  }
 
   // Prefer bill_to_name; if we can resolve a customer row, show CODE — Name
   const soCustomerLabel = (s: SO) => {
@@ -412,11 +552,11 @@ export default function SalesOrders() {
     const [soRes, solRes] = await Promise.all([
       supabase
         .from('sales_orders')
-        .select('id,customer_id,customer,status,currency_code,fx_to_base,total_amount,tax_total,due_date,payment_terms,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,notes,created_at,updated_at,order_no,company_id')
+        .select('id,customer_id,customer,status,order_date,currency_code,fx_to_base,total_amount,tax_total,due_date,payment_terms,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,confirmed_by,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,created_by,public_id,created_at,updated_at,order_no,company_id')
         .eq('company_id', activeCompanyId),
       supabase
         .from('sales_order_lines')
-        .select('id,so_id,item_id,uom_id,line_no,qty,unit_price,discount_pct,line_total,is_shipped,shipped_at,shipped_qty')
+        .select('id,so_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total,is_shipped,shipped_at,shipped_qty')
         .eq('company_id', activeCompanyId),
     ])
 
@@ -595,6 +735,10 @@ export default function SalesOrders() {
     setSoViewOpen(true)
   }, [searchParams, sos])
 
+  useEffect(() => {
+    setSelectedSoMeta(buildSoMetaDraft(selectedSO))
+  }, [selectedSO, customers])
+
   // Initialize per-line warehouse and bin when opening View
   useEffect(() => {
     if (!soViewOpen || !selectedSO) return
@@ -701,7 +845,7 @@ export default function SalesOrders() {
       if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
       if (!soCustomerId) return toast.error(tt('orders.customerRequired', 'Customer is required'))
       const cleanLines = soLinesForm
-        .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct) } ))
+        .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct), description: (l.description || '').trim() } ))
         .filter(l => l.itemId && l.uomId && l.qty > 0 && l.unitPrice >= 0 && l.discountPct >= 0 && l.discountPct <= 100)
 
       if (!cleanLines.length) return toast.error(tt('orders.addOneLine', 'Add at least one valid line'))
@@ -719,18 +863,25 @@ export default function SalesOrders() {
           company_id: companyId,
           customer_id: soCustomerId,
           status: 'draft',
+          order_date: soOrderDate || null,
           currency_code: chosenCurrency,
           fx_to_base: fx,
           expected_ship_date: soDate || null,
           due_date: soDueDate || null,
-          notes: null,
-          payment_terms: cust?.payment_terms ?? null,
-          bill_to_name: cust?.name ?? null,
-          bill_to_email: cust?.email ?? null,
-          bill_to_phone: cust?.phone ?? null,
-          bill_to_tax_id: cust?.tax_id ?? null,
-          bill_to_billing_address: cust?.billing_address ?? null,
-          bill_to_shipping_address: cust?.shipping_address ?? null,
+          notes: soNotes.trim() || null,
+          internal_notes: soInternalNotes.trim() || null,
+          payment_terms: soPaymentTerms.trim() || cust?.payment_terms || null,
+          delivery_terms: soDeliveryTerms.trim() || null,
+          reference_no: soReferenceNo.trim() || null,
+          prepared_by: (soPreparedBy.trim() || user?.name || '') || null,
+          approved_by: soApprovedBy.trim() || null,
+          confirmed_by: soConfirmedBy.trim() || null,
+          bill_to_name: soBillToName.trim() || cust?.name || null,
+          bill_to_email: soBillToEmail.trim() || cust?.email || null,
+          bill_to_phone: soBillToPhone.trim() || cust?.phone || null,
+          bill_to_tax_id: soBillToTaxId.trim() || cust?.tax_id || null,
+          bill_to_billing_address: soBillToBillingAddress.trim() || cust?.billing_address || null,
+          bill_to_shipping_address: soBillToShippingAddress.trim() || cust?.shipping_address || null,
           total_amount: headerSubtotal,
           tax_total: headerSubtotal * n(soTaxPct, 0) / 100,
         })
@@ -747,6 +898,7 @@ export default function SalesOrders() {
           so_id: soId,
           item_id: l.itemId,
           uom_id: l.uomId,
+          description: l.description || null,
           line_no: lineNo,
           qty: l.qty,
           unit_price: l.unitPrice,
@@ -763,9 +915,24 @@ export default function SalesOrders() {
       setSoCurrency(baseCode)
       setSoFx('1')
       setSoTaxPct('0')
-      setSoDate(() => new Date().toISOString().slice(0, 10))
-      setSoDueDate(() => new Date().toISOString().slice(0, 10))
-      setSoLinesForm([{ itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])
+      setSoOrderDate(() => todayYmd())
+      setSoDate(() => todayYmd())
+      setSoDueDate(() => todayYmd())
+      setSoPaymentTerms('')
+      setSoDeliveryTerms('')
+      setSoReferenceNo('')
+      setSoNotes('')
+      setSoInternalNotes('')
+      setSoPreparedBy(user?.name || '')
+      setSoApprovedBy('')
+      setSoConfirmedBy('')
+      setSoBillToName('')
+      setSoBillToEmail('')
+      setSoBillToPhone('')
+      setSoBillToTaxId('')
+      setSoBillToBillingAddress('')
+      setSoBillToShippingAddress('')
+      setSoLinesForm([blankSalesLine()])
       setSoOpen(false)
 
       await refreshSalesData(companyId)
@@ -781,11 +948,13 @@ export default function SalesOrders() {
       const subtotal = lines.reduce((s, l) => s + n(l.line_total), 0)
 
       const updated = await tryUpdateStatus(soId, ['confirmed'])
-      let query = supabase.from('sales_orders').update({ total_amount: subtotal }).eq('id', soId)
+      const confirmPatch: any = { total_amount: subtotal }
+      if (user?.name) confirmPatch.confirmed_by = user.name
+      let query = supabase.from('sales_orders').update(confirmPatch).eq('id', soId)
       if (companyId) query = query.eq('company_id', companyId)
       await query
 
-      setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated || s.status, total_amount: subtotal } : s)))
+      setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated || s.status, total_amount: subtotal, confirmed_by: user?.name || s.confirmed_by } : s)))
       toast.success(tt('orders.soConfirmed', 'SO confirmed'))
     } catch (err: any) {
       console.error(err)
@@ -801,6 +970,40 @@ export default function SalesOrders() {
     } catch (err: any) {
       console.error(err)
       toast.error(err?.message || tt('orders.soCancelFailed', 'Failed to cancel SO'))
+    }
+  }
+
+  async function saveSelectedSOMeta() {
+    if (!selectedSO || !companyId) return
+    try {
+      const patch: Partial<SO> & Record<string, any> = {
+        order_date: selectedSoMeta.orderDate || null,
+        expected_ship_date: selectedSoMeta.expectedShipDate || null,
+        due_date: selectedSoMeta.dueDate || null,
+        payment_terms: selectedSoMeta.paymentTerms.trim() || null,
+        delivery_terms: selectedSoMeta.deliveryTerms.trim() || null,
+        reference_no: selectedSoMeta.referenceNo.trim() || null,
+        notes: selectedSoMeta.notes.trim() || null,
+        internal_notes: selectedSoMeta.internalNotes.trim() || null,
+        prepared_by: selectedSoMeta.preparedBy.trim() || null,
+        approved_by: selectedSoMeta.approvedBy.trim() || null,
+        confirmed_by: selectedSoMeta.confirmedBy.trim() || null,
+        bill_to_name: selectedSoMeta.billToName.trim() || null,
+        bill_to_email: selectedSoMeta.billToEmail.trim() || null,
+        bill_to_phone: selectedSoMeta.billToPhone.trim() || null,
+        bill_to_tax_id: selectedSoMeta.billToTaxId.trim() || null,
+        bill_to_billing_address: selectedSoMeta.billToBillingAddress.trim() || null,
+        bill_to_shipping_address: selectedSoMeta.billToShippingAddress.trim() || null,
+      }
+      const { error } = await supabase.from('sales_orders').update(patch).eq('id', selectedSO.id).eq('company_id', companyId)
+      if (error) throw error
+      const merged = { ...selectedSO, ...patch } as SO
+      setSelectedSO(merged)
+      setSOs(prev => prev.map(so => so.id === merged.id ? merged : so))
+      toast.success(tt('orders.detailsSaved', 'Order details saved'))
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err?.message || tt('orders.detailsSaveFailed', 'Failed to save order details'))
     }
   }
 
@@ -942,11 +1145,12 @@ export default function SalesOrders() {
       const lineTotal = discountedLineTotal(n(l.qty), n(l.unit_price), disc)
       const shippedBadge = (n(l.shipped_qty) >= n(l.qty)) || l.is_shipped
         ? ' <span class="pill pill-ok">shipped</span>' : ''
+      const detail = (l.description || '').trim()
       return `<tr>
-        <td>${it?.name || l.item_id}${shippedBadge}</td>
-        <td>${it?.sku || ''}</td>
+        <td><div class="item-name">${docText(it?.name || l.item_id)}${shippedBadge}</div>${detail ? `<div class="item-detail">${docMultiline(detail, '')}</div>` : ''}</td>
+        <td>${docText(it?.sku || '', '')}</td>
         <td class="right">${fmtAcct(n(l.qty))}</td>
-        <td>${uomCode}</td>
+        <td>${docText(uomCode)}</td>
         <td class="right">${fmtAcct(n(l.unit_price))}</td>
         <td class="right">${fmtAcct(disc)}</td>
         <td class="right">${fmtAcct(lineTotal)}</td>
@@ -972,6 +1176,12 @@ export default function SalesOrders() {
       ship_to: (so.bill_to_shipping_address ?? custRow?.shipping_address ?? '')?.trim() || '—',
       terms: so.payment_terms ?? custRow?.payment_terms ?? '—',
     }
+    ;(cust as any).referenceNo = (so as any).reference_no ?? ''
+    ;(cust as any).deliveryTerms = (so as any).delivery_terms ?? ''
+    ;(cust as any).preparedBy = (so as any).prepared_by ?? ''
+    ;(cust as any).approvedBy = (so as any).approved_by ?? ''
+    ;(cust as any).confirmedBy = (so as any).confirmed_by ?? ''
+    ;(cust as any).notes = so.notes ?? ''
 
     // Brand & company details
     const companyName = (brandName
@@ -992,7 +1202,7 @@ export default function SalesOrders() {
     ].filter(Boolean).join('<br/>')
 
     const css = `
-      @page { margin: 20mm; }
+      @page { size: A4; margin: 20mm; }
       * { box-sizing: border-box; }
       body{
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -1025,6 +1235,11 @@ export default function SalesOrders() {
       .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
       .kv .k { color: #64748b; }
       .addr { white-space: pre-wrap; }
+      .section { margin-top: 14px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
+      .section-head { padding: 10px 12px; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .section-body { padding: 12px; }
+      .item-name { font-weight: 600; }
+      .item-detail { margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
 
       table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
       th, td { border-bottom: 1px solid #eef2f7; padding: 8px 6px; text-align: left; }
@@ -1043,13 +1258,25 @@ export default function SalesOrders() {
       .totals .label { color: #475569; }
       .totals .grand { font-weight: 800; }
       .totals .muted { color: #64748b; }
+      .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; min-height: 100px; }
+      .terms-box h4 { margin: 0 0 8px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .signatures { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; page-break-inside: avoid; }
+      .sig { padding-top: 32px; }
+      .sig-line { border-top: 1px solid #94a3b8; height: 1px; }
+      .sig-label { margin-top: 8px; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+      .sig-name { margin-top: 6px; min-height: 16px; font-size: 12px; font-weight: 600; }
 
       .footnote {
         margin-top: 18px; padding-top: 8px; border-top: 1px dashed #e5e7eb;
         color: #475569; font-size: 11px;
       }
 
-      @media print { .wrap { padding: 0; } }
+      @media print {
+        .wrap { padding: 0; }
+        thead { display: table-header-group; }
+        tr, .section, .terms-box { page-break-inside: avoid; }
+      }
     `
 
     const headerBrand = logoDataUrl
@@ -1092,7 +1319,7 @@ export default function SalesOrders() {
         <div class="muted">${tt('orders.email', 'Email')}: ${cust.email} · ${tt('orders.phone', 'Phone')}: ${cust.phone} · ${tt('orders.taxId', 'Tax ID')}: ${cust.tax_id}</div>
         <div class="kv" style="margin-top:6px">
           <div class="k">${tt('orders.billTo', 'Bill To')}</div><div class="addr">${cust.bill_to}</div>
-          <div class="k">${tt('orders.shipTo', 'Ship To')}</div><div class="addr">${cust.ship_to}</div>
+          <div class="k">${tt('orders.shipOrServiceLocation', 'Shipping / Service Location')}</div><div class="addr">${cust.ship_to}</div>
           <div class="k">${tt('orders.terms', 'Terms')}</div><div>${cust.terms}</div>
         </div>
       </div>
@@ -1118,10 +1345,32 @@ export default function SalesOrders() {
 
         ${customerCard}
 
+        <div class="section">
+          <div class="section-head">${tt('orders.commercialTerms', 'Commercial terms')}</div>
+          <div class="section-body">
+            <div class="terms-grid">
+              <div class="terms-box">
+                <h4>${tt('orders.commercialTerms', 'Commercial terms')}</h4>
+                <div class="kv">
+                  <div class="k">${tt('orders.orderDate', 'Order Date')}</div><div>${docDate((so as any).order_date)}</div>
+                  <div class="k">${tt('orders.dueDate', 'Due Date')}</div><div>${docDate((so as any).due_date)}</div>
+                  <div class="k">${tt('orders.referenceNo', 'Reference')}</div><div>${docText((cust as any).referenceNo)}</div>
+                  <div class="k">${tt('orders.paymentTerms', 'Payment Terms')}</div><div>${docText(cust.terms)}</div>
+                  <div class="k">${tt('orders.deliveryTerms', 'Delivery Terms')}</div><div>${docText((cust as any).deliveryTerms)}</div>
+                </div>
+              </div>
+              <div class="terms-box">
+                <h4>${tt('orders.notes', 'Notes')}</h4>
+                <div>${docMultiline((cust as any).notes)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <table>
           <thead>
             <tr>
-              <th>${tt('table.item', 'Item')}</th><th>${tt('table.sku', 'SKU')}</th><th class="right">${tt('orders.qty', 'Qty')}</th><th>${tt('orders.uom', 'UoM')}</th>
+              <th>${tt('orders.itemOrService', 'Item / Service')}</th><th>${tt('table.sku', 'SKU')}</th><th class="right">${tt('orders.qty', 'Qty')}</th><th>${tt('orders.uom', 'UoM')}</th>
               <th class="right">${tt('orders.unitPrice', 'Unit Price')}</th><th class="right">${tt('orders.discountPct', 'Disc %')}</th><th class="right">${tt('orders.lineTotal', 'Line Total')} (${currency})</th>
             </tr>
           </thead>
@@ -1134,6 +1383,24 @@ export default function SalesOrders() {
           <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
           <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
           <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
+        </div>
+
+        <div class="signatures">
+          <div class="sig">
+            <div class="sig-line"></div>
+            <div class="sig-label">${tt('orders.preparedBy', 'Prepared by')}</div>
+            <div class="sig-name">${docName((cust as any).preparedBy)}</div>
+          </div>
+          <div class="sig">
+            <div class="sig-line"></div>
+            <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
+            <div class="sig-name">${docName((cust as any).approvedBy)}</div>
+          </div>
+          <div class="sig">
+            <div class="sig-line"></div>
+            <div class="sig-label">${tt('orders.confirmedBy', 'Confirmed by')}</div>
+            <div class="sig-name">${docName((cust as any).confirmedBy)}</div>
+          </div>
         </div>
       </div>
     `
@@ -1276,14 +1543,105 @@ export default function SalesOrders() {
                     </div>
                   </div>
 
+                  <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                      <div className="flex flex-col gap-1 pb-3">
+                        <h3 className="text-sm font-semibold">{tt('orders.documentSetup', 'Document setup')}</h3>
+                        <p className="text-xs text-muted-foreground">{tt('orders.salesSetupHelp', 'Capture the commercial details first, then add goods or service lines below.')}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <Label>{tt('orders.orderDate', 'Order Date')}</Label>
+                          <Input type="date" value={soOrderDate} onChange={e => setSoOrderDate(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.referenceNo', 'Reference')}</Label>
+                          <Input value={soReferenceNo} onChange={e => setSoReferenceNo(e.target.value)} placeholder={tt('orders.referencePlaceholder', 'Customer PO, job, or contract reference')} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
+                          <Input value={soPaymentTerms} onChange={e => setSoPaymentTerms(e.target.value)} placeholder={tt('orders.paymentTermsPlaceholder', '30 days, advance, milestone, etc.')} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
+                          <Input value={soDeliveryTerms} onChange={e => setSoDeliveryTerms(e.target.value)} placeholder={tt('orders.deliveryTermsPlaceholder', 'Delivery, collection, on-site, remote service, etc.')} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                      <div className="flex flex-col gap-1 pb-3">
+                        <h3 className="text-sm font-semibold">{tt('orders.counterpartyAndResponsibilities', 'Counterparty and responsibilities')}</h3>
+                        <p className="text-xs text-muted-foreground">{tt('orders.salesCounterpartyHelp', 'Keep billing, service location, and sign-off names on the order so the document stays usable for stock and service work.')}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
+                          <Input value={soPreparedBy} onChange={e => setSoPreparedBy(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                          <Input value={soApprovedBy} onChange={e => setSoApprovedBy(e.target.value)} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
+                          <Input value={soConfirmedBy} onChange={e => setSoConfirmedBy(e.target.value)} placeholder={tt('orders.confirmedByPlaceholder', 'Customer contact or internal confirmer')} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                    <div className="flex flex-col gap-1 pb-3">
+                      <h3 className="text-sm font-semibold">{tt('orders.counterpartyDetails', 'Customer and location details')}</h3>
+                      <p className="text-xs text-muted-foreground">{tt('orders.counterpartyDetailsHelp', 'These details appear on the document and work for billing, delivery, and service-location scenarios.')}</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <Label>{tt('orders.billToName', 'Bill-to Name')}</Label>
+                        <Input value={soBillToName} onChange={e => setSoBillToName(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>{tt('orders.taxId', 'Tax ID')}</Label>
+                        <Input value={soBillToTaxId} onChange={e => setSoBillToTaxId(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>{tt('orders.email', 'Email')}</Label>
+                        <Input value={soBillToEmail} onChange={e => setSoBillToEmail(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>{tt('orders.phone', 'Phone')}</Label>
+                        <Input value={soBillToPhone} onChange={e => setSoBillToPhone(e.target.value)} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label>{tt('orders.billingAddress', 'Billing Address')}</Label>
+                        <Textarea className="min-h-[86px]" value={soBillToBillingAddress} onChange={e => setSoBillToBillingAddress(e.target.value)} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label>{tt('orders.shipOrServiceLocation', 'Shipping / Service Location')}</Label>
+                        <Textarea className="min-h-[86px]" value={soBillToShippingAddress} onChange={e => setSoBillToShippingAddress(e.target.value)} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label>{tt('orders.notes', 'Notes')}</Label>
+                        <Textarea className="min-h-[92px]" value={soNotes} onChange={e => setSoNotes(e.target.value)} placeholder={tt('orders.notesPlaceholder', 'Visible on the customer-facing document. Use this for scope, delivery notes, or service details.')} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label>{tt('orders.internalNotes', 'Internal Notes')}</Label>
+                        <Textarea className="min-h-[92px]" value={soInternalNotes} onChange={e => setSoInternalNotes(e.target.value)} placeholder={tt('orders.internalNotesPlaceholder', 'Internal remarks for operations or finance. This stays off the printed document.')} />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Lines */}
                   <div className="mt-6">
-                    <Label>{tt('orders.lines', 'Lines')}</Label>
+                    <div className="flex flex-col gap-1">
+                      <Label>{tt('orders.lines', 'Lines')}</Label>
+                      <p className="text-xs text-muted-foreground">{tt('orders.linesHelp', 'Use the description field for service scope, project detail, or product specifics. Quantity and UoM still support stock and non-stock work.')}</p>
+                    </div>
                     <div className="mt-2 border rounded-lg overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50">
                           <tr className="text-left">
-                            <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                            <th className="py-2 px-3">{tt('orders.itemOrService', 'Item / Service')}</th>
                             <th className="py-2 px-3 w-24">{tt('orders.uom', 'UoM')}</th>
                             <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
                             <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
@@ -1304,7 +1662,7 @@ export default function SalesOrders() {
                             const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
 
                             return (
-                              <tr key={idx} className="border-t">
+                              <tr key={idx} className="border-t align-top">
                                 <td className="py-2 px-3">
                                   <Select
                                     value={ln.itemId}
@@ -1319,6 +1677,12 @@ export default function SalesOrders() {
                                       {items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.sku})</SelectItem>)}
                                     </SelectContent>
                                   </Select>
+                                  <Textarea
+                                    className="mt-2 min-h-[74px]"
+                                    value={ln.description}
+                                    onChange={e => setSoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
+                                    placeholder={tt('orders.lineDescriptionPlaceholder', 'Optional line description for service scope, specifications, or deliverables')}
+                                  />
                                 </td>
 
                                 <td className="py-2 px-3">
@@ -1390,7 +1754,7 @@ export default function SalesOrders() {
                       </table>
                       <div className="p-2">
                         <MobileAddLineButton
-                          onAdd={() => setSoLinesForm(prev => [...prev, { itemId: '', uomId: '', qty: '', unitPrice: '', discountPct: '0' }])}
+                          onAdd={() => setSoLinesForm(prev => [...prev, blankSalesLine()])}
                           label={tt('orders.addLine', 'Add Line')}
                         />
                       </div>
@@ -1531,9 +1895,85 @@ export default function SalesOrders() {
                 <div><Label>{tt('orders.customer', 'Customer')}</Label><div>{soCustomerLabel(selectedSO)}</div></div>
                 <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedSO.status}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curSO(selectedSO)}</div></div>
+                <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedSO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxSO(selectedSO))}</div></div>
                 <div><Label>{tt('orders.expectedShip', 'Expected Ship')}</Label><div>{(selectedSO as any).expected_ship_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedSO as any).due_date || tt('none', '(none)')}</div></div>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.documentDetails', 'Document details')}</h3>
+                  <p className="text-xs text-muted-foreground">{tt('orders.documentDetailsHelp', 'Update commercial terms, customer-facing notes, and document sign-off names without touching line totals or fulfilment logic.')}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <Label>{tt('orders.orderDate', 'Order Date')}</Label>
+                    <Input type="date" value={selectedSoMeta.orderDate} onChange={e => setSelectedSoMeta(prev => ({ ...prev, orderDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.expectedShip', 'Expected Ship')}</Label>
+                    <Input type="date" value={selectedSoMeta.expectedShipDate} onChange={e => setSelectedSoMeta(prev => ({ ...prev, expectedShipDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.dueDate', 'Due Date')}</Label>
+                    <Input type="date" value={selectedSoMeta.dueDate} onChange={e => setSelectedSoMeta(prev => ({ ...prev, dueDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.referenceNo', 'Reference')}</Label>
+                    <Input value={selectedSoMeta.referenceNo} onChange={e => setSelectedSoMeta(prev => ({ ...prev, referenceNo: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
+                    <Input value={selectedSoMeta.paymentTerms} onChange={e => setSelectedSoMeta(prev => ({ ...prev, paymentTerms: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
+                    <Input value={selectedSoMeta.deliveryTerms} onChange={e => setSelectedSoMeta(prev => ({ ...prev, deliveryTerms: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
+                    <Input value={selectedSoMeta.preparedBy} onChange={e => setSelectedSoMeta(prev => ({ ...prev, preparedBy: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                    <Input value={selectedSoMeta.approvedBy} onChange={e => setSelectedSoMeta(prev => ({ ...prev, approvedBy: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
+                    <Input value={selectedSoMeta.confirmedBy} onChange={e => setSelectedSoMeta(prev => ({ ...prev, confirmedBy: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.billToName', 'Bill-to Name')}</Label>
+                    <Input value={selectedSoMeta.billToName} onChange={e => setSelectedSoMeta(prev => ({ ...prev, billToName: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.email', 'Email')}</Label>
+                    <Input value={selectedSoMeta.billToEmail} onChange={e => setSelectedSoMeta(prev => ({ ...prev, billToEmail: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.phone', 'Phone')}</Label>
+                    <Input value={selectedSoMeta.billToPhone} onChange={e => setSelectedSoMeta(prev => ({ ...prev, billToPhone: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Label>{tt('orders.billingAddress', 'Billing Address')}</Label>
+                    <Textarea className="min-h-[86px]" value={selectedSoMeta.billToBillingAddress} onChange={e => setSelectedSoMeta(prev => ({ ...prev, billToBillingAddress: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Label>{tt('orders.shipOrServiceLocation', 'Shipping / Service Location')}</Label>
+                    <Textarea className="min-h-[86px]" value={selectedSoMeta.billToShippingAddress} onChange={e => setSelectedSoMeta(prev => ({ ...prev, billToShippingAddress: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Label>{tt('orders.notes', 'Notes')}</Label>
+                    <Textarea className="min-h-[92px]" value={selectedSoMeta.notes} onChange={e => setSelectedSoMeta(prev => ({ ...prev, notes: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Label>{tt('orders.internalNotes', 'Internal Notes')}</Label>
+                    <Textarea className="min-h-[92px]" value={selectedSoMeta.internalNotes} onChange={e => setSelectedSoMeta(prev => ({ ...prev, internalNotes: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3 flex justify-end">
+                    <Button variant="secondary" onClick={saveSelectedSOMeta}>{tt('orders.saveDetails', 'Save details')}</Button>
+                  </div>
+                </div>
               </div>
               {/* Global "From Warehouse" = quick setter for all lines */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1615,8 +2055,11 @@ export default function SalesOrders() {
                         : tt('orders.noStockInWh', 'No stock in selected warehouse')
 
                       return (
-                        <tr key={key} className="border-t">
-                          <td className="py-2 px-3">{it?.name || l.item_id}</td>
+                        <tr key={key} className="border-t align-top">
+                          <td className="py-2 px-3">
+                            <div className="font-medium">{it?.name || l.item_id}</div>
+                            {!!l.description && <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{l.description}</div>}
+                          </td>
                           <td className="py-2 px-3">{it?.sku || '—'}</td>
                           <td className="py-2 px-3">{fmtAcct(n(l.qty))} {uomCode}</td>
                           <td className="py-2 px-3">{fmtAcct(disc)}</td>
