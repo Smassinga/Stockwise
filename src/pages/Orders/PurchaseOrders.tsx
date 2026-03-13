@@ -12,7 +12,7 @@ import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
-import { discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
+import { addDaysIso, deriveDueDate, discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
@@ -74,7 +74,8 @@ const mapDBProfile = (p?: DBCompanyProfile | null): CompanyProfileUI => {
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string }
 type Currency = { code: string; name: string }
-type Supplier = { id: string; code?: string; name: string; email?: string|null; phone?: string|null; tax_id?: string|null; payment_terms?: string|null }
+type PaymentTerm = { id: string; code: string; name: string; net_days: number }
+type Supplier = { id: string; code?: string; name: string; email?: string|null; phone?: string|null; tax_id?: string|null; payment_terms_id?: string | null; payment_terms?: string|null }
 type Warehouse = { id: string; code?: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
 
@@ -99,6 +100,7 @@ type PO = {
   supplier_email?: string|null
   supplier_phone?: string|null
   supplier_tax_id?: string|null
+  payment_terms_id?: string | null
   payment_terms?: string|null
   subtotal?: number|null
   tax_total?: number|null
@@ -149,6 +151,7 @@ type PoMetaDraft = {
   orderDate: string
   expectedDate: string
   dueDate: string
+  paymentTermsId: string
   paymentTerms: string
   deliveryTerms: string
   referenceNo: string
@@ -165,6 +168,7 @@ const emptyPoMetaDraft = (): PoMetaDraft => ({
   orderDate: todayYmd(),
   expectedDate: todayYmd(),
   dueDate: todayYmd(),
+  paymentTermsId: '',
   paymentTerms: '',
   deliveryTerms: '',
   referenceNo: '',
@@ -225,6 +229,7 @@ export default function PurchaseOrders() {
   const [uoms, setUoms] = useState<Uom[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [baseCode, setBaseCode] = useState<string>('MZN')
+  const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
@@ -254,6 +259,7 @@ export default function PurchaseOrders() {
   const [poDate, setPoDate] = useState<string>(() => todayYmd())
   const [poDueDate, setPoDueDate] = useState<string>(() => todayYmd())
   const [poTaxPct, setPoTaxPct] = useState<string>('0')
+  const [poPaymentTermsId, setPoPaymentTermsId] = useState('')
   const [poPaymentTerms, setPoPaymentTerms] = useState('')
   const [poDeliveryTerms, setPoDeliveryTerms] = useState('')
   const [poReferenceNo, setPoReferenceNo] = useState('')
@@ -263,6 +269,43 @@ export default function PurchaseOrders() {
   const [poApprovedBy, setPoApprovedBy] = useState('')
   const [poReceivedBy, setPoReceivedBy] = useState('')
   const [poLinesForm, setPoLinesForm] = useState<PurchaseLineDraft[]>([blankPurchaseLine()])
+
+  const paymentTermById = useMemo(() => new Map(paymentTermsList.map(pt => [pt.id, pt])), [paymentTermsList])
+  const paymentTermLabel = (termId?: string | null, fallback?: string | null) => {
+    const term = termId ? paymentTermById.get(termId) : undefined
+    if (term) return String(term.name || term.code || '').trim()
+    return String(fallback ?? '').trim()
+  }
+  const paymentTermOptionLabel = (term: PaymentTerm) =>
+    term.net_days > 0
+      ? `${term.name || term.code} (${tt('orders.netDays', '{count} days', { count: term.net_days })})`
+      : (term.name || term.code)
+  const matchPaymentTermId = (termId?: string | null, termText?: string | null) => {
+    if (termId && paymentTermById.has(termId)) return termId
+    const needle = String(termText ?? '').trim().toLowerCase()
+    if (!needle) return ''
+    const hit = paymentTermsList.find(term => {
+      const candidates = [term.name, term.code, `${term.name} (${term.net_days})`]
+      return candidates.some(candidate => String(candidate ?? '').trim().toLowerCase() === needle)
+    })
+    return hit?.id ?? ''
+  }
+  const buildTermState = (orderDate: string, termId?: string | null, fallbackText?: string | null, currentDueDate?: string | null) => {
+    const nextPaymentTerms = paymentTermLabel(termId, fallbackText)
+    const matchedTerm = termId ? paymentTermById.get(termId) : undefined
+    const dueDate = matchedTerm && Number.isFinite(Number(matchedTerm.net_days))
+      ? addDaysIso(orderDate || todayYmd(), Number(matchedTerm.net_days))
+      : (deriveDueDate({
+          baseDate: orderDate || todayYmd(),
+          fallbackDate: currentDueDate || orderDate || todayYmd(),
+          paymentTerms: nextPaymentTerms || fallbackText || '',
+        }) || currentDueDate || orderDate || todayYmd())
+    return {
+      paymentTermsId: termId || '',
+      paymentTerms: nextPaymentTerms,
+      dueDate,
+    }
+  }
 
   // view + receive
   const [poViewOpen, setPoViewOpen] = useState(false)
@@ -284,8 +327,12 @@ export default function PurchaseOrders() {
   useEffect(() => {
     const supp = suppliers.find(s => s.id === poSupplierId)
     if (!supp) return
-    setPoPaymentTerms(supp.payment_terms ?? '')
-  }, [poSupplierId, suppliers])
+    const matchedPaymentTermsId = matchPaymentTermId(supp.payment_terms_id, supp.payment_terms)
+    const termState = buildTermState(poOrderDate, matchedPaymentTermsId, supp.payment_terms, poDueDate)
+    setPoPaymentTermsId(termState.paymentTermsId)
+    setPoPaymentTerms(termState.paymentTerms)
+    setPoDueDate(termState.dueDate)
+  }, [poSupplierId, suppliers, paymentTermsList])
 
   // --- Closed/Received POs browser state
   const [browserOpen, setBrowserOpen] = useState(false)
@@ -353,11 +400,13 @@ export default function PurchaseOrders() {
     p.supplier_name ?? p.supplier ?? (p.supplier_id ? (suppliers.find(s => s.id === p.supplier_id)?.name ?? p.supplier_id) : tt('none', '(none)'))
   const buildPoMetaDraft = (po?: PO | null): PoMetaDraft => {
     if (!po) return emptyPoMetaDraft()
+    const matchedPaymentTermsId = matchPaymentTermId((po as any).payment_terms_id, po.payment_terms)
     return {
       orderDate: String((po as any).order_date ?? '').slice(0, 10) || todayYmd(),
       expectedDate: String((po as any).expected_date ?? '').slice(0, 10) || '',
       dueDate: String((po as any).due_date ?? '').slice(0, 10) || '',
-      paymentTerms: String(po.payment_terms ?? ''),
+      paymentTermsId: matchedPaymentTermsId,
+      paymentTerms: paymentTermLabel(matchedPaymentTermsId, po.payment_terms ?? ''),
       deliveryTerms: String((po as any).delivery_terms ?? ''),
       referenceNo: String((po as any).reference_no ?? ''),
       notes: String(po.notes ?? ''),
@@ -396,16 +445,21 @@ export default function PurchaseOrders() {
 
         const supps = await supabase
           .from('suppliers')
-          .select('id,code,name,email,phone,tax_id,payment_terms')
+          .select('id,code,name,email,phone,tax_id,payment_terms_id,payment_terms')
           .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (supps.error) throw supps.error
         setSuppliers((supps.data || []) as Supplier[])
 
+        const { data: paymentTermsRows, error: paymentTermsError } = await supabase
+          .rpc('get_payment_terms', { p_company_id: companyId })
+        if (paymentTermsError) throw paymentTermsError
+        setPaymentTermsList((paymentTermsRows || []) as PaymentTerm[])
+
         // POs + lines for this company
         const [poRes, polRes] = await Promise.all([
           supabase.from('purchase_orders')
-            .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
+            .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
             .eq('company_id', companyId),
           supabase.from('purchase_order_lines')
             .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
@@ -580,6 +634,8 @@ export default function PurchaseOrders() {
 
       const fx = n(poFx, 1)
       const supp = suppliers.find(s => s.id === poSupplierId)
+      const matchedPaymentTermsId = poPaymentTermsId || matchPaymentTermId(supp?.payment_terms_id, supp?.payment_terms)
+      const resolvedPaymentTerms = paymentTermLabel(matchedPaymentTermsId, poPaymentTerms || supp?.payment_terms || '')
 
       const subtotal = cleanLines.reduce((s, l) => s + discountedLineTotal(l.qty, l.unitPrice, l.discountPct), 0)
       const tax_total = subtotal * (n(poTaxPct, 0) / 100)
@@ -596,7 +652,9 @@ export default function PurchaseOrders() {
         expected_date: poDate || null,
         notes: poNotes.trim() || null,
         internal_notes: poInternalNotes.trim() || null,
-        payment_terms: poPaymentTerms.trim() || supp?.payment_terms || null,
+        created_by: user?.id || null,
+        payment_terms_id: matchedPaymentTermsId || null,
+        payment_terms: resolvedPaymentTerms || null,
         delivery_terms: poDeliveryTerms.trim() || null,
         reference_no: poReferenceNo.trim() || null,
         prepared_by: (poPreparedBy.trim() || user?.name || '') || null,
@@ -625,7 +683,7 @@ export default function PurchaseOrders() {
       toast.success(tt('orders.poCreated', 'Purchase Order created'))
       setPoSupplierId(''); setPoCurrency(baseCode); setPoFx('1'); setPoTaxPct('0')
       setPoOrderDate(() => todayYmd()); setPoDate(() => todayYmd()); setPoDueDate(() => todayYmd())
-      setPoPaymentTerms(''); setPoDeliveryTerms(''); setPoReferenceNo(''); setPoNotes(''); setPoInternalNotes('')
+      setPoPaymentTermsId(''); setPoPaymentTerms(''); setPoDeliveryTerms(''); setPoReferenceNo(''); setPoNotes(''); setPoInternalNotes('')
       setPoPreparedBy(user?.name || ''); setPoApprovedBy(''); setPoReceivedBy('')
       setPoLinesForm([blankPurchaseLine()])
       setPoOpen(false)
@@ -658,12 +716,12 @@ export default function PurchaseOrders() {
         order_date: selectedPoMeta.orderDate || null,
         expected_date: selectedPoMeta.expectedDate || null,
         due_date: selectedPoMeta.dueDate || null,
+        payment_terms_id: selectedPoMeta.paymentTermsId || null,
         payment_terms: selectedPoMeta.paymentTerms.trim() || null,
         delivery_terms: selectedPoMeta.deliveryTerms.trim() || null,
         reference_no: selectedPoMeta.referenceNo.trim() || null,
         notes: selectedPoMeta.notes.trim() || null,
         internal_notes: selectedPoMeta.internalNotes.trim() || null,
-        prepared_by: selectedPoMeta.preparedBy.trim() || null,
         approved_by: selectedPoMeta.approvedBy.trim() || null,
         received_by: selectedPoMeta.receivedBy.trim() || null,
       }
@@ -687,7 +745,7 @@ export default function PurchaseOrders() {
     const [poRes, polRes] = await Promise.all([
       supabase
         .from('purchase_orders')
-        .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms,expected_date')
+        .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
         .eq('company_id', companyId),
       supabase
         .from('purchase_order_lines')
@@ -929,7 +987,7 @@ export default function PurchaseOrders() {
 
   useEffect(() => {
     setSelectedPoMeta(buildPoMetaDraft(selectedPO))
-  }, [selectedPO])
+  }, [selectedPO, paymentTermsList])
 
   useEffect(() => {
     if (!browserOpen) return
@@ -1068,6 +1126,8 @@ export default function PurchaseOrders() {
     ;(supp as any).approvedBy = (po as any).approved_by ?? ''
     ;(supp as any).receivedBy = (po as any).received_by ?? ''
     ;(supp as any).notes = po.notes ?? ''
+    ;(supp as any).terms = paymentTermLabel((po as any).payment_terms_id, (supp as any).terms) || (supp as any).terms
+    const hasNotes = Boolean(String((supp as any).notes ?? '').trim())
 
     // Brand & company details
     const companyName = (brandName
@@ -1080,47 +1140,47 @@ export default function PurchaseOrders() {
     const init = initials(companyName || companyProfile.tradeName || companyProfile.legalName)
 
     const css = `
-      @page { size: A4; margin: 20mm; }
+      @page { size: A4; margin: 12mm; }
       * { box-sizing: border-box; }
       body{
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
         margin: 0; padding: 0; color: #0f172a;
-        font: 12px/1.45 ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
+        font: 11.5px/1.35 ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
       }
-      .wrap { padding: 8px; }
+      .wrap { padding: 0; }
       .header {
-        display: flex; align-items: center; justify-content: space-between; gap: 16px;
-        padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb;
       }
-      .brand { display: flex; align-items: center; gap: 12px; min-height: 42px; }
+      .brand { display: flex; align-items: center; gap: 10px; min-height: 38px; }
       .logo {
-        height: 55px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
-        background: #f8fafc; padding: 4px;
+        height: 46px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+        background: #f8fafc; padding: 3px;
       }
       .logo-fallback {
-        height: 55px; width: 50px; border: 1px solid #e5e7eb; border-radius: 8px;
+        height: 46px; width: 44px; border: 1px solid #e5e7eb; border-radius: 8px;
         display: flex; align-items: center; justify-content: center; font-weight: 700; background: #eef2ff;
       }
-      .company-name { font-size: 26px; font-weight: 700; letter-spacing: .01em; }
+      .company-name { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
       .doc-meta { text-align: right; }
-      .doc-title { font-size: 30px; font-weight: 800; letter-spacing: .01em; margin: 0; }
+      .doc-title { font-size: 26px; font-weight: 800; letter-spacing: .01em; margin: 0; }
       .muted { color: #64748b; }
       .cap { text-transform: capitalize; }
 
-      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
-      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; }
-      .card h4 { margin: 0 0 6px; font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
-      .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; }
+      .card h4 { margin: 0 0 4px; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
       .kv .k { color: #64748b; }
       .addr { white-space: pre-wrap; }
-      .section { margin-top: 14px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
-      .section-head { padding: 10px 12px; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-      .section-body { padding: 12px; }
+      .section { margin-top: 10px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+      .section-head { padding: 8px 10px; background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .section-body { padding: 10px; }
       .item-name { font-weight: 600; }
-      .item-detail { margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
+      .item-detail { margin-top: 3px; color: #64748b; font-size: 10px; line-height: 1.3; white-space: pre-wrap; }
 
-      table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
-      th, td { border-bottom: 1px solid #eef2f7; padding: 8px 6px; text-align: left; }
+      table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 11px; }
+      th, td { border-bottom: 1px solid #eef2f7; padding: 6px 5px; text-align: left; }
       thead th { background: #f8fafc; font-weight: 700; }
       .right { text-align: right; }
       .pill {
@@ -1130,24 +1190,26 @@ export default function PurchaseOrders() {
       .pill-ok { border-color: #86efac; background: #ecfdf5; color: #166534; }
 
       .totals {
-        margin-top: 14px; width: 380px; margin-left: auto;
-        display: grid; grid-template-columns: 1fr auto; row-gap: 6px;
+        margin-top: 10px; width: 320px; margin-left: auto;
+        display: grid; grid-template-columns: 1fr auto; row-gap: 4px;
       }
       .totals .label { color: #475569; }
       .totals .grand { font-weight: 800; }
       .totals .muted { color: #64748b; }
-      .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; min-height: 100px; }
-      .terms-box h4 { margin: 0 0 8px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
-      .signatures { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; page-break-inside: avoid; }
-      .sig { padding-top: 32px; }
+      .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .terms-grid.single { grid-template-columns: 1fr; }
+      .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; min-height: 68px; }
+      .terms-box h4 { margin: 0 0 6px; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .closing { page-break-inside: avoid; }
+      .signatures { margin-top: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; page-break-inside: avoid; }
+      .sig { padding-top: 20px; }
       .sig-line { border-top: 1px solid #94a3b8; height: 1px; }
-      .sig-label { margin-top: 8px; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-      .sig-name { margin-top: 6px; min-height: 16px; font-size: 12px; font-weight: 600; }
+      .sig-label { margin-top: 6px; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+      .sig-name { margin-top: 4px; min-height: 14px; font-size: 11px; font-weight: 600; }
 
       .footnote {
-        margin-top: 18px; padding-top: 8px; border-top: 1px dashed #e5e7eb;
-        color: #475569; font-size: 11px;
+        margin-top: 10px; padding-top: 6px; border-top: 1px dashed #e5e7eb;
+        color: #475569; font-size: 10px;
       }
 
       @media print {
@@ -1232,7 +1294,7 @@ export default function PurchaseOrders() {
         <div class="section">
           <div class="section-head">${tt('orders.commercialTerms', 'Commercial terms')}</div>
           <div class="section-body">
-            <div class="terms-grid">
+            <div class="terms-grid ${hasNotes ? '' : 'single'}">
               <div class="terms-box">
                 <h4>${tt('orders.commercialTerms', 'Commercial terms')}</h4>
                 <div class="kv">
@@ -1244,10 +1306,10 @@ export default function PurchaseOrders() {
                   <div class="k">${tt('orders.deliveryTerms', 'Delivery Terms')}</div><div>${docText((supp as any).deliveryTerms)}</div>
                 </div>
               </div>
-              <div class="terms-box">
+              ${hasNotes ? `<div class="terms-box">
                 <h4>${tt('orders.notes', 'Notes')}</h4>
                 <div>${docMultiline((supp as any).notes)}</div>
-              </div>
+              </div>` : ''}
             </div>
           </div>
         </div>
@@ -1262,29 +1324,31 @@ export default function PurchaseOrders() {
           <tbody>${rows}</tbody>
         </table>
 
-        <div class="totals">
-          <div class="label">${tt('orders.subtotal', 'Subtotal')} (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
-          <div class="label">${tt('orders.tax', 'Tax')} (${currency})</div><div class="right">${fmtAcct(tax)}</div>
-          <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
-          <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
-          <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
-        </div>
+        <div class="closing">
+          <div class="totals">
+            <div class="label">${tt('orders.subtotal', 'Subtotal')} (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
+            <div class="label">${tt('orders.tax', 'Tax')} (${currency})</div><div class="right">${fmtAcct(tax)}</div>
+            <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
+            <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
+            <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
+          </div>
 
-        <div class="signatures">
-          <div class="sig">
-            <div class="sig-line"></div>
-            <div class="sig-label">${tt('orders.preparedBy', 'Prepared by')}</div>
-            <div class="sig-name">${docName((supp as any).preparedBy)}</div>
-          </div>
-          <div class="sig">
-            <div class="sig-line"></div>
-            <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
-            <div class="sig-name">${docName((supp as any).approvedBy)}</div>
-          </div>
-          <div class="sig">
-            <div class="sig-line"></div>
-            <div class="sig-label">${tt('orders.receivedBy', 'Received by')}</div>
-            <div class="sig-name">${docName((supp as any).receivedBy)}</div>
+          <div class="signatures">
+            <div class="sig">
+              <div class="sig-line"></div>
+              <div class="sig-label">${tt('orders.preparedBy', 'Prepared by')}</div>
+              <div class="sig-name">${docName((supp as any).preparedBy)}</div>
+            </div>
+            <div class="sig">
+              <div class="sig-line"></div>
+              <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
+              <div class="sig-name">${docName((supp as any).approvedBy)}</div>
+            </div>
+            <div class="sig">
+              <div class="sig-line"></div>
+              <div class="sig-label">${tt('orders.receivedBy', 'Received by')}</div>
+              <div class="sig-name">${docName((supp as any).receivedBy)}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1391,7 +1455,17 @@ export default function PurchaseOrders() {
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                           <Label>{tt('orders.orderDate', 'Order Date')}</Label>
-                          <Input type="date" value={poOrderDate} onChange={e => setPoOrderDate(e.target.value)} />
+                          <Input
+                            type="date"
+                            value={poOrderDate}
+                            onChange={e => {
+                              const nextOrderDate = e.target.value
+                              setPoOrderDate(nextOrderDate)
+                              if (poPaymentTermsId || poPaymentTerms.trim()) {
+                                setPoDueDate(buildTermState(nextOrderDate, poPaymentTermsId, poPaymentTerms, poDueDate).dueDate)
+                              }
+                            }}
+                          />
                         </div>
                         <div>
                           <Label>{tt('orders.dueDate', 'Due Date')}</Label>
@@ -1403,7 +1477,29 @@ export default function PurchaseOrders() {
                         </div>
                         <div>
                           <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
-                          <Input value={poPaymentTerms} onChange={e => setPoPaymentTerms(e.target.value)} placeholder={tt('orders.paymentTermsPlaceholder', '30 days, advance, milestone, etc.')} />
+                          <Select
+                            value={poPaymentTermsId || undefined}
+                            onValueChange={(value) => {
+                              const termState = buildTermState(poOrderDate, value, '', poDueDate)
+                              setPoPaymentTermsId(termState.paymentTermsId)
+                              setPoPaymentTerms(termState.paymentTerms)
+                              setPoDueDate(termState.dueDate)
+                            }}
+                          >
+                            <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
+                            <SelectContent>
+                              {paymentTermsList.map(term => (
+                                <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {poPaymentTermsId
+                              ? tt('orders.paymentTermsHelpPurchase', 'Defaults from the selected supplier and can still be changed here.')
+                              : poPaymentTerms.trim()
+                                ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: poPaymentTerms })
+                                : tt('orders.paymentTermsHelpPurchase', 'Defaults from the selected supplier and can still be changed here.')}
+                          </p>
                         </div>
                         <div className="md:col-span-2">
                           <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
@@ -1419,7 +1515,8 @@ export default function PurchaseOrders() {
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                           <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
-                          <Input value={poPreparedBy} onChange={e => setPoPreparedBy(e.target.value)} />
+                          <Input value={poPreparedBy || user?.name || ''} readOnly className="bg-muted/40" />
+                          <p className="mt-1 text-xs text-muted-foreground">{tt('orders.preparedByAutoHelp', 'Auto-filled from the user who creates the order.')}</p>
                         </div>
                         <div>
                           <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
@@ -1680,7 +1777,17 @@ export default function PurchaseOrders() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div>
                     <Label>{tt('orders.orderDate', 'Order Date')}</Label>
-                    <Input type="date" value={selectedPoMeta.orderDate} onChange={e => setSelectedPoMeta(prev => ({ ...prev, orderDate: e.target.value }))} />
+                    <Input
+                      type="date"
+                      value={selectedPoMeta.orderDate}
+                      onChange={e => setSelectedPoMeta(prev => ({
+                        ...prev,
+                        orderDate: e.target.value,
+                        dueDate: prev.paymentTermsId || prev.paymentTerms.trim()
+                          ? buildTermState(e.target.value, prev.paymentTermsId, prev.paymentTerms, prev.dueDate).dueDate
+                          : prev.dueDate,
+                      }))}
+                    />
                   </div>
                   <div>
                     <Label>{tt('orders.expectedDate', 'Expected Date')}</Label>
@@ -1696,7 +1803,27 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
-                    <Input value={selectedPoMeta.paymentTerms} onChange={e => setSelectedPoMeta(prev => ({ ...prev, paymentTerms: e.target.value }))} />
+                    <Select
+                      value={selectedPoMeta.paymentTermsId || undefined}
+                      onValueChange={(value) => setSelectedPoMeta(prev => {
+                        const termState = buildTermState(prev.orderDate, value, '', prev.dueDate)
+                        return { ...prev, paymentTermsId: termState.paymentTermsId, paymentTerms: termState.paymentTerms, dueDate: termState.dueDate }
+                      })}
+                    >
+                      <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
+                      <SelectContent>
+                        {paymentTermsList.map(term => (
+                          <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedPoMeta.paymentTermsId
+                        ? tt('orders.paymentTermsHelpPurchase', 'Defaults from the selected supplier and can still be changed here.')
+                        : selectedPoMeta.paymentTerms.trim()
+                          ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: selectedPoMeta.paymentTerms })
+                          : tt('orders.paymentTermsHelpPurchase', 'Defaults from the selected supplier and can still be changed here.')}
+                    </p>
                   </div>
                   <div>
                     <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
@@ -1704,7 +1831,8 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
-                    <Input value={selectedPoMeta.preparedBy} onChange={e => setSelectedPoMeta(prev => ({ ...prev, preparedBy: e.target.value }))} />
+                    <Input value={selectedPoMeta.preparedBy || tt('orders.notAvailableShort', 'Not captured')} readOnly className="bg-muted/40" />
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.preparedByAutoHelp', 'Auto-filled from the user who creates the order.')}</p>
                   </div>
                   <div>
                     <Label>{tt('orders.approvedBy', 'Approved by')}</Label>

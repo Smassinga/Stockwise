@@ -17,7 +17,7 @@ import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
-import { discountedLineTotal, salesOrderAmounts } from '../../lib/orderFinance'
+import { addDaysIso, deriveDueDate, discountedLineTotal, salesOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
@@ -33,6 +33,7 @@ import {
 type Item = { id: string; name: string; sku: string; baseUomId: string }
 type Uom = { id: string; code: string; name: string; family?: string }
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
+type PaymentTerm = { id: string; code: string; name: string; net_days: number }
 type Customer = {
   id: string
   code?: string
@@ -42,6 +43,7 @@ type Customer = {
   tax_id?: string | null
   billing_address?: string | null
   shipping_address?: string | null
+  payment_terms_id?: string | null
   payment_terms?: string | null
 }
 type Warehouse = { id: string; code?: string; name: string }
@@ -66,6 +68,7 @@ type SO = {
   total_amount?: number | null
   tax_total?: number | null
   due_date?: string | null
+  payment_terms_id?: string | null
   payment_terms?: string | null
   prepared_by?: string | null
   approved_by?: string | null
@@ -206,6 +209,7 @@ type SoMetaDraft = {
   orderDate: string
   expectedShipDate: string
   dueDate: string
+  paymentTermsId: string
   paymentTerms: string
   deliveryTerms: string
   referenceNo: string
@@ -228,6 +232,7 @@ const emptySoMetaDraft = (): SoMetaDraft => ({
   orderDate: todayYmd(),
   expectedShipDate: todayYmd(),
   dueDate: todayYmd(),
+  paymentTermsId: '',
   paymentTerms: '',
   deliveryTerms: '',
   referenceNo: '',
@@ -281,6 +286,7 @@ export default function SalesOrders() {
   const [uoms, setUoms] = useState<Uom[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [baseCode, setBaseCode] = useState<string>('MZN')
+  const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
@@ -310,6 +316,7 @@ export default function SalesOrders() {
   const [soDate, setSoDate] = useState<string>(() => todayYmd())
   const [soDueDate, setSoDueDate] = useState<string>(() => todayYmd())
   const [soTaxPct, setSoTaxPct] = useState<string>('0')
+  const [soPaymentTermsId, setSoPaymentTermsId] = useState('')
   const [soPaymentTerms, setSoPaymentTerms] = useState('')
   const [soDeliveryTerms, setSoDeliveryTerms] = useState('')
   const [soReferenceNo, setSoReferenceNo] = useState('')
@@ -325,6 +332,43 @@ export default function SalesOrders() {
   const [soBillToBillingAddress, setSoBillToBillingAddress] = useState('')
   const [soBillToShippingAddress, setSoBillToShippingAddress] = useState('')
   const [soLinesForm, setSoLinesForm] = useState<SalesLineDraft[]>([blankSalesLine()])
+
+  const paymentTermById = useMemo(() => new Map(paymentTermsList.map(pt => [pt.id, pt])), [paymentTermsList])
+  const paymentTermLabel = (termId?: string | null, fallback?: string | null) => {
+    const term = termId ? paymentTermById.get(termId) : undefined
+    if (term) return String(term.name || term.code || '').trim()
+    return String(fallback ?? '').trim()
+  }
+  const paymentTermOptionLabel = (term: PaymentTerm) =>
+    term.net_days > 0
+      ? `${term.name || term.code} (${tt('orders.netDays', '{count} days', { count: term.net_days })})`
+      : (term.name || term.code)
+  const matchPaymentTermId = (termId?: string | null, termText?: string | null) => {
+    if (termId && paymentTermById.has(termId)) return termId
+    const needle = String(termText ?? '').trim().toLowerCase()
+    if (!needle) return ''
+    const hit = paymentTermsList.find(term => {
+      const candidates = [term.name, term.code, `${term.name} (${term.net_days})`]
+      return candidates.some(candidate => String(candidate ?? '').trim().toLowerCase() === needle)
+    })
+    return hit?.id ?? ''
+  }
+  const buildTermState = (orderDate: string, termId?: string | null, fallbackText?: string | null, currentDueDate?: string | null) => {
+    const nextPaymentTerms = paymentTermLabel(termId, fallbackText)
+    const matchedTerm = termId ? paymentTermById.get(termId) : undefined
+    const dueDate = matchedTerm && Number.isFinite(Number(matchedTerm.net_days))
+      ? addDaysIso(orderDate || todayYmd(), Number(matchedTerm.net_days))
+      : (deriveDueDate({
+          baseDate: orderDate || todayYmd(),
+          fallbackDate: currentDueDate || orderDate || todayYmd(),
+          paymentTerms: nextPaymentTerms || fallbackText || '',
+        }) || currentDueDate || orderDate || todayYmd())
+    return {
+      paymentTermsId: termId || '',
+      paymentTerms: nextPaymentTerms,
+      dueDate,
+    }
+  }
 
   // Auto-fetch FX rate when currency changes
   useEffect(() => {
@@ -372,14 +416,18 @@ export default function SalesOrders() {
   useEffect(() => {
     const cust = customers.find(c => c.id === soCustomerId)
     if (!cust) return
-    setSoPaymentTerms(cust.payment_terms ?? '')
+    const matchedPaymentTermsId = matchPaymentTermId(cust.payment_terms_id, cust.payment_terms)
+    const termState = buildTermState(soOrderDate, matchedPaymentTermsId, cust.payment_terms, soDueDate)
+    setSoPaymentTermsId(termState.paymentTermsId)
+    setSoPaymentTerms(termState.paymentTerms)
+    setSoDueDate(termState.dueDate)
     setSoBillToName(cust.name ?? '')
     setSoBillToEmail(cust.email ?? '')
     setSoBillToPhone(cust.phone ?? '')
     setSoBillToTaxId(cust.tax_id ?? '')
     setSoBillToBillingAddress(cust.billing_address ?? '')
     setSoBillToShippingAddress(cust.shipping_address ?? '')
-  }, [customers, soCustomerId])
+  }, [customers, soCustomerId, paymentTermsList])
 
   // view+ship
   const [soViewOpen, setSoViewOpen] = useState(false)
@@ -512,11 +560,13 @@ export default function SalesOrders() {
   const buildSoMetaDraft = (so?: SO | null): SoMetaDraft => {
     if (!so) return emptySoMetaDraft()
     const cust = so.customer_id ? customers.find(c => c.id === so.customer_id) : undefined
+    const matchedPaymentTermsId = matchPaymentTermId((so as any).payment_terms_id ?? cust?.payment_terms_id, so.payment_terms ?? cust?.payment_terms)
     return {
       orderDate: String((so as any).order_date ?? '').slice(0, 10) || todayYmd(),
       expectedShipDate: String((so as any).expected_ship_date ?? '').slice(0, 10) || '',
       dueDate: String((so as any).due_date ?? '').slice(0, 10) || '',
-      paymentTerms: String(so.payment_terms ?? cust?.payment_terms ?? ''),
+      paymentTermsId: matchedPaymentTermsId,
+      paymentTerms: paymentTermLabel(matchedPaymentTermsId, so.payment_terms ?? cust?.payment_terms ?? ''),
       deliveryTerms: String((so as any).delivery_terms ?? ''),
       referenceNo: String((so as any).reference_no ?? ''),
       notes: String(so.notes ?? ''),
@@ -552,7 +602,7 @@ export default function SalesOrders() {
     const [soRes, solRes] = await Promise.all([
       supabase
         .from('sales_orders')
-        .select('id,customer_id,customer,status,order_date,currency_code,fx_to_base,total_amount,tax_total,due_date,payment_terms,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,confirmed_by,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,created_by,public_id,created_at,updated_at,order_no,company_id')
+        .select('id,customer_id,customer,status,order_date,currency_code,fx_to_base,total_amount,tax_total,due_date,payment_terms_id,payment_terms,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,confirmed_by,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,created_by,public_id,created_at,updated_at,order_no,company_id')
         .eq('company_id', activeCompanyId),
       supabase
         .from('sales_order_lines')
@@ -651,11 +701,16 @@ export default function SalesOrders() {
         // 3) customers
         const custs = await supabase
           .from('customers')
-          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,payment_terms')
+          .select('id,code,name,email,phone,tax_id,billing_address,shipping_address,payment_terms_id,payment_terms')
           .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (custs.error) throw custs.error
         setCustomers((custs.data || []) as Customer[])
+
+        const { data: paymentTermsRows, error: paymentTermsError } = await supabase
+          .rpc('get_payment_terms', { p_company_id: companyId })
+        if (paymentTermsError) throw paymentTermsError
+        setPaymentTermsList((paymentTermsRows || []) as PaymentTerm[])
 
         // 4) warehouses
         const whs = await supabase
@@ -737,7 +792,7 @@ export default function SalesOrders() {
 
   useEffect(() => {
     setSelectedSoMeta(buildSoMetaDraft(selectedSO))
-  }, [selectedSO, customers])
+  }, [selectedSO, customers, paymentTermsList])
 
   // Initialize per-line warehouse and bin when opening View
   useEffect(() => {
@@ -855,12 +910,15 @@ export default function SalesOrders() {
 
       const fx = n(soFx, 1)
       const cust = customers.find(c => c.id === soCustomerId)
+      const matchedPaymentTermsId = soPaymentTermsId || matchPaymentTermId(cust?.payment_terms_id, cust?.payment_terms)
+      const resolvedPaymentTerms = paymentTermLabel(matchedPaymentTermsId, soPaymentTerms || cust?.payment_terms || '')
       const headerSubtotal = cleanLines.reduce((sum, line) => sum + discountedLineTotal(line.qty, line.unitPrice, line.discountPct), 0)
 
       const inserted: any = await supabase
         .from('sales_orders')
         .insert({
           company_id: companyId,
+          created_by: user?.id || null,
           customer_id: soCustomerId,
           status: 'draft',
           order_date: soOrderDate || null,
@@ -870,7 +928,8 @@ export default function SalesOrders() {
           due_date: soDueDate || null,
           notes: soNotes.trim() || null,
           internal_notes: soInternalNotes.trim() || null,
-          payment_terms: soPaymentTerms.trim() || cust?.payment_terms || null,
+          payment_terms_id: matchedPaymentTermsId || null,
+          payment_terms: resolvedPaymentTerms || null,
           delivery_terms: soDeliveryTerms.trim() || null,
           reference_no: soReferenceNo.trim() || null,
           prepared_by: (soPreparedBy.trim() || user?.name || '') || null,
@@ -918,6 +977,7 @@ export default function SalesOrders() {
       setSoOrderDate(() => todayYmd())
       setSoDate(() => todayYmd())
       setSoDueDate(() => todayYmd())
+      setSoPaymentTermsId('')
       setSoPaymentTerms('')
       setSoDeliveryTerms('')
       setSoReferenceNo('')
@@ -980,12 +1040,12 @@ export default function SalesOrders() {
         order_date: selectedSoMeta.orderDate || null,
         expected_ship_date: selectedSoMeta.expectedShipDate || null,
         due_date: selectedSoMeta.dueDate || null,
+        payment_terms_id: selectedSoMeta.paymentTermsId || null,
         payment_terms: selectedSoMeta.paymentTerms.trim() || null,
         delivery_terms: selectedSoMeta.deliveryTerms.trim() || null,
         reference_no: selectedSoMeta.referenceNo.trim() || null,
         notes: selectedSoMeta.notes.trim() || null,
         internal_notes: selectedSoMeta.internalNotes.trim() || null,
-        prepared_by: selectedSoMeta.preparedBy.trim() || null,
         approved_by: selectedSoMeta.approvedBy.trim() || null,
         confirmed_by: selectedSoMeta.confirmedBy.trim() || null,
         bill_to_name: selectedSoMeta.billToName.trim() || null,
@@ -1182,6 +1242,8 @@ export default function SalesOrders() {
     ;(cust as any).approvedBy = (so as any).approved_by ?? ''
     ;(cust as any).confirmedBy = (so as any).confirmed_by ?? ''
     ;(cust as any).notes = so.notes ?? ''
+    ;(cust as any).terms = paymentTermLabel((so as any).payment_terms_id ?? custRow?.payment_terms_id, (cust as any).terms) || (cust as any).terms
+    const hasNotes = Boolean(String((cust as any).notes ?? '').trim())
 
     // Brand & company details
     const companyName = (brandName
@@ -1202,47 +1264,47 @@ export default function SalesOrders() {
     ].filter(Boolean).join('<br/>')
 
     const css = `
-      @page { size: A4; margin: 20mm; }
+      @page { size: A4; margin: 12mm; }
       * { box-sizing: border-box; }
       body{
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
         margin: 0; padding: 0; color: #0f172a;
-        font: 12px/1.45 ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
+        font: 11.5px/1.35 ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
       }
-      .wrap { padding: 8px; }
+      .wrap { padding: 0; }
       .header {
-        display: flex; align-items: center; justify-content: space-between; gap: 16px;
-        padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb;
       }
-      .brand { display: flex; align-items: center; gap: 12px; min-height: 42px; }
+      .brand { display: flex; align-items: center; gap: 10px; min-height: 38px; }
       .logo {
-        height: 55px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
-        background: #f8fafc; padding: 4px;
+        height: 46px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+        background: #f8fafc; padding: 3px;
       }
       .logo-fallback {
-        height: 55px; width: 50px; border: 1px solid #e5e7eb; border-radius: 8px;
+        height: 46px; width: 44px; border: 1px solid #e5e7eb; border-radius: 8px;
         display: flex; align-items: center; justify-content: center; font-weight: 700; background: #eef2ff;
       }
-      .company-name { font-size: 26px; font-weight: 700; letter-spacing: .01em; }
+      .company-name { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
       .doc-meta { text-align: right; }
-      .doc-title { font-size: 30px; font-weight: 800; letter-spacing: .01em; margin: 0; }
+      .doc-title { font-size: 26px; font-weight: 800; letter-spacing: .01em; margin: 0; }
       .muted { color: #64748b; }
       .cap { text-transform: capitalize; }
 
-      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
-      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; }
-      .card h4 { margin: 0 0 6px; font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
-      .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; }
+      .card h4 { margin: 0 0 4px; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
       .kv .k { color: #64748b; }
       .addr { white-space: pre-wrap; }
-      .section { margin-top: 14px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
-      .section-head { padding: 10px 12px; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-      .section-body { padding: 12px; }
+      .section { margin-top: 10px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+      .section-head { padding: 8px 10px; background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .section-body { padding: 10px; }
       .item-name { font-weight: 600; }
-      .item-detail { margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
+      .item-detail { margin-top: 3px; color: #64748b; font-size: 10px; line-height: 1.3; white-space: pre-wrap; }
 
-      table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
-      th, td { border-bottom: 1px solid #eef2f7; padding: 8px 6px; text-align: left; }
+      table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 11px; }
+      th, td { border-bottom: 1px solid #eef2f7; padding: 6px 5px; text-align: left; }
       thead th { background: #f8fafc; font-weight: 700; }
       .right { text-align: right; }
       .pill {
@@ -1252,24 +1314,26 @@ export default function SalesOrders() {
       .pill-ok { border-color: #86efac; background: #ecfdf5; color: #166534; }
 
       .totals {
-        margin-top: 14px; width: 380px; margin-left: auto;
-        display: grid; grid-template-columns: 1fr auto; row-gap: 6px;
+        margin-top: 10px; width: 320px; margin-left: auto;
+        display: grid; grid-template-columns: 1fr auto; row-gap: 4px;
       }
       .totals .label { color: #475569; }
       .totals .grand { font-weight: 800; }
       .totals .muted { color: #64748b; }
-      .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; min-height: 100px; }
-      .terms-box h4 { margin: 0 0 8px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
-      .signatures { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; page-break-inside: avoid; }
-      .sig { padding-top: 32px; }
+      .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .terms-grid.single { grid-template-columns: 1fr; }
+      .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; min-height: 68px; }
+      .terms-box h4 { margin: 0 0 6px; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .closing { page-break-inside: avoid; }
+      .signatures { margin-top: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; page-break-inside: avoid; }
+      .sig { padding-top: 20px; }
       .sig-line { border-top: 1px solid #94a3b8; height: 1px; }
-      .sig-label { margin-top: 8px; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-      .sig-name { margin-top: 6px; min-height: 16px; font-size: 12px; font-weight: 600; }
+      .sig-label { margin-top: 6px; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+      .sig-name { margin-top: 4px; min-height: 14px; font-size: 11px; font-weight: 600; }
 
       .footnote {
-        margin-top: 18px; padding-top: 8px; border-top: 1px dashed #e5e7eb;
-        color: #475569; font-size: 11px;
+        margin-top: 10px; padding-top: 6px; border-top: 1px dashed #e5e7eb;
+        color: #475569; font-size: 10px;
       }
 
       @media print {
@@ -1348,7 +1412,7 @@ export default function SalesOrders() {
         <div class="section">
           <div class="section-head">${tt('orders.commercialTerms', 'Commercial terms')}</div>
           <div class="section-body">
-            <div class="terms-grid">
+            <div class="terms-grid ${hasNotes ? '' : 'single'}">
               <div class="terms-box">
                 <h4>${tt('orders.commercialTerms', 'Commercial terms')}</h4>
                 <div class="kv">
@@ -1359,10 +1423,10 @@ export default function SalesOrders() {
                   <div class="k">${tt('orders.deliveryTerms', 'Delivery Terms')}</div><div>${docText((cust as any).deliveryTerms)}</div>
                 </div>
               </div>
-              <div class="terms-box">
+              ${hasNotes ? `<div class="terms-box">
                 <h4>${tt('orders.notes', 'Notes')}</h4>
                 <div>${docMultiline((cust as any).notes)}</div>
-              </div>
+              </div>` : ''}
             </div>
           </div>
         </div>
@@ -1377,29 +1441,31 @@ export default function SalesOrders() {
           <tbody>${rows}</tbody>
         </table>
 
-        <div class="totals">
-          <div class="label">${tt('orders.subtotal', 'Subtotal')} (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
-          <div class="label">${tt('orders.tax', 'Tax')} (${currency})</div><div class="right">${fmtAcct(tax)}</div>
-          <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
-          <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
-          <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
-        </div>
+        <div class="closing">
+          <div class="totals">
+            <div class="label">${tt('orders.subtotal', 'Subtotal')} (${currency})</div><div class="right">${fmtAcct(subtotal)}</div>
+            <div class="label">${tt('orders.tax', 'Tax')} (${currency})</div><div class="right">${fmtAcct(tax)}</div>
+            <div class="muted">${tt('orders.fxToBaseShort', 'FX to {baseCode}', { baseCode })}</div><div class="right muted">${fmtAcct(fx)}</div>
+            <div class="grand">${tt('orders.total', 'Total')} (${currency})</div><div class="right grand">${fmtAcct(total)}</div>
+            <div class="grand">${tt('orders.totalBase', 'Total ({baseCode})', { baseCode })}</div><div class="right grand">${fmtAcct(total * fx)}</div>
+          </div>
 
-        <div class="signatures">
-          <div class="sig">
-            <div class="sig-line"></div>
-            <div class="sig-label">${tt('orders.preparedBy', 'Prepared by')}</div>
-            <div class="sig-name">${docName((cust as any).preparedBy)}</div>
-          </div>
-          <div class="sig">
-            <div class="sig-line"></div>
-            <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
-            <div class="sig-name">${docName((cust as any).approvedBy)}</div>
-          </div>
-          <div class="sig">
-            <div class="sig-line"></div>
-            <div class="sig-label">${tt('orders.confirmedBy', 'Confirmed by')}</div>
-            <div class="sig-name">${docName((cust as any).confirmedBy)}</div>
+          <div class="signatures">
+            <div class="sig">
+              <div class="sig-line"></div>
+              <div class="sig-label">${tt('orders.preparedBy', 'Prepared by')}</div>
+              <div class="sig-name">${docName((cust as any).preparedBy)}</div>
+            </div>
+            <div class="sig">
+              <div class="sig-line"></div>
+              <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
+              <div class="sig-name">${docName((cust as any).approvedBy)}</div>
+            </div>
+            <div class="sig">
+              <div class="sig-line"></div>
+              <div class="sig-label">${tt('orders.confirmedBy', 'Confirmed by')}</div>
+              <div class="sig-name">${docName((cust as any).confirmedBy)}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1410,7 +1476,7 @@ export default function SalesOrders() {
       // Add PDF-specific print styles
       const pdfCss = `${css}
         @media print {
-          @page { size: A4; margin: 20mm; }
+          @page { size: A4; margin: 12mm; }
           body { margin: 0; padding: 0; }
           .wrap { padding: 0; }
         }
@@ -1552,7 +1618,17 @@ export default function SalesOrders() {
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                           <Label>{tt('orders.orderDate', 'Order Date')}</Label>
-                          <Input type="date" value={soOrderDate} onChange={e => setSoOrderDate(e.target.value)} />
+                          <Input
+                            type="date"
+                            value={soOrderDate}
+                            onChange={e => {
+                              const nextOrderDate = e.target.value
+                              setSoOrderDate(nextOrderDate)
+                              if (soPaymentTermsId || soPaymentTerms.trim()) {
+                                setSoDueDate(buildTermState(nextOrderDate, soPaymentTermsId, soPaymentTerms, soDueDate).dueDate)
+                              }
+                            }}
+                          />
                         </div>
                         <div>
                           <Label>{tt('orders.referenceNo', 'Reference')}</Label>
@@ -1560,7 +1636,29 @@ export default function SalesOrders() {
                         </div>
                         <div>
                           <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
-                          <Input value={soPaymentTerms} onChange={e => setSoPaymentTerms(e.target.value)} placeholder={tt('orders.paymentTermsPlaceholder', '30 days, advance, milestone, etc.')} />
+                          <Select
+                            value={soPaymentTermsId || undefined}
+                            onValueChange={(value) => {
+                              const termState = buildTermState(soOrderDate, value, '', soDueDate)
+                              setSoPaymentTermsId(termState.paymentTermsId)
+                              setSoPaymentTerms(termState.paymentTerms)
+                              setSoDueDate(termState.dueDate)
+                            }}
+                          >
+                            <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
+                            <SelectContent>
+                              {paymentTermsList.map(term => (
+                                <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {soPaymentTermsId
+                              ? tt('orders.paymentTermsHelpSales', 'Defaults from the selected customer and can still be changed here.')
+                              : soPaymentTerms.trim()
+                                ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: soPaymentTerms })
+                                : tt('orders.paymentTermsHelpSales', 'Defaults from the selected customer and can still be changed here.')}
+                          </p>
                         </div>
                         <div>
                           <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
@@ -1576,7 +1674,8 @@ export default function SalesOrders() {
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                           <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
-                          <Input value={soPreparedBy} onChange={e => setSoPreparedBy(e.target.value)} />
+                          <Input value={soPreparedBy || user?.name || ''} readOnly className="bg-muted/40" />
+                          <p className="mt-1 text-xs text-muted-foreground">{tt('orders.preparedByAutoHelp', 'Auto-filled from the user who creates the order.')}</p>
                         </div>
                         <div>
                           <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
@@ -1908,7 +2007,17 @@ export default function SalesOrders() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div>
                     <Label>{tt('orders.orderDate', 'Order Date')}</Label>
-                    <Input type="date" value={selectedSoMeta.orderDate} onChange={e => setSelectedSoMeta(prev => ({ ...prev, orderDate: e.target.value }))} />
+                    <Input
+                      type="date"
+                      value={selectedSoMeta.orderDate}
+                      onChange={e => setSelectedSoMeta(prev => ({
+                        ...prev,
+                        orderDate: e.target.value,
+                        dueDate: prev.paymentTermsId || prev.paymentTerms.trim()
+                          ? buildTermState(e.target.value, prev.paymentTermsId, prev.paymentTerms, prev.dueDate).dueDate
+                          : prev.dueDate,
+                      }))}
+                    />
                   </div>
                   <div>
                     <Label>{tt('orders.expectedShip', 'Expected Ship')}</Label>
@@ -1924,7 +2033,27 @@ export default function SalesOrders() {
                   </div>
                   <div>
                     <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
-                    <Input value={selectedSoMeta.paymentTerms} onChange={e => setSelectedSoMeta(prev => ({ ...prev, paymentTerms: e.target.value }))} />
+                    <Select
+                      value={selectedSoMeta.paymentTermsId || undefined}
+                      onValueChange={(value) => setSelectedSoMeta(prev => {
+                        const termState = buildTermState(prev.orderDate, value, '', prev.dueDate)
+                        return { ...prev, paymentTermsId: termState.paymentTermsId, paymentTerms: termState.paymentTerms, dueDate: termState.dueDate }
+                      })}
+                    >
+                      <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
+                      <SelectContent>
+                        {paymentTermsList.map(term => (
+                          <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedSoMeta.paymentTermsId
+                        ? tt('orders.paymentTermsHelpSales', 'Defaults from the selected customer and can still be changed here.')
+                        : selectedSoMeta.paymentTerms.trim()
+                          ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: selectedSoMeta.paymentTerms })
+                          : tt('orders.paymentTermsHelpSales', 'Defaults from the selected customer and can still be changed here.')}
+                    </p>
                   </div>
                   <div>
                     <Label>{tt('orders.deliveryTerms', 'Delivery Terms')}</Label>
@@ -1932,7 +2061,8 @@ export default function SalesOrders() {
                   </div>
                   <div>
                     <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
-                    <Input value={selectedSoMeta.preparedBy} onChange={e => setSelectedSoMeta(prev => ({ ...prev, preparedBy: e.target.value }))} />
+                    <Input value={selectedSoMeta.preparedBy || tt('orders.notAvailableShort', 'Not captured')} readOnly className="bg-muted/40" />
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.preparedByAutoHelp', 'Auto-filled from the user who creates the order.')}</p>
                   </div>
                   <div>
                     <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
