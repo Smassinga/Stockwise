@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
+import { can, type CompanyRole } from '../lib/permissions'
 
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -46,9 +47,11 @@ type Bin = {
 }
 
 export function Warehouses() {
-  const { companyId } = useOrg()
+  const { companyId, myRole } = useOrg()
   const { t } = useI18n()
   const isMobile = useIsMobile()
+  const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
+  const canManage = can.manageWarehouses(role)
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
@@ -146,6 +149,10 @@ export function Warehouses() {
 
   async function addWarehouse() {
     try {
+      if (!canManage) {
+        toast.error('Only managers and above can manage warehouses')
+        return
+      }
       if (!companyId) {
         toast.error(t('org.noCompany'))
         return
@@ -190,6 +197,10 @@ export function Warehouses() {
   async function updateWarehouse() {
     if (!editing) return
     try {
+      if (!canManage) {
+        toast.error('Only managers and above can manage warehouses')
+        return
+      }
       const patch = {
         code: form.code,
         name: form.name,
@@ -232,6 +243,10 @@ export function Warehouses() {
 
   async function deleteWarehouse(id: string) {
     try {
+      if (!canManage) {
+        toast.error('Only managers and above can manage warehouses')
+        return
+      }
       // Stock-level check (snake_case)
       const { count, error: slErr } = await supabase
         .from('stock_levels')
@@ -263,6 +278,10 @@ export function Warehouses() {
 
   async function addBin() {
     try {
+      if (!canManage) {
+        toast.error('Only managers and above can manage warehouses')
+        return
+      }
       if (!binForm.warehouseId) {
         toast.error(t('warehouses.selectFirst') ?? 'Select a warehouse first')
         return
@@ -309,6 +328,12 @@ export function Warehouses() {
   )
 
   const binsFor = (warehouseId: string) => bins.filter(b => b.warehouseId === warehouseId)
+  const summary = {
+    total: warehouses.length,
+    active: warehouses.filter((warehouse) => warehouse.status === 'active').length,
+    inactive: warehouses.filter((warehouse) => warehouse.status !== 'active').length,
+    bins: bins.length,
+  }
 
   if (loading) {
     return (
@@ -348,7 +373,7 @@ export function Warehouses() {
         <div className="flex flex-wrap gap-2">
           <Dialog open={isAddBinDialogOpen} onOpenChange={setIsAddBinDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" onClick={resetBinForm} className={isMobile ? 'px-2' : ''}>
+              <Button variant="outline" onClick={resetBinForm} className={isMobile ? 'px-2' : ''} disabled={!canManage}>
                 <Package className="w-4 h-4 mr-2" />
                 {t('warehouses.addBin') ?? 'Add Bin'}
               </Button>
@@ -394,7 +419,7 @@ export function Warehouses() {
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setIsAddBinDialogOpen(false)}>{t('common.cancel') ?? 'Cancel'}</Button>
-                  <Button onClick={addBin}>{t('warehouses.addBin') ?? 'Add Bin'}</Button>
+                  <Button onClick={addBin} disabled={!canManage}>{t('warehouses.addBin') ?? 'Add Bin'}</Button>
                 </div>
                 </div>
               </DialogBody>
@@ -403,7 +428,7 @@ export function Warehouses() {
 
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={resetForm} className={isMobile ? 'px-2' : ''}>
+              <Button onClick={resetForm} className={isMobile ? 'px-2' : ''} disabled={!canManage}>
                 <Plus className="w-4 h-4 mr-2" />
                 {t('warehouses.addWarehouse') ?? 'Add Warehouse'}
               </Button>
@@ -454,13 +479,58 @@ export function Warehouses() {
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>{t('common.cancel') ?? 'Cancel'}</Button>
-                  <Button onClick={addWarehouse}>{t('warehouses.addWarehouse') ?? 'Add Warehouse'}</Button>
+                  <Button onClick={addWarehouse} disabled={!canManage}>{t('warehouses.addWarehouse') ?? 'Add Warehouse'}</Button>
                 </div>
                 </div>
               </DialogBody>
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      {!canManage ? (
+        <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+          Read-only: only managers and above can add, edit, or remove warehouses and bins.
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Warehouses</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.total}</div>
+            <div className="text-xs text-muted-foreground">Configured locations in this company.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.active}</div>
+            <div className="text-xs text-muted-foreground">Ready for receiving, picking, and transfers.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Inactive</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.inactive}</div>
+            <div className="text-xs text-muted-foreground">Kept for history but not currently active.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Bins</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.bins}</div>
+            <div className="text-xs text-muted-foreground">Storage locations distributed across warehouses.</div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="flex items-center gap-4">
@@ -517,6 +587,7 @@ export function Warehouses() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                disabled={!canManage}
                                 onClick={() => {
                                   setEditing(wh)
                                   setForm({
@@ -552,7 +623,7 @@ export function Warehouses() {
                                 </div>
                                 <div className="flex justify-end gap-2">
                                   <Button variant="outline" onClick={() => setEditing(null)}>{t('common.cancel') ?? 'Cancel'}</Button>
-                                  <Button onClick={updateWarehouse}>{t('warehouses.updateWarehouse') ?? 'Update Warehouse'}</Button>
+                                  <Button onClick={updateWarehouse} disabled={!canManage}>{t('warehouses.updateWarehouse') ?? 'Update Warehouse'}</Button>
                                 </div>
                                 </div>
                               </DialogBody>
@@ -561,7 +632,7 @@ export function Warehouses() {
 
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm">
+                              <Button variant="ghost" size="sm" disabled={!canManage}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </AlertDialogTrigger>
@@ -574,7 +645,7 @@ export function Warehouses() {
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>{t('common.cancel') ?? 'Cancel'}</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteWarehouse(wh.id)}>{t('common.remove')}</AlertDialogAction>
+                                <AlertDialogAction onClick={() => deleteWarehouse(wh.id)} disabled={!canManage}>{t('common.remove')}</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -607,7 +678,7 @@ export function Warehouses() {
               </p>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button onClick={resetForm}>
+                  <Button onClick={resetForm} disabled={!canManage}>
                     <Plus className="w-4 h-4 mr-2" />
                     {t('warehouses.addWarehouse') ?? 'Add Warehouse'}
                   </Button>

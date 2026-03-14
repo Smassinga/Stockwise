@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
+import { can, type CompanyRole } from '../lib/permissions'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
@@ -31,8 +32,10 @@ const DEFAULT_CURRENCIES: Currency[] = [
 ]
 
 export default function CurrencyPage() {
-  const { companyId } = useOrg()
+  const { companyId, companyName, myRole } = useOrg()
   const { t } = useI18n()
+  const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
+  const canEdit = can.updateMaster(role)
 
   const [loading, setLoading] = useState(true)
   const [allCurrencies, setAllCurrencies] = useState<Currency[]>([])
@@ -46,6 +49,16 @@ export default function CurrencyPage() {
   const [rate, setRate] = useState<string>('')
 
   const allowedCodes = useMemo(() => new Set(allowed.map(a => a.code)), [allowed])
+  const availableCurrencies = useMemo(
+    () =>
+      [...allCurrencies].sort((left, right) => {
+        const leftEnabled = allowedCodes.has(left.code) ? 0 : 1
+        const rightEnabled = allowedCodes.has(right.code) ? 0 : 1
+        if (leftEnabled !== rightEnabled) return leftEnabled - rightEnabled
+        return left.code.localeCompare(right.code)
+      }),
+    [allCurrencies, allowedCodes]
+  )
 
   // -------- Load (per-company) --------
   useEffect(() => {
@@ -134,6 +147,7 @@ export default function CurrencyPage() {
   // -------- Actions (all scoped by RLS/trigger to current company) --------
   async function saveBase() {
     try {
+      if (!canEdit) return toast.error('You do not have permission to change currency settings')
       if (!allowedCodes.has(base)) return toast.error('Base currency must be enabled for this company')
       const { error } = await supabase.rpc('set_base_currency_for_current_company', { p_code: base })
       if (error) throw error
@@ -156,6 +170,7 @@ export default function CurrencyPage() {
 
   async function addAllowed(code: string) {
     try {
+      if (!canEdit) return toast.error('You do not have permission to change currency settings')
       const { error } = await supabase.from('company_currencies').insert({ currency_code: code })
       if (error) throw error
       await refreshAllowed()
@@ -168,6 +183,7 @@ export default function CurrencyPage() {
 
   async function removeAllowed(code: string) {
     try {
+      if (!canEdit) return toast.error('You do not have permission to change currency settings')
       if (code === base) return toast.error('You cannot remove the current base currency')
       const { error } = await supabase.from('company_currencies').delete().eq('currency_code', code)
       if (error) throw error
@@ -181,6 +197,7 @@ export default function CurrencyPage() {
 
   async function addFx() {
     try {
+      if (!canEdit) return toast.error('You do not have permission to save FX rates')
       const r = parseFloat(rate)
       if (!fxDate || !from || !to || !r || Number.isNaN(r) || r <= 0) {
         toast.error('Please fill date, from, to and a positive rate')
@@ -224,18 +241,66 @@ export default function CurrencyPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
+          <p className="text-muted-foreground">
+            Control which currencies this company can transact in, define the base currency, and maintain recent FX rates.
+          </p>
+        </div>
+        {companyId ? (
+          <div className="text-sm text-muted-foreground">
+            Company: {companyName || companyId}
+          </div>
+        ) : null}
+      </div>
+
+      {!canEdit ? (
+        <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+          Read-only: only operational roles can change enabled currencies, base currency, or FX rates.
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Base currency</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{base}</div>
+            <div className="text-xs text-muted-foreground">Used as the default valuation and reporting currency.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Enabled currencies</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{allowed.length}</div>
+            <div className="text-xs text-muted-foreground">Currencies currently available to this company.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Recent FX rows</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{fx.length}</div>
+            <div className="text-xs text-muted-foreground">Saved rates visible in the current company scope.</div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Allowed per company */}
       <Card>
         <CardHeader><CardTitle>{t('currency.allowed')}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
           <div className="text-sm text-muted-foreground">
-            Toggle which codes this company can use.
+            Keep enabled codes aligned with the currencies you actually buy, sell, and settle in.
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {allCurrencies.map(c => {
+            {availableCurrencies.map(c => {
               const on = allowedCodes.has(c.code)
               return (
                 <div
@@ -257,11 +322,12 @@ export default function CurrencyPage() {
                       variant="outline"
                       className="ml-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/25"
                       onClick={() => removeAllowed(c.code)}
+                      disabled={!canEdit}
                     >
                       Disable
                     </Button>
                   ) : (
-                    <Button size="sm" className="ml-1" onClick={() => addAllowed(c.code)}>
+                    <Button size="sm" className="ml-1" onClick={() => addAllowed(c.code)} disabled={!canEdit}>
                       {t('suppliers.enable')}
                     </Button>
                   )}
@@ -278,7 +344,7 @@ export default function CurrencyPage() {
         <CardContent className="flex items-end gap-3">
           <div className="w-72">
             <Label>{t('currency.baseLabel')}</Label>
-            <Select value={base} onValueChange={setBase}>
+            <Select value={base} onValueChange={setBase} disabled={!canEdit}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {allowed.map(c => (
@@ -289,7 +355,7 @@ export default function CurrencyPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={saveBase}>{t('currency.save')}</Button>
+          <Button onClick={saveBase} disabled={!canEdit}>{t('currency.save')}</Button>
         </CardContent>
       </Card>
 
@@ -299,11 +365,11 @@ export default function CurrencyPage() {
         <CardContent className="grid gap-3 md:grid-cols-5">
           <div>
             <Label>{t('currency.date')}</Label>
-            <Input type="date" value={fxDate} onChange={e => setFxDate(e.target.value)} />
+            <Input type="date" value={fxDate} onChange={e => setFxDate(e.target.value)} disabled={!canEdit} />
           </div>
           <div>
             <Label>{t('currency.from')}</Label>
-            <Select value={from} onValueChange={setFrom}>
+            <Select value={from} onValueChange={setFrom} disabled={!canEdit}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {allowed.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
@@ -312,7 +378,7 @@ export default function CurrencyPage() {
           </div>
           <div>
             <Label>{t('currency.to')}</Label>
-            <Select value={to} onValueChange={setTo}>
+            <Select value={to} onValueChange={setTo} disabled={!canEdit}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {allowed.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
@@ -328,10 +394,11 @@ export default function CurrencyPage() {
               value={rate}
               onChange={e => setRate(e.target.value)}
               placeholder="e.g., 63.50"
+              disabled={!canEdit}
             />
           </div>
           <div className="flex items-end">
-            <Button onClick={addFx}>{t('currency.saveRate')}</Button>
+            <Button onClick={addFx} disabled={!canEdit}>{t('currency.saveRate')}</Button>
           </div>
         </CardContent>
       </Card>

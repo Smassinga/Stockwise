@@ -238,6 +238,18 @@ function Settings() {
     () => canEditAll || roleUpper === "MANAGER",
     [canEditAll, roleUpper],
   );
+  const settingsSummary = useMemo(() => {
+    const companyLabel =
+      profile?.trade_name ||
+      profile?.legal_name ||
+      data.documents.brand.name ||
+      "Company profile not set";
+    const defaultWarehouse =
+      warehouses.find((warehouse) => warehouse.id === data.dashboard.defaultWarehouseId)?.name ||
+      (data.dashboard.defaultWarehouseId === "ALL" ? "All warehouses" : "Not set");
+    const reminderState = data.dueReminders?.enabled ? "Enabled" : "Paused";
+    return { companyLabel, defaultWarehouse, reminderState };
+  }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, data.dueReminders?.enabled, profile?.legal_name, profile?.trade_name, warehouses]);
 
   useEffect(() => {
     let cancelled = false;
@@ -463,6 +475,48 @@ function Settings() {
           once to create them.
         </div>
       )}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Company profile
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-semibold">{settingsSummary.companyLabel}</div>
+            <div className="text-xs text-muted-foreground">
+              Maintained from the live companies record used in printed documents and onboarding.
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Default warehouse
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-semibold">{settingsSummary.defaultWarehouse}</div>
+            <div className="text-xs text-muted-foreground">
+              Used as the default operational context for dashboard and sales settings.
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Due reminders
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-semibold">{settingsSummary.reminderState}</div>
+            <div className="text-xs text-muted-foreground">
+              Worker configuration is stored in company settings and saved with the rest of this page.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Quick links */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { buildConvGraph, tryConvertQty, type ConvRow } from '../lib/uom'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
+import { can, type CompanyRole } from '../lib/permissions'
 
 type Uom = { id: string; code: string; name: string; family?: string }
 type Conv = { from_uom_id: string; to_uom_id: string; factor: number; company_id: string | null }
@@ -17,8 +18,10 @@ const FAMILIES = ['mass', 'volume', 'length', 'area', 'time', 'count', 'other'] 
 type Family = typeof FAMILIES[number]
 
 export default function UomSettings() {
-  const { companyId, companyName, loading: orgLoading } = useOrg()
+  const { companyId, companyName, loading: orgLoading, myRole } = useOrg()
   const { t } = useI18n()
+  const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
+  const canEdit = can.updateMaster(role)
 
   const [uoms, setUoms] = useState<Uom[]>([])
   const [convs, setConvs] = useState<Conv[]>([])
@@ -41,6 +44,15 @@ export default function UomSettings() {
   const [testQty, setTestQty] = useState('')
 
   const byId = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
+  const summary = useMemo(() => {
+    const companyConversions = convs.filter((conv) => !!conv.company_id).length
+    const globalConversions = convs.length - companyConversions
+    return {
+      units: uoms.length,
+      companyConversions,
+      globalConversions,
+    }
+  }, [convs, uoms.length])
 
   // group UoMs by family (for nicer selects)
   const groupedUoms = useMemo(() => {
@@ -100,6 +112,7 @@ export default function UomSettings() {
 
   async function addUnit(e: React.FormEvent) {
     e.preventDefault()
+    if (!canEdit) return toast.error('You do not have permission to manage units')
     const c = code.trim().toUpperCase()
     const n = name.trim()
     if (!c || !n) return toast.error(t('uom.required') ?? 'Code and Name are required')
@@ -122,6 +135,7 @@ export default function UomSettings() {
 
   async function addConv(e: React.FormEvent) {
     e.preventDefault()
+    if (!canEdit) return toast.error('You do not have permission to manage conversions')
     if (!companyId) return toast.error(t('org.noCompany'))
     if (!fromId || !toId) return toast.error(t('uom.pickBoth') ?? 'Pick both From and To')
     if (fromId === toId) return toast.error(t('uom.mustDiffer') ?? 'From and To must be different')
@@ -151,6 +165,7 @@ export default function UomSettings() {
   }
 
   async function deleteConv(from: string, to: string) {
+    if (!canEdit) return toast.error('You do not have permission to manage conversions')
     if (!companyId) return toast.error(t('org.noCompany'))
     try {
       // Only delete your company’s own conversion (leave global defaults intact)
@@ -215,10 +230,53 @@ export default function UomSettings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">{t('uom.title')}</h1>
-      <p className="text-sm text-muted-foreground">
-        Company: <span className="font-medium">{companyName || companyId}</span>
-      </p>
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{t('uom.title')}</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage global unit codes and company-specific conversions used in purchasing, stock, and order entry.
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Company: <span className="font-medium">{companyName || companyId}</span>
+        </p>
+      </div>
+
+      {!canEdit ? (
+        <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+          Read-only: only operational roles can add units or maintain company conversion rules.
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Unit codes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.units}</div>
+            <div className="text-xs text-muted-foreground">Global units available to every company.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Company conversions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.companyConversions}</div>
+            <div className="text-xs text-muted-foreground">Conversion rules owned by this company.</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Global defaults</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold">{summary.globalConversions}</div>
+            <div className="text-xs text-muted-foreground">Shared fallback conversions loaded for everyone.</div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Add Unit (global) */}
       <Card>
@@ -243,7 +301,7 @@ export default function UomSettings() {
               </Select>
             </div>
             <div className="flex items-end">
-              <Button type="submit">{t('uom.saveUnit')}</Button>
+              <Button type="submit" disabled={!canEdit}>{t('uom.saveUnit')}</Button>
             </div>
           </form>
         </CardContent>
@@ -302,7 +360,7 @@ export default function UomSettings() {
               <div className="text-xs text-muted-foreground mt-1">{preview}</div>
             </div>
             <div className="flex items-end">
-              <Button type="submit">{t('uom.saveConversion')}</Button>
+              <Button type="submit" disabled={!canEdit}>{t('uom.saveConversion')}</Button>
             </div>
 
             {/* Quick Test */}
@@ -380,7 +438,7 @@ export default function UomSettings() {
                       <td className="py-2 px-3">{isCompanyRow ? t('uom.company') : t('uom.global')}</td>
                       <td className="py-2 px-3">
                         {isCompanyRow
-                          ? <Button variant="destructive" onClick={() => deleteConv(c.from_uom_id, c.to_uom_id)}>{t('common.remove')}</Button>
+                          ? <Button variant="destructive" onClick={() => deleteConv(c.from_uom_id, c.to_uom_id)} disabled={!canEdit}>{t('common.remove')}</Button>
                           : <span className="text-muted-foreground">{t('common.dash')}</span>}
                       </td>
                     </tr>
