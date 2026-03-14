@@ -10,7 +10,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import { setBaseCurrencyCode } from '../lib/currency'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type FxRate = {
@@ -34,6 +34,8 @@ const DEFAULT_CURRENCIES: Currency[] = [
 export default function CurrencyPage() {
   const { companyId, companyName, myRole } = useOrg()
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canEdit = can.updateMaster(role)
 
@@ -136,7 +138,7 @@ export default function CurrencyPage() {
         if (!allowedArr.includes(to)) setTo(fallback)
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || 'Failed to load currency data')
+        toast.error(e?.message || tt('currency.toast.loadFailed', 'Failed to load currency data'))
       } finally {
         setLoading(false)
       }
@@ -147,15 +149,15 @@ export default function CurrencyPage() {
   // -------- Actions (all scoped by RLS/trigger to current company) --------
   async function saveBase() {
     try {
-      if (!canEdit) return toast.error('You do not have permission to change currency settings')
-      if (!allowedCodes.has(base)) return toast.error('Base currency must be enabled for this company')
+      if (!canEdit) return toast.error(tt('currency.toast.noPermission', 'You do not have permission to change currency settings'))
+      if (!allowedCodes.has(base)) return toast.error(tt('currency.toast.baseMustBeEnabled', 'Base currency must be enabled for this company'))
       const { error } = await supabase.rpc('set_base_currency_for_current_company', { p_code: base })
       if (error) throw error
       setBaseCurrencyCode(base, companyId)
-      toast.success('Base currency saved for this company')
+      toast.success(tt('currency.toast.baseSaved', 'Base currency saved for this company'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to save base currency')
+      toast.error(e?.message || tt('currency.toast.baseSaveFailed', 'Failed to save base currency'))
     }
   }
 
@@ -170,41 +172,41 @@ export default function CurrencyPage() {
 
   async function addAllowed(code: string) {
     try {
-      if (!canEdit) return toast.error('You do not have permission to change currency settings')
+      if (!canEdit) return toast.error(tt('currency.toast.noPermission', 'You do not have permission to change currency settings'))
       const { error } = await supabase.from('company_currencies').insert({ currency_code: code })
       if (error) throw error
       await refreshAllowed()
-      toast.success(`Enabled ${code} for this company`)
+      toast.success(tt('currency.toast.enabled', 'Enabled {code} for this company', { code }))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || `Failed to enable ${code}`)
+      toast.error(e?.message || tt('currency.toast.enableFailed', 'Failed to enable {code}', { code }))
     }
   }
 
   async function removeAllowed(code: string) {
     try {
-      if (!canEdit) return toast.error('You do not have permission to change currency settings')
-      if (code === base) return toast.error('You cannot remove the current base currency')
+      if (!canEdit) return toast.error(tt('currency.toast.noPermission', 'You do not have permission to change currency settings'))
+      if (code === base) return toast.error(tt('currency.toast.cannotRemoveBase', 'You cannot remove the current base currency'))
       const { error } = await supabase.from('company_currencies').delete().eq('currency_code', code)
       if (error) throw error
       await refreshAllowed()
-      toast.success(`Disabled ${code} for this company`)
+      toast.success(tt('currency.toast.disabled', 'Disabled {code} for this company', { code }))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || `Failed to disable ${code}`)
+      toast.error(e?.message || tt('currency.toast.disableFailed', 'Failed to disable {code}', { code }))
     }
   }
 
   async function addFx() {
     try {
-      if (!canEdit) return toast.error('You do not have permission to save FX rates')
+      if (!canEdit) return toast.error(tt('currency.toast.noPermissionFx', 'You do not have permission to save FX rates'))
       const r = parseFloat(rate)
       if (!fxDate || !from || !to || !r || Number.isNaN(r) || r <= 0) {
-        toast.error('Please fill date, from, to and a positive rate')
+        toast.error(tt('currency.toast.fillFxFields', 'Please fill date, from, to and a positive rate'))
         return
       }
       if (!allowedCodes.has(from) || !allowedCodes.has(to)) {
-        toast.error('Both currencies must be enabled for this company')
+        toast.error(tt('currency.toast.enableBoth', 'Both currencies must be enabled for this company'))
         return
       }
       const payload = { date: fxDate, from_code: from, to_code: to, rate: r }
@@ -221,10 +223,10 @@ export default function CurrencyPage() {
       if (rErr) throw rErr
       setFx((data || []) as FxRate[])
       setRate('')
-      toast.success('FX rate saved')
+      toast.success(tt('currency.toast.rateSaved', 'FX rate saved'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to save FX rate')
+      toast.error(e?.message || tt('currency.toast.rateSaveFailed', 'Failed to save FX rate'))
     }
   }
 
@@ -245,48 +247,54 @@ export default function CurrencyPage() {
         <div>
           <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
           <p className="text-muted-foreground">
-            Control which currencies this company can transact in, define the base currency, and maintain recent FX rates.
+            {tt(
+              'currency.subtitle',
+              'Control which currencies this company can transact in, define the base currency, and maintain recent FX rates.'
+            )}
           </p>
         </div>
         {companyId ? (
           <div className="text-sm text-muted-foreground">
-            Company: {companyName || companyId}
+            {tt('users.company', 'Company')}: {companyName || companyId}
           </div>
         ) : null}
       </div>
 
       {!canEdit ? (
         <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-          Read-only: only operational roles can change enabled currencies, base currency, or FX rates.
+          {tt(
+            'currency.readOnly',
+            'Read-only: only operational roles can change enabled currencies, base currency, or FX rates.'
+          )}
         </div>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Base currency</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('currency.summary.base', 'Base currency')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{base}</div>
-            <div className="text-xs text-muted-foreground">Used as the default valuation and reporting currency.</div>
+            <div className="text-xs text-muted-foreground">{tt('currency.summary.baseHelp', 'Used as the default valuation and reporting currency.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Enabled currencies</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('currency.summary.enabled', 'Enabled currencies')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{allowed.length}</div>
-            <div className="text-xs text-muted-foreground">Currencies currently available to this company.</div>
+            <div className="text-xs text-muted-foreground">{tt('currency.summary.enabledHelp', 'Currencies currently available to this company.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Recent FX rows</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('currency.summary.fxRows', 'Recent FX rows')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{fx.length}</div>
-            <div className="text-xs text-muted-foreground">Saved rates visible in the current company scope.</div>
+            <div className="text-xs text-muted-foreground">{tt('currency.summary.fxRowsHelp', 'Saved rates visible in the current company scope.')}</div>
           </CardContent>
         </Card>
       </div>
@@ -296,7 +304,7 @@ export default function CurrencyPage() {
         <CardHeader><CardTitle>{t('currency.allowed')}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
           <div className="text-sm text-muted-foreground">
-            Keep enabled codes aligned with the currencies you actually buy, sell, and settle in.
+            {tt('currency.allowedHelp', 'Keep enabled codes aligned with the currencies you actually buy, sell, and settle in.')}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -324,7 +332,7 @@ export default function CurrencyPage() {
                       onClick={() => removeAllowed(c.code)}
                       disabled={!canEdit}
                     >
-                      Disable
+                      {tt('currency.disable', 'Disable')}
                     </Button>
                   ) : (
                     <Button size="sm" className="ml-1" onClick={() => addAllowed(c.code)} disabled={!canEdit}>
@@ -349,7 +357,7 @@ export default function CurrencyPage() {
               <SelectContent>
                 {allowed.map(c => (
                   <SelectItem key={c.code} value={c.code}>
-                    {c.code} — {c.name}
+                    {c.code} - {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -393,7 +401,7 @@ export default function CurrencyPage() {
               step="0.000001"
               value={rate}
               onChange={e => setRate(e.target.value)}
-              placeholder="e.g., 63.50"
+              placeholder={tt('currency.placeholder.rate', 'e.g., 63.50')}
               disabled={!canEdit}
             />
           </div>
@@ -422,7 +430,7 @@ export default function CurrencyPage() {
               {fx.map(r => (
                 <tr key={r.id} className="border-b">
                   <td className="py-2 pr-2">{r.date}</td>
-                  <td className="py-2 pr-2">{(r.fromCode || r.from_code)} → {(r.toCode || r.to_code)}</td>
+                  <td className="py-2 pr-2">{(r.fromCode || r.from_code)} {'->'} {(r.toCode || r.to_code)}</td>
                   <td className="py-2 pr-2">{r.rate}</td>
                 </tr>
               ))}

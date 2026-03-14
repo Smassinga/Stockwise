@@ -5,7 +5,7 @@ import { supabase } from '../lib/db'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -137,7 +137,7 @@ function supplierTermsLabel(supplier: Supplier, paymentTermsById: Map<string, Pa
   if (supplier.paymentTermsId) {
     return paymentTermsById.get(supplier.paymentTermsId)?.name || supplier.paymentTerms || supplier.paymentTermsId
   }
-  return supplier.paymentTerms || 'No terms'
+  return supplier.paymentTerms || ''
 }
 
 function SupplierFormFields({
@@ -145,83 +145,85 @@ function SupplierFormFields({
   onChange,
   currencies,
   paymentTermsList,
+  tt,
 }: {
   form: SupplierForm
   onChange: (patch: Partial<SupplierForm>) => void
   currencies: Currency[]
   paymentTermsList: PaymentTerm[]
+  tt: (key: string, fallback: string, vars?: Record<string, string | number>) => string
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="space-y-2">
-        <Label htmlFor="supplier-code">Code *</Label>
+        <Label htmlFor="supplier-code">{tt('suppliers.form.code', 'Code')} *</Label>
         <Input
           id="supplier-code"
           value={form.code}
           onChange={(e) => onChange({ code: e.target.value })}
-          placeholder="e.g., SUP-001"
+          placeholder={tt('suppliers.placeholder.code', 'e.g., SUP-001')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="supplier-name">Name *</Label>
+        <Label htmlFor="supplier-name">{tt('suppliers.form.name', 'Name')} *</Label>
         <Input
           id="supplier-name"
           value={form.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="Supplier legal or trading name"
+          placeholder={tt('suppliers.placeholder.name', 'Supplier legal or trading name')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="supplier-contact-name">Contact name</Label>
+        <Label htmlFor="supplier-contact-name">{tt('suppliers.form.contactName', 'Contact name')}</Label>
         <Input
           id="supplier-contact-name"
           value={form.contactName}
           onChange={(e) => onChange({ contactName: e.target.value })}
-          placeholder="Primary buyer contact"
+          placeholder={tt('suppliers.placeholder.contactName', 'Primary buyer contact')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="supplier-email">Email</Label>
+        <Label htmlFor="supplier-email">{tt('suppliers.form.email', 'Email')}</Label>
         <Input
           id="supplier-email"
           type="email"
           value={form.email}
           onChange={(e) => onChange({ email: e.target.value })}
-          placeholder="purchasing@supplier.com"
+          placeholder={tt('suppliers.placeholder.email', 'purchasing@supplier.com')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="supplier-phone">Phone</Label>
+        <Label htmlFor="supplier-phone">{tt('suppliers.form.phone', 'Phone')}</Label>
         <Input
           id="supplier-phone"
           value={form.phone}
           onChange={(e) => onChange({ phone: e.target.value })}
-          placeholder="+258 ..."
+          placeholder={tt('suppliers.placeholder.phone', '+258 ...')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="supplier-tax-id">Tax ID</Label>
+        <Label htmlFor="supplier-tax-id">{tt('suppliers.form.taxId', 'Tax ID')}</Label>
         <Input
           id="supplier-tax-id"
           value={form.taxId}
           onChange={(e) => onChange({ taxId: e.target.value })}
-          placeholder="NUIT / VAT / Tax ID"
+          placeholder={tt('suppliers.placeholder.taxId', 'NUIT / VAT / Tax ID')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label>Default currency</Label>
+        <Label>{tt('suppliers.form.currency', 'Default currency')}</Label>
         <Select
           value={form.currencyId || NO_CURRENCY}
           onValueChange={(value) => onChange({ currencyId: value === NO_CURRENCY ? '' : value })}
         >
           <SelectTrigger>
-            <SelectValue placeholder="No default currency" />
+            <SelectValue placeholder={tt('suppliers.placeholder.noCurrency', 'No default currency')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NO_CURRENCY}>No default currency</SelectItem>
+            <SelectItem value={NO_CURRENCY}>{tt('suppliers.placeholder.noCurrency', 'No default currency')}</SelectItem>
             {currencies.map((currency) => (
               <SelectItem key={currency.id} value={currency.id}>
                 {currency.code} - {currency.name}
@@ -232,7 +234,7 @@ function SupplierFormFields({
       </div>
 
       <div className="space-y-2">
-        <Label>Payment terms</Label>
+        <Label>{tt('suppliers.form.paymentTerms', 'Payment terms')}</Label>
         <Select
           value={form.paymentTermsChoice || NO_PAYMENT_TERMS}
           onValueChange={(value) =>
@@ -243,33 +245,33 @@ function SupplierFormFields({
           }
         >
           <SelectTrigger>
-            <SelectValue placeholder="Select payment terms" />
+            <SelectValue placeholder={tt('suppliers.placeholder.paymentTerms', 'Select payment terms')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NO_PAYMENT_TERMS}>No default terms</SelectItem>
+            <SelectItem value={NO_PAYMENT_TERMS}>{tt('suppliers.placeholder.noTerms', 'No default terms')}</SelectItem>
             {paymentTermsList.map((paymentTerm) => (
               <SelectItem key={paymentTerm.id} value={paymentTerm.id}>
                 {paymentTerm.name}
               </SelectItem>
             ))}
-            <SelectItem value={CUSTOM_PAYMENT_TERMS}>Custom terms</SelectItem>
+            <SelectItem value={CUSTOM_PAYMENT_TERMS}>{tt('suppliers.customTerms', 'Custom terms')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="supplier-custom-terms">Terms note</Label>
+        <Label htmlFor="supplier-custom-terms">{tt('suppliers.form.termsNote', 'Terms note')}</Label>
         <Input
           id="supplier-custom-terms"
           value={form.customPaymentTerms}
           onChange={(e) => onChange({ customPaymentTerms: e.target.value })}
-          placeholder="Only used when Custom terms is selected"
+          placeholder={tt('suppliers.placeholder.termsNote', 'Only used when Custom terms is selected')}
           disabled={form.paymentTermsChoice !== CUSTOM_PAYMENT_TERMS}
         />
       </div>
 
       <div className="space-y-2">
-        <Label>Status</Label>
+        <Label>{tt('suppliers.form.status', 'Status')}</Label>
         <Select
           value={form.isActive ? 'active' : 'inactive'}
           onValueChange={(value) => onChange({ isActive: value === 'active' })}
@@ -278,19 +280,19 @@ function SupplierFormFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
+            <SelectItem value="active">{tt('suppliers.active', 'Active')}</SelectItem>
+            <SelectItem value="inactive">{tt('suppliers.inactive', 'Inactive')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div className="space-y-2 md:col-span-2">
-        <Label htmlFor="supplier-notes">Notes</Label>
+        <Label htmlFor="supplier-notes">{tt('suppliers.form.notes', 'Notes')}</Label>
         <Textarea
           id="supplier-notes"
           value={form.notes}
           onChange={(e) => onChange({ notes: e.target.value })}
-          placeholder="Procurement notes, contract reminders, delivery behaviour..."
+          placeholder={tt('suppliers.placeholder.notes', 'Procurement notes, contract reminders, delivery behaviour...')}
         />
       </div>
     </div>
@@ -302,6 +304,8 @@ export default function Suppliers() {
   const { companyId, myRole } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
@@ -340,7 +344,7 @@ export default function Suppliers() {
         await reloadSuppliers()
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || 'Failed to load suppliers')
+        toast.error(e?.message || tt('suppliers.toast.loadFailed', 'Failed to load suppliers'))
       } finally {
         setLoading(false)
       }
@@ -395,23 +399,23 @@ export default function Suppliers() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!companyId) return toast.error('Join or create a company first')
-    if (!can.createMaster(role)) return toast.error('Only operators and above can create suppliers')
+    if (!companyId) return toast.error(tt('suppliers.toast.joinCompany', 'Join or create a company first'))
+    if (!can.createMaster(role)) return toast.error(tt('suppliers.toast.noCreatePermission', 'Only operators and above can create suppliers'))
 
     const code = createForm.code.trim()
     const name = createForm.name.trim()
-    if (!code || !name) return toast.error('Code and name are required')
+    if (!code || !name) return toast.error(tt('suppliers.toast.codeNameRequired', 'Code and name are required'))
     if (
       createForm.paymentTermsChoice === CUSTOM_PAYMENT_TERMS &&
       !createForm.customPaymentTerms.trim()
     ) {
-      return toast.error('Enter the custom payment terms or choose a standard term')
+      return toast.error(tt('suppliers.toast.customTermsRequired', 'Enter the custom payment terms or choose a standard term'))
     }
 
     try {
       setSaving(true)
       if (await ensureUniqueCode(code)) {
-        toast.error('Code must be unique in this company')
+        toast.error(tt('suppliers.toast.uniqueCode', 'Code must be unique in this company'))
         return
       }
 
@@ -432,12 +436,12 @@ export default function Suppliers() {
       const insert = await supabase.from('suppliers').insert(payload).select('id').single()
       if (insert.error) throw insert.error
 
-      toast.success('Supplier created')
+      toast.success(tt('suppliers.toast.created', 'Supplier created'))
       setCreateForm(EMPTY_FORM)
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to create supplier')
+      toast.error(e?.message || tt('suppliers.toast.createFailed', 'Failed to create supplier'))
     } finally {
       setSaving(false)
     }
@@ -445,20 +449,20 @@ export default function Suppliers() {
 
   async function handleUpdate() {
     if (!editing) return
-    if (!companyId) return toast.error('Join or create a company first')
-    if (!can.updateMaster(role)) return toast.error('Only operators and above can update suppliers')
+    if (!companyId) return toast.error(tt('suppliers.toast.joinCompany', 'Join or create a company first'))
+    if (!can.updateMaster(role)) return toast.error(tt('suppliers.toast.noUpdatePermission', 'Only operators and above can update suppliers'))
 
     const code = editForm.code.trim()
     const name = editForm.name.trim()
-    if (!code || !name) return toast.error('Code and name are required')
+    if (!code || !name) return toast.error(tt('suppliers.toast.codeNameRequired', 'Code and name are required'))
     if (editForm.paymentTermsChoice === CUSTOM_PAYMENT_TERMS && !editForm.customPaymentTerms.trim()) {
-      return toast.error('Enter the custom payment terms or choose a standard term')
+      return toast.error(tt('suppliers.toast.customTermsRequired', 'Enter the custom payment terms or choose a standard term'))
     }
 
     try {
       setSaving(true)
       if (await ensureUniqueCode(code, editing.id)) {
-        toast.error('Code must be unique in this company')
+        toast.error(tt('suppliers.toast.uniqueCode', 'Code must be unique in this company'))
         return
       }
 
@@ -481,36 +485,36 @@ export default function Suppliers() {
 
       if (update.error) throw update.error
 
-      toast.success('Supplier updated')
+      toast.success(tt('suppliers.toast.updated', 'Supplier updated'))
       setEditing(null)
       setEditForm(EMPTY_FORM)
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to update supplier')
+      toast.error(e?.message || tt('suppliers.toast.updateFailed', 'Failed to update supplier'))
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(id: string) {
-    if (!companyId) return toast.error('Join or create a company first')
-    if (!can.deleteMaster(role)) return toast.error('Only managers and above can delete suppliers')
+    if (!companyId) return toast.error(tt('suppliers.toast.joinCompany', 'Join or create a company first'))
+    if (!can.deleteMaster(role)) return toast.error(tt('suppliers.toast.noDeletePermission', 'Only managers and above can delete suppliers'))
 
     try {
       const del = await supabase.from('suppliers').delete().eq('id', id).eq('company_id', companyId)
       if (del.error) throw del.error
-      toast.success('Supplier deleted')
+      toast.success(tt('suppliers.toast.deleted', 'Supplier deleted'))
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to delete supplier')
+      toast.error(e?.message || tt('suppliers.toast.deleteFailed', 'Failed to delete supplier'))
     }
   }
 
   async function toggleActive(id: string, next: boolean) {
-    if (!companyId) return toast.error('Join or create a company first')
-    if (!can.updateMaster(role)) return toast.error('Only operators and above can update suppliers')
+    if (!companyId) return toast.error(tt('suppliers.toast.joinCompany', 'Join or create a company first'))
+    if (!can.updateMaster(role)) return toast.error(tt('suppliers.toast.noUpdatePermission', 'Only operators and above can update suppliers'))
 
     try {
       const update = await supabase
@@ -523,7 +527,7 @@ export default function Suppliers() {
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to update supplier')
+      toast.error(e?.message || tt('suppliers.toast.updateFailed', 'Failed to update supplier'))
     }
   }
 
@@ -566,7 +570,7 @@ export default function Suppliers() {
         <div>
           <h1 className="text-3xl font-bold">{t('suppliers.title')}</h1>
           <p className="text-muted-foreground">
-            Maintain supplier defaults, commercial terms, and contact details used across purchasing and landed cost workflows.
+            {tt('suppliers.subtitle', 'Maintain supplier defaults, commercial terms, and contact details used across purchasing and landed cost workflows.')}
           </p>
         </div>
       </div>
@@ -574,41 +578,41 @@ export default function Suppliers() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Suppliers</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('suppliers.summary.total', 'Suppliers')}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div>
               <div className="text-3xl font-semibold">{stats.total}</div>
-              <div className="text-xs text-muted-foreground">Records in this company</div>
+              <div className="text-xs text-muted-foreground">{tt('suppliers.summary.totalHelp', 'Records in this company')}</div>
             </div>
             <Building2 className="h-5 w-5 text-primary" />
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('suppliers.summary.active', 'Active')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats.active}</div>
-            <div className="text-xs text-muted-foreground">Available for new purchasing activity</div>
+            <div className="text-xs text-muted-foreground">{tt('suppliers.summary.activeHelp', 'Available for new purchasing activity')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Inactive</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('suppliers.summary.inactive', 'Inactive')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats.inactive}</div>
-            <div className="text-xs text-muted-foreground">Kept for history, blocked for new use</div>
+            <div className="text-xs text-muted-foreground">{tt('suppliers.summary.inactiveHelp', 'Kept for history, blocked for new use')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Terms captured</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('suppliers.summary.terms', 'Terms captured')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats.withTerms}</div>
-            <div className="text-xs text-muted-foreground">Suppliers with default payment terms</div>
+            <div className="text-xs text-muted-foreground">{tt('suppliers.summary.termsHelp', 'Suppliers with default payment terms')}</div>
           </CardContent>
         </Card>
       </div>
@@ -619,7 +623,7 @@ export default function Suppliers() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-            Capture currency, payment terms, and primary contact details once so new purchase orders inherit the correct defaults.
+            {tt('suppliers.createHelp', 'Capture currency, payment terms, and primary contact details once so new purchase orders inherit the correct defaults.')}
           </div>
           <form onSubmit={handleCreate} className="space-y-6">
             <SupplierFormFields
@@ -627,6 +631,7 @@ export default function Suppliers() {
               onChange={(patch) => setCreateForm((current) => ({ ...current, ...patch }))}
               currencies={currencies}
               paymentTermsList={paymentTermsList}
+              tt={tt}
             />
             <div className="flex items-center justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateForm(EMPTY_FORM)}>
@@ -645,7 +650,7 @@ export default function Suppliers() {
           <div>
             <CardTitle>{t('suppliers.list')}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Search by supplier, contact, or terms and update existing records without recreating them.
+              {tt('suppliers.listHelp', 'Search by supplier, contact, or terms and update existing records without recreating them.')}
             </p>
           </div>
           <div className="relative w-full sm:max-w-sm">
@@ -653,7 +658,7 @@ export default function Suppliers() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search suppliers"
+              placeholder={tt('suppliers.searchPlaceholder', 'Search suppliers')}
               className="pl-10"
             />
           </div>
@@ -661,20 +666,22 @@ export default function Suppliers() {
         <CardContent className="overflow-x-auto">
           {filteredSuppliers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
-              <div className="text-lg font-medium">{search ? 'No suppliers match this search.' : 'No suppliers yet.'}</div>
+              <div className="text-lg font-medium">{search ? tt('suppliers.empty.filteredTitle', 'No suppliers match this search.') : tt('suppliers.empty.title', 'No suppliers yet.')}</div>
               <div className="mt-2 text-sm text-muted-foreground">
-                {search ? 'Try a different supplier name, contact, or code.' : 'Create the first supplier so purchasing, costing, and payables flows have a real counterparty record.'}
+                {search
+                  ? tt('suppliers.empty.filteredBody', 'Try a different supplier name, contact, or code.')
+                  : tt('suppliers.empty.body', 'Create the first supplier so purchasing, costing, and payables flows have a real counterparty record.')}
               </div>
             </div>
           ) : (
             <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="py-3 pr-4">Supplier</th>
-                  <th className="py-3 pr-4">Terms</th>
-                  <th className="py-3 pr-4">Currency</th>
-                  <th className="py-3 pr-4">Contact</th>
-                  <th className="py-3 pr-4">Status</th>
+                  <th className="py-3 pr-4">{tt('suppliers.table.supplier', 'Supplier')}</th>
+                  <th className="py-3 pr-4">{tt('suppliers.table.terms', 'Terms')}</th>
+                  <th className="py-3 pr-4">{tt('suppliers.table.currency', 'Currency')}</th>
+                  <th className="py-3 pr-4">{tt('suppliers.table.contact', 'Contact')}</th>
+                  <th className="py-3 pr-4">{tt('suppliers.table.status', 'Status')}</th>
                   <th className="py-3 pr-4 text-right">{t('customers.actions')}</th>
                 </tr>
               </thead>
@@ -688,7 +695,7 @@ export default function Suppliers() {
                           <div className="font-medium">{supplier.name}</div>
                           <div className="text-xs text-muted-foreground">{supplier.code}</div>
                           {supplier.contactName ? (
-                            <div className="text-xs text-muted-foreground">Contact: {supplier.contactName}</div>
+                            <div className="text-xs text-muted-foreground">{tt('suppliers.contactLabel', 'Contact')}: {supplier.contactName}</div>
                           ) : null}
                           {supplier.notes ? (
                             <div className="line-clamp-2 max-w-[280px] text-xs text-muted-foreground">
@@ -700,10 +707,10 @@ export default function Suppliers() {
                       <td className="py-4 pr-4">
                         <div className="flex flex-col gap-2">
                           <Badge variant={supplier.paymentTermsId ? 'secondary' : 'outline'}>
-                            {supplierTermsLabel(supplier, paymentTermById)}
+                            {supplierTermsLabel(supplier, paymentTermById) || tt('suppliers.noTerms', 'No terms')}
                           </Badge>
                           {supplier.taxId ? (
-                            <span className="text-xs text-muted-foreground">Tax ID: {supplier.taxId}</span>
+                            <span className="text-xs text-muted-foreground">{tt('suppliers.taxIdLabel', 'Tax ID')}: {supplier.taxId}</span>
                           ) : null}
                         </div>
                       </td>
@@ -752,7 +759,7 @@ export default function Suppliers() {
                             }}
                           >
                             <Pencil className="mr-2 h-4 w-4" />
-                            Edit
+                            {tt('suppliers.edit', 'Edit')}
                           </Button>
                           <Button
                             variant="outline"
@@ -782,9 +789,9 @@ export default function Suppliers() {
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Edit supplier</DialogTitle>
+            <DialogTitle>{tt('suppliers.editTitle', 'Edit supplier')}</DialogTitle>
             <DialogDescription>
-              Update contact details, default terms, and supplier status without affecting historical orders.
+              {tt('suppliers.editDescription', 'Update contact details, default terms, and supplier status without affecting historical orders.')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
@@ -794,13 +801,14 @@ export default function Suppliers() {
                 onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))}
                 currencies={currencies}
                 paymentTermsList={paymentTermsList}
+                tt={tt}
               />
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setEditing(null)}>
                   {t('common.cancel')}
                 </Button>
                 <Button onClick={handleUpdate} disabled={saving || !can.updateMaster(role)}>
-                  {saving ? t('actions.saving') : 'Save changes'}
+                  {saving ? t('actions.saving') : t('actions.save')}
                 </Button>
               </div>
             </div>

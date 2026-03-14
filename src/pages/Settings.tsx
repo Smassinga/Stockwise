@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
-import { useI18n } from "../lib/i18n";
+import { useI18n, withI18nFallback } from "../lib/i18n";
 import { useOrg } from "../hooks/useOrg";
 
 import {
@@ -36,7 +36,6 @@ import {
   Globe,
   Bell,
   FileText,
-  DollarSign,
   Building,
   Clock,
 } from "lucide-react";
@@ -217,6 +216,8 @@ function pathFromPublicUrl(url: string | null | undefined): string | null {
 
 function Settings() {
   const { t, setLang } = useI18n();
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars);
   const { companyId, myRole } = useOrg();
 
   const [loading, setLoading] = useState(true);
@@ -243,13 +244,15 @@ function Settings() {
       profile?.trade_name ||
       profile?.legal_name ||
       data.documents.brand.name ||
-      "Company profile not set";
+      tt("settings.summary.companyFallback", "Company profile not set");
     const defaultWarehouse =
       warehouses.find((warehouse) => warehouse.id === data.dashboard.defaultWarehouseId)?.name ||
-      (data.dashboard.defaultWarehouseId === "ALL" ? "All warehouses" : "Not set");
-    const reminderState = data.dueReminders?.enabled ? "Enabled" : "Paused";
-    return { companyLabel, defaultWarehouse, reminderState };
-  }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, data.dueReminders?.enabled, profile?.legal_name, profile?.trade_name, warehouses]);
+      (data.dashboard.defaultWarehouseId === "ALL"
+        ? tt("filters.warehouse.all", "All warehouses")
+        : tt("settings.summary.notSet", "Not set"));
+    const valuationMethod = tt("reports.weightedAverage", "Weighted Average");
+    return { companyLabel, defaultWarehouse, valuationMethod };
+  }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses]);
 
   useEffect(() => {
     let cancelled = false;
@@ -339,7 +342,7 @@ function Settings() {
           setWarehouses((resWh.data ?? []) as Warehouse[]);
       } catch (e: any) {
         console.error(e);
-        toast.error(e?.message || "Failed to load settings");
+        toast.error(e?.message || tt("settings.toast.loadFailed", "Failed to load settings"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -370,17 +373,41 @@ function Settings() {
   const save = async () => {
     if (!companyId) return;
     if (!canEditOps) {
-      toast.error("You do not have permission to edit settings");
+      toast.error(tt("settings.toast.noEditPermission", "You do not have permission to edit settings"));
       return;
     }
 
     try {
       setSaving(true);
+      const normalized = clone(data);
+      normalized.notifications = {
+        ...normalized.notifications,
+        dailyDigestChannels: { email: true, sms: false, whatsapp: false },
+        recipients: {
+          emails: normalized.notifications.recipients?.emails || [],
+          phones: normalized.notifications.recipients?.phones || [],
+          whatsapp: normalized.notifications.recipients?.whatsapp || [],
+        },
+      };
+
+      if (
+        normalized.notifications.dailyDigest &&
+        !(normalized.notifications.recipients?.emails || []).length
+      ) {
+        toast.error(
+          tt(
+            "settings.toast.digestRecipientsRequired",
+            "Add at least one email recipient before enabling the daily digest."
+          )
+        );
+        return;
+      }
+
       const { data: updated, error } = await supabase.rpc(
         "update_company_settings",
         {
           p_company_id: companyId,
-          p_patch: data,
+          p_patch: normalized,
         },
       );
       if (error) throw error;
@@ -392,10 +419,10 @@ function Settings() {
       setData(merged);
       setLang(merged.locale.language);
       writeCachedLang(companyId, merged.locale.language);
-      toast.success("Settings saved");
+      toast.success(tt("settings.toast.saved", "Settings saved"));
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message || "Save failed");
+      toast.error(e?.message || tt("settings.toast.saveFailed", "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -404,7 +431,7 @@ function Settings() {
   const saveProfile = async () => {
     if (!companyId || !profile) return;
     if (!canEditOps) {
-      toast.error("You do not have permission to edit company profile");
+      toast.error(tt("settings.toast.noProfilePermission", "You do not have permission to edit company profile"));
       return;
     }
     try {
@@ -417,10 +444,10 @@ function Settings() {
         .update(upd)
         .eq("id", companyId);
       if (error) throw error;
-      toast.success("Company profile saved");
+      toast.success(tt("settings.toast.companySaved", "Company profile saved"));
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message || "Save failed");
+      toast.error(e?.message || tt("settings.toast.saveFailed", "Save failed"));
     } finally {
       setSavingProfile(false);
     }
@@ -455,7 +482,7 @@ function Settings() {
             disabled={savingProfile || !canEditOps}
             variant="secondary"
           >
-            {savingProfile ? t("actions.saving") : "Save Company"}
+            {savingProfile ? t("actions.saving") : tt("settings.actions.saveCompany", "Save company")}
           </Button>
           <Button onClick={save} disabled={saving || !canEditOps}>
             {saving ? t("actions.saving") : t("actions.save")}
@@ -465,14 +492,16 @@ function Settings() {
 
       {!canEditOps && (
         <div className="text-sm text-muted-foreground">
-          Read-only: only Owners / Admins / Managers can edit settings.
+          {tt("settings.readOnly", "Read-only: only Owners / Admins / Managers can edit settings.")}
         </div>
       )}
 
       {missingRow && !canEditAll && (
         <div className="text-sm text-muted-foreground">
-          Settings not initialized yet. Ask an Owner/Admin to open this page
-          once to create them.
+          {tt(
+            "settings.notInitialized",
+            "Settings are not initialized yet. Ask an Owner or Admin to open this page once to create them."
+          )}
         </div>
       )}
 
@@ -480,39 +509,48 @@ function Settings() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Company profile
+              {tt("settings.summary.companyTitle", "Company profile")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xl font-semibold">{settingsSummary.companyLabel}</div>
             <div className="text-xs text-muted-foreground">
-              Maintained from the live companies record used in printed documents and onboarding.
+              {tt(
+                "settings.summary.companyHelp",
+                "Maintained from the live company profile used in onboarding, exports, and printed documents."
+              )}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Default warehouse
+              {tt("settings.summary.warehouseTitle", "Default warehouse")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xl font-semibold">{settingsSummary.defaultWarehouse}</div>
             <div className="text-xs text-muted-foreground">
-              Used as the default operational context for dashboard and sales settings.
+              {tt(
+                "settings.summary.warehouseHelp",
+                "Used as the default operational context for the dashboard and sales defaults."
+              )}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Due reminders
+              {tt("settings.summary.valuationTitle", "Inventory valuation")}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-semibold">{settingsSummary.reminderState}</div>
+            <div className="text-xl font-semibold">{settingsSummary.valuationMethod}</div>
             <div className="text-xs text-muted-foreground">
-              Worker configuration is stored in company settings and saved with the rest of this page.
+              {tt(
+                "settings.summary.valuationHelp",
+                "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
+              )}
             </div>
           </CardContent>
         </Card>
@@ -727,7 +765,7 @@ function Settings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>Common Countries</SelectLabel>
+                    <SelectLabel>{tt("settings.companyProfile.country.common", "Common countries")}</SelectLabel>
                     <SelectItem value="MZ">Mozambique (MZ)</SelectItem>
                     <SelectItem value="PT">Portugal (PT)</SelectItem>
                     <SelectItem value="BR">Brazil (BR)</SelectItem>
@@ -740,7 +778,7 @@ function Settings() {
                     <SelectItem value="GB">United Kingdom (GB)</SelectItem>
                   </SelectGroup>
                   <SelectGroup>
-                    <SelectLabel>Other Countries</SelectLabel>
+                    <SelectLabel>{tt("settings.companyProfile.country.other", "Other countries")}</SelectLabel>
                     <SelectItem value="AF">Afghanistan (AF)</SelectItem>
                     <SelectItem value="AL">Albania (AL)</SelectItem>
                     <SelectItem value="DZ">Algeria (DZ)</SelectItem>
@@ -875,7 +913,7 @@ function Settings() {
                     <SelectItem value="PE">Peru (PE)</SelectItem>
                     <SelectItem value="PH">Philippines (PH)</SelectItem>
                     <SelectItem value="PL">Poland (PL)</SelectItem>
-                    <SelectItem value="PT">Portugal (PT)</SelectItem>
+                    <SelectItem value="pt">{tt("settings.language.pt", "Portuguese")}</SelectItem>
                     <SelectItem value="QA">Qatar (QA)</SelectItem>
                     <SelectItem value="RO">Romania (RO)</SelectItem>
                     <SelectItem value="RU">Russia (RU)</SelectItem>
@@ -949,8 +987,8 @@ function Settings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto">{t("settings.companyProfile.preferredLang.auto")}</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="pt">Português</SelectItem>
+                  <SelectItem value="en">{tt("settings.language.en", "English")}</SelectItem>
+                  <SelectItem value="pt">{tt("settings.language.pt", "Portuguese")}</SelectItem>
                 </SelectContent>
               </Select>
               <div className="text-xs text-muted-foreground">
@@ -1018,8 +1056,8 @@ function Settings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="pt">Português</SelectItem>
+                <SelectItem value="en">{tt("settings.language.en", "English")}</SelectItem>
+                <SelectItem value="pt">{tt("settings.language.pt", "Portuguese")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1056,7 +1094,7 @@ function Settings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All Warehouses</SelectItem>
+                <SelectItem value="ALL">{tt("filters.warehouse.all", "All warehouses")}</SelectItem>
                 {warehouses.map((w) => (
                   <SelectItem key={w.id} value={w.id}>
                     {w.name}
@@ -1083,6 +1121,12 @@ function Settings() {
           <CardTitle>{t("sections.sales.title")}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2 text-sm text-muted-foreground">
+            {tt(
+              "settings.sales.help",
+              "Keep only the operational defaults your team actually controls here. Revenue recognition logic stays in product behavior, not company setup."
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <Switch
               checked={data.sales.allowLineShip}
@@ -1104,60 +1148,6 @@ function Settings() {
           </div>
 
           <div>
-            <Label>{t("fields.revenueRule")}</Label>
-            <Select
-              value={data.sales.revenueRule}
-              onValueChange={(v) => setField("sales.revenueRule", v)}
-              disabled={!canEditAll}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="order_total_first">
-                  {t("fields.revenueRule.order_total_first")}
-                </SelectItem>
-                <SelectItem value="lines_only">
-                  {t("fields.revenueRule.lines_only")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {!canEditAll && (
-              <div className="text-xs text-muted-foreground mt-1">
-                Admins only
-              </div>
-            )}
-          </div>
-
-          <div>
-            <Label>{t("fields.allocateMissingRevenueBy")}</Label>
-            <Select
-              value={data.sales.allocateMissingRevenueBy}
-              onValueChange={(v) =>
-                setField("sales.allocateMissingRevenueBy", v)
-              }
-              disabled={!canEditAll}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cogs_share">
-                  {t("fields.allocateMissingRevenueBy.cogs_share")}
-                </SelectItem>
-                <SelectItem value="line_share">
-                  {t("fields.allocateMissingRevenueBy.line_share")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {!canEditAll && (
-              <div className="text-xs text-muted-foreground mt-1">
-                Admins only
-              </div>
-            )}
-          </div>
-
-          <div>
             <Label>{t("fields.defaultFulfilWarehouse")}</Label>
             <Select
               value={data.sales.defaultFulfilWarehouseId || "NONE"}
@@ -1170,10 +1160,10 @@ function Settings() {
               disabled={!canEditOps}
             >
               <SelectTrigger>
-                <SelectValue placeholder={t("none")} />
+                <SelectValue placeholder={t("common.none")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="NONE">{t("none")}</SelectItem>
+                <SelectItem value="NONE">{t("common.none")}</SelectItem>
                 {warehouses.map((w) => (
                   <SelectItem key={w.id} value={w.id}>
                     {w.name}
@@ -1185,96 +1175,28 @@ function Settings() {
         </CardContent>
       </Card>
 
-      {/* Revenue Sources */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5" /> {t("settings.revenueSources.title")}
-          </CardTitle>
+          <CardTitle>{tt("settings.inventory.title", "Inventory valuation")}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <Label>{t("settings.revenueSources.ordersSource")}</Label>
-            <Input
-              placeholder={t("settings.revenueSources.ordersSource.placeholder")}
-              value={data.revenueSources.ordersSource || ""}
-              onChange={(e) =>
-                setField("revenueSources.ordersSource", e.target.value)
-              }
-              disabled={!canEditOps}
-            />
-            <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.revenueSources.ordersSource.helper")}
+          <div className="space-y-2">
+            <Label>{tt("settings.inventory.method", "Valuation method")}</Label>
+            <Input value={tt("reports.weightedAverage", "Weighted Average")} disabled />
+            <div className="text-xs text-muted-foreground">
+              {tt(
+                "settings.inventory.methodHelp",
+                "Operational inventory, stock levels, purchase receipts, and landed cost revaluations currently use weighted average costing."
+              )}
             </div>
           </div>
-
-          <div className="md:col-span-2 pt-2">
-            <Label>{t("settings.revenueSources.cashSales")}</Label>
-            <Input
-              placeholder={t("settings.revenueSources.cashSales.placeholder")}
-              value={data.revenueSources.cashSales?.source || ""}
-              onChange={(e) =>
-                setField("revenueSources.cashSales.source", e.target.value)
-              }
-              disabled={!canEditOps}
-            />
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-2">
-              <div>
-                <Label>{t("settings.revenueSources.dateCol")}</Label>
-                <Input
-                  placeholder={t("settings.revenueSources.dateCol.placeholder")}
-                  value={data.revenueSources.cashSales?.dateCol || ""}
-                  onChange={(e) =>
-                    setField("revenueSources.cashSales.dateCol", e.target.value)
-                  }
-                  disabled={!canEditOps}
-                />
-              </div>
-              <div>
-                <Label>{t("settings.revenueSources.customerCol")}</Label>
-                <Input
-                  placeholder={t("settings.revenueSources.customerCol.placeholder")}
-                  value={data.revenueSources.cashSales?.customerCol || ""}
-                  onChange={(e) =>
-                    setField(
-                      "revenueSources.cashSales.customerCol",
-                      e.target.value,
-                    )
-                  }
-                  disabled={!canEditOps}
-                />
-              </div>
-              <div>
-                <Label>{t("settings.revenueSources.amountCol")}</Label>
-                <Input
-                  placeholder={t("settings.revenueSources.amountCol.placeholder")}
-                  value={data.revenueSources.cashSales?.amountCol || ""}
-                  onChange={(e) =>
-                    setField(
-                      "revenueSources.cashSales.amountCol",
-                      e.target.value,
-                    )
-                  }
-                  disabled={!canEditOps}
-                />
-              </div>
-              <div>
-                <Label>{t("settings.revenueSources.currencyCol")}</Label>
-                <Input
-                  placeholder={t("settings.revenueSources.currencyCol.placeholder")}
-                  value={data.revenueSources.cashSales?.currencyCol || ""}
-                  onChange={(e) =>
-                    setField(
-                      "revenueSources.cashSales.currencyCol",
-                      e.target.value,
-                    )
-                  }
-                  disabled={!canEditOps}
-                />
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.revenueSources.cashSales.helper")}
+          <div className="space-y-2">
+            <Label>{tt("settings.inventory.futureMethods", "Other methods")}</Label>
+            <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+              {tt(
+                "settings.inventory.futureMethodsHelp",
+                "FIFO and LIFO are not yet available for live company inventory valuation, so they are not exposed as selectable company options."
+              )}
             </div>
           </div>
         </CardContent>
@@ -1284,29 +1206,15 @@ function Settings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" /> {t("sections.notifications.title")}
+            <Bell className="w-5 h-5" /> {tt("settings.digest.title", "Daily digest")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label>{t("fields.lowStockChannel")}</Label>
-            <Select
-              value={data.notifications.lowStock.channel}
-              onValueChange={(v) =>
-                setField("notifications.lowStock.channel", v)
-              }
-              disabled={!canEditOps}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="email">{t("common.email")}</SelectItem>
-                <SelectItem value="slack">Slack</SelectItem>
-                <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                <SelectItem value="none">{t("common.none")}</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="md:col-span-2 text-sm text-muted-foreground">
+            {tt(
+              "settings.digest.help",
+              "The daily digest is queued once per local day after the selected time and is currently delivered by email only."
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -1345,40 +1253,14 @@ function Settings() {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={!!data.notifications.dailyDigestChannels?.email}
-                onCheckedChange={(v) =>
-                  setField("notifications.dailyDigestChannels.email", v)
-                }
-                disabled={!canEditOps}
-              />
-              <Label>{t("orders.email")}</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={!!data.notifications.dailyDigestChannels?.sms}
-                onCheckedChange={(v) =>
-                  setField("notifications.dailyDigestChannels.sms", v)
-                }
-                disabled={!canEditOps}
-              />
-              <Label>SMS</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={!!data.notifications.dailyDigestChannels?.whatsapp}
-                onCheckedChange={(v) =>
-                  setField("notifications.dailyDigestChannels.whatsapp", v)
-                }
-                disabled={!canEditOps}
-              />
-              <Label>WhatsApp</Label>
-            </div>
+          <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+            {tt(
+              "settings.digest.emailOnly",
+              "Email recipients below are the addresses the digest worker will send to when this feature is enabled."
+            )}
           </div>
 
-          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="md:col-span-2">
             <div>
               <Label>{t("notifications.recipientEmails")}</Label>
               <Input
@@ -1392,34 +1274,12 @@ function Settings() {
                 }
                 disabled={!canEditOps}
               />
-            </div>
-            <div>
-              <Label>{t("notifications.recipientPhones")}</Label>
-              <Input
-                placeholder={t("notifications.recipientPhones.placeholder")}
-                value={listToCSV(data.notifications.recipients?.phones || [])}
-                onChange={(e) =>
-                  setField(
-                    "notifications.recipients.phones",
-                    csvToList(e.target.value),
-                  )
-                }
-                disabled={!canEditOps}
-              />
-            </div>
-            <div>
-              <Label>{t("notifications.recipientWhatsapp")}</Label>
-              <Input
-                placeholder={t("notifications.recipientWhatsapp.placeholder")}
-                value={listToCSV(data.notifications.recipients?.whatsapp || [])}
-                onChange={(e) =>
-                  setField(
-                    "notifications.recipients.whatsapp",
-                    csvToList(e.target.value),
-                  )
-                }
-                disabled={!canEditOps}
-              />
+              <div className="mt-1 text-xs text-muted-foreground">
+                {tt(
+                  "settings.digest.recipientsHelp",
+                  "Use one or more company email addresses, separated by commas. SMS and WhatsApp delivery are not active for the daily digest yet."
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -1433,6 +1293,12 @@ function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2 text-sm text-muted-foreground">
+            {tt(
+              "settings.dueReminders.help",
+              "Due reminders run on your company timezone, send to the billing email on each sales order, and can add internal BCC copies when needed."
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <Switch
               checked={
@@ -1537,21 +1403,6 @@ function Settings() {
           </div>
 
           <div className="md:col-span-2">
-            <Label>{t("settings.dueReminders.recipients")}</Label>
-            <Input
-              placeholder={t("settings.dueReminders.recipients.placeholder")}
-              value={listToCSV(data.dueReminders?.recipients || [])}
-              onChange={(e) =>
-                setField("dueReminders.recipients", csvToList(e.target.value))
-              }
-              disabled={!canEditOps}
-            />
-            <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.dueReminders.recipients.helper")}
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
             <Label>{t("settings.dueReminders.bcc")}</Label>
             <Input
               placeholder={t("settings.dueReminders.bcc.placeholder")}
@@ -1562,27 +1413,18 @@ function Settings() {
               disabled={!canEditOps}
             />
             <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.dueReminders.bcc.helper")}
+              {tt(
+                "settings.dueReminders.bccHelp",
+                "Optional internal email addresses that should receive a blind-copy when customer due reminders are sent."
+              )}
             </div>
           </div>
 
-          <div className="md:col-span-2">
-            <Label>{t("settings.dueReminders.invoiceBaseUrl")}</Label>
-            <Input
-              placeholder={t("settings.dueReminders.invoiceBaseUrl.placeholder")}
-              value={
-                data.dueReminders?.invoiceBaseUrl ||
-                DEFAULTS.dueReminders?.invoiceBaseUrl ||
-                ""
-              }
-              onChange={(e) =>
-                setField("dueReminders.invoiceBaseUrl", e.target.value)
-              }
-              disabled={!canEditOps}
-            />
-            <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.dueReminders.invoiceBaseUrl.helper")}
-            </div>
+          <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+            {tt(
+              "settings.dueReminders.linkingHelp",
+              "Invoice links in reminders follow the app's document routing automatically. The document URL pattern is product logic, not a company setup field."
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1601,11 +1443,10 @@ function Settings() {
               value={data.documents.brand.name}
               onChange={(e) => setField("documents.brand.name", e.target.value)}
               disabled={!canEditOps}
-              placeholder="Leave blank to use your organization name"
+              placeholder={tt("settings.documents.brandPlaceholder", "Leave blank to use your company profile name")}
             />
             <div className="text-xs text-muted-foreground">
-              Display name on documents. If empty, we’ll use your organization’s
-              company name.
+              {tt("settings.documents.brandHelp", "Display name on printed documents and exports. If left blank, the company profile name is used.")}
             </div>
           </div>
 
@@ -1621,8 +1462,7 @@ function Settings() {
               disabled={!canEditOps}
             />
             <div className="text-xs text-muted-foreground">
-              Paste a URL or upload to Supabase Storage (public). PNG/SVG
-              recommended.
+              {tt("settings.documents.logoHelp", "Paste a URL or upload to Supabase Storage. PNG or SVG works best for printed documents and branded exports.")}
             </div>
           </div>
 
@@ -1653,3 +1493,5 @@ function Settings() {
 
 export default Settings;
 export { Settings };
+
+

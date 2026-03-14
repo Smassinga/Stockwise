@@ -5,7 +5,7 @@ import { supabase } from '../lib/db'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -154,7 +154,7 @@ function customerTermsLabel(customer: Customer, paymentTermsById: Map<string, Pa
   if (customer.paymentTermsId) {
     return paymentTermsById.get(customer.paymentTermsId)?.name || customer.paymentTerms || customer.paymentTermsId
   }
-  return customer.paymentTerms || 'No terms'
+  return customer.paymentTerms || ''
 }
 
 function CustomerFormFields({
@@ -162,73 +162,75 @@ function CustomerFormFields({
   onChange,
   currencies,
   paymentTermsList,
+  tt,
 }: {
   form: CustomerForm
   onChange: (patch: Partial<CustomerForm>) => void
   currencies: Currency[]
   paymentTermsList: PaymentTerm[]
+  tt: (key: string, fallback: string, vars?: Record<string, string | number>) => string
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="space-y-2">
-        <Label htmlFor="customer-code">Code *</Label>
+        <Label htmlFor="customer-code">{tt('customers.form.code', 'Code')} *</Label>
         <Input
           id="customer-code"
           value={form.code}
           onChange={(e) => onChange({ code: e.target.value })}
-          placeholder="e.g., CUST-001"
+          placeholder={tt('customers.placeholder.code', 'e.g., CUST-001')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="customer-name">Name *</Label>
+        <Label htmlFor="customer-name">{tt('customers.form.name', 'Name')} *</Label>
         <Input
           id="customer-name"
           value={form.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="Customer legal or trading name"
+          placeholder={tt('customers.placeholder.name', 'Customer legal or trading name')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="customer-email">Email</Label>
+        <Label htmlFor="customer-email">{tt('customers.form.email', 'Email')}</Label>
         <Input
           id="customer-email"
           type="email"
           value={form.email}
           onChange={(e) => onChange({ email: e.target.value })}
-          placeholder="customer@company.com"
+          placeholder={tt('customers.placeholder.email', 'customer@company.com')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="customer-phone">Phone</Label>
+        <Label htmlFor="customer-phone">{tt('customers.form.phone', 'Phone')}</Label>
         <Input
           id="customer-phone"
           value={form.phone}
           onChange={(e) => onChange({ phone: e.target.value })}
-          placeholder="+258 ..."
+          placeholder={tt('customers.placeholder.phone', '+258 ...')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="customer-tax-id">Tax ID</Label>
+        <Label htmlFor="customer-tax-id">{tt('customers.form.taxId', 'Tax ID')}</Label>
         <Input
           id="customer-tax-id"
           value={form.taxId}
           onChange={(e) => onChange({ taxId: e.target.value })}
-          placeholder="NUIT / VAT / Tax ID"
+          placeholder={tt('customers.placeholder.taxId', 'NUIT / VAT / Tax ID')}
         />
       </div>
       <div className="space-y-2">
-        <Label>Default currency</Label>
+        <Label>{tt('customers.form.currency', 'Default currency')}</Label>
         <Select
           value={form.currencyCode || NO_CURRENCY}
           onValueChange={(value) => onChange({ currencyCode: value === NO_CURRENCY ? '' : value })}
         >
           <SelectTrigger>
-            <SelectValue placeholder="No default currency" />
+            <SelectValue placeholder={tt('customers.placeholder.noCurrency', 'No default currency')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NO_CURRENCY}>No default currency</SelectItem>
+            <SelectItem value={NO_CURRENCY}>{tt('customers.placeholder.noCurrency', 'No default currency')}</SelectItem>
             {currencies.map((currency) => (
               <SelectItem key={currency.code} value={currency.code}>
                 {currency.code} - {currency.name}
@@ -239,7 +241,7 @@ function CustomerFormFields({
       </div>
 
       <div className="space-y-2">
-        <Label>Payment terms</Label>
+        <Label>{tt('customers.form.paymentTerms', 'Payment terms')}</Label>
         <Select
           value={form.paymentTermsChoice || NO_PAYMENT_TERMS}
           onValueChange={(value) =>
@@ -250,55 +252,55 @@ function CustomerFormFields({
           }
         >
           <SelectTrigger>
-            <SelectValue placeholder="Select payment terms" />
+            <SelectValue placeholder={tt('customers.placeholder.paymentTerms', 'Select payment terms')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NO_PAYMENT_TERMS}>No default terms</SelectItem>
+            <SelectItem value={NO_PAYMENT_TERMS}>{tt('customers.placeholder.noTerms', 'No default terms')}</SelectItem>
             {paymentTermsList.map((paymentTerm) => (
               <SelectItem key={paymentTerm.id} value={paymentTerm.id}>
                 {paymentTerm.name}
               </SelectItem>
             ))}
-            <SelectItem value={CUSTOM_PAYMENT_TERMS}>Custom terms</SelectItem>
+            <SelectItem value={CUSTOM_PAYMENT_TERMS}>{tt('customers.customTerms', 'Custom terms')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="customer-custom-terms">Terms note</Label>
+        <Label htmlFor="customer-custom-terms">{tt('customers.form.termsNote', 'Terms note')}</Label>
         <Input
           id="customer-custom-terms"
           value={form.customPaymentTerms}
           onChange={(e) => onChange({ customPaymentTerms: e.target.value })}
-          placeholder="Only used when Custom terms is selected"
+          placeholder={tt('customers.placeholder.termsNote', 'Only used when Custom terms is selected')}
           disabled={form.paymentTermsChoice !== CUSTOM_PAYMENT_TERMS}
         />
       </div>
 
       <div className="space-y-2 md:col-span-2">
-        <Label htmlFor="customer-billing-address">Billing address</Label>
+        <Label htmlFor="customer-billing-address">{tt('customers.form.billingAddress', 'Billing address')}</Label>
         <Input
           id="customer-billing-address"
           value={form.billingAddress}
           onChange={(e) => onChange({ billingAddress: e.target.value })}
-          placeholder="Street, city, province, postal code"
+          placeholder={tt('customers.placeholder.billingAddress', 'Street, city, province, postal code')}
         />
       </div>
       <div className="space-y-2 md:col-span-2">
-        <Label htmlFor="customer-shipping-address">Shipping or service address</Label>
+        <Label htmlFor="customer-shipping-address">{tt('customers.form.shippingAddress', 'Shipping or service address')}</Label>
         <Input
           id="customer-shipping-address"
           value={form.shippingAddress}
           onChange={(e) => onChange({ shippingAddress: e.target.value })}
-          placeholder="Only if it differs from billing"
+          placeholder={tt('customers.placeholder.shippingAddress', 'Only if it differs from billing')}
         />
       </div>
       <div className="space-y-2 md:col-span-2">
-        <Label htmlFor="customer-notes">Notes</Label>
+        <Label htmlFor="customer-notes">{tt('customers.form.notes', 'Notes')}</Label>
         <Textarea
           id="customer-notes"
           value={form.notes}
           onChange={(e) => onChange({ notes: e.target.value })}
-          placeholder="Commercial notes, service instructions, account context..."
+          placeholder={tt('customers.placeholder.notes', 'Commercial notes, service instructions, account context...')}
         />
       </div>
     </div>
@@ -310,6 +312,8 @@ export default function Customers() {
   const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -347,7 +351,7 @@ export default function Customers() {
         await reloadCustomers()
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || 'Failed to load customers')
+        toast.error(e?.message || tt('customers.toast.loadFailed', 'Failed to load customers'))
       } finally {
         setLoading(false)
       }
@@ -388,23 +392,23 @@ export default function Customers() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!can.createMaster(role)) return toast.error('Only operators and above can create customers')
-    if (!companyId) return toast.error('Join or create a company first')
+    if (!can.createMaster(role)) return toast.error(tt('customers.toast.noCreatePermission', 'Only operators and above can create customers'))
+    if (!companyId) return toast.error(tt('customers.toast.joinCompany', 'Join or create a company first'))
 
     const code = createForm.code.trim()
     const name = createForm.name.trim()
-    if (!code || !name) return toast.error('Code and name are required')
+    if (!code || !name) return toast.error(tt('customers.toast.codeNameRequired', 'Code and name are required'))
     if (
       createForm.paymentTermsChoice === CUSTOM_PAYMENT_TERMS &&
       !createForm.customPaymentTerms.trim()
     ) {
-      return toast.error('Enter the custom payment terms or choose a standard term')
+      return toast.error(tt('customers.toast.customTermsRequired', 'Enter the custom payment terms or choose a standard term'))
     }
 
     try {
       setSaving(true)
       if (await ensureUniqueCode(code)) {
-        toast.error('Code must be unique in this company')
+        toast.error(tt('customers.toast.uniqueCode', 'Code must be unique in this company'))
         return
       }
 
@@ -430,7 +434,7 @@ export default function Customers() {
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to create customer')
+      toast.error(e?.message || tt('customers.toast.createFailed', 'Failed to create customer'))
     } finally {
       setSaving(false)
     }
@@ -438,20 +442,20 @@ export default function Customers() {
 
   async function handleUpdate() {
     if (!editing) return
-    if (!can.updateMaster(role)) return toast.error('Only operators and above can update customers')
-    if (!companyId) return toast.error('Join or create a company first')
+    if (!can.updateMaster(role)) return toast.error(tt('customers.toast.noUpdatePermission', 'Only operators and above can update customers'))
+    if (!companyId) return toast.error(tt('customers.toast.joinCompany', 'Join or create a company first'))
 
     const code = editForm.code.trim()
     const name = editForm.name.trim()
-    if (!code || !name) return toast.error('Code and name are required')
+    if (!code || !name) return toast.error(tt('customers.toast.codeNameRequired', 'Code and name are required'))
     if (editForm.paymentTermsChoice === CUSTOM_PAYMENT_TERMS && !editForm.customPaymentTerms.trim()) {
-      return toast.error('Enter the custom payment terms or choose a standard term')
+      return toast.error(tt('customers.toast.customTermsRequired', 'Enter the custom payment terms or choose a standard term'))
     }
 
     try {
       setSaving(true)
       if (await ensureUniqueCode(code, editing.id)) {
-        toast.error('Code must be unique in this company')
+        toast.error(tt('customers.toast.uniqueCode', 'Code must be unique in this company'))
         return
       }
 
@@ -474,21 +478,21 @@ export default function Customers() {
 
       if (update.error) throw update.error
 
-      toast.success('Customer updated')
+      toast.success(tt('customers.toast.updated', 'Customer updated'))
       setEditing(null)
       setEditForm(EMPTY_FORM)
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to update customer')
+      toast.error(e?.message || tt('customers.toast.updateFailed', 'Failed to update customer'))
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(id: string) {
-    if (!can.deleteMaster(role)) return toast.error('Only managers and above can delete customers')
-    if (!companyId) return toast.error('Join or create a company first')
+    if (!can.deleteMaster(role)) return toast.error(tt('customers.toast.noDeletePermission', 'Only managers and above can delete customers'))
+    if (!companyId) return toast.error(tt('customers.toast.joinCompany', 'Join or create a company first'))
 
     try {
       const del = await supabase.from('customers').delete().eq('id', id).eq('company_id', companyId)
@@ -497,7 +501,7 @@ export default function Customers() {
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to delete customer')
+      toast.error(e?.message || tt('customers.toast.deleteFailed', 'Failed to delete customer'))
     }
   }
 
@@ -542,7 +546,7 @@ export default function Customers() {
         <div>
           <h1 className="text-3xl font-bold">{t('customers.title')}</h1>
           <p className="text-muted-foreground">
-            Maintain commercial defaults, billing details, and settlement-ready customer records.
+            {tt('customers.subtitle', 'Maintain commercial defaults, billing details, and settlement-ready customer records.')}
           </p>
         </div>
       </div>
@@ -550,32 +554,32 @@ export default function Customers() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Customers</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('customers.summary.total', 'Customers')}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div>
               <div className="text-3xl font-semibold">{stats.total}</div>
-              <div className="text-xs text-muted-foreground">Records in this company</div>
+              <div className="text-xs text-muted-foreground">{tt('customers.summary.totalHelp', 'Records in this company')}</div>
             </div>
             <Users className="h-5 w-5 text-primary" />
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Contact ready</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('customers.summary.contactReady', 'Contact ready')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats.withContact}</div>
-            <div className="text-xs text-muted-foreground">Customers with email or phone captured</div>
+            <div className="text-xs text-muted-foreground">{tt('customers.summary.contactReadyHelp', 'Customers with email or phone captured')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Commercial defaults</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('customers.summary.defaults', 'Commercial defaults')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats.withTerms}</div>
-            <div className="text-xs text-muted-foreground">Customers with default payment terms</div>
+            <div className="text-xs text-muted-foreground">{tt('customers.summary.defaultsHelp', 'Customers with default payment terms')}</div>
           </CardContent>
         </Card>
       </div>
@@ -586,7 +590,7 @@ export default function Customers() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-            Store default currency, billing details, and payment terms once so sales orders inherit the right commercial context.
+            {tt('customers.createHelp', 'Store default currency, billing details, and payment terms once so sales orders inherit the right commercial context.')}
           </div>
           <form onSubmit={handleCreate} className="space-y-6">
             <CustomerFormFields
@@ -594,6 +598,7 @@ export default function Customers() {
               onChange={(patch) => setCreateForm((current) => ({ ...current, ...patch }))}
               currencies={currencies}
               paymentTermsList={paymentTermsList}
+              tt={tt}
             />
             <div className="flex items-center justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateForm(EMPTY_FORM)}>
@@ -612,7 +617,7 @@ export default function Customers() {
           <div>
             <CardTitle>{t('customers.list')}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Search by code, name, contact, or payment terms and keep existing accounts up to date.
+              {tt('customers.listHelp', 'Search by code, name, contact, or payment terms and keep existing accounts up to date.')}
             </p>
           </div>
           <div className="relative w-full sm:max-w-sm">
@@ -620,7 +625,7 @@ export default function Customers() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customers"
+              placeholder={tt('customers.searchPlaceholder', 'Search customers')}
               className="pl-10"
             />
           </div>
@@ -628,20 +633,22 @@ export default function Customers() {
         <CardContent className="overflow-x-auto">
           {filteredCustomers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
-              <div className="text-lg font-medium">{search ? 'No customers match this search.' : t('customers.empty')}</div>
+              <div className="text-lg font-medium">{search ? tt('customers.empty.filteredTitle', 'No customers match this search.') : t('customers.empty')}</div>
               <div className="mt-2 text-sm text-muted-foreground">
-                {search ? 'Try a different name, code, or contact detail.' : 'Create the first customer to speed up quoting, sales orders, and settlement tracking.'}
+                {search
+                  ? tt('customers.empty.filteredBody', 'Try a different name, code, or contact detail.')
+                  : tt('customers.empty.body', 'Create the first customer to speed up quoting, sales orders, and settlement tracking.')}
               </div>
             </div>
           ) : (
             <table className="w-full min-w-[920px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="py-3 pr-4">Customer</th>
-                  <th className="py-3 pr-4">Terms</th>
-                  <th className="py-3 pr-4">Currency</th>
-                  <th className="py-3 pr-4">Contact</th>
-                  <th className="py-3 pr-4">Address</th>
+                  <th className="py-3 pr-4">{tt('customers.table.customer', 'Customer')}</th>
+                  <th className="py-3 pr-4">{tt('customers.table.terms', 'Terms')}</th>
+                  <th className="py-3 pr-4">{tt('customers.table.currency', 'Currency')}</th>
+                  <th className="py-3 pr-4">{tt('customers.table.contact', 'Contact')}</th>
+                  <th className="py-3 pr-4">{tt('customers.table.address', 'Address')}</th>
                   <th className="py-3 pr-4 text-right">{t('customers.actions')}</th>
                 </tr>
               </thead>
@@ -664,10 +671,10 @@ export default function Customers() {
                       <td className="py-4 pr-4">
                         <div className="flex flex-col gap-2">
                           <Badge variant={customer.paymentTermsId ? 'secondary' : 'outline'}>
-                            {customerTermsLabel(customer, paymentTermById)}
+                            {customerTermsLabel(customer, paymentTermById) || tt('customers.noTerms', 'No terms')}
                           </Badge>
                           {customer.taxId ? (
-                            <span className="text-xs text-muted-foreground">Tax ID: {customer.taxId}</span>
+                            <span className="text-xs text-muted-foreground">{tt('customers.taxIdLabel', 'Tax ID')}: {customer.taxId}</span>
                           ) : null}
                         </div>
                       </td>
@@ -711,7 +718,7 @@ export default function Customers() {
                             ) : null}
                             {customer.shippingAddress && customer.shippingAddress !== customer.billingAddress ? (
                               <div className="text-xs text-muted-foreground">
-                                Ship to: {customer.shippingAddress}
+                                {tt('customers.shipTo', 'Ship to')}: {customer.shippingAddress}
                               </div>
                             ) : null}
                           </div>
@@ -730,7 +737,7 @@ export default function Customers() {
                             }}
                           >
                             <Pencil className="mr-2 h-4 w-4" />
-                            Edit
+                            {tt('customers.edit', 'Edit')}
                           </Button>
                           <Button
                             variant="destructive"
@@ -753,9 +760,9 @@ export default function Customers() {
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Edit customer</DialogTitle>
+            <DialogTitle>{tt('customers.editTitle', 'Edit customer')}</DialogTitle>
             <DialogDescription>
-              Update contact details, commercial defaults, and address information without recreating the record.
+              {tt('customers.editDescription', 'Update contact details, commercial defaults, and address information without recreating the record.')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
@@ -765,13 +772,14 @@ export default function Customers() {
                 onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))}
                 currencies={currencies}
                 paymentTermsList={paymentTermsList}
+                tt={tt}
               />
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setEditing(null)}>
                   {t('common.cancel')}
                 </Button>
                 <Button onClick={handleUpdate} disabled={saving || !can.updateMaster(role)}>
-                  {saving ? t('actions.saving') : 'Save changes'}
+                  {saving ? t('actions.saving') : t('actions.save')}
                 </Button>
               </div>
             </div>

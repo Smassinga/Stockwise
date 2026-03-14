@@ -3,7 +3,7 @@ import { Search, UserPlus, Users as UsersIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -45,6 +45,8 @@ function extractFnErr(error: any): string {
 export default function Users() {
   const { companyId, companyName, myRole } = useOrg()
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const canAccessUsersPage = hasMinRole(myRole, 'MANAGER')
   const canManageUsers = canAccessUsersPage
@@ -60,6 +62,9 @@ export default function Users() {
 
   const [myEmail, setMyEmail] = useState<string | null>(null)
   const [myName, setMyName] = useState<string | null>(null)
+
+  const roleLabel = (role: Role) => tt(`users.roles.${role.toLowerCase()}`, role)
+  const statusLabel = (status: Status) => tt(`users.statuses.${status}`, status.charAt(0).toUpperCase() + status.slice(1))
 
   const higherThanMe = (role: Role) => (myRole ? roleRank(role) < roleRank(myRole) : false)
 
@@ -108,7 +113,7 @@ export default function Users() {
       setMembers((data || []) as Member[])
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to load members')
+      toast.error(e?.message || tt('users.toast.loadFailed', 'Failed to load members'))
     } finally {
       setLoading(false)
     }
@@ -131,14 +136,14 @@ export default function Users() {
       if (error) {
         const message = extractFnErr(error)
         console.error('mailer-invite 4xx/5xx:', { message, raw: error })
-        toast.error(`Invite failed: ${message}`)
+        toast.error(tt('users.toast.inviteFailed', 'Invite failed: {message}', { message }))
         return { ok: false }
       }
-      if (data?.warning) toast(`Invite created with warning: ${data.warning}`)
+      if (data?.warning) toast(tt('users.toast.inviteWarning', 'Invite created with warning: {warning}', { warning: data.warning }))
       return { ok: true, link: data?.link }
     } catch (e: any) {
       console.error('mailer-invite threw:', e)
-      toast.error(e?.message || 'Invite failed (network)')
+      toast.error(e?.message || tt('users.toast.inviteFailedNetwork', 'Invite failed (network)'))
       return { ok: false }
     }
   }
@@ -189,7 +194,7 @@ export default function Users() {
       await refreshMembers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to invite')
+      toast.error(e?.message || tt('users.toast.inviteCreateFailed', 'Failed to invite'))
     } finally {
       setSendingInvite(false)
     }
@@ -197,11 +202,11 @@ export default function Users() {
 
   async function copyInviteLink() {
     if (!companyId) return
-    if (!canManageUsers) return toast.error('You do not have permission to invite users.')
+    if (!canManageUsers) return toast.error(tt('users.noPermissionToInvite', 'You do not have permission to invite users.'))
     const email = inviteEmail.trim().toLowerCase()
-    if (!email) return toast.error('Enter an email first (the link is tied to that email)')
+    if (!email) return toast.error(tt('users.toast.enterEmailFirst', 'Enter an email first (the link is tied to that email)'))
     if (!canInviteAdmins && (inviteRole === 'OWNER' || inviteRole === 'ADMIN')) {
-      return toast.error('You cannot invite owners/admins.')
+      return toast.error(tt('users.cannotAssignOwnerAdmin', 'You cannot invite owners/admins.'))
     }
     try {
       const { data: token, error } = await supabase.rpc('reinvite_company_member', {
@@ -211,17 +216,17 @@ export default function Users() {
       if (error) throw error
       const link = `${window.location.origin}/accept-invite?token=${token}`
       await navigator.clipboard.writeText(link)
-      toast.success('Invite link copied')
+      toast.success(tt('users.toast.linkCopied', 'Invite link copied'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Could not generate link')
+      toast.error(e?.message || tt('users.toast.linkGenerateFailed', 'Could not generate link'))
     }
   }
 
   async function reinvite(email: string) {
-    if (!email) return toast.error('No email on record for this member.')
+    if (!email) return toast.error(tt('users.noEmailRecord', 'No email on record for this member.'))
     if (!companyId) return
-    if (!canManageUsers) return toast.error('You do not have permission to reinvite.')
+    if (!canManageUsers) return toast.error(tt('users.toast.noPermissionReinvite', 'You do not have permission to reinvite.'))
     try {
       const { data: token, error } = await supabase.rpc('reinvite_company_member', {
         p_company: companyId,
@@ -244,16 +249,16 @@ export default function Users() {
       if (!result.ok) {
         try {
           await navigator.clipboard.writeText(link)
-          toast.error('Email send failed; invite link copied to clipboard.')
+          toast.error(tt('users.emailSendFailed', 'Email send failed; invite link copied to clipboard.'))
         } catch {
-          toast.error('Email send failed; could not copy link.')
+          toast.error(tt('users.couldNotCopyLink', 'Email send failed; could not copy link.'))
         }
       } else {
-        toast.success(`Invite re-sent to ${email}.`)
+        toast.success(tt('users.toast.reinviteSent', 'Invite re-sent to {email}.', { email }))
       }
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to reinvite')
+      toast.error(e?.message || tt('users.toast.reinviteFailed', 'Failed to reinvite'))
     }
   }
 
@@ -287,11 +292,11 @@ export default function Users() {
   }
 
   async function removeMember(email: string, targetRole: Role) {
-    if (!email) return toast.error('No email on record for this member.')
+    if (!email) return toast.error(tt('users.noEmailRecord', 'No email on record for this member.'))
     if (!companyId) return
     if (!canManageUsers) return toast.error('You do not have permission to remove members.')
     if (myEmail && email.toLowerCase() === myEmail.toLowerCase()) {
-      return toast.error('You cannot remove yourself')
+      return toast.error(tt('users.cannotRemoveSelf', 'You cannot remove yourself'))
     }
     if (higherThanMe(targetRole)) {
       return toast.error('You cannot remove a member with a higher role than yours.')
@@ -304,11 +309,11 @@ export default function Users() {
         .eq('company_id', companyId)
         .eq('email', email)
       if (error) throw error
-      toast.success('Member removed')
+      toast.success(tt('users.toast.memberRemoved', 'Member removed'))
       await refreshMembers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to remove member')
+      toast.error(e?.message || tt('users.toast.memberRemoveFailed', 'Failed to remove member'))
     }
   }
 
@@ -355,7 +360,7 @@ export default function Users() {
         <div>
           <h1 className="text-3xl font-bold">{t('sections.users.title')}</h1>
           <p className="text-muted-foreground">
-            Invite teammates, track pending access, and manage company roles from one page.
+            {tt('users.subtitle', 'Invite teammates, track pending access, and manage company roles from one page.')}
           </p>
         </div>
         {companyId ? (
@@ -369,41 +374,41 @@ export default function Users() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Members</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.members', 'Members')}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div>
               <div className="text-3xl font-semibold">{memberStats.total}</div>
-              <div className="text-xs text-muted-foreground">Active and invited company records</div>
+              <div className="text-xs text-muted-foreground">{tt('users.summary.membersHelp', 'Active and invited company records')}</div>
             </div>
             <UsersIcon className="h-5 w-5 text-primary" />
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.active', 'Active')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{memberStats.active}</div>
-            <div className="text-xs text-muted-foreground">Members currently able to access the company</div>
+            <div className="text-xs text-muted-foreground">{tt('users.summary.activeHelp', 'Members currently able to access the company')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Invited</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.invited', 'Invited')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{memberStats.invited}</div>
-            <div className="text-xs text-muted-foreground">Pending acceptances you may need to follow up</div>
+            <div className="text-xs text-muted-foreground">{tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Disabled</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.disabled', 'Disabled')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{memberStats.disabled}</div>
-            <div className="text-xs text-muted-foreground">Historical users kept without active access</div>
+            <div className="text-xs text-muted-foreground">{tt('users.summary.disabledHelp', 'Historical users kept without active access')}</div>
           </CardContent>
         </Card>
       </div>
@@ -412,7 +417,7 @@ export default function Users() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
-            Invite teammate
+            {tt('users.inviteTitle', 'Invite teammate')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -421,13 +426,16 @@ export default function Users() {
           ) : (
             <div className="space-y-4">
               <p className="max-w-3xl text-sm text-muted-foreground">
-                Invite records stay visible until the teammate accepts, which makes it easier to resend links or downgrade access without losing the trail.
+                {tt(
+                  'users.inviteHelp',
+                  'Invite records stay visible until the teammate accepts, which makes it easier to resend links or adjust access without losing the trail.'
+                )}
               </p>
               <div className="grid max-w-4xl gap-3 sm:grid-cols-3 sm:items-end">
                 <div>
                   <Label>{t('users.email')}</Label>
                   <Input
-                    placeholder="name@example.com"
+                    placeholder={tt('users.placeholder.email', 'name@example.com')}
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                   />
@@ -436,7 +444,7 @@ export default function Users() {
                   <Label>{t('users.role')}</Label>
                   <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as Role)} disabled={!canManageUsers}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select role" />
+                      <SelectValue placeholder={tt('users.placeholder.role', 'Select role')} />
                     </SelectTrigger>
                     <SelectContent>
                       {roleOptions.map((role) => (
@@ -479,7 +487,7 @@ export default function Users() {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search members by email, role, or status"
+                placeholder={tt('users.searchPlaceholder', 'Search members by email, role, or status')}
                 className="pl-10"
               />
             </div>
@@ -488,10 +496,10 @@ export default function Users() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="invited">Invited</SelectItem>
-                <SelectItem value="disabled">Disabled</SelectItem>
+                <SelectItem value="all">{tt('users.filters.allStatuses', 'All statuses')}</SelectItem>
+                <SelectItem value="active">{tt('users.summary.active', 'Active')}</SelectItem>
+                <SelectItem value="invited">{tt('users.summary.invited', 'Invited')}</SelectItem>
+                <SelectItem value="disabled">{tt('users.summary.disabled', 'Disabled')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -501,12 +509,14 @@ export default function Users() {
           ) : filteredMembers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
               <div className="text-lg font-medium">
-                {searchTerm || statusFilter !== 'all' ? 'No members match the current filters.' : 'No members yet.'}
+                {searchTerm || statusFilter !== 'all'
+                  ? tt('users.empty.filteredTitle', 'No members match the current filters.')
+                  : tt('users.empty.title', 'No members yet.')}
               </div>
               <div className="mt-2 text-sm text-muted-foreground">
                 {searchTerm || statusFilter !== 'all'
-                  ? 'Clear the filters or search for a different email.'
-                  : 'Invite the first teammate to start managing company access from here.'}
+                  ? tt('users.empty.filteredBody', 'Clear the filters or search for a different email.')
+                  : tt('users.empty.body', 'Invite the first teammate to start managing company access from here.')}
               </div>
             </div>
           ) : (
@@ -515,7 +525,7 @@ export default function Users() {
                 <tr className="border-b text-left">
                   <th className="py-2 pr-2">Email</th>
                   <th className="py-2 pr-2">{t('users.role')}</th>
-                  <th className="py-2 pr-2">Status</th>
+                  <th className="py-2 pr-2">{tt('users.status', 'Status')}</th>
                   <th className="py-2 pr-2">{t('users.table.confirmed')}</th>
                   <th className="py-2 pr-2">{t('users.table.lastSignin')}</th>
                   <th className="py-2 pr-2 text-right">{t('users.table.actions')}</th>
@@ -527,7 +537,7 @@ export default function Users() {
                   const isHigher = higherThanMe(member.role)
                   const removeDisabled = !canManageUsers || isSelf || isHigher
                   const removeTitle = !canManageUsers
-                    ? 'No permission'
+                    ? tt('common.noPermission', 'No permission')
                     : isSelf
                       ? t('users.cannotRemoveSelf')
                       : isHigher
@@ -540,8 +550,8 @@ export default function Users() {
                         <div className="flex flex-col gap-1">
                           <span className="font-medium">{member.email || t('common.dash')}</span>
                           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            {member.user_id ? <span>Linked account</span> : <span>Invite only</span>}
-                            {isSelf ? <span>This is you</span> : null}
+                            {member.user_id ? <span>{tt('users.linkedAccount', 'Linked account')}</span> : <span>{tt('users.inviteOnly', 'Invite only')}</span>}
+                            {isSelf ? <span>{tt('users.thisIsYou', 'This is you')}</span> : null}
                           </div>
                         </div>
                       </td>
@@ -561,7 +571,7 @@ export default function Users() {
                                 value={role}
                                 disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, role) || isHigher}
                               >
-                                {role}
+                            {roleLabel(role)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -573,7 +583,7 @@ export default function Users() {
                             variant={member.status === 'active' ? 'default' : member.status === 'invited' ? 'secondary' : 'outline'}
                             className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
                           >
-                            {member.status}
+                            {statusLabel(member.status)}
                           </Badge>
                           <Select
                             value={member.status}
@@ -586,7 +596,7 @@ export default function Users() {
                             <SelectContent>
                               {(['invited', 'active', 'disabled'] as Status[]).map((status) => (
                                 <SelectItem key={status} value={status}>
-                                  {status}
+                                  {statusLabel(status)}
                                 </SelectItem>
                               ))}
                             </SelectContent>

@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { buildConvGraph, tryConvertQty, type ConvRow } from '../lib/uom'
 import { useOrg } from '../hooks/useOrg'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { can, type CompanyRole } from '../lib/permissions'
 
 type Uom = { id: string; code: string; name: string; family?: string }
@@ -20,6 +20,8 @@ type Family = typeof FAMILIES[number]
 export default function UomSettings() {
   const { companyId, companyName, loading: orgLoading, myRole } = useOrg()
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canEdit = can.updateMaster(role)
 
@@ -71,7 +73,7 @@ export default function UomSettings() {
     if (orgLoading) return
     loadAll().catch((e) => {
       console.error(e)
-      toast.error(e?.message || t('errors.title'))
+      toast.error(e?.message || tt('uom.toast.loadFailed', 'Failed to load units and conversions'))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgLoading, companyId])
@@ -112,7 +114,7 @@ export default function UomSettings() {
 
   async function addUnit(e: React.FormEvent) {
     e.preventDefault()
-    if (!canEdit) return toast.error('You do not have permission to manage units')
+    if (!canEdit) return toast.error(tt('uom.toast.noUnitPermission', 'You do not have permission to manage units'))
     const c = code.trim().toUpperCase()
     const n = name.trim()
     if (!c || !n) return toast.error(t('uom.required') ?? 'Code and Name are required')
@@ -135,7 +137,7 @@ export default function UomSettings() {
 
   async function addConv(e: React.FormEvent) {
     e.preventDefault()
-    if (!canEdit) return toast.error('You do not have permission to manage conversions')
+    if (!canEdit) return toast.error(tt('uom.toast.noConversionPermission', 'You do not have permission to manage conversions'))
     if (!companyId) return toast.error(t('org.noCompany'))
     if (!fromId || !toId) return toast.error(t('uom.pickBoth') ?? 'Pick both From and To')
     if (fromId === toId) return toast.error(t('uom.mustDiffer') ?? 'From and To must be different')
@@ -165,7 +167,7 @@ export default function UomSettings() {
   }
 
   async function deleteConv(from: string, to: string) {
-    if (!canEdit) return toast.error('You do not have permission to manage conversions')
+    if (!canEdit) return toast.error(tt('uom.toast.noConversionPermission', 'You do not have permission to manage conversions'))
     if (!companyId) return toast.error(t('org.noCompany'))
     try {
       // Only delete your company’s own conversion (leave global defaults intact)
@@ -210,9 +212,15 @@ export default function UomSettings() {
   const familyLabel = (fam?: string) => {
     const key = String(fam || 'other').toLowerCase()
     const map: Record<string, string> = {
-      mass: 'Mass', volume: 'Volume', length: 'Length', area: 'Area', time: 'Time', count: 'Count', other: 'Other'
+      mass: tt('uom.family.mass', 'Mass'),
+      volume: tt('uom.family.volume', 'Volume'),
+      length: tt('uom.family.length', 'Length'),
+      area: tt('uom.family.area', 'Area'),
+      time: tt('uom.family.time', 'Time'),
+      count: tt('uom.family.count', 'Count'),
+      other: tt('uom.family.other', 'Other'),
     }
-    return map[key] || (fam || 'Other')
+    return map[key] || fam || tt('uom.family.other', 'Other')
   }
 
   if (orgLoading || loading) return <div className="p-6">{t('loading')}</div>
@@ -234,46 +242,46 @@ export default function UomSettings() {
         <div>
           <h1 className="text-3xl font-bold">{t('uom.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Manage global unit codes and company-specific conversions used in purchasing, stock, and order entry.
+            {tt('uom.subtitle', 'Manage global unit codes and company-specific conversions used in purchasing, stock, and order entry.')}
           </p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Company: <span className="font-medium">{companyName || companyId}</span>
+          {tt('users.company', 'Company')}: <span className="font-medium">{companyName || companyId}</span>
         </p>
       </div>
 
       {!canEdit ? (
         <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-          Read-only: only operational roles can add units or maintain company conversion rules.
+          {tt('uom.readOnly', 'Read-only: only operational roles can add units or maintain company conversion rules.')}
         </div>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unit codes</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('uom.summary.units', 'Unit codes')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.units}</div>
-            <div className="text-xs text-muted-foreground">Global units available to every company.</div>
+            <div className="text-xs text-muted-foreground">{tt('uom.summary.unitsHelp', 'Global units available to every company.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Company conversions</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('uom.summary.companyConversions', 'Company conversions')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.companyConversions}</div>
-            <div className="text-xs text-muted-foreground">Conversion rules owned by this company.</div>
+            <div className="text-xs text-muted-foreground">{tt('uom.summary.companyConversionsHelp', 'Conversion rules owned by this company.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Global defaults</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('uom.summary.globalDefaults', 'Global defaults')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.globalConversions}</div>
-            <div className="text-xs text-muted-foreground">Shared fallback conversions loaded for everyone.</div>
+            <div className="text-xs text-muted-foreground">{tt('uom.summary.globalDefaultsHelp', 'Shared fallback conversions loaded for everyone.')}</div>
           </CardContent>
         </Card>
       </div>
@@ -285,11 +293,11 @@ export default function UomSettings() {
           <form onSubmit={addUnit} className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="code">{t('users.code') ?? 'Code'} *</Label>
-              <Input id="code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g., BOX" />
+              <Input id="code" value={code} onChange={(e) => setCode(e.target.value)} placeholder={tt('uom.placeholder.code', 'e.g., BOX')} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="name">{t('items.fields.name')} *</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Box" />
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder={tt('uom.placeholder.name', 'e.g., Box')} />
             </div>
             <div className="space-y-2">
               <Label>{t('uom.family')}</Label>
@@ -318,7 +326,7 @@ export default function UomSettings() {
             <div className="space-y-2">
               <Label>{t('uom.from')} *</Label>
               <Select value={fromId} onValueChange={setFromId}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={tt('common.select', 'Select')} /></SelectTrigger>
                 <SelectContent className="max-h-64 overflow-auto">
                   {groupedUoms.order.map(fam => (
                     <div key={`from-${fam}`}>
@@ -337,7 +345,7 @@ export default function UomSettings() {
             <div className="space-y-2">
               <Label>{t('uom.to')} *</Label>
               <Select value={toId} onValueChange={setToId}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={tt('common.select', 'Select')} /></SelectTrigger>
                 <SelectContent className="max-h-64 overflow-auto">
                   {groupedUoms.order.map(fam => (
                     <div key={`to-${fam}`}>
@@ -356,7 +364,7 @@ export default function UomSettings() {
             <div className="space-y-2">
               <Label htmlFor="factor">{t('uom.factor')} *</Label>
               <Input id="factor" type="number" min="0" step="0.000001" value={factor}
-                     onChange={(e) => setFactor(e.target.value)} placeholder="e.g., 24" />
+                     onChange={(e) => setFactor(e.target.value)} placeholder={tt('uom.placeholder.factor', 'e.g., 24')} />
               <div className="text-xs text-muted-foreground mt-1">{preview}</div>
             </div>
             <div className="flex items-end">
@@ -367,9 +375,9 @@ export default function UomSettings() {
             <div className="space-y-2">
               <Label>{t('uom.quickTest')}</Label>
               <div className="grid grid-cols-3 gap-2">
-                <Input placeholder="Qty" value={testQty} onChange={(e)=>setTestQty(e.target.value)} />
+                <Input placeholder={tt('uom.placeholder.qty', 'Qty')} value={testQty} onChange={(e)=>setTestQty(e.target.value)} />
                 <Select value={testFrom} onValueChange={setTestFrom}>
-                  <SelectTrigger><SelectValue placeholder="From" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={tt('uom.from', 'From')} /></SelectTrigger>
                   <SelectContent className="max-h-64 overflow-auto">
                     {groupedUoms.order.map(fam => (
                       <div key={`test-from-${fam}`}>
@@ -385,7 +393,7 @@ export default function UomSettings() {
                   </SelectContent>
                 </Select>
                 <Select value={testTo} onValueChange={setTestTo}>
-                  <SelectTrigger><SelectValue placeholder="To" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={tt('uom.to', 'To')} /></SelectTrigger>
                   <SelectContent className="max-h-64 overflow-auto">
                     {groupedUoms.order.map(fam => (
                       <div key={`test-to-${fam}`}>

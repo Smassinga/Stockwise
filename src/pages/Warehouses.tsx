@@ -24,7 +24,7 @@ import {
   AlertDialogTrigger
 } from '../components/ui/alert-dialog'
 import { Warehouse as WarehouseIcon, Plus, Search, Edit, Trash2, MapPin, Package } from 'lucide-react'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useIsMobile } from '../hooks/use-mobile'
 
 type Warehouse = {
@@ -49,6 +49,8 @@ type Bin = {
 export function Warehouses() {
   const { companyId, myRole } = useOrg()
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const isMobile = useIsMobile()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canManage = can.manageWarehouses(role)
@@ -65,6 +67,8 @@ export function Warehouses() {
 
   const [form, setForm] = useState({ code: '', name: '', address: '', status: 'active' })
   const [binForm, setBinForm] = useState({ code: '', name: '', warehouseId: '', status: 'active' })
+  const warehouseStatusLabel = (status: string) =>
+    status === 'active' ? tt('warehouses.active', 'Active') : tt('warehouses.inactive', 'Inactive')
 
   useEffect(() => {
     if (!companyId) return
@@ -122,7 +126,7 @@ export function Warehouses() {
 
     if (bnErr) {
       console.error(bnErr)
-        toast.error(bnErr.message || t('errors.title'))
+        toast.error(bnErr.message || tt('warehouses.toast.binLoadFailed', 'Failed to load bins'))
       setBins([])
       return
     }
@@ -150,7 +154,7 @@ export function Warehouses() {
   async function addWarehouse() {
     try {
       if (!canManage) {
-        toast.error('Only managers and above can manage warehouses')
+        toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
       if (!companyId) {
@@ -198,7 +202,7 @@ export function Warehouses() {
     if (!editing) return
     try {
       if (!canManage) {
-        toast.error('Only managers and above can manage warehouses')
+        toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
       const patch = {
@@ -244,7 +248,7 @@ export function Warehouses() {
   async function deleteWarehouse(id: string) {
     try {
       if (!canManage) {
-        toast.error('Only managers and above can manage warehouses')
+        toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
       // Stock-level check (snake_case)
@@ -279,7 +283,7 @@ export function Warehouses() {
   async function addBin() {
     try {
       if (!canManage) {
-        toast.error('Only managers and above can manage warehouses')
+        toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
       if (!binForm.warehouseId) {
@@ -391,7 +395,7 @@ export function Warehouses() {
                     value={binForm.warehouseId}
                     onValueChange={(v) => setBinForm(s => ({ ...s, warehouseId: v }))}
                   >
-                    <SelectTrigger><SelectValue placeholder={t('orders.selectWarehouse')} /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={tt('warehouses.placeholder.selectWarehouse', 'Select warehouse')} /></SelectTrigger>
                     <SelectContent>
                       {warehouses.map(wh => (
                         <SelectItem key={wh.id} value={wh.id}>
@@ -406,7 +410,7 @@ export function Warehouses() {
                   <Input
                     value={binForm.code}
                     onChange={e => setBinForm(s => ({ ...s, code: e.target.value }))}
-                    placeholder="A1-01"
+                    placeholder={tt('warehouses.placeholder.binCode', 'A1-01')}
                   />
                 </div>
                 <div>
@@ -414,7 +418,7 @@ export function Warehouses() {
                   <Input
                     value={binForm.name}
                     onChange={e => setBinForm(s => ({ ...s, name: e.target.value }))}
-                    placeholder="Shelf A1 Bin 01"
+                    placeholder={tt('warehouses.placeholder.binName', 'Shelf A1 Bin 01')}
                   />
                 </div>
                 <div className="flex justify-end gap-2">
@@ -445,7 +449,7 @@ export function Warehouses() {
                   <Input
                     value={form.code}
                     onChange={e => setForm(s => ({ ...s, code: e.target.value }))}
-                    placeholder="WH001"
+                    placeholder={tt('warehouses.placeholder.code', 'WH001')}
                   />
                 </div>
                 <div>
@@ -453,7 +457,7 @@ export function Warehouses() {
                   <Input
                     value={form.name}
                     onChange={e => setForm(s => ({ ...s, name: e.target.value }))}
-                    placeholder="Main Warehouse"
+                    placeholder={tt('warehouses.placeholder.name', 'Main Warehouse')}
                   />
                 </div>
                 <div>
@@ -461,19 +465,19 @@ export function Warehouses() {
                   <Input
                     value={form.address}
                     onChange={e => setForm(s => ({ ...s, address: e.target.value }))}
-                    placeholder="Address"
+                    placeholder={tt('warehouses.placeholder.address', 'Address')}
                   />
                 </div>
                 <div>
-                  <Label>{t('orders.status')}</Label>
+                  <Label>{tt('warehouses.status', 'Status')}</Label>
                   <Select
                     value={form.status}
                     onValueChange={(v) => setForm(s => ({ ...s, status: v }))}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">{t('suppliers.active')}</SelectItem>
-                      <SelectItem value="inactive">{t('suppliers.inactive')}</SelectItem>
+                      <SelectItem value="active">{warehouseStatusLabel('active')}</SelectItem>
+                      <SelectItem value="inactive">{warehouseStatusLabel('inactive')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -490,45 +494,45 @@ export function Warehouses() {
 
       {!canManage ? (
         <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-          Read-only: only managers and above can add, edit, or remove warehouses and bins.
+          {tt('warehouses.readOnly', 'Read-only: only managers and above can add, edit, or remove warehouses and bins.')}
         </div>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Warehouses</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.total', 'Warehouses')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.total}</div>
-            <div className="text-xs text-muted-foreground">Configured locations in this company.</div>
+            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.totalHelp', 'Configured locations in this company.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.active', 'Active')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.active}</div>
-            <div className="text-xs text-muted-foreground">Ready for receiving, picking, and transfers.</div>
+            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.activeHelp', 'Ready for receiving, picking, and transfers.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Inactive</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.inactive', 'Inactive')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.inactive}</div>
-            <div className="text-xs text-muted-foreground">Kept for history but not currently active.</div>
+            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.inactiveHelp', 'Kept for history but not currently active.')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Bins</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.bins', 'Bins')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{summary.bins}</div>
-            <div className="text-xs text-muted-foreground">Storage locations distributed across warehouses.</div>
+            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.binsHelp', 'Storage locations distributed across warehouses.')}</div>
           </CardContent>
         </Card>
       </div>
@@ -580,7 +584,7 @@ export function Warehouses() {
                         <div className="text-right">
                           <p className="text-sm"><span className="text-muted-foreground">{t('warehouses.bins') ?? 'Bins'}:</span> {wBins.length}</p>
                         </div>
-                        <Badge variant={wh.status === 'active' ? 'default' : 'secondary'}>{wh.status}</Badge>
+                        <Badge variant={wh.status === 'active' ? 'default' : 'secondary'}>{warehouseStatusLabel(wh.status)}</Badge>
                         <div className="flex items-center gap-2">
                           <Dialog>
                             <DialogTrigger asChild>
@@ -612,12 +616,12 @@ export function Warehouses() {
                                 <div><Label>{t('items.fields.name')}</Label><Input value={form.name} onChange={e => setForm(s => ({ ...s, name: e.target.value }))} /></div>
                                 <div><Label>{t('settings.companyProfile.address1')}</Label><Input value={form.address} onChange={e => setForm(s => ({ ...s, address: e.target.value }))} /></div>
                                 <div>
-                                  <Label>Status</Label>
+                                  <Label>{tt('warehouses.status', 'Status')}</Label>
                                   <Select value={form.status} onValueChange={(v) => setForm(s => ({ ...s, status: v }))}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="active">{t('suppliers.active')}</SelectItem>
-                                      <SelectItem value="inactive">{t('suppliers.inactive')}</SelectItem>
+                                      <SelectItem value="active">{warehouseStatusLabel('active')}</SelectItem>
+                                      <SelectItem value="inactive">{warehouseStatusLabel('inactive')}</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </div>

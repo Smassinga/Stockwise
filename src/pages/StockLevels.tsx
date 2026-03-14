@@ -9,8 +9,9 @@ import { Badge } from '../components/ui/badge'
 import { toast } from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
+import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
 
 interface Item {
   id: string
@@ -67,45 +68,11 @@ function formatQuantity(value: number) {
   })
 }
 
-function downloadCSV(data: StockRow[], filename: string, formatCurrency: (n: number) => string) {
-  if (!data.length) {
-    return false
-  }
-  const headers = ['Item', 'SKU', 'Warehouse', 'On hand', 'Min stock', 'Avg cost', 'Total value', 'Status']
-  const csv = [
-    headers.join(','),
-    ...data.map((row) =>
-      [
-        row.itemName,
-        row.sku,
-        row.warehouseName,
-        row.onHandQty,
-        row.minStock,
-        formatCurrency(row.avgCost),
-        formatCurrency(row.totalValue),
-        row.status,
-      ]
-        .map((value) => {
-          const text = String(value).replace(/"/g, '""')
-          return /[",\n]/.test(text) ? `"${text}"` : text
-        })
-        .join(',')
-    ),
-  ].join('\n')
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-  return true
-}
-
 export function StockLevels() {
   const { companyId } = useOrg()
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const [items, setItems] = useState<Item[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -113,6 +80,7 @@ export function StockLevels() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [baseCode, setBaseCode] = useState('MZN')
+  const [exporting, setExporting] = useState(false)
 
   const [search, setSearch] = useState('')
   const [itemFilter, setItemFilter] = useState<string>('all')
@@ -255,6 +223,66 @@ export function StockLevels() {
   const activeWarehouse = warehouseFilter === 'all' ? null : warehouses.find((warehouse) => warehouse.id === warehouseFilter)
 
   const formatCurrency = (value: number) => formatMoneyBase(value, baseCode)
+  const statusLabel = (status: StockStatus) => {
+    if (status === 'out') return tt('stock.status.out', 'Out of stock')
+    if (status === 'low') return tt('stock.status.low', 'Low stock')
+    return tt('stock.status.healthy', 'Healthy')
+  }
+
+  async function exportToExcel() {
+    if (!companyId) return
+    if (!rows.length) {
+      toast(tt('stock.export.empty', 'There are no stock positions to export right now.'))
+      return
+    }
+
+    try {
+      setExporting(true)
+      const company = await loadCompanyExportHeader(companyId)
+      const selectedItem = itemFilter === 'all' ? null : items.find((item) => item.id === itemFilter)
+      const filters = [
+        `${tt('stock.export.baseCurrency', 'Base currency')}: ${baseCode}`,
+        `${tt('warehouses.warehouse', 'Warehouse')}: ${activeWarehouse?.name || tt('filters.warehouse.all', 'All warehouses')}`,
+        `${tt('stock.sortBy', 'Sort by')}: ${tt(`stock.sort.${sortBy.replace('_desc', '').replace('_asc', '')}`, sortBy)}`,
+      ]
+      if (selectedItem) filters.push(`${tt('table.item', 'Item')}: ${selectedItem.name} (${selectedItem.sku})`)
+      if (search.trim()) filters.push(`${tt('common.search', 'Search')}: ${search.trim()}`)
+
+      exportExcelReport({
+        filename: `stock_levels_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: tt('nav.stockLevels', 'Stock Levels'),
+        title: tt('stock.export.title', 'Inventory valuation report'),
+        subtitle: tt('stock.export.subtitle', 'On-hand quantity, weighted average cost, and stock value by warehouse.'),
+        filters,
+        company,
+        labels: {
+          generated: tt('export.generated', 'Generated'),
+          filters: tt('export.filters', 'Filters'),
+          taxId: tt('company.taxId', 'Tax ID'),
+          email: tt('common.email', 'Email'),
+          phone: tt('common.phone', 'Phone'),
+        },
+        columns: [
+          { label: tt('table.item', 'Item'), value: (row) => row.itemName, width: 30 },
+          { label: tt('table.sku', 'SKU'), value: (row) => row.sku || tt('common.dash', '—'), width: 16 },
+          { label: tt('warehouses.warehouse', 'Warehouse'), value: (row) => row.warehouseName, width: 20 },
+          { label: tt('table.onHand', 'On hand'), value: (row) => row.onHandQty, type: 'number', width: 14 },
+          { label: tt('table.minStock', 'Min stock'), value: (row) => row.minStock || 0, type: 'number', width: 14 },
+          { label: tt('stock.avgCost', 'Average cost'), value: (row) => row.avgCost, type: 'currency', width: 16 },
+          { label: tt('stock.totalValue', 'Total value'), value: (row) => row.totalValue, type: 'currency', width: 18 },
+          { label: tt('stock.status', 'Status'), value: (row) => statusLabel(row.status), width: 16 },
+          { label: tt('stock.shortage', 'Shortage'), value: (row) => row.shortageQty, type: 'number', width: 14 },
+        ],
+        rows,
+      })
+      toast.success(t('export.done'))
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e?.message || tt('stock.export.failed', 'Failed to generate the Excel export'))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (!companyId) {
     return (
@@ -299,12 +327,14 @@ export function StockLevels() {
         <div>
           <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
           <p className="text-muted-foreground">
-            Review on-hand quantity, weighted average cost, and inventory value by warehouse.
+            {tt('stock.description', 'Review on-hand quantity, weighted average cost, and inventory value by warehouse.')}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">Base currency: {baseCode}</Badge>
+            <Badge variant="outline">{tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}</Badge>
             <Badge variant="outline">
-              {activeWarehouse ? `Warehouse: ${activeWarehouse.name}` : 'All warehouses'}
+              {activeWarehouse
+                ? `${tt('warehouses.warehouse', 'Warehouse')}: ${activeWarehouse.name}`
+                : tt('filters.warehouse.all', 'All warehouses')}
             </Badge>
           </div>
         </div>
@@ -313,18 +343,9 @@ export function StockLevels() {
             <RefreshCw className="mr-2 h-4 w-4" />
             {t('common.refresh') ?? 'Refresh'}
           </Button>
-          <Button
-            onClick={() => {
-              const ok = downloadCSV(rows, 'stock_levels.csv', formatCurrency)
-              if (!ok) {
-                toast(t('common.headsUp'))
-                return
-              }
-              toast.success(t('export.done'))
-            }}
-          >
+          <Button onClick={() => void exportToExcel()} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
-            {t('export.csv') ?? 'Export CSV'}
+            {exporting ? t('actions.saving') : tt('export.xlsx', 'Export Excel')}
           </Button>
         </div>
       </div>
@@ -332,43 +353,45 @@ export function StockLevels() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Inventory value</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{formatCurrency(totals.totalValue)}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Value of the filtered stock position using average cost.
+              {tt('stock.summary.valueHelp', 'Value of the filtered stock position using average cost.')}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">On-hand units</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.units', 'On-hand units')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{formatQuantity(totals.totalUnits)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{totals.positions} stock positions in view.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {tt('stock.summary.unitsHelp', '{count} stock positions in view.', { count: totals.positions })}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Low stock positions</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.low', 'Low stock positions')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{totals.lowStock}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Includes {totals.outOfStock} positions already at zero stock.
+              {tt('stock.summary.lowHelp', 'Includes {count} positions already at zero stock.', { count: totals.outOfStock })}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Warehouse coverage</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.coverage', 'Warehouse coverage')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{totals.filteredWarehouses}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Warehouses represented in the current filtered result.
+              {tt('stock.summary.coverageHelp', 'Warehouses represented in the current filtered result.')}
             </p>
           </CardContent>
         </Card>
@@ -425,17 +448,17 @@ export function StockLevels() {
             </Select>
           </div>
           <div>
-            <Label>Sort by</Label>
+            <Label>{tt('stock.sortBy', 'Sort by')}</Label>
             <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="value_desc">Value (high to low)</SelectItem>
-                <SelectItem value="qty_desc">Quantity (high to low)</SelectItem>
-                <SelectItem value="risk_desc">Stock risk first</SelectItem>
-                <SelectItem value="item_asc">Item name</SelectItem>
-                <SelectItem value="warehouse_asc">Warehouse name</SelectItem>
+                <SelectItem value="value_desc">{tt('stock.sort.value', 'Value (high to low)')}</SelectItem>
+                <SelectItem value="qty_desc">{tt('stock.sort.qty', 'Quantity (high to low)')}</SelectItem>
+                <SelectItem value="risk_desc">{tt('stock.sort.risk', 'Stock risk first')}</SelectItem>
+                <SelectItem value="item_asc">{tt('stock.sort.item', 'Item name')}</SelectItem>
+                <SelectItem value="warehouse_asc">{tt('stock.sort.warehouse', 'Warehouse name')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -461,13 +484,13 @@ export function StockLevels() {
           <div>
             <CardTitle>{t('transactions.results')} ({rows.length})</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Use this view to review stock valuation and identify rows that need replenishment attention.
+              {tt('stock.resultsHelp', 'Use this view to review stock valuation and identify rows that need replenishment attention.')}
             </p>
           </div>
           {totals.lowStock > 0 ? (
             <div className="flex items-center gap-2 rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
               <AlertTriangle className="h-4 w-4" />
-              {totals.lowStock} positions need attention
+              {tt('stock.resultsAttention', '{count} positions need attention', { count: totals.lowStock })}
             </div>
           ) : null}
         </CardHeader>
@@ -477,13 +500,13 @@ export function StockLevels() {
               <table className="w-full min-w-[980px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="py-3 pr-4">Item</th>
-                    <th className="py-3 pr-4">Warehouse</th>
-                    <th className="py-3 pr-4 text-right">On hand</th>
-                    <th className="py-3 pr-4 text-right">Min stock</th>
+                    <th className="py-3 pr-4">{tt('table.item', 'Item')}</th>
+                    <th className="py-3 pr-4">{tt('warehouses.warehouse', 'Warehouse')}</th>
+                    <th className="py-3 pr-4 text-right">{tt('table.onHand', 'On hand')}</th>
+                    <th className="py-3 pr-4 text-right">{tt('table.minStock', 'Min stock')}</th>
                     <th className="py-3 pr-4 text-right">{t('stock.avgCost')}</th>
                     <th className="py-3 pr-4 text-right">{t('stock.totalValue')}</th>
-                    <th className="py-3 pr-4">Status</th>
+                    <th className="py-3 pr-4">{tt('stock.status', 'Status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -524,11 +547,11 @@ export function StockLevels() {
                         <td className="py-4 pr-4">
                           <div className="flex flex-col gap-2">
                             <Badge variant="outline" className={badgeClass}>
-                              {row.status === 'out' ? 'Out of stock' : row.status === 'low' ? 'Low stock' : 'Healthy'}
+                              {statusLabel(row.status)}
                             </Badge>
                             {row.shortageQty > 0 ? (
                               <span className="text-xs text-muted-foreground">
-                                Short by {formatQuantity(row.shortageQty)}
+                                {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
                               </span>
                             ) : null}
                           </div>
@@ -544,13 +567,13 @@ export function StockLevels() {
               <Package className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
               <div className="text-lg font-medium">
                 {search || itemFilter !== 'all' || warehouseFilter !== 'all'
-                  ? 'No stock positions match the current filters.'
+                  ? tt('stock.empty.filteredTitle', 'No stock positions match the current filters.')
                   : t('stock.none')}
               </div>
               <div className="mt-2 text-sm text-muted-foreground">
                 {search || itemFilter !== 'all' || warehouseFilter !== 'all'
-                  ? 'Clear or relax the filters to widen the stock view.'
-                  : 'Receive stock or post movements to start building a live valuation view.'}
+                  ? tt('stock.empty.filteredBody', 'Clear or relax the filters to widen the stock view.')
+                  : tt('stock.empty.defaultBody', 'Receive stock or post movements to start building a live valuation view.')}
               </div>
             </div>
           )}
