@@ -10,7 +10,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
 import {
   getBankTransactionRefSupport,
@@ -811,8 +811,9 @@ export default function SettlementsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {activeRow && (
-            <div className="space-y-4">
+          <DialogBody className="pr-1">
+            {activeRow && (
+              <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-4">
                 <Card className="border-border/70 shadow-none">
                   <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</CardTitle></CardHeader>
@@ -924,8 +925,9 @@ export default function SettlementsPage() {
                   )}
                 </TabsContent>
               </Tabs>
-            </div>
-          )}
+              </div>
+            )}
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setActiveRow(null)}>{tt('common.cancel', 'Cancel')}</Button>

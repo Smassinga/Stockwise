@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
 import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
@@ -1411,10 +1411,11 @@ export default function PurchaseOrders() {
                   <Button size="sm">{tt('orders.newPO', 'New PO')}</Button>
                 </SheetTrigger>
                 <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-                  <SheetHeader>
+                  <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
                     <SheetTitle>{tt('orders.newPO', 'New Purchase Order')}</SheetTitle>
                     <SheetDescription className="sr-only">{tt('orders.createPO', 'Create a purchase order')}</SheetDescription>
                   </SheetHeader>
+                  <SheetBody className="px-4 pb-6 md:px-0">
 
                   {/* Header - Responsive grid */}
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1649,6 +1650,7 @@ export default function PurchaseOrders() {
                       </div>
                     </div>
                   </div>
+                  </SheetBody>
                 </SheetContent>
               </Sheet>
             </div>
@@ -1747,11 +1749,12 @@ export default function PurchaseOrders() {
         }
         setPoViewOpen(o)
       }}>
-        <SheetContent side="right" className="w-full sm:w=[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-          <SheetHeader>
+        <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+          <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
             <SheetTitle>{tt('orders.poDetails', 'PO Details')}</SheetTitle>
             <SheetDescription className="sr-only">{tt('orders.poDetailsDesc', 'Review and receive by line')}</SheetDescription>
           </SheetHeader>
+          <SheetBody className="px-4 pb-6 md:px-0">
 
           {!selectedPO ? (
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noPOSelected', 'No PO selected.')}</div>
@@ -1994,21 +1997,23 @@ export default function PurchaseOrders() {
               </div>
             </div>
           )}
+          </SheetBody>
         </SheetContent>
       </Sheet>
 
       {/* Closed/Received POs Browser */}
       <Sheet open={browserOpen} onOpenChange={setBrowserOpen}>
         <SheetContent side="right" className="w-full sm:max-w-3xl max-w-none p-0 md:p-6">
-          <SheetHeader>
+          <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
             <SheetTitle>{tt('orders.poBrowser', 'Closed/Received POs')}</SheetTitle>
             <SheetDescription className="sr-only">
               {tt('orders.poBrowserDesc', 'Search, filter and print purchase orders')}
             </SheetDescription>
           </SheetHeader>
+          <SheetBody className="px-4 pb-6 md:px-0">
 
           {/* Filters */}
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4 md:p-0">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <Label>{tt('common.search', 'Search')}</Label>
               <Input
@@ -2028,7 +2033,7 @@ export default function PurchaseOrders() {
           </div>
 
           {/* Status checkboxes */}
-          <div className="p-4 md:p-0 mt-2 flex flex-wrap gap-4 text-sm">
+          <div className="mt-2 flex flex-wrap gap-4 text-sm">
             <div className="text-muted-foreground">{tt('orders.statuses', 'Statuses')}:</div>
             {(['closed','partially_received'] as const).map(sname => (
               <label key={sname} className="flex items-center gap-2 cursor-pointer">
@@ -2088,7 +2093,7 @@ export default function PurchaseOrders() {
           </div>
 
           {/* Paging */}
-          <div className="p-4 flex justify-between items-center">
+          <div className="flex justify-between items-center pt-4">
             <div className="text-xs text-muted-foreground">
               {tt('orders.rows', 'Rows')}: {browserRows.length}
             </div>
@@ -2098,6 +2103,7 @@ export default function PurchaseOrders() {
               </Button>
             )}
           </div>
+          </SheetBody>
         </SheetContent>
       </Sheet>
     </div>

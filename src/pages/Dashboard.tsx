@@ -7,7 +7,7 @@ import { useOrg } from '../hooks/useOrg'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Button } from '../components/ui/button'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet'
 import { Badge } from '../components/ui/badge'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 
@@ -655,49 +655,48 @@ export default function Dashboard() {
                   <SheetDescription>{tt('daily.desc', 'Daily totals for the selected window')}</SheetDescription>
                 </SheetHeader>
 
-                {/* Date controls */}
-                <div className="px-4 md:px-0 mt-2 mb-4 flex flex-wrap items-center gap-2">
-                  <div className="w-full sm:w-48">
-                    <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
-                      <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 12 }).map((_, i) => (
-                          <SelectItem key={i} value={String(i)} className="capitalize">
-                            {monthName(i)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <SheetBody className="px-4 pb-6 md:px-0">
+                  {/* Date controls */}
+                  <div className="mt-2 mb-4 flex flex-wrap items-center gap-2">
+                    <div className="w-full sm:w-48">
+                      <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
+                        <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 12 }).map((_, i) => (
+                            <SelectItem key={i} value={String(i)} className="capitalize">
+                              {monthName(i)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-full sm:w-32">
+                      <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
+                        <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
+                        <SelectContent>
+                          {availableYears.map(y => (
+                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        const d = new Date()
+                        setDailyYear(d.getFullYear())
+                        setDailyMonth(d.getMonth())
+                      }}
+                      className="w-full sm:w-auto"
+                    >
+                      {tt('common.thisMonth', 'This month')}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
+                    </span>
                   </div>
-                  <div className="w-full sm:w-32">
-                    <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
-                      <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
-                      <SelectContent>
-                        {availableYears.map(y => (
-                          <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      const d = new Date()
-                      setDailyYear(d.getFullYear())
-                      setDailyMonth(d.getMonth())
-                    }}
-                    className="w-full sm:w-auto"
-                  >
-                    {tt('common.thisMonth', 'This month')}
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
-                  </span>
-                </div>
 
-                {/* SCROLLABLE daily table */}
-                <div className="mt-2 px-4 md:px-0">
-                  <div className="max-h-[360px] overflow-auto overscroll-contain rounded-md border">
+                  <div className="mt-2 rounded-md border">
                     <div className="min-w-[560px] md:min-w-0 overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -721,7 +720,7 @@ export default function Dashboard() {
                       </table>
                     </div>
                   </div>
-                </div>
+                </SheetBody>
               </SheetContent>
             </Sheet>
           </CardContent>

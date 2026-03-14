@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   SelectGroup, SelectLabel
 } from '../../components/ui/select'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
 import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
@@ -1564,10 +1564,11 @@ export default function SalesOrders() {
                   <Button size="sm">{tt('orders.newSO', 'New SO')}</Button>
                 </SheetTrigger>
                 <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-                  <SheetHeader>
+                  <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
                     <SheetTitle>{tt('orders.newSO', 'New Sales Order')}</SheetTitle>
                     <SheetDescription className="sr-only">{tt('orders.createSO', 'Create a sales order')}</SheetDescription>
                   </SheetHeader>
+                  <SheetBody className="px-4 pb-6 md:px-0">
 
                   {/* Header */}
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -1882,6 +1883,7 @@ export default function SalesOrders() {
                       </div>
                     </div>
                   </div>
+                  </SheetBody>
                 </SheetContent>
               </Sheet>
             </div>
@@ -1980,10 +1982,11 @@ export default function SalesOrders() {
         setSoViewOpen(o)
       }}>
         <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-          <SheetHeader>
+          <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
             <SheetTitle>{tt('orders.soDetails', 'SO Details')}</SheetTitle>
             <SheetDescription className="sr-only">{tt('orders.soDetailsDesc', 'Review, pick source warehouse/bin per line, and ship')}</SheetDescription>
           </SheetHeader>
+          <SheetBody className="px-4 pb-6 md:px-0">
 
           {!selectedSO ? (
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noSOSelected', 'No SO selected.')}</div>
@@ -2264,21 +2267,23 @@ export default function SalesOrders() {
               </div>
             </div>
           )}
+          </SheetBody>
         </SheetContent>
       </Sheet>
 
       {/* Shipped SOs Browser */}
       <Sheet open={shippedOpen} onOpenChange={setShippedOpen}>
         <SheetContent side="right" className="w-full sm:max-w-3xl max-w-none p-0 md:p-6">
-          <SheetHeader>
+          <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
             <SheetTitle>{tt('orders.shippedBrowser', 'Shipped Sales Orders')}</SheetTitle>
             <SheetDescription className="sr-only">
               {tt('orders.shippedBrowserDesc', 'Search, filter and print shipped/closed orders')}
             </SheetDescription>
           </SheetHeader>
+          <SheetBody className="px-4 pb-6 md:px-0">
 
           {/* Filters */}
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4 md:p-0">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <Label>{tt('common.search', 'Search')}</Label>
               <Input
@@ -2298,7 +2303,7 @@ export default function SalesOrders() {
           </div>
 
           {/* Status checkboxes */}
-          <div className="p-4 md:p-0 mt-2 flex flex-wrap gap-4 text-sm">
+          <div className="mt-2 flex flex-wrap gap-4 text-sm">
             <div className="text-muted-foreground">{tt('orders.statuses', 'Statuses')}:</div>
             {(['shipped','closed'] as const).map(sname => (
               <label key={sname} className="flex items-center gap-2 cursor-pointer">
@@ -2361,7 +2366,7 @@ export default function SalesOrders() {
           </div>
 
           {/* Paging */}
-          <div className="p-4 flex justify-between items-center">
+          <div className="flex justify-between items-center pt-4">
             <div className="text-xs text-muted-foreground">
               {tt('orders.rows', 'Rows')}: {shippedRows.length}
             </div>
@@ -2371,6 +2376,7 @@ export default function SalesOrders() {
               </Button>
             )}
           </div>
+          </SheetBody>
         </SheetContent>
       </Sheet>
     </div>

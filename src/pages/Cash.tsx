@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from '../components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from '../components/ui/sheet'
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
@@ -349,65 +349,67 @@ export default function CashPage() {
                   {t('cash.addCashTx')}
                 </SheetDescription>
               </SheetHeader>
-              <div className="space-y-3 mt-4">
-                <div>
-                  <Label>{t('table.date')}</Label>
-                  <Input type="date" value={addForm.date} onChange={(e) => setAddForm((v) => ({ ...v, date: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>{t('filters.type')}</Label>
-                  <Select value={addForm.type} onValueChange={(v: any) => setAddForm((f) => ({ ...f, type: v }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sale_receipt">{t('cash.saleReceipt')}</SelectItem>
-                      <SelectItem value="purchase_payment">{t('cash.purchasePayment')}</SelectItem>
-                      <SelectItem value="adjustment">{t('cash.adjustment')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>{t('cash.amount', { code: baseCurrency || 'MZN' })}</Label>
-                  <Input
-                    inputMode="decimal"
-                    placeholder={tf('cash.placeholder.amount', 'e.g. 1500 or -450')}
-                    value={addForm.amount}
-                    onChange={(e) => setAddForm((v) => ({ ...v, amount: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>{t('cash.memo')}</Label>
-                  <Input placeholder={t('cash.optional')} value={addForm.memo} onChange={(e) => setAddForm((v) => ({ ...v, memo: e.target.value }))} />
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-1">
-                    <Label>{t('filters.ref')}</Label>
-                    <Select value={addForm.refType} onValueChange={(v: any) => setAddForm((f) => ({ ...f, refType: v }))}>
+              <SheetBody className="mt-4 pr-1">
+                <div className="space-y-3">
+                  <div>
+                    <Label>{t('table.date')}</Label>
+                    <Input type="date" value={addForm.date} onChange={(e) => setAddForm((v) => ({ ...v, date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{t('filters.type')}</Label>
+                    <Select value={addForm.type} onValueChange={(v: any) => setAddForm((f) => ({ ...f, type: v }))}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">{t('common.none')}</SelectItem>
-                        <SelectItem value="SO">SO</SelectItem>
-                        <SelectItem value="PO">PO</SelectItem>
-                        <SelectItem value="ADJ">ADJ</SelectItem>
+                        <SelectItem value="sale_receipt">{t('cash.saleReceipt')}</SelectItem>
+                        <SelectItem value="purchase_payment">{t('cash.purchasePayment')}</SelectItem>
+                        <SelectItem value="adjustment">{t('cash.adjustment')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="col-span-2">
-                    <Label>{t('movements.refId')}</Label>
+                  <div>
+                    <Label>{t('cash.amount', { code: baseCurrency || 'MZN' })}</Label>
                     <Input
-                      placeholder={tf('cash.placeholder.refId', 'Internal reference ID (UUID)')}
-                      value={addForm.refId}
-                      onChange={(e) => setAddForm((v) => ({ ...v, refId: e.target.value }))}
+                      inputMode="decimal"
+                      placeholder={tf('cash.placeholder.amount', 'e.g. 1500 or -450')}
+                      value={addForm.amount}
+                      onChange={(e) => setAddForm((v) => ({ ...v, amount: e.target.value }))}
                     />
                   </div>
+                  <div>
+                    <Label>{t('cash.memo')}</Label>
+                    <Input placeholder={t('cash.optional')} value={addForm.memo} onChange={(e) => setAddForm((v) => ({ ...v, memo: e.target.value }))} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-1">
+                      <Label>{t('filters.ref')}</Label>
+                      <Select value={addForm.refType} onValueChange={(v: any) => setAddForm((f) => ({ ...f, refType: v }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">{t('common.none')}</SelectItem>
+                          <SelectItem value="SO">SO</SelectItem>
+                          <SelectItem value="PO">PO</SelectItem>
+                          <SelectItem value="ADJ">ADJ</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2">
+                      <Label>{t('movements.refId')}</Label>
+                      <Input
+                        placeholder={tf('cash.placeholder.refId', 'Internal reference ID (UUID)')}
+                        value={addForm.refId}
+                        onChange={(e) => setAddForm((v) => ({ ...v, refId: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <Button disabled={savingTx} onClick={addTransaction}>
+                    {savingTx ? t('actions.saving') : t('cash.add')}
+                  </Button>
                 </div>
-                <Button disabled={savingTx} onClick={addTransaction}>
-                  {savingTx ? t('actions.saving') : t('cash.add')}
-                </Button>
-              </div>
+              </SheetBody>
             </SheetContent>
           </Sheet>
         </div>

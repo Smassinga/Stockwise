@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Badge } from '../components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import {
   AlertDialog,
@@ -358,7 +358,8 @@ export function Warehouses() {
                 <DialogTitle>{t('warehouses.addBin')}</DialogTitle>
                 <DialogDescription>{t('warehouses.addBinDesc') ?? ''}</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <DialogBody className="pr-1">
+                <div className="space-y-4">
                 <div>
                   <Label>{t('warehouses.warehouse')}</Label>
                   <Select
@@ -395,7 +396,8 @@ export function Warehouses() {
                   <Button variant="outline" onClick={() => setIsAddBinDialogOpen(false)}>{t('common.cancel') ?? 'Cancel'}</Button>
                   <Button onClick={addBin}>{t('warehouses.addBin') ?? 'Add Bin'}</Button>
                 </div>
-              </div>
+                </div>
+              </DialogBody>
             </DialogContent>
           </Dialog>
 
@@ -411,7 +413,8 @@ export function Warehouses() {
                 <DialogTitle>{t('warehouses.addWarehouse')}</DialogTitle>
                 <DialogDescription>{t('warehouses.addWarehouseDesc') ?? ''}</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <DialogBody className="pr-1">
+                <div className="space-y-4">
                 <div>
                   <Label>{t('users.code') ?? 'Code'}</Label>
                   <Input
@@ -453,7 +456,8 @@ export function Warehouses() {
                   <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>{t('common.cancel') ?? 'Cancel'}</Button>
                   <Button onClick={addWarehouse}>{t('warehouses.addWarehouse') ?? 'Add Warehouse'}</Button>
                 </div>
-              </div>
+                </div>
+              </DialogBody>
             </DialogContent>
           </Dialog>
         </div>
@@ -531,7 +535,8 @@ export function Warehouses() {
                                 <DialogTitle>{t('warehouses.edit') ?? 'Edit Warehouse'}</DialogTitle>
                                 <DialogDescription>{t('warehouses.editDesc') ?? 'Update details'}</DialogDescription>
                               </DialogHeader>
-                              <div className="space-y-4">
+                              <DialogBody className="pr-1">
+                                <div className="space-y-4">
                                 <div><Label>{t('users.code') ?? 'Code'}</Label><Input value={form.code} onChange={e => setForm(s => ({ ...s, code: e.target.value }))} /></div>
                                 <div><Label>{t('items.fields.name')}</Label><Input value={form.name} onChange={e => setForm(s => ({ ...s, name: e.target.value }))} /></div>
                                 <div><Label>{t('settings.companyProfile.address1')}</Label><Input value={form.address} onChange={e => setForm(s => ({ ...s, address: e.target.value }))} /></div>
@@ -549,7 +554,8 @@ export function Warehouses() {
                                   <Button variant="outline" onClick={() => setEditing(null)}>{t('common.cancel') ?? 'Cancel'}</Button>
                                   <Button onClick={updateWarehouse}>{t('warehouses.updateWarehouse') ?? 'Update Warehouse'}</Button>
                                 </div>
-                              </div>
+                                </div>
+                              </DialogBody>
                             </DialogContent>
                           </Dialog>
 

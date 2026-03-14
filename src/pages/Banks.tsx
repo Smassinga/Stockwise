@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import {
   Sheet,
+  SheetBody,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -169,34 +170,36 @@ export default function Banks() {
                   {tf('banks.addDescription', 'Add a bank account with a nickname, account number, and currency.')}
                 </SheetDescription>
               </SheetHeader>
-              <div className="space-y-3 mt-4">
-                <div>
-                  <Label>{t('banks.nickname')}</Label>
-                  <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              <SheetBody className="mt-4 pr-1">
+                <div className="space-y-3">
+                  <div>
+                    <Label>{t('banks.nickname')}</Label>
+                    <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{t('banks.bankName')}</Label>
+                    <Input value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>{t('banks.accountNumber')}</Label>
+                    <Input
+                      value={form.account_number}
+                      onChange={(e) => setForm((f) => ({ ...f, account_number: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>{t('banks.currencyCode')}</Label>
+                    <Input
+                      value={form.currency_code}
+                      onChange={(e) => setForm((f) => ({ ...f, currency_code: e.target.value.toUpperCase() }))}
+                      placeholder={tf('banks.placeholder.currencyCode', baseCurrency || 'MZN')}
+                    />
+                  </div>
+                  <Button onClick={addBank} disabled={saving}>
+                    {saving ? t('actions.saving') : t('banks.save')}
+                  </Button>
                 </div>
-                <div>
-                  <Label>{t('banks.bankName')}</Label>
-                  <Input value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>{t('banks.accountNumber')}</Label>
-                  <Input
-                    value={form.account_number}
-                    onChange={(e) => setForm((f) => ({ ...f, account_number: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label>{t('banks.currencyCode')}</Label>
-                  <Input
-                    value={form.currency_code}
-                    onChange={(e) => setForm((f) => ({ ...f, currency_code: e.target.value.toUpperCase() }))}
-                    placeholder={tf('banks.placeholder.currencyCode', baseCurrency || 'MZN')}
-                  />
-                </div>
-                <Button onClick={addBank} disabled={saving}>
-                  {saving ? t('actions.saving') : t('banks.save')}
-                </Button>
-              </div>
+              </SheetBody>
             </SheetContent>
           </Sheet>
         </div>
