@@ -162,6 +162,15 @@ type PoMetaDraft = {
   receivedBy: string
 }
 
+type PurchaseOrderAudit = {
+  createdBy: string | null
+  createdAt: string | null
+  approvedBy: string | null
+  receivedBy: string | null
+  paidVia: string | null
+  lastPaidAt: string | null
+}
+
 const todayYmd = () => new Date().toISOString().slice(0, 10)
 const blankPurchaseLine = (): PurchaseLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0' })
 const emptyPoMetaDraft = (): PoMetaDraft => ({
@@ -177,6 +186,14 @@ const emptyPoMetaDraft = (): PoMetaDraft => ({
   preparedBy: '',
   approvedBy: '',
   receivedBy: '',
+})
+const emptyPurchaseOrderAudit = (): PurchaseOrderAudit => ({
+  createdBy: null,
+  createdAt: null,
+  approvedBy: null,
+  receivedBy: null,
+  paidVia: null,
+  lastPaidAt: null,
 })
 const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -199,6 +216,15 @@ const docDate = (value: unknown, fallback = '—') => {
 const docName = (value: unknown) => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text) : '&nbsp;'
+}
+const readableIdentity = (value?: string | null) => {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  if (!text.includes('@')) return text
+  const [local] = text.split('@')
+  const pretty = local.replace(/[._-]+/g, ' ').trim()
+  const titled = pretty.replace(/\b\w/g, (char) => char.toUpperCase())
+  return titled ? `${titled} (${text})` : text
 }
 async function fetchDataUrl(src?: string | null): Promise<string | null> {
   if (!src || !src.trim()) return null
@@ -233,6 +259,7 @@ export default function PurchaseOrders() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [bins, setBins] = useState<Bin[]>([])
+  const [memberIdentityByUserId, setMemberIdentityByUserId] = useState<Record<string, string>>({})
 
   // brand (company_settings preferred; app_settings fallback)
   const [brandName, setBrandName] = useState<string>('')
@@ -307,10 +334,72 @@ export default function PurchaseOrders() {
     }
   }
 
+  const createdByLabel = (po?: PO | null) => {
+    if (!po) return ''
+    const prepared = String((po as any).prepared_by ?? '').trim()
+    if (prepared) return prepared
+    const creatorId = String(po.created_by ?? '').trim()
+    return creatorId ? memberIdentityByUserId[creatorId] ?? '' : ''
+  }
+
+  async function resolvePurchaseOrderAudit(po: PO): Promise<PurchaseOrderAudit> {
+    const audit: PurchaseOrderAudit = {
+      createdBy: createdByLabel(po) || null,
+      createdAt: String(po.created_at ?? '').trim() || null,
+      approvedBy: String((po as any).approved_by ?? '').trim() || null,
+      receivedBy: String((po as any).received_by ?? '').trim() || null,
+      paidVia: null,
+      lastPaidAt: null,
+    }
+
+    if (!companyId) return audit
+
+    const [cashRes, bankRes] = await Promise.all([
+      supabase
+        .from('cash_transactions')
+        .select('happened_at')
+        .eq('company_id', companyId)
+        .eq('ref_type', 'PO')
+        .eq('ref_id', po.id)
+        .order('happened_at', { ascending: false })
+        .limit(1),
+      supabase
+        .from('bank_transactions')
+        .select('happened_at')
+        .eq('ref_type', 'PO')
+        .eq('ref_id', po.id)
+        .order('happened_at', { ascending: false })
+        .limit(1),
+    ])
+
+    const paymentEvents: Array<{ happenedAt: string; via: string }> = []
+    if (!cashRes.error && cashRes.data?.[0]?.happened_at) {
+      paymentEvents.push({
+        happenedAt: String(cashRes.data[0].happened_at),
+        via: tt('cash.title', 'Cash'),
+      })
+    }
+    if (!bankRes.error && bankRes.data?.[0]?.happened_at) {
+      paymentEvents.push({
+        happenedAt: String(bankRes.data[0].happened_at),
+        via: tt('orders.bankChannel', 'Bank'),
+      })
+    }
+
+    paymentEvents.sort((left, right) => new Date(right.happenedAt).getTime() - new Date(left.happenedAt).getTime())
+    if (paymentEvents[0]) {
+      audit.paidVia = paymentEvents[0].via
+      audit.lastPaidAt = paymentEvents[0].happenedAt
+    }
+
+    return audit
+  }
+
   // view + receive
   const [poViewOpen, setPoViewOpen] = useState(false)
   const [selectedPO, setSelectedPO] = useState<PO | null>(null)
   const [selectedPoMeta, setSelectedPoMeta] = useState<PoMetaDraft>(emptyPoMetaDraft())
+  const [selectedPoAudit, setSelectedPoAudit] = useState<PurchaseOrderAudit>(emptyPurchaseOrderAudit())
 
   // defaults for receiving
   const [defaultReceiveWhId, setDefaultReceiveWhId] = useState<string>('')
@@ -455,6 +544,17 @@ export default function PurchaseOrders() {
           .rpc('get_payment_terms', { p_company_id: companyId })
         if (paymentTermsError) throw paymentTermsError
         setPaymentTermsList((paymentTermsRows || []) as PaymentTerm[])
+
+        const { data: membersData } = await supabase
+          .from('company_members_with_auth')
+          .select('user_id,email')
+          .eq('company_id', companyId)
+        const memberMap = Object.fromEntries(
+          ((membersData || []) as Array<{ user_id?: string | null; email?: string | null }>)
+            .filter((member) => member.user_id)
+            .map((member) => [String(member.user_id), readableIdentity(member.email)]),
+        )
+        setMemberIdentityByUserId(memberMap)
 
         // POs + lines for this company
         const [poRes, polRes] = await Promise.all([
@@ -864,6 +964,8 @@ export default function PurchaseOrders() {
       await loadReceiptsMap(po.id)
       if (user?.name) {
         await supabase.from('purchase_orders').update({ received_by: user.name }).eq('id', po.id).eq('company_id', companyId)
+        setSelectedPO(prev => (prev?.id === po.id ? { ...prev, received_by: user.name } : prev))
+        setSelectedPoMeta(prev => ({ ...prev, receivedBy: user.name }))
       }
       if (closed) {
         toast.success(tt('orders.poClosed', 'PO closed — all items received'))
@@ -938,6 +1040,8 @@ export default function PurchaseOrders() {
       await loadReceiptsMap(po.id)
       if (user?.name) {
         await supabase.from('purchase_orders').update({ received_by: user.name }).eq('id', po.id).eq('company_id', companyId)
+        setSelectedPO(prev => (prev?.id === po.id ? { ...prev, received_by: user.name } : prev))
+        setSelectedPoMeta(prev => ({ ...prev, receivedBy: user.name }))
       }
 
       if (closed) {
@@ -988,6 +1092,23 @@ export default function PurchaseOrders() {
   useEffect(() => {
     setSelectedPoMeta(buildPoMetaDraft(selectedPO))
   }, [selectedPO, paymentTermsList])
+
+  useEffect(() => {
+    if (!selectedPO) {
+      setSelectedPoAudit(emptyPurchaseOrderAudit())
+      return
+    }
+
+    let active = true
+    ;(async () => {
+      const audit = await resolvePurchaseOrderAudit(selectedPO)
+      if (active) setSelectedPoAudit(audit)
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [selectedPO, companyId, memberIdentityByUserId])
 
   useEffect(() => {
     if (!browserOpen) return
@@ -1128,6 +1249,7 @@ export default function PurchaseOrders() {
     ;(supp as any).notes = po.notes ?? ''
     ;(supp as any).terms = paymentTermLabel((po as any).payment_terms_id, (supp as any).terms) || (supp as any).terms
     const hasNotes = Boolean(String((supp as any).notes ?? '').trim())
+    const audit = await resolvePurchaseOrderAudit(po)
 
     // Brand & company details
     const companyName = (brandName
@@ -1255,7 +1377,11 @@ export default function PurchaseOrders() {
           <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${po.status}</b></div>
           <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
           <div class="k">${tt('orders.fxToBaseShort', 'FX → {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
-          <div class="k">${tt('orders.expectedDate', 'Expected Date')}</div><div><b>${(po as any).expected_date || '—'}</b></div>
+          <div class="k">${tt('orders.expectedDate', 'Expected Date')}</div><div><b>${docDate((po as any).expected_date)}</b></div>
+          <div class="k">${tt('orders.createdBy', 'Created by')}</div><div>${docText(audit.createdBy)}</div>
+          <div class="k">${tt('orders.createdAt', 'Created at')}</div><div>${docDate(audit.createdAt)}</div>
+          <div class="k">${tt('orders.paidVia', 'Paid via')}</div><div>${docText(audit.paidVia)}</div>
+          <div class="k">${tt('orders.lastPaidOn', 'Last paid on')}</div><div>${docDate(audit.lastPaidAt)}</div>
         </div>
       </div>
     `
@@ -1855,6 +1981,53 @@ export default function PurchaseOrders() {
                   </div>
                   <div className="md:col-span-2 xl:col-span-3 flex justify-end">
                     <Button variant="secondary" onClick={saveSelectedPOMeta}>{tt('orders.saveDetails', 'Save details')}</Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.auditTrail', 'Audit trail')}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {tt('orders.purchaseAuditHelp', 'Shows who created, approved, received, and last paid this purchase order when the data is captured by the current workflow.')}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <Label>{tt('orders.createdBy', 'Created by')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedPoAudit.createdBy || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.createdAt', 'Created at')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedPoAudit.createdAt ? new Date(selectedPoAudit.createdAt).toLocaleString() : tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedPoAudit.approvedBy || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.receivedBy', 'Received by')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedPoAudit.receivedBy || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.paidVia', 'Paid via')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedPoAudit.paidVia || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.lastPaidOn', 'Last paid on')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedPoAudit.lastPaidAt ? new Date(selectedPoAudit.lastPaidAt).toLocaleString() : tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
                   </div>
                 </div>
               </div>

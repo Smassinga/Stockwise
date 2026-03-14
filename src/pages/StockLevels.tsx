@@ -248,7 +248,7 @@ export function StockLevels() {
       if (selectedItem) filters.push(`${tt('table.item', 'Item')}: ${selectedItem.name} (${selectedItem.sku})`)
       if (search.trim()) filters.push(`${tt('common.search', 'Search')}: ${search.trim()}`)
 
-      exportExcelReport({
+      await exportExcelReport({
         filename: `stock_levels_${new Date().toISOString().slice(0, 10)}.xlsx`,
         sheetName: tt('nav.stockLevels', 'Stock Levels'),
         title: tt('stock.export.title', 'Inventory valuation report'),
@@ -268,8 +268,8 @@ export function StockLevels() {
           { label: tt('warehouses.warehouse', 'Warehouse'), value: (row) => row.warehouseName, width: 20 },
           { label: tt('table.onHand', 'On hand'), value: (row) => row.onHandQty, type: 'number', width: 14 },
           { label: tt('table.minStock', 'Min stock'), value: (row) => row.minStock || 0, type: 'number', width: 14 },
-          { label: tt('stock.avgCost', 'Average cost'), value: (row) => row.avgCost, type: 'currency', width: 16 },
-          { label: tt('stock.totalValue', 'Total value'), value: (row) => row.totalValue, type: 'currency', width: 18 },
+          { label: `${tt('stock.avgCost', 'Average cost')} (${baseCode})`, value: (row) => row.avgCost, type: 'currency', width: 16 },
+          { label: `${tt('stock.totalValue', 'Total value')} (${baseCode})`, value: (row) => row.totalValue, type: 'currency', width: 18 },
           { label: tt('stock.status', 'Status'), value: (row) => statusLabel(row.status), width: 16 },
           { label: tt('stock.shortage', 'Shortage'), value: (row) => row.shortageQty, type: 'number', width: 14 },
         ],

@@ -1,5 +1,6 @@
 // src/pages/Cash.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
@@ -11,7 +12,7 @@ import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetTrigger, 
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
-import { buildSettlementMemo, fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
+import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 
 type CashSummary = { beginning: number; inflows: number; outflows: number; net: number; ending: number }
 type CashTx = {
@@ -29,18 +30,6 @@ type CashBook = {
   company_id: string
   beginning_balance_base: number
   beginning_as_of: string
-}
-
-type QueueRow = {
-  kind: 'SO' | 'PO'
-  ref_id: string
-  order_no: string
-  status: string
-  total_amount_base: number
-  cash_posted_base: number
-  balance_due_base: number
-  suggested_amount_base: number
-  last_activity_at: string | null
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
@@ -67,9 +56,6 @@ export default function CashPage() {
   const [openAdd, setOpenAdd] = useState(false)
   const [savingBeg, setSavingBeg] = useState(false)
   const [savingTx, setSavingTx] = useState(false)
-  const [queue, setQueue] = useState<QueueRow[]>([])
-  const [queueKind, setQueueKind] = useState<'ALL' | 'SO' | 'PO'>('ALL')
-
   // Resolve base currency via effect; fallback to MZN
   const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
 
@@ -100,7 +86,6 @@ export default function CashPage() {
     if (!companyId) return
     loadBook()
     loadData()
-    loadQueue()
   }, [companyId, from, to, typeFilter])
 
   async function loadBook() {
@@ -175,26 +160,6 @@ export default function CashPage() {
       console.warn('Failed to resolve cash order references:', error)
       setOrderRefByKey({})
     }
-  }
-
-  async function loadQueue() {
-    const { data, error } = await supabase.rpc('get_cash_approvals_queue', {
-      p_company: companyId,
-    })
-    if (error) {
-      console.warn('queue rpc error:', error.message)
-      setQueue([])
-      return
-    }
-    // Coerce numerics
-    const coerced = (data as any[]).map((r) => ({
-      ...r,
-      total_amount_base: Number(r.total_amount_base ?? 0),
-      cash_posted_base: Number(r.cash_posted_base ?? 0),
-      balance_due_base: Number(r.balance_due_base ?? 0),
-      suggested_amount_base: Number(r.suggested_amount_base ?? 0),
-    })) as QueueRow[]
-    setQueue(coerced)
   }
 
   async function upsertBeginningBalance() {
@@ -273,35 +238,13 @@ export default function CashPage() {
       toast.success(tf('cash.toast.added', 'Transaction added'))
       setOpenAdd(false)
       setAddForm({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
-      await Promise.all([loadData(), loadQueue()])
+      await loadData()
     } catch (err: any) {
       toast.error(tf('cash.toast.addFailed', 'Could not add transaction'))
       console.error(err)
     } finally {
       setSavingTx(false)
     }
-  }
-
-  const filteredQueue = useMemo(() => {
-    if (queueKind === 'ALL') return queue
-    return queue.filter(q => q.kind === queueKind)
-  }, [queue, queueKind])
-
-  function approveRow(r: QueueRow) {
-    const isSO = r.kind === 'SO'
-    const signedAmt = isSO ? r.suggested_amount_base : -r.suggested_amount_base
-    setAddForm({
-      date: todayISO(),
-      type: isSO ? 'sale_receipt' : 'purchase_payment',
-      amount: String(signedAmt),
-      memo: buildSettlementMemo(r.kind, r.order_no, {
-        receive: tf('cash.receiveMemo', 'Receipt for {orderNo}'),
-        pay: tf('cash.payMemo', 'Payment for {orderNo}'),
-      }),
-      refType: r.kind,
-      refId: r.ref_id,
-    })
-    setOpenAdd(true)
   }
 
   const cashTypeLabel = (type: CashTx['type']) => {
@@ -338,6 +281,9 @@ export default function CashPage() {
         </div>
 
         <div className="ml-auto flex gap-2">
+          <Button asChild variant="outline">
+            <Link to="/settlements">{t('nav.settlements')}</Link>
+          </Button>
           <Sheet open={openAdd} onOpenChange={setOpenAdd}>
             <SheetTrigger asChild>
               <Button>+ {t('cash.addTx')}</Button>
@@ -415,6 +361,11 @@ export default function CashPage() {
         </div>
       </div>
 
+      <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+        <p className="text-sm font-medium">{t('nav.settlements')}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t('cash.settlementsHint')}</p>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <Card>
@@ -475,67 +426,6 @@ export default function CashPage() {
           <Button onClick={upsertBeginningBalance} disabled={savingBeg}>
             {savingBeg ? t('actions.saving') : book?.id ? t('cash.update') : t('cash.create')}
           </Button>
-        </CardContent>
-      </Card>
-
-      {/* Awaiting approvals */}
-      <Card className="overflow-hidden">
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle>{t('cash.awaiting')}</CardTitle>
-          <div className="flex items-center gap-2">
-            <Label>{t('cash.kind')}</Label>
-            <Select value={queueKind} onValueChange={(v: 'ALL' | 'SO' | 'PO') => setQueueKind(v)}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">{t('common.all') ?? 'All'}</SelectItem>
-                <SelectItem value="SO">SO</SelectItem>
-                <SelectItem value="PO">PO</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto overflow-y-auto max-h-[45vh]">
-          <table className="w-full text-sm">
-            <thead className="text-left sticky top-0 bg-background">
-              <tr>
-                <th className="py-2 pr-3">{t('cash.kind')}</th>
-                <th className="py-2 pr-3">{t('cash.order')}</th>
-                <th className="py-2 pr-3">{t('cash.status')}</th>
-                <th className="py-2 pr-3 text-right">{t('cash.total')}</th>
-                <th className="py-2 pr-3 text-right">{t('cash.posted')}</th>
-                <th className="py-2 pr-3 text-right">{t('cash.due')}</th>
-                <th className="py-2 pr-3 text-right">{t('cash.suggest')}</th>
-                <th className="py-2 pr-3">{t('cash.lastActivity')}</th>
-                <th className="py-2 pr-0 text-right">{t('cash.action')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredQueue.map((q) => (
-                <tr key={`${q.kind}:${q.ref_id}`} className="border-t">
-                  <td className="py-2 pr-3">{q.kind}</td>
-                  <td className="py-2 pr-3">{q.order_no}</td>
-                  <td className="py-2 pr-3">{q.status}</td>
-                  <td className="py-2 pr-3 text-right">{formatMoneyBase(q.total_amount_base)}</td>
-                  <td className="py-2 pr-3 text-right">{formatMoneyBase(q.cash_posted_base)}</td>
-                  <td className="py-2 pr-3 text-right">{formatMoneyBase(q.balance_due_base)}</td>
-                  <td className="py-2 pr-3 text-right">{formatMoneyBase(q.suggested_amount_base)}</td>
-                  <td className="py-2 pr-3">{q.last_activity_at ?? t('common.dash')}</td>
-                  <td className="py-2 pr-0 text-right">
-                    <Button size="sm" onClick={() => approveRow(q)}>{t('cash.approve')}</Button>
-                  </td>
-                </tr>
-              ))}
-              {filteredQueue.length === 0 && (
-                <tr>
-                  <td className="py-6 text-muted-foreground" colSpan={9}>
-                    {t('cash.nothing')}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </CardContent>
       </Card>
 

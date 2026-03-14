@@ -18,6 +18,8 @@ type Notif = {
   url?: string | null
 }
 
+type RealtimeStatus = 'off' | 'connecting' | 'on' | 'reconnecting'
+
 const NOTIFICATION_SELECT = 'id,title,body,created_at,read_at,url,user_id,company_id'
 const NOTIFICATION_SELECT_FALLBACK = 'id,title,body,created_at,read_at,url'
 const isDev = import.meta.env.DEV
@@ -75,18 +77,28 @@ export function NotificationCenter() {
 
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<Notif[]>([])
-  const [subscribing, setSubscribing] = useState(false)
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('off')
+  const [reconnectTick, setReconnectTick] = useState(0)
 
   const chanRef = useRef<RealtimeChannel | null>(null)
   const activeCompanyRef = useRef<string | null>(null)
   const activeUserRef = useRef<string | null>(userId)
   const settingUpCompanyRef = useRef<string | null>(null)
+  const retryTimerRef = useRef<number | null>(null)
+  const retryAttemptsRef = useRef(0)
 
   const unreadCount = useMemo(() => rows.filter(r => !r.readAt).length, [rows])
 
   useEffect(() => {
     activeUserRef.current = userId
   }, [userId])
+
+  function clearRetryTimer() {
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+  }
 
   async function runNotificationQuery(selectClause: string, company: string, currentUserId: string | null) {
     let q = supabase
@@ -154,7 +166,9 @@ export function NotificationCenter() {
   useEffect(() => {
     if (!companyId) {
       debugLog('[NotificationCenter] No companyId, skipping subscription')
-      setSubscribing(false)
+      clearRetryTimer()
+      retryAttemptsRef.current = 0
+      setRealtimeStatus('off')
       settingUpCompanyRef.current = null
 
       if (chanRef.current) {
@@ -169,6 +183,8 @@ export function NotificationCenter() {
       return
     }
 
+    clearRetryTimer()
+
     if (chanRef.current && activeCompanyRef.current === companyId) {
       debugLog('[NotificationCenter] Channel already active for company', { companyId })
       return
@@ -181,7 +197,7 @@ export function NotificationCenter() {
 
     let disposed = false
     settingUpCompanyRef.current = companyId
-    setSubscribing(true)
+    setRealtimeStatus(retryAttemptsRef.current > 0 ? 'reconnecting' : 'connecting')
 
     ;(async () => {
       try {
@@ -196,8 +212,12 @@ export function NotificationCenter() {
 
         debugLog('[NotificationCenter] Setting up realtime subscription for company', { companyId })
         const chan = await createAuthedChannel(`notifications:company:${companyId}`)
+        chanRef.current = chan
+        activeCompanyRef.current = companyId
 
         if (disposed) {
+          chanRef.current = null
+          activeCompanyRef.current = null
           await supabase.removeChannel(chan)
           return
         }
@@ -244,28 +264,60 @@ export function NotificationCenter() {
             }
           )
           .subscribe((status) => {
+            if (disposed || chanRef.current !== chan || activeCompanyRef.current !== companyId) return
             debugLog('[NotificationCenter] Subscription status changed', { status, companyId })
-            if (disposed) return
 
             if (status === 'SUBSCRIBED') {
-              setSubscribing(false)
+              clearRetryTimer()
+              retryAttemptsRef.current = 0
+              setRealtimeStatus('on')
               return
             }
 
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-              setSubscribing(false)
-              if (status === 'CHANNEL_ERROR') {
-                console.warn('[NotificationCenter] Realtime subscription failed for company', { companyId, status })
+              setRealtimeStatus(status === 'CLOSED' ? 'off' : 'reconnecting')
+              if (chanRef.current === chan) {
+                chanRef.current = null
+                activeCompanyRef.current = null
               }
+              void supabase.removeChannel(chan).catch((error) => {
+                if (isDev) console.warn('[NotificationCenter] Error removing failed realtime channel', error)
+              })
+
+              if (retryTimerRef.current !== null || status === 'CLOSED' && disposed) return
+
+              retryAttemptsRef.current += 1
+              const attempt = retryAttemptsRef.current
+              const delay = Math.min(15000, attempt * 3000)
+
+              if (isDev) {
+                if (attempt >= 2 && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+                  console.warn('[NotificationCenter] Realtime subscription retry scheduled', { companyId, status, attempt, delay })
+                } else {
+                  debugLog('[NotificationCenter] Realtime subscription reconnecting', { companyId, status, attempt, delay })
+                }
+              }
+
+              retryTimerRef.current = window.setTimeout(() => {
+                retryTimerRef.current = null
+                if (!disposed && activeUserRef.current !== undefined) {
+                  setReconnectTick((value) => value + 1)
+                }
+              }, delay)
             }
           })
-
-        chanRef.current = chan
-        activeCompanyRef.current = companyId
       } catch (error) {
         if (!disposed) {
-          console.error('[NotificationCenter] Error setting up realtime subscription', error)
-          setSubscribing(false)
+          if (isDev) console.error('[NotificationCenter] Error setting up realtime subscription', error)
+          setRealtimeStatus('reconnecting')
+          if (retryTimerRef.current === null) {
+            retryAttemptsRef.current += 1
+            const delay = Math.min(15000, retryAttemptsRef.current * 3000)
+            retryTimerRef.current = window.setTimeout(() => {
+              retryTimerRef.current = null
+              if (!disposed) setReconnectTick((value) => value + 1)
+            }, delay)
+          }
         }
       } finally {
         if (settingUpCompanyRef.current === companyId) {
@@ -277,10 +329,11 @@ export function NotificationCenter() {
     return () => {
       disposed = true
     }
-  }, [companyId])
+  }, [companyId, reconnectTick])
 
   useEffect(() => {
     return () => {
+      clearRetryTimer()
       if (chanRef.current) {
         debugLog('[NotificationCenter] Unmount: removing channel', { companyId: activeCompanyRef.current })
         void supabase.removeChannel(chanRef.current).catch((error) => {
@@ -389,9 +442,7 @@ export function NotificationCenter() {
           </div>
 
           <div className="flex items-center justify-between border-t px-3 py-2 text-[11px] text-muted-foreground">
-            <span>
-              {t('notifications.realtime.connecting')}: {subscribing ? t('notifications.realtime.connecting') : t('notifications.realtime.on')}
-            </span>
+            <span>{t(`notifications.realtime.${realtimeStatus}`)}</span>
             <span>{t('notifications.showingLatest', { count: rows.length })}</span>
           </div>
         </div>
