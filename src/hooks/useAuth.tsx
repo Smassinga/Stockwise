@@ -29,7 +29,12 @@ type AuthContextValue = {
     email: string,
     password: string,
     _role?: unknown
-  ) => Promise<{ success: boolean; error?: string }>
+  ) => Promise<{
+    success: boolean
+    error?: string
+    signedIn?: boolean
+    requiresEmailVerification?: boolean
+  }>
   requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
 }
@@ -120,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   async function register(name: string, email: string, password: string, _role?: unknown) {
     try {
-      const { error } = await withTimeout(
+      const { data, error } = await withTimeout(
         supabase.auth.signUp({
           email,
           password,
@@ -134,8 +139,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
       if (error) return { success: false, error: error.message }
 
-      // Do not setUser here; we want them to verify first.
-      return { success: true }
+      if (data.session?.user || data.user?.email_confirmed_at) {
+        setUser(mapUser(data.session?.user ?? data.user!))
+        return { success: true, signedIn: true }
+      }
+
+      // No session means verification is still required.
+      return { success: true, requiresEmailVerification: true }
     } catch (e: any) {
       return { success: false, error: e?.message ?? 'Unknown error' }
     }

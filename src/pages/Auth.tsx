@@ -1,19 +1,19 @@
-import { type ReactNode, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Mail, ShieldCheck, Warehouse } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowRight, Eye, EyeOff, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
-import BrandLockup from '../components/brand/BrandLockup'
-import LocaleToggle from '../components/LocaleToggle'
-import ThemeToggle from '../components/ThemeToggle'
+import { useNavigate } from 'react-router-dom'
+import PublicAuthShell from '../components/auth/PublicAuthShell'
 import { Alert, AlertDescription } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useAuth } from '../hooks/useAuth'
-import { useI18n } from '../lib/i18n'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
+import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
+
+const MIN_PASSWORD_LENGTH = 6
 
 type Copy = {
   subtitle: string
@@ -22,10 +22,21 @@ type Copy = {
   signInBody: string
   signUpBody: string
   name: string
+  namePlaceholder: string
+  nameRequired: string
   email: string
+  emailPlaceholder: string
+  emailRequired: string
+  emailInvalid: string
   password: string
+  passwordPlaceholder: string
+  passwordRequired: string
+  passwordHint: string
+  passwordTooShort: string
   submitSignIn: string
   submitSignUp: string
+  loadingSignIn: string
+  loadingSignUp: string
   forgot: string
   forgotMissingEmail: string
   waiting: string
@@ -41,25 +52,46 @@ type Copy = {
   switchToSignIn: string
   verifyPlease: string
   accountCreated: string
+  accountCreatedAndSignedIn: string
   resetSent: string
+  resetFailed: string
+  invalidCredentials: string
+  accountExists: string
+  genericLoginError: string
+  genericSignUpError: string
+  genericUnexpected: string
+  signUpSupport: string
   wrongBrowserHint: string
   heroTitle: string
   heroBody: string
   highlights: string[]
+  showPasswordLabel: string
+  hidePasswordLabel: string
 }
 
 const copyByLang: Record<'en' | 'pt', Copy> = {
   en: {
     subtitle: 'Inventory operations, order execution, and cash visibility in one workspace.',
     signInTitle: 'Sign in to StockWise',
-    signUpTitle: 'Create your StockWise workspace',
+    signUpTitle: 'Create your StockWise account',
     signInBody: 'Access your dashboard, warehouses, orders, cash, and reports.',
-    signUpBody: 'Set up your account and finish verification to start using StockWise.',
+    signUpBody: 'Create your login first, then continue straight to company setup.',
     name: 'Full name',
+    namePlaceholder: 'Jane Doe',
+    nameRequired: 'Enter your full name.',
     email: 'Email',
+    emailPlaceholder: 'name@company.com',
+    emailRequired: 'Enter your email address.',
+    emailInvalid: 'Enter a valid email address.',
     password: 'Password',
+    passwordPlaceholder: 'Enter your password',
+    passwordRequired: 'Enter your password.',
+    passwordHint: 'Use at least 6 characters. You can change it later from your profile.',
+    passwordTooShort: 'Use at least 6 characters for your password.',
     submitSignIn: 'Sign in',
     submitSignUp: 'Create account',
+    loadingSignIn: 'Signing in...',
+    loadingSignUp: 'Creating account...',
     forgot: 'Forgot password?',
     forgotMissingEmail: 'Enter your email address first.',
     waiting: 'Please wait...',
@@ -76,7 +108,16 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     switchToSignIn: 'Already have an account? Sign in',
     verifyPlease: 'Verify your email before signing in.',
     accountCreated: 'Account created. Check your email to finish setup.',
+    accountCreatedAndSignedIn: 'Account created. Continue with company setup.',
     resetSent: 'Password reset email sent.',
+    resetFailed: 'We could not send a reset email right now. Please try again shortly.',
+    invalidCredentials: 'Check your email and password, then try again.',
+    accountExists: 'An account with this email already exists. Sign in or reset your password.',
+    genericLoginError: 'We could not sign you in right now. Please try again.',
+    genericSignUpError: 'We could not create your account right now. Please try again shortly.',
+    genericUnexpected: 'An unexpected error occurred. Please try again.',
+    signUpSupport:
+      'After account creation, StockWise will either sign you in immediately or ask for email verification, depending on your workspace security settings.',
     wrongBrowserHint: 'Open verification and reset links in the same browser session you used here.',
     heroTitle: 'Keep stock, orders, and margin aligned.',
     heroBody:
@@ -86,99 +127,99 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       'Inventory, warehouses, cash, and reporting in one app',
       'EN/PT language toggle carried across public and authenticated screens',
     ],
+    showPasswordLabel: 'Show password',
+    hidePasswordLabel: 'Hide password',
   },
   pt: {
-    subtitle: 'Operações de inventário, execução de encomendas e visibilidade de caixa num só workspace.',
-    signInTitle: 'Iniciar sessão no StockWise',
+    subtitle: 'Operacoes de inventario, execucao de encomendas e visibilidade de caixa num so workspace.',
+    signInTitle: 'Iniciar sessao no StockWise',
     signUpTitle: 'Criar a sua conta no StockWise',
-    signInBody: 'Aceda ao dashboard, armazéns, encomendas, caixa e relatórios.',
-    signUpBody: 'Crie a conta e conclua a verificação para começar a usar o StockWise.',
+    signInBody: 'Aceda ao dashboard, armazens, encomendas, caixa e relatorios.',
+    signUpBody: 'Crie primeiro o seu acesso e siga diretamente para a configuracao da empresa.',
     name: 'Nome completo',
+    namePlaceholder: 'Nome Apelido',
+    nameRequired: 'Introduza o seu nome completo.',
     email: 'Email',
+    emailPlaceholder: 'nome@empresa.com',
+    emailRequired: 'Introduza o seu email.',
+    emailInvalid: 'Introduza um email valido.',
     password: 'Palavra-passe',
-    submitSignIn: 'Iniciar sessão',
+    passwordPlaceholder: 'Introduza a sua palavra-passe',
+    passwordRequired: 'Introduza a sua palavra-passe.',
+    passwordHint: 'Use pelo menos 6 caracteres. Depois pode alterar a palavra-passe no perfil.',
+    passwordTooShort: 'Use pelo menos 6 caracteres na palavra-passe.',
+    submitSignIn: 'Iniciar sessao',
     submitSignUp: 'Criar conta',
+    loadingSignIn: 'A iniciar sessao...',
+    loadingSignUp: 'A criar conta...',
     forgot: 'Esqueceu-se da palavra-passe?',
     forgotMissingEmail: 'Introduza primeiro o seu email.',
     waiting: 'Aguarde...',
     verifyTitle: 'Verifique o seu email',
     verifyBody: (email) =>
-      `Enviámos um link de verificação para ${email}. Abra-o no mesmo navegador para concluir a entrada.`,
-    resend: 'Reenviar email de verificação',
-    resendDone: 'Email de verificação reenviado.',
+      `Enviamos um link de verificacao para ${email}. Abra-o no mesmo navegador para concluir a entrada.`,
+    resend: 'Reenviar email de verificacao',
+    resendDone: 'Email de verificacao reenviado.',
     goBackEdit: 'Voltar e editar',
-    verified: 'Já verificou o email?',
-    signIn: 'Iniciar sessão',
+    verified: 'Ja verificou o email?',
+    signIn: 'Iniciar sessao',
     signUp: 'Criar conta',
-    switchToSignUp: 'Ainda não tem conta? Criar conta',
-    switchToSignIn: 'Já tem conta? Iniciar sessão',
-    verifyPlease: 'Verifique o seu email antes de iniciar sessão.',
+    switchToSignUp: 'Ainda nao tem conta? Criar conta',
+    switchToSignIn: 'Ja tem conta? Iniciar sessao',
+    verifyPlease: 'Verifique o seu email antes de iniciar sessao.',
     accountCreated: 'Conta criada. Verifique o email para concluir.',
-    resetSent: 'Email de recuperação enviado.',
-    wrongBrowserHint: 'Abra links de verificação e recuperação no mesmo navegador usado aqui.',
+    accountCreatedAndSignedIn: 'Conta criada. Continue para configurar a empresa.',
+    resetSent: 'Email de recuperacao enviado.',
+    resetFailed: 'Nao foi possivel enviar o email de recuperacao agora. Tente novamente em instantes.',
+    invalidCredentials: 'Confirme o email e a palavra-passe e tente novamente.',
+    accountExists: 'Ja existe uma conta com este email. Inicie sessao ou recupere a palavra-passe.',
+    genericLoginError: 'Nao foi possivel iniciar sessao agora. Tente novamente.',
+    genericSignUpError: 'Nao foi possivel criar a conta agora. Tente novamente em instantes.',
+    genericUnexpected: 'Ocorreu um erro inesperado. Tente novamente.',
+    signUpSupport:
+      'Depois de criar a conta, o StockWise vai iniciar sessao automaticamente ou pedir verificacao por email, conforme a politica de seguranca ativa.',
+    wrongBrowserHint: 'Abra links de verificacao e recuperacao no mesmo navegador usado aqui.',
     heroTitle: 'Mantenha stock, encomendas e margem alinhados.',
     heroBody:
-      'O StockWise é a camada operacional para equipas que precisam de ligar movimento de inventário, fluxo de encomendas e visibilidade financeira.',
+      'O StockWise liga movimento de inventario, fluxo de encomendas e visibilidade financeira num unico workspace operacional.',
     highlights: [
       'Dashboard e rotas internas protegidas',
-      'Inventário, armazéns, caixa e relatórios na mesma aplicação',
-      'Alternância EN/PT preservada entre ecrãs públicos e autenticados',
+      'Inventario, armazens, caixa e relatorios na mesma aplicacao',
+      'Alternancia EN/PT preservada entre ecras publicos e autenticados',
     ],
+    showPasswordLabel: 'Mostrar palavra-passe',
+    hidePasswordLabel: 'Ocultar palavra-passe',
   },
 }
 
-function AuthShell({
-  children,
-  subtitle,
-  heroTitle,
-  heroBody,
-  highlights,
-}: {
-  children: ReactNode
-  subtitle: string
-  heroTitle: string
-  heroBody: string
-  highlights: string[]
-}) {
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="absolute inset-x-0 top-0 -z-10 h-[440px] bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.16),_transparent_44%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.16),_transparent_28%)]" />
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-3">
-          <Link to="/">
-            <BrandLockup subtitle={subtitle} />
-          </Link>
-          <div className="flex items-center gap-2">
-            <LocaleToggle />
-            <ThemeToggle />
-          </div>
-        </div>
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase()
+}
 
-        <div className="flex flex-1 items-center py-8 lg:py-12">
-          <div className="grid w-full gap-8 lg:grid-cols-[1fr_460px] lg:items-center">
-            <div className="hidden max-w-xl lg:block">
-              <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary">
-                <ShieldCheck className="mr-2 h-4 w-4" />
-                StockWise
-              </div>
-              <h1 className="mt-6 text-4xl font-semibold tracking-tight">{heroTitle}</h1>
-              <p className="mt-5 text-lg leading-8 text-muted-foreground">{heroBody}</p>
-              <div className="mt-8 space-y-3">
-                {highlights.map((item) => (
-                  <div key={item} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background/85 p-4 shadow-sm">
-                    <Warehouse className="mt-0.5 h-4 w-4 text-primary" />
-                    <span className="text-sm text-muted-foreground">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+function isValidEmail(value: string) {
+  return /^\S+@\S+\.\S+$/.test(value)
+}
 
-            <div>{children}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+function getFriendlyAuthError(copy: Copy, rawError: string | undefined, mode: 'login' | 'signup' | 'reset') {
+  const message = (rawError || '').trim()
+  const lower = message.toLowerCase()
+
+  if (mode === 'login') {
+    if (lower.includes('invalid login credentials')) return copy.invalidCredentials
+    if (lower.includes('not confirmed') || lower.includes('confirm your email')) return copy.verifyPlease
+    return copy.genericLoginError
+  }
+
+  if (mode === 'signup') {
+    if (lower.includes('already registered') || lower.includes('user already registered')) {
+      return copy.accountExists
+    }
+    if (lower.includes('password should be at least')) return copy.passwordTooShort
+    if (lower.includes('sending confirmation email')) return copy.genericSignUpError
+    return copy.genericSignUpError
+  }
+
+  return copy.resetFailed
 }
 
 export default function Auth() {
@@ -200,56 +241,93 @@ export default function Auth() {
     if (error) setError('')
   }
 
+  function validateForm() {
+    const email = normalizeEmail(formData.email)
+    if (!email) return copy.emailRequired
+    if (!isValidEmail(email)) return copy.emailInvalid
+    if (!formData.password) return copy.passwordRequired
+    if (!isLogin && !formData.name.trim()) return copy.nameRequired
+    if (!isLogin && formData.password.length < MIN_PASSWORD_LENGTH) return copy.passwordTooShort
+    return ''
+  }
+
+  function resetMode(nextIsLogin: boolean) {
+    setIsLogin(nextIsLogin)
+    setError('')
+    setShowPassword(false)
+    setFormData({ name: '', email: '', password: '' })
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const validationError = validateForm()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    const email = normalizeEmail(formData.email)
+    const name = formData.name.trim()
+
     setError('')
     setLoading(true)
 
     try {
       if (isLogin) {
-        const result = await login(formData.email, formData.password)
+        const result = await login(email, formData.password)
         if (!result.success) {
           const message = (result.error || '').toLowerCase()
           if (message.includes('not confirmed') || message.includes('confirm your email')) {
-            setAwaitingVerification({ email: formData.email })
+            setAwaitingVerification({ email })
             toast.success(copy.verifyPlease)
             return
           }
-          setError(result.error || 'Login failed')
+          setError(getFriendlyAuthError(copy, result.error, 'login'))
           return
         }
 
-        navigate('/dashboard')
+        navigate('/dashboard', { replace: true })
         return
       }
 
-      const result = await register(formData.name, formData.email, formData.password)
+      const result = await register(name, email, formData.password)
       if (!result.success) {
-        setError(result.error || 'Registration failed')
+        setError(getFriendlyAuthError(copy, result.error, 'signup'))
         return
       }
 
-      setAwaitingVerification({ email: formData.email })
+      if (result.signedIn) {
+        toast.success(copy.accountCreatedAndSignedIn)
+        navigate('/onboarding', { replace: true })
+        return
+      }
+
+      setAwaitingVerification({ email })
       toast.success(copy.accountCreated)
     } catch (err) {
       console.error(err)
-      setError('An unexpected error occurred')
+      setError(copy.genericUnexpected)
     } finally {
       setLoading(false)
     }
   }
 
   async function handleResetPassword() {
-    if (!formData.email) {
+    const email = normalizeEmail(formData.email)
+    if (!email) {
       setError(copy.forgotMissingEmail)
+      return
+    }
+    if (!isValidEmail(email)) {
+      setError(copy.emailInvalid)
       return
     }
 
     setLoading(true)
-    const result = await requestPasswordReset(formData.email)
+    const result = await requestPasswordReset(email)
     setLoading(false)
 
-    if (!result.success) setError(result.error || 'Failed to request password reset')
+    if (!result.success) setError(getFriendlyAuthError(copy, result.error, 'reset'))
     else toast.success(copy.resetSent)
   }
 
@@ -265,7 +343,7 @@ export default function Auth() {
       })
 
       if (error) {
-        toast.error(error.message)
+        toast.error(getFriendlyAuthError(copy, error.message, 'signup'))
         return
       }
 
@@ -287,19 +365,26 @@ export default function Auth() {
       ? copy.signInBody
       : copy.signUpBody
 
+  const canSubmit = isLogin
+    ? !!normalizeEmail(formData.email) && !!formData.password && !loading
+    : !!formData.name.trim() &&
+      !!normalizeEmail(formData.email) &&
+      formData.password.length >= MIN_PASSWORD_LENGTH &&
+      !loading
+
   return (
-    <AuthShell
+    <PublicAuthShell
       subtitle={copy.subtitle}
       heroTitle={copy.heroTitle}
       heroBody={copy.heroBody}
       highlights={copy.highlights}
     >
       <Card className="border-border/70 bg-card/95 shadow-xl">
-        <CardHeader className="space-y-3">
+        <CardHeader className="space-y-3 pb-4">
           <CardTitle className="text-2xl font-semibold tracking-tight">{cardTitle}</CardTitle>
           <p className="text-sm leading-6 text-muted-foreground">{cardBody}</p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
           {awaitingVerification ? (
             <div className="space-y-5">
               <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
@@ -322,7 +407,7 @@ export default function Auth() {
                   className="px-1"
                   onClick={() => {
                     setAwaitingVerification(null)
-                    setIsLogin(false)
+                    resetMode(false)
                   }}
                 >
                   {copy.goBackEdit}
@@ -337,7 +422,7 @@ export default function Auth() {
                   className="px-1"
                   onClick={() => {
                     setAwaitingVerification(null)
-                    setIsLogin(true)
+                    resetMode(true)
                   }}
                 >
                   {copy.signIn}
@@ -346,56 +431,71 @@ export default function Auth() {
             </div>
           ) : (
             <>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {!isLogin ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="name">{copy.name}</Label>
-                    <Input
-                      id="name"
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      placeholder={copy.name}
-                      required
-                    />
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">{copy.email}</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange('email', e.target.value)}
-                    placeholder={copy.email}
-                    required
-                    autoComplete="email"
-                  />
+              {!isLogin ? (
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                  {copy.signUpSupport}
                 </div>
+              ) : null}
 
-                <div className="space-y-2">
-                  <Label htmlFor="password">{copy.password}</Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={formData.password}
-                      onChange={(e) => handleInputChange('password', e.target.value)}
-                      placeholder={copy.password}
-                      required
-                      autoComplete={isLogin ? 'current-password' : 'new-password'}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowPassword((value) => !value)}
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
+              <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+                <div className="rounded-2xl border border-border/70 bg-background/70 p-4 sm:p-5">
+                  <div className="space-y-4">
+                    {!isLogin ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="name">{copy.name}</Label>
+                        <Input
+                          id="name"
+                          type="text"
+                          value={formData.name}
+                          onChange={(e) => handleInputChange('name', e.target.value)}
+                          placeholder={copy.namePlaceholder}
+                          required
+                          autoComplete="name"
+                        />
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="email">{copy.email}</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        placeholder={copy.emailPlaceholder}
+                        required
+                        autoComplete="email"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="password">{copy.password}</Label>
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          value={formData.password}
+                          onChange={(e) => handleInputChange('password', e.target.value)}
+                          placeholder={copy.passwordPlaceholder}
+                          required
+                          minLength={isLogin ? undefined : MIN_PASSWORD_LENGTH}
+                          autoComplete={isLogin ? 'current-password' : 'new-password'}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword((value) => !value)}
+                          aria-label={showPassword ? copy.hidePasswordLabel : copy.showPasswordLabel}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      {!isLogin ? (
+                        <p className="text-xs leading-5 text-muted-foreground">{copy.passwordHint}</p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 
@@ -405,27 +505,31 @@ export default function Auth() {
                   </Alert>
                 ) : null}
 
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? copy.waiting : isLogin ? copy.submitSignIn : copy.submitSignUp}
+                <Button type="submit" className="w-full" disabled={!canSubmit}>
+                  {loading
+                    ? isLogin
+                      ? copy.loadingSignIn
+                      : copy.loadingSignUp
+                    : isLogin
+                      ? copy.submitSignIn
+                      : copy.submitSignUp}
+                  {!loading ? <ArrowRight className="h-4 w-4" /> : null}
                 </Button>
               </form>
 
               {isLogin ? (
-                <div className="mt-4 text-right">
-                  <Button variant="link" onClick={handleResetPassword}>
+                <div className="text-right">
+                  <Button variant="link" onClick={handleResetPassword} disabled={loading}>
                     {copy.forgot}
                   </Button>
                 </div>
               ) : null}
 
-              <div className="mt-6 text-center">
+              <div className="text-center">
                 <Button
                   variant="link"
-                  onClick={() => {
-                    setIsLogin((value) => !value)
-                    setError('')
-                    setFormData({ name: '', email: '', password: '' })
-                  }}
+                  onClick={() => resetMode(!isLogin)}
+                  disabled={loading}
                 >
                   {isLogin ? copy.switchToSignUp : copy.switchToSignIn}
                 </Button>
@@ -433,9 +537,9 @@ export default function Auth() {
             </>
           )}
 
-          <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">{copy.wrongBrowserHint}</p>
+          <p className="text-center text-xs leading-5 text-muted-foreground">{copy.wrongBrowserHint}</p>
         </CardContent>
       </Card>
-    </AuthShell>
+    </PublicAuthShell>
   )
 }

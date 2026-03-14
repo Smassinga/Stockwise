@@ -16,8 +16,7 @@ export default function CompanySwitcher({ className }: { className?: string }) {
   const activeLabel =
     options.find((option) => option.id === companyId)?.label ||
     companyName ||
-    t('company.selectCompany') ||
-    'Select company'
+    ''
 
   if (!options.length && !activeLabel) return null
 
@@ -39,7 +38,7 @@ export default function CompanySwitcher({ className }: { className?: string }) {
   return (
     <div className={className} aria-busy={switching || undefined}>
       <Select
-        value={companyId ?? undefined}
+        value={companyId ?? ''}
         onValueChange={(v) => setActiveCompany(String(v))}
         disabled={switching}
       >
