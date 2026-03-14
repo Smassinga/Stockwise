@@ -1,8 +1,9 @@
-import { Mail } from 'lucide-react'
+import { AlertCircle, Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import PublicAuthShell from '../components/auth/PublicAuthShell'
+import { Alert, AlertDescription } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -19,6 +20,14 @@ const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
 const BEST_EFFORT_SYNC_TIMEOUT_MS = 5000
 const INVITE_REDEEM_TIMEOUT_MS = 6000
 const CREATE_COMPANY_TIMEOUT_MS = 15000
+const SET_ACTIVE_COMPANY_TIMEOUT_MS = 6000
+const isDev = import.meta.env.DEV
+
+type BootstrapCompanyResult = {
+  out_company_id?: string | null
+  company_name?: string | null
+  out_role?: string | null
+}
 
 const shellCopyByLang = {
   en: {
@@ -36,14 +45,24 @@ const shellCopyByLang = {
       'This creates the first company for your account. You can add more companies later if your role allows it.',
     inviteHint:
       "If you were invited by another company, StockWise will route you there automatically as soon as the membership becomes active.",
+    companyLabelHint: 'You can rename company details later from settings.',
     startupTitle: 'Could not finish setup',
     startupBody:
       'Authentication completed, but company membership data is temporarily unavailable.',
+    startupRetryHint: 'Refresh once, or sign in again if the session has expired.',
     resendDone: 'Verification email resent.',
     retry: 'Retry',
     backToSignIn: 'Back to sign-in',
     createCompanyError: 'Please enter a company name.',
     createCompanyFailed: 'Could not create company.',
+    createCompanyFailedBody:
+      'We could not finish the company setup right now. Please review the company name and try again.',
+    createCompanyTimeout:
+      'Company setup is taking longer than expected. Please try again in a moment.',
+    createCompanySessionExpired: 'Your session expired. Sign in again to continue.',
+    createCompanyResponseError: 'Company setup finished without a usable company record. Please try again.',
+    createCompanyCta: 'Create company',
+    creatingCompany: 'Creating company...',
   },
   pt: {
     subtitle: 'Conclua a configuracao da empresa e comece a trabalhar num workspace seguro.',
@@ -60,16 +79,63 @@ const shellCopyByLang = {
       'Isto cria a primeira empresa da sua conta. Pode adicionar outras empresas mais tarde se a sua funcao permitir.',
     inviteHint:
       'Se foi convidado por outra empresa, o StockWise vai encaminha-lo automaticamente assim que a associacao ficar ativa.',
+    companyLabelHint: 'Mais tarde pode atualizar os detalhes da empresa nas definicoes.',
     startupTitle: 'Nao foi possivel concluir a configuracao',
     startupBody:
       'A autenticacao foi concluida, mas os dados de associacao da empresa estao temporariamente indisponiveis.',
+    startupRetryHint: 'Atualize a pagina uma vez ou volte a entrar se a sessao tiver expirado.',
     resendDone: 'Email de verificacao reenviado.',
     retry: 'Tentar novamente',
     backToSignIn: 'Voltar ao login',
     createCompanyError: 'Introduza o nome da empresa.',
     createCompanyFailed: 'Nao foi possivel criar a empresa.',
+    createCompanyFailedBody:
+      'Nao foi possivel concluir a configuracao da empresa agora. Reveja o nome e tente novamente.',
+    createCompanyTimeout:
+      'A configuracao da empresa esta a demorar mais do que o esperado. Tente novamente dentro de instantes.',
+    createCompanySessionExpired: 'A sua sessao expirou. Volte a iniciar sessao para continuar.',
+    createCompanyResponseError:
+      'A configuracao terminou sem devolver uma empresa valida. Tente novamente.',
+    createCompanyCta: 'Criar empresa',
+    creatingCompany: 'A criar empresa...',
   },
 } as const
+
+function rememberCompanyLocally(companyId: string | null) {
+  if (!companyId || typeof window === 'undefined') return
+  localStorage.setItem('sw:lastCompanyId:temp', companyId)
+}
+
+function unwrapBootstrapCompany(payload: unknown): BootstrapCompanyResult | null {
+  if (Array.isArray(payload)) {
+    return (payload[0] as BootstrapCompanyResult | undefined) ?? null
+  }
+  if (payload && typeof payload === 'object') {
+    return payload as BootstrapCompanyResult
+  }
+  return null
+}
+
+function getFriendlyStartupError(
+  copy: (typeof shellCopyByLang)['en'],
+  error: { message?: string } | null | undefined
+) {
+  const message = (error?.message || '').toLowerCase()
+  if (message.includes('timed out')) return copy.startupBody
+  if (message.includes('not_authenticated')) return copy.createCompanySessionExpired
+  return copy.startupBody
+}
+
+function getFriendlyCreateCompanyError(
+  copy: (typeof shellCopyByLang)['en'],
+  error: { message?: string; code?: string } | null | undefined
+) {
+  const message = (error?.message || '').toLowerCase()
+  if (message.includes('timed out')) return copy.createCompanyTimeout
+  if (message.includes('not_authenticated')) return copy.createCompanySessionExpired
+  if (message.includes('bootstrap_error') || error?.code === 'P0001') return copy.createCompanyFailed
+  return copy.createCompanyFailed
+}
 
 async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
   const startedAt = Date.now()
@@ -113,12 +179,14 @@ export default function Onboarding() {
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [resending, setResending] = useState(false)
   const [startupError, setStartupError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
     ;(async () => {
       try {
         setLoading(true)
         setStartupError(null)
+        setSubmitError(null)
 
         const {
           data: { session },
@@ -181,15 +249,17 @@ export default function Onboarding() {
         )
 
         if (active.data?.company_id) {
+          rememberCompanyLocally(active.data.company_id)
           nav('/dashboard', { replace: true })
           return
         }
 
         setLoading(false)
       } catch (e: any) {
-        console.error(e)
-        const message = e?.message || t('common.headsUp')
-        setStartupError(message)
+        if (isDev) {
+          console.warn('[Onboarding] startup failed', e)
+        }
+        setStartupError(getFriendlyStartupError(shellCopy, e))
         setLoading(false)
       }
     })()
@@ -215,35 +285,85 @@ export default function Onboarding() {
   async function createCompany() {
     const name = companyName.trim()
     if (!name) {
+      setSubmitError(shellCopy.createCompanyError)
       toast.error(shellCopy.createCompanyError)
       return
     }
 
     try {
       setCreating(true)
-      const { error } = await withTimeout(
+      setSubmitError(null)
+      const { data, error } = await withTimeout(
         supabase.rpc('create_company_and_bootstrap', { p_name: name }),
         CREATE_COMPANY_TIMEOUT_MS,
         'create company'
       )
       if (error) {
-        toast.error(error.message)
+        const friendly = getFriendlyCreateCompanyError(shellCopy, error)
+        if (isDev) {
+          console.warn('[Onboarding] create_company_and_bootstrap failed', {
+            companyName: name,
+            code: error.code,
+            message: error.message,
+            details: (error as any).details,
+            hint: (error as any).hint,
+          })
+        }
+        setSubmitError(friendly)
+        toast.error(friendly)
         return
       }
 
-      await withTimeout(
-        supabase.auth.refreshSession(),
-        SESSION_LOOKUP_TIMEOUT_MS,
-        'refresh session'
+      const bootstrap = unwrapBootstrapCompany(data)
+      const companyId = bootstrap?.out_company_id ?? null
+      if (!companyId) {
+        setSubmitError(shellCopy.createCompanyResponseError)
+        toast.error(shellCopy.createCompanyResponseError)
+        return
+      }
+
+      rememberCompanyLocally(companyId)
+
+      const { error: activeErr } = await withTimeout(
+        supabase.rpc('set_active_company', { p_company_id: companyId }),
+        SET_ACTIVE_COMPANY_TIMEOUT_MS,
+        'set active company'
       )
+      if (activeErr && isDev) {
+        console.warn('[Onboarding] set_active_company after bootstrap failed', {
+          companyId,
+          code: activeErr.code,
+          message: activeErr.message,
+          details: (activeErr as any).details,
+          hint: (activeErr as any).hint,
+        })
+      }
+
+      try {
+        await withTimeout(
+          supabase.auth.refreshSession(),
+          SESSION_LOOKUP_TIMEOUT_MS,
+          'refresh session'
+        )
+      } catch (refreshError) {
+        if (isDev) console.warn('[Onboarding] refreshSession after bootstrap failed', refreshError)
+      }
 
       setLoading(true)
-      const companyId = await waitForMembership(8000, 400)
-      if (!companyId) console.warn('Membership not visible yet; navigating anyway.')
+      const visibleCompanyId = await waitForMembership(8000, 400)
+      if (visibleCompanyId) {
+        rememberCompanyLocally(visibleCompanyId)
+      } else if (isDev) {
+        console.warn('[Onboarding] membership not visible yet after company bootstrap', { companyId })
+      }
       nav('/dashboard', { replace: true })
     } catch (e: any) {
-      console.error(e)
-      toast.error(e?.message || shellCopy.createCompanyFailed)
+      if (isDev) {
+        console.warn('[Onboarding] create company request crashed', e)
+      }
+      const friendly = getFriendlyCreateCompanyError(shellCopy, e)
+      setSubmitError(friendly)
+      toast.error(friendly)
       setLoading(false)
     } finally {
       setCreating(false)
@@ -281,7 +401,7 @@ export default function Onboarding() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">{startupError}</p>
-            <p className="text-sm text-muted-foreground">{shellCopy.startupBody}</p>
+            <p className="text-sm text-muted-foreground">{shellCopy.startupRetryHint}</p>
             <div className="flex gap-2">
               <Button onClick={() => window.location.reload()}>{shellCopy.retry}</Button>
               <Button variant="secondary" onClick={() => location.assign('/login')}>
@@ -342,6 +462,12 @@ export default function Onboarding() {
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
             {shellCopy.createCompanyHint}
           </div>
+          {submitError ? (
+            <Alert variant="destructive" className="border-destructive/40 bg-destructive/5">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{submitError}</AlertDescription>
+            </Alert>
+          ) : null}
           <div className="rounded-2xl border border-border/70 bg-background/70 p-4 sm:p-5">
             <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
               <div className="space-y-2">
@@ -350,14 +476,20 @@ export default function Onboarding() {
                   id="companyName"
                   placeholder={shellCopy.companyPlaceholder}
                   value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
+                  autoFocus
+                  disabled={creating}
+                  onChange={(e) => {
+                    setCompanyName(e.target.value)
+                    if (submitError) setSubmitError(null)
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') void createCompany()
                   }}
                 />
+                <p className="text-xs text-muted-foreground">{shellCopy.companyLabelHint}</p>
               </div>
               <Button onClick={createCompany} disabled={creating || !companyName.trim()} className="sm:min-w-[160px]">
-                {creating ? t('actions.saving') : t('onboarding.create')}
+                {creating ? shellCopy.creatingCompany : shellCopy.createCompanyCta}
               </Button>
             </div>
           </div>
