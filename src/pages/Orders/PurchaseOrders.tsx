@@ -14,7 +14,7 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import { addDaysIso, deriveDueDate, discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
-import { useI18n } from '../../lib/i18n'
+import { useI18n, withI18nFallback } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -246,9 +246,8 @@ export default function PurchaseOrders() {
   const { t } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
-    const s = t(key, vars); return s === key ? fallback : s
-  }
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const { companyId } = useOrg()
 
   // masters

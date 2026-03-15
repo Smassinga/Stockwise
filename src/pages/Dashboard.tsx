@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
@@ -65,12 +65,6 @@ type MovementCostRow = {
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const shippedLike = (s: string) => ['shipped', 'completed', 'delivered', 'closed'].includes(String(s).toLowerCase())
 
-// tiny i18n fallback helper (avoids showing raw keys)
-const withFallback = (t: (k: string, v?: any) => string, key: string, fallback: string, vars?: Record<string, any>) => {
-  const s = t(key, vars)
-  return s === key ? fallback : s
-}
-
 // build YYYY-MM-DD without UTC shifting
 const toISODateLocal = (d: Date) => {
   const y = d.getFullYear()
@@ -92,7 +86,8 @@ const movementCost = (mv?: MovementCostRow, fallbackQty?: number | null) => {
 export default function Dashboard() {
   const { t, lang } = useI18n()
   const { companyId, companyName } = useOrg()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => withFallback(t, key, fallback, vars)
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
@@ -176,7 +171,7 @@ export default function Dashboard() {
         }
       } catch (e: any) {
         console.error(e)
-        if (!cancelled) setError(e?.message || 'Failed to load dashboard data')
+        if (!cancelled) setError(e?.message || tt('dashboard.loadError', 'Failed to load dashboard data'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -271,7 +266,7 @@ export default function Dashboard() {
       } catch (e: any) {
         console.error(e)
         if (!cancelled) {
-          setError(e?.message || 'Failed to refresh dashboard metrics')
+          setError(e?.message || tt('dashboard.refreshError', 'Failed to refresh dashboard metrics'))
           setSOs([])
           setSOL([])
           setShipmentsWin([])

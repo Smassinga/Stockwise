@@ -74,6 +74,15 @@ function formatDateTime(value: Date) {
   return value.toLocaleString()
 }
 
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 function normalizeAddress(row: CompanyRow | null) {
   if (!row) return ''
   return [
@@ -88,6 +97,7 @@ function normalizeAddress(row: CompanyRow | null) {
 }
 
 async function toDataUrl(src: string): Promise<string | null> {
+  if (src.startsWith('data:image/')) return src
   try {
     const response = await fetch(src, { cache: 'no-store' })
     if (!response.ok) return null
@@ -134,7 +144,12 @@ export async function loadCompanyExportHeader(companyId: string): Promise<Export
 
   const company = (companyData as CompanyRow | null) ?? null
   const settings = (settingsData as CompanySettingsRow | null) ?? null
-  const settingsLogo = settings?.data?.documents?.brand?.logoUrl?.trim()
+  const settingsLogoRaw = settings?.data?.documents?.brand?.logoUrl?.trim()
+  const settingsLogo = settingsLogoRaw
+    ? isHttpUrl(settingsLogoRaw) || settingsLogoRaw.startsWith('data:image/')
+      ? settingsLogoRaw
+      : companyLogoUrl(settingsLogoRaw)
+    : null
   const companyLogo = companyLogoUrl(company?.logo_path || null)
 
   return {
@@ -178,24 +193,25 @@ export async function exportExcelReport<T>(options: ExcelReportOptions<T>) {
     width: column.width ?? Math.max(14, column.label.length + 2),
   }))
 
-  const headerStartColumn = options.company.logoUrl ? 3 : 1
-  const headerEndColumn = Math.max(headerStartColumn, totalColumns)
+  const logo = normalizeLogoImage(await toDataUrl(options.company.logoUrl || ''))
+  const contentStartColumn = logo ? 2 : 1
+  const headerEndColumn = Math.max(contentStartColumn, totalColumns)
   const mergeAcross = (row: number) => {
-    sheet.mergeCells(row, headerStartColumn, row, headerEndColumn)
+    if (contentStartColumn < headerEndColumn) {
+      sheet.mergeCells(row, contentStartColumn, row, headerEndColumn)
+    }
   }
 
-  if (options.company.logoUrl) {
-    const logo = normalizeLogoImage(await toDataUrl(options.company.logoUrl))
-    if (logo) {
-      const imageId = workbook.addImage(logo)
-      sheet.addImage(imageId, {
-        tl: { col: 0.1, row: 0.15 },
-        ext: { width: 92, height: 52 },
-      })
-      sheet.getRow(1).height = 24
-      sheet.getRow(2).height = 22
-      sheet.getRow(3).height = 18
-    }
+  if (logo) {
+    sheet.getColumn(1).width = Math.max(sheet.getColumn(1).width || 14, 16)
+    const imageId = workbook.addImage(logo)
+    sheet.addImage(imageId, {
+      tl: { col: 0.15, row: 0.2 },
+      ext: { width: 96, height: 56 },
+    })
+    sheet.getRow(1).height = 26
+    sheet.getRow(2).height = 22
+    sheet.getRow(3).height = 18
   }
 
   const companyLine =
@@ -211,40 +227,49 @@ export async function exportExcelReport<T>(options: ExcelReportOptions<T>) {
     .join('  |  ')
 
   mergeAcross(1)
-  sheet.getCell(1, headerStartColumn).value = companyLine
-  sheet.getCell(1, headerStartColumn).font = { size: 16, bold: true, color: { argb: 'FF0F172A' } }
-  sheet.getCell(1, headerStartColumn).alignment = { vertical: 'middle' }
+  sheet.getCell(1, contentStartColumn).value = companyLine
+  sheet.getCell(1, contentStartColumn).font = { size: 16, bold: true, color: { argb: 'FF0F172A' } }
+  sheet.getCell(1, contentStartColumn).alignment = { vertical: 'middle' }
 
   if (contactLine) {
     mergeAcross(2)
-    sheet.getCell(2, headerStartColumn).value = contactLine
-    sheet.getCell(2, headerStartColumn).font = { size: 10, color: { argb: 'FF475569' } }
+    sheet.getCell(2, contentStartColumn).value = contactLine
+    sheet.getCell(2, contentStartColumn).font = { size: 10, color: { argb: 'FF475569' } }
   }
 
   if (options.company.address) {
     mergeAcross(3)
-    sheet.getCell(3, headerStartColumn).value = options.company.address
-    sheet.getCell(3, headerStartColumn).font = { size: 10, color: { argb: 'FF475569' } }
+    sheet.getCell(3, contentStartColumn).value = options.company.address
+    sheet.getCell(3, contentStartColumn).font = { size: 10, color: { argb: 'FF475569' } }
   }
 
   mergeAcross(5)
-  sheet.getCell(5, 1).value = options.title
-  sheet.getCell(5, 1).font = { size: 15, bold: true, color: { argb: 'FF0F172A' } }
+  sheet.getCell(5, contentStartColumn).value = options.title
+  sheet.getCell(5, contentStartColumn).font = { size: 15, bold: true, color: { argb: 'FF0F172A' } }
+  sheet.getCell(5, contentStartColumn).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE2E8F0' },
+  }
+  sheet.getCell(5, contentStartColumn).border = {
+    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+  }
+  sheet.getRow(5).height = 22
 
   if (options.subtitle) {
     mergeAcross(6)
-    sheet.getCell(6, 1).value = options.subtitle
-    sheet.getCell(6, 1).font = { size: 10, color: { argb: 'FF64748B' } }
+    sheet.getCell(6, contentStartColumn).value = options.subtitle
+    sheet.getCell(6, contentStartColumn).font = { size: 10, color: { argb: 'FF64748B' } }
   }
 
   mergeAcross(7)
-  sheet.getCell(7, 1).value = `${labels.generated}: ${formatDateTime(new Date())}`
-  sheet.getCell(7, 1).font = { size: 10, color: { argb: 'FF475569' } }
+  sheet.getCell(7, contentStartColumn).value = `${labels.generated}: ${formatDateTime(new Date())}`
+  sheet.getCell(7, contentStartColumn).font = { size: 10, color: { argb: 'FF475569' } }
 
   if (options.filters?.length) {
     mergeAcross(8)
-    sheet.getCell(8, 1).value = `${labels.filters}: ${options.filters.join(' | ')}`
-    sheet.getCell(8, 1).font = { size: 10, color: { argb: 'FF475569' } }
+    sheet.getCell(8, contentStartColumn).value = `${labels.filters}: ${options.filters.join(' | ')}`
+    sheet.getCell(8, contentStartColumn).font = { size: 10, color: { argb: 'FF475569' } }
   }
 
   const headerRowNumber = options.filters?.length ? 10 : 9
@@ -267,6 +292,7 @@ export async function exportExcelReport<T>(options: ExcelReportOptions<T>) {
     }
   })
   headerRow.height = 22
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
 
   const moneyFmt = '#,##0.00;[Red](#,##0.00)'
   const numberFmt = '#,##0.00;[Red]-#,##0.00'

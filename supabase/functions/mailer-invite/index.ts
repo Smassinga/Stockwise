@@ -3,6 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getMailConfig, sendMailViaSendGrid } from "../_shared/sendgrid.ts";
 
 type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 type Status = "invited" | "active" | "disabled";
@@ -22,12 +23,11 @@ const SERVICE_ROLE_KEY =
   "";
 const ANON_KEY = Deno.env.get("SB_ANON_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? Deno.env.get("SG_API_KEY") ?? "";
-const MAIL_FROM = Deno.env.get("MAIL_FROM") ?? Deno.env.get("FROM_EMAIL") ?? "no-reply@stockwiseapp.com";
-const MAIL_FROM_NAME = Deno.env.get("MAIL_FROM_NAME") ?? Deno.env.get("BRAND_NAME") ?? "StockWise";
-const MAIL_REPLY_TO = Deno.env.get("MAIL_REPLY_TO") ?? Deno.env.get("REPLY_TO_EMAIL") ?? MAIL_FROM;
-
-const PUBLIC_SITE_URL = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/+$/, "");
+const MAIL = getMailConfig();
+const MAIL_FROM = MAIL.defaultFromEmail || "no-reply@stockwiseapp.com";
+const MAIL_FROM_NAME = MAIL.defaultFromName || "StockWise";
+const MAIL_REPLY_TO = MAIL.defaultReplyTo || MAIL_FROM;
+const PUBLIC_SITE_URL = (MAIL.publicSiteUrl ?? "").replace(/\/+$/, "");
 const MAILER_ALLOWED_ORIGINS = (Deno.env.get("MAILER_ALLOWED_ORIGINS") ?? PUBLIC_SITE_URL)
   .split(",")
   .map((s) => s.trim())
@@ -214,44 +214,32 @@ If you cannot click, paste the link above into your browser.`;
 }
 
 async function sendViaSendGrid(to: string, subject: string, html: string, text: string) {
-  if (!SENDGRID_API_KEY || !MAIL_FROM) {
+  if (!MAIL.apiKey || !MAIL_FROM) {
     return j(
       { error: "server_misconfigured", details: "SENDGRID_API_KEY and/or MAIL_FROM not set" },
       500,
       { "x-error": "missing SENDGRID_API_KEY or MAIL_FROM" }
     );
   }
-
-  const body = {
-    personalizations: [{ to: [{ email: to }] }],
-    from: { email: MAIL_FROM, name: MAIL_FROM_NAME },
-    reply_to: { email: MAIL_REPLY_TO },
-    subject,
-    content: [
-      { type: "text/plain", value: text },
-      { type: "text/html", value: html },
-    ],
-  };
-
-  const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${SENDGRID_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (resp.status !== 202) {
-    const msg = await resp.text().catch(() => "");
+  try {
+    await sendMailViaSendGrid({
+      to: [to],
+      subject,
+      html,
+      text,
+      fromEmail: MAIL_FROM,
+      fromName: MAIL_FROM_NAME,
+      replyTo: MAIL_REPLY_TO,
+    }, MAIL);
+    return j({ ok: true });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     return j(
-      { error: "sendgrid_failed", details: `${resp.status} ${msg}` },
+      { error: "sendgrid_failed", details: msg },
       500,
-      { "x-error": `sendgrid:${resp.status}` }
+      { "x-error": "sendgrid:failed" }
     );
   }
-
-  return j({ ok: true });
 }
 
 serve(async (req) => {

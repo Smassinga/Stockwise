@@ -1,7 +1,7 @@
 // src/pages/Transactions.tsx (company-scoped drop-in)
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Button } from '../components/ui/button'
@@ -63,10 +63,8 @@ const REF_VALUES = [
 export default function Transactions() {
   const { t, lang } = useI18n()
   const { companyId } = useOrg()
-  const tt = (key: string, fallback: string, vars?: Record<string, any>) => {
-    const s = t(key, vars)
-    return s === key ? fallback : s
-  }
+  const tt = (key: string, fallback: string, vars?: Record<string, any>) =>
+    withI18nFallback(t, key, fallback, vars)
 
   const [baseCode, setBaseCode] = useState('MZN')
 
