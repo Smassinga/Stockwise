@@ -172,6 +172,7 @@ type PurchaseOrderAudit = {
 }
 
 const todayYmd = () => new Date().toISOString().slice(0, 10)
+const NO_ORDER_PAYMENT_TERMS = '__none__'
 const blankPurchaseLine = (): PurchaseLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0' })
 const emptyPoMetaDraft = (): PoMetaDraft => ({
   orderDate: todayYmd(),
@@ -1605,9 +1606,10 @@ export default function PurchaseOrders() {
                         <div>
                           <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
                           <Select
-                            value={poPaymentTermsId || undefined}
+                            value={poPaymentTermsId || NO_ORDER_PAYMENT_TERMS}
                             onValueChange={(value) => {
-                              const termState = buildTermState(poOrderDate, value, '', poDueDate)
+                              const nextTermId = value === NO_ORDER_PAYMENT_TERMS ? '' : value
+                              const termState = buildTermState(poOrderDate, nextTermId, '', poDueDate)
                               setPoPaymentTermsId(termState.paymentTermsId)
                               setPoPaymentTerms(termState.paymentTerms)
                               setPoDueDate(termState.dueDate)
@@ -1615,13 +1617,16 @@ export default function PurchaseOrders() {
                           >
                             <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
                             <SelectContent>
+                              <SelectItem value={NO_ORDER_PAYMENT_TERMS}>{tt('orders.noPaymentTerms', 'No payment terms')}</SelectItem>
                               {paymentTermsList.map(term => (
                                 <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {poPaymentTermsId
+                            {!paymentTermsList.length
+                              ? tt('orders.paymentTermsEmptyHelp', 'This company has no reusable payment terms yet. You can keep the field blank for now.')
+                              : poPaymentTermsId
                               ? tt('orders.paymentTermsHelpPurchase', 'Defaults from the selected supplier and can still be changed here.')
                               : poPaymentTerms.trim()
                                 ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: poPaymentTerms })
@@ -1933,21 +1938,25 @@ export default function PurchaseOrders() {
                   <div>
                     <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
                     <Select
-                      value={selectedPoMeta.paymentTermsId || undefined}
+                      value={selectedPoMeta.paymentTermsId || NO_ORDER_PAYMENT_TERMS}
                       onValueChange={(value) => setSelectedPoMeta(prev => {
-                        const termState = buildTermState(prev.orderDate, value, '', prev.dueDate)
+                        const nextTermId = value === NO_ORDER_PAYMENT_TERMS ? '' : value
+                        const termState = buildTermState(prev.orderDate, nextTermId, '', prev.dueDate)
                         return { ...prev, paymentTermsId: termState.paymentTermsId, paymentTerms: termState.paymentTerms, dueDate: termState.dueDate }
                       })}
                     >
                       <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value={NO_ORDER_PAYMENT_TERMS}>{tt('orders.noPaymentTerms', 'No payment terms')}</SelectItem>
                         {paymentTermsList.map(term => (
                           <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {selectedPoMeta.paymentTermsId
+                      {!paymentTermsList.length
+                        ? tt('orders.paymentTermsEmptyHelp', 'This company has no reusable payment terms yet. You can keep the field blank for now.')
+                        : selectedPoMeta.paymentTermsId
                         ? tt('orders.paymentTermsHelpPurchase', 'Defaults from the selected supplier and can still be changed here.')
                         : selectedPoMeta.paymentTerms.trim()
                           ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: selectedPoMeta.paymentTerms })

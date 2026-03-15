@@ -257,6 +257,17 @@ function SupplierFormFields({
             <SelectItem value={CUSTOM_PAYMENT_TERMS}>{tt('suppliers.customTerms', 'Custom terms')}</SelectItem>
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">
+          {paymentTermsList.length
+            ? tt(
+                'suppliers.paymentTermsHelp',
+                'Choose a reusable company term or switch to custom terms for supplier-specific wording.'
+              )
+            : tt(
+                'suppliers.paymentTermsEmptyHelp',
+                'No company payment terms are available yet. Leave this blank or use Custom terms below until defaults are added for this company.'
+              )}
+        </p>
       </div>
 
       <div className="space-y-2">
@@ -339,6 +350,8 @@ export default function Suppliers() {
           })
           if (paymentTermsError) throw paymentTermsError
           setPaymentTermsList((paymentTerms || []) as PaymentTerm[])
+        } else {
+          setPaymentTermsList([])
         }
 
         await reloadSuppliers()
@@ -358,20 +371,7 @@ export default function Suppliers() {
       return
     }
 
-    const viewResult = await supabase
-      .from('suppliers_view')
-      .select(
-        'id,code,name,contactName,email,phone,taxId,currencyId,paymentTermsId,paymentTerms,isActive,notes,createdAt,updatedAt,company_id'
-      )
-      .eq('company_id', companyId)
-      .order('name', { ascending: true })
-
-    if (!viewResult.error) {
-      setSuppliers((viewResult.data || []).map(mapSupplierRow))
-      return
-    }
-
-    const fallback = await supabase
+    const result = await supabase
       .from('suppliers')
       .select(
         'id,code,name,contact_name,email,phone,tax_id,currency_code,payment_terms_id,payment_terms,is_active,notes,created_at,updated_at'
@@ -379,13 +379,13 @@ export default function Suppliers() {
       .eq('company_id', companyId)
       .order('name', { ascending: true })
 
-    if (fallback.error) {
-      toast.error(fallback.error.message)
+    if (result.error) {
+      toast.error(result.error.message)
       setSuppliers([])
       return
     }
 
-    setSuppliers((fallback.data || []).map(mapSupplierRow))
+    setSuppliers((result.data || []).map(mapSupplierRow))
   }
 
   async function ensureUniqueCode(code: string, excludeId?: string) {

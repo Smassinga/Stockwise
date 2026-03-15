@@ -264,6 +264,17 @@ function CustomerFormFields({
             <SelectItem value={CUSTOM_PAYMENT_TERMS}>{tt('customers.customTerms', 'Custom terms')}</SelectItem>
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">
+          {paymentTermsList.length
+            ? tt(
+                'customers.paymentTermsHelp',
+                'Choose a reusable company term or switch to custom terms for customer-specific wording.'
+              )
+            : tt(
+                'customers.paymentTermsEmptyHelp',
+                'No company payment terms are available yet. Leave this blank or use Custom terms below until defaults are added for this company.'
+              )}
+        </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="customer-custom-terms">{tt('customers.form.termsNote', 'Terms note')}</Label>
@@ -346,6 +357,8 @@ export default function Customers() {
           })
           if (paymentTermsError) throw paymentTermsError
           setPaymentTermsList((paymentTerms || []) as PaymentTerm[])
+        } else {
+          setPaymentTermsList([])
         }
 
         await reloadCustomers()

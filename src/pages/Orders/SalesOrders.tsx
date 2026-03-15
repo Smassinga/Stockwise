@@ -1,4 +1,4 @@
-// src/pages/Orders/SalesOrders.tsx
+﻿// src/pages/Orders/SalesOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { db, supabase } from '../../lib/db'
 import { useSearchParams } from 'react-router-dom'
@@ -48,6 +48,19 @@ type Customer = {
 }
 type Warehouse = { id: string; code?: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouseId: string }
+type StockSourceOption = {
+  warehouseId: string
+  warehouseName: string
+  binId: string | null
+  binLabel: string
+  qtyBase: number
+}
+type IssueAllocationDraft = {
+  id: string
+  warehouseId: string
+  binId: string
+  qty: string
+}
 
 const VALID_SO_STATUSES = ['draft','submitted','confirmed','allocated','shipped','closed','cancelled'] as const
 type SoStatus = typeof VALID_SO_STATUSES[number]
@@ -159,9 +172,9 @@ const ts = (row: any) =>
 
 const initials = (s?: string | null) => {
   const t = (s || '').trim()
-  if (!t) return '—'
+  if (!t) return 'â€”'
   const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
-  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || 'â€”'
 }
 
 /** Prefetch an image and convert to Data URL to avoid CORS/expiry; returns null on failure. */
@@ -192,9 +205,6 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
     return null
   }
 }
-
-// --- NEW: per-line on-hand state
-type OnHandByBin = { bin_id: string | null; qty: number }
 
 type SalesLineDraft = {
   itemId: string
@@ -227,7 +237,19 @@ type SoMetaDraft = {
 }
 
 const todayYmd = () => new Date().toISOString().slice(0, 10)
+const NO_ORDER_PAYMENT_TERMS = '__none__'
+const NO_DEFAULT_WAREHOUSE = '__none__'
+const SELECT_WAREHOUSE_VALUE = '__select_warehouse__'
+const SELECT_BIN_VALUE = '__select_bin__'
+const NO_BIN_VALUE = '__unbinned__'
 const blankSalesLine = (): SalesLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0' })
+const makeDraftId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+const blankIssueAllocation = (warehouseId = ''): IssueAllocationDraft => ({
+  id: makeDraftId(),
+  warehouseId,
+  binId: '',
+  qty: '',
+})
 const emptySoMetaDraft = (): SoMetaDraft => ({
   orderDate: todayYmd(),
   expectedShipDate: todayYmd(),
@@ -254,15 +276,15 @@ const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;')
-const docText = (value: unknown, fallback = '—') => {
+const docText = (value: unknown, fallback = 'â€”') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text) : fallback
 }
-const docMultiline = (value: unknown, fallback = '—') => {
+const docMultiline = (value: unknown, fallback = 'â€”') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text).replace(/\r?\n/g, '<br/>') : fallback
 }
-const docDate = (value: unknown, fallback = '—') => {
+const docDate = (value: unknown, fallback = 'â€”') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text.slice(0, 10)) : fallback
 }
@@ -437,10 +459,9 @@ export default function SalesOrders() {
   // GLOBAL override/default warehouse (optional UX)
   const [shipWhId, setShipWhId] = useState<string>('')
 
-  // --- NEW: per-line warehouse + bin selection and on-hand
-  const [whByLine, setWhByLine] = useState<Record<string, string>>({})
-  const [binByLine, setBinByLine] = useState<Record<string, string>>({})
-  const [onHandByLine, setOnHandByLine] = useState<Record<string, OnHandByBin[]>>({})
+  // Per-line issue planning across multiple bins and warehouses.
+  const [allocationsByLine, setAllocationsByLine] = useState<Record<string, IssueAllocationDraft[]>>({})
+  const [stockOptionsByLine, setStockOptionsByLine] = useState<Record<string, StockSourceOption[]>>({})
 
   // --- Shipped SOs browser state
   const PAGE_SIZE = 100
@@ -583,10 +604,10 @@ export default function SalesOrders() {
     }
   }
 
-  // Prefer bill_to_name; if we can resolve a customer row, show CODE — Name
+  // Prefer bill_to_name; if we can resolve a customer row, show CODE â€” Name
   const soCustomerLabel = (s: SO) => {
     const cust = s.customer_id ? customers.find(c => c.id === s.customer_id) : undefined
-    if (cust) return `${cust.code ? cust.code + ' — ' : ''}${cust.name}`
+    if (cust) return `${cust.code ? cust.code + ' â€” ' : ''}${cust.name}`
     return s.bill_to_name ?? s.customer ?? (s.customer_id || tt('none', '(none)'))
   }
 
@@ -740,7 +761,7 @@ export default function SalesOrders() {
         const preferred = (whs.data || []).find((w:any) => w.id === prefId) ?? (whs.data || [])[0]
         setShipWhId(preferred?.id || '')
 
-        // 7) branding—companies table (preferred)
+        // 7) brandingâ€”companies table (preferred)
         try {
           const row = await getCompanyProfileDB(companyId)
           setCompanyProfile(mapDBProfile(row))
@@ -794,77 +815,115 @@ export default function SalesOrders() {
     setSelectedSoMeta(buildSoMetaDraft(selectedSO))
   }, [selectedSO, customers, paymentTermsList])
 
-  // Initialize per-line warehouse and bin when opening View
   useEffect(() => {
-    if (!soViewOpen || !selectedSO) return
-    const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
-    setWhByLine(prev => {
-      const next = { ...prev }
-      const fallbackWh = shipWhId || warehouses[0]?.id || ''
-      for (const ln of lines) {
-        const key = String(ln.id)
-        if (!next[key]) next[key] = fallbackWh
-      }
-      return next
-    })
-  }, [soViewOpen, selectedSO, solines, shipWhId, warehouses])
+    if (!selectedSO) return
+    const fresh = sos.find((order) => order.id === selectedSO.id)
+    if (fresh && fresh !== selectedSO) setSelectedSO(fresh)
+  }, [selectedSO, sos])
 
-  // Fetch on-hand per line (group queries by warehouse)
+  const encodeBinValue = (binId?: string | null) => binId ?? NO_BIN_VALUE
+  const decodeBinValue = (binValue?: string | null) => {
+    if (!binValue) return null
+    return binValue === NO_BIN_VALUE ? null : binValue
+  }
+  const pickPreferredSource = (options: StockSourceOption[], preferredWarehouseId?: string) => {
+    if (!options.length) return null
+    return (preferredWarehouseId ? options.find((option) => option.warehouseId === preferredWarehouseId) : null) || options[0]
+  }
+  const buildDefaultAllocation = (line: SOL, options: StockSourceOption[]): IssueAllocationDraft => {
+    const preferred = pickPreferredSource(options, shipWhId)
+    if (!preferred) return blankIssueAllocation(shipWhId || warehouses[0]?.id || '')
+    const item = itemById.get(line.item_id)
+    const availableInLineUom =
+      item?.baseUomId ? safeConvert(preferred.qtyBase, item.baseUomId, line.uom_id) : null
+    const defaultQty = availableInLineUom == null
+      ? remaining(line)
+      : Math.min(remaining(line), Math.max(availableInLineUom, 0))
+    return {
+      id: makeDraftId(),
+      warehouseId: preferred.warehouseId,
+      binId: encodeBinValue(preferred.binId),
+      qty: defaultQty > 0 ? String(Number(defaultQty.toFixed(6))) : '',
+    }
+  }
+
   useEffect(() => {
     async function run() {
-      if (!soViewOpen || !selectedSO) { setOnHandByLine({}); return }
-      const lines = solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)
-      if (lines.length === 0) { setOnHandByLine({}); return }
-
-      // Group items by selected warehouse
-      const groups = new Map<string, Set<string>>() // whId -> itemIds
-      for (const ln of lines) {
-        const wh = whByLine[String(ln.id)] || shipWhId
-        if (!wh) continue
-        if (!groups.has(wh)) groups.set(wh, new Set())
-        groups.get(wh)!.add(ln.item_id)
+      if (!soViewOpen || !selectedSO || !companyId) {
+        setStockOptionsByLine({})
+        setAllocationsByLine({})
+        return
+      }
+      const lines = solines.filter((line) => line.so_id === selectedSO.id && remaining(line) > 0)
+      if (lines.length === 0) {
+        setStockOptionsByLine({})
+        setAllocationsByLine({})
+        return
       }
 
-      const result: Record<string, OnHandByBin[]> = {}
-      for (const [wh, itemsSet] of groups.entries()) {
-        const itemIds = Array.from(itemsSet)
-        const { data, error } = await supabase
-          .from('stock_levels')
-          .select('item_id,bin_id,qty')
-          .eq('warehouse_id', wh)
-          .in('item_id', itemIds)
-        if (error) { console.warn('on-hand fetch failed', error); continue }
-        const byItem: Record<string, OnHandByBin[]> = {}
-        for (const r of (data || []) as any[]) {
-          (byItem[r.item_id] ||= []).push({ bin_id: r.bin_id, qty: Number(r.qty) || 0 })
-        }
-        // Map back to lines in this warehouse
-        for (const ln of lines.filter(l => (whByLine[String(l.id)] || shipWhId) === wh)) {
-          result[String(ln.id)] = (byItem[ln.item_id] || []).sort((a,b) => b.qty - a.qty)
-        }
+      const itemIds = Array.from(new Set(lines.map((line) => line.item_id)))
+      const { data, error } = await supabase
+        .from('stock_levels')
+        .select('item_id,warehouse_id,bin_id,qty')
+        .eq('company_id', companyId)
+        .in('item_id', itemIds)
+        .gt('qty', 0)
+      if (error) {
+        console.warn('stock source fetch failed', error)
+        setStockOptionsByLine({})
+        return
       }
 
-      setOnHandByLine(result)
+      const byItem: Record<string, StockSourceOption[]> = {}
+      for (const row of (data || []) as any[]) {
+        const warehouseId = String(row.warehouse_id || '')
+        if (!warehouseId) continue
+        const warehouseName = warehouses.find((warehouse) => warehouse.id === warehouseId)?.name || warehouseId
+        const binId = row.bin_id == null ? null : String(row.bin_id)
+        const binName = binId
+          ? (bins.find((bin) => bin.id === binId)?.code || bins.find((bin) => bin.id === binId)?.name || binId)
+          : tt('orders.noBin', '(no bin)')
+        ;(byItem[String(row.item_id)] ||= []).push({
+          warehouseId,
+          warehouseName,
+          binId,
+          binLabel: binName,
+          qtyBase: Number(row.qty) || 0,
+        })
+      }
 
-      // Initialize default bin per line (first bin with stock; else first bin in that wh)
-      setBinByLine(prev => {
-        const next = { ...prev }
-        for (const ln of lines) {
-          const key = String(ln.id)
-          const wh = whByLine[key] || shipWhId
-          if (!wh) continue
-          if (!next[key]) {
-            const choices = result[key] || []
-            const withStock = choices.find(c => (c.qty || 0) > 0)?.bin_id
-            const firstBinInWh = bins.find(b => b.warehouseId === wh)?.id
-            next[key] = (withStock as string | undefined) || firstBinInWh || ''
-          }
+      const nextOptions: Record<string, StockSourceOption[]> = {}
+      for (const line of lines) {
+        nextOptions[String(line.id)] = [...(byItem[line.item_id] || [])].sort((left, right) => {
+          if (right.qtyBase !== left.qtyBase) return right.qtyBase - left.qtyBase
+          if (left.warehouseName !== right.warehouseName) return left.warehouseName.localeCompare(right.warehouseName)
+          return left.binLabel.localeCompare(right.binLabel)
+        })
+      }
+      setStockOptionsByLine(nextOptions)
+      setAllocationsByLine((current) => {
+        const next: Record<string, IssueAllocationDraft[]> = {}
+        for (const line of lines) {
+          const key = String(line.id)
+          const options = nextOptions[key] || []
+          const rows = (current[key] || [])
+            .filter((row) => !row.warehouseId || options.some((option) => option.warehouseId === row.warehouseId))
+            .map((row) => {
+              if (!row.warehouseId) return row
+              const matchingOptions = options.filter((option) => option.warehouseId === row.warehouseId)
+              if (!matchingOptions.length) return row
+              if (!row.binId || !matchingOptions.some((option) => encodeBinValue(option.binId) === row.binId)) {
+                return { ...row, binId: encodeBinValue(matchingOptions[0].binId) }
+              }
+              return row
+            })
+          next[key] = rows.length ? rows : [buildDefaultAllocation(line, options)]
         }
         return next
       })
     }
     run()
-  }, [soViewOpen, selectedSO, solines, whByLine, bins, shipWhId])
+  }, [bins, companyId, itemById, selectedSO, shipWhId, soViewOpen, solines, warehouses])
 
   async function avgCostAt(whId: string, binId: string | null, itemId: string) {
     let q = supabase
@@ -877,6 +936,121 @@ export default function SalesOrders() {
     const { data } = await q
     const row: any = data && data[0]
     return { onHand: n(row?.qty, 0), avgCost: n(row?.avg_cost, 0) }
+  }
+
+  const updateAllocationRow = (lineKey: string, rowId: string, patch: Partial<IssueAllocationDraft>) => {
+    setAllocationsByLine((current) => ({
+      ...current,
+      [lineKey]: (current[lineKey] || []).map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+    }))
+  }
+
+  const addAllocationRow = (line: SOL) => {
+    const lineKey = String(line.id)
+    const preferred = pickPreferredSource(stockOptionsByLine[lineKey] || [], shipWhId)
+    setAllocationsByLine((current) => ({
+      ...current,
+      [lineKey]: [
+        ...(current[lineKey] || []),
+        {
+          id: makeDraftId(),
+          warehouseId: preferred?.warehouseId || shipWhId || '',
+          binId: preferred ? encodeBinValue(preferred.binId) : '',
+          qty: '',
+        },
+      ],
+    }))
+  }
+
+  const removeAllocationRow = (line: SOL, rowId: string) => {
+    const lineKey = String(line.id)
+    setAllocationsByLine((current) => {
+      const remainingRows = (current[lineKey] || []).filter((row) => row.id !== rowId)
+      return {
+        ...current,
+        [lineKey]: remainingRows.length ? remainingRows : [buildDefaultAllocation(line, stockOptionsByLine[lineKey] || [])],
+      }
+    })
+  }
+
+  const buildIssuePlan = (line: SOL, rows: IssueAllocationDraft[], options: StockSourceOption[]) => {
+    const item = itemById.get(line.item_id)
+    const outstandingQty = remaining(line)
+    const outstandingQtyBase = item?.baseUomId ? safeConvert(outstandingQty, line.uom_id, item.baseUomId) : null
+    const optionMap = new Map(
+      options.map((option) => [`${option.warehouseId}::${encodeBinValue(option.binId)}`, option])
+    )
+    const errors: string[] = []
+    const preparedRows: Array<IssueAllocationDraft & { qtyNumber: number; qtyBase: number }> = []
+    const sourceUsage = new Map<string, number>()
+    let totalQty = 0
+    let totalQtyBase = 0
+
+    if (!item) {
+      errors.push(tt('orders.itemMissingForIssue', 'Item setup is incomplete for this line.'))
+      return { item, outstandingQty, outstandingQtyBase, totalQty, totalQtyBase, remainingQty: outstandingQty, errors, rows: preparedRows }
+    }
+
+    for (const row of rows) {
+      const qtyNumber = n(row.qty, 0)
+      if (qtyNumber <= 0) continue
+      if (!row.warehouseId) {
+        errors.push(tt('orders.selectSourceWh', 'Select source warehouse'))
+        continue
+      }
+      if (!row.binId) {
+        errors.push(tt('orders.selectSourceBin', 'Pick a From Bin for this line'))
+        continue
+      }
+      const qtyBase = safeConvert(qtyNumber, line.uom_id, item.baseUomId)
+      if (qtyBase == null) {
+        const fromCode = uomById.get(uomIdFromIdOrCode(line.uom_id))?.code || line.uom_id
+        errors.push(
+          tt('orders.noConversion', 'No conversion from {from} to base for {sku}')
+            .replace('{from}', String(fromCode))
+            .replace('{sku}', String(item.sku))
+        )
+        continue
+      }
+      totalQty += qtyNumber
+      totalQtyBase += qtyBase
+      preparedRows.push({ ...row, qtyNumber, qtyBase })
+      const sourceKey = `${row.warehouseId}::${row.binId}`
+      sourceUsage.set(sourceKey, (sourceUsage.get(sourceKey) || 0) + qtyBase)
+    }
+
+    if (!preparedRows.length) {
+      errors.push(tt('orders.issueQtyRequired', 'Enter at least one quantity to issue.'))
+    }
+    if (totalQty > outstandingQty + 0.000001) {
+      errors.push(
+        tt('orders.overAllocateIssue', 'Allocated quantity exceeds the remaining quantity to issue.')
+      )
+    }
+    for (const [sourceKey, usedQtyBase] of sourceUsage.entries()) {
+      const option = optionMap.get(sourceKey)
+      if (!option) {
+        errors.push(tt('orders.sourceUnavailable', 'One of the selected stock sources is no longer available.'))
+        continue
+      }
+      if (usedQtyBase > option.qtyBase + 0.000001) {
+        errors.push(
+          tt('orders.overAllocateBin', 'Allocated quantity exceeds what is available in the selected bin.')
+        )
+      }
+    }
+
+    return {
+      item,
+      outstandingQty,
+      outstandingQtyBase,
+      totalQty,
+      totalQtyBase,
+      remainingQty: Math.max(outstandingQty - totalQty, 0),
+      availableQtyBase: options.reduce((sum, option) => sum + option.qtyBase, 0),
+      errors,
+      rows: preparedRows,
+    }
   }
 
   // actions
@@ -1007,18 +1181,61 @@ export default function SalesOrders() {
       const lines = solines.filter(l => l.so_id === soId)
       const subtotal = lines.reduce((s, l) => s + n(l.line_total), 0)
 
-      const updated = await tryUpdateStatus(soId, ['confirmed'])
+      const updated = await tryUpdateStatus(soId, ['submitted'])
       const confirmPatch: any = { total_amount: subtotal }
       if (user?.name) confirmPatch.confirmed_by = user.name
       let query = supabase.from('sales_orders').update(confirmPatch).eq('id', soId)
       if (companyId) query = query.eq('company_id', companyId)
-      await query
+      const { error } = await query
+      if (error) throw error
 
-      setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated || s.status, total_amount: subtotal, confirmed_by: user?.name || s.confirmed_by } : s)))
+      setSOs((prev) =>
+        prev.map((order) =>
+          order.id === soId
+            ? { ...order, status: updated || order.status, total_amount: subtotal, confirmed_by: user?.name || order.confirmed_by }
+            : order
+        )
+      )
+      setSelectedSO((prev) =>
+        prev?.id === soId
+          ? { ...prev, status: updated || prev.status, total_amount: subtotal, confirmed_by: user?.name || prev.confirmed_by }
+          : prev
+      )
+      setSelectedSoMeta((prev) => ({ ...prev, confirmedBy: user?.name || prev.confirmedBy }))
       toast.success(tt('orders.soConfirmed', 'SO confirmed'))
     } catch (err: any) {
       console.error(err)
       toast.error(err?.message || tt('orders.soConfirmFailed', 'Failed to confirm SO'))
+    }
+  }
+
+  async function approveSO(soId: string) {
+    try {
+      const updated = await tryUpdateStatus(soId, ['confirmed'])
+      const approvePatch: any = {}
+      if (user?.name) approvePatch.approved_by = user.name
+      let query = supabase.from('sales_orders').update(approvePatch).eq('id', soId)
+      if (companyId) query = query.eq('company_id', companyId)
+      const { error } = await query
+      if (error) throw error
+
+      setSOs((prev) =>
+        prev.map((order) =>
+          order.id === soId
+            ? { ...order, status: updated || order.status, approved_by: user?.name || order.approved_by }
+            : order
+        )
+      )
+      setSelectedSO((prev) =>
+        prev?.id === soId
+          ? { ...prev, status: updated || prev.status, approved_by: user?.name || prev.approved_by }
+          : prev
+      )
+      setSelectedSoMeta((prev) => ({ ...prev, approvedBy: user?.name || prev.approvedBy }))
+      toast.success(tt('orders.soApproved', 'SO approved'))
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err?.message || tt('orders.soApproveFailed', 'Failed to approve SO'))
     }
   }
 
@@ -1067,102 +1284,105 @@ export default function SalesOrders() {
     }
   }
 
-  // --- Ship a line using the selected WH/BIN; DB trigger updates stock_levels
-  async function doShipLineSO(so: SO, line: SOL) {
+  async function doShipLineSO(so: SO, line: SOL, options?: { silent?: boolean; refresh?: boolean }) {
     try {
       const lineKey = String(line.id)
-      const whId = whByLine[lineKey]
-      const binId = binByLine[lineKey]
-      if (!whId) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
-      if (!binId) return toast.error(tt('orders.selectSourceBin', 'Pick a From Bin for this line'))
-
-      const total = n(line.qty)
-      const already = n(line.shipped_qty)
-      const outstanding = Math.max(total - already, 0)
-      if (outstanding <= 0) {
-        toast.success(tt('orders.lineAlreadyShipped', 'Line already shipped'))
-        return
+      const plan = buildIssuePlan(line, allocationsByLine[lineKey] || [], stockOptionsByLine[lineKey] || [])
+      if (plan.outstandingQty <= 0) {
+        if (!options?.silent) toast.success(tt('orders.lineAlreadyShipped', 'Line already shipped'))
+        return true
+      }
+      if (plan.errors.length) {
+        throw new Error(plan.errors[0])
+      }
+      if (!plan.item) {
+        throw new Error(tt('orders.itemMissingForIssue', 'Item setup is incomplete for this line.'))
       }
 
-      const it = itemById.get(line.item_id)
-      if (!it) throw new Error(`Item not found for line ${line.item_id}`)
-      const baseUom = it.baseUomId
-
-      const qtyBaseOutstanding = safeConvert(outstanding, line.uom_id, baseUom)
-      if (qtyBaseOutstanding == null) {
-        const fromCode = uomById.get(uomIdFromIdOrCode(line.uom_id))?.code || line.uom_id
-        throw new Error(tt('orders.noConversion', 'No conversion from {from} to base for {sku}')
-          .replace('{from}', String(fromCode)).replace('{sku}', String(it.sku)))
+      const sourceChecks = new Map<string, { onHand: number; avgCost: number }>()
+      for (const row of plan.rows) {
+        const binDbId = decodeBinValue(row.binId)
+        const key = `${row.warehouseId}::${row.binId}`
+        if (!sourceChecks.has(key)) {
+          const snapshot = await avgCostAt(row.warehouseId, binDbId, plan.item.id)
+          sourceChecks.set(key, snapshot)
+        }
       }
 
-      // UX guard: verify on-hand snapshot for this line
-      const avail = (onHandByLine[lineKey] || []).find(x => x.bin_id === binId)?.qty || 0
-      if (avail < qtyBaseOutstanding) {
-        throw new Error(tt('orders.insufficientStockBin', 'Insufficient stock in bin for item {sku}')
-          .replace('{sku}', String(it?.sku || '')))
+      const dbUsageBySource = new Map<string, number>()
+      for (const row of plan.rows) {
+        const key = `${row.warehouseId}::${row.binId}`
+        dbUsageBySource.set(key, (dbUsageBySource.get(key) || 0) + row.qtyBase)
+      }
+      for (const [key, qtyBase] of dbUsageBySource.entries()) {
+        const snapshot = sourceChecks.get(key)
+        if (!snapshot || snapshot.onHand < qtyBase - 0.000001) {
+          throw new Error(
+            tt('orders.overAllocateBin', 'Allocated quantity exceeds what is available in the selected bin.')
+          )
+        }
       }
 
-      // Source-of-truth insert; trigger handles the rest
-      const { avgCost } = await avgCostAt(whId, binId, it.id)
-      const mvIns = await supabase.from('stock_movements').insert({
-        type: 'issue',
-        item_id: it.id,
-        uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
-        qty: outstanding,
-        qty_base: qtyBaseOutstanding,
-        unit_cost: avgCost,
-        total_value: avgCost * qtyBaseOutstanding,
-        warehouse_from_id: whId,
-        bin_from_id: binId,
-        notes: `SO ${soNo(so)}`,
-        created_by: 'system',
-        ref_type: 'SO',
-        ref_id: (so as any).id,
-        ref_line_id: line.id ?? null,
-      } as any).select('id').single()
-      if (mvIns.error) throw mvIns.error
+      for (const row of plan.rows) {
+        const binDbId = decodeBinValue(row.binId)
+        const key = `${row.warehouseId}::${row.binId}`
+        const snapshot = sourceChecks.get(key)
+        const avgCost = snapshot?.avgCost ?? 0
+        const movementInsert = await supabase.from('stock_movements').insert({
+          type: 'issue',
+          item_id: plan.item.id,
+          uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
+          qty: row.qtyNumber,
+          qty_base: row.qtyBase,
+          unit_cost: avgCost,
+          total_value: avgCost * row.qtyBase,
+          warehouse_from_id: row.warehouseId,
+          bin_from_id: binDbId,
+          notes: `SO ${soNo(so)}`,
+          created_by: user?.name || 'system',
+          ref_type: 'SO',
+          ref_id: (so as any).id,
+          ref_line_id: line.id ?? null,
+        } as any).select('id').single()
+        if (movementInsert.error) throw movementInsert.error
+      }
 
-      // Refresh UI state from DB (trigger will have updated things)
-      const [soList, soLineList] = await Promise.all([db.salesOrders.list(), db.salesOrderLines.list()])
-      const withFlags = (soLineList || []).map((l: any) => ({
-        ...l,
-        is_shipped: l.is_shipped ?? false,
-        shipped_at: l.shipped_at ?? null,
-        shipped_qty: Number.isFinite(Number(l.shipped_qty)) ? Number(l.shipped_qty) : 0,
-      })) as SOL[]
-      setSOs((soList || []).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
-      setSOLines(withFlags)
-
-      // Update local on-hand cache for the selected line (best-effort UX)
-      setOnHandByLine(prev => {
-        const arr = (prev[lineKey] || []).slice()
-        const idx = arr.findIndex(x => x.bin_id === binId)
-        if (idx >= 0) arr[idx] = { ...arr[idx], qty: Math.max(0, (arr[idx].qty || 0) - qtyBaseOutstanding) }
-        return { ...prev, [lineKey]: arr }
-      })
-
-      toast.success(tt('orders.lineShipped', 'Line shipped'))
+      if (options?.refresh !== false) {
+        await refreshSalesData(companyId)
+      }
+      if (!options?.silent) toast.success(tt('orders.lineShipped', 'Line shipped'))
+      return true
     } catch (err: any) {
       console.error(err)
       toast.error(err?.message || tt('orders.shipLineFailed', 'Failed to ship line'))
+      return false
     }
   }
 
-  // Ship all outstanding lines (each uses its own selected warehouse/bin)
+  // Ship all lines that currently have a valid allocation plan.
   async function doShipSO(so: SO) {
     try {
-      const lines = solines.filter(l => l.so_id === so.id && remaining(l) > 0)
+      const lines = solines.filter((line) => line.so_id === so.id && remaining(line) > 0)
       if (!lines.length) return toast.error(tt('orders.noLinesToShip', 'No lines to ship'))
 
-      for (const l of lines) {
-        const key = String(l.id)
-        if (!whByLine[key]) return toast.error(tt('orders.selectSourceWh', 'Select source warehouse'))
-        if (!binByLine[key]) return toast.error(tt('orders.selectSourceBin', 'Pick a From Bin for each line'))
+      const plannedLines = lines.filter((line) => {
+        const plan = buildIssuePlan(line, allocationsByLine[String(line.id)] || [], stockOptionsByLine[String(line.id)] || [])
+        return plan.rows.length > 0
+      })
+      if (!plannedLines.length) {
+        return toast.error(tt('orders.issueQtyRequired', 'Enter at least one quantity to issue.'))
       }
-      for (const l of lines) {
+
+      for (const line of plannedLines) {
         // eslint-disable-next-line no-await-in-loop
-        await doShipLineSO(so, l)
+        const shipped = await doShipLineSO(so, line, { silent: true, refresh: false })
+        if (!shipped) {
+          await refreshSalesData(companyId)
+          return
+        }
       }
+      await refreshSalesData(companyId)
+      toast.success(tt('orders.issueBatchPosted', 'Allocated issue quantities posted'))
     } catch (err: any) {
       console.error(err)
       toast.error(err?.message || tt('orders.shipSoFailed', 'Failed to ship SO'))
@@ -1178,7 +1398,8 @@ export default function SalesOrders() {
   const soTax = soSubtotal * (n(soTaxPct, 0) / 100)
   const openSalesBase = useMemo(() => soOutstanding.reduce((sum, so) => sum + amountSO(so).totalBase, 0), [soOutstanding, solines])
   const draftSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'draft').length, [soOutstanding])
-  const confirmedSalesCount = useMemo(() => soOutstanding.filter(so => ['confirmed', 'allocated', 'submitted'].includes(String(so.status).toLowerCase())).length, [soOutstanding])
+  const submittedSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'submitted').length, [soOutstanding])
+  const confirmedSalesCount = useMemo(() => soOutstanding.filter(so => ['confirmed', 'allocated'].includes(String(so.status).toLowerCase())).length, [soOutstanding])
 
   function soHeaderSubtotal(so: SO): number {
     return amountSO(so).subtotal
@@ -1187,14 +1408,32 @@ export default function SalesOrders() {
   function salesStatusClass(status?: string) {
     const value = String(status || '').toLowerCase()
     if (value === 'draft') return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+    if (value === 'submitted') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    if (value === 'confirmed') return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+    if (value === 'allocated') return 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300'
     if (value === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
     if (value === 'shipped' || value === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
   }
 
+  function salesStatusLabel(status?: string) {
+    const value = String(status || '').toLowerCase()
+    if (value === 'draft') return tt('orders.draftStatus', 'Draft')
+    if (value === 'submitted') return tt('orders.confirmedStatus', 'Confirmed')
+    if (value === 'confirmed') return tt('orders.approvedStatus', 'Approved')
+    if (value === 'allocated') return tt('orders.allocatedStatus', 'Allocated')
+    if (value === 'shipped') return tt('orders.shippedStatus', 'Shipped')
+    if (value === 'closed') return tt('orders.closedStatus', 'Closed')
+    if (value === 'cancelled') return tt('orders.cancelledStatus', 'Cancelled')
+    return tt(`orders.status.${value}`, value.replace('_', ' '))
+  }
+
+  const canIssueFromStatus = (status?: string) =>
+    ['confirmed', 'allocated'].includes(String(status || '').toLowerCase())
+
   // ---- Print: uses companies profile (preferred), then company_settings brand as fallback
   async function printSO(so: SO, download = false) {
-    const currency = curSO(so) || '—'
+    const currency = curSO(so) || 'â€”'
     const fx = fxSO(so) || 1
     const lines = solines.filter(l => l.so_id === so.id)
 
@@ -1228,13 +1467,13 @@ export default function SalesOrders() {
     const custRow = so.customer_id ? customers.find(c => c.id === so.customer_id) : undefined
     const cust = {
       code: custRow?.code || '',
-      name: so.bill_to_name ?? custRow?.name ?? so.customer ?? '—',
-      email: so.bill_to_email ?? custRow?.email ?? '—',
-      phone: so.bill_to_phone ?? custRow?.phone ?? '—',
-      tax_id: so.bill_to_tax_id ?? custRow?.tax_id ?? '—',
-      bill_to: (so.bill_to_billing_address ?? custRow?.billing_address ?? '')?.trim() || '—',
-      ship_to: (so.bill_to_shipping_address ?? custRow?.shipping_address ?? '')?.trim() || '—',
-      terms: so.payment_terms ?? custRow?.payment_terms ?? '—',
+      name: so.bill_to_name ?? custRow?.name ?? so.customer ?? 'â€”',
+      email: so.bill_to_email ?? custRow?.email ?? 'â€”',
+      phone: so.bill_to_phone ?? custRow?.phone ?? 'â€”',
+      tax_id: so.bill_to_tax_id ?? custRow?.tax_id ?? 'â€”',
+      bill_to: (so.bill_to_billing_address ?? custRow?.billing_address ?? '')?.trim() || 'â€”',
+      ship_to: (so.bill_to_shipping_address ?? custRow?.shipping_address ?? '')?.trim() || 'â€”',
+      terms: so.payment_terms ?? custRow?.payment_terms ?? 'â€”',
     }
     ;(cust as any).referenceNo = (so as any).reference_no ?? ''
     ;(cust as any).deliveryTerms = (so as any).delivery_terms ?? ''
@@ -1351,14 +1590,14 @@ export default function SalesOrders() {
       <div class="card">
         <h4>${tt('orders.companyDetails', 'Company Details')}</h4>
         <div class="kv">
-          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || '—'}</b></div>
-          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || '—'}</div>
-          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || '—'}</div>
-          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || '—'}</div>
-          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || '—'}</div>
-          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || '—'}</div>
-          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || '—'}</div>
-          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || '—'}</div>
+          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || 'â€”'}</b></div>
+          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || 'â€”'}</div>
+          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || 'â€”'}</div>
+          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || 'â€”'}</div>
+          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || 'â€”'}</div>
+          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || 'â€”'}</div>
+          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || 'â€”'}</div>
+          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || 'â€”'}</div>
         </div>
         ${cp.printFooterNote ? `<div class="footnote">${cp.printFooterNote}</div>` : ''}
       </div>
@@ -1370,8 +1609,8 @@ export default function SalesOrders() {
         <div class="kv">
           <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${so.status}</b></div>
           <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
-          <div class="k">${tt('orders.fxToBaseShort', 'FX → {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
-          <div class="k">${tt('orders.expectedShip', 'Expected Ship')}</div><div><b>${(so as any).expected_ship_date || '—'}</b></div>
+          <div class="k">${tt('orders.fxToBaseShort', 'FX â†’ {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
+          <div class="k">${tt('orders.expectedShip', 'Expected Ship')}</div><div><b>${(so as any).expected_ship_date || 'â€”'}</b></div>
         </div>
       </div>
     `
@@ -1379,8 +1618,8 @@ export default function SalesOrders() {
     const customerCard = `
       <div class="card" style="margin-top:8px">
         <h4>${tt('orders.customer', 'Customer')}</h4>
-        <div><b>${cust.code ? cust.code + ' — ' : ''}${cust.name}</b></div>
-        <div class="muted">${tt('orders.email', 'Email')}: ${cust.email} · ${tt('orders.phone', 'Phone')}: ${cust.phone} · ${tt('orders.taxId', 'Tax ID')}: ${cust.tax_id}</div>
+        <div><b>${cust.code ? cust.code + ' â€” ' : ''}${cust.name}</b></div>
+        <div class="muted">${tt('orders.email', 'Email')}: ${cust.email} Â· ${tt('orders.phone', 'Phone')}: ${cust.phone} Â· ${tt('orders.taxId', 'Tax ID')}: ${cust.tax_id}</div>
         <div class="kv" style="margin-top:6px">
           <div class="k">${tt('orders.billTo', 'Bill To')}</div><div class="addr">${cust.bill_to}</div>
           <div class="k">${tt('orders.shipOrServiceLocation', 'Shipping / Service Location')}</div><div class="addr">${cust.ship_to}</div>
@@ -1394,7 +1633,7 @@ export default function SalesOrders() {
         <div class="header">
           <div class="brand">
             ${headerBrand}
-            <div class="company-name">${companyName || '—'}</div>
+            <div class="company-name">${companyName || 'â€”'}</div>
           </div>
           <div class="doc-meta">
             <h1 class="doc-title">${tt('orders.salesOrder', 'Sales Order')} ${number}</h1>
@@ -1458,13 +1697,13 @@ export default function SalesOrders() {
             </div>
             <div class="sig">
               <div class="sig-line"></div>
-              <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
-              <div class="sig-name">${docName((cust as any).approvedBy)}</div>
+              <div class="sig-label">${tt('orders.confirmedBy', 'Confirmed by')}</div>
+              <div class="sig-name">${docName((cust as any).confirmedBy)}</div>
             </div>
             <div class="sig">
               <div class="sig-line"></div>
-              <div class="sig-label">${tt('orders.confirmedBy', 'Confirmed by')}</div>
-              <div class="sig-name">${docName((cust as any).confirmedBy)}</div>
+              <div class="sig-label">${tt('orders.approvedBy', 'Approved by')}</div>
+              <div class="sig-name">${docName((cust as any).approvedBy)}</div>
             </div>
           </div>
         </div>
@@ -1542,8 +1781,8 @@ export default function SalesOrders() {
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.salesReadiness', 'Order readiness')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
-            <div className="text-sm font-medium">{tt('orders.confirmedReady', '{count} confirmed or allocated', { count: confirmedSalesCount })}</div>
-            <p className="text-xs text-muted-foreground">{tt('orders.salesDrafts', '{count} drafts still need review before fulfilment.', { count: draftSalesCount })}</p>
+            <div className="text-sm font-medium">{tt('orders.confirmedReady', '{count} approved or allocated', { count: confirmedSalesCount })}</div>
+            <p className="text-xs text-muted-foreground">{tt('orders.salesApprovalPending', '{count} confirmed orders are waiting for approval and {drafts} drafts still need review.', { count: submittedSalesCount, drafts: draftSalesCount })}</p>
           </CardContent>
         </Card>
       </div>
@@ -1579,7 +1818,7 @@ export default function SalesOrders() {
                         <SelectContent className="max-h-64 overflow-auto">
                           {customers.map((c) => (
                             <SelectItem key={c.id} value={c.id}>
-                              {(c.code ? c.code + ' — ' : '') + c.name}
+                              {(c.code ? c.code + ' â€” ' : '') + c.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1638,9 +1877,10 @@ export default function SalesOrders() {
                         <div>
                           <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
                           <Select
-                            value={soPaymentTermsId || undefined}
+                            value={soPaymentTermsId || NO_ORDER_PAYMENT_TERMS}
                             onValueChange={(value) => {
-                              const termState = buildTermState(soOrderDate, value, '', soDueDate)
+                              const nextTermId = value === NO_ORDER_PAYMENT_TERMS ? '' : value
+                              const termState = buildTermState(soOrderDate, nextTermId, '', soDueDate)
                               setSoPaymentTermsId(termState.paymentTermsId)
                               setSoPaymentTerms(termState.paymentTerms)
                               setSoDueDate(termState.dueDate)
@@ -1648,13 +1888,16 @@ export default function SalesOrders() {
                           >
                             <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
                             <SelectContent>
+                              <SelectItem value={NO_ORDER_PAYMENT_TERMS}>{tt('orders.noPaymentTerms', 'No payment terms')}</SelectItem>
                               {paymentTermsList.map(term => (
                                 <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {soPaymentTermsId
+                            {!paymentTermsList.length
+                              ? tt('orders.paymentTermsEmptyHelp', 'This company has no reusable payment terms yet. You can keep the field blank for now.')
+                              : soPaymentTermsId
                               ? tt('orders.paymentTermsHelpSales', 'Defaults from the selected customer and can still be changed here.')
                               : soPaymentTerms.trim()
                                 ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: soPaymentTerms })
@@ -1679,12 +1922,12 @@ export default function SalesOrders() {
                           <p className="mt-1 text-xs text-muted-foreground">{tt('orders.preparedByAutoHelp', 'Auto-filled from the user who creates the order.')}</p>
                         </div>
                         <div>
-                          <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
-                          <Input value={soApprovedBy} onChange={e => setSoApprovedBy(e.target.value)} />
+                          <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
+                          <Input value={soConfirmedBy || ''} readOnly className="bg-muted/40" placeholder={tt('orders.capturedOnConfirm', 'Captured when the order is confirmed')} />
                         </div>
                         <div className="md:col-span-2">
-                          <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
-                          <Input value={soConfirmedBy} onChange={e => setSoConfirmedBy(e.target.value)} placeholder={tt('orders.confirmedByPlaceholder', 'Customer contact or internal confirmer')} />
+                          <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                          <Input value={soApprovedBy || ''} readOnly className="bg-muted/40" placeholder={tt('orders.capturedOnApprove', 'Captured when the order is approved')} />
                         </div>
                       </div>
                     </div>
@@ -1818,7 +2061,7 @@ export default function SalesOrders() {
                                     <div className={`text-xs mt-1 ${previewInvalid ? 'text-red-600' : 'text-muted-foreground'}`}>
                                       {qtyPreviewBase == null
                                         ? tt('orders.previewNoPath', 'No conversion path to base')
-                                        : `→ ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
+                                        : `â†’ ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
                                     </div>
                                   )}
                                 </td>
@@ -1845,7 +2088,7 @@ export default function SalesOrders() {
                                 </td>
                                 <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
                                 <td className="py-2 px-3 text-right">
-                                  <Button size="icon" variant="ghost" onClick={() => setSoLinesForm(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
+                                  <Button size="icon" variant="ghost" onClick={() => setSoLinesForm(prev => prev.filter((_, i) => i !== idx))}>âœ•</Button>
                                 </td>
                               </tr>
                             )
@@ -1909,7 +2152,7 @@ export default function SalesOrders() {
                     <td className="py-3 pr-2">{soCustomerLabel(so)}</td>
                     <td className="py-3 pr-2">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
-                        {String(so.status).replace('_', ' ')}
+                        {salesStatusLabel(so.status)}
                       </span>
                     </td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
@@ -1921,6 +2164,12 @@ export default function SalesOrders() {
                         {String(so.status).toLowerCase() === 'draft' && (
                           <>
                             <Button size="sm" variant="outline" onClick={() => confirmSO(so.id)}>{tt('orders.confirm', 'Confirm')}</Button>
+                            <Button size="sm" variant="destructive" onClick={() => cancelSO(so.id)}>{tt('orders.cancel', 'Cancel')}</Button>
+                          </>
+                        )}
+                        {String(so.status).toLowerCase() === 'submitted' && (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => approveSO(so.id)}>{tt('orders.approve', 'Approve')}</Button>
                             <Button size="sm" variant="destructive" onClick={() => cancelSO(so.id)}>{tt('orders.cancel', 'Cancel')}</Button>
                           </>
                         )}
@@ -1956,7 +2205,7 @@ export default function SalesOrders() {
                     <td className="py-3 pr-2">{soCustomerLabel(so)}</td>
                     <td className="py-3 pr-2">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
-                        {String(so.status).replace('_', ' ')}
+                        {salesStatusLabel(so.status)}
                       </span>
                     </td>
                     <td className="py-3 pr-2">{curSO(so)}</td>
@@ -1973,6 +2222,8 @@ export default function SalesOrders() {
       <Sheet open={soViewOpen} onOpenChange={(o) => {
         if (!o) {
           setSelectedSO(null)
+          setAllocationsByLine({})
+          setStockOptionsByLine({})
           if (searchParams.get('orderId')) {
             const next = new URLSearchParams(searchParams)
             next.delete('orderId')
@@ -1995,7 +2246,14 @@ export default function SalesOrders() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>
                 <div><Label>{tt('orders.customer', 'Customer')}</Label><div>{soCustomerLabel(selectedSO)}</div></div>
-                <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedSO.status}</div></div>
+                <div>
+                  <Label>{tt('orders.status', 'Status')}</Label>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${salesStatusClass(selectedSO.status)}`}>
+                      {salesStatusLabel(selectedSO.status)}
+                    </span>
+                  </div>
+                </div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curSO(selectedSO)}</div></div>
                 <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedSO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxSO(selectedSO))}</div></div>
@@ -2037,21 +2295,25 @@ export default function SalesOrders() {
                   <div>
                     <Label>{tt('orders.paymentTerms', 'Payment Terms')}</Label>
                     <Select
-                      value={selectedSoMeta.paymentTermsId || undefined}
+                      value={selectedSoMeta.paymentTermsId || NO_ORDER_PAYMENT_TERMS}
                       onValueChange={(value) => setSelectedSoMeta(prev => {
-                        const termState = buildTermState(prev.orderDate, value, '', prev.dueDate)
+                        const nextTermId = value === NO_ORDER_PAYMENT_TERMS ? '' : value
+                        const termState = buildTermState(prev.orderDate, nextTermId, '', prev.dueDate)
                         return { ...prev, paymentTermsId: termState.paymentTermsId, paymentTerms: termState.paymentTerms, dueDate: termState.dueDate }
                       })}
                     >
                       <SelectTrigger><SelectValue placeholder={tt('orders.selectPaymentTerms', 'Select payment terms')} /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value={NO_ORDER_PAYMENT_TERMS}>{tt('orders.noPaymentTerms', 'No payment terms')}</SelectItem>
                         {paymentTermsList.map(term => (
                           <SelectItem key={term.id} value={term.id}>{paymentTermOptionLabel(term)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {selectedSoMeta.paymentTermsId
+                      {!paymentTermsList.length
+                        ? tt('orders.paymentTermsEmptyHelp', 'This company has no reusable payment terms yet. You can keep the field blank for now.')
+                        : selectedSoMeta.paymentTermsId
                         ? tt('orders.paymentTermsHelpSales', 'Defaults from the selected customer and can still be changed here.')
                         : selectedSoMeta.paymentTerms.trim()
                           ? tt('orders.paymentTermsLegacyHelp', 'Current saved terms: {terms}. Choose a standard term to replace it.', { terms: selectedSoMeta.paymentTerms })
@@ -2068,12 +2330,12 @@ export default function SalesOrders() {
                     <p className="mt-1 text-xs text-muted-foreground">{tt('orders.preparedByAutoHelp', 'Auto-filled from the user who creates the order.')}</p>
                   </div>
                   <div>
-                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
-                    <Input value={selectedSoMeta.approvedBy} onChange={e => setSelectedSoMeta(prev => ({ ...prev, approvedBy: e.target.value }))} />
+                    <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
+                    <Input value={selectedSoMeta.confirmedBy || tt('orders.notAvailableShort', 'Not captured')} readOnly className="bg-muted/40" />
                   </div>
                   <div>
-                    <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
-                    <Input value={selectedSoMeta.confirmedBy} onChange={e => setSelectedSoMeta(prev => ({ ...prev, confirmedBy: e.target.value }))} />
+                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                    <Input value={selectedSoMeta.approvedBy || tt('orders.notAvailableShort', 'Not captured')} readOnly className="bg-muted/40" />
                   </div>
                   <div>
                     <Label>{tt('orders.billToName', 'Bill-to Name')}</Label>
@@ -2108,162 +2370,266 @@ export default function SalesOrders() {
                   </div>
                 </div>
               </div>
-              {/* Global "From Warehouse" = quick setter for all lines */}
+              {/* Issue controls */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
-                  <Label>{tt('orders.fromWarehouse', 'From Warehouse (set for all lines)')}</Label>
+                  <Label>{tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}</Label>
                   <Select
-                    value={shipWhId}
+                    value={shipWhId || NO_DEFAULT_WAREHOUSE}
                     onValueChange={(v) => {
-                      setShipWhId(v)
-                      // Set all outstanding lines to this WH and clear their bins (will auto-pick best bin)
-                      setWhByLine(prev => {
-                        const next = { ...prev }
-                        for (const ln of solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0)) {
-                          next[String(ln.id)] = v
-                        }
-                        return next
-                      })
-                      setBinByLine({})
+                      const nextWarehouseId = v === NO_DEFAULT_WAREHOUSE ? '' : v
+                      setShipWhId(nextWarehouseId)
                     }}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NO_DEFAULT_WAREHOUSE}>{tt('orders.noDefaultWarehouse', 'No default warehouse')}</SelectItem>
                       {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {tt('orders.defaultIssueWarehouseHelp', 'New allocation rows start from this warehouse, but each row can still be changed before posting.')}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-end justify-end gap-2 md:col-span-2 lg:col-span-2">
                   <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
                   <Button variant="outline" onClick={() => printSO(selectedSO, true)}>{tt('orders.download', 'Download')}</Button>
-                  {String(selectedSO.status).toLowerCase() === 'confirmed' && (
+                  {String(selectedSO.status).toLowerCase() === 'draft' && (
+                    <Button variant="outline" onClick={() => confirmSO(selectedSO.id)}>
+                      {tt('orders.confirm', 'Confirm')}
+                    </Button>
+                  )}
+                  {String(selectedSO.status).toLowerCase() === 'submitted' && (
+                    <Button variant="outline" onClick={() => approveSO(selectedSO.id)}>
+                      {tt('orders.approve', 'Approve')}
+                    </Button>
+                  )}
+                  {canIssueFromStatus(selectedSO.status) && (
                     <Button onClick={() => doShipSO(selectedSO)}>
-                      {tt('orders.shipAll', 'Ship All Outstanding')}
+                      {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
                     </Button>
                   )}
                 </div>
               </div>
 
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr className="text-left">
-                      <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
-                      <th className="py-2 px-3">{tt('table.sku', 'SKU')}</th>
-                      <th className="py-2 px-3">{tt('orders.qtyUom', 'Qty (UoM)')}</th>
-                      <th className="py-2 px-3">{tt('orders.discountPct', 'Disc %')}</th>
-                      <th className="py-2 px-3">{tt('table.qtyBase', 'Qty (base)')}</th>
-                      <th className="py-2 px-3">{tt('orders.fromWarehouse', 'From Warehouse')}</th>
-                      <th className="py-2 px-3">{tt('orders.fromBin', 'From Bin')}</th>
-                      <th className="py-2 px-3">{tt('orders.onHandBin', 'On-hand (bin)')}</th>
-                      <th className="py-2 px-3">{tt('orders.binHint', 'Bin Hint')}</th>
-                      <th className="py-2 px-3 text-right">{tt('orders.action', 'Action')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).map(l => {
-                      const it = itemById.get(l.item_id)
-                      const baseU = it?.baseUomId || ''
-                      const outstanding = remaining(l)
-                      const qtyBase = it ? safeConvert(outstanding, l.uom_id, baseU) : null
-                      const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
-                      const baseUomCode =
-                        it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
+              <div className='rounded-xl border border-border/80 bg-card p-4 shadow-sm'>
+                <div className='flex flex-col gap-1 pb-4'>
+                  <h3 className='text-sm font-semibold'>{tt('orders.issueAllocations', 'Issue allocations')}</h3>
+                  <p className='text-xs text-muted-foreground'>
+                    {tt('orders.issueAllocationHelp', 'Split each issue across the warehouse bins that actually hold stock. Quantities are validated against live on-hand balances before posting.')}
+                  </p>
+                </div>
 
-                      const disc = n(l.discount_pct, 0)
+                {!canIssueFromStatus(selectedSO.status) && (
+                  <div className='mb-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'>
+                    {String(selectedSO.status).toLowerCase() === 'draft'
+                      ? tt('orders.confirmBeforeIssue', 'Confirm the sales order before issuing stock.')
+                      : tt('orders.approveBeforeIssueSales', 'Approve the sales order before issuing stock.')}
+                  </div>
+                )}
 
-                      const key = String(l.id)
-                      const lineWh = whByLine[key] || shipWhId
-                      const lineOnHands = onHandByLine[key] || []
-                      const lineSelectedBin = binByLine[key] || ''
-                      const selectedBinQty = (lineOnHands.find(x => x.bin_id === lineSelectedBin)?.qty) ?? 0
-                      const enough = qtyBase != null && selectedBinQty >= (qtyBase || 0)
+                <div className='space-y-4'>
+                  {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).map(l => {
+                    const it = itemById.get(l.item_id)
+                    const baseU = it?.baseUomId || ''
+                    const outstanding = remaining(l)
+                    const outstandingBase = it ? safeConvert(outstanding, l.uom_id, baseU) : null
+                    const uomCode = uomById.get(uomIdFromIdOrCode(l.uom_id))?.code || l.uom_id
+                    const baseUomCode =
+                      it?.baseUomId ? (uomById.get(uomIdFromIdOrCode(it.baseUomId))?.code || 'BASE') : 'BASE'
+                    const disc = n(l.discount_pct, 0)
+                    const key = String(l.id)
+                    const options = stockOptionsByLine[key] || []
+                    const rows = allocationsByLine[key] || [buildDefaultAllocation(l, options)]
+                    const plan = buildIssuePlan(l, rows, options)
+                    const availableInLineUom =
+                      it?.baseUomId ? safeConvert(plan.availableQtyBase || 0, it.baseUomId, l.uom_id) : null
 
-                      const tops = lineOnHands.slice(0, 3)
-                      const hint = tops.length
-                        ? tops.map(t => {
-                            const code = t.bin_id ? (bins.find(b => b.id === t.bin_id)?.code || 'bin') : tt('orders.noBin', '(no bin)')
-                            return `${code}: ${fmtAcct(t.qty)} ${baseUomCode}`
-                          }).join(', ')
-                        : tt('orders.noStockInWh', 'No stock in selected warehouse')
+                    return (
+                      <div key={key} className='rounded-xl border border-border/70 bg-background/70 p-4'>
+                        <div className='flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between'>
+                          <div className='space-y-1'>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <h4 className='text-sm font-semibold'>{it?.name || l.item_id}</h4>
+                              <span className='rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground'>
+                                {it?.sku || '—'}
+                              </span>
+                            </div>
+                            {!!l.description && (
+                              <p className='max-w-3xl whitespace-pre-wrap text-xs text-muted-foreground'>{l.description}</p>
+                            )}
+                          </div>
+                          <div className='text-xs text-muted-foreground lg:text-right'>
+                            <div>{tt('orders.discountPct', 'Disc %')}: {fmtAcct(disc)}</div>
+                            <div>{tt('table.qtyBase', 'Qty (base)')}: {outstandingBase == null ? '—' : `${fmtAcct(outstandingBase)} ${baseUomCode}`}</div>
+                          </div>
+                        </div>
 
-                      return (
-                        <tr key={key} className="border-t align-top">
-                          <td className="py-2 px-3">
-                            <div className="font-medium">{it?.name || l.item_id}</div>
-                            {!!l.description && <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{l.description}</div>}
-                          </td>
-                          <td className="py-2 px-3">{it?.sku || '—'}</td>
-                          <td className="py-2 px-3">{fmtAcct(n(l.qty))} {uomCode}</td>
-                          <td className="py-2 px-3">{fmtAcct(disc)}</td>
-                          <td className="py-2 px-3">{qtyBase == null ? '—' : `${fmtAcct(qtyBase)} ${baseUomCode}`}</td>
+                        <div className='mt-4 grid gap-3 md:grid-cols-3'>
+                          <div className='rounded-lg border border-border/70 bg-muted/30 p-3'>
+                            <p className='text-[11px] uppercase tracking-wide text-muted-foreground'>{tt('orders.outstandingQty', 'Outstanding qty')}</p>
+                            <div className='mt-1 text-lg font-semibold'>{fmtAcct(outstanding)} {uomCode}</div>
+                            <p className='mt-1 text-xs text-muted-foreground'>
+                              {outstandingBase == null ? '—' : `${fmtAcct(outstandingBase)} ${baseUomCode}`}
+                            </p>
+                          </div>
+                          <div className='rounded-lg border border-border/70 bg-muted/30 p-3'>
+                            <p className='text-[11px] uppercase tracking-wide text-muted-foreground'>{tt('orders.availableQty', 'Available stock')}</p>
+                            <div className='mt-1 text-lg font-semibold'>
+                              {availableInLineUom == null ? `${fmtAcct(plan.availableQtyBase || 0)} ${baseUomCode}` : `${fmtAcct(availableInLineUom)} ${uomCode}`}
+                            </div>
+                            <p className='mt-1 text-xs text-muted-foreground'>{fmtAcct(plan.availableQtyBase || 0)} {baseUomCode}</p>
+                          </div>
+                          <div className='rounded-lg border border-border/70 bg-muted/30 p-3'>
+                            <p className='text-[11px] uppercase tracking-wide text-muted-foreground'>{tt('orders.remainingToIssue', 'Still to allocate')}</p>
+                            <div className='mt-1 text-lg font-semibold'>{fmtAcct(Math.max(plan.remainingQty, 0))} {uomCode}</div>
+                            <p className='mt-1 text-xs text-muted-foreground'>
+                              {tt('orders.allocatedQty', 'Allocated')}: {fmtAcct(plan.totalQty)} {uomCode}
+                            </p>
+                          </div>
+                        </div>
 
-                          {/* Per-line Warehouse */}
-                          <td className="py-2 px-3">
-                            <Select
-                              value={lineWh || ''}
-                              onValueChange={(v) => {
-                                setWhByLine(s => ({ ...s, [key]: v }))
-                                // clear bin so it re-picks for new warehouse
-                                setBinByLine(s => {
-                                  const n = { ...s }; delete n[key]; return n
-                                })
-                              }}
-                            >
-                              <SelectTrigger className="w-44"><SelectValue placeholder={tt('orders.selectWh', 'Select warehouse')} /></SelectTrigger>
-                              <SelectContent>
-                                {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </td>
+                        <div className='mt-4 space-y-3'>
+                          {rows.map((row) => {
+                            const warehouseValue = row.warehouseId || SELECT_WAREHOUSE_VALUE
+                            const rowOptions = row.warehouseId
+                              ? options.filter((option) => option.warehouseId === row.warehouseId)
+                              : []
+                            const selectedSource = row.binId
+                              ? rowOptions.find((option) => encodeBinValue(option.binId) === row.binId)
+                              : undefined
+                            const availableLineQty = selectedSource && it?.baseUomId
+                              ? safeConvert(selectedSource.qtyBase, it.baseUomId, l.uom_id)
+                              : null
 
-                          {/* Per-line From Bin */}
-                          <td className="py-2 px-3">
-                            <Select
-                              value={lineSelectedBin}
-                              onValueChange={(v) => setBinByLine(s => ({ ...s, [key]: v }))}
-                            >
-                              <SelectTrigger className="w-48"><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
-                              <SelectContent>
-                                {(bins
-                                  .filter(b => b.warehouseId === lineWh)
-                                  .map(b => ({
-                                    bin: b,
-                                    qty: (lineOnHands.find(x => x.bin_id === b.id)?.qty) ?? 0
-                                  }))
-                                  .sort((a,b) => (b.qty - a.qty) || a.bin.code.localeCompare(b.bin.code))
-                                ).map(({ bin, qty }) => (
-                                  <SelectItem key={bin.id} value={bin.id}>
-                                    {bin.code} — {fmtAcct(qty)} {baseUomCode}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </td>
+                            return (
+                              <div key={row.id} className='rounded-lg border border-border/60 p-3'>
+                                <div className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_auto]'>
+                                  <div>
+                                    <Label>{tt('orders.fromWarehouse', 'From Warehouse')}</Label>
+                                    <Select
+                                      value={warehouseValue}
+                                      onValueChange={(value) => {
+                                        if (value === SELECT_WAREHOUSE_VALUE) {
+                                          updateAllocationRow(key, row.id, { warehouseId: '', binId: '' })
+                                          return
+                                        }
+                                        const firstOption = options.find((option) => option.warehouseId === value)
+                                        updateAllocationRow(key, row.id, {
+                                          warehouseId: value,
+                                          binId: firstOption ? encodeBinValue(firstOption.binId) : '',
+                                        })
+                                      }}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder={tt('orders.selectWh', 'Select warehouse')} />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value={SELECT_WAREHOUSE_VALUE}>{tt('orders.selectWh', 'Select warehouse')}</SelectItem>
+                                        {warehouses.map((warehouse) => (
+                                          <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
 
-                          <td className={`py-2 px-3 font-medium ${enough ? 'text-green-600' : 'text-red-600'}`}>
-                            {fmtAcct(selectedBinQty)} {baseUomCode}
-                          </td>
+                                  <div>
+                                    <Label>{tt('orders.fromBin', 'From Bin')}</Label>
+                                    <Select
+                                      value={row.binId || SELECT_BIN_VALUE}
+                                      onValueChange={(value) => updateAllocationRow(key, row.id, {
+                                        binId: value === SELECT_BIN_VALUE ? '' : value,
+                                      })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder={tt('orders.selectBin', 'Select bin')} />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value={SELECT_BIN_VALUE}>{tt('orders.chooseWarehouseBin', 'Choose a warehouse/bin')}</SelectItem>
+                                        {rowOptions.map((option) => (
+                                          <SelectItem
+                                            key={`${key}-${row.id}-${option.warehouseId}-${option.binId ?? 'unbinned'}`}
+                                            value={encodeBinValue(option.binId)}
+                                          >
+                                            {option.binLabel} • {fmtAcct(option.qtyBase)} {baseUomCode}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
 
-                          <td className="py-2 px-3">{hint}</td>
-                          <td className="py-2 px-3 text-right">
-                            <Button
-                              size="sm"
-                              disabled={String(selectedSO.status).toLowerCase() !== 'confirmed'}
-                              onClick={() => doShipLineSO(selectedSO, l)}
-                              className="touch-target"
-                            >
-                              {tt('orders.ship', 'Ship Outstanding')}
+                                  <div>
+                                    <Label>{tt('orders.issueQty', 'Issue qty')}</Label>
+                                    <Input
+                                      type='number'
+                                      min='0'
+                                      step='0.000001'
+                                      value={row.qty}
+                                      placeholder={tt('orders.issueQtyPlaceholder', 'Enter quantity')}
+                                      onChange={(event) => updateAllocationRow(key, row.id, { qty: event.target.value })}
+                                    />
+                                  </div>
+
+                                  <div className='flex items-end justify-end'>
+                                    <Button variant='ghost' size='sm' onClick={() => removeAllocationRow(l, row.id)}>
+                                      {tt('orders.removeAllocation', 'Remove')}
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <div className='mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground'>
+                                  <span>
+                                    {selectedSource
+                                      ? tt('orders.availableQty', 'Available stock')
+                                      : tt('orders.chooseWarehouseBin', 'Choose a warehouse/bin')}
+                                    {selectedSource ? `: ${fmtAcct(selectedSource.qtyBase)} ${baseUomCode}` : ''}
+                                  </span>
+                                  {selectedSource && availableLineQty != null && (
+                                    <span>{tt('orders.issueQtyBaseHelp', 'Equivalent in line UoM')}: {fmtAcct(availableLineQty)} {uomCode}</span>
+                                  )}
+                                  {!rowOptions.length && !!row.warehouseId && (
+                                    <span>{tt('orders.noStockInWh', 'No stock in selected warehouse')}</span>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {!!plan.errors.length && (
+                          <div className='mt-3 rounded-lg border border-rose-200 bg-rose-50/80 p-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'>
+                            {Array.from(new Set(plan.errors)).map((error) => (
+                              <div key={error}>{error}</div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className='mt-4 flex flex-wrap items-center justify-between gap-3'>
+                          <p className='text-xs text-muted-foreground'>
+                            {tt('orders.issueAllocationHelp', 'Split each issue across the warehouse bins that actually hold stock. Quantities are validated against live on-hand balances before posting.')}
+                          </p>
+                          <div className='flex flex-wrap gap-2'>
+                            <Button variant='outline' onClick={() => addAllocationRow(l)}>
+                              {tt('orders.addAllocation', 'Add allocation')}
                             </Button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).length === 0 && (
-                      <tr><td colSpan={10} className="py-3 text-muted-foreground">{tt('orders.allLinesShipped', 'All lines shipped.')}</td></tr>
-                    )}
-                  </tbody>
-                </table>
+                            <Button
+                              size='sm'
+                              disabled={!canIssueFromStatus(selectedSO.status) || !!plan.errors.length || !plan.rows.length}
+                              onClick={() => doShipLineSO(selectedSO, l)}
+                            >
+                              {tt('orders.issueAllocatedQty', 'Issue allocated qty')}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).length === 0 && (
+                    <div className='rounded-xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground'>
+                      {tt('orders.allLinesShipped', 'All lines shipped.')}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -2343,10 +2709,10 @@ export default function SalesOrders() {
                       <td className="py-2 px-3">{soCustomerLabel(so)}</td>
                       <td className="py-2 px-3">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
-                          {String(so.status).replace('_', ' ')}
+                          {salesStatusLabel(so.status)}
                         </span>
                       </td>
-                      <td className="py-2 px-3">{updated || '—'}</td>
+                      <td className="py-2 px-3">{updated || 'â€”'}</td>
                       <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                       <td className="py-2 px-3 text-right">
                         <div className="flex justify-end gap-2">
@@ -2382,6 +2748,7 @@ export default function SalesOrders() {
     </div>
   )
 }
+
 
 
 
