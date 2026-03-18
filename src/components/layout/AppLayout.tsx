@@ -1,5 +1,5 @@
 // src/components/layout/AppLayout.tsx
-import { ReactNode, useEffect, useRef, useState, useMemo } from 'react'
+import { FormEvent, ReactNode, useState, useMemo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -38,6 +38,13 @@ import CompanySwitcher from '../CompanySwitcher'
 import { useI18n } from '../../lib/i18n'
 import BrandLockup from '../brand/BrandLockup'
 import LocaleToggle from '../LocaleToggle'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu'
 
 type Props = { user: AppUser; children: ReactNode }
 
@@ -71,24 +78,30 @@ function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
   ]
 }
 
-function useClickOutside<T extends HTMLElement>(onClose: () => void) {
-  const ref = useRef<T | null>(null)
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current) return
-      if (!ref.current.contains(e.target as Node)) onClose()
-    }
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDocClick)
-    document.addEventListener('keydown', onEsc)
-    return () => {
-      document.removeEventListener('mousedown', onDocClick)
-      document.removeEventListener('keydown', onEsc)
-    }
-  }, [onClose])
-  return ref
+function SearchBar({
+  placeholder,
+  value,
+  onChange,
+  onSubmit,
+  className,
+}: {
+  placeholder: string
+  value: string
+  onChange: (value: string) => void
+  onSubmit: (event: FormEvent) => void
+  className?: string
+}) {
+  return (
+    <form onSubmit={onSubmit} className={cn('relative', className)}>
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        placeholder={placeholder}
+        className="h-10 rounded-xl border-border/70 bg-muted/20 pl-9 shadow-none"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </form>
+  )
 }
 
 export function AppLayout({ user, children }: Props) {
@@ -117,10 +130,10 @@ export function AppLayout({ user, children }: Props) {
         to={item.to}
         onClick={() => setOpen(false)}
         className={cn(
-          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors',
           active
-            ? 'bg-primary text-primary-foreground'
-            : 'text-foreground/80 hover:bg-accent hover:text-foreground'
+            ? 'border-primary/20 bg-primary/10 text-primary'
+            : 'border-transparent text-foreground/80 hover:border-border/80 hover:bg-accent/45 hover:text-foreground'
         )}
       >
         <Icon className="h-5 w-5 flex-shrink-0" />
@@ -131,29 +144,29 @@ export function AppLayout({ user, children }: Props) {
 
   const sidebar = useMemo(
     () => (
-      <aside className="hidden md:flex md:w-64 md:flex-col md:border-r">
-        <div className="flex h-16 items-center gap-2 px-4">
+      <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-border/80 md:bg-muted/10">
+        <div className="flex h-16 items-center gap-2 border-b border-border/70 px-4">
           <BrandLockup compact subtitle="" />
           <div className="ml-2 shrink-0">
             <ThemeToggle />
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 px-3 py-2">
+        <nav className="flex-1 space-y-1 px-3 py-4">
           {nav.map((item) => (
             <NavLink key={item.to} item={item} />
           ))}
         </nav>
 
-        <div className="border-t p-3">
-          <CompanySwitcher className="mb-2" />
-          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
+        <div className="border-t border-border/70 p-3">
+          <CompanySwitcher className="mb-3" />
+          {companyName && <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
           <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
           <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
           <Button
             variant="ghost"
             size="sm"
-            className="mt-2 w-full justify-start"
+            className="mt-3 w-full justify-start"
             onClick={() => logout?.()}
           >
             <LogOut className="mr-2 h-4 w-4" />
@@ -165,21 +178,13 @@ export function AppLayout({ user, children }: Props) {
     [user, location.pathname, logout, nav, companyName, myRole]
   )
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = (e: FormEvent) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
     // Navigate to search results page with query parameter
     navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
   }
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch(e as any)
-    }
-  }
-
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false))
   const initial = (user.name || user.email || '?').charAt(0).toUpperCase()
 
   return (
@@ -243,7 +248,7 @@ export function AppLayout({ user, children }: Props) {
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background px-4">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/88 md:px-6">
           <Button 
             variant="ghost" 
             size="icon" 
@@ -256,80 +261,67 @@ export function AppLayout({ user, children }: Props) {
           
           {/* Mobile search form */}
           <div className="ml-1 flex-1 md:hidden">
-            <form onSubmit={handleSearch} className="relative">
-              <Input 
-                placeholder={t('common.searchPlaceholder')} 
-                className="w-full pl-8" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-              />
-              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </form>
+            <SearchBar
+              placeholder={t('common.searchPlaceholder')}
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onSubmit={handleSearch}
+            />
           </div>
           
           {/* Desktop search form */}
           <div className="ml-1 hidden flex-1 md:flex">
-            <form onSubmit={handleSearch} className="relative w-full max-w-xl">
-              <Input 
-                placeholder={t('common.searchPlaceholder')} 
-                className="w-full pl-8" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-              />
-              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </form>
+            <SearchBar
+              className="w-full max-w-xl"
+              placeholder={t('common.searchPlaceholder')}
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onSubmit={handleSearch}
+            />
           </div>
           
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 md:gap-3">
             <LocaleToggle className="hidden sm:inline-flex" />
             <NotificationCenter />
             <CompanySwitcher className="hidden md:block" />
-            <div className="hidden text-right md:block">
-              {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
+            <div className="hidden border-l border-border/70 pl-3 text-right md:block">
+              {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
               <div className="text-sm font-semibold leading-tight truncate">{user.name || user.email}</div>
               <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
             </div>
 
-            <div className="relative ml-2 hidden md:block" ref={menuRef}>
-              <button
-                className="h-9 w-9 rounded-full bg-primary/10 text-sm font-semibold flex items-center justify-center hover:bg-primary/20 transition min-h-[44px] min-w-[44px]"
-                onClick={() => setMenuOpen(v => !v)}
-                aria-label="User menu"
-              >
-                {initial}
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 mt-2 w-48 rounded-md border bg-popover text-popover-foreground shadow-md">
-                  <div className="p-1">
-                    {/* Profile Menu Items */}
-                    <button
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
-                      onClick={() => { setMenuOpen(false); navigate('/profile'); }}
-                    >
-                      <Users className="h-4 w-4" />
-                      {t('common.profile')}
-                    </button>
-                    <button
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
-                      onClick={() => { setMenuOpen(false); navigate('/settings'); }}
-                    >
-                      <SettingsIcon className="h-4 w-4" />
-                      {t('common.settings')}
-                    </button>
-                    <hr className="my-1" />
-                    <button
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-accent min-h-[44px]"
-                      onClick={() => { setMenuOpen(false); logout?.() }}
-                    >
-                      <LogOut className="h-4 w-4" />
-                      {t('common.signOut')}
-                    </button>
-                  </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="hidden h-10 w-10 rounded-full border border-border/70 bg-muted/20 font-semibold md:inline-flex"
+                  aria-label="User menu"
+                >
+                  {initial}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <div className="px-2 py-2">
+                  <div className="text-sm font-semibold truncate">{user.name || user.email}</div>
+                  <div className="text-xs text-muted-foreground truncate">{user.email}</div>
                 </div>
-              )}
-            </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/profile')}>
+                  <Users className="h-4 w-4" />
+                  {t('common.profile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/settings')}>
+                  <SettingsIcon className="h-4 w-4" />
+                  {t('common.settings')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => logout?.()}>
+                  <LogOut className="h-4 w-4" />
+                  {t('common.signOut')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 

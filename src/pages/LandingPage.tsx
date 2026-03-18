@@ -5,7 +5,6 @@ import {
   Boxes,
   Building2,
   CheckCircle2,
-  ChevronRight,
   Languages,
   LineChart,
   Menu,
@@ -34,6 +33,12 @@ type Plan = {
   title: string
   body: string
   points: string[]
+}
+
+type SurfaceSignal = {
+  label: string
+  body: string
+  tone?: 'default' | 'accent'
 }
 
 type Copy = {
@@ -84,7 +89,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     valueStrip: 'One operational system for stock control, order execution, cash tracking, and margin visibility.',
     featuresTitle: 'Built for daily operational control',
     featuresBody:
-      'The public experience now matches the application itself: practical, data-heavy, and designed for people who need answers quickly.',
+      'The public experience should explain the product the same way the product behaves: clearly, directly, and around the work teams do every day.',
     features: [
       {
         title: 'See stock with confidence',
@@ -121,20 +126,20 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     workflowBody:
       'StockWise follows the real movement of goods and money: receive stock, store it correctly, fulfill demand, and reconcile what actually happened.',
     workflowSteps: ['Receive', 'Store', 'Move', 'Sell', 'Ship', 'Collect', 'Reconcile'],
-    kpiTitle: 'The metrics teams actually use',
+    kpiTitle: 'The signals teams actually use',
     kpiBody:
-      'The interface is built around operational numbers you can act on, not vanity charts. Stock value, cash, orders, and gross margin stay visible.',
+      'The product keeps the few operational views that matter visible instead of burying them under decorative dashboard noise.',
     aboutTitle: 'Designed for practical inventory and sales operations',
     aboutBody:
       'StockWise is for teams that need the system of record and the daily operating screen to be the same product.',
     aboutPoints: [
       'Shared EN/PT runtime experience across landing, login, and the authenticated app',
       'Clean route protection for dashboard and internal pages',
-      'Operational UI language aligned with the existing dashboard',
+      'Operational UI language aligned with the product itself',
     ],
     getStartedTitle: 'Choose how to start',
     getStartedBody:
-      'The navigation uses a real onboarding section instead of placeholder pricing. Pick the rollout style that matches your team.',
+      'The onboarding entry points are framed around real rollout needs instead of placeholder pricing plans.',
     plans: [
       {
         title: 'Self-serve workspace',
@@ -176,7 +181,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     valueStrip: 'Um único sistema operacional para controlo de stock, execução de encomendas, caixa e visibilidade de margem.',
     featuresTitle: 'Criado para controlo operacional diário',
     featuresBody:
-      'A experiência pública foi alinhada com a aplicação: prática, orientada a dados e pensada para equipas que precisam de respostas rápidas.',
+      'A experiência pública deve explicar o produto da mesma forma que o produto funciona: de forma clara, directa e focada no trabalho diário da equipa.',
     features: [
       {
         title: 'Ver stock com confiança',
@@ -213,20 +218,20 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     workflowBody:
       'O StockWise acompanha o fluxo real de mercadoria e dinheiro: receber, armazenar, movimentar, vender, expedir e reconciliar o que realmente aconteceu.',
     workflowSteps: ['Receber', 'Guardar', 'Mover', 'Vender', 'Expedir', 'Receber', 'Reconciliar'],
-    kpiTitle: 'Os indicadores que a equipa realmente usa',
+    kpiTitle: 'Os sinais que a equipa realmente usa',
     kpiBody:
-      'A interface foi desenhada à volta de números operacionais acionáveis. Valor de stock, caixa, encomendas e margem ficam sempre visíveis.',
+      'O produto mantém visível a leitura operacional que importa, em vez de esconder tudo atrás de um dashboard decorativo.',
     aboutTitle: 'Feito para operações práticas de stock e vendas',
     aboutBody:
       'O StockWise é para equipas que precisam que o sistema de registo e o ecrã operacional do dia a dia sejam o mesmo produto.',
     aboutPoints: [
       'Experiência EN/PT consistente entre landing page, login e aplicação autenticada',
       'Proteção real de rotas para dashboard e páginas internas',
-      'Linguagem visual alinhada com o dashboard existente',
+      'Linguagem operacional alinhada com o produto',
     ],
     getStartedTitle: 'Escolha como começar',
     getStartedBody:
-      'A navegação usa uma secção real de arranque, em vez de uma secção de pricing inventada. Escolha o formato mais adequado para a equipa.',
+      'Os pontos de entrada foram organizados à volta de necessidades reais de rollout, e não de planos de pricing inventados.',
     plans: [
       {
         title: 'Workspace self-serve',
@@ -253,26 +258,26 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
   },
 }
 
-function MetricCard({
+function SurfaceSignalCard({
   label,
-  value,
+  body,
   tone = 'default',
 }: {
   label: string
-  value: string
+  body: string
   tone?: 'default' | 'accent'
 }) {
   return (
     <div
       className={cn(
-        'rounded-2xl border p-4 shadow-sm',
+        'rounded-2xl border p-4',
         tone === 'accent'
           ? 'border-amber-200/80 bg-amber-50/90 dark:border-amber-500/30 dark:bg-amber-500/10'
-          : 'border-border/70 bg-background/90'
+          : 'border-border/70 bg-background'
       )}
     >
       <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
+      <div className="mt-2 text-sm leading-6 text-muted-foreground">{body}</div>
     </div>
   )
 }
@@ -281,76 +286,102 @@ function PreviewPanel({ lang }: { lang: 'en' | 'pt' }) {
   const labels =
     lang === 'pt'
       ? {
-          inventory: 'Valor do Stock',
-          revenue: 'Receita 30d',
-          margin: 'Margem Bruta',
-          open: 'Encomendas Abertas',
-          headline: 'Preview operacional',
-          sub: 'O visual usa os mesmos cartões neutros, métricas fortes e linguagem operacional do dashboard.',
-          rows: 'Alertas operacionais',
-          row1: '5 artigos abaixo do stock mínimo',
-          row2: '2 transferências pendentes',
-          row3: '1 conta bancária por reconciliar',
+          headline: 'O que a equipa acompanha todos os dias',
+          sub: 'A interface privilegia poucos sinais operacionais bem visíveis, em vez de um painel decorativo cheio de ruído.',
+          rows: 'Rotina operacional',
+          row1: 'Ver rupturas e excesso de stock sem sair do contexto do armazém',
+          row2: 'Ligar ordens, movimentos e liquidações no mesmo fluxo',
+          row3: 'Fechar o dia com margem, caixa e reconciliação no mesmo ecrã',
+          signals: [
+            {
+              label: 'Stock visível',
+              body: 'Quantidades, mínimos e valor ficam juntos para a leitura operacional e financeira.',
+            },
+            {
+              label: 'Ordens em contexto',
+              body: 'Compras, vendas e receção/expedição mantêm a mesma referência de trabalho.',
+              tone: 'accent' as const,
+            },
+            {
+              label: 'Caixa sob controlo',
+              body: 'Recebimentos, pagamentos e bancos já não vivem em folhas separadas.',
+            },
+            {
+              label: 'Margem confiável',
+              body: 'Receita, CMVMC e valor de stock aparecem na mesma leitura de gestão.',
+            },
+          ] satisfies SurfaceSignal[],
         }
       : {
-          inventory: 'Inventory Value',
-          revenue: 'Revenue 30d',
-          margin: 'Gross Margin',
-          open: 'Open Orders',
-          headline: 'Operational preview',
-          sub: 'The preview uses the same neutral cards, strong KPI treatment, and operational language as the dashboard.',
-          rows: 'Operational alerts',
-          row1: '5 items below minimum stock',
-          row2: '2 warehouse transfers pending',
-          row3: '1 bank account awaiting reconciliation',
+          headline: 'What teams keep in view every day',
+          sub: 'The interface favors a few strong operational signals instead of a decorative dashboard full of noise.',
+          rows: 'Operational rhythm',
+          row1: 'See low stock and overstock without leaving warehouse context',
+          row2: 'Keep orders, movements, and settlements tied to the same workflow',
+          row3: 'Close the day with margin, cash, and reconciliation on one screen',
+          signals: [
+            {
+              label: 'Visible stock',
+              body: 'Quantities, minimums, and value stay together for operational and financial reading.',
+            },
+            {
+              label: 'Orders in context',
+              body: 'Purchases, sales, receiving, and shipping keep the same working reference.',
+              tone: 'accent' as const,
+            },
+            {
+              label: 'Cash under control',
+              body: 'Cash receipts, payments, and banks no longer live in separate spreadsheets.',
+            },
+            {
+              label: 'Trustworthy margin',
+              body: 'Revenue, COGS, and inventory value sit in the same management view.',
+            },
+          ] satisfies SurfaceSignal[],
         }
 
   return (
-    <div className="relative">
-      <div className="absolute -left-10 top-10 h-28 w-28 rounded-full bg-primary/15 blur-3xl" />
-      <div className="absolute -right-10 bottom-0 h-32 w-32 rounded-full bg-amber-400/20 blur-3xl" />
-
-      <Card className="relative overflow-hidden border-slate-200/80 bg-white/95 shadow-2xl dark:border-slate-700/60 dark:bg-slate-950/90">
-        <CardContent className="p-0">
-          <div className="border-b border-slate-200/70 bg-slate-950 px-6 py-4 text-white dark:border-slate-700/70">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold">{labels.headline}</div>
-                <div className="mt-1 text-sm text-slate-300">{labels.sub}</div>
-              </div>
-              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs text-white/80">
-                StockWise
-              </div>
+    <Card className="overflow-hidden border-border/70 bg-card shadow-sm">
+      <CardContent className="p-0">
+        <div className="border-b border-border/70 bg-muted/35 px-6 py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">{labels.headline}</div>
+              <div className="mt-1 text-sm leading-6 text-muted-foreground">{labels.sub}</div>
+            </div>
+            <div className="rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
+              StockWise
             </div>
           </div>
+        </div>
 
-          <div className="grid gap-3 p-6 sm:grid-cols-2">
-            <MetricCard label={labels.inventory} value="$ 428,500" />
-            <MetricCard label={labels.revenue} value="$ 182,400" tone="accent" />
-            <MetricCard label={labels.margin} value="27.4%" />
-            <MetricCard label={labels.open} value="36" />
-          </div>
+        <div className="grid gap-3 p-6 sm:grid-cols-2">
+          {labels.signals.map((signal) => (
+            <SurfaceSignalCard
+              key={signal.label}
+              label={signal.label}
+              body={signal.body}
+              tone={signal.tone}
+            />
+          ))}
+        </div>
 
-          <div className="border-t border-slate-200/70 bg-slate-50/80 p-6 dark:border-slate-700/70 dark:bg-slate-900/60">
-            <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{labels.rows}</div>
-            <div className="mt-4 space-y-3">
-              {[labels.row1, labels.row2, labels.row3].map((row) => (
-                <div
-                  key={row}
-                  className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/90 px-4 py-3"
-                >
-                  <div className="flex items-center gap-3 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <span>{row}</span>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              ))}
-            </div>
+        <div className="border-t border-border/70 bg-muted/20 p-6">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{labels.rows}</div>
+          <div className="mt-4 space-y-3">
+            {[labels.row1, labels.row2, labels.row3].map((row) => (
+              <div
+                key={row}
+                className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background px-4 py-3"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+                <span className="text-sm leading-6">{row}</span>
+              </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -362,48 +393,35 @@ export default function LandingPage() {
   const copy = copyByLang[lang]
   const ctaHref = user ? '/dashboard' : '/login'
   const signInHref = user ? '/dashboard' : '/login'
-  const signInLabel =
-    user
-      ? 'Dashboard'
-      : copy.signIn
-  const primaryCtaLabel =
-    user
-      ? lang === 'pt'
-        ? 'Abrir dashboard'
-        : 'Open dashboard'
-      : copy.primaryCta
-  const secondaryCtaLabel =
-    user
-      ? lang === 'pt'
-        ? 'Ir para a aplicação'
-        : 'Go to app'
-      : copy.secondaryCta
+  const signInLabel = user ? 'Dashboard' : copy.signIn
+  const primaryCtaLabel = user ? (lang === 'pt' ? 'Abrir dashboard' : 'Open dashboard') : copy.primaryCta
+  const secondaryCtaLabel = user ? (lang === 'pt' ? 'Ir para a aplicação' : 'Go to app') : copy.secondaryCta
 
-  const mockKpis = useMemo(
+  const dashboardSignals = useMemo(
     () =>
       lang === 'pt'
         ? [
-            ['Valor do Stock', '$ 428,500'],
-            ['Receita 30d', '$ 182,400'],
-            ['CMVMC 30d', '$ 132,100'],
-            ['Margem Bruta', '27.4%'],
-            ['Armazéns', '4'],
-            ['Ordens Abertas', '36'],
+            ['Valor do Stock', 'Visível por armazém, com custo médio e alerta de reposição na mesma leitura.'],
+            ['Receita 30d', 'Lida no mesmo período usado para CMVMC, margem e detalhe diário.'],
+            ['CMVMC 30d', 'Ligado às saídas reais e não a um número solto sem rasto operacional.'],
+            ['Margem Bruta', 'Interpretada com contexto de stock, expedição e liquidação.'],
+            ['Armazéns', 'Operação multi-armazém com bins e movimentos rastreáveis.'],
+            ['Ordens Abertas', 'Mantidas junto ao fluxo operacional, não perdidas em listas genéricas.'],
           ]
         : [
-            ['Inventory Value', '$ 428,500'],
-            ['Revenue 30d', '$ 182,400'],
-            ['COGS 30d', '$ 132,100'],
-            ['Gross Margin', '27.4%'],
-            ['Warehouses', '4'],
-            ['Open Orders', '36'],
+            ['Inventory Value', 'Visible by warehouse, with average cost and replenishment risk in the same reading.'],
+            ['Revenue 30d', 'Read inside the same window used for COGS, margin, and daily detail.'],
+            ['COGS 30d', 'Tied to real issue movements instead of a disconnected finance number.'],
+            ['Gross Margin', 'Interpreted with stock, shipping, and settlement context still in view.'],
+            ['Warehouses', 'Multi-warehouse operations with bins and traceable movements.'],
+            ['Open Orders', 'Kept inside the operational workflow instead of generic lists.'],
           ],
     [lang]
   )
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="absolute inset-x-0 top-0 -z-10 h-[520px] bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.16),_transparent_42%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_28%)]" />
+      <div className="absolute inset-x-0 top-0 -z-10 h-[360px] bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.12),_transparent_40%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_24%)]" />
 
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/92 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -478,7 +496,7 @@ export default function LandingPage() {
 
       <main>
         <section id="product" className="mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 lg:px-8 lg:pb-24 lg:pt-20">
-          <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+          <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div className="max-w-2xl">
               <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary">
                 <ShieldCheck className="mr-2 h-4 w-4" />
@@ -512,7 +530,7 @@ export default function LandingPage() {
                   lang === 'pt' ? 'Dashboard, stock, caixa e relatórios integrados' : 'Dashboard, stock, cash, and reporting aligned',
                   lang === 'pt' ? 'Experiência pública coerente com o produto' : 'Public experience aligned with the product itself',
                 ].map((point) => (
-                  <div key={point} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background/80 p-4 shadow-sm">
+                  <div key={point} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background p-4">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
                     <span className="text-sm text-muted-foreground">{point}</span>
                   </div>
@@ -524,8 +542,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="border-y border-border/60 bg-slate-950 py-4 text-white">
-          <div className="mx-auto max-w-7xl px-4 text-center text-sm font-medium tracking-[0.16em] text-slate-200 sm:px-6 lg:px-8">
+        <section className="border-y border-border/60 bg-muted/30 py-4">
+          <div className="mx-auto max-w-7xl px-4 text-center text-sm font-medium text-foreground/80 sm:px-6 lg:px-8">
             {copy.valueStrip}
           </div>
         </section>
@@ -540,7 +558,7 @@ export default function LandingPage() {
             {copy.features.map((feature) => {
               const Icon = feature.icon
               return (
-                <Card key={feature.title} className="border-border/70 bg-card/95 shadow-sm transition-transform hover:-translate-y-0.5">
+                <Card key={feature.title} className="border-border/70 bg-card shadow-sm transition-colors hover:border-primary/20">
                   <CardContent className="p-6">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                       <Icon className="h-5 w-5" />
@@ -564,10 +582,7 @@ export default function LandingPage() {
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {copy.workflowSteps.map((step, index) => (
-                  <div
-                    key={step}
-                    className="rounded-2xl border border-border/70 bg-background px-4 py-5 shadow-sm"
-                  >
+                  <div key={step} className="rounded-2xl border border-border/70 bg-background px-4 py-5">
                     <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                       {lang === 'pt' ? 'Etapa' : 'Step'} {index + 1}
                     </div>
@@ -586,11 +601,11 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {mockKpis.map(([label, value], index) => (
-              <MetricCard
+            {dashboardSignals.map(([label, body], index) => (
+              <SurfaceSignalCard
                 key={label}
                 label={label}
-                value={value}
+                body={body}
                 tone={index === 1 || index === 3 ? 'accent' : 'default'}
               />
             ))}
@@ -625,7 +640,7 @@ export default function LandingPage() {
               <Card
                 key={plan.title}
                 className={cn(
-                  'border-border/70 bg-card/95 shadow-sm',
+                  'border-border/70 bg-card shadow-sm',
                   index === 1 ? 'border-primary/30 ring-1 ring-primary/15' : ''
                 )}
               >
@@ -647,17 +662,17 @@ export default function LandingPage() {
         </section>
 
         <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8 lg:pb-24">
-          <Card className="overflow-hidden border-slate-200/80 bg-[linear-gradient(135deg,rgba(37,99,235,0.96),rgba(15,23,42,0.98))] text-white shadow-2xl dark:border-slate-700/60">
+          <Card className="overflow-hidden border-primary/15 bg-primary/[0.05] shadow-sm dark:border-primary/20 dark:bg-primary/[0.08]">
             <CardContent className="flex flex-col gap-6 p-8 lg:flex-row lg:items-center lg:justify-between lg:p-10">
               <div className="max-w-2xl">
                 <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{copy.finalTitle}</h2>
-                <p className="mt-4 text-lg text-blue-50/88">{copy.finalBody}</p>
+                <p className="mt-4 text-lg text-muted-foreground">{copy.finalBody}</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button size="lg" variant="secondary" asChild>
+                <Button size="lg" asChild>
                   <Link to={ctaHref}>{copy.finalCta}</Link>
                 </Button>
-                <Button size="lg" variant="outline" className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white" asChild>
+                <Button size="lg" variant="outline" asChild>
                   <Link to={signInHref}>{signInLabel}</Link>
                 </Button>
               </div>

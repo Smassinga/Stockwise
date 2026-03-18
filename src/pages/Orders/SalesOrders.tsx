@@ -172,9 +172,9 @@ const ts = (row: any) =>
 
 const initials = (s?: string | null) => {
   const t = (s || '').trim()
-  if (!t) return 'â€”'
+  if (!t) return '-'
   const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
-  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || 'â€”'
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '-'
 }
 
 /** Prefetch an image and convert to Data URL to avoid CORS/expiry; returns null on failure. */
@@ -276,15 +276,15 @@ const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;')
-const docText = (value: unknown, fallback = 'â€”') => {
+const docText = (value: unknown, fallback = '-') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text) : fallback
 }
-const docMultiline = (value: unknown, fallback = 'â€”') => {
+const docMultiline = (value: unknown, fallback = '-') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text).replace(/\r?\n/g, '<br/>') : fallback
 }
-const docDate = (value: unknown, fallback = 'â€”') => {
+const docDate = (value: unknown, fallback = '-') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text.slice(0, 10)) : fallback
 }
@@ -602,10 +602,10 @@ export default function SalesOrders() {
     }
   }
 
-  // Prefer bill_to_name; if we can resolve a customer row, show CODE â€” Name
+  // Prefer bill_to_name; if we can resolve a customer row, show CODE - Name
   const soCustomerLabel = (s: SO) => {
     const cust = s.customer_id ? customers.find(c => c.id === s.customer_id) : undefined
-    if (cust) return `${cust.code ? cust.code + ' â€” ' : ''}${cust.name}`
+    if (cust) return `${cust.code ? cust.code + ' - ' : ''}${cust.name}`
     return s.bill_to_name ?? s.customer ?? (s.customer_id || tt('none', '(none)'))
   }
 
@@ -759,7 +759,7 @@ export default function SalesOrders() {
         const preferred = (whs.data || []).find((w:any) => w.id === prefId) ?? (whs.data || [])[0]
         setShipWhId(preferred?.id || '')
 
-        // 7) brandingâ€”companies table (preferred)
+        // 7) branding - companies table (preferred)
         try {
           const row = await getCompanyProfileDB(companyId)
           setCompanyProfile(mapDBProfile(row))
@@ -1431,7 +1431,7 @@ export default function SalesOrders() {
 
   // ---- Print: uses companies profile (preferred), then company_settings brand as fallback
   async function printSO(so: SO, download = false) {
-    const currency = curSO(so) || 'â€”'
+    const currency = curSO(so) || '-'
     const fx = fxSO(so) || 1
     const lines = solines.filter(l => l.so_id === so.id)
 
@@ -1465,13 +1465,13 @@ export default function SalesOrders() {
     const custRow = so.customer_id ? customers.find(c => c.id === so.customer_id) : undefined
     const cust = {
       code: custRow?.code || '',
-      name: so.bill_to_name ?? custRow?.name ?? so.customer ?? 'â€”',
-      email: so.bill_to_email ?? custRow?.email ?? 'â€”',
-      phone: so.bill_to_phone ?? custRow?.phone ?? 'â€”',
-      tax_id: so.bill_to_tax_id ?? custRow?.tax_id ?? 'â€”',
-      bill_to: (so.bill_to_billing_address ?? custRow?.billing_address ?? '')?.trim() || 'â€”',
-      ship_to: (so.bill_to_shipping_address ?? custRow?.shipping_address ?? '')?.trim() || 'â€”',
-      terms: so.payment_terms ?? custRow?.payment_terms ?? 'â€”',
+      name: so.bill_to_name ?? custRow?.name ?? so.customer ?? '-',
+      email: so.bill_to_email ?? custRow?.email ?? '-',
+      phone: so.bill_to_phone ?? custRow?.phone ?? '-',
+      tax_id: so.bill_to_tax_id ?? custRow?.tax_id ?? '-',
+      bill_to: (so.bill_to_billing_address ?? custRow?.billing_address ?? '')?.trim() || '-',
+      ship_to: (so.bill_to_shipping_address ?? custRow?.shipping_address ?? '')?.trim() || '-',
+      terms: so.payment_terms ?? custRow?.payment_terms ?? '-',
     }
     ;(cust as any).referenceNo = (so as any).reference_no ?? ''
     ;(cust as any).deliveryTerms = (so as any).delivery_terms ?? ''
@@ -1588,14 +1588,14 @@ export default function SalesOrders() {
       <div class="card">
         <h4>${tt('orders.companyDetails', 'Company Details')}</h4>
         <div class="kv">
-          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || 'â€”'}</b></div>
-          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || 'â€”'}</div>
-          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || 'â€”'}</div>
-          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || 'â€”'}</div>
-          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || 'â€”'}</div>
-          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || 'â€”'}</div>
-          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || 'â€”'}</div>
-          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || 'â€”'}</div>
+          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || '-'}</b></div>
+          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || '-'}</div>
+          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || '-'}</div>
+          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || '-'}</div>
+          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || '-'}</div>
+          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || '-'}</div>
+          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || '-'}</div>
+          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || '-'}</div>
         </div>
         ${cp.printFooterNote ? `<div class="footnote">${cp.printFooterNote}</div>` : ''}
       </div>
@@ -1607,8 +1607,8 @@ export default function SalesOrders() {
         <div class="kv">
           <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${so.status}</b></div>
           <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
-          <div class="k">${tt('orders.fxToBaseShort', 'FX â†’ {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
-          <div class="k">${tt('orders.expectedShip', 'Expected Ship')}</div><div><b>${(so as any).expected_ship_date || 'â€”'}</b></div>
+          <div class="k">${tt('orders.fxToBaseShort', 'FX -> {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
+          <div class="k">${tt('orders.expectedShip', 'Expected Ship')}</div><div><b>${(so as any).expected_ship_date || '-'}</b></div>
         </div>
       </div>
     `
@@ -1616,8 +1616,8 @@ export default function SalesOrders() {
     const customerCard = `
       <div class="card" style="margin-top:8px">
         <h4>${tt('orders.customer', 'Customer')}</h4>
-        <div><b>${cust.code ? cust.code + ' â€” ' : ''}${cust.name}</b></div>
-        <div class="muted">${tt('orders.email', 'Email')}: ${cust.email} Â· ${tt('orders.phone', 'Phone')}: ${cust.phone} Â· ${tt('orders.taxId', 'Tax ID')}: ${cust.tax_id}</div>
+        <div><b>${cust.code ? cust.code + ' - ' : ''}${cust.name}</b></div>
+        <div class="muted">${tt('orders.email', 'Email')}: ${cust.email} | ${tt('orders.phone', 'Phone')}: ${cust.phone} | ${tt('orders.taxId', 'Tax ID')}: ${cust.tax_id}</div>
         <div class="kv" style="margin-top:6px">
           <div class="k">${tt('orders.billTo', 'Bill To')}</div><div class="addr">${cust.bill_to}</div>
           <div class="k">${tt('orders.shipOrServiceLocation', 'Shipping / Service Location')}</div><div class="addr">${cust.ship_to}</div>
@@ -1631,7 +1631,7 @@ export default function SalesOrders() {
         <div class="header">
           <div class="brand">
             ${headerBrand}
-            <div class="company-name">${companyName || 'â€”'}</div>
+            <div class="company-name">${companyName || '-'}</div>
           </div>
           <div class="doc-meta">
             <h1 class="doc-title">${tt('orders.salesOrder', 'Sales Order')} ${number}</h1>
@@ -1816,7 +1816,7 @@ export default function SalesOrders() {
                         <SelectContent className="max-h-64 overflow-auto">
                           {customers.map((c) => (
                             <SelectItem key={c.id} value={c.id}>
-                              {(c.code ? c.code + ' â€” ' : '') + c.name}
+                              {(c.code ? c.code + ' - ' : '') + c.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -2059,7 +2059,7 @@ export default function SalesOrders() {
                                     <div className={`text-xs mt-1 ${previewInvalid ? 'text-red-600' : 'text-muted-foreground'}`}>
                                       {qtyPreviewBase == null
                                         ? tt('orders.previewNoPath', 'No conversion path to base')
-                                        : `â†’ ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
+                                        : `-> ${fmtAcct(qtyPreviewBase)} ${baseUomCode}`}
                                     </div>
                                   )}
                                 </td>
@@ -2086,7 +2086,7 @@ export default function SalesOrders() {
                                 </td>
                                 <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
                                 <td className="py-2 px-3 text-right">
-                                  <Button size="icon" variant="ghost" onClick={() => setSoLinesForm(prev => prev.filter((_, i) => i !== idx))}>âœ•</Button>
+                                  <Button size="icon" variant="ghost" onClick={() => setSoLinesForm(prev => prev.filter((_, i) => i !== idx))}>X</Button>
                                 </td>
                               </tr>
                             )
@@ -2710,7 +2710,7 @@ export default function SalesOrders() {
                           {salesStatusLabel(so.status)}
                         </span>
                       </td>
-                      <td className="py-2 px-3">{updated || 'â€”'}</td>
+                      <td className="py-2 px-3">{updated || '-'}</td>
                       <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                       <td className="py-2 px-3 text-right">
                         <div className="flex justify-end gap-2">

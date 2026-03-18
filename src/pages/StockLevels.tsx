@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, FileDown, Package, RefreshCw, Search, Warehouse as WarehouseIcon } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -325,7 +325,7 @@ export function StockLevels() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{t('nav.stockLevels')}</h1>
           <p className="text-muted-foreground">
             {tt('stock.description', 'Review on-hand quantity, weighted average cost, and inventory value by warehouse.')}
           </p>
@@ -351,45 +351,45 @@ export function StockLevels() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{formatCurrency(totals.totalValue)}</div>
+            <div className="font-mono text-3xl font-semibold tabular-nums">{formatCurrency(totals.totalValue)}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {tt('stock.summary.valueHelp', 'Value of the filtered stock position using average cost.')}
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.units', 'On-hand units')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{formatQuantity(totals.totalUnits)}</div>
+            <div className="font-mono text-3xl font-semibold tabular-nums">{formatQuantity(totals.totalUnits)}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {tt('stock.summary.unitsHelp', '{count} stock positions in view.', { count: totals.positions })}
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.low', 'Low stock positions')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{totals.lowStock}</div>
+            <div className="font-mono text-3xl font-semibold tabular-nums">{totals.lowStock}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {tt('stock.summary.lowHelp', 'Includes {count} positions already at zero stock.', { count: totals.outOfStock })}
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.coverage', 'Warehouse coverage')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{totals.filteredWarehouses}</div>
+            <div className="font-mono text-3xl font-semibold tabular-nums">{totals.filteredWarehouses}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {tt('stock.summary.coverageHelp', 'Warehouses represented in the current filtered result.')}
             </p>
@@ -397,9 +397,12 @@ export function StockLevels() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="border-border/80 shadow-sm">
         <CardHeader>
           <CardTitle>{t('reports.filters')}</CardTitle>
+          <CardDescription>
+            {tt('stock.filtersHelp', 'Narrow the valuation view by item, warehouse, and risk priority without losing the current company context.')}
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 lg:grid-cols-[1.3fr_repeat(3,minmax(0,1fr))_auto]">
           <div>
@@ -479,7 +482,7 @@ export function StockLevels() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-border/80 shadow-sm">
         <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>{t('transactions.results')} ({rows.length})</CardTitle>
@@ -525,7 +528,7 @@ export function StockLevels() {
                           : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
 
                     return (
-                      <tr key={row.id} className={`border-b align-top ${rowTone}`}>
+                      <tr key={row.id} className={`border-b align-top transition-colors hover:bg-muted/20 ${rowTone}`}>
                         <td className="py-4 pr-4">
                           <div className="flex flex-col gap-1">
                             <div className="font-medium">{row.itemName}</div>
@@ -538,12 +541,12 @@ export function StockLevels() {
                             <div className="text-xs text-muted-foreground">{row.warehouseCode || t('common.dash')}</div>
                           </div>
                         </td>
-                        <td className="py-4 pr-4 text-right font-medium">{formatQuantity(row.onHandQty)}</td>
-                        <td className="py-4 pr-4 text-right">
+                        <td className="py-4 pr-4 text-right font-mono font-medium tabular-nums">{formatQuantity(row.onHandQty)}</td>
+                        <td className="py-4 pr-4 text-right font-mono tabular-nums">
                           {row.minStock > 0 ? formatQuantity(row.minStock) : t('common.dash')}
                         </td>
-                        <td className="py-4 pr-4 text-right">{formatCurrency(row.avgCost)}</td>
-                        <td className="py-4 pr-4 text-right font-medium">{formatCurrency(row.totalValue)}</td>
+                        <td className="py-4 pr-4 text-right font-mono tabular-nums">{formatCurrency(row.avgCost)}</td>
+                        <td className="py-4 pr-4 text-right font-mono font-medium tabular-nums">{formatCurrency(row.totalValue)}</td>
                         <td className="py-4 pr-4">
                           <div className="flex flex-col gap-2">
                             <Badge variant="outline" className={badgeClass}>

@@ -29,7 +29,6 @@ import { Switch } from "../components/ui/switch";
 import LogoUploader from "../components/settings/LogoUploader";
 
 import {
-  Settings as SettingsIcon,
   Users,
   Building2 as WarehouseIcon,
   Package,
@@ -471,12 +470,12 @@ function Settings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{t("settings.title")}</h1>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-3xl space-y-1">
+          <h1 className="text-3xl font-semibold tracking-tight">{t("settings.title")}</h1>
           <p className="text-muted-foreground">{t("settings.subtitle")}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             onClick={saveProfile}
             disabled={savingProfile || !canEditOps}
@@ -558,7 +557,7 @@ function Settings() {
 
       {/* Quick links */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" /> {t("sections.users.title")}
@@ -571,7 +570,7 @@ function Settings() {
             </Button>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <WarehouseIcon className="w-5 h-5" />{" "}
@@ -587,7 +586,7 @@ function Settings() {
             </Button>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" /> {t("sections.uom.title")}
@@ -1476,15 +1475,6 @@ function Settings() {
             />
             <Label>{t("fields.packingSlipShowsPrices")}</Label>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Footer */}
-      <Card>
-        <CardContent className="p-10 text-center">
-          <SettingsIcon className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <h3 className="text-lg font-semibold mb-1">{t("more.title")}</h3>
-          <p className="text-muted-foreground">{t("more.body")}</p>
         </CardContent>
       </Card>
     </div>

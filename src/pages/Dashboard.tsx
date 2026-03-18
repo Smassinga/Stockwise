@@ -609,9 +609,9 @@ export default function Dashboard() {
               {tt('dashboard.filtersHelp', 'Adjust the date window and warehouse without losing context. The daily breakdown follows the current window.')}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
+          <CardContent className="grid gap-3 md:grid-cols-[minmax(0,12rem)_minmax(0,14rem)_auto] md:items-end">
             {/* Date window (KPIs/top products) */}
-            <div className="w-full sm:w-40">
+            <div className="w-full">
               <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))} disabled={windowLoading}>
                 <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.window.label')} /></SelectTrigger>
                 <SelectContent>
@@ -624,7 +624,7 @@ export default function Dashboard() {
             </div>
 
             {/* Warehouse filter */}
-            <div className="w-full sm:w-56">
+            <div className="w-full">
               <Select value={warehouseId} onValueChange={setWarehouseId}>
                 <SelectTrigger className="w-full"><SelectValue placeholder={t('filters.warehouse.label')} /></SelectTrigger>
                 <SelectContent>
@@ -637,87 +637,91 @@ export default function Dashboard() {
             </div>
 
             {/* Daily sheet */}
-            <Sheet open={dailyOpen} onOpenChange={setDailyOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="w-full sm:w-auto">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  {t('daily.button')}
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
-                <SheetHeader className="px-4 md:px-0 pt-4 md:pt-0">
-                  <SheetTitle>{t('daily.title')}</SheetTitle>
-                  <SheetDescription>{tt('daily.desc', 'Daily totals for the selected window')}</SheetDescription>
-                </SheetHeader>
+            <div className="flex flex-wrap items-center gap-3">
+              <Sheet open={dailyOpen} onOpenChange={setDailyOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="outline" className="w-full sm:w-auto">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    {t('daily.button')}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
+                  <SheetHeader className="px-4 md:px-0 pt-4 md:pt-0">
+                    <SheetTitle>{t('daily.title')}</SheetTitle>
+                    <SheetDescription>{tt('daily.desc', 'Daily totals for the selected window')}</SheetDescription>
+                  </SheetHeader>
 
-                <SheetBody className="px-4 pb-6 md:px-0">
-                  {/* Date controls */}
-                  <div className="mt-2 mb-4 flex flex-wrap items-center gap-2">
-                    <div className="w-full sm:w-48">
-                      <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
-                        <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
-                        <SelectContent>
-                          {Array.from({ length: 12 }).map((_, i) => (
-                            <SelectItem key={i} value={String(i)} className="capitalize">
-                              {monthName(i)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <SheetBody className="px-4 pb-6 md:px-0">
+                    <div className="mt-2 mb-4 flex flex-wrap items-center gap-2">
+                      <div className="w-full sm:w-48">
+                        <Select value={String(dailyMonth)} onValueChange={(v) => setDailyMonth(Number(v))}>
+                          <SelectTrigger><SelectValue placeholder={t('common.month')} /></SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 12 }).map((_, i) => (
+                              <SelectItem key={i} value={String(i)} className="capitalize">
+                                {monthName(i)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="w-full sm:w-32">
+                        <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
+                          <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
+                          <SelectContent>
+                            {availableYears.map(y => (
+                              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          const d = new Date()
+                          setDailyYear(d.getFullYear())
+                          setDailyMonth(d.getMonth())
+                        }}
+                        className="w-full sm:w-auto"
+                      >
+                        {tt('common.thisMonth', 'This month')}
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
+                      </span>
                     </div>
-                    <div className="w-full sm:w-32">
-                      <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
-                        <SelectTrigger><SelectValue placeholder={t('common.year')} /></SelectTrigger>
-                        <SelectContent>
-                          {availableYears.map(y => (
-                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        const d = new Date()
-                        setDailyYear(d.getFullYear())
-                        setDailyMonth(d.getMonth())
-                      }}
-                      className="w-full sm:w-auto"
-                    >
-                      {tt('common.thisMonth', 'This month')}
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
-                    </span>
-                  </div>
 
-                  <div className="mt-2 rounded-md border">
-                    <div className="min-w-[560px] md:min-w-0 overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left border-b">
-                            <th className="py-2 pr-2">{t('table.date')}</th>
-                            <th className="py-2 pr-2">{t('table.revenue')}</th>
-                            <th className="py-2 pr-2">{t('table.cogs')}</th>
-                            <th className="py-2 pr-2">{t('table.grossMargin')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dailyRows.map(r => (
-                            <tr key={r.date} className="border-b">
-                              <td className="py-2 pr-2">{r.date}</td>
-                              <td className="py-2 pr-2">{money(r.revenue)}</td>
-                              <td className="py-2 pr-2">{money(r.cogs)}</td>
-                              <td className="py-2 pr-2">{money(r.revenue - r.cogs)}</td>
+                    <div className="mt-2 rounded-md border">
+                      <div className="min-w-[560px] md:min-w-0 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left border-b">
+                              <th className="py-2 pr-2">{t('table.date')}</th>
+                              <th className="py-2 pr-2">{t('table.revenue')}</th>
+                              <th className="py-2 pr-2">{t('table.cogs')}</th>
+                              <th className="py-2 pr-2">{t('table.grossMargin')}</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {dailyRows.map(r => (
+                              <tr key={r.date} className="border-b">
+                                <td className="py-2 pr-2">{r.date}</td>
+                                <td className="py-2 pr-2">{money(r.revenue)}</td>
+                                <td className="py-2 pr-2">{money(r.cogs)}</td>
+                                <td className="py-2 pr-2">{money(r.revenue - r.cogs)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
-                </SheetBody>
-              </SheetContent>
-            </Sheet>
+                  </SheetBody>
+                </SheetContent>
+              </Sheet>
+              <div className="text-xs text-muted-foreground">
+                {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -743,7 +747,7 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.inventoryValue.title')}</CardDescription>
-                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(inventoryValue)}</CardTitle>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(inventoryValue)}</CardTitle>
                 </div>
                 <Chip className="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Package size={18} /></Chip>
               </div>
@@ -755,7 +759,7 @@ export default function Dashboard() {
                   : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.')}
               </div>
               <div className="text-xs text-muted-foreground">
-                {inventoryUnits.toLocaleString(lang === 'pt' ? 'pt-MZ' : 'en-MZ')} {tt('dashboard.inventoryUnits', 'units on hand')} • {t('kpi.inventoryValue.help')}
+                {inventoryUnits.toLocaleString(lang === 'pt' ? 'pt-MZ' : 'en-MZ')} {tt('dashboard.inventoryUnits', 'units on hand')} | {t('kpi.inventoryValue.help')}
               </div>
             </CardContent>
           </Card>
@@ -765,7 +769,7 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.revenue.title', { days: windowDays })}</CardDescription>
-                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(revenueWindow)}</CardTitle>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(revenueWindow)}</CardTitle>
                 </div>
                 <Chip className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"><DollarSign size={18} /></Chip>
               </div>
@@ -785,7 +789,7 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.cogs.title', { days: windowDays })}</CardDescription>
-                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(cogsWindow)}</CardTitle>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(cogsWindow)}</CardTitle>
                 </div>
                 <Chip className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><Coins size={18} /></Chip>
               </div>
@@ -805,7 +809,7 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.grossMargin.title')}</CardDescription>
-                  <CardTitle className="mt-2 text-2xl tracking-tight">{money(grossMargin)}</CardTitle>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(grossMargin)}</CardTitle>
                 </div>
                 <Chip className={grossMargin >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'}>
                   {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
@@ -876,7 +880,7 @@ export default function Dashboard() {
                     </thead>
                     <tbody>
                       {lowStock.map(({ item, onHand, min, shortage, severity }) => (
-                        <tr key={item.id} className="border-b">
+                        <tr key={item.id} className="border-b transition-colors hover:bg-muted/20">
                           <td className="py-2 pr-2 max-w-[180px] truncate font-medium">{item.name}</td>
                           <td className="py-2 pr-2">{item.sku}</td>
                           <td className="py-2 pr-2 text-right font-mono tabular-nums">{onHand}</td>
@@ -945,11 +949,11 @@ export default function Dashboard() {
                         const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
                         return (
                           <tr key={m.id} className="border-b">
-                            <td className="py-2 pr-2 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleDateString(lang)}</td>
-                            <td className="py-2 pr-2 capitalize">{movementLabel(m.type)}</td>
-                            <td className="py-2 pr-2 max-w-[160px] truncate">{label}</td>
-                            <td className="py-2 pr-2 text-right font-mono tabular-nums">{num(m.qty_base)}</td>
-                            <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(val)}</td>
+                          <td className="py-2 pr-2 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleDateString(lang)}</td>
+                          <td className="py-2 pr-2 capitalize">{movementLabel(m.type)}</td>
+                          <td className="py-2 pr-2 max-w-[160px] truncate">{label}</td>
+                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{num(m.qty_base)}</td>
+                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(val)}</td>
                           </tr>
                         )
                       })}
@@ -1002,7 +1006,7 @@ export default function Dashboard() {
                     const pctStr = row.revenue > 0 ? (row.pct * 100).toFixed(1) + '%' : t('common.dash')
                     const pctClass = row.revenue > 0 && row.pct < 0 ? 'text-rose-600 dark:text-rose-300' : ''
                     return (
-                      <tr key={row.itemId} className="border-b">
+                      <tr key={row.itemId} className="border-b transition-colors hover:bg-muted/20">
                         <td className="py-2 pr-2 text-muted-foreground">#{index + 1}</td>
                         <td className="py-2 pr-2 max-w-[160px] truncate font-medium">{row.name}</td>
                         <td className="py-2 pr-2">{row.sku}</td>
