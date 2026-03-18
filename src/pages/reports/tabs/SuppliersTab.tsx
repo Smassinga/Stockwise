@@ -38,7 +38,6 @@ export default function SuppliersTab() {
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
   const { companyId } = useOrg()
   const { ui, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote } = useReports()
-  const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
 
   const [baseCode, setBaseCode] = useState('MZN')
   const [from, setFrom] = useState<string>(startDate)
@@ -48,6 +47,22 @@ export default function SuppliersTab() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [rows, setRows] = useState<RowT[]>([])
   const [loading, setLoading] = useState(true)
+
+  const selectedSupplier = supplierId === 'ALL' ? null : suppliers.find((supplier) => supplier.id === supplierId)
+  const ctx = {
+    companyId: companyId || undefined,
+    companyName: ui.companyName,
+    startDate,
+    endDate,
+    displayCurrency,
+    baseCurrency,
+    fxRate,
+    fxNote,
+    filters: [
+      selectedSupplier ? `${tt('reports.suppliers.title', 'Suppliers')}: ${selectedSupplier.name}` : '',
+      query.trim() ? `${tt('common.search', 'Search')}: ${query.trim()}` : '',
+    ].filter(Boolean),
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -132,7 +147,9 @@ export default function SuppliersTab() {
 
   const onPDF = async () => {
     const doc = await startPDF(ctx, tt('reports.supplierMovements', 'Supplier Movements'))
-    await pdfTable(doc, exportBody[0] as string[], exportBody.slice(1), [4], ctx, 110)
+    await pdfTable(doc, exportBody[0] as string[], exportBody.slice(1), [4], ctx, 110, {
+      qtyCols: [3],
+    })
     doc.save(`supplier_movements_${stamp}.pdf`)
   }
 

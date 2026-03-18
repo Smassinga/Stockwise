@@ -2,12 +2,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { useI18n } from '../../../lib/i18n'
 import { useReports } from '../context/ReportsProvider'
+import { useOrg } from '../../../hooks/useOrg'
 import ExportButtons from '../components/ExportButtons'
 import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
 
 export default function RevenueTab() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key) === key ? fallback : t(key))
+  const { companyId } = useOrg()
   const {
     revenueByCustomer,
     moneyText,
@@ -22,7 +24,7 @@ export default function RevenueTab() {
     ui,
   } = useReports()
 
-  const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
+  const ctx = { companyId: companyId || undefined, companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
   const stamp = endDate.replace(/-/g, '')
 
   const rows: Row[] = [[tt('reports.customerLabel', 'Customer'), `${tt('reports.revenueLabel', 'Revenue')} (${displayCurrency})`]]

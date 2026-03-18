@@ -56,6 +56,7 @@ export default function SummaryTab() {
   } = useReports()
 
   const ctx = {
+    companyId: companyId || undefined,
     companyName: ui.companyName,
     startDate, endDate,
     displayCurrency, baseCurrency, fxRate, fxNote,
@@ -279,10 +280,15 @@ export default function SummaryTab() {
 
   const onPDF = async () => {
     const doc = await startPDF(ctx, t('reports.summary.export.kpis'))
-    await pdfTable(doc, [t('reports.summary.kpi.metric'), t('reports.summary.kpi.value')], kpiRows.slice(1), [1], ctx, 110)
+    await pdfTable(doc, [t('reports.summary.kpi.metric'), t('reports.summary.kpi.value')], kpiRows.slice(1), [1], ctx, 110, {
+      sectionTitle: t('reports.summary.export.kpis'),
+    })
     doc.addPage()
     await pdfTable(doc, [t('reports.summary.movements.time'),t('reports.summary.movements.type'),t('reports.summary.movements.item'),t('reports.summary.movements.qty'),t('reports.summary.movements.unitCost'),t('reports.summary.movements.warehouseFrom'),t('reports.summary.movements.warehouseTo')],
-      movementsRows.slice(1), [4], ctx, 110)
+      movementsRows.slice(1), [4], ctx, 110, {
+        qtyCols: [3],
+        sectionTitle: t('reports.summary.export.movements'),
+      })
     doc.save(`summary_${stamp}.pdf`)
   }
 

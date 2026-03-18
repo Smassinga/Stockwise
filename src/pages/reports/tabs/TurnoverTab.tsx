@@ -45,7 +45,7 @@ export default function TurnoverTab() {
   const { companyId } = useOrg()
   const { turnoverPerItem, moneyText, fmt, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote, ui } = useReports()
 
-  const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
+  const ctx = { companyId: companyId || undefined, companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
   const stamp = endDate.replace(/-/g, '')
 
   const [shipments, setShipments] = useState<ShipmentRow[]>([])
@@ -210,7 +210,9 @@ export default function TurnoverTab() {
 
   const onPDF = async () => {
     const doc = await startPDF(ctx, tt('reports.turnoverTitle', 'Inventory Turnover & Avg Days to Sell'))
-    await pdfTable(doc, rows[0] as string[], rows.slice(1), [8], ctx, 110)
+    await pdfTable(doc, rows[0] as string[], rows.slice(1), [8], ctx, 110, {
+      qtyCols: [2, 3, 4, 5, 6, 7],
+    })
     doc.save(`turnover_${stamp}.pdf`)
   }
 

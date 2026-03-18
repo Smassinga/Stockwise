@@ -38,7 +38,6 @@ export default function CustomersTab() {
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
   const { companyId } = useOrg()
   const { ui, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote } = useReports()
-  const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
 
   const [baseCode, setBaseCode] = useState('MZN')
   const [from, setFrom] = useState<string>(startDate)
@@ -48,6 +47,22 @@ export default function CustomersTab() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [rows, setRows] = useState<RowT[]>([])
   const [loading, setLoading] = useState(true)
+
+  const selectedCustomer = customerId === 'ALL' ? null : customers.find((customer) => customer.id === customerId)
+  const ctx = {
+    companyId: companyId || undefined,
+    companyName: ui.companyName,
+    startDate,
+    endDate,
+    displayCurrency,
+    baseCurrency,
+    fxRate,
+    fxNote,
+    filters: [
+      selectedCustomer ? `${tt('reports.customerLabel', 'Customer')}: ${selectedCustomer.name}` : '',
+      query.trim() ? `${tt('common.search', 'Search')}: ${query.trim()}` : '',
+    ].filter(Boolean),
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -132,7 +147,9 @@ export default function CustomersTab() {
 
   const onPDF = async () => {
     const doc = await startPDF(ctx, tt('reports.customerMovements', 'Customer Movements'))
-    await pdfTable(doc, exportBody[0] as string[], exportBody.slice(1), [4], ctx, 110)
+    await pdfTable(doc, exportBody[0] as string[], exportBody.slice(1), [4], ctx, 110, {
+      qtyCols: [3],
+    })
     doc.save(`customer_movements_${stamp}.pdf`)
   }
 

@@ -123,6 +123,10 @@ function normalizeLogoImage(dataUrl: string | null): LogoImage | null {
   return null
 }
 
+export async function loadCompanyLogoImage(logoUrl?: string | null): Promise<LogoImage | null> {
+  return normalizeLogoImage(await toDataUrl((logoUrl || '').trim()))
+}
+
 export async function loadCompanyExportHeader(companyId: string): Promise<ExportCompanyHeader> {
   const [{ data: companyData, error: companyError }, { data: settingsData, error: settingsError }] = await Promise.all([
     supabase
@@ -193,7 +197,7 @@ export async function exportExcelReport<T>(options: ExcelReportOptions<T>) {
     width: column.width ?? Math.max(14, column.label.length + 2),
   }))
 
-  const logo = normalizeLogoImage(await toDataUrl(options.company.logoUrl || ''))
+  const logo = await loadCompanyLogoImage(options.company.logoUrl || '')
   const contentStartColumn = logo ? 2 : 1
   const headerEndColumn = Math.max(contentStartColumn, totalColumns)
   const mergeAcross = (row: number) => {

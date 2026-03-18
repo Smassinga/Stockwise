@@ -1,6 +1,7 @@
 // src/pages/reports/tabs/ValuationTab.tsx
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { useI18n } from '../../../lib/i18n'
+import { useOrg } from '../../../hooks/useOrg'
 import { useReports } from '../context/ReportsProvider'
 import ExportButtons from '../components/ExportButtons'
 import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
@@ -8,6 +9,7 @@ import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable
 export default function ValuationTab() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key) === key ? fallback : t(key))
+  const { companyId } = useOrg()
   const {
     valuationAsOfEnd,
     ui,
@@ -24,7 +26,20 @@ export default function ValuationTab() {
     fxNote,
   } = useReports()
 
-  const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
+  const ctx = {
+    companyId: companyId || undefined,
+    companyName: ui.companyName,
+    startDate,
+    endDate,
+    displayCurrency,
+    baseCurrency,
+    fxRate,
+    fxNote,
+    filters: [
+      valuationAsOfEnd ? `${tt('reports.asOfEnd', 'As of end date')} ${endDate}` : tt('reports.currentSnapshot', 'Current snapshot'),
+      `${tt('settings.inventory.method', 'Valuation method')}: ${ui.costMethod}`,
+    ],
+  }
   const stamp = endDate.replace(/-/g, '')
   const pairs = valuationAsOfEnd
     ? Array.from(valuationEngine.valuationByWH_AsOfEnd.entries())
@@ -78,9 +93,13 @@ export default function ValuationTab() {
 
   const onPDF = async () => {
     const doc = await startPDF(ctx, `${tt('reports.tab.valuation', 'Valuation')} — ${valuationAsOfEnd ? `${tt('reports.asOfEnd', 'As of end date')} ${endDate}` : tt('reports.currentSnapshot', 'Current snapshot')}`)
-    await pdfTable(doc, [tt('reports.summary.valuation.warehouse', 'Warehouse'), `${tt('reports.summary.valuation.value', 'Value')} (${displayCurrency})`], rowsByWH.slice(1), [1], ctx, 110)
+    await pdfTable(doc, [tt('reports.summary.valuation.warehouse', 'Warehouse'), `${tt('reports.summary.valuation.value', 'Value')} (${displayCurrency})`], rowsByWH.slice(1), [1], ctx, 110, {
+      sectionTitle: tt('reports.summary.valuation.title', 'Valuation by Warehouse'),
+    })
     doc.addPage()
-    await pdfTable(doc, [tt('reports.summary.valuation.warehouse', 'Warehouse'), tt('orders.binHint', 'Bin'), `${tt('reports.summary.valuation.value', 'Value')} (${displayCurrency})`], rowsByBin.slice(1), [2], ctx, 110)
+    await pdfTable(doc, [tt('reports.summary.valuation.warehouse', 'Warehouse'), tt('orders.binHint', 'Bin'), `${tt('reports.summary.valuation.value', 'Value')} (${displayCurrency})`], rowsByBin.slice(1), [2], ctx, 110, {
+      sectionTitle: tt('reports.binBreakdown', 'By bin'),
+    })
     doc.save(`valuation_${stamp}.pdf`)
   }
 

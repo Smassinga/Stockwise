@@ -98,7 +98,8 @@ type SettingsData = {
     bcc?: string[];
     timezone?: string;
     invoiceBaseUrl?: string;
-    hours?: number[]; // Add hours field for reminder times
+    hours?: number[];
+    sendAt?: string;
   };
 };
 
@@ -146,7 +147,8 @@ const DEFAULTS: SettingsData = {
     bcc: [],
     timezone: "Africa/Maputo",
     invoiceBaseUrl: "https://app.stockwise.app/invoices",
-    hours: [9], // Default to 9 AM
+    hours: [9],
+    sendAt: "09:00",
   },
 };
 
@@ -177,6 +179,68 @@ function csvToList(s: string) {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function formatDueReminderTime(settings?: SettingsData["dueReminders"]) {
+  const explicit = settings?.sendAt?.trim();
+  if (explicit && /^\d{2}:\d{2}$/.test(explicit)) return explicit;
+
+  const hoursValue = settings?.hours?.length
+    ? Number(settings.hours[0])
+    : Number(DEFAULTS.dueReminders.hours?.[0] ?? 9);
+
+  if (!Number.isFinite(hoursValue)) return DEFAULTS.dueReminders.sendAt || "09:00";
+
+  const hours = Math.max(0, Math.min(23, Math.floor(hoursValue)));
+  const minutes = Math.max(0, Math.min(59, Math.round((hoursValue - hours) * 60)));
+  return `${pad2(hours)}:${pad2(minutes)}`;
+}
+
+function parseDueReminderTime(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec((value || "").trim());
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return {
+    normalized: `${pad2(hours)}:${pad2(minutes)}`,
+    legacyHourValue: Number((hours + minutes / 60).toFixed(4)),
+  };
+}
+
+function formatLeadDaysInput(values?: number[]) {
+  return (values || []).join(", ");
+}
+
+function parseLeadDaysInput(raw: string) {
+  const tokens = (raw || "")
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const invalidTokens: string[] = [];
+  const values: number[] = [];
+
+  for (const token of tokens) {
+    if (!/^-?\d+$/.test(token)) {
+      invalidTokens.push(token);
+      continue;
+    }
+    values.push(parseInt(token, 10));
+  }
+
+  return {
+    values,
+    invalidTokens,
+    normalized: values.join(", "),
+  };
 }
 
 // ----- per-company language cache -----
@@ -218,6 +282,13 @@ function Settings() {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [dueReminderTimeInput, setDueReminderTimeInput] = useState(
+    formatDueReminderTime(DEFAULTS.dueReminders),
+  );
+  const [dueReminderLeadDaysInput, setDueReminderLeadDaysInput] = useState(
+    formatLeadDaysInput(DEFAULTS.dueReminders.leadDays),
+  );
+  const [dueReminderLeadDaysError, setDueReminderLeadDaysError] = useState<string | null>(null);
 
   const roleUpper = useMemo(() => String(myRole || "").toUpperCase(), [myRole]);
   const canEditAll = useMemo(
@@ -242,6 +313,20 @@ function Settings() {
     const valuationMethod = tt("reports.weightedAverage", "Weighted Average");
     return { companyLabel, defaultWarehouse, valuationMethod };
   }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses]);
+
+  useEffect(() => {
+    setDueReminderTimeInput(formatDueReminderTime(data.dueReminders || DEFAULTS.dueReminders));
+    setDueReminderLeadDaysInput(
+      formatLeadDaysInput(
+        data.dueReminders?.leadDays || DEFAULTS.dueReminders.leadDays,
+      ),
+    );
+    setDueReminderLeadDaysError(null);
+  }, [
+    data.dueReminders?.sendAt,
+    data.dueReminders?.hours?.join(","),
+    data.dueReminders?.leadDays?.join(","),
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,6 +454,35 @@ function Settings() {
     try {
       setSaving(true);
       const normalized = clone(data);
+      const reminderTime = parseDueReminderTime(dueReminderTimeInput);
+      if (!reminderTime) {
+        toast.error(
+          tt(
+            "settings.toast.reminderTimeInvalid",
+            "Choose a valid due-reminder time in HH:MM format."
+          )
+        );
+        return;
+      }
+
+      const leadDaysDraft = parseLeadDaysInput(dueReminderLeadDaysInput);
+      if (leadDaysDraft.invalidTokens.length) {
+        setDueReminderLeadDaysError(
+          tt(
+            "settings.dueReminders.leadDays.validation",
+            "Use whole numbers separated by commas, for example 3, 1, 0, -3."
+          )
+        );
+        toast.error(
+          tt(
+            "settings.toast.reminderLeadDaysInvalid",
+            "Use whole numbers separated by commas for reminder dates."
+          )
+        );
+        return;
+      }
+      setDueReminderLeadDaysError(null);
+
       normalized.notifications = {
         ...normalized.notifications,
         dailyDigestChannels: { email: true, sms: false, whatsapp: false },
@@ -391,6 +505,16 @@ function Settings() {
         );
         return;
       }
+
+      normalized.dueReminders = {
+        ...normalized.dueReminders,
+        sendAt: reminderTime.normalized,
+        hours: [reminderTime.legacyHourValue],
+        leadDays:
+          leadDaysDraft.values.length > 0
+            ? leadDaysDraft.values
+            : [...(DEFAULTS.dueReminders.leadDays || [])],
+      };
 
       const { data: updated, error } = await supabase.rpc(
         "update_company_settings",
@@ -1279,20 +1403,24 @@ function Settings() {
             <div className="flex gap-2">
               <Input
                 type="time"
-                value={
-                  data.dueReminders?.hours && data.dueReminders.hours.length > 0
-                    ? `${String(data.dueReminders.hours[0]).padStart(2, '0')}:00`
-                    : (DEFAULTS.dueReminders?.hours?.[0] 
-                        ? `${String(DEFAULTS.dueReminders.hours[0]).padStart(2, '0')}:00`
-                        : "09:00")
-                }
+                step={60}
+                value={dueReminderTimeInput}
                 onChange={(e) => {
-                  const [hours] = e.target.value.split(':').map(Number);
-                  if (!isNaN(hours) && hours >= 0 && hours <= 23) {
-                    setField("dueReminders.hours", [hours]);
-                  } else {
-                    setField("dueReminders.hours", []);
+                  setDueReminderTimeInput(e.target.value);
+                }}
+                onBlur={() => {
+                  const parsed = parseDueReminderTime(dueReminderTimeInput);
+                  if (!parsed) {
+                    setDueReminderTimeInput(
+                      formatDueReminderTime(
+                        data.dueReminders || DEFAULTS.dueReminders,
+                      ),
+                    );
+                    return;
                   }
+                  setDueReminderTimeInput(parsed.normalized);
+                  setField("dueReminders.sendAt", parsed.normalized);
+                  setField("dueReminders.hours", [parsed.legacyHourValue]);
                 }}
                 disabled={!canEditOps}
               />
@@ -1318,7 +1446,10 @@ function Settings() {
               </Button> */}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.dueReminders.hours.helper")}
+              {tt(
+                "settings.dueReminders.hours.helper",
+                "Company local time, with minute precision."
+              )}
             </div>
           </div>
 
@@ -1326,22 +1457,41 @@ function Settings() {
             <Label>{t("settings.dueReminders.leadDays")}</Label>
             <Input
               placeholder={t("settings.dueReminders.leadDays.placeholder")}
-              value={(
-                data.dueReminders?.leadDays ||
-                DEFAULTS.dueReminders?.leadDays ||
-                []
-              ).join(",")}
+              value={dueReminderLeadDaysInput}
               onChange={(e) => {
-                const leadDays = e.target.value
-                  .split(",")
-                  .map((d) => parseInt(d.trim()))
-                  .filter((d) => !isNaN(d));
-                setField("dueReminders.leadDays", leadDays);
+                setDueReminderLeadDaysInput(e.target.value);
+                if (dueReminderLeadDaysError) setDueReminderLeadDaysError(null);
+              }}
+              onBlur={() => {
+                const parsed = parseLeadDaysInput(dueReminderLeadDaysInput);
+                if (parsed.invalidTokens.length) {
+                  setDueReminderLeadDaysError(
+                    tt(
+                      "settings.dueReminders.leadDays.validation",
+                      "Use whole numbers separated by commas, for example 3, 1, 0, -3."
+                    )
+                  );
+                  return;
+                }
+                setDueReminderLeadDaysError(null);
+                setField(
+                  "dueReminders.leadDays",
+                  parsed.values.length > 0
+                    ? parsed.values
+                    : [...(DEFAULTS.dueReminders?.leadDays || [])]
+                );
+                setDueReminderLeadDaysInput(
+                  parsed.normalized || formatLeadDaysInput(DEFAULTS.dueReminders?.leadDays)
+                );
               }}
               disabled={!canEditOps}
             />
-            <div className="text-xs text-muted-foreground mt-1">
-              {t("settings.dueReminders.leadDays.helper")}
+            <div className={`mt-1 text-xs ${dueReminderLeadDaysError ? "text-destructive" : "text-muted-foreground"}`}>
+              {dueReminderLeadDaysError ||
+                tt(
+                  "settings.dueReminders.leadDays.helper",
+                  "Days before or after due date to send reminders. Separate multiple values with commas."
+                )}
             </div>
           </div>
 

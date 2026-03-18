@@ -1,6 +1,7 @@
 // src/pages/reports/tabs/AgingTab.tsx
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { useI18n } from '../../../lib/i18n'
+import { useOrg } from '../../../hooks/useOrg'
 import { useReports } from '../context/ReportsProvider'
 import ExportButtons from '../components/ExportButtons'
 import { headerRows, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
@@ -8,9 +9,19 @@ import { headerRows, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../u
 export default function AgingTab() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key) === key ? fallback : t(key))
+  const { companyId } = useOrg()
   const { aging, moneyText, fmt, ui, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote } = useReports()
 
-  const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
+  const ctx = {
+    companyId: companyId || undefined,
+    companyName: ui.companyName,
+    startDate,
+    endDate,
+    displayCurrency,
+    baseCurrency,
+    fxRate,
+    fxNote,
+  }
   const stamp = endDate.replace(/-/g, '')
   const totalValue = aging.rowsWH.reduce((sum, row) => sum + row.value, 0)
   const totalQty = aging.rowsWH.reduce((sum, row) => sum + row.qty, 0)
@@ -49,9 +60,15 @@ export default function AgingTab() {
 
   const onPDF = async () => {
     const doc = await startPDF(ctx, tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse'))
-    await pdfTable(doc, whRows[0] as string[], whRows.slice(1), [], ctx, 110)
+    await pdfTable(doc, whRows[0] as string[], whRows.slice(1), [], ctx, 110, {
+      qtyCols: [1],
+      sectionTitle: tt('reports.agingByWarehouse', 'Inventory Aging - By Warehouse'),
+    })
     doc.addPage()
-    await pdfTable(doc, binRows[0] as string[], binRows.slice(1), [], ctx, 110)
+    await pdfTable(doc, binRows[0] as string[], binRows.slice(1), [], ctx, 110, {
+      qtyCols: [2],
+      sectionTitle: tt('reports.agingByBin', 'Inventory Aging - By Bin'),
+    })
     doc.save(`aging_${stamp}.pdf`)
   }
 
