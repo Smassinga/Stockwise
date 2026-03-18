@@ -43,7 +43,7 @@ export default function CompanySwitcher({ className }: { className?: string }) {
         disabled={switching}
       >
         <SelectTrigger
-          className="min-w-0 max-w-full gap-2 sm:w-[220px] xl:w-[240px]"
+          className="min-w-0 max-w-full gap-2 sm:w-[180px] lg:w-[200px] xl:w-[240px]"
           aria-label={t('company.selectCompany') || 'Select company'}
         >
           <div className="flex min-w-0 items-center gap-2">

@@ -1398,6 +1398,18 @@ export default function SalesOrders() {
   const draftSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'draft').length, [soOutstanding])
   const submittedSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'submitted').length, [soOutstanding])
   const confirmedSalesCount = useMemo(() => soOutstanding.filter(so => ['confirmed', 'allocated'].includes(String(so.status).toLowerCase())).length, [soOutstanding])
+  const selectedSOLines = useMemo(
+    () => (selectedSO ? solines.filter((line) => line.so_id === selectedSO.id) : []),
+    [selectedSO, solines]
+  )
+  const selectedSOOpenLines = useMemo(
+    () => selectedSOLines.filter((line) => remaining(line) > 0),
+    [selectedSOLines]
+  )
+  const selectedSORemainingQty = useMemo(
+    () => selectedSOOpenLines.reduce((sum, line) => sum + remaining(line), 0),
+    [selectedSOOpenLines]
+  )
 
   function soHeaderSubtotal(so: SO): number {
     return amountSO(so).subtotal
@@ -1428,6 +1440,57 @@ export default function SalesOrders() {
 
   const canIssueFromStatus = (status?: string) =>
     ['confirmed', 'allocated'].includes(String(status || '').toLowerCase())
+
+  function salesWorkflowSummary(status?: string) {
+    const value = String(status || '').toLowerCase()
+    if (value === 'draft') {
+      return {
+        stage: tt('orders.workflowDraftStage', 'Draft ready for review'),
+        help: tt('orders.workflowDraftHelp', 'Check terms, dates, and customer details before confirming the order.'),
+        action: tt('orders.confirm', 'Confirm'),
+      }
+    }
+    if (value === 'submitted') {
+      return {
+        stage: tt('orders.workflowConfirmedStage', 'Confirmed and waiting approval'),
+        help: tt('orders.workflowConfirmedHelp', 'Approval signs off the commercial commitment before stock is issued.'),
+        action: tt('orders.approve', 'Approve'),
+      }
+    }
+    if (value === 'confirmed' || value === 'allocated') {
+      return {
+        stage: tt('orders.workflowReadyToIssue', 'Approved and ready for fulfilment'),
+        help: tt('orders.workflowReadyToIssueHelp', 'Allocate stock by warehouse and bin, then post the issue quantities that are ready.'),
+        action: tt('orders.shipAllocatedLines', 'Issue allocated lines'),
+      }
+    }
+    if (value === 'shipped') {
+      return {
+        stage: tt('orders.workflowShippedStage', 'Shipped and ready for closure review'),
+        help: tt('orders.workflowShippedHelp', 'Use the shipped browser or print view for handoff and final document review.'),
+        action: tt('orders.print', 'Print'),
+      }
+    }
+    if (value === 'closed') {
+      return {
+        stage: tt('orders.workflowClosedStage', 'Closed and fully documented'),
+        help: tt('orders.workflowClosedHelp', 'This order is complete. Use the detail, print, and audit sections for traceability.'),
+        action: tt('orders.view', 'View'),
+      }
+    }
+    if (value === 'cancelled') {
+      return {
+        stage: tt('orders.workflowCancelledStage', 'Cancelled'),
+        help: tt('orders.workflowCancelledHelp', 'No further operational action is expected on this order.'),
+        action: tt('orders.view', 'View'),
+      }
+    }
+    return {
+      stage: salesStatusLabel(status),
+      help: tt('orders.workflowGenericHelp', 'Review the order details and continue with the next operational step.'),
+      action: tt('orders.view', 'View'),
+    }
+  }
 
   // ---- Print: uses companies profile (preferred), then company_settings brand as fallback
   async function printSO(so: SO, download = false) {
@@ -2240,8 +2303,9 @@ export default function SalesOrders() {
           {!selectedSO ? (
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noSOSelected', 'No SO selected.')}</div>
           ) : (
-            <div className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="mt-4 space-y-5">
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>
                 <div><Label>{tt('orders.customer', 'Customer')}</Label><div>{soCustomerLabel(selectedSO)}</div></div>
                 <div>
@@ -2258,6 +2322,58 @@ export default function SalesOrders() {
                 <div><Label>{tt('orders.expectedShip', 'Expected Ship')}</Label><div>{(selectedSO as any).expected_ship_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedSO as any).due_date || tt('none', '(none)')}</div></div>
               </div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      {tt('orders.nextAction', 'Next action')}
+                    </p>
+                    <h3 className="text-base font-semibold">{salesWorkflowSummary(selectedSO.status).stage}</h3>
+                    <p className="max-w-3xl text-sm text-muted-foreground">{salesWorkflowSummary(selectedSO.status).help}</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                    <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
+                    <Button variant="outline" onClick={() => printSO(selectedSO, true)}>{tt('orders.download', 'Download')}</Button>
+                    {String(selectedSO.status).toLowerCase() === 'draft' && (
+                      <Button variant="outline" onClick={() => confirmSO(selectedSO.id)}>
+                        {tt('orders.confirm', 'Confirm')}
+                      </Button>
+                    )}
+                    {String(selectedSO.status).toLowerCase() === 'submitted' && (
+                      <Button variant="outline" onClick={() => approveSO(selectedSO.id)}>
+                        {tt('orders.approve', 'Approve')}
+                      </Button>
+                    )}
+                    {canIssueFromStatus(selectedSO.status) && (
+                      <Button onClick={() => doShipSO(selectedSO)}>
+                        {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.orderLines', 'Order lines')}</p>
+                    <div className="mt-1 text-lg font-semibold">{selectedSOLines.length}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.orderLinesHelp', 'Includes product and service lines captured on the document.')}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.fulfilmentOpenLines', 'Lines still open')}</p>
+                    <div className="mt-1 text-lg font-semibold">{selectedSOOpenLines.length}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.fulfilmentOpenLinesHelp', 'These lines still need stock issue or service completion before the order is fully shipped.')}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.remainingQty', 'Remaining quantity')}</p>
+                    <div className="mt-1 text-lg font-semibold">{fmtAcct(selectedSORemainingQty)}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.remainingQtyHelp', 'Use the allocation section below to split the remaining issue quantity across source bins.')}</p>
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
                 <div className="flex flex-col gap-1 pb-4">
                   <h3 className="text-sm font-semibold">{tt('orders.documentDetails', 'Document details')}</h3>
@@ -2368,8 +2484,47 @@ export default function SalesOrders() {
                   </div>
                 </div>
               </div>
-              {/* Issue controls */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.lineSummary', 'Line summary')}</h3>
+                  <p className="text-xs text-muted-foreground">{tt('orders.lineSummaryHelp', 'Review the commercial scope first, then move to fulfilment for any remaining quantity that still needs to be issued.')}</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead className="bg-muted/40">
+                      <tr className="text-left">
+                        <th className="px-3 py-2">{tt('orders.itemOrService', 'Item / Service')}</th>
+                        <th className="px-3 py-2">{tt('orders.qty', 'Qty')}</th>
+                        <th className="px-3 py-2">{tt('orders.shipped', 'Shipped')}</th>
+                        <th className="px-3 py-2">{tt('orders.remaining', 'Remaining')}</th>
+                        <th className="px-3 py-2 text-right">{tt('orders.lineTotal', 'Line Total')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSOLines.map((line) => {
+                        const item = itemById.get(line.item_id)
+                        const uomCode = uomById.get(uomIdFromIdOrCode(line.uom_id))?.code || line.uom_id
+                        const shippedQty = n(line.shipped_qty)
+                        return (
+                          <tr key={String(line.id || `${line.so_id}-${line.line_no}`)} className="border-t align-top">
+                            <td className="px-3 py-3">
+                              <div className="font-medium">{item?.name || line.item_id}</div>
+                              {!!line.description && <div className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{line.description}</div>}
+                            </td>
+                            <td className="px-3 py-3">{fmtAcct(n(line.qty))} {uomCode}</td>
+                            <td className="px-3 py-3">{fmtAcct(shippedQty)} {uomCode}</td>
+                            <td className="px-3 py-3">{fmtAcct(remaining(line))} {uomCode}</td>
+                            <td className="px-3 py-3 text-right font-mono tabular-nums">{fmtAcct(n(line.line_total))}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <Label>{tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}</Label>
                   <Select
@@ -2389,25 +2544,12 @@ export default function SalesOrders() {
                     {tt('orders.defaultIssueWarehouseHelp', 'New allocation rows start from this warehouse, but each row can still be changed before posting.')}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-end justify-end gap-2 md:col-span-2 lg:col-span-2">
-                  <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
-                  <Button variant="outline" onClick={() => printSO(selectedSO, true)}>{tt('orders.download', 'Download')}</Button>
-                  {String(selectedSO.status).toLowerCase() === 'draft' && (
-                    <Button variant="outline" onClick={() => confirmSO(selectedSO.id)}>
-                      {tt('orders.confirm', 'Confirm')}
-                    </Button>
-                  )}
-                  {String(selectedSO.status).toLowerCase() === 'submitted' && (
-                    <Button variant="outline" onClick={() => approveSO(selectedSO.id)}>
-                      {tt('orders.approve', 'Approve')}
-                    </Button>
-                  )}
-                  {canIssueFromStatus(selectedSO.status) && (
-                    <Button onClick={() => doShipSO(selectedSO)}>
-                      {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
-                    </Button>
-                  )}
+                <div className="md:col-span-2 lg:col-span-2">
+                  <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                    {tt('orders.fulfilmentPanelHelp', 'Fulfilment stays separate from commercial edits: choose a default warehouse for new allocation rows, then post issue quantities line by line or in one batch.')}
+                  </div>
                 </div>
+              </div>
               </div>
 
               <div className='rounded-xl border border-border/80 bg-card p-4 shadow-sm'>
@@ -2427,7 +2569,7 @@ export default function SalesOrders() {
                 )}
 
                 <div className='space-y-4'>
-                  {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).map(l => {
+                  {selectedSOOpenLines.map(l => {
                     const it = itemById.get(l.item_id)
                     const baseU = it?.baseUomId || ''
                     const outstanding = remaining(l)
@@ -2622,11 +2764,38 @@ export default function SalesOrders() {
                       </div>
                     )
                   })}
-                  {solines.filter(l => l.so_id === selectedSO.id && remaining(l) > 0).length === 0 && (
+                  {selectedSOOpenLines.length === 0 && (
                     <div className='rounded-xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground'>
                       {tt('orders.allLinesShipped', 'All lines shipped.')}
                     </div>
                   )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.auditAndSignoff', 'Audit and sign-off')}</h3>
+                  <p className="text-xs text-muted-foreground">{tt('orders.auditAndSignoffHelp', 'Prepared, confirmed, and approved names should map to real actions in the workflow instead of manual guesswork.')}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
+                    <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedSoMeta.preparedBy || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedSoMeta.confirmedBy || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
+                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                      {selectedSoMeta.approvedBy || tt('orders.notAvailableShort', 'Not captured')}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

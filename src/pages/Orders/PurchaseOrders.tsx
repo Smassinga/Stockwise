@@ -1071,6 +1071,26 @@ export default function PurchaseOrders() {
   const openPurchaseBase = useMemo(() => poOutstanding.reduce((sum, po) => sum + amountPO(po).totalBase, 0), [poOutstanding, polines])
   const draftPurchaseCount = useMemo(() => poOutstanding.filter(po => String(po.status).toLowerCase() === 'draft').length, [poOutstanding])
   const receivingPurchaseCount = useMemo(() => poOutstanding.filter(po => ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(po.status).toLowerCase())).length, [poOutstanding])
+  const selectedPOLines = useMemo(
+    () => (selectedPO ? polines.filter((line) => line.po_id === selectedPO.id) : []),
+    [selectedPO, polines]
+  )
+  const selectedPOOpenLines = useMemo(
+    () => selectedPOLines.filter((line) => {
+      const lineId = String(line.id || '')
+      const received = n(receivedMap[lineId] || 0)
+      return Math.max(0, n(line.qty) - received) > 0
+    }),
+    [receivedMap, selectedPOLines]
+  )
+  const selectedPORemainingQty = useMemo(
+    () => selectedPOOpenLines.reduce((sum, line) => {
+      const lineId = String(line.id || '')
+      const received = n(receivedMap[lineId] || 0)
+      return sum + Math.max(0, n(line.qty) - received)
+    }, 0),
+    [receivedMap, selectedPOOpenLines]
+  )
 
   function purchaseStatusClass(status?: string) {
     const value = String(status || '').toLowerCase()
@@ -1078,6 +1098,53 @@ export default function PurchaseOrders() {
     if (value === 'cancelled' || value === 'canceled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
     if (value === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+  }
+
+  function purchaseStatusLabel(status?: string) {
+    const value = String(status || '').toLowerCase()
+    if (value === 'draft') return tt('orders.draftStatus', 'Draft')
+    if (value === 'partially_received') return tt('orders.partiallyReceivedStatus', 'Partially received')
+    if (['approved', 'open', 'authorised', 'authorized', 'submitted'].includes(value)) return tt('orders.approvedStatus', 'Approved')
+    if (value === 'closed') return tt('orders.closedStatus', 'Closed')
+    if (value === 'cancelled' || value === 'canceled') return tt('orders.cancelledStatus', 'Cancelled')
+    return value.replace('_', ' ')
+  }
+
+  function purchaseWorkflowSummary(status?: string) {
+    const value = String(status || '').toLowerCase()
+    if (value === 'draft') {
+      return {
+        stage: tt('orders.purchaseWorkflowDraftStage', 'Draft ready for approval'),
+        help: tt('orders.purchaseWorkflowDraftHelp', 'Review supplier terms and sign-off fields before approving the order for receiving.'),
+        action: tt('orders.approve', 'Approve'),
+      }
+    }
+    if (['approved', 'open', 'authorised', 'authorized', 'submitted'].includes(value)) {
+      return {
+        stage: tt('orders.purchaseWorkflowReceivingStage', 'Approved and ready to receive'),
+        help: tt('orders.purchaseWorkflowReceivingHelp', 'Apply warehouse defaults if useful, then receive each line or post the remaining batch receipt.'),
+        action: tt('orders.receiveAll', 'Receive All'),
+      }
+    }
+    if (value === 'partially_received') {
+      return {
+        stage: tt('orders.purchaseWorkflowPartialStage', 'Partially received'),
+        help: tt('orders.purchaseWorkflowPartialHelp', 'Finish the remaining receipts and keep the receiving plan aligned with the physical warehouse flow.'),
+        action: tt('orders.receiveAll', 'Receive All'),
+      }
+    }
+    if (value === 'closed') {
+      return {
+        stage: tt('orders.purchaseWorkflowClosedStage', 'Closed and fully documented'),
+        help: tt('orders.purchaseWorkflowClosedHelp', 'Use the audit and print views for purchasing traceability and supplier handoff history.'),
+        action: tt('orders.print', 'Print'),
+      }
+    }
+    return {
+      stage: purchaseStatusLabel(status),
+      help: tt('orders.workflowGenericHelp', 'Review the order details and continue with the next operational step.'),
+      action: tt('orders.view', 'View'),
+    }
   }
 
   useEffect(() => {
@@ -1889,17 +1956,65 @@ export default function PurchaseOrders() {
           {!selectedPO ? (
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noPOSelected', 'No PO selected.')}</div>
           ) : (
-            <div className="mt-4 space-y-4">
-              {/* PO Header */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="mt-4 space-y-5">
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <div><Label>{tt('orders.po', 'PO')}</Label><div>{poNo(selectedPO)}</div></div>
                 <div><Label>{tt('orders.supplier', 'Supplier')}</Label><div>{poSupplierLabel(selectedPO)}</div></div>
-                <div><Label>{tt('orders.status', 'Status')}</Label><div className="capitalize">{selectedPO.status}</div></div>
+                <div>
+                  <Label>{tt('orders.status', 'Status')}</Label>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseStatusClass(selectedPO.status)}`}>
+                      {purchaseStatusLabel(selectedPO.status)}
+                    </span>
+                  </div>
+                </div>
                 <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedPO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curPO(selectedPO)}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxPO(selectedPO))}</div></div>
                 <div><Label>{tt('orders.expectedDate', 'Expected Date')}</Label><div>{(selectedPO as any).expected_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedPO as any).due_date || tt('none', '(none)')}</div></div>
+              </div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      {tt('orders.nextAction', 'Next action')}
+                    </p>
+                    <h3 className="text-base font-semibold">{purchaseWorkflowSummary(selectedPO.status).stage}</h3>
+                    <p className="max-w-3xl text-sm text-muted-foreground">{purchaseWorkflowSummary(selectedPO.status).help}</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                    <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
+                    {String(selectedPO.status).toLowerCase() === 'draft' && (
+                      <Button variant="outline" onClick={() => approvePO(selectedPO.id)}>{tt('orders.approve', 'Approve')}</Button>
+                    )}
+                    {String(selectedPO.status).toLowerCase() !== 'draft' && (
+                      <Button onClick={() => doReceivePO(selectedPO)}>{tt('orders.receiveAll', 'Receive All')}</Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.orderLines', 'Order lines')}</p>
+                    <div className="mt-1 text-lg font-semibold">{selectedPOLines.length}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.purchaseLineSummaryHelp', 'Includes goods and service lines captured on this purchase document.')}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.linesStillOpen', 'Lines still open')}</p>
+                    <div className="mt-1 text-lg font-semibold">{selectedPOOpenLines.length}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.linesStillOpenHelp', 'These lines still need receiving or warehouse confirmation before the PO is operationally complete.')}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.remainingQty', 'Remaining quantity')}</p>
+                    <div className="mt-1 text-lg font-semibold">{fmtAcct(selectedPORemainingQty)}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.remainingQtyReceiveHelp', 'Use the receiving plan below to direct each remaining quantity into the correct warehouse and bin.')}</p>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
@@ -2040,8 +2155,12 @@ export default function PurchaseOrders() {
                 </div>
               </div>
 
-              {/* Defaults row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.receivingPlan', 'Receiving plan')}</h3>
+                  <p className="text-xs text-muted-foreground">{tt('orders.receivingPlanHelp', 'Set default warehouse targets for the remaining lines, then receive individually or batch the remaining receipt when the physical stock is ready.')}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 lg:items-end">
                 <div>
                   <Label>{tt('orders.defaultWarehouse', 'Default Warehouse')}</Label>
                   <Select value={defaultReceiveWhId} onValueChange={(v) => {
@@ -2070,9 +2189,14 @@ export default function PurchaseOrders() {
                   </Button>
                 </div>
               </div>
+              </div>
 
-              {/* Lines with per-line receive controls */}
-              <div className="border rounded-lg overflow-hidden">
+              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+                <div className="flex flex-col gap-1 pb-4">
+                  <h3 className="text-sm font-semibold">{tt('orders.lineSummary', 'Line summary')}</h3>
+                  <p className="text-xs text-muted-foreground">{tt('orders.purchaseLineTableHelp', 'The receiving table stays operational: ordered, received, remaining, destination warehouse/bin, and line value stay visible in one place.')}</p>
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-border/70">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr className="text-left">
@@ -2175,6 +2299,7 @@ export default function PurchaseOrders() {
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}

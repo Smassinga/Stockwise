@@ -270,9 +270,9 @@ export function AppLayout({ user, children }: Props) {
           </div>
           
           {/* Desktop search form */}
-          <div className="ml-1 hidden flex-1 md:flex">
+          <div className="ml-1 hidden min-w-0 flex-1 md:flex">
             <SearchBar
-              className="w-full max-w-xl"
+              className="w-full max-w-md lg:max-w-lg xl:max-w-xl"
               placeholder={t('common.searchPlaceholder')}
               value={searchQuery}
               onChange={setSearchQuery}
@@ -280,11 +280,11 @@ export function AppLayout({ user, children }: Props) {
             />
           </div>
           
-          <div className="ml-auto flex items-center gap-2 md:gap-3">
-            <LocaleToggle className="hidden sm:inline-flex" />
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2 lg:gap-3">
+            <LocaleToggle className="hidden lg:inline-flex" />
             <NotificationCenter />
-            <CompanySwitcher className="hidden md:block" />
-            <div className="hidden border-l border-border/70 pl-3 text-right md:block">
+            <CompanySwitcher className="hidden lg:block" />
+            <div className="hidden border-l border-border/70 pl-3 text-right xl:block">
               {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
               <div className="text-sm font-semibold leading-tight truncate">{user.name || user.email}</div>
               <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>

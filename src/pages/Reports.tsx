@@ -1,202 +1,287 @@
 // src/pages/Reports.tsx
-import { lazy, Suspense } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
+import { lazy, Suspense, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Label } from '../components/ui/label'
 import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Link } from 'react-router-dom'
 import { useI18n } from '../lib/i18n'
-
 import { ReportsProvider, useReports } from './reports/context/ReportsProvider'
 
-// lazy tabs
-const SummaryTab   = lazy(() => import('./reports/tabs/SummaryTab'))
+const SummaryTab = lazy(() => import('./reports/tabs/SummaryTab'))
 const ValuationTab = lazy(() => import('./reports/tabs/ValuationTab'))
-const TurnoverTab  = lazy(() => import('./reports/tabs/TurnoverTab'))
-const AgingTab     = lazy(() => import('./reports/tabs/AgingTab'))
-const RevenueTab   = lazy(() => import('./reports/tabs/RevenueTab'))
-
-// NEW: supplier / customer statement tabs
+const TurnoverTab = lazy(() => import('./reports/tabs/TurnoverTab'))
+const AgingTab = lazy(() => import('./reports/tabs/AgingTab'))
+const RevenueTab = lazy(() => import('./reports/tabs/RevenueTab'))
 const SuppliersTab = lazy(() => import('./reports/tabs/SuppliersTab'))
 const CustomersTab = lazy(() => import('./reports/tabs/CustomersTab'))
 
 function FiltersBar() {
   const { t } = useI18n()
+  const tt = (key: string, fallback: string) => (t(key) === key ? fallback : t(key))
+  const tv = (key: string, vars: Record<string, string | number>, fallback: string) => {
+    const resolved = t(key, vars)
+    return resolved === key ? fallback : resolved
+  }
   const {
     ui,
-    startDate, endDate, setStartDate, setEndDate,
-    lastNDays, setCostMethod,
-    valuationAsOfEnd, setValuationAsOfEnd,
-    baseCurrency, displayCurrency, setDisplayCurrency,
-    fxRate, setFxRate, autoFx, setAutoFx,
+    startDate,
+    endDate,
+    setStartDate,
+    setEndDate,
+    lastNDays,
+    setCostMethod,
+    valuationAsOfEnd,
+    setValuationAsOfEnd,
+    baseCurrency,
+    displayCurrency,
+    setDisplayCurrency,
+    fxRate,
+    setFxRate,
+    autoFx,
+    setAutoFx,
     currencyOptions,
   } = useReports()
 
-  // Higher-contrast select styling for light theme, still theme-aware
   const selectCx =
-    "w-full h-9 rounded-md border border-input bg-background text-foreground px-2 pr-8 " +
-    "shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background " +
-    "disabled:opacity-50";
+    'h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none ring-offset-background transition focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50'
 
   return (
-    <>
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl md:text-3xl font-bold">
-          <Link to="/settings" className="underline decoration-dotted underline-offset-4 hover:opacity-80">
-            {ui.companyName}
-          </Link>
-          {' — '}
-          {ui.subtitle}
-        </h1>
-        <div className="text-xs text-muted-foreground">
-          Money shown in {displayCurrency}
-          {fxRate !== 1 ? ` @ FX ${fxRate.toFixed(6)} per ${baseCurrency}` : ''}
-          {ui.fxNote ? ` • ${ui.fxNote}` : ''}
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
+            {tt('reports.workspace', 'Reporting workspace')}
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">{tt('nav.reports', 'Reports')}</h1>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              {tt('reports.subtitle', 'Review valuation, turnover, revenue, and partner-level movement summaries with the same company and currency context used across the app.')}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link to="/stock-levels">{tt('nav.stockLevels', 'Stock Levels')}</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/settings">{tt('nav.settings', 'Settings')}</Link>
+          </Button>
         </div>
       </div>
 
-      <Card className="mt-4">
-        <CardHeader><CardTitle>{t('reports.filters')}</CardTitle></CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <Label>{t('reports.start')}</Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            </div>
-            <div>
-              <Label>{t('reports.end')}</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-            </div>
-            <div className="flex items-end">
-              <div className="flex gap-2 flex-wrap">
-                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(30); setStartDate(d.start); setEndDate(d.end) }}>{t('reports.last30d')}</Button>
-                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(90); setStartDate(d.start); setEndDate(d.end) }}>{t('reports.last90d')}</Button>
-                <Button type="button" variant="outline" onClick={() => { const d = lastNDays(365); setStartDate(d.start); setEndDate(d.end) }}>{t('reports.last365d')}</Button>
-              </div>
-            </div>
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <div className="rounded-2xl border border-border/80 bg-card px-4 py-3 shadow-sm">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {tt('reports.context.company', 'Company')}
           </div>
+          <div className="mt-2 text-sm font-semibold">{ui.companyName}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{ui.subtitle}</div>
+        </div>
+        <div className="rounded-2xl border border-border/80 bg-card px-4 py-3 shadow-sm">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {tt('reports.context.period', 'Period')}
+          </div>
+          <div className="mt-2 text-sm font-semibold">
+            {startDate} → {endDate}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{tt('reports.filters', 'Filters')} + quick ranges</div>
+        </div>
+        <div className="rounded-2xl border border-border/80 bg-card px-4 py-3 shadow-sm">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {tt('reports.context.currency', 'Display currency')}
+          </div>
+          <div className="mt-2 text-sm font-semibold">{displayCurrency}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {fxRate !== 1 ? `FX ${fxRate.toFixed(6)} / ${baseCurrency}` : tt('reports.context.baseCurrency', 'Using base currency')}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border/80 bg-card px-4 py-3 shadow-sm">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {tt('reports.context.valuationMode', 'Valuation mode')}
+          </div>
+          <div className="mt-2 text-sm font-semibold">
+            {valuationAsOfEnd ? tt('reports.asOfEnd', 'As of end date') : tt('reports.currentSnapshot', 'Current snapshot')}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{ui.costMethod}</div>
+        </div>
+      </div>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+      <Card className="rounded-2xl border-border/80 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{tt('reports.filters', 'Filters')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div>
-              <Label>{t('reports.costingMethod')}</Label>
+              <Label>{tt('reports.start', 'Start')}</Label>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </div>
+            <div>
+              <Label>{tt('reports.end', 'End')}</Label>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </div>
+            <div>
+              <Label>{tt('reports.costingMethod', 'Costing method')}</Label>
               <select
-                className={selectCx} // ← updated
+                className={selectCx}
                 value={ui.costMethod}
-                onChange={e => setCostMethod(e.target.value === 'FIFO' ? 'FIFO' : 'WA')}
+                onChange={(e) => setCostMethod(e.target.value === 'FIFO' ? 'FIFO' : 'WA')}
               >
-                <option value="WA">{t('reports.weightedAverage')}</option>
-                <option value="FIFO">{t('reports.fifo')}</option>
+                <option value="WA">{tt('reports.weightedAverage', 'Weighted Average')}</option>
+                <option value="FIFO">{tt('reports.fifo', 'FIFO')}</option>
               </select>
             </div>
             <div>
-              <Label>{t('reports.valuationTiming')}</Label>
-              <div className="flex items-center gap-2 h-9">
+              <Label>{tt('reports.currency', 'Currency')}</Label>
+              <select className={selectCx} value={displayCurrency} onChange={(e) => setDisplayCurrency(e.target.value)}>
+                {currencyOptions.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => { const d = lastNDays(30); setStartDate(d.start); setEndDate(d.end) }}>
+              {tt('reports.last30d', 'Last 30d')}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => { const d = lastNDays(90); setStartDate(d.start); setEndDate(d.end) }}>
+              {tt('reports.last90d', 'Last 90d')}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => { const d = lastNDays(365); setStartDate(d.start); setEndDate(d.end) }}>
+              {tt('reports.last365d', 'Last 365d')}
+            </Button>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+              <div className="flex items-center gap-2">
                 <input
                   id="asof"
                   type="checkbox"
                   className="h-4 w-4"
                   checked={valuationAsOfEnd}
-                  onChange={e => setValuationAsOfEnd(e.target.checked)}
+                  onChange={(e) => setValuationAsOfEnd(e.target.checked)}
                 />
-                <Label htmlFor="asof">{t('reports.asOfEnd')}</Label>
+                <Label htmlFor="asof">{tt('reports.asOfEnd', 'As of end date')}</Label>
               </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {t('reports.binNote')}
-              </div>
+              <div className="mt-2 text-xs text-muted-foreground">{tt('reports.binNote', 'Bin-level valuation depends on movement bin tracking.')}</div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>{t('reports.currency')}</Label>
-                <select
-                  className={selectCx} // ← updated
-                  value={displayCurrency}
-                  onChange={e => setDisplayCurrency(e.target.value)}
-                >
-                  {currencyOptions.map(code => (<option key={code} value={code}>{code}</option>))}
-                </select>
-              </div>
-              <div>
-                <Label>{t('reports.fxPerBase', { code: baseCurrency })}</Label>
-                <Input
-                  type="number"
-                  step="0.000001"
-                  value={fxRate}
-                  onChange={e => setFxRate(Number(e.target.value) || 0)}
-                  disabled={autoFx}
-                />
-                <div className="flex items-center gap-2 mt-1">
-                  <input id="autofx" type="checkbox" className="h-4 w-4" checked={autoFx} onChange={e => setAutoFx(e.target.checked)} />
-                  <Label htmlFor="autofx" className="text-xs">{t('reports.autoFx')}</Label>
+
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <div>
+                  <Label>{tv('reports.fxPerBase', { code: baseCurrency }, `FX per ${baseCurrency}`)}</Label>
+                  <Input
+                    type="number"
+                    step="0.000001"
+                    value={fxRate}
+                    onChange={(e) => setFxRate(Number(e.target.value) || 0)}
+                    disabled={autoFx}
+                  />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input id="autofx" type="checkbox" className="h-4 w-4" checked={autoFx} onChange={(e) => setAutoFx(e.target.checked)} />
+                  <span>{tt('reports.autoFx', 'Auto FX')}</span>
+                </label>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
-    </>
+    </div>
+  )
+}
+
+function ReportTabFallback({ label }: { label: string }) {
+  return (
+    <Card className="border-dashed">
+      <CardContent className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+        Loading {label}…
+      </CardContent>
+    </Card>
   )
 }
 
 export default function Reports() {
   const { t } = useI18n()
+  const [tab, setTab] = useState('summary')
+
   return (
     <ReportsProvider>
-      <div className="p-4 space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
+      <div className="space-y-6">
         <FiltersBar />
 
-        <Tabs defaultValue="summary">
-          <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="summary">{t('reports.tab.summary')}</TabsTrigger>
-            <TabsTrigger value="valuation">{t('reports.tab.valuation')}</TabsTrigger>
-            <TabsTrigger value="turnover">{t('reports.tab.turnover')}</TabsTrigger>
-            <TabsTrigger value="aging">{t('reports.tab.aging')}</TabsTrigger>
-            <TabsTrigger value="revenue">{t('reports.tab.revenue')}</TabsTrigger>
-            {/* NEW */}
-            <TabsTrigger value="suppliers">{t('reports.tab.suppliers')}</TabsTrigger>
-            <TabsTrigger value="customers">{t('reports.tab.customers')}</TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={setTab}>
+          <div className="rounded-2xl border bg-card p-3 shadow-sm">
+            <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-muted/70 p-1">
+              <TabsTrigger value="summary" className="rounded-lg">
+                {t('reports.tab.summary')}
+              </TabsTrigger>
+              <TabsTrigger value="valuation" className="rounded-lg">
+                {t('reports.tab.valuation')}
+              </TabsTrigger>
+              <TabsTrigger value="turnover" className="rounded-lg">
+                {t('reports.tab.turnover')}
+              </TabsTrigger>
+              <TabsTrigger value="aging" className="rounded-lg">
+                {t('reports.tab.aging')}
+              </TabsTrigger>
+              <TabsTrigger value="revenue" className="rounded-lg">
+                {t('reports.tab.revenue')}
+              </TabsTrigger>
+              <TabsTrigger value="suppliers" className="rounded-lg">
+                {t('reports.tab.suppliers')}
+              </TabsTrigger>
+              <TabsTrigger value="customers" className="rounded-lg">
+                {t('reports.tab.customers')}
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="summary">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.summary')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.summary')} />}>
               <SummaryTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="valuation">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.valuation')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.valuation')} />}>
               <ValuationTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="turnover">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.turnover')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.turnover')} />}>
               <TurnoverTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="aging">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.aging')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.aging')} />}>
               <AgingTab />
             </Suspense>
           </TabsContent>
 
           <TabsContent value="revenue">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.revenue')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.revenue')} />}>
               <RevenueTab />
             </Suspense>
           </TabsContent>
 
-          {/* NEW: Suppliers */}
           <TabsContent value="suppliers">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.suppliers')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.suppliers')} />}>
               <SuppliersTab />
             </Suspense>
           </TabsContent>
 
-          {/* NEW: Customers */}
           <TabsContent value="customers">
-            <Suspense fallback={<div>{t('loading')} {t('reports.tab.customers')}…</div>}>
+            <Suspense fallback={<ReportTabFallback label={t('reports.tab.customers')} />}>
               <CustomersTab />
             </Suspense>
           </TabsContent>

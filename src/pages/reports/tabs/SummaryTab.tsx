@@ -259,29 +259,29 @@ export default function SummaryTab() {
   ]
 
   // ----- handlers -----
-  const onCSV = () => {
-    downloadCSV(`summary_kpis_${stamp}.csv`, [
+  const onCSV = async () => {
+    await downloadCSV(`summary_kpis_${stamp}.csv`, [
       ...headerRows(ctx, t('reports.summary.export.kpis')),
       ...formatRowsForCSV(kpiRows, ctx, [1], []),
     ])
-    downloadCSV(`summary_movements_${stamp}.csv`, [
+    await downloadCSV(`summary_movements_${stamp}.csv`, [
       ...headerRows(ctx, t('reports.summary.export.movements')),
       ...formatRowsForCSV(movementsRows, ctx, [4], [3]),
     ])
   }
 
-  const onXLSX = () => {
-    saveXLSX(`summary_${stamp}.xlsx`, ctx, [
+  const onXLSX = async () => {
+    await saveXLSX(`summary_${stamp}.xlsx`, ctx, [
       { title: 'KPIs', headerTitle: t('reports.summary.export.kpis'), body: kpiRows, moneyCols: [1] },
       { title: 'Movements', headerTitle: t('reports.summary.export.movements'), body: movementsRows, moneyCols: [4], qtyCols: [3] },
     ])
   }
 
-  const onPDF = () => {
-    const doc = startPDF(ctx, t('reports.summary.export.kpis'))
-    pdfTable(doc, [t('reports.summary.kpi.metric'), t('reports.summary.kpi.value')], kpiRows.slice(1), [1], ctx, 110)
+  const onPDF = async () => {
+    const doc = await startPDF(ctx, t('reports.summary.export.kpis'))
+    await pdfTable(doc, [t('reports.summary.kpi.metric'), t('reports.summary.kpi.value')], kpiRows.slice(1), [1], ctx, 110)
     doc.addPage()
-    pdfTable(doc, [t('reports.summary.movements.time'),t('reports.summary.movements.type'),t('reports.summary.movements.item'),t('reports.summary.movements.qty'),t('reports.summary.movements.unitCost'),t('reports.summary.movements.warehouseFrom'),t('reports.summary.movements.warehouseTo')],
+    await pdfTable(doc, [t('reports.summary.movements.time'),t('reports.summary.movements.type'),t('reports.summary.movements.item'),t('reports.summary.movements.qty'),t('reports.summary.movements.unitCost'),t('reports.summary.movements.warehouseFrom'),t('reports.summary.movements.warehouseTo')],
       movementsRows.slice(1), [4], ctx, 110)
     doc.save(`summary_${stamp}.pdf`)
   }
@@ -301,7 +301,7 @@ export default function SummaryTab() {
         <CardTitle>{t('reports.summary.title')}</CardTitle>
       </CardHeader>
       <CardContent>
-        <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} />
+        <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} className="mt-0 justify-end" />
 
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <KPI label={t('reports.summary.kpi.daysInPeriod')} value={fmt(turnoverPerItem.daysInPeriod, 0)} />

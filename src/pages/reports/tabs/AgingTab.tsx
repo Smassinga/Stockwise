@@ -1,114 +1,155 @@
 // src/pages/reports/tabs/AgingTab.tsx
-import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
+import { useI18n } from '../../../lib/i18n'
 import { useReports } from '../context/ReportsProvider'
 import ExportButtons from '../components/ExportButtons'
 import { headerRows, downloadCSV, saveXLSX, startPDF, pdfTable, Row } from '../utils/exports'
 
 export default function AgingTab() {
+  const { t } = useI18n()
+  const tt = (key: string, fallback: string) => (t(key) === key ? fallback : t(key))
   const { aging, moneyText, fmt, ui, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote } = useReports()
+
   const ctx = { companyName: ui.companyName, startDate, endDate, displayCurrency, baseCurrency, fxRate, fxNote }
   const stamp = endDate.replace(/-/g, '')
+  const totalValue = aging.rowsWH.reduce((sum, row) => sum + row.value, 0)
+  const totalQty = aging.rowsWH.reduce((sum, row) => sum + row.qty, 0)
 
   const whRows: Row[] = [
-    ['Warehouse', 'Total Qty', `Total Value (${displayCurrency})`, ...aging.buckets],
-    ...aging.rowsWH.map(r => ([
-      r.warehouseName,
-      Number(r.qty.toFixed(2)),
-      Number(r.value),
-      ...aging.buckets.map(b => `${fmt(r.byBucket[b].qty, 2)} / ${moneyText(r.byBucket[b].value)}`)
+    [tt('reports.summary.valuation.warehouse', 'Warehouse'), tt('reports.totalQty', 'Total Qty'), `${tt('reports.summary.valuation.value', 'Value')} (${displayCurrency})`, ...aging.buckets],
+    ...aging.rowsWH.map((row) => ([
+      row.warehouseName,
+      Number(row.qty.toFixed(2)),
+      Number(row.value),
+      ...aging.buckets.map((bucket) => `${fmt(row.byBucket[bucket].qty, 2)} / ${moneyText(row.byBucket[bucket].value)}`),
     ])),
   ]
   const binRows: Row[] = [
-    ['Warehouse', 'Bin', 'Total Qty', `Total Value (${displayCurrency})`, ...aging.buckets],
-    ...aging.rowsBin.map(r => ([
-      r.warehouseName,
-      r.binCode,
-      Number(r.qty.toFixed(2)),
-      Number(r.value),
-      ...aging.buckets.map(b => `${fmt(r.byBucket[b].qty, 2)} / ${moneyText(r.byBucket[b].value)}`)
+    [tt('reports.summary.valuation.warehouse', 'Warehouse'), tt('orders.binHint', 'Bin'), tt('reports.totalQty', 'Total Qty'), `${tt('reports.summary.valuation.value', 'Value')} (${displayCurrency})`, ...aging.buckets],
+    ...aging.rowsBin.map((row) => ([
+      row.warehouseName,
+      row.binCode,
+      Number(row.qty.toFixed(2)),
+      Number(row.value),
+      ...aging.buckets.map((bucket) => `${fmt(row.byBucket[bucket].qty, 2)} / ${moneyText(row.byBucket[bucket].value)}`),
     ])),
   ]
 
-  const onCSV = () => {
-    downloadCSV(`aging_by_warehouse_${stamp}.csv`, [...headerRows(ctx, 'Inventory Aging — By Warehouse'), ...whRows])
-    downloadCSV(`aging_by_bin_${stamp}.csv`, [...headerRows(ctx, 'Inventory Aging — By Bin'), ...binRows])
+  const onCSV = async () => {
+    await downloadCSV(`aging_by_warehouse_${stamp}.csv`, [...headerRows(ctx, tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse')), ...whRows])
+    await downloadCSV(`aging_by_bin_${stamp}.csv`, [...headerRows(ctx, tt('reports.agingByBin', 'Inventory Aging — By Bin')), ...binRows])
   }
-  const onXLSX = () => {
-    saveXLSX(`aging_${stamp}.xlsx`, ctx, [
-      { title: 'By Warehouse', headerTitle: 'Inventory Aging — By Warehouse', body: whRows, moneyCols: [2], qtyCols: [1] },
-      { title: 'By Bin', headerTitle: 'Inventory Aging — By Bin', body: binRows, moneyCols: [3], qtyCols: [2] },
+
+  const onXLSX = async () => {
+    await saveXLSX(`aging_${stamp}.xlsx`, ctx, [
+      { title: 'By Warehouse', headerTitle: tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse'), body: whRows, moneyCols: [2], qtyCols: [1] },
+      { title: 'By Bin', headerTitle: tt('reports.agingByBin', 'Inventory Aging — By Bin'), body: binRows, moneyCols: [3], qtyCols: [2] },
     ])
   }
-  const onPDF = () => {
-    const doc = startPDF(ctx, 'Inventory Aging — By Warehouse')
-    pdfTable(doc, whRows[0] as string[], whRows.slice(1), [], ctx, 110)
+
+  const onPDF = async () => {
+    const doc = await startPDF(ctx, tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse'))
+    await pdfTable(doc, whRows[0] as string[], whRows.slice(1), [], ctx, 110)
     doc.addPage()
-    pdfTable(doc, binRows[0] as string[], binRows.slice(1), [], ctx, 110)
+    await pdfTable(doc, binRows[0] as string[], binRows.slice(1), [], ctx, 110)
     doc.save(`aging_${stamp}.pdf`)
   }
 
   return (
-    <Card>
-      <CardHeader><CardTitle>Aging Buckets</CardTitle></CardHeader>
+    <Card className="rounded-2xl border-border/80 shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle>{tt('reports.tab.aging', 'Aging')}</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          {tt('reports.agingHelp', 'Use aging buckets to spot old stock value, where it sits, and which warehouses or bins are carrying slow-moving inventory.')}
+        </p>
+      </CardHeader>
       <CardContent className="space-y-6">
-        <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} />
+        <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} className="mt-0 justify-end" />
 
-        <div className="overflow-x-auto">
-          <h3 className="font-medium mb-2">By Warehouse</h3>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left border-b">
-                <th className="py-2 pr-2">Warehouse</th>
-                <th className="py-2 pr-2">Total Qty</th>
-                <th className="py-2 pr-2">Total Value</th>
-                {aging.buckets.map(b => <th key={b} className="py-2 pr-2">{b}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {aging.rowsWH.map(r => (
-                <tr key={r.warehouseId} className="border-b">
-                  <td className="py-2 pr-2">{r.warehouseName}</td>
-                  <td className="py-2 pr-2">{fmt(r.qty, 2)}</td>
-                  <td className="py-2 pr-2">{moneyText(r.value)}</td>
-                  {aging.buckets.map(b => (
-                    <td key={b} className="py-2 pr-2">
-                      {fmt(r.byBucket[b].qty, 2)} / {moneyText(r.byBucket[b].value)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.summary.valuation.warehouse', 'Warehouse')}</p>
+            <div className="mt-2 text-lg font-semibold">{aging.rowsWH.length}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.agingWarehouseHelp', 'Warehouses carrying stock in the current aging snapshot.')}</p>
+          </div>
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.totalQty', 'Total Qty')}</p>
+            <div className="mt-2 text-lg font-semibold">{fmt(totalQty, 2)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.agingQtyHelp', 'On-hand quantity included in the aging analysis.')}</p>
+          </div>
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.summary.valuation.value', 'Value')}</p>
+            <div className="mt-2 text-lg font-semibold">{moneyText(totalValue)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.agingValueHelp', 'Total value represented across the aging buckets.')}</p>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <h3 className="font-medium mb-2">By Bin (current snapshot)</h3>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left border-b">
-                <th className="py-2 pr-2">Warehouse</th>
-                <th className="py-2 pr-2">Bin</th>
-                <th className="py-2 pr-2">Total Qty</th>
-                <th className="py-2 pr-2">Total Value</th>
-                {aging.buckets.map(b => <th key={b} className="py-2 pr-2">{b}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {aging.rowsBin.map(r => (
-                <tr key={`${r.warehouseId}|${r.binId || ''}`} className="border-b">
-                  <td className="py-2 pr-2">{r.warehouseName}</td>
-                  <td className="py-2 pr-2">{r.binCode}</td>
-                  <td className="py-2 pr-2">{fmt(r.qty, 2)}</td>
-                  <td className="py-2 pr-2">{moneyText(r.value)}</td>
-                  {aging.buckets.map(b => (
-                    <td key={b} className="py-2 pr-2">
-                      {fmt(r.byBucket[b].qty, 2)} / {moneyText(r.byBucket[b].value)}
-                    </td>
-                  ))}
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">{tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse')}</h3>
+            <p className="text-xs text-muted-foreground">{tt('reports.agingWarehouseBreakdownHelp', 'Warehouse rows combine quantity and value by aging bucket so slow-moving stock is easier to isolate.')}</p>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-border/70">
+            <table className="w-full min-w-[960px] text-sm">
+              <thead className="bg-muted/40">
+                <tr className="text-left">
+                  <th className="px-3 py-2">{tt('reports.summary.valuation.warehouse', 'Warehouse')}</th>
+                  <th className="px-3 py-2 text-right">{tt('reports.totalQty', 'Total Qty')}</th>
+                  <th className="px-3 py-2 text-right">{tt('reports.summary.valuation.value', 'Value')}</th>
+                  {aging.buckets.map((bucket) => <th key={bucket} className="px-3 py-2">{bucket}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {aging.rowsWH.map((row) => (
+                  <tr key={row.warehouseId} className="border-t">
+                    <td className="px-3 py-3">{row.warehouseName}</td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">{fmt(row.qty, 2)}</td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">{moneyText(row.value)}</td>
+                    {aging.buckets.map((bucket) => (
+                      <td key={bucket} className="px-3 py-3 text-xs text-muted-foreground">
+                        {fmt(row.byBucket[bucket].qty, 2)} / {moneyText(row.byBucket[bucket].value)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">{tt('reports.agingByBin', 'Inventory Aging — By Bin')}</h3>
+            <p className="text-xs text-muted-foreground">{tt('reports.agingBinBreakdownHelp', 'Bin rows help warehouse teams pinpoint exactly where older stock is sitting inside a site.')}</p>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-border/70">
+            <table className="w-full min-w-[1080px] text-sm">
+              <thead className="bg-muted/40">
+                <tr className="text-left">
+                  <th className="px-3 py-2">{tt('reports.summary.valuation.warehouse', 'Warehouse')}</th>
+                  <th className="px-3 py-2">{tt('orders.binHint', 'Bin')}</th>
+                  <th className="px-3 py-2 text-right">{tt('reports.totalQty', 'Total Qty')}</th>
+                  <th className="px-3 py-2 text-right">{tt('reports.summary.valuation.value', 'Value')}</th>
+                  {aging.buckets.map((bucket) => <th key={bucket} className="px-3 py-2">{bucket}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {aging.rowsBin.map((row) => (
+                  <tr key={`${row.warehouseId}|${row.binId || ''}`} className="border-t">
+                    <td className="px-3 py-3">{row.warehouseName}</td>
+                    <td className="px-3 py-3">{row.binCode}</td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">{fmt(row.qty, 2)}</td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">{moneyText(row.value)}</td>
+                    {aging.buckets.map((bucket) => (
+                      <td key={bucket} className="px-3 py-3 text-xs text-muted-foreground">
+                        {fmt(row.byBucket[bucket].qty, 2)} / {moneyText(row.byBucket[bucket].value)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </CardContent>
     </Card>

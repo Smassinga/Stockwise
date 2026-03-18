@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from '../components/ui/button'
+import { Card, CardContent } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useI18n } from '../lib/i18n'
-import PurchaseOrders from './Orders/PurchaseOrders'
-import SalesOrders from './Orders/SalesOrders'
+
+const PurchaseOrders = lazy(() => import('./Orders/PurchaseOrders'))
+const SalesOrders = lazy(() => import('./Orders/SalesOrders'))
 
 export default function OrdersPage() {
   const { t } = useI18n()
@@ -70,7 +72,17 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {tab === 'purchase' ? <PurchaseOrders /> : <SalesOrders />}
+      <Suspense
+        fallback={
+          <Card className="border-dashed">
+            <CardContent className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+              {tt('orders.loadingWorkspace', 'Loading order workspace…')}
+            </CardContent>
+          </Card>
+        }
+      >
+        {tab === 'purchase' ? <PurchaseOrders /> : <SalesOrders />}
+      </Suspense>
     </div>
   )
 }
