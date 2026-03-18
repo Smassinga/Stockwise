@@ -120,6 +120,23 @@ export function AppLayout({ user, children }: Props) {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const [searchQuery, setSearchQuery] = useState('')
+  const searchPlaceholder = tt('common.searchPlaceholder', 'Search items, orders, customers...')
+  const displayName = useMemo(() => {
+    const rawName = user.name?.trim()
+    if (rawName && rawName !== user.email) return rawName
+    if (user.email?.includes('@')) return user.email.split('@')[0]
+    return rawName || tt('shell.account.userFallback', 'Account')
+  }, [tt, user.email, user.name])
+  const displayEmail = user.email?.trim() || tt('shell.account.noEmail', 'No email on file')
+  const displayCompany = companyName?.trim() || tt('shell.account.companyFallback', 'No company selected')
+  const displayRole = useMemo(() => {
+    if (!myRole) return tt('shell.account.roleFallback', 'Team member')
+    return String(myRole)
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }, [myRole, tt])
 
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, [...CanManageUsers])
@@ -205,9 +222,9 @@ export function AppLayout({ user, children }: Props) {
         <div className="border-t border-border/70 space-y-3 p-3">
           <CompanySwitcher className="mb-3" />
           <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
-            {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
-            <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
-            <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
+            <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
+            <div className="text-xs text-muted-foreground">{displayRole}</div>
           </div>
           <Button
             variant="ghost"
@@ -221,7 +238,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [user, location.pathname, logout, navSections, companyName, myRole, t]
+    [displayCompany, displayName, displayRole, logout, navSections, t]
   )
 
   const handleSearch = (e: FormEvent) => {
@@ -231,7 +248,7 @@ export function AppLayout({ user, children }: Props) {
     navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
   }
 
-  const initial = (user.name || user.email || '?').charAt(0).toUpperCase()
+  const initial = (displayName || 'A').charAt(0).toUpperCase()
 
   return (
     <div className="flex min-h-screen">
@@ -286,12 +303,12 @@ export function AppLayout({ user, children }: Props) {
             </div>
           ))}
         </nav>
-        <div className="mt-auto border-t p-3">
-          <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
-            {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
-            <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
-            <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
-          </div>
+          <div className="mt-auto border-t p-3">
+            <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
+              <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
+              <div className="text-xs text-muted-foreground">{displayRole}</div>
+            </div>
           <Button
             variant="ghost"
             size="sm"
@@ -319,7 +336,7 @@ export function AppLayout({ user, children }: Props) {
           {/* Mobile search form */}
           <div className="ml-1 flex-1 md:hidden">
             <SearchBar
-              placeholder={t('common.searchPlaceholder')}
+              placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={setSearchQuery}
               onSubmit={handleSearch}
@@ -330,7 +347,7 @@ export function AppLayout({ user, children }: Props) {
           <div className="ml-1 hidden min-w-0 flex-1 md:flex">
             <SearchBar
               className="w-full max-w-sm lg:max-w-md xl:max-w-lg"
-              placeholder={t('common.searchPlaceholder')}
+              placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={setSearchQuery}
               onSubmit={handleSearch}
@@ -352,16 +369,20 @@ export function AppLayout({ user, children }: Props) {
                     {initial}
                   </span>
                   <span className="hidden max-w-[9rem] min-w-0 text-left xl:block">
-                    <span className="block truncate text-sm font-medium leading-tight">{user.name || user.email}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">{myRole ?? '-'}</span>
+                    <span className="block truncate text-sm font-medium leading-tight">{displayName}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">{displayRole}</span>
                   </span>
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <div className="px-2 py-2">
-                  <div className="text-sm font-semibold truncate">{user.name || user.email}</div>
-                  <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {tt('shell.account.signedInAs', 'Signed in as')}
+                  </div>
+                  <div className="mt-1 text-sm font-semibold truncate">{displayName}</div>
+                  <div className="text-xs text-muted-foreground truncate">{displayEmail}</div>
+                  <div className="mt-2 text-xs text-muted-foreground truncate">{displayCompany}</div>
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/profile')}>

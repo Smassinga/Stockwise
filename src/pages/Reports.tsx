@@ -31,7 +31,6 @@ function FiltersBar() {
     setStartDate,
     setEndDate,
     lastNDays,
-    setCostMethod,
     valuationAsOfEnd,
     setValuationAsOfEnd,
     baseCurrency,
@@ -125,14 +124,9 @@ function FiltersBar() {
             </div>
             <div>
               <Label>{tt('reports.costingMethod', 'Costing method')}</Label>
-              <select
-                className={selectCx}
-                value={ui.costMethod}
-                onChange={(e) => setCostMethod(e.target.value === 'FIFO' ? 'FIFO' : 'WA')}
-              >
-                <option value="WA">{tt('reports.weightedAverage', 'Weighted Average')}</option>
-                <option value="FIFO">{tt('reports.fifo', 'FIFO')}</option>
-              </select>
+              <div className={`${selectCx} flex items-center`}>
+                {tt('reports.weightedAverage', 'Weighted Average')}
+              </div>
             </div>
             <div>
               <Label>{tt('reports.currency', 'Currency')}</Label>

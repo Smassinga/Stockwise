@@ -16,7 +16,8 @@ export default function CompanySwitcher({ className }: { className?: string }) {
   const activeLabel =
     options.find((option) => option.id === companyId)?.label ||
     companyName ||
-    ''
+    t('company.selectCompany') ||
+    'Select company'
 
   if (!options.length && !activeLabel) return null
 

@@ -27,7 +27,7 @@ import { Switch } from "../components/ui/switch";
 // Existing uploader (fast preview / storage)
 import LogoUploader from "../components/settings/LogoUploader";
 
-import { Globe, Bell, FileText, Building, Clock } from "lucide-react";
+import { Globe, Bell, FileText, Building, Clock, Plus, X } from "lucide-react";
 
 type Warehouse = { id: string; name: string };
 
@@ -216,31 +216,24 @@ function parseDueReminderTime(value: string) {
   };
 }
 
-function formatLeadDaysInput(values?: number[]) {
-  return (values || []).join(", ");
-}
+function normalizeLeadDays(values?: number[]) {
+  const unique = Array.from(
+    new Set(
+      (values || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value))
+        .map((value) => Math.trunc(value)),
+    ),
+  );
 
-function parseLeadDaysInput(raw: string) {
-  const tokens = (raw || "")
-    .split(",")
-    .map((token) => token.trim())
-    .filter(Boolean);
-  const invalidTokens: string[] = [];
-  const values: number[] = [];
-
-  for (const token of tokens) {
-    if (!/^-?\d+$/.test(token)) {
-      invalidTokens.push(token);
-      continue;
-    }
-    values.push(parseInt(token, 10));
-  }
-
-  return {
-    values,
-    invalidTokens,
-    normalized: values.join(", "),
-  };
+  return unique.sort((a, b) => {
+    const bucket = (value: number) => (value > 0 ? 0 : value === 0 ? 1 : 2);
+    const bucketDiff = bucket(a) - bucket(b);
+    if (bucketDiff !== 0) return bucketDiff;
+    if (a > 0 && b > 0) return b - a;
+    if (a < 0 && b < 0) return Math.abs(a) - Math.abs(b);
+    return a - b;
+  });
 }
 
 // ----- per-company language cache -----
@@ -285,10 +278,9 @@ function Settings() {
   const [dueReminderTimeInput, setDueReminderTimeInput] = useState(
     formatDueReminderTime(DEFAULTS.dueReminders),
   );
-  const [dueReminderLeadDaysInput, setDueReminderLeadDaysInput] = useState(
-    formatLeadDaysInput(DEFAULTS.dueReminders.leadDays),
-  );
   const [dueReminderLeadDaysError, setDueReminderLeadDaysError] = useState<string | null>(null);
+  const [dueReminderBeforeDraft, setDueReminderBeforeDraft] = useState("");
+  const [dueReminderAfterDraft, setDueReminderAfterDraft] = useState("");
 
   const roleUpper = useMemo(() => String(myRole || "").toUpperCase(), [myRole]);
   const canEditAll = useMemo(
@@ -314,18 +306,29 @@ function Settings() {
     return { companyLabel, defaultWarehouse, valuationMethod };
   }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses]);
 
+  const reminderLeadDays = useMemo(
+    () =>
+      normalizeLeadDays(
+        data.dueReminders?.leadDays || DEFAULTS.dueReminders?.leadDays,
+      ),
+    [data.dueReminders?.leadDays?.join(",")],
+  );
+  const reminderOffsetsBefore = useMemo(
+    () => reminderLeadDays.filter((value) => value > 0),
+    [reminderLeadDays],
+  );
+  const reminderOffsetsAfter = useMemo(
+    () => reminderLeadDays.filter((value) => value < 0),
+    [reminderLeadDays],
+  );
+  const reminderOffsetOnDue = reminderLeadDays.includes(0);
+
   useEffect(() => {
     setDueReminderTimeInput(formatDueReminderTime(data.dueReminders || DEFAULTS.dueReminders));
-    setDueReminderLeadDaysInput(
-      formatLeadDaysInput(
-        data.dueReminders?.leadDays || DEFAULTS.dueReminders.leadDays,
-      ),
-    );
     setDueReminderLeadDaysError(null);
   }, [
     data.dueReminders?.sendAt,
     data.dueReminders?.hours?.join(","),
-    data.dueReminders?.leadDays?.join(","),
   ]);
 
   useEffect(() => {
@@ -444,6 +447,35 @@ function Settings() {
     setProfile((p) => (p ? { ...p, [key]: value } : p));
   };
 
+  const setReminderLeadDays = (values: number[]) => {
+    const normalized = normalizeLeadDays(values);
+    setField("dueReminders.leadDays", normalized);
+    setDueReminderLeadDaysError(null);
+  };
+
+  const addReminderOffset = (direction: "before" | "after") => {
+    const raw = direction === "before" ? dueReminderBeforeDraft : dueReminderAfterDraft;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      const message = tt(
+        "settings.toast.reminderOffsetInvalid",
+        "Enter a whole number of days greater than zero."
+      );
+      setDueReminderLeadDaysError(message);
+      toast.error(message);
+      return;
+    }
+
+    const offset = direction === "before" ? parsed : -parsed;
+    setReminderLeadDays([...reminderLeadDays, offset]);
+    if (direction === "before") setDueReminderBeforeDraft("");
+    else setDueReminderAfterDraft("");
+  };
+
+  const removeReminderOffset = (offset: number) => {
+    setReminderLeadDays(reminderLeadDays.filter((value) => value !== offset));
+  };
+
   const save = async () => {
     if (!companyId) return;
     if (!canEditOps) {
@@ -465,23 +497,15 @@ function Settings() {
         return;
       }
 
-      const leadDaysDraft = parseLeadDaysInput(dueReminderLeadDaysInput);
-      if (leadDaysDraft.invalidTokens.length) {
-        setDueReminderLeadDaysError(
-          tt(
-            "settings.dueReminders.leadDays.validation",
-            "Use whole numbers separated by commas, for example 3, 1, 0, -3."
-          )
+      if (!reminderLeadDays.length) {
+        const message = tt(
+          "settings.toast.reminderOffsetRequired",
+          "Add at least one reminder offset before saving."
         );
-        toast.error(
-          tt(
-            "settings.toast.reminderLeadDaysInvalid",
-            "Use whole numbers separated by commas for reminder dates."
-          )
-        );
+        setDueReminderLeadDaysError(message);
+        toast.error(message);
         return;
       }
-      setDueReminderLeadDaysError(null);
 
       normalized.notifications = {
         ...normalized.notifications,
@@ -510,10 +534,7 @@ function Settings() {
         ...normalized.dueReminders,
         sendAt: reminderTime.normalized,
         hours: [reminderTime.legacyHourValue],
-        leadDays:
-          leadDaysDraft.values.length > 0
-            ? leadDaysDraft.values
-            : [...(DEFAULTS.dueReminders.leadDays || [])],
+        leadDays: reminderLeadDays,
       };
 
       const { data: updated, error } = await supabase.rpc(
@@ -1453,44 +1474,179 @@ function Settings() {
             </div>
           </div>
 
-          <div>
-            <Label>{t("settings.dueReminders.leadDays")}</Label>
-            <Input
-              placeholder={t("settings.dueReminders.leadDays.placeholder")}
-              value={dueReminderLeadDaysInput}
-              onChange={(e) => {
-                setDueReminderLeadDaysInput(e.target.value);
-                if (dueReminderLeadDaysError) setDueReminderLeadDaysError(null);
-              }}
-              onBlur={() => {
-                const parsed = parseLeadDaysInput(dueReminderLeadDaysInput);
-                if (parsed.invalidTokens.length) {
-                  setDueReminderLeadDaysError(
-                    tt(
-                      "settings.dueReminders.leadDays.validation",
-                      "Use whole numbers separated by commas, for example 3, 1, 0, -3."
-                    )
-                  );
-                  return;
-                }
-                setDueReminderLeadDaysError(null);
-                setField(
-                  "dueReminders.leadDays",
-                  parsed.values.length > 0
-                    ? parsed.values
-                    : [...(DEFAULTS.dueReminders?.leadDays || [])]
-                );
-                setDueReminderLeadDaysInput(
-                  parsed.normalized || formatLeadDaysInput(DEFAULTS.dueReminders?.leadDays)
-                );
-              }}
-              disabled={!canEditOps}
-            />
-            <div className={`mt-1 text-xs ${dueReminderLeadDaysError ? "text-destructive" : "text-muted-foreground"}`}>
+          <div className="md:col-span-2 space-y-3">
+            <div>
+              <Label>{t("settings.dueReminders.leadDays")}</Label>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {tt(
+                  "settings.dueReminders.leadDays.helper",
+                  "Choose when reminders should go out before, on, or after the due date."
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)]">
+              <div className="rounded-xl border border-border/70 bg-muted/15 p-3">
+                <div className="text-sm font-medium">
+                  {tt("settings.dueReminders.before.title", "Before due date")}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {tt(
+                    "settings.dueReminders.before.help",
+                    "Use this for early reminders such as 7, 3, or 1 day before the invoice is due."
+                  )}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {reminderOffsetsBefore.length ? (
+                    reminderOffsetsBefore.map((offset) => (
+                      <button
+                        key={`before-${offset}`}
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background px-3 py-1.5 text-sm"
+                        onClick={() => removeReminderOffset(offset)}
+                        disabled={!canEditOps}
+                      >
+                        <span>
+                          {tt(
+                            offset === 1
+                              ? "settings.dueReminders.offsetBefore.one"
+                              : "settings.dueReminders.offsetBefore.other",
+                            offset === 1 ? "1 day before" : "{count} days before",
+                            { count: offset }
+                          )}
+                        </span>
+                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      {tt("settings.dueReminders.before.empty", "No early reminders yet.")}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={dueReminderBeforeDraft}
+                    onChange={(e) => {
+                      setDueReminderBeforeDraft(e.target.value);
+                      if (dueReminderLeadDaysError) setDueReminderLeadDaysError(null);
+                    }}
+                    placeholder={tt("settings.dueReminders.before.placeholder", "Add days before")}
+                    disabled={!canEditOps}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => addReminderOffset("before")}
+                    disabled={!canEditOps}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {tt("settings.dueReminders.addOffset", "Add")}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-muted/15 p-3">
+                <div className="text-sm font-medium">
+                  {tt("settings.dueReminders.onDue.title", "On due date")}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {tt(
+                    "settings.dueReminders.onDue.help",
+                    "Turn this on if customers should also receive a reminder on the exact due date."
+                  )}
+                </div>
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-background px-3 py-3">
+                  <div className="text-sm font-medium">
+                    {tt("settings.dueReminders.offsetOnDue", "On due date")}
+                  </div>
+                  <Switch
+                    checked={reminderOffsetOnDue}
+                    onCheckedChange={(enabled) => {
+                      const withoutCurrentDay = reminderLeadDays.filter((value) => value !== 0);
+                      setReminderLeadDays(enabled ? [...withoutCurrentDay, 0] : withoutCurrentDay);
+                    }}
+                    disabled={!canEditOps}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-muted/15 p-3">
+                <div className="text-sm font-medium">
+                  {tt("settings.dueReminders.after.title", "After due date")}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {tt(
+                    "settings.dueReminders.after.help",
+                    "Use this for overdue follow-ups such as 1 or 3 days after the due date passes."
+                  )}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {reminderOffsetsAfter.length ? (
+                    reminderOffsetsAfter.map((offset) => (
+                      <button
+                        key={`after-${offset}`}
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background px-3 py-1.5 text-sm"
+                        onClick={() => removeReminderOffset(offset)}
+                        disabled={!canEditOps}
+                      >
+                        <span>
+                          {tt(
+                            Math.abs(offset) === 1
+                              ? "settings.dueReminders.offsetAfter.one"
+                              : "settings.dueReminders.offsetAfter.other",
+                            Math.abs(offset) === 1 ? "1 day after" : "{count} days after",
+                            { count: Math.abs(offset) }
+                          )}
+                        </span>
+                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      {tt("settings.dueReminders.after.empty", "No overdue reminders yet.")}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={dueReminderAfterDraft}
+                    onChange={(e) => {
+                      setDueReminderAfterDraft(e.target.value);
+                      if (dueReminderLeadDaysError) setDueReminderLeadDaysError(null);
+                    }}
+                    placeholder={tt("settings.dueReminders.after.placeholder", "Add days after")}
+                    disabled={!canEditOps}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => addReminderOffset("after")}
+                    disabled={!canEditOps}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {tt("settings.dueReminders.addOffset", "Add")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className={`text-xs ${dueReminderLeadDaysError ? "text-destructive" : "text-muted-foreground"}`}>
               {dueReminderLeadDaysError ||
                 tt(
-                  "settings.dueReminders.leadDays.helper",
-                  "Days before or after due date to send reminders. Separate multiple values with commas."
+                  "settings.dueReminders.leadDays.summary",
+                  "You can mix early, on-date, and overdue reminders. Click an existing reminder chip to remove it."
                 )}
             </div>
           </div>
