@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Mail, MapPin, Pencil, Phone, Search, Users } from 'lucide-react'
+import { Mail, MapPin, Pencil, Phone, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useAuth } from '../hooks/useAuth'
@@ -332,6 +332,7 @@ export default function Customers() {
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
   const [search, setSearch] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
   const [createForm, setCreateForm] = useState<CustomerForm>(EMPTY_FORM)
   const [editing, setEditing] = useState<Customer | null>(null)
   const [editForm, setEditForm] = useState<CustomerForm>(EMPTY_FORM)
@@ -443,6 +444,7 @@ export default function Customers() {
       if (insert.error) throw insert.error
 
       toast.success(t('customers.toast.created') || 'Customer created')
+      setCreateOpen(false)
       setCreateForm(EMPTY_FORM)
       await reloadCustomers()
     } catch (e: any) {
@@ -555,75 +557,20 @@ export default function Customers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
           <h1 className="text-3xl font-bold">{t('customers.title')}</h1>
           <p className="text-muted-foreground">
             {tt('customers.subtitle', 'Maintain commercial defaults, billing details, and settlement-ready customer records.')}
           </p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('customers.summary.total', 'Customers')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-end justify-between">
-            <div>
-              <div className="text-3xl font-semibold">{stats.total}</div>
-              <div className="text-xs text-muted-foreground">{tt('customers.summary.totalHelp', 'Records in this company')}</div>
-            </div>
-            <Users className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('customers.summary.contactReady', 'Contact ready')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{stats.withContact}</div>
-            <div className="text-xs text-muted-foreground">{tt('customers.summary.contactReadyHelp', 'Customers with email or phone captured')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('customers.summary.defaults', 'Commercial defaults')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{stats.withTerms}</div>
-            <div className="text-xs text-muted-foreground">{tt('customers.summary.defaultsHelp', 'Customers with default payment terms')}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('customers.create')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-            {tt('customers.createHelp', 'Store default currency, billing details, and payment terms once so sales orders inherit the right commercial context.')}
+          <div className="text-sm text-muted-foreground">
+            {stats.total} {tt('customers.summary.total', 'Customers')} • {stats.withContact} {tt('customers.summary.contactReady', 'Contact ready')} • {stats.withTerms} {tt('customers.summary.defaults', 'Commercial defaults')}
           </div>
-          <form onSubmit={handleCreate} className="space-y-6">
-            <CustomerFormFields
-              form={createForm}
-              onChange={(patch) => setCreateForm((current) => ({ ...current, ...patch }))}
-              currencies={currencies}
-              paymentTermsList={paymentTermsList}
-              tt={tt}
-            />
-            <div className="flex items-center justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setCreateForm(EMPTY_FORM)}>
-                {t('common.clear')}
-              </Button>
-              <Button type="submit" disabled={saving || !can.createMaster(role)}>
-                {saving ? t('actions.saving') : t('customers.create')}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        </div>
+        <Button disabled={!can.createMaster(role)} onClick={() => setCreateOpen(true)}>
+          {t('customers.create')}
+        </Button>
+      </div>
 
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -769,6 +716,45 @@ export default function Customers() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) setCreateForm(EMPTY_FORM)
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('customers.create')}</DialogTitle>
+            <DialogDescription>
+              {tt('customers.createHelp', 'Store default currency, billing details, and payment terms once so sales orders inherit the right commercial context.')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <form onSubmit={handleCreate} className="space-y-6">
+              <CustomerFormFields
+                form={createForm}
+                onChange={(patch) => setCreateForm((current) => ({ ...current, ...patch }))}
+                currencies={currencies}
+                paymentTermsList={paymentTermsList}
+                tt={tt}
+              />
+              <div className="flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setCreateForm(EMPTY_FORM)}>
+                  {t('common.clear')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={saving || !can.createMaster(role)}>
+                  {saving ? t('actions.saving') : t('customers.create')}
+                </Button>
+              </div>
+            </form>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-w-3xl">

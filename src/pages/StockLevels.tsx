@@ -209,13 +209,11 @@ export function StockLevels() {
     const totalValue = rows.reduce((sum, row) => sum + row.totalValue, 0)
     const lowStock = rows.filter((row) => row.status !== 'healthy').length
     const outOfStock = rows.filter((row) => row.status === 'out').length
-    const filteredWarehouses = new Set(rows.map((row) => row.warehouseId)).size
     return {
       totalUnits,
       totalValue,
       lowStock,
       outOfStock,
-      filteredWarehouses,
       positions: rows.length,
     }
   }, [rows])
@@ -299,8 +297,8 @@ export function StockLevels() {
           <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
         </div>
         <div className="animate-pulse space-y-3">
-          <div className="grid gap-4 md:grid-cols-4">
-            {[...Array(4)].map((_, index) => (
+          <div className="grid gap-4 md:grid-cols-3">
+            {[...Array(3)].map((_, index) => (
               <div key={index} className="h-28 rounded-xl bg-muted" />
             ))}
           </div>
@@ -350,7 +348,7 @@ export function StockLevels() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</CardTitle>
@@ -381,17 +379,6 @@ export function StockLevels() {
             <div className="font-mono text-3xl font-semibold tabular-nums">{totals.lowStock}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {tt('stock.summary.lowHelp', 'Includes {count} positions already at zero stock.', { count: totals.outOfStock })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.coverage', 'Warehouse coverage')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-mono text-3xl font-semibold tabular-nums">{totals.filteredWarehouses}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {tt('stock.summary.coverageHelp', 'Warehouses represented in the current filtered result.')}
             </p>
           </CardContent>
         </Card>

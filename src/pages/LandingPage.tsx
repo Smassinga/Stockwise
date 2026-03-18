@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -397,32 +397,8 @@ export default function LandingPage() {
   const primaryCtaLabel = user ? (lang === 'pt' ? 'Abrir dashboard' : 'Open dashboard') : copy.primaryCta
   const secondaryCtaLabel = user ? (lang === 'pt' ? 'Ir para a aplicação' : 'Go to app') : copy.secondaryCta
 
-  const dashboardSignals = useMemo(
-    () =>
-      lang === 'pt'
-        ? [
-            ['Valor do Stock', 'Visível por armazém, com custo médio e alerta de reposição na mesma leitura.'],
-            ['Receita 30d', 'Lida no mesmo período usado para CMVMC, margem e detalhe diário.'],
-            ['CMVMC 30d', 'Ligado às saídas reais e não a um número solto sem rasto operacional.'],
-            ['Margem Bruta', 'Interpretada com contexto de stock, expedição e liquidação.'],
-            ['Armazéns', 'Operação multi-armazém com bins e movimentos rastreáveis.'],
-            ['Ordens Abertas', 'Mantidas junto ao fluxo operacional, não perdidas em listas genéricas.'],
-          ]
-        : [
-            ['Inventory Value', 'Visible by warehouse, with average cost and replenishment risk in the same reading.'],
-            ['Revenue 30d', 'Read inside the same window used for COGS, margin, and daily detail.'],
-            ['COGS 30d', 'Tied to real issue movements instead of a disconnected finance number.'],
-            ['Gross Margin', 'Interpreted with stock, shipping, and settlement context still in view.'],
-            ['Warehouses', 'Multi-warehouse operations with bins and traceable movements.'],
-            ['Open Orders', 'Kept inside the operational workflow instead of generic lists.'],
-          ],
-    [lang]
-  )
-
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="absolute inset-x-0 top-0 -z-10 h-[360px] bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.12),_transparent_40%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_24%)]" />
-
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/92 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <Link to="/" className="min-w-0">
@@ -542,12 +518,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="border-y border-border/60 bg-muted/30 py-4">
-          <div className="mx-auto max-w-7xl px-4 text-center text-sm font-medium text-foreground/80 sm:px-6 lg:px-8">
-            {copy.valueStrip}
-          </div>
-        </section>
-
         <section id="features" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
           <div className="max-w-3xl">
             <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{copy.featuresTitle}</h2>
@@ -558,9 +528,9 @@ export default function LandingPage() {
             {copy.features.map((feature) => {
               const Icon = feature.icon
               return (
-                <Card key={feature.title} className="border-border/70 bg-card shadow-sm transition-colors hover:border-primary/20">
+                <Card key={feature.title} className="border-border/70 bg-card shadow-sm">
                   <CardContent className="p-6">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/70 bg-muted/30 text-primary">
                       <Icon className="h-5 w-5" />
                     </div>
                     <h3 className="mt-5 text-xl font-semibold tracking-tight">{feature.title}</h3>
@@ -594,35 +564,17 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
-          <div className="max-w-3xl">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{copy.kpiTitle}</h2>
-            <p className="mt-4 text-lg text-muted-foreground">{copy.kpiBody}</p>
-          </div>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {dashboardSignals.map(([label, body], index) => (
-              <SurfaceSignalCard
-                key={label}
-                label={label}
-                body={body}
-                tone={index === 1 || index === 3 ? 'accent' : 'default'}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section id="about" className="border-y border-border/60 bg-slate-950 py-16 text-white lg:py-24">
+        <section id="about" className="border-y border-border/60 bg-muted/30 py-16 lg:py-24">
           <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
             <div>
               <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{copy.aboutTitle}</h2>
-              <p className="mt-4 text-lg text-slate-300">{copy.aboutBody}</p>
+              <p className="mt-4 text-lg text-muted-foreground">{copy.aboutBody}</p>
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               {copy.aboutPoints.map((point) => (
-                <div key={point} className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <CheckCircle2 className="h-5 w-5 text-amber-300" />
-                  <p className="mt-4 text-sm leading-6 text-slate-200">{point}</p>
+                <div key={point} className="rounded-2xl border border-border/70 bg-background p-5">
+                  <CheckCircle2 className="h-5 w-5 text-primary" />
+                  <p className="mt-4 text-sm leading-6 text-muted-foreground">{point}</p>
                 </div>
               ))}
             </div>
@@ -636,16 +588,10 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-10 grid gap-4 lg:grid-cols-3">
-            {copy.plans.map((plan, index) => (
-              <Card
-                key={plan.title}
-                className={cn(
-                  'border-border/70 bg-card shadow-sm',
-                  index === 1 ? 'border-primary/30 ring-1 ring-primary/15' : ''
-                )}
-              >
+            {copy.plans.map((plan) => (
+              <Card key={plan.title} className={cn('border-border/70 bg-card shadow-sm')}>
                 <CardContent className="p-6">
-                  <div className="text-sm font-semibold text-primary">{plan.title}</div>
+                  <div className="text-sm font-semibold text-foreground">{plan.title}</div>
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">{plan.body}</p>
                   <div className="mt-6 space-y-3">
                     {plan.points.map((point) => (

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useI18n, withI18nFallback } from "../lib/i18n";
@@ -28,16 +27,7 @@ import { Switch } from "../components/ui/switch";
 // Existing uploader (fast preview / storage)
 import LogoUploader from "../components/settings/LogoUploader";
 
-import {
-  Users,
-  Building2 as WarehouseIcon,
-  Package,
-  Globe,
-  Bell,
-  FileText,
-  Building,
-  Clock,
-} from "lucide-react";
+import { Globe, Bell, FileText, Building, Clock } from "lucide-react";
 
 type Warehouse = { id: string; name: string };
 
@@ -551,52 +541,6 @@ function Settings() {
                 "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
               )}
             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick links */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" /> {t("sections.users.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-muted-foreground">{t("sections.users.desc")}</p>
-            <Button asChild>
-              <Link to="/users">{t("sections.users.button")}</Link>
-            </Button>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <WarehouseIcon className="w-5 h-5" />{" "}
-              {t("sections.warehouses.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-muted-foreground">
-              {t("sections.warehouses.desc")}
-            </p>
-            <Button asChild>
-              <Link to="/warehouses">{t("sections.warehouses.button")}</Link>
-            </Button>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5" /> {t("sections.uom.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-muted-foreground">{t("sections.uom.desc")}</p>
-            <Button asChild>
-              <Link to="/uom">{t("sections.uom.button")}</Link>
-            </Button>
           </CardContent>
         </Card>
       </div>

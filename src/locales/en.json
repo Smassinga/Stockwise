@@ -1509,5 +1509,8 @@
   "orders.lastPaidOn": "Last paid on",
   "orders.paidVia": "Paid via",
   "orders.purchaseAuditHelp": "Shows who created, approved, received, and last paid this purchase order when the data is captured by the current workflow.",
-  "orders.bankChannel": "Bank"
+  "orders.bankChannel": "Bank",
+  "shell.nav.operations": "Operations",
+  "shell.nav.commercial": "Commercial & finance",
+  "shell.nav.setup": "Setup"
 }

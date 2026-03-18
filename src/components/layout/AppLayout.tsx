@@ -1,5 +1,5 @@
 // src/components/layout/AppLayout.tsx
-import { FormEvent, ReactNode, useState, useMemo } from 'react'
+import { FormEvent, ReactNode, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -24,7 +24,8 @@ import {
   Ruler,           // UoM
   ClipboardList,   // Stock Levels
   X,
-  Search
+  Search,
+  ChevronDown
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -35,7 +36,7 @@ import { hasRole, CanManageUsers } from '../../lib/roles'
 import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
 import CompanySwitcher from '../CompanySwitcher'
-import { useI18n } from '../../lib/i18n'
+import { useI18n, withI18nFallback } from '../../lib/i18n'
 import BrandLockup from '../brand/BrandLockup'
 import LocaleToggle from '../LocaleToggle'
 import {
@@ -52,6 +53,11 @@ type NavItem = {
   label: string
   to: string
   icon: React.ComponentType<{ className?: string }>
+}
+
+type NavSection = {
+  label: string
+  items: NavItem[]
 }
 
 function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
@@ -111,6 +117,8 @@ export function AppLayout({ user, children }: Props) {
   const { logout } = useAuth() as any
   const { companyName, myRole } = useOrg()
   const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const [searchQuery, setSearchQuery] = useState('')
 
   const nav = useMemo(() => {
@@ -118,6 +126,33 @@ export function AppLayout({ user, children }: Props) {
     const base = buildNavLabels(t)
     return base.filter(item => !(item.to === '/users' && !canManage))
   }, [myRole, t])
+
+  const navSections = useMemo<NavSection[]>(
+    () => {
+      const sectionMap = new Map([
+        [
+          tt('shell.nav.operations', 'Operations'),
+          ['/dashboard', '/items', '/bom', '/movements', '/stock-levels', '/warehouses'],
+        ],
+        [
+          tt('shell.nav.commercial', 'Commercial & finance'),
+          ['/orders', '/settlements', '/transactions', '/cash', '/banks', '/landed-cost', '/reports'],
+        ],
+        [
+          tt('shell.nav.setup', 'Setup'),
+          ['/customers', '/suppliers', '/users', '/currency', '/uom', '/settings'],
+        ],
+      ])
+
+      return Array.from(sectionMap.entries()).map(([label, routes]) => ({
+        label,
+        items: routes
+          .map((route) => nav.find((item) => item.to === route))
+          .filter((item): item is NavItem => Boolean(item)),
+      }))
+    },
+    [nav, tt]
+  )
 
   const isActive = (to: string) =>
     location.pathname === to || location.pathname.startsWith(to + '/')
@@ -130,10 +165,10 @@ export function AppLayout({ user, children }: Props) {
         to={item.to}
         onClick={() => setOpen(false)}
         className={cn(
-          'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors',
+          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
           active
-            ? 'border-primary/20 bg-primary/10 text-primary'
-            : 'border-transparent text-foreground/80 hover:border-border/80 hover:bg-accent/45 hover:text-foreground'
+            ? 'bg-primary/10 text-primary'
+            : 'text-foreground/78 hover:bg-accent/40 hover:text-foreground'
         )}
       >
         <Icon className="h-5 w-5 flex-shrink-0" />
@@ -152,21 +187,32 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 px-3 py-4">
-          {nav.map((item) => (
-            <NavLink key={item.to} item={item} />
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+          {navSections.map((section) => (
+            <div key={section.label} className="space-y-1.5">
+              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {section.label}
+              </div>
+              <div className="space-y-1">
+                {section.items.map((item) => (
+                  <NavLink key={item.to} item={item} />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
-        <div className="border-t border-border/70 p-3">
+        <div className="border-t border-border/70 space-y-3 p-3">
           <CompanySwitcher className="mb-3" />
-          {companyName && <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
-          <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
-          <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
+          <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+            {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
+            <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
+            <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
+          </div>
           <Button
             variant="ghost"
             size="sm"
-            className="mt-3 w-full justify-start"
+            className="w-full justify-start"
             onClick={() => logout?.()}
           >
             <LogOut className="mr-2 h-4 w-4" />
@@ -175,7 +221,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [user, location.pathname, logout, nav, companyName, myRole]
+    [user, location.pathname, logout, navSections, companyName, myRole, t]
   )
 
   const handleSearch = (e: FormEvent) => {
@@ -202,7 +248,7 @@ export function AppLayout({ user, children }: Props) {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 border-r bg-background transition-transform duration-300 ease-in-out md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-background transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -226,15 +272,26 @@ export function AppLayout({ user, children }: Props) {
         <div className="px-3 pb-2">
           <CompanySwitcher />
         </div>
-        <nav className="space-y-1 px-3 py-2">
-          {nav.map((item) => (
-            <NavLink key={item.to} item={item} />
+        <nav className="space-y-5 px-3 py-2">
+          {navSections.map((section) => (
+            <div key={section.label} className="space-y-1.5">
+              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {section.label}
+              </div>
+              <div className="space-y-1">
+                {section.items.map((item) => (
+                  <NavLink key={item.to} item={item} />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="mt-auto border-t p-3">
-          {companyName && <div className="text-xs text-muted-foreground truncate">{companyName}</div>}
-          <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
-          <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
+          <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+            {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
+            <div className="mt-1 text-sm font-medium truncate">{user.name || user.email}</div>
+            <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -272,7 +329,7 @@ export function AppLayout({ user, children }: Props) {
           {/* Desktop search form */}
           <div className="ml-1 hidden min-w-0 flex-1 md:flex">
             <SearchBar
-              className="w-full max-w-md lg:max-w-lg xl:max-w-xl"
+              className="w-full max-w-sm lg:max-w-md xl:max-w-lg"
               placeholder={t('common.searchPlaceholder')}
               value={searchQuery}
               onChange={setSearchQuery}
@@ -280,25 +337,25 @@ export function AppLayout({ user, children }: Props) {
             />
           </div>
           
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2 lg:gap-3">
-            <LocaleToggle className="hidden lg:inline-flex" />
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
+            <LocaleToggle className="hidden xl:inline-flex" />
             <NotificationCenter />
-            <CompanySwitcher className="hidden lg:block" />
-            <div className="hidden border-l border-border/70 pl-3 text-right xl:block">
-              {companyName && <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{companyName}</div>}
-              <div className="text-sm font-semibold leading-tight truncate">{user.name || user.email}</div>
-              <div className="text-xs text-muted-foreground">{myRole ?? '-'}</div>
-            </div>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="hidden h-10 w-10 rounded-full border border-border/70 bg-muted/20 font-semibold md:inline-flex"
+                  variant="outline"
+                  className="hidden h-10 items-center gap-2 rounded-xl border-border/70 bg-background/80 px-2.5 md:inline-flex"
                   aria-label="User menu"
                 >
-                  {initial}
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-muted/80 text-xs font-semibold text-foreground">
+                    {initial}
+                  </span>
+                  <span className="hidden max-w-[9rem] min-w-0 text-left xl:block">
+                    <span className="block truncate text-sm font-medium leading-tight">{user.name || user.email}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">{myRole ?? '-'}</span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">

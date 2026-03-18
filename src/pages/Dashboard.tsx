@@ -557,7 +557,7 @@ export default function Dashboard() {
   }
 
   const Chip = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-    <div className={`h-9 w-9 rounded-xl flex items-center justify-center shadow-sm ${className}`} aria-hidden>
+    <div className={`flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 bg-background ${className}`} aria-hidden>
       {children}
     </div>
   )
@@ -718,9 +718,6 @@ export default function Dashboard() {
                   </SheetBody>
                 </SheetContent>
               </Sheet>
-              <div className="text-xs text-muted-foreground">
-                {tt('dashboard.dailyWindowNote', 'Daily rows reflect the active dashboard window.')}
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -749,7 +746,7 @@ export default function Dashboard() {
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.inventoryValue.title')}</CardDescription>
                   <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(inventoryValue)}</CardTitle>
                 </div>
-                <Chip className="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Package size={18} /></Chip>
+                <Chip className="text-sky-700 dark:text-sky-300"><Package size={18} /></Chip>
               </div>
             </CardHeader>
             <CardContent className="space-y-1">
@@ -771,7 +768,7 @@ export default function Dashboard() {
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.revenue.title', { days: windowDays })}</CardDescription>
                   <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(revenueWindow)}</CardTitle>
                 </div>
-                <Chip className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"><DollarSign size={18} /></Chip>
+                <Chip className="text-emerald-700 dark:text-emerald-300"><DollarSign size={18} /></Chip>
               </div>
             </CardHeader>
             <CardContent className="space-y-1">
@@ -791,7 +788,7 @@ export default function Dashboard() {
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.cogs.title', { days: windowDays })}</CardDescription>
                   <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(cogsWindow)}</CardTitle>
                 </div>
-                <Chip className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><Coins size={18} /></Chip>
+                <Chip className="text-amber-700 dark:text-amber-300"><Coins size={18} /></Chip>
               </div>
             </CardHeader>
             <CardContent className="space-y-1">
@@ -811,7 +808,7 @@ export default function Dashboard() {
                   <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.grossMargin.title')}</CardDescription>
                   <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(grossMargin)}</CardTitle>
                 </div>
-                <Chip className={grossMargin >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'}>
+                <Chip className={grossMargin >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}>
                   {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
                 </Chip>
               </div>

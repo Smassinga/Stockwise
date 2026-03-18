@@ -1506,5 +1506,8 @@
   "orders.lastPaidOn": "?ltimo pagamento em",
   "orders.paidVia": "Pago via",
   "orders.purchaseAuditHelp": "Mostra quem criou, aprovou, recebeu e liquidou por último esta encomenda de compra quando esses dados são capturados pelo fluxo actual.",
-  "orders.bankChannel": "Banco"
+  "orders.bankChannel": "Banco",
+  "shell.nav.operations": "Opera\u00e7\u00f5es",
+  "shell.nav.commercial": "Comercial e finan\u00e7as",
+  "shell.nav.setup": "Configura\u00e7\u00e3o"
 }
