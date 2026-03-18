@@ -9,6 +9,15 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
@@ -35,6 +44,11 @@ function sortByName<T extends { name?: string }>(arr: T[]) {
   return [...arr].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 }
 
+function formatStockThreshold(value: number | null | undefined) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '-'
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value)
+}
+
 const Items: React.FC = () => {
   const { t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
@@ -52,8 +66,15 @@ const Items: React.FC = () => {
   const [sku, setSku] = useState('')
   const [baseUomId, setBaseUomId] = useState('')
   const [minStock, setMinStock] = useState<string>('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editMinStock, setEditMinStock] = useState('0')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const uomById = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
+  const editingItem = useMemo(
+    () => items.find((item) => item.id === editingItemId) ?? null,
+    [editingItemId, items],
+  )
 
   // ------- Family helpers -------
   const familyLabel = (fam?: string) => {
@@ -214,9 +235,63 @@ const Items: React.FC = () => {
     }
   }
 
+  function openEditItem(item: Item) {
+    setEditingItemId(item.id)
+    setEditMinStock(typeof item.minStock === 'number' ? String(item.minStock) : '0')
+  }
+
+  function closeEditItem(force = false) {
+    if (savingEdit && !force) return
+    setEditingItemId(null)
+    setEditMinStock('0')
+  }
+
+  async function handleSaveMinStock(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingItem) return
+    if (!can.updateItem(role)) return toast.error(tt('items.toast.updatePermission', 'Only Operator and above can update minimum stock'))
+    if (!companyId) return toast.error(tt('items.toast.noCompany', 'No active company'))
+
+    const rawValue = editMinStock.trim()
+    if (!rawValue) return toast.error(tt('items.toast.minStockRequired', 'Minimum stock is required'))
+
+    const nextMinStock = Number(rawValue)
+    if (!Number.isFinite(nextMinStock) || nextMinStock < 0) {
+      return toast.error(tt('items.toast.minStockInvalid', 'Minimum stock must be zero or greater'))
+    }
+
+    const previousItems = items
+    setSavingEdit(true)
+    setItems((current) =>
+      current.map((item) =>
+        item.id === editingItem.id ? { ...item, minStock: nextMinStock } : item,
+      ),
+    )
+
+    try {
+      const update = await supabase
+        .from('items')
+        .update({ min_stock: nextMinStock })
+        .eq('id', editingItem.id)
+        .eq('company_id', companyId)
+
+      if (update.error) throw update.error
+
+      toast.success(tt('items.toast.updated', 'Minimum stock updated'))
+      closeEditItem(true)
+      await reloadItems()
+    } catch (e: any) {
+      setItems(previousItems)
+      console.error(e)
+      toast.error(e?.message || tt('items.toast.updateFailed', 'Failed to update minimum stock'))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   if (loading) return <div className="p-6">{tt('loading', 'Loading...')}</div>
 
-  const uomLabel = (u: Uom) => `${u.code} — ${u.name}`
+  const uomLabel = (u: Uom) => `${u.code} - ${u.name}`
   const itemsCountLabel = tt(
     items.length === 1 ? 'items.summary.items.one' : 'items.summary.items.other',
     items.length === 1 ? '1 item tracked' : '{count} items tracked',
@@ -407,27 +482,41 @@ const Items: React.FC = () => {
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
                           <p className="text-muted-foreground">{t('items.table.baseUom')}</p>
-                          <p>{u ? `${u.code} — ${u.name}` : it.baseUomId}</p>
+                          <p>{u ? uomLabel(u) : it.baseUomId}</p>
                           <p className="text-xs text-muted-foreground">{u ? familyLabel(u.family) : tt('items.family.unspecified', 'Unspecified')}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">{t('items.fields.minStock')}</p>
-                          <p>{typeof it.minStock === 'number' ? it.minStock : '-'}</p>
+                          <p>{formatStockThreshold(it.minStock)}</p>
                         </div>
                       </div>
 
-                      <Button
-                        variant="destructive"
-                        disabled={!can.deleteItem(role)}
-                        onClick={() =>
-                          can.deleteItem(role)
-                            ? handleDelete(it.id)
-                            : toast.error(tt('items.toast.deletePermission', 'Only Manager and above can delete items'))
-                        }
-                        className="w-full min-h-[44px]"
-                      >
-                        {t('common.remove')}
-                      </Button>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Button
+                          variant="outline"
+                          disabled={!can.updateItem(role)}
+                          onClick={() =>
+                            can.updateItem(role)
+                              ? openEditItem(it)
+                              : toast.error(tt('items.toast.updatePermission', 'Only Operator and above can update minimum stock'))
+                          }
+                          className="min-h-[44px]"
+                        >
+                          {tt('items.actions.edit', 'Edit minimum stock')}
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          disabled={!can.deleteItem(role)}
+                          onClick={() =>
+                            can.deleteItem(role)
+                              ? handleDelete(it.id)
+                              : toast.error(tt('items.toast.deletePermission', 'Only Manager and above can delete items'))
+                          }
+                          className="min-h-[44px]"
+                        >
+                          {t('common.remove')}
+                        </Button>
+                      </div>
                     </div>
                   )
                 })
@@ -466,11 +555,22 @@ const Items: React.FC = () => {
                     <tr key={it.id} className="border-b">
                       <td className="py-2 pr-2">{it.name}</td>
                       <td className="py-2 pr-2">{it.sku}</td>
-                      <td className="py-2 pr-2">{u ? `${u.code} — ${u.name}` : it.baseUomId}</td>
+                      <td className="py-2 pr-2">{u ? uomLabel(u) : it.baseUomId}</td>
                       <td className="py-2 pr-2 text-muted-foreground">{u ? familyLabel(u.family) : tt('items.family.unspecified', 'Unspecified')}</td>
-                      <td className="py-2 pr-2">{typeof it.minStock === 'number' ? it.minStock : '-'}</td>
+                      <td className="py-2 pr-2">{formatStockThreshold(it.minStock)}</td>
                       <td className="py-2 pr-2">
                         <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            disabled={!can.updateItem(role)}
+                            onClick={() =>
+                              can.updateItem(role)
+                                ? openEditItem(it)
+                                : toast.error(tt('items.toast.updatePermission', 'Only Operator and above can update minimum stock'))
+                            }
+                          >
+                            {tt('items.actions.edit', 'Edit minimum stock')}
+                          </Button>
                           <Button
                             variant="destructive"
                             disabled={!can.deleteItem(role)}
@@ -492,6 +592,98 @@ const Items: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(editingItem)} onOpenChange={(open) => { if (!open) closeEditItem() }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{tt('items.edit.title', 'Update minimum stock')}</DialogTitle>
+            <DialogDescription>
+              {tt(
+                'items.edit.help',
+                'Only the minimum stock threshold can be edited after item creation. Core item fields stay read-only to preserve stock history and audit consistency.',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogBody>
+            <form id="edit-min-stock-form" onSubmit={handleSaveMinStock} className="space-y-4">
+              <div className="rounded-xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
+                {tt(
+                  'items.edit.auditNotice',
+                  'Item name, code, and measurement fields are locked after creation. Update the reorder threshold here when your replenishment policy changes.',
+                )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>{t('items.fields.name')}</Label>
+                  <Input value={editingItem?.name || ''} readOnly className="bg-muted/20" />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('items.fields.sku')}</Label>
+                  <Input value={editingItem?.sku || ''} readOnly className="bg-muted/20" />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('items.table.baseUom')}</Label>
+                  <Input
+                    value={
+                      editingItem
+                        ? (uomById.get(editingItem.baseUomId)
+                            ? uomLabel(uomById.get(editingItem.baseUomId)!)
+                            : editingItem.baseUomId)
+                        : ''
+                    }
+                    readOnly
+                    className="bg-muted/20"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{tt('items.table.family', 'Unit family')}</Label>
+                  <Input
+                    value={
+                      editingItem
+                        ? familyLabel(uomById.get(editingItem.baseUomId)?.family)
+                        : ''
+                    }
+                    readOnly
+                    className="bg-muted/20"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editMinStock">{t('items.fields.minStock')}</Label>
+                <Input
+                  id="editMinStock"
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  inputMode="decimal"
+                  value={editMinStock}
+                  onChange={(event) => setEditMinStock(event.target.value)}
+                  placeholder="0"
+                  className="min-h-[44px]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {tt(
+                    'items.edit.minStockHelp',
+                    'Use this threshold to drive replenishment visibility without changing the original item master data.',
+                  )}
+                </p>
+              </div>
+            </form>
+          </DialogBody>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeEditItem} disabled={savingEdit}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" form="edit-min-stock-form" disabled={savingEdit || !can.updateItem(role)}>
+              {savingEdit ? tt('common.saving', 'Saving...') : t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

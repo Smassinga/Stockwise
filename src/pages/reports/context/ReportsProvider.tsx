@@ -57,6 +57,8 @@ type Movement = {
   createdat?: string | null
 }
 
+// Internal analytical comparison engine only.
+// Live operational costing remains weighted average until FIFO exists end to end in backend posting logic.
 type CostMethod = 'WA' | 'FIFO'
 
 /* -------------------- small helpers -------------------- */

@@ -1,9 +1,13 @@
 // supabase/functions/mailer-invite/index.ts
-// Sends invite emails via SendGrid. Requires authenticated MANAGER+ membership.
+// Sends invite emails via the shared transactional mailer. Requires authenticated MANAGER+ membership.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getMailConfig, sendMailViaSendGrid } from "../_shared/sendgrid.ts";
+import {
+  getMailConfig,
+  requireMailConfig,
+  sendTransactionalEmail,
+} from "../_shared/mailer.ts";
 
 type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 type Status = "invited" | "active" | "disabled";
@@ -23,10 +27,10 @@ const SERVICE_ROLE_KEY =
   "";
 const ANON_KEY = Deno.env.get("SB_ANON_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const MAIL = getMailConfig();
+const MAIL = requireMailConfig(getMailConfig());
 const MAIL_FROM = MAIL.defaultFromEmail || "no-reply@stockwiseapp.com";
 const MAIL_FROM_NAME = MAIL.defaultFromName || "StockWise";
-const MAIL_REPLY_TO = MAIL.defaultReplyTo || MAIL_FROM;
+const MAIL_REPLY_TO = MAIL.defaultReplyToEmail || MAIL_FROM;
 const PUBLIC_SITE_URL = (MAIL.publicSiteUrl ?? "").replace(/\/+$/, "");
 const MAILER_ALLOWED_ORIGINS = (Deno.env.get("MAILER_ALLOWED_ORIGINS") ?? PUBLIC_SITE_URL)
   .split(",")
@@ -213,16 +217,16 @@ ${opts.inviteLink}
 If you cannot click, paste the link above into your browser.`;
 }
 
-async function sendViaSendGrid(to: string, subject: string, html: string, text: string) {
-  if (!MAIL.apiKey || !MAIL_FROM) {
+async function sendInviteEmail(to: string, subject: string, html: string, text: string) {
+  if (!MAIL.smtpLogin || !MAIL.smtpKey || !MAIL_FROM) {
     return j(
-      { error: "server_misconfigured", details: "SENDGRID_API_KEY and/or MAIL_FROM not set" },
+      { error: "server_misconfigured", details: "BREVO_SMTP_LOGIN/BREVO_SMTP_KEY and/or BREVO_SENDER_EMAIL not set" },
       500,
-      { "x-error": "missing SENDGRID_API_KEY or MAIL_FROM" }
+      { "x-error": "missing BREVO_SMTP_LOGIN/BREVO_SMTP_KEY or BREVO_SENDER_EMAIL" }
     );
   }
   try {
-    await sendMailViaSendGrid({
+    await sendTransactionalEmail({
       to: [to],
       subject,
       html,
@@ -230,14 +234,14 @@ async function sendViaSendGrid(to: string, subject: string, html: string, text: 
       fromEmail: MAIL_FROM,
       fromName: MAIL_FROM_NAME,
       replyTo: MAIL_REPLY_TO,
-    }, MAIL);
+    }, MAIL, { notificationType: "invite_email", workerId: "mailer-invite" });
     return j({ ok: true });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     return j(
-      { error: "sendgrid_failed", details: msg },
+      { error: "mail_delivery_failed", details: msg },
       500,
-      { "x-error": "sendgrid:failed" }
+      { "x-error": "mail:failed" }
     );
   }
 }
@@ -305,7 +309,7 @@ serve(async (req) => {
     const mode = String(body.mode ?? "email");
     if (mode === "preview") return j({ ok: true, preview: { subject, text, html } });
 
-    return await sendViaSendGrid(email, subject, html, text);
+    return await sendInviteEmail(email, subject, html, text);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return j({ error: "unexpected", details: msg }, 500, { "x-error": msg });

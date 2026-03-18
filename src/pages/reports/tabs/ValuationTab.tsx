@@ -9,6 +9,7 @@ import { headerRows, formatRowsForCSV, downloadCSV, saveXLSX, startPDF, pdfTable
 export default function ValuationTab() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string) => (t(key) === key ? fallback : t(key))
+  const liveCostMethodLabel = tt('reports.weightedAverage', 'Weighted Average')
   const { companyId } = useOrg()
   const {
     valuationAsOfEnd,
@@ -37,7 +38,7 @@ export default function ValuationTab() {
     fxNote,
     filters: [
       valuationAsOfEnd ? `${tt('reports.asOfEnd', 'As of end date')} ${endDate}` : tt('reports.currentSnapshot', 'Current snapshot'),
-      `${tt('settings.inventory.method', 'Valuation method')}: ${ui.costMethod}`,
+      `${tt('settings.inventory.method', 'Valuation method')}: ${liveCostMethodLabel}`,
     ],
   }
   const stamp = endDate.replace(/-/g, '')
@@ -122,7 +123,7 @@ export default function ValuationTab() {
             <div className="mt-2 text-lg font-semibold">
               {valuationAsOfEnd ? tt('reports.asOfEnd', 'As of end date') : tt('reports.currentSnapshot', 'Current snapshot')}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{ui.costMethod}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{liveCostMethodLabel}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.summary.valuation.total', 'Total')}</p>
@@ -140,7 +141,7 @@ export default function ValuationTab() {
           <div className="space-y-3">
             <div>
               <h3 className="text-sm font-semibold">
-                {tt('reports.summary.valuation.title', 'Valuation by Warehouse')} {valuationAsOfEnd ? `(${tt('reports.asOfEnd', 'As of end date')}, ${ui.costMethod})` : `(${tt('reports.currentSnapshot', 'Current snapshot')})`}
+                {tt('reports.summary.valuation.title', 'Valuation by Warehouse')} {valuationAsOfEnd ? `(${tt('reports.asOfEnd', 'As of end date')}, ${liveCostMethodLabel})` : `(${tt('reports.currentSnapshot', 'Current snapshot')})`}
               </h3>
               <p className="text-xs text-muted-foreground">{tt('reports.valuationWarehouseHelp', 'Sort warehouses by value concentration so the largest inventory positions are visible first.')}</p>
             </div>

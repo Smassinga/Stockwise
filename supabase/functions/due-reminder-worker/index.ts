@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getMailConfig, sendMailViaSendGrid } from "../_shared/sendgrid.ts";
+import {
+  getMailConfig,
+  requireMailConfig,
+  sendTransactionalEmail,
+} from "../_shared/mailer.ts";
 
 type QueueRow = {
   id: number;
@@ -53,7 +57,7 @@ type CompanyRow = {
   print_footer_note?: string | null;
 };
 
-const MAIL = getMailConfig();
+const MAIL = requireMailConfig(getMailConfig());
 const FALLBACK_BRAND = MAIL.defaultFromName || "StockWise";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -225,7 +229,7 @@ function htmlBody(opts: {
         : `${t.overdueBy} <strong>${Math.abs(opts.days)}</strong> ${t.days}`;
   const address = escapeHtml(companyAddress(opts.company));
   const companyName = escapeHtml(opts.company?.trade_name || opts.company?.legal_name || opts.company?.name || opts.brandForCopy);
-  const helpMail = `mailto:${encodeURIComponent(opts.company?.email || MAIL.defaultReplyTo)}?subject=${encodeURIComponent(`${opts.brandForCopy}: ${opts.soCode}`)}`;
+  const helpMail = `mailto:${encodeURIComponent(opts.company?.email || MAIL.defaultReplyToEmail)}?subject=${encodeURIComponent(`${opts.brandForCopy}: ${opts.soCode}`)}`;
 
   return `
     <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:680px;padding:16px;line-height:1.5;color:#0f172a;">
@@ -467,7 +471,7 @@ serve(async (req) => {
       if (DRY_RUN) {
         log("[DRY_RUN] would send reminder", { to, subject });
       } else {
-        await sendMailViaSendGrid(
+        await sendTransactionalEmail(
           {
             to,
             bcc,
@@ -475,9 +479,10 @@ serve(async (req) => {
             html,
             text,
             fromName: subjectPrefix,
-            replyTo: company.email || MAIL.defaultReplyTo,
+            replyTo: company.email || MAIL.defaultReplyToEmail,
           },
           MAIL,
+          { notificationType: "due_reminder", jobId: job.id, workerId: "due-reminder-worker" },
         );
       }
       sent++;

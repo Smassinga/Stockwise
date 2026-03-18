@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getMailConfig, sendMailViaSendGrid } from "../_shared/sendgrid.ts";
+import {
+  getMailConfig,
+  requireMailConfig,
+  sendTransactionalEmail,
+} from "../_shared/mailer.ts";
 
 type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 
@@ -11,7 +15,7 @@ const cors = {
   "Access-Control-Max-Age": "86400",
 };
 
-const MAIL = getMailConfig();
+const MAIL = requireMailConfig(getMailConfig());
 const SUPABASE_URL = Deno.env.get("SB_URL") ?? Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY =
   Deno.env.get("SB_SERVICE_ROLE_KEY") ??
@@ -190,14 +194,14 @@ serve(async (req) => {
     const html = htmlTemplate({ brandName, companyName, reportTitle, reportPeriod, message, downloadUrl });
     const text = textTemplate({ brandName, companyName, reportTitle, reportPeriod, message, downloadUrl });
 
-    await sendMailViaSendGrid({
+    await sendTransactionalEmail({
       to,
       subject,
       html,
       text,
       fromName: brandName,
-      replyTo: company?.email || MAIL.defaultReplyTo,
-    }, MAIL);
+      replyTo: company?.email || MAIL.defaultReplyToEmail,
+    }, MAIL, { notificationType: "report_email", workerId: "mailer-report" });
 
     return json({ ok: true, sent: to.length });
   } catch (error) {

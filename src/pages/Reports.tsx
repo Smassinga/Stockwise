@@ -42,6 +42,7 @@ function FiltersBar() {
     setAutoFx,
     currencyOptions,
   } = useReports()
+  const liveCostMethodLabel = tt('reports.weightedAverage', 'Weighted Average')
 
   const selectCx =
     'h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none ring-offset-background transition focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50'
@@ -104,7 +105,7 @@ function FiltersBar() {
           <div className="mt-2 text-sm font-semibold">
             {valuationAsOfEnd ? tt('reports.asOfEnd', 'As of end date') : tt('reports.currentSnapshot', 'Current snapshot')}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{ui.costMethod}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{liveCostMethodLabel}</div>
         </div>
       </div>
 
@@ -125,7 +126,7 @@ function FiltersBar() {
             <div>
               <Label>{tt('reports.costingMethod', 'Costing method')}</Label>
               <div className={`${selectCx} flex items-center`}>
-                {tt('reports.weightedAverage', 'Weighted Average')}
+                {liveCostMethodLabel}
               </div>
             </div>
             <div>

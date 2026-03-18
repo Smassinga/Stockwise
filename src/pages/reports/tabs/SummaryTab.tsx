@@ -45,6 +45,7 @@ const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 
 export default function SummaryTab() {
   const { t, lang } = useI18n()
+  const liveCostMethodLabel = t('reports.weightedAverage')
   const { companyId } = useOrg()
 
   const {
@@ -354,7 +355,7 @@ export default function SummaryTab() {
           <Card className="border-dashed md:col-span-2">
             <CardHeader>
               <CardTitle>
-                {t('reports.summary.valuation.title')} {valuationAsOfEnd ? `(${t('reports.summary.valuation.asOfEndDate')}, ${ui.costMethod})` : `(${t('reports.summary.valuation.currentSnapshot')})`}
+                {t('reports.summary.valuation.title')} {valuationAsOfEnd ? `(${t('reports.summary.valuation.asOfEndDate')}, ${liveCostMethodLabel})` : `(${t('reports.summary.valuation.currentSnapshot')})`}
               </CardTitle>
             </CardHeader>
             <CardContent>

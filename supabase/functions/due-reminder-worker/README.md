@@ -1,6 +1,6 @@
 # Due Reminder Worker
 
-A Supabase Edge Function that sends automated invoice due date reminders via email using SendGrid.
+A Supabase Edge Function that sends automated invoice due date reminders via email using the shared Brevo SMTP mailer.
 
 ## Overview
 
@@ -11,7 +11,7 @@ The Due Reminder Worker processes jobs from a queue to send email reminders for 
 1. Jobs are enqueued in the `due_reminder_queue` table
 2. The worker picks up pending jobs and processes them
 3. For each job, it calls the `build_due_reminder_batch` RPC function to find qualifying sales orders
-4. It sends email reminders via SendGrid for each qualifying order
+4. It sends email reminders via the shared Brevo SMTP mailer for each qualifying order
 
 ## Configuration
 
@@ -19,7 +19,9 @@ The Due Reminder Worker processes jobs from a queue to send email reminders for 
 
 The function requires these environment variables to be set in your Supabase project:
 
-- `SENDGRID_API_KEY` - Your SendGrid API key for sending emails
+- `BREVO_SMTP_LOGIN` - Your Brevo SMTP login
+- `BREVO_SMTP_KEY` - Your Brevo SMTP key
+- `BREVO_SENDER_EMAIL` - Default sender address for outgoing mail
 - `FROM_EMAIL` - The sender email address (default: "no-reply@stockwiseapp.com")
 - `REPLY_TO_EMAIL` - The reply-to email address (default: "support@stockwiseapp.com")
 - `BRAND_NAME` - Your company/brand name (default: "Stockwise")

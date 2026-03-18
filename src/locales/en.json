@@ -1578,5 +1578,15 @@
   "shell.account.noEmail": "No email on file",
   "shell.account.roleFallback": "Team member",
   "shell.account.signedInAs": "Signed in as",
-  "shell.account.userFallback": "Account"
+  "shell.account.userFallback": "Account",
+  "common.saving": "Saving...",
+  "items.actions.edit": "Edit minimum stock",
+  "items.edit.title": "Update minimum stock",
+  "items.edit.help": "Only the minimum stock threshold can be edited after item creation. Core item fields stay read-only to preserve stock history and audit consistency.",
+  "items.edit.auditNotice": "Item name, code, and measurement fields are locked after creation. Update the reorder threshold here when your replenishment policy changes.",
+  "items.edit.minStockHelp": "Use this threshold to drive replenishment visibility without changing the original item master data.",
+  "items.toast.minStockRequired": "Minimum stock is required",
+  "items.toast.updatePermission": "Only Operator and above can update minimum stock",
+  "items.toast.updateFailed": "Failed to update minimum stock",
+  "items.toast.updated": "Minimum stock updated"
 }

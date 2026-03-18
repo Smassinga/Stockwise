@@ -1,9 +1,13 @@
-// Sends one daily digest email through SendGrid.
+// Sends one daily digest email through the shared Brevo SMTP mailer.
 // Auth gate: X-Webhook-Secret header, Authorization: Bearer <secret>, or ?key= when DEBUG_ACCEPT_QUERY_KEY=true.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getMailConfig, sendMailViaSendGrid } from "../_shared/sendgrid.ts";
+import {
+  getMailConfig,
+  requireMailConfig,
+  sendTransactionalEmail,
+} from "../_shared/mailer.ts";
 
 type DigestQueueRow = {
   id: number;
@@ -54,7 +58,7 @@ type CompanyRow = {
   print_footer_note?: string | null;
 };
 
-const MAIL = getMailConfig();
+const MAIL = requireMailConfig(getMailConfig());
 const FALLBACK_BRAND = MAIL.defaultFromName || "StockWise";
 const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -363,17 +367,18 @@ serve(async (req: Request) => {
     if (DRY_RUN) {
       log("[DRY_RUN] would send digest", { to: emails, subject });
     } else {
-      await sendMailViaSendGrid(
-        {
-          to: emails,
-          subject,
-          html,
-          text,
-          fromName: brand,
-          replyTo: companyRow?.email || MAIL.defaultReplyTo,
-        },
-        MAIL,
-      );
+        await sendTransactionalEmail(
+          {
+            to: emails,
+            subject,
+            html,
+            text,
+            fromName: brand,
+            replyTo: companyRow?.email || MAIL.defaultReplyToEmail,
+          },
+          MAIL,
+          { notificationType: "daily_digest", jobId: job.id, workerId: "digest-worker" },
+        );
     }
 
     await supabase

@@ -199,9 +199,9 @@ export function AppLayout({ user, children }: Props) {
       <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-border/80 md:bg-muted/10">
         <div className="flex h-16 items-center gap-2 border-b border-border/70 px-4">
           <BrandLockup compact subtitle="" />
-          <div className="ml-2 shrink-0">
-            <ThemeToggle />
-          </div>
+            <div className="ml-2 shrink-0 overflow-visible">
+              <ThemeToggle />
+            </div>
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
@@ -272,7 +272,7 @@ export function AppLayout({ user, children }: Props) {
         <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <BrandLockup compact subtitle="" />
-            <div className="ml-2 shrink-0">
+            <div className="ml-2 shrink-0 overflow-visible">
               <ThemeToggle compact />
             </div>
           </div>
