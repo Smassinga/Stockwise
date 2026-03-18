@@ -199,10 +199,16 @@ function FiltersBar() {
 }
 
 function ReportTabFallback({ label }: { label: string }) {
+  const { t } = useI18n()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) => {
+    const resolved = t(key, vars)
+    return resolved === key ? fallback : resolved
+  }
+
   return (
     <Card className="border-dashed">
       <CardContent className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
-        Loading {label}…
+        {tt('reports.loadingTab', `Loading ${label}...`, { label })}
       </CardContent>
     </Card>
   )

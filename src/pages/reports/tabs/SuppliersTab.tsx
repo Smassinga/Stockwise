@@ -126,7 +126,7 @@ export default function SuppliersTab() {
 
   const onXLSX = async () => {
     await saveXLSX(`supplier_movements_${stamp}.xlsx`, ctx, [
-      { title: 'Movements', headerTitle: tt('reports.supplierMovements', 'Supplier Movements'), body: exportBody, moneyCols: [4], qtyCols: [3] },
+      { title: tt('reports.sheet.movements', 'Movements'), headerTitle: tt('reports.supplierMovements', 'Supplier Movements'), body: exportBody, moneyCols: [4], qtyCols: [3] },
     ])
   }
 

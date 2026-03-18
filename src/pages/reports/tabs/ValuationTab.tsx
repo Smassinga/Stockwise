@@ -62,13 +62,13 @@ export default function ValuationTab() {
   const onXLSX = async () => {
     await saveXLSX(`valuation_${stamp}.xlsx`, ctx, [
       {
-        title: 'By Warehouse',
+        title: tt('reports.sheet.byWarehouse', 'By warehouse'),
         headerTitle: `${tt('reports.tab.valuation', 'Valuation')} — ${valuationAsOfEnd ? `${tt('reports.asOfEnd', 'As of end date')} ${endDate}` : tt('reports.currentSnapshot', 'Current snapshot')}`,
         body: rowsByWH,
         moneyCols: [1],
       },
       {
-        title: 'By Bin',
+        title: tt('reports.sheet.byBin', 'By bin'),
         headerTitle: `${tt('reports.tab.valuation', 'Valuation')} — ${tt('reports.binBreakdown', 'By bin')}`,
         body: rowsByBin,
         moneyCols: [2],

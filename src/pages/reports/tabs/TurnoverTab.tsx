@@ -199,7 +199,7 @@ export default function TurnoverTab() {
   const onXLSX = async () => {
     await saveXLSX(`turnover_${stamp}.xlsx`, ctx, [
       {
-        title: 'Turnover',
+        title: tt('reports.sheet.turnover', 'Turnover'),
         headerTitle: tt('reports.turnoverTitle', 'Inventory Turnover & Avg Days to Sell'),
         body: rows,
         moneyCols: [8],

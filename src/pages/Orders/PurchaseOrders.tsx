@@ -17,6 +17,7 @@ import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
+import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -1977,17 +1978,12 @@ export default function PurchaseOrders() {
               </div>
               </div>
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                      {tt('orders.nextAction', 'Next action')}
-                    </p>
-                    <h3 className="text-base font-semibold">{purchaseWorkflowSummary(selectedPO.status).stage}</h3>
-                    <p className="max-w-3xl text-sm text-muted-foreground">{purchaseWorkflowSummary(selectedPO.status).help}</p>
-                  </div>
-
-                  <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+              <OrderWorkflowStrip
+                eyebrow={tt('orders.nextAction', 'Next action')}
+                title={purchaseWorkflowSummary(selectedPO.status).stage}
+                description={purchaseWorkflowSummary(selectedPO.status).help}
+                actions={
+                  <>
                     <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
                     {String(selectedPO.status).toLowerCase() === 'draft' && (
                       <Button variant="outline" onClick={() => approvePO(selectedPO.id)}>{tt('orders.approve', 'Approve')}</Button>
@@ -1995,33 +1991,31 @@ export default function PurchaseOrders() {
                     {String(selectedPO.status).toLowerCase() !== 'draft' && (
                       <Button onClick={() => doReceivePO(selectedPO)}>{tt('orders.receiveAll', 'Receive All')}</Button>
                     )}
-                  </div>
-                </div>
+                  </>
+                }
+                stats={[
+                  {
+                    label: tt('orders.orderLines', 'Order lines'),
+                    value: selectedPOLines.length,
+                    hint: tt('orders.purchaseLineSummaryHelp', 'Includes goods and service lines captured on this purchase document.'),
+                  },
+                  {
+                    label: tt('orders.linesStillOpen', 'Lines still open'),
+                    value: selectedPOOpenLines.length,
+                    hint: tt('orders.linesStillOpenHelp', 'These lines still need receiving or warehouse confirmation before the PO is operationally complete.'),
+                  },
+                  {
+                    label: tt('orders.remainingQty', 'Remaining quantity'),
+                    value: fmtAcct(selectedPORemainingQty),
+                    hint: tt('orders.remainingQtyReceiveHelp', 'Use the receiving plan below to direct each remaining quantity into the correct warehouse and bin.'),
+                  },
+                ]}
+              />
 
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.orderLines', 'Order lines')}</p>
-                    <div className="mt-1 text-lg font-semibold">{selectedPOLines.length}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.purchaseLineSummaryHelp', 'Includes goods and service lines captured on this purchase document.')}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.linesStillOpen', 'Lines still open')}</p>
-                    <div className="mt-1 text-lg font-semibold">{selectedPOOpenLines.length}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.linesStillOpenHelp', 'These lines still need receiving or warehouse confirmation before the PO is operationally complete.')}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.remainingQty', 'Remaining quantity')}</p>
-                    <div className="mt-1 text-lg font-semibold">{fmtAcct(selectedPORemainingQty)}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.remainingQtyReceiveHelp', 'Use the receiving plan below to direct each remaining quantity into the correct warehouse and bin.')}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.documentDetails', 'Document details')}</h3>
-                  <p className="text-xs text-muted-foreground">{tt('orders.purchaseDocumentDetailsHelp', 'Update supplier-facing notes and receiving sign-off details without changing quantities, costs, or receiving logic.')}</p>
-                </div>
+              <OrderDetailSection
+                title={tt('orders.documentDetails', 'Document details')}
+                description={tt('orders.purchaseDocumentDetailsHelp', 'Update supplier-facing notes and receiving sign-off details without changing quantities, costs, or receiving logic.')}
+              >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div>
                     <Label>{tt('orders.orderDate', 'Order Date')}</Label>
@@ -2106,60 +2100,43 @@ export default function PurchaseOrders() {
                     <Button variant="secondary" onClick={saveSelectedPOMeta}>{tt('orders.saveDetails', 'Save details')}</Button>
                   </div>
                 </div>
-              </div>
+              </OrderDetailSection>
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.auditTrail', 'Audit trail')}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {tt('orders.purchaseAuditHelp', 'Shows who created, approved, received, and last paid this purchase order when the data is captured by the current workflow.')}
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <div>
-                    <Label>{tt('orders.createdBy', 'Created by')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedPoAudit.createdBy || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.createdAt', 'Created at')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedPoAudit.createdAt ? new Date(selectedPoAudit.createdAt).toLocaleString() : tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedPoAudit.approvedBy || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.receivedBy', 'Received by')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedPoAudit.receivedBy || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.paidVia', 'Paid via')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedPoAudit.paidVia || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.lastPaidOn', 'Last paid on')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedPoAudit.lastPaidAt ? new Date(selectedPoAudit.lastPaidAt).toLocaleString() : tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <OrderAuditGrid
+                title={tt('orders.auditTrail', 'Audit trail')}
+                description={tt('orders.purchaseAuditHelp', 'Shows who created, approved, received, and last paid this purchase order when the data is captured by the current workflow.')}
+                fields={[
+                  {
+                    label: tt('orders.createdBy', 'Created by'),
+                    value: selectedPoAudit.createdBy || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.createdAt', 'Created at'),
+                    value: selectedPoAudit.createdAt ? new Date(selectedPoAudit.createdAt).toLocaleString() : tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.approvedBy', 'Approved by'),
+                    value: selectedPoAudit.approvedBy || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.receivedBy', 'Received by'),
+                    value: selectedPoAudit.receivedBy || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.paidVia', 'Paid via'),
+                    value: selectedPoAudit.paidVia || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.lastPaidOn', 'Last paid on'),
+                    value: selectedPoAudit.lastPaidAt ? new Date(selectedPoAudit.lastPaidAt).toLocaleString() : tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                ]}
+              />
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.receivingPlan', 'Receiving plan')}</h3>
-                  <p className="text-xs text-muted-foreground">{tt('orders.receivingPlanHelp', 'Set default warehouse targets for the remaining lines, then receive individually or batch the remaining receipt when the physical stock is ready.')}</p>
-                </div>
+              <OrderDetailSection
+                title={tt('orders.receivingPlan', 'Receiving plan')}
+                description={tt('orders.receivingPlanHelp', 'Set default warehouse targets for the remaining lines, then receive individually or batch the remaining receipt when the physical stock is ready.')}
+              >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 lg:items-end">
                 <div>
                   <Label>{tt('orders.defaultWarehouse', 'Default Warehouse')}</Label>
@@ -2189,13 +2166,12 @@ export default function PurchaseOrders() {
                   </Button>
                 </div>
               </div>
-              </div>
+              </OrderDetailSection>
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.lineSummary', 'Line summary')}</h3>
-                  <p className="text-xs text-muted-foreground">{tt('orders.purchaseLineTableHelp', 'The receiving table stays operational: ordered, received, remaining, destination warehouse/bin, and line value stay visible in one place.')}</p>
-                </div>
+              <OrderDetailSection
+                title={tt('orders.lineSummary', 'Line summary')}
+                description={tt('orders.purchaseLineTableHelp', 'The receiving table stays operational: ordered, received, remaining, destination warehouse/bin, and line value stay visible in one place.')}
+              >
                 <div className="overflow-x-auto rounded-lg border border-border/70">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
@@ -2300,7 +2276,7 @@ export default function PurchaseOrders() {
                   </tbody>
                 </table>
                 </div>
-              </div>
+              </OrderDetailSection>
             </div>
           )}
           </SheetBody>

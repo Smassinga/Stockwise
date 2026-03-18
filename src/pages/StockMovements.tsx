@@ -95,7 +95,7 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 }
 
 export default function StockMovements() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
   const { companyId, companyName } = useOrg()
 

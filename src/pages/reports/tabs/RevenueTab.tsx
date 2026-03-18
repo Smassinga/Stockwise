@@ -38,7 +38,7 @@ export default function RevenueTab() {
 
   const onXLSX = async () => {
     await saveXLSX(`revenue_${stamp}.xlsx`, ctx, [
-      { title: 'By Customer', headerTitle: tt('reports.revenueByCustomer', 'Revenue by Customer'), body: rows, moneyCols: [1] },
+      { title: tt('reports.sheet.byCustomer', 'By customer'), headerTitle: tt('reports.revenueByCustomer', 'Revenue by Customer'), body: rows, moneyCols: [1] },
     ])
   }
 

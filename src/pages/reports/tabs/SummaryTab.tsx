@@ -44,7 +44,7 @@ const SALES_REF_TYPES = new Set(['SO', 'CASH_SALE', 'POS', 'CASH'])
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 
 export default function SummaryTab() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { companyId } = useOrg()
 
   const {
@@ -249,7 +249,7 @@ export default function SummaryTab() {
     [t('reports.summary.movements.time'), t('reports.summary.movements.type'), t('reports.summary.movements.item'), t('reports.summary.movements.qty'), t('reports.summary.movements.unitCost'), t('reports.summary.movements.warehouseFrom'), t('reports.summary.movements.warehouseTo')],
     ...movementsInCompany.map(m => {
       const created = m?.createdAt ?? m?.created_at ?? m?.createdat
-      const t = created ? new Date(created).toLocaleString() : ''
+      const t = created ? new Date(created).toLocaleString(lang) : ''
       const it = itemById.get(m.itemId)
       const qty = Math.abs(Number(m.qtyBase ?? m.qty) || 0)
       const wFrom = whName(m.warehouseFromId)
@@ -272,8 +272,8 @@ export default function SummaryTab() {
 
   const onXLSX = async () => {
     await saveXLSX(`summary_${stamp}.xlsx`, ctx, [
-      { title: 'KPIs', headerTitle: t('reports.summary.export.kpis'), body: kpiRows, moneyCols: [1] },
-      { title: 'Movements', headerTitle: t('reports.summary.export.movements'), body: movementsRows, moneyCols: [4], qtyCols: [3] },
+      { title: t('reports.sheet.kpis'), headerTitle: t('reports.summary.export.kpis'), body: kpiRows, moneyCols: [1] },
+      { title: t('reports.sheet.movements'), headerTitle: t('reports.summary.export.movements'), body: movementsRows, moneyCols: [4], qtyCols: [3] },
     ])
   }
 
@@ -400,7 +400,7 @@ export default function SummaryTab() {
                   )}
                   {movementsInCompany.map(m => {
                     const created = m?.createdAt ?? m?.created_at ?? m?.createdat
-                    const t = created ? new Date(created).toLocaleString() : ''
+                    const t = created ? new Date(created).toLocaleString(lang) : ''
                     const it = itemById.get(m.itemId)
                     const qty = Math.abs(Number(m.qtyBase ?? m.qty) || 0)
                     const wFrom = whName(m.warehouseFromId)

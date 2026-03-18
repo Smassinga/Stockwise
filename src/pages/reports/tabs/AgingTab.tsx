@@ -42,8 +42,8 @@ export default function AgingTab() {
 
   const onXLSX = async () => {
     await saveXLSX(`aging_${stamp}.xlsx`, ctx, [
-      { title: 'By Warehouse', headerTitle: tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse'), body: whRows, moneyCols: [2], qtyCols: [1] },
-      { title: 'By Bin', headerTitle: tt('reports.agingByBin', 'Inventory Aging — By Bin'), body: binRows, moneyCols: [3], qtyCols: [2] },
+      { title: tt('reports.sheet.byWarehouse', 'By warehouse'), headerTitle: tt('reports.agingByWarehouse', 'Inventory Aging — By Warehouse'), body: whRows, moneyCols: [2], qtyCols: [1] },
+      { title: tt('reports.sheet.byBin', 'By bin'), headerTitle: tt('reports.agingByBin', 'Inventory Aging — By Bin'), body: binRows, moneyCols: [3], qtyCols: [2] },
     ])
   }
 

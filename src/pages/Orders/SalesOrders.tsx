@@ -22,6 +22,7 @@ import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
+import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -2324,17 +2325,12 @@ export default function SalesOrders() {
               </div>
               </div>
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                      {tt('orders.nextAction', 'Next action')}
-                    </p>
-                    <h3 className="text-base font-semibold">{salesWorkflowSummary(selectedSO.status).stage}</h3>
-                    <p className="max-w-3xl text-sm text-muted-foreground">{salesWorkflowSummary(selectedSO.status).help}</p>
-                  </div>
-
-                  <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+              <OrderWorkflowStrip
+                eyebrow={tt('orders.nextAction', 'Next action')}
+                title={salesWorkflowSummary(selectedSO.status).stage}
+                description={salesWorkflowSummary(selectedSO.status).help}
+                actions={
+                  <>
                     <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
                     <Button variant="outline" onClick={() => printSO(selectedSO, true)}>{tt('orders.download', 'Download')}</Button>
                     {String(selectedSO.status).toLowerCase() === 'draft' && (
@@ -2352,33 +2348,31 @@ export default function SalesOrders() {
                         {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
                       </Button>
                     )}
-                  </div>
-                </div>
+                  </>
+                }
+                stats={[
+                  {
+                    label: tt('orders.orderLines', 'Order lines'),
+                    value: selectedSOLines.length,
+                    hint: tt('orders.orderLinesHelp', 'Includes product and service lines captured on the document.'),
+                  },
+                  {
+                    label: tt('orders.fulfilmentOpenLines', 'Lines still open'),
+                    value: selectedSOOpenLines.length,
+                    hint: tt('orders.fulfilmentOpenLinesHelp', 'These lines still need stock issue or service completion before the order is fully shipped.'),
+                  },
+                  {
+                    label: tt('orders.remainingQty', 'Remaining quantity'),
+                    value: fmtAcct(selectedSORemainingQty),
+                    hint: tt('orders.remainingQtyHelp', 'Use the allocation section below to split the remaining issue quantity across source bins.'),
+                  },
+                ]}
+              />
 
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.orderLines', 'Order lines')}</p>
-                    <div className="mt-1 text-lg font-semibold">{selectedSOLines.length}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.orderLinesHelp', 'Includes product and service lines captured on the document.')}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.fulfilmentOpenLines', 'Lines still open')}</p>
-                    <div className="mt-1 text-lg font-semibold">{selectedSOOpenLines.length}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.fulfilmentOpenLinesHelp', 'These lines still need stock issue or service completion before the order is fully shipped.')}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tt('orders.remainingQty', 'Remaining quantity')}</p>
-                    <div className="mt-1 text-lg font-semibold">{fmtAcct(selectedSORemainingQty)}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{tt('orders.remainingQtyHelp', 'Use the allocation section below to split the remaining issue quantity across source bins.')}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.documentDetails', 'Document details')}</h3>
-                  <p className="text-xs text-muted-foreground">{tt('orders.documentDetailsHelp', 'Update commercial terms, customer-facing notes, and document sign-off names without touching line totals or fulfilment logic.')}</p>
-                </div>
+              <OrderDetailSection
+                title={tt('orders.documentDetails', 'Document details')}
+                description={tt('orders.documentDetailsHelp', 'Update commercial terms, customer-facing notes, and document sign-off names without touching line totals or fulfilment logic.')}
+              >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div>
                     <Label>{tt('orders.orderDate', 'Order Date')}</Label>
@@ -2483,12 +2477,11 @@ export default function SalesOrders() {
                     <Button variant="secondary" onClick={saveSelectedSOMeta}>{tt('orders.saveDetails', 'Save details')}</Button>
                   </div>
                 </div>
-              </div>
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.lineSummary', 'Line summary')}</h3>
-                  <p className="text-xs text-muted-foreground">{tt('orders.lineSummaryHelp', 'Review the commercial scope first, then move to fulfilment for any remaining quantity that still needs to be issued.')}</p>
-                </div>
+              </OrderDetailSection>
+              <OrderDetailSection
+                title={tt('orders.lineSummary', 'Line summary')}
+                description={tt('orders.lineSummaryHelp', 'Review the commercial scope first, then move to fulfilment for any remaining quantity that still needs to be issued.')}
+              >
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-sm">
                     <thead className="bg-muted/40">
@@ -2521,9 +2514,12 @@ export default function SalesOrders() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </OrderDetailSection>
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+              <OrderDetailSection
+                title={tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}
+                description={tt('orders.fulfilmentPanelHelp', 'Fulfilment stays separate from commercial edits: choose a default warehouse for new allocation rows, then post issue quantities line by line or in one batch.')}
+              >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <Label>{tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}</Label>
@@ -2550,15 +2546,12 @@ export default function SalesOrders() {
                   </div>
                 </div>
               </div>
-              </div>
+              </OrderDetailSection>
 
-              <div className='rounded-xl border border-border/80 bg-card p-4 shadow-sm'>
-                <div className='flex flex-col gap-1 pb-4'>
-                  <h3 className='text-sm font-semibold'>{tt('orders.issueAllocations', 'Issue allocations')}</h3>
-                  <p className='text-xs text-muted-foreground'>
-                    {tt('orders.issueAllocationHelp', 'Split each issue across the warehouse bins that actually hold stock. Quantities are validated against live on-hand balances before posting.')}
-                  </p>
-                </div>
+              <OrderDetailSection
+                title={tt('orders.issueAllocations', 'Issue allocations')}
+                description={tt('orders.issueAllocationHelp', 'Split each issue across the warehouse bins that actually hold stock. Quantities are validated against live on-hand balances before posting.')}
+              >
 
                 {!canIssueFromStatus(selectedSO.status) && (
                   <div className='mb-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'>
@@ -2770,34 +2763,26 @@ export default function SalesOrders() {
                     </div>
                   )}
                 </div>
-              </div>
+              </OrderDetailSection>
 
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h3 className="text-sm font-semibold">{tt('orders.auditAndSignoff', 'Audit and sign-off')}</h3>
-                  <p className="text-xs text-muted-foreground">{tt('orders.auditAndSignoffHelp', 'Prepared, confirmed, and approved names should map to real actions in the workflow instead of manual guesswork.')}</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div>
-                    <Label>{tt('orders.preparedBy', 'Prepared by')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedSoMeta.preparedBy || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.confirmedBy', 'Confirmed by')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedSoMeta.confirmedBy || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>{tt('orders.approvedBy', 'Approved by')}</Label>
-                    <div className="mt-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
-                      {selectedSoMeta.approvedBy || tt('orders.notAvailableShort', 'Not captured')}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <OrderAuditGrid
+                title={tt('orders.auditAndSignoff', 'Audit and sign-off')}
+                description={tt('orders.auditAndSignoffHelp', 'Prepared, confirmed, and approved names should map to real actions in the workflow instead of manual guesswork.')}
+                fields={[
+                  {
+                    label: tt('orders.preparedBy', 'Prepared by'),
+                    value: selectedSoMeta.preparedBy || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.confirmedBy', 'Confirmed by'),
+                    value: selectedSoMeta.confirmedBy || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                  {
+                    label: tt('orders.approvedBy', 'Approved by'),
+                    value: selectedSoMeta.approvedBy || tt('orders.notAvailableShort', 'Not captured'),
+                  },
+                ]}
+              />
             </div>
           )}
           </SheetBody>
