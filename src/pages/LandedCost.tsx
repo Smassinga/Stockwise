@@ -352,19 +352,10 @@ export default function LandedCostPage() {
         p_charges: chargePayload,
         p_lines: previewState.preview.map(row => ({
           item_id: row.itemId,
-          item_label: row.itemLabel,
           po_line_id: row.poLineId,
           warehouse_id: row.warehouseId,
           bin_id: row.binId,
           stock_level_id: row.stockLevelId,
-          received_qty_base: round(row.receivedQtyBase),
-          impacted_qty_base: round(row.impactedQtyBase),
-          on_hand_qty_base: round(row.onHandQtyBase),
-          allocated_extra: round(row.allocatedExtra),
-          applied_revaluation: round(row.appliedRevaluation),
-          unapplied_value: round(row.unappliedValue),
-          previous_avg_cost: round(row.previousAvgCost),
-          new_avg_cost: round(row.newAvgCost),
         })),
       })
 

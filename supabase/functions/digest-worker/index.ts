@@ -22,6 +22,7 @@ type DigestQueueRow = {
   created_at: string;
   attempts?: number | null;
   next_attempt_at?: string | null;
+  processing_started_at?: string | null;
 };
 
 type DigestPayload = {
@@ -276,6 +277,60 @@ function authorized(req: Request) {
   return ok;
 }
 
+function isMissingProcessingStartedAtColumn(error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined) {
+  const text = [error?.message, error?.details, error?.hint].filter(Boolean).join(" ").toLowerCase();
+  return text.includes("processing_started_at");
+}
+
+async function claimDigestJob(supabase: ReturnType<typeof supa>, candidateId: number) {
+  const processingStartedAt = new Date().toISOString();
+  const withProcessingStarted = await supabase
+    .from("digest_queue")
+    .update({ status: "processing", processing_started_at: processingStartedAt })
+    .eq("id", candidateId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+
+  if (!isMissingProcessingStartedAtColumn(withProcessingStarted.error)) {
+    return withProcessingStarted;
+  }
+
+  return await supabase
+    .from("digest_queue")
+    .update({ status: "processing" })
+    .eq("id", candidateId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+}
+
+async function updateDigestJob(
+  supabase: ReturnType<typeof supa>,
+  jobId: number,
+  values: Record<string, unknown>,
+  expectedStatus?: DigestQueueRow["status"],
+) {
+  const withProcessingStarted = await (() => {
+    let query = supabase.from("digest_queue").update(values).eq("id", jobId)
+    if (expectedStatus) query = query.eq("status", expectedStatus)
+    return query
+  })()
+
+  if (!isMissingProcessingStartedAtColumn(withProcessingStarted.error) || !Object.prototype.hasOwnProperty.call(values, "processing_started_at")) {
+    return withProcessingStarted
+  }
+
+  const fallbackValues = { ...values }
+  delete fallbackValues.processing_started_at
+
+  return await (() => {
+    let query = supabase.from("digest_queue").update(fallbackValues).eq("id", jobId)
+    if (expectedStatus) query = query.eq("status", expectedStatus)
+    return query
+  })()
+}
+
 serve(async (req: Request) => {
   let claimedJobId: number | null = null;
   let claimedCompanyId: string | null = null;
@@ -314,13 +369,7 @@ serve(async (req: Request) => {
     }
 
     const candidate = jobs[0] as DigestQueueRow;
-    const { data: job, error: claimError } = await supabase
-      .from("digest_queue")
-      .update({ status: "processing" })
-      .eq("id", candidate.id)
-      .eq("status", "pending")
-      .select("*")
-      .maybeSingle();
+    const { data: job, error: claimError } = await claimDigestJob(supabase, candidate.id);
 
     if (claimError) {
       return new Response(JSON.stringify({ ok: false, error: claimError.message }), {
@@ -381,10 +430,17 @@ serve(async (req: Request) => {
         );
     }
 
-    await supabase
-      .from("digest_queue")
-      .update({ status: "done", processed_at: new Date().toISOString(), error: null, next_attempt_at: null })
-      .eq("id", job.id);
+    await updateDigestJob(
+      supabase,
+      job.id,
+      {
+        status: "done",
+        processed_at: new Date().toISOString(),
+        error: null,
+        next_attempt_at: null,
+        processing_started_at: null,
+      },
+    );
 
     await supabase
       .from("company_digest_state")
@@ -405,16 +461,18 @@ serve(async (req: Request) => {
         const backoffMinutes = Math.min(60, Math.max(2, 2 ** Math.min(nextAttempts, 6)));
         const nextAttemptAt = new Date(Date.now() + backoffMinutes * 60_000).toISOString();
 
-        await sb
-          .from("digest_queue")
-          .update({
+        await updateDigestJob(
+          sb,
+          claimedJobId,
+          {
             status: shouldFail ? "failed" : "pending",
             attempts: nextAttempts,
             next_attempt_at: shouldFail ? null : nextAttemptAt,
             error: message,
-          })
-          .eq("id", claimedJobId)
-          .eq("status", "processing");
+            processing_started_at: null,
+          },
+          "processing",
+        );
 
         if (claimedCompanyId) {
           await sb

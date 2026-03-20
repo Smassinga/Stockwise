@@ -22,6 +22,7 @@ type QueueRow = {
   status: "pending" | "processing" | "done" | "failed";
   attempts?: number | null;
   next_attempt_at?: string | null;
+  processing_started_at?: string | null;
   created_at: string;
 };
 
@@ -319,6 +320,60 @@ function authorized(req: Request) {
   return headerSecret === REMINDER_HOOK_SECRET;
 }
 
+function isMissingProcessingStartedAtColumn(error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined) {
+  const text = [error?.message, error?.details, error?.hint].filter(Boolean).join(" ").toLowerCase();
+  return text.includes("processing_started_at");
+}
+
+async function claimDueReminderJob(sb: ReturnType<typeof supa>, candidateId: number) {
+  const processingStartedAt = new Date().toISOString();
+  const withProcessingStarted = await sb
+    .from("due_reminder_queue")
+    .update({ status: "processing", processing_started_at: processingStartedAt })
+    .eq("id", candidateId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+
+  if (!isMissingProcessingStartedAtColumn(withProcessingStarted.error)) {
+    return withProcessingStarted;
+  }
+
+  return await sb
+    .from("due_reminder_queue")
+    .update({ status: "processing" })
+    .eq("id", candidateId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+}
+
+async function updateDueReminderJob(
+  sb: ReturnType<typeof supa>,
+  jobId: number,
+  values: Record<string, unknown>,
+  expectedStatus?: QueueRow["status"],
+) {
+  const withProcessingStarted = await (() => {
+    let query = sb.from("due_reminder_queue").update(values).eq("id", jobId)
+    if (expectedStatus) query = query.eq("status", expectedStatus)
+    return query
+  })()
+
+  if (!isMissingProcessingStartedAtColumn(withProcessingStarted.error) || !Object.prototype.hasOwnProperty.call(values, "processing_started_at")) {
+    return withProcessingStarted
+  }
+
+  const fallbackValues = { ...values }
+  delete fallbackValues.processing_started_at
+
+  return await (() => {
+    let query = sb.from("due_reminder_queue").update(fallbackValues).eq("id", jobId)
+    if (expectedStatus) query = query.eq("status", expectedStatus)
+    return query
+  })()
+}
+
 serve(async (req) => {
   let claimedJobId: number | null = null;
   let claimedAttempts = 0;
@@ -344,13 +399,7 @@ serve(async (req) => {
     }
 
     const candidate = jobs[0] as QueueRow;
-    const { data: job, error: claimError } = await sb
-      .from("due_reminder_queue")
-      .update({ status: "processing" })
-      .eq("id", candidate.id)
-      .eq("status", "pending")
-      .select("*")
-      .maybeSingle();
+    const { data: job, error: claimError } = await claimDueReminderJob(sb, candidate.id);
     if (claimError) throw new Error(`queue.claim: ${safeErr(claimError)}`);
     if (!job) {
       return new Response(JSON.stringify({ ok: true, message: "job already taken" }), { status: 200 });
@@ -398,10 +447,16 @@ serve(async (req) => {
     }
 
     if (!reminderBatch?.reminders?.length) {
-      await sb
-        .from("due_reminder_queue")
-        .update({ status: "done", processed_at: new Date().toISOString(), next_attempt_at: null })
-        .eq("id", job.id);
+      await updateDueReminderJob(
+        sb,
+        job.id,
+        {
+          status: "done",
+          processed_at: new Date().toISOString(),
+          next_attempt_at: null,
+          processing_started_at: null,
+        },
+      );
       return new Response(JSON.stringify({ ok: true, message: "no reminders for window" }), { status: 200 });
     }
 
@@ -488,10 +543,16 @@ serve(async (req) => {
       sent++;
     }
 
-    await sb
-      .from("due_reminder_queue")
-      .update({ status: "done", processed_at: new Date().toISOString(), next_attempt_at: null })
-      .eq("id", job.id);
+    await updateDueReminderJob(
+      sb,
+      job.id,
+      {
+        status: "done",
+        processed_at: new Date().toISOString(),
+        next_attempt_at: null,
+        processing_started_at: null,
+      },
+    );
 
     return new Response(JSON.stringify({ ok: true, sent, mode: DRY_RUN ? "dry" : "live" }), { status: 200 });
   } catch (error) {
@@ -502,15 +563,17 @@ serve(async (req) => {
         const shouldFail = nextAttempts >= MAX_ATTEMPTS;
         const backoffMinutes = Math.min(60, Math.max(1, 2 ** Math.min(nextAttempts, 6)));
         const nextAttemptAt = new Date(Date.now() + backoffMinutes * 60_000).toISOString();
-        await sb
-          .from("due_reminder_queue")
-          .update({
+        await updateDueReminderJob(
+          sb,
+          claimedJobId,
+          {
             attempts: nextAttempts,
             status: shouldFail ? "failed" : "pending",
             next_attempt_at: shouldFail ? null : nextAttemptAt,
-          })
-          .eq("id", claimedJobId)
-          .eq("status", "processing");
+            processing_started_at: null,
+          },
+          "processing",
+        );
       }
     } catch {
       // best effort only
