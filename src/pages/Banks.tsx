@@ -19,6 +19,7 @@ import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg' // <- source of truth for company id
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { hasRole, CanManageUsers } from '../lib/roles'
 
 type BankAccount = {
   id: string
@@ -40,7 +41,7 @@ export default function Banks() {
   const { t } = useI18n()
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
-  const { companyId } = useOrg() // no changes to useOrg needed
+  const { companyId, myRole } = useOrg() // no changes to useOrg needed
   const [rows, setRows] = useState<BankAccount[]>([])
   const [balances, setBalances] = useState<Record<string, number>>({})
   const [openAdd, setOpenAdd] = useState(false)
@@ -48,6 +49,7 @@ export default function Banks() {
 
   // async base currency → resolve to state, fallback MZN
   const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
+  const canManageBanks = hasRole(myRole, CanManageUsers)
 
   const [form, setForm] = useState<{
     name: string
@@ -119,6 +121,10 @@ export default function Banks() {
   }
 
   async function addBank() {
+    if (!canManageBanks) {
+      toast.error(tf('banks.toast.noPermission', 'You do not have permission to manage bank accounts'))
+      return
+    }
     if (!form.name.trim()) {
       toast.error(t('banks.required.nickname'))
       return
@@ -161,7 +167,7 @@ export default function Banks() {
         <div className="ml-auto">
           <Sheet open={openAdd} onOpenChange={setOpenAdd}>
             <SheetTrigger asChild>
-              <Button>+ {t('banks.new')}</Button>
+              <Button disabled={!canManageBanks}>+ {t('banks.new')}</Button>
             </SheetTrigger>
             <SheetContent>
               <SheetHeader>
@@ -195,7 +201,7 @@ export default function Banks() {
                       placeholder={tf('banks.placeholder.currencyCode', baseCurrency || 'MZN')}
                     />
                   </div>
-                  <Button onClick={addBank} disabled={saving}>
+                  <Button onClick={addBank} disabled={saving || !canManageBanks}>
                     {saving ? t('actions.saving') : t('banks.save')}
                   </Button>
                 </div>
