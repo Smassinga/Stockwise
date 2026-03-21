@@ -21,6 +21,11 @@ entrypoint = "./functions/ai-ops/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/ai-ops/*.html" ]
 
+[functions.ai-chat-exec]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/ai-chat-exec/index.ts"
+
 [functions.schema-snapshot-cron]
 enabled = true
 verify_jwt = true

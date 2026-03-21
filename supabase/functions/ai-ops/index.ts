@@ -1,37 +1,21 @@
 // supabase/functions/ai-ops/index.ts
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  authErrorResponse,
+  parseJsonObject,
+  verifySignedRequest,
+} from '../_shared/internalAuth.ts'
 
 // ENV (Dashboard → Project Settings → Functions → Environment variables)
 const SUPABASE_URL  = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const AI_OPS_SECRET = Deno.env.get('AI_OPS_SECRET')!
+const MAX_COMMANDS = 20
+const MAX_SQL_CHARS = 20000
+const MAX_TOTAL_SQL_CHARS = 100000
 
 const supa = createClient(SUPABASE_URL, SERVICE_KEY)
-
-// Edge-safe constant-time compare
-function safeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= (a[i] ^ b[i])
-  return diff === 0
-}
-
-async function validSig(req: Request) {
-  const provided = (req.headers.get('x-ai-signature') ?? '').trim().toLowerCase()
-  const body = await req.clone().text()
-  const enc = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(AI_OPS_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(body))
-  const hex = Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
-  return safeEqual(enc.encode(provided), enc.encode(hex))
-}
 
 type SqlCommand = {
   kind?: 'sql'
@@ -52,11 +36,12 @@ Deno.serve(async (req) => {
     if (req.method !== 'POST') {
       return new Response('Method Not Allowed', { status: 405 })
     }
-    if (!(await validSig(req))) {
-      return new Response('Forbidden', { status: 403 })
-    }
+    const { rawBody } = await verifySignedRequest(req, AI_OPS_SECRET, {
+      maxAgeSeconds: 300,
+      maxBodyBytes: 128 * 1024,
+    })
 
-    const env: Envelope = await req.json()
+    const env = parseJsonObject(rawBody) as Envelope
     const dryRun = !!env.dry_run
     const actor = env.actor?.slice(0, 64) || 'chatgpt'
     const idem  = (env.idempotency_key || '').trim()
@@ -66,6 +51,20 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: false, error: 'invalid_envelope' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
+      })
+    }
+    if (env.commands.length > MAX_COMMANDS) {
+      return new Response(JSON.stringify({ ok: false, error: 'too_many_commands' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const totalSqlChars = env.commands.reduce((sum, cmd) => sum + String(cmd.sql ?? '').length, 0)
+    if (totalSqlChars > MAX_TOTAL_SQL_CHARS || env.commands.some((cmd) => String(cmd.sql ?? '').length > MAX_SQL_CHARS)) {
+      return new Response(JSON.stringify({ ok: false, error: 'command_too_large' }), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json' },
       })
     }
 
@@ -146,9 +145,11 @@ Deno.serve(async (req) => {
       headers: { 'Content-Type': 'application/json' }
     })
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    })
+    if (!(e instanceof Error)) {
+      console.error('[ai-ops] unexpected error', e)
+      return authErrorResponse(e)
+    }
+    console.error('[ai-ops] request failed', e)
+    return authErrorResponse(e)
   }
 })

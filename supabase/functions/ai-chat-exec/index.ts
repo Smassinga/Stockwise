@@ -1,35 +1,14 @@
 // supabase/functions/ai-chat-exec/index.ts
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+import {
+  authErrorResponse,
+  buildSignedJsonHeaders,
+  parseJsonObject,
+  verifySignedRequest,
+} from '../_shared/internalAuth.ts'
 
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')!
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const AI_OPS_SECRET     = Deno.env.get('AI_OPS_SECRET')!
-
-// ---- crypto helpers ----
-function safeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= (a[i] ^ b[i])
-  return diff === 0
-}
-
-async function hmacHex(secret: string, body: string): Promise<string> {
-  const enc = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  )
-  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(body))
-  return Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
-async function checkInboundHmac(req: Request): Promise<boolean> {
-  const provided = (req.headers.get('x-ai-signature') ?? '').trim().toLowerCase()
-  if (!provided) return false
-  const body = await req.clone().text()
-  const hex = await hmacHex(AI_OPS_SECRET, body)
-  const enc = new TextEncoder()
-  return safeEqual(enc.encode(provided), enc.encode(hex))
-}
 
 // ---- types the chat client may send ----
 type ChatExecPayload =
@@ -40,9 +19,12 @@ type ChatExecPayload =
 Deno.serve(async (req) => {
   try {
     if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 })
-    if (!(await checkInboundHmac(req))) return new Response('Forbidden', { status: 403 })
+    const { rawBody } = await verifySignedRequest(req, AI_OPS_SECRET, {
+      maxAgeSeconds: 300,
+      maxBodyBytes: 128 * 1024,
+    })
 
-    const input = await req.json() as ChatExecPayload
+    const input = parseJsonObject(rawBody) as ChatExecPayload
 
     // Normalize into the ai-ops envelope
     let commands: { sql: string; label?: string }[] = []
@@ -72,19 +54,12 @@ Deno.serve(async (req) => {
     }
 
     const body = JSON.stringify(envelope)
-    const sig  = await hmacHex(AI_OPS_SECRET, body)
+    const headers = await buildSignedJsonHeaders(AI_OPS_SECRET, body)
 
     // Call the centralized executor (your existing function)
     const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-ops`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-ai-signature': sig,
-        // These are harmless when ai-ops has verify_jwt=false; if you enable it later,
-        // swap Authorization to a real user access token.
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
+      headers,
       body
     })
 
@@ -92,11 +67,10 @@ Deno.serve(async (req) => {
     const out = (() => { try { return JSON.parse(text) } catch { return { raw: text } } })()
 
     return new Response(JSON.stringify({ ok: res.ok, status: res.status, envelope, exec: out }), {
-      headers: { 'Content-Type': 'application/json' }, status: res.ok ? 200 : 500
+      headers: { 'Content-Type': 'application/json' }, status: res.ok ? 200 : res.status
     })
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      headers: { 'Content-Type': 'application/json' }, status: 500
-    })
+    console.error('[ai-chat-exec] request failed', e)
+    return authErrorResponse(e)
   }
 })

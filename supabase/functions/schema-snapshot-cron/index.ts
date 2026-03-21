@@ -1,31 +1,17 @@
 // supabase/functions/schema-snapshot-cron/index.ts
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+import {
+  authErrorResponse,
+  buildSignedJsonHeaders,
+  verifySignedRequest,
+} from '../_shared/internalAuth.ts'
 
 const SUPABASE_URL = Deno.env.get('SB_URL') ?? Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_ANON_KEY = Deno.env.get('SB_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const AI_OPS_SECRET = Deno.env.get('AI_OPS_SECRET') ?? ''
+const SNAPSHOT_SCHEMA = (Deno.env.get('AI_SNAPSHOT_SCHEMA') ?? 'public').split(',').map((value) => value.trim()).find(Boolean) ?? 'public'
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !AI_OPS_SECRET) {
-  throw new Error('Missing SB_URL/SB_ANON_KEY/AI_OPS_SECRET (or SUPABASE_* fallbacks)')
-}
-
-// small helper: HMAC-SHA256 -> hex
-async function hmacHex(secret: string, body: string): Promise<string> {
-  const enc = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(body))
-  return Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
-// nice-to-have parser
-function tryJson(s: string) {
-  try { return JSON.parse(s) } catch { return s }
+if (!SUPABASE_URL || !AI_OPS_SECRET) {
+  throw new Error('Missing SB_URL/AI_OPS_SECRET (or SUPABASE_URL fallback)')
 }
 
 Deno.serve(async (req) => {
@@ -36,22 +22,16 @@ Deno.serve(async (req) => {
         status: 405,
       })
     }
+    await verifySignedRequest(req, AI_OPS_SECRET, {
+      maxAgeSeconds: 300,
+      maxBodyBytes: 4 * 1024,
+    })
 
-    const schema = 'public'
+    const schema = SNAPSHOT_SCHEMA
     const persist = true
 
     const payload = JSON.stringify({ schema, persist })
-    const sig     = await hmacHex(AI_OPS_SECRET, payload)
-
-    // If schema-snapshot.verify_jwt=false this Authorization/apikey is harmless.
-    // If you later switch it to true, this still works for external invokes
-    // (you’d replace ANON with a real user access token for Authorization).
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'x-ai-signature': sig,
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-    }
+    const headers = await buildSignedJsonHeaders(AI_OPS_SECRET, payload)
 
     const res = await fetch(`${SUPABASE_URL}/functions/v1/schema-snapshot`, {
       method: 'POST',
@@ -59,14 +39,16 @@ Deno.serve(async (req) => {
       body: payload,
     })
 
-    const text = await res.text()
+    if (!res.ok) {
+      const text = await res.text()
+      console.error('[schema-snapshot-cron] upstream failed', res.status, text)
+    }
     return new Response(
-      JSON.stringify({ ok: res.ok, status: res.status, body: tryJson(text) }),
-      { headers: { 'Content-Type': 'application/json' }, status: res.ok ? 200 : 500 }
+      JSON.stringify({ ok: res.ok, status: res.status, schema, persisted: res.ok }),
+      { headers: { 'Content-Type': 'application/json' }, status: res.ok ? 200 : res.status }
     )
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      headers: { 'Content-Type': 'application/json' }, status: 500
-    })
+    console.error('[schema-snapshot-cron] request failed', e)
+    return authErrorResponse(e)
   }
 })

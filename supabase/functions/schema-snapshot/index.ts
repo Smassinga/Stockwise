@@ -1,43 +1,22 @@
 // supabase/functions/schema-snapshot/index.ts
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  authErrorResponse,
+  parseJsonObject,
+  verifySignedRequest,
+} from '../_shared/internalAuth.ts'
 
 // Environment (set these in Project Settings → Functions → Environment variables)
 const SUPABASE_URL  = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const AI_OPS_SECRET = Deno.env.get('AI_OPS_SECRET')!  // shared HMAC secret
+const ALLOWED_SCHEMAS = (Deno.env.get('AI_SNAPSHOT_SCHEMA') ?? 'public')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean)
 
 const supa = createClient(SUPABASE_URL, SERVICE_KEY)
-
-// Constant-time compare for Uint8Array (Edge-safe; no Node APIs)
-function safeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) {
-    diff |= a[i] ^ b[i]
-  }
-  return diff === 0
-}
-
-async function validSig(req: Request) {
-  const providedRaw = (req.headers.get('x-ai-signature') ?? '').trim().toLowerCase()
-  const body = await req.clone().text()
-  const enc = new TextEncoder()
-
-  // HMAC-SHA256(body, AI_OPS_SECRET) → hex (lowercase)
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(AI_OPS_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(body))
-  const hex = Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
-
-  // Constant-time comparison on bytes
-  return safeEqual(enc.encode(providedRaw), enc.encode(hex))
-}
 
 Deno.serve(async (req) => {
   try {
@@ -45,17 +24,26 @@ Deno.serve(async (req) => {
       return new Response('Method Not Allowed', { status: 405 })
     }
 
-    // HMAC gate (second factor in addition to Supabase function auth)
-    if (!(await validSig(req))) {
-      return new Response('Forbidden', { status: 403 })
-    }
+    const { rawBody } = await verifySignedRequest(req, AI_OPS_SECRET, {
+      maxAgeSeconds: 300,
+      maxBodyBytes: 16 * 1024,
+    })
+    const body = parseJsonObject(rawBody)
 
-    const { schema = 'public', persist = false } = await req.json()
+    const schema = String(body.schema ?? ALLOWED_SCHEMAS[0] ?? 'public').trim().toLowerCase()
+    const persist = body.persist === true
+    if (!ALLOWED_SCHEMAS.includes(schema)) {
+      return new Response(JSON.stringify({ ok: false, error: 'invalid_schema' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
 
     // RPC returns JSONB with catalog metadata only
     const { data, error } = await supa.rpc('get_schema_snapshot', { p_schema: schema })
     if (error) {
-      return new Response(JSON.stringify({ ok: false, error }), {
+      console.error('[schema-snapshot] rpc failed', error)
+      return new Response(JSON.stringify({ ok: false, error: 'snapshot_failed' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -67,7 +55,8 @@ Deno.serve(async (req) => {
         snapshot: data
       })
       if (insErr) {
-        return new Response(JSON.stringify({ ok: false, error: insErr }), {
+        console.error('[schema-snapshot] persist failed', insErr)
+        return new Response(JSON.stringify({ ok: false, error: 'persist_failed' }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -78,9 +67,7 @@ Deno.serve(async (req) => {
       headers: { 'Content-Type': 'application/json' }
     })
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    })
+    console.error('[schema-snapshot] request failed', e)
+    return authErrorResponse(e)
   }
 })
