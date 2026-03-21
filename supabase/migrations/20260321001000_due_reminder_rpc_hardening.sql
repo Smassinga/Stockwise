@@ -1,5 +1,89 @@
 BEGIN;
 
+CREATE OR REPLACE FUNCTION public.parse_due_reminder_send_at(
+  p_settings jsonb
+)
+RETURNS time
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  WITH due_cfg AS (
+    SELECT COALESCE(p_settings->'dueReminders', '{}'::jsonb) AS cfg
+  ),
+  explicit_time AS (
+    SELECT NULLIF(trim(cfg->>'sendAt'), '') AS send_at_text
+    FROM due_cfg
+  ),
+  legacy_time AS (
+    SELECT
+      CASE
+        WHEN jsonb_typeof(cfg->'hours') = 'array' AND jsonb_array_length(cfg->'hours') > 0
+          THEN NULLIF(cfg->'hours'->>0, '')::numeric
+        ELSE NULL
+      END AS hour_value
+    FROM due_cfg
+  )
+  SELECT COALESCE(
+    CASE
+      WHEN explicit_time.send_at_text ~ '^\d{2}:\d{2}$'
+        THEN explicit_time.send_at_text::time
+      ELSE NULL
+    END,
+    make_time(
+      GREATEST(0, LEAST(23, floor(COALESCE(legacy_time.hour_value, 9))::int)),
+      GREATEST(
+        0,
+        LEAST(
+          59,
+          round((COALESCE(legacy_time.hour_value, 9) - floor(COALESCE(legacy_time.hour_value, 9))) * 60)::int
+        )
+      ),
+      0
+    )
+  )
+  FROM explicit_time, legacy_time;
+$$;
+
+CREATE OR REPLACE FUNCTION public.parse_due_reminder_lead_days(
+  p_settings jsonb
+)
+RETURNS int[]
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  WITH due_cfg AS (
+    SELECT CASE
+      WHEN jsonb_typeof(COALESCE(p_settings->'dueReminders'->'leadDays', '[]'::jsonb)) = 'array'
+        THEN COALESCE(p_settings->'dueReminders'->'leadDays', '[]'::jsonb)
+      ELSE '[]'::jsonb
+    END AS cfg
+  ),
+  parsed AS (
+    SELECT DISTINCT (value)::int AS offset_days
+    FROM due_cfg, jsonb_array_elements_text(cfg)
+    WHERE value ~ '^-?\d+$'
+  ),
+  sorted AS (
+    SELECT offset_days
+    FROM parsed
+    ORDER BY
+      CASE
+        WHEN offset_days > 0 THEN 0
+        WHEN offset_days = 0 THEN 1
+        ELSE 2
+      END,
+      CASE
+        WHEN offset_days > 0 THEN -offset_days
+        WHEN offset_days < 0 THEN abs(offset_days)
+        ELSE 0
+      END
+  )
+  SELECT COALESCE(
+    ARRAY(SELECT offset_days FROM sorted),
+    ARRAY[]::int[]
+  );
+$$;
+
 CREATE OR REPLACE FUNCTION public.enqueue_due_reminder(
   p_company_id uuid,
   p_local_day date,
@@ -278,7 +362,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.enqueue_due_reminders_for_all_companies(
-  p_local_day date
+  p_local_day date DEFAULT current_date
 )
 RETURNS integer
 LANGUAGE sql

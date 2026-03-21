@@ -1,0 +1,1 @@
+revoke all on table public.ai_command_log  from anon, authenticated; revoke all on table public.ai_schema_cache from anon, authenticated; alter table public.ai_command_log  disable row level security; alter table public.ai_schema_cache disable row level security;;
