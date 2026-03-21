@@ -43,6 +43,21 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 VITE_SITE_URL=http://localhost:3000
 ```
 
+Set mail-related secrets for Supabase Edge Functions in the Supabase dashboard or via `supabase secrets set`, not in the frontend `.env`:
+```
+PUBLIC_SITE_URL=https://stockwiseapp.com
+BREVO_SMTP_HOST=smtp-relay.brevo.com
+BREVO_SMTP_PORT=587
+BREVO_SMTP_SECURE=false
+BREVO_SMTP_LOGIN=your_brevo_smtp_login
+BREVO_SMTP_KEY=your_brevo_smtp_key
+BREVO_SENDER_EMAIL=no-reply@stockwiseapp.com
+BREVO_SENDER_NAME=StockWise
+BREVO_REPLY_TO_EMAIL=optional_reply_to@example.com
+BREVO_REPLY_TO_NAME=StockWise
+MAILER_ALLOWED_ORIGINS=https://stockwiseapp.com
+```
+
 ### 4. Start the Development Server
 ```bash
 npm run dev
@@ -62,6 +77,18 @@ The application will be available at `http://localhost:3000`.
 1. Navigate to "Authentication" → "Settings"
 2. Configure email templates as needed
 3. Set up email providers for production use
+
+For Supabase Auth emails, configure Brevo SMTP with:
+- Host: `smtp-relay.brevo.com`
+- Port: `587`
+- Username: the Brevo SMTP login from Brevo's SMTP relay settings
+- Password: the Brevo SMTP key/password from Brevo's SMTP relay settings
+- Sender email: `no-reply@stockwiseapp.com`
+- Sender name: `StockWise`
+
+Important:
+- Do not use a Brevo HTTP API key as the SMTP username or SMTP password.
+- If the Supabase Auth settings currently show `apikey` as the username, replace it with the dedicated Brevo SMTP login from Brevo.
 
 ### 3. Set Up the Database
 1. Navigate to "SQL Editor"
@@ -129,6 +156,7 @@ Stockwise requires the following environment variables:
 1. **Email Templates**: Customize email templates in Supabase Auth settings
 2. **Site URL**: Set the site URL for redirect URIs
 3. **Email Providers**: Configure SMTP settings for production email delivery
+4. **SMTP username**: Use the Brevo SMTP login, not a generic `apikey` value unless Brevo explicitly issued that exact SMTP login
 
 #### Database Settings
 1. **Connection Pooling**: Configure connection pool settings for high-traffic applications

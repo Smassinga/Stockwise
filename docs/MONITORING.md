@@ -163,7 +163,7 @@ Set up alerts in Supabase:
 Set up alerts for the due reminder system:
 - Job processing failures
 - Empty reminder batches (indicating no qualifying orders)
-- SendGrid API errors
+- Brevo SMTP delivery errors
 - Queue backlog buildup
 
 ### Custom Alerting

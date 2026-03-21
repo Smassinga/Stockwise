@@ -19,12 +19,15 @@ The Due Reminder Worker processes jobs from a queue to send email reminders for 
 
 The function requires these environment variables to be set in your Supabase project:
 
+- `BREVO_SMTP_HOST` - Brevo SMTP relay host (default: `smtp-relay.brevo.com`)
+- `BREVO_SMTP_PORT` - Brevo SMTP relay port (default: `587`)
 - `BREVO_SMTP_LOGIN` - Your Brevo SMTP login
 - `BREVO_SMTP_KEY` - Your Brevo SMTP key
 - `BREVO_SENDER_EMAIL` - Default sender address for outgoing mail
-- `FROM_EMAIL` - The sender email address (default: "no-reply@stockwiseapp.com")
-- `REPLY_TO_EMAIL` - The reply-to email address (default: "support@stockwiseapp.com")
-- `BRAND_NAME` - Your company/brand name (default: "Stockwise")
+- `BREVO_SENDER_NAME` - Sender display name (default: "StockWise")
+- `BREVO_REPLY_TO_EMAIL` - Default reply-to address
+- `BREVO_REPLY_TO_NAME` - Default reply-to display name
+- `PUBLIC_SITE_URL` - Canonical site URL used in generated document links
 - `SERVICE_ROLE_KEY` - Supabase service role key for database access
 - `REMINDER_HOOK_SECRET` - Secret key for authenticating webhook requests
 - `DRY_RUN` - Set to "true" to test without actually sending emails (default: "false")

@@ -27,10 +27,13 @@ In the Settings page, you can configure the Due Reminder Worker:
 
 The Edge Function requires these environment variables:
 
-- `SENDGRID_API_KEY`: Your SendGrid API key
-- `FROM_EMAIL`: Sender email address
-- `REPLY_TO_EMAIL`: Reply-to email address
-- `BRAND_NAME`: Your company name
+- `BREVO_SMTP_LOGIN`: Your Brevo SMTP login
+- `BREVO_SMTP_KEY`: Your Brevo SMTP key
+- `BREVO_SENDER_EMAIL`: Default sender email address
+- `BREVO_SENDER_NAME`: Sender display name
+- `BREVO_REPLY_TO_EMAIL`: Reply-to email address
+- `BREVO_REPLY_TO_NAME`: Reply-to display name
+- `PUBLIC_SITE_URL`: Base site URL for generated links
 - `SERVICE_ROLE_KEY`: Supabase service role key
 - `REMINDER_HOOK_SECRET`: Secret for webhook authentication
 - `DRY_RUN`: Set to "true" for testing without sending emails
@@ -40,7 +43,7 @@ The Edge Function requires these environment variables:
 1. Jobs are added to the `due_reminder_queue` table
 2. The Edge Function processes pending jobs
 3. For each job, it finds sales orders with due dates matching the lead days
-4. It sends email reminders via SendGrid
+4. It sends email reminders via the shared Brevo SMTP mailer
 
 ## Troubleshooting
 

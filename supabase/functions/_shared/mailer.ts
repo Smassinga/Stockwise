@@ -9,7 +9,6 @@ export type MailConfig = {
   smtpSecure: boolean;
   smtpLogin: string;
   smtpKey: string;
-  apiKey: string;
   defaultFromEmail: string;
   defaultFromName: string;
   defaultReplyToEmail: string;
@@ -120,7 +119,6 @@ export function getMailConfig(): MailConfig {
       smtpPort === 465,
     smtpLogin: envFirst("BREVO_SMTP_LOGIN"),
     smtpKey: envFirst("BREVO_SMTP_KEY"),
-    apiKey: envFirst("BREVO_API_KEY"),
     defaultFromEmail,
     defaultFromName,
     defaultReplyToEmail,

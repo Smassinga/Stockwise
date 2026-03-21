@@ -50,7 +50,7 @@ This document summarizes all the changes made to implement the Due Reminder Work
 
 ### 4. Edge Function Worker
 - Processes jobs from the queue
-- Sends emails via SendGrid
+- Sends emails via the shared Brevo SMTP mailer
 - Supports dry run mode for testing
 - Implements proper authentication
 - Handles job claiming to prevent duplicate processing
@@ -81,10 +81,13 @@ This document summarizes all the changes made to implement the Due Reminder Work
 ## Configuration Options
 
 ### Environment Variables
-- `SENDGRID_API_KEY` - SendGrid API key for email sending
-- `FROM_EMAIL` - Sender email address
-- `REPLY_TO_EMAIL` - Reply-to email address
-- `BRAND_NAME` - Company/brand name
+- `BREVO_SMTP_LOGIN` - Brevo SMTP login
+- `BREVO_SMTP_KEY` - Brevo SMTP key
+- `BREVO_SENDER_EMAIL` - Sender email address
+- `BREVO_SENDER_NAME` - Sender display name
+- `BREVO_REPLY_TO_EMAIL` - Reply-to email address
+- `BREVO_REPLY_TO_NAME` - Reply-to display name
+- `PUBLIC_SITE_URL` - Base URL used in generated links
 - `SERVICE_ROLE_KEY` - Supabase service role key
 - `REMINDER_HOOK_SECRET` - Authentication secret for webhooks
 - `DRY_RUN` - Testing mode (true/false)
@@ -124,7 +127,7 @@ This document summarizes all the changes made to implement the Due Reminder Work
 ### Common Issues
 1. "no reminders for window" - Check sales orders, due dates, and email addresses
 2. Authentication failures - Verify `REMINDER_HOOK_SECRET`
-3. SendGrid errors - Check `SENDGRID_API_KEY` and account status
+3. Brevo SMTP errors - Check `BREVO_SMTP_LOGIN`, `BREVO_SMTP_KEY`, and sender identity status
 4. Empty recipient lists - Ensure customers have emails or override recipients
 5. Branding issues - Verify `email_subject_prefix` and company name fields
 

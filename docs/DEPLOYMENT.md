@@ -45,7 +45,18 @@ Before deploying, ensure you have:
 1. Go to Authentication > Settings
 2. Configure site URL: `https://your-domain.com`
 3. Add additional redirect URLs as needed
-4. Configure email templates (optional)
+4. Configure email templates as needed
+5. Configure custom SMTP for Auth emails:
+   - Host: `smtp-relay.brevo.com`
+   - Port: `587`
+   - Username: the Brevo SMTP login from Brevo's SMTP relay settings
+   - Password: the Brevo SMTP key/password from Brevo's SMTP relay settings
+   - Sender email: `no-reply@stockwiseapp.com`
+   - Sender name: `StockWise`
+
+Important:
+- Do not use a Brevo HTTP API key as the SMTP username or SMTP password.
+- If the Supabase dashboard currently shows `apikey` as the SMTP username, replace it with the dedicated Brevo SMTP login shown in the Brevo SMTP relay settings.
 
 ### 4. Set Up Storage
 
@@ -70,6 +81,26 @@ VITE_SITE_URL=https://your-domain.com
 1. In Supabase dashboard, go to Settings > API
 2. Copy "Project URL" to `VITE_SUPABASE_URL`
 3. Copy "anon public" key to `VITE_SUPABASE_ANON_KEY`
+4. In Brevo, open SMTP & API > SMTP and copy the SMTP relay login and SMTP key
+5. In Supabase, set the Brevo SMTP secrets for Edge Functions and the same SMTP host/port/login/password in Authentication > Settings > SMTP
+
+### Edge Function Mail Secrets
+
+Set these in Supabase Edge Function secrets, not in Vercel frontend env:
+
+```bash
+PUBLIC_SITE_URL=https://your-domain.com
+BREVO_SMTP_HOST=smtp-relay.brevo.com
+BREVO_SMTP_PORT=587
+BREVO_SMTP_SECURE=false
+BREVO_SMTP_LOGIN=your_brevo_smtp_login
+BREVO_SMTP_KEY=your_brevo_smtp_key
+BREVO_SENDER_EMAIL=no-reply@stockwiseapp.com
+BREVO_SENDER_NAME=StockWise
+BREVO_REPLY_TO_EMAIL=optional_reply_to@example.com
+BREVO_REPLY_TO_NAME=StockWise
+MAILER_ALLOWED_ORIGINS=https://your-domain.com
+```
 
 ## Vercel Deployment
 
