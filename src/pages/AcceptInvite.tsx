@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'
+import { clearInviteToken, stashInviteToken } from '../lib/inviteToken'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
-
-const LS_INVITE_KEY = 'sw:inviteToken'
 const SESSION_LOOKUP_TIMEOUT_MS = 5000
 const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
 const INVITE_REDEEM_TIMEOUT_MS = 6000
@@ -25,7 +24,7 @@ export default function AcceptInvite() {
           return
         }
 
-        localStorage.setItem(LS_INVITE_KEY, token)
+        stashInviteToken(token)
 
         const {
           data: { session },
@@ -66,7 +65,7 @@ async function redeemAndRoute(nav: ReturnType<typeof useNavigate>, token: string
     INVITE_REDEEM_TIMEOUT_MS,
     'invite redeem'
   )
-  localStorage.removeItem(LS_INVITE_KEY)
+  clearInviteToken()
 
   if (error) {
     console.warn('invite redeem failed:', error.message)

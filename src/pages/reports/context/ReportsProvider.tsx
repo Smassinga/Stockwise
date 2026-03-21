@@ -238,7 +238,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     ;(async () => {
       try {
         // Settings (not company-scoped)
-        const { data: settingsRows } = await supabase.from('settings').select('*').eq('id', 'app').limit(1)
+        const { data: settingsRows } = await supabase.from('settings').select('data').eq('id', 'app').limit(1)
         const setting: any = Array.isArray(settingsRows) && settingsRows.length ? settingsRows[0] : null
 
         if (!companyId) {
@@ -353,13 +353,13 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
       const startIso = `${startDate}T00:00:00Z`; const endIso = `${endDate}T23:59:59.999Z`
       type DateCol = 'createdAt' | 'created_at'
-      async function attempt(col: DateCol, withCompany: boolean) {
+      async function attempt(col: DateCol) {
         let q = supabase.from(ordersSource)
           .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${col}`)
           .gte(col, startIso)
           .lte(col, endIso)
           .order(col, { ascending: true })
-        if (withCompany && companyId) {
+        if (companyId) {
           // Try both column styles using OR; if the table lacks either, Postgrest may error → we’ll catch and retry.
           q = q.or(`company_id.eq.${companyId},companyId.eq.${companyId}`)
         }
@@ -367,31 +367,15 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        let resp = await attempt('createdAt', true)
+        let resp = await attempt('createdAt')
         if (resp.error) {
-          // retry combos to be resilient
           const msg = (resp.error.message || '').toLowerCase()
           if (msg.includes('column') && msg.includes('does not exist')) {
-            const r2 = await attempt('created_at', true)
-            if (r2.error) {
-              const r3 = await attempt('createdAt', false)
-              if (r3.error) {
-                const r4 = await attempt('created_at', false)
-                if (r4.error) { setOrdersUnavailable(true); return }
-                setOrders((r4.data || []) as OrderLite[]); return
-              }
-              setOrders((r3.data || []) as OrderLite[]); return
-            }
+            const r2 = await attempt('created_at')
+            if (r2.error) { setOrdersUnavailable(true); return }
             setOrders((r2.data || []) as OrderLite[]); return
           }
-          // unknown error: retry without company filter
-          const r5 = await attempt('createdAt', false)
-          if (r5.error) {
-            const r6 = await attempt('created_at', false)
-            if (r6.error) { setOrdersUnavailable(true); return }
-            setOrders((r6.data || []) as OrderLite[]); return
-          }
-          setOrders((r5.data || []) as OrderLite[]); return
+          setOrdersUnavailable(true); return
         }
         setOrders((resp.data || []) as OrderLite[])
       } catch { setOrdersUnavailable(true) }
@@ -408,42 +392,28 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
       const startIso = `${startDate}T00:00:00Z`; const endIso = `${endDate}T23:59:59.999Z`
       type DateCol = 'createdAt' | 'created_at'
-      async function attempt(col: DateCol, withCompany: boolean) {
+      async function attempt(col: DateCol) {
         let q = supabase.from(cashSource)
           .select(`id,customerId,customer_id,status,currencyCode,currency_code,total,grandTotal,netTotal,total_amount,grand_total,net_total,${col}`)
           .gte(col, startIso)
           .lte(col, endIso)
           .order(col, { ascending: true })
-        if (withCompany && companyId) {
+        if (companyId) {
           q = q.or(`company_id.eq.${companyId},companyId.eq.${companyId}`)
         }
         return q
       }
 
       try {
-        let resp = await attempt('createdAt', true)
+        let resp = await attempt('createdAt')
         if (resp.error) {
           const msg = (resp.error.message || '').toLowerCase()
           if (msg.includes('column') && msg.includes('does not exist')) {
-            const r2 = await attempt('created_at', true)
-            if (r2.error) {
-              const r3 = await attempt('createdAt', false)
-              if (r3.error) {
-                const r4 = await attempt('created_at', false)
-                if (r4.error) { setCashUnavailable(true); return }
-                setCashSales((r4.data || []) as CashSaleLite[]); return
-              }
-              setCashSales((r3.data || []) as CashSaleLite[]); return
-            }
+            const r2 = await attempt('created_at')
+            if (r2.error) { setCashUnavailable(true); return }
             setCashSales((r2.data || []) as CashSaleLite[]); return
           }
-          const r5 = await attempt('createdAt', false)
-          if (r5.error) {
-            const r6 = await attempt('created_at', false)
-            if (r6.error) { setCashUnavailable(true); return }
-            setCashSales((r6.data || []) as CashSaleLite[]); return
-          }
-          setCashSales((r5.data || []) as CashSaleLite[]); return
+          setCashUnavailable(true); return
         }
         setCashSales((resp.data || []) as CashSaleLite[])
       } catch { setCashUnavailable(true) }

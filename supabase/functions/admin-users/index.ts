@@ -1,6 +1,14 @@
 // supabase/functions/admin-users/index.ts
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  enforceRateLimit,
+  getClientIp,
+  HttpError,
+  readJsonBody,
+  requireEmail,
+  requireText,
+} from "../_shared/security.ts";
 
 type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 type Status = "invited" | "active" | "disabled";
@@ -42,6 +50,18 @@ function json(body: unknown, status = 200) {
 
 function normalizeEmail(email: string | null | undefined): string {
   return String(email ?? "").trim().toLowerCase();
+}
+
+function parseRole(value: unknown): Role | null {
+  if (typeof value !== "string") return null;
+  const role = value.trim().toUpperCase();
+  return ["OWNER", "ADMIN", "MANAGER", "OPERATOR", "VIEWER"].includes(role) ? (role as Role) : null;
+}
+
+function parseStatus(value: unknown): Status | null {
+  if (typeof value !== "string") return null;
+  const status = value.trim().toLowerCase();
+  return ["invited", "active", "disabled"].includes(status) ? (status as Status) : null;
 }
 
 function roleRank(role: Role): number {
@@ -165,7 +185,17 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!);
     const url = new URL(req.url);
     const pathname = url.pathname;
-    const companyId = url.searchParams.get("company_id");
+    const companyId = (url.searchParams.get("company_id") ?? "").trim();
+    const clientIp = getClientIp(req) ?? "unknown";
+
+    async function throttle(scope: string, company_id: string, windowSeconds: number, maxHits: number, extra = "") {
+      await enforceRateLimit(admin, {
+        scope,
+        subject: [company_id, userId, clientIp, extra].filter(Boolean).join(":"),
+        windowSeconds,
+        maxHits,
+      });
+    }
 
     async function assertPrivileged(company_id: string) {
       const me = await loadActorMembership(admin, company_id, userId, userEmail);
@@ -176,15 +206,16 @@ serve(async (req) => {
     }
 
     if (req.method === "GET") {
-      if (!companyId) return json({ error: "company_id is required" }, 400);
+      const scopedCompanyId = requireText(companyId, "company_id", 64);
+      await throttle("admin-users:get-members", scopedCompanyId, 60, 30);
 
-      const guard = await assertPrivileged(companyId);
+      const guard = await assertPrivileged(scopedCompanyId);
       if ("error" in guard) return json({ error: guard.error }, 403);
 
       const { data: rows, error: rowsErr } = await admin
         .from("company_members")
         .select("email,user_id,role,status,invited_by,created_at")
-        .eq("company_id", companyId)
+        .eq("company_id", scopedCompanyId)
         .order("created_at", { ascending: true });
 
       if (rowsErr) return json({ error: rowsErr.message }, 400);
@@ -213,21 +244,29 @@ serve(async (req) => {
     }
 
     if (req.method === "POST" && pathname.endsWith("/invite")) {
-      const body = await req.json().catch(() => ({}));
-      const { company_id, email, role } = body as { company_id?: string; email?: string; role?: Role };
-      if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
+      const body = await readJsonBody(req, 4096);
+      const company_id = requireText(body.company_id, "company_id", 64);
+      const email = requireEmail(body.email);
+      const role = parseRole(body.role);
+      await throttle("admin-users:invite", company_id, 900, 20);
+      await enforceRateLimit(admin, {
+        scope: "admin-users:invite-target",
+        subject: `${company_id}:${email}:${clientIp}`,
+        windowSeconds: 1800,
+        maxHits: 3,
+      });
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
 
-      const lower = normalizeEmail(email);
+      const lower = email;
       const existing = await loadTargetMembership(admin, company_id, lower);
       if (existing) {
         if (!canManageTarget(guard.role, existing.role)) return json({ error: "target_not_allowed" }, 403);
         if (existing.status === "active") return json({ error: "already_active" }, 409);
       }
 
-      const requestedRole = (role ?? existing?.role ?? "VIEWER") as Role;
+      const requestedRole = role ?? existing?.role ?? "VIEWER";
       if (!canInviteRole(guard.role, requestedRole)) return json({ error: "role_not_allowed" }, 403);
 
       const { error: upErr } = await admin.from("company_members").upsert(
@@ -252,21 +291,29 @@ serve(async (req) => {
     }
 
     if (req.method === "POST" && pathname.endsWith("/invite-link")) {
-      const body = await req.json().catch(() => ({}));
-      const { company_id, email, role } = body as { company_id?: string; email?: string; role?: Role };
-      if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
+      const body = await readJsonBody(req, 4096);
+      const company_id = requireText(body.company_id, "company_id", 64);
+      const email = requireEmail(body.email);
+      const role = parseRole(body.role);
+      await throttle("admin-users:invite-link", company_id, 900, 20);
+      await enforceRateLimit(admin, {
+        scope: "admin-users:invite-link-target",
+        subject: `${company_id}:${email}:${clientIp}`,
+        windowSeconds: 1800,
+        maxHits: 3,
+      });
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
 
-      const lower = normalizeEmail(email);
+      const lower = email;
       const existing = await loadTargetMembership(admin, company_id, lower);
       if (existing) {
         if (!canManageTarget(guard.role, existing.role)) return json({ error: "target_not_allowed" }, 403);
         if (existing.status === "active") return json({ error: "already_active" }, 409);
       }
 
-      const requestedRole = (role ?? existing?.role ?? "VIEWER") as Role;
+      const requestedRole = role ?? existing?.role ?? "VIEWER";
       if (!canInviteRole(guard.role, requestedRole)) return json({ error: "role_not_allowed" }, 403);
 
       const { error: upErr } = await admin.from("company_members").upsert(
@@ -299,20 +346,27 @@ serve(async (req) => {
     }
 
     if (req.method === "POST" && pathname.endsWith("/reinvite")) {
-      const body = await req.json().catch(() => ({}));
-      const { company_id, email } = body as { company_id?: string; email?: string };
-      if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
+      const body = await readJsonBody(req, 4096);
+      const company_id = requireText(body.company_id, "company_id", 64);
+      const email = requireEmail(body.email);
+      await throttle("admin-users:reinvite", company_id, 900, 20);
+      await enforceRateLimit(admin, {
+        scope: "admin-users:reinvite-target",
+        subject: `${company_id}:${email}:${clientIp}`,
+        windowSeconds: 1800,
+        maxHits: 3,
+      });
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
 
-      const target = await loadTargetMembership(admin, company_id, normalizeEmail(email));
+      const target = await loadTargetMembership(admin, company_id, email);
       if (!target) return json({ error: "member_not_found" }, 404);
       if (!canManageTarget(guard.role, target.role)) return json({ error: "target_not_allowed" }, 403);
 
       const redirectTo = makeRedirectTo(req);
       try {
-        await admin.auth.admin.inviteUserByEmail(normalizeEmail(email), { redirectTo });
+        await admin.auth.admin.inviteUserByEmail(email, { redirectTo });
         return json({ ok: true, redirectTo });
       } catch {
         return json({ error: "invite email failed", redirectTo }, 400);
@@ -320,20 +374,20 @@ serve(async (req) => {
     }
 
     if (req.method === "PATCH" && pathname.endsWith("/member")) {
-      const body = await req.json().catch(() => ({}));
-      const { company_id, email, role, status } = body as {
-        company_id?: string;
-        email?: string;
-        role?: Role;
-        status?: Status;
-      };
-      if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
+      const body = await readJsonBody(req, 4096);
+      const company_id = requireText(body.company_id, "company_id", 64);
+      const email = requireEmail(body.email);
+      const role = body.role == null ? null : parseRole(body.role);
+      const status = body.status == null ? null : parseStatus(body.status);
+      if (body.role != null && !role) return json({ error: "invalid_role" }, 400);
+      if (body.status != null && !status) return json({ error: "invalid_status" }, 400);
       if (!role && !status) return json({ error: "role or status required" }, 400);
+      await throttle("admin-users:member-update", company_id, 60, 20);
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
 
-      const lower = normalizeEmail(email);
+      const lower = email;
       const target = await loadTargetMembership(admin, company_id, lower);
       if (!target) return json({ error: "member_not_found" }, 404);
       if (!canManageTarget(guard.role, target.role)) return json({ error: "target_not_allowed" }, 403);
@@ -357,14 +411,15 @@ serve(async (req) => {
     }
 
     if (req.method === "DELETE" && pathname.endsWith("/member")) {
-      const body = await req.json().catch(() => ({}));
-      const { company_id, email } = body as { company_id?: string; email?: string };
-      if (!company_id || !email) return json({ error: "company_id and email required" }, 400);
+      const body = await readJsonBody(req, 4096);
+      const company_id = requireText(body.company_id, "company_id", 64);
+      const email = requireEmail(body.email);
+      await throttle("admin-users:member-delete", company_id, 60, 20);
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
 
-      const lower = normalizeEmail(email);
+      const lower = email;
       const target = await loadTargetMembership(admin, company_id, lower);
       if (!target) return json({ error: "member_not_found" }, 404);
 
@@ -384,6 +439,13 @@ serve(async (req) => {
     }
 
     if (req.method === "POST" && pathname.endsWith("/sync")) {
+      await enforceRateLimit(admin, {
+        scope: "admin-users:sync",
+        subject: `${userId}:${clientIp}`,
+        windowSeconds: 900,
+        maxHits: 4,
+      });
+
       const { data, error } = await admin.rpc("link_invites_to_user", {
         p_user_id: userId,
         p_email: userEmail,
@@ -437,6 +499,9 @@ serve(async (req) => {
 
     return json({ error: "not found" }, 404);
   } catch (e) {
+    if (e instanceof HttpError) {
+      return json({ error: e.code, details: e.details }, e.status);
+    }
     return json({ error: (e as Error).message }, 500);
   }
 });

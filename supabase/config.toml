@@ -23,7 +23,7 @@ entrypoint = "./functions/ai-ops/index.ts"
 
 [functions.schema-snapshot-cron]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/schema-snapshot-cron/deno.json"
 # Supported file extensions: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/schema-snapshot-cron/index.ts"
@@ -38,4 +38,19 @@ entrypoint = "./functions/mailer-invite/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/admin-users/index.ts"
+
+[functions.mailer-report]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/mailer-report/index.ts"
+
+[functions.due-reminder-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/due-reminder-worker/index.ts"
+
+[functions.digest-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/digest-worker/index.ts"
 

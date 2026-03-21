@@ -9,12 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
+import { clearInviteToken, readInviteToken } from '../lib/inviteToken'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
-
-const LS_INVITE_KEY = 'sw:inviteToken'
 const SESSION_LOOKUP_TIMEOUT_MS = 5000
 const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
 const BEST_EFFORT_SYNC_TIMEOUT_MS = 5000
@@ -222,14 +221,14 @@ export default function Onboarding() {
         }
 
         try {
-          const token = localStorage.getItem(LS_INVITE_KEY)
+          const token = readInviteToken()
           if (token) {
             await withTimeout(
               supabase.rpc('accept_invite_with_token', { p_token: token }),
               INVITE_REDEEM_TIMEOUT_MS,
               'invite redeem'
             )
-            localStorage.removeItem(LS_INVITE_KEY)
+            clearInviteToken()
           }
         } catch (e) {
           console.warn('invite token redeem failed (onboarding):', (e as any)?.message || e)

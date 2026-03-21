@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
+import { clearInviteToken, readInviteToken } from '../lib/inviteToken'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
-
-const LS_INVITE_KEY = 'sw:inviteToken'
 const SESSION_LOOKUP_TIMEOUT_MS = 5000
 const AUTH_FINISH_TIMEOUT_MS = 15000
 const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
@@ -123,7 +122,7 @@ export default function AuthCallback() {
 }
 
 async function maybeRedeemInviteToken() {
-  const token = localStorage.getItem(LS_INVITE_KEY)
+  const token = readInviteToken()
   if (!token) return
   try {
     await withTimeout(
@@ -134,7 +133,7 @@ async function maybeRedeemInviteToken() {
   } catch (e) {
     console.warn('invite token redeem failed (callback):', (e as any)?.message || e)
   } finally {
-    localStorage.removeItem(LS_INVITE_KEY)
+    clearInviteToken()
   }
 }
 

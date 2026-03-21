@@ -1,9 +1,13 @@
 // supabase/functions/schema-snapshot-cron/index.ts
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 
-const SUPABASE_URL       = Deno.env.get('SUPABASE_URL')!
-const SUPABASE_ANON_KEY  = Deno.env.get('SUPABASE_ANON_KEY')! // fine even if snapshot has verify_jwt=false
-const AI_OPS_SECRET      = Deno.env.get('AI_OPS_SECRET')!
+const SUPABASE_URL = Deno.env.get('SB_URL') ?? Deno.env.get('SUPABASE_URL') ?? ''
+const SUPABASE_ANON_KEY = Deno.env.get('SB_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+const AI_OPS_SECRET = Deno.env.get('AI_OPS_SECRET') ?? ''
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !AI_OPS_SECRET) {
+  throw new Error('Missing SB_URL/SB_ANON_KEY/AI_OPS_SECRET (or SUPABASE_* fallbacks)')
+}
 
 // small helper: HMAC-SHA256 -> hex
 async function hmacHex(secret: string, body: string): Promise<string> {
@@ -26,10 +30,15 @@ function tryJson(s: string) {
 
 Deno.serve(async (req) => {
   try {
-    // optional overrides via querystring: ?schema=public&persist=true
-    const url = new URL(req.url)
-    const schema  = url.searchParams.get('schema')  ?? 'public'
-    const persist = (url.searchParams.get('persist') ?? 'true').toLowerCase() !== 'false'
+    if (req.method !== 'POST') {
+      return new Response(JSON.stringify({ ok: false, error: 'method_not_allowed' }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 405,
+      })
+    }
+
+    const schema = 'public'
+    const persist = true
 
     const payload = JSON.stringify({ schema, persist })
     const sig     = await hmacHex(AI_OPS_SECRET, payload)

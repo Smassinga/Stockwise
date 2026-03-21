@@ -5,6 +5,14 @@ import {
   requireMailConfig,
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
+import {
+  enforceRateLimit,
+  getClientIp,
+  HttpError,
+  optionalText,
+  readJsonBody,
+  requireText,
+} from "../_shared/security.ts";
 
 type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 
@@ -144,17 +152,16 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   try {
-    const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const companyId = String(body.company_id ?? "").trim();
+    const body = await readJsonBody(req, 16 * 1024);
+    const companyId = requireText(body.company_id, "company_id", 64);
     const to = normalizeEmails(body.to);
-    const reportTitle = String(body.report_title ?? body.title ?? "").trim();
-    const reportPeriod = String(body.report_period ?? "").trim();
-    const downloadUrl = String(body.download_url ?? body.url ?? "").trim();
-    const message = String(body.message ?? "").trim();
+    const reportTitle = requireText(body.report_title ?? body.title, "report_title", 160);
+    const reportPeriod = optionalText(body.report_period, 120) ?? "";
+    const downloadUrl = optionalText(body.download_url ?? body.url, 2048) ?? "";
+    const message = optionalText(body.message, 2000) ?? "";
 
-    if (!companyId) return json({ error: "company_id_required" }, 400);
     if (!to.length) return json({ error: "recipient_required" }, 400);
-    if (!reportTitle) return json({ error: "report_title_required" }, 400);
+    if (to.length > 10) return json({ error: "too_many_recipients" }, 400);
 
     const jwt = getBearer(req);
     if (!jwt) return json({ error: "missing_bearer_token" }, 401);
@@ -165,11 +172,19 @@ serve(async (req) => {
 
     const userId = userData.user.id;
     const userEmail = normalizeEmail(userData.user.email);
+    const clientIp = getClientIp(req) ?? "unknown";
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const actorRole = await getActorRole(admin, companyId, userId, userEmail);
     if (!actorRole || roleRank(actorRole) > roleRank("MANAGER")) {
       return json({ error: "not_privileged" }, 403);
     }
+
+    await enforceRateLimit(admin, {
+      scope: "mailer-report:send",
+      subject: `${companyId}:${userId}:${clientIp}`,
+      windowSeconds: 3600,
+      maxHits: 6,
+    });
 
     const { data: company, error: companyErr } = await admin
       .from("companies")
@@ -205,6 +220,9 @@ serve(async (req) => {
 
     return json({ ok: true, sent: to.length });
   } catch (error) {
+    if (error instanceof HttpError) {
+      return json({ error: error.code, details: error.details }, error.status, { "x-error": error.code });
+    }
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: "unexpected", details: message }, 500, { "x-error": message });
   }

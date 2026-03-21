@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, UserPlus, Users as UsersIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { authFetch } from '../lib/authFetch'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
@@ -103,17 +104,14 @@ export default function Users() {
     if (!companyId) return
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('company_members_with_auth')
-        .select('email, user_id, role, status, invited_by, created_at, email_confirmed_at, last_sign_in_at')
-        .eq('company_id', companyId)
-        .order('role', { ascending: true })
-
-      if (error) throw error
-      setMembers((data || []) as Member[])
+      const data = await authFetch<{ users?: Member[] }>(`admin-users/?company_id=${encodeURIComponent(companyId)}`, {
+        method: 'GET',
+      })
+      setMembers((data?.users || []) as Member[])
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('users.toast.loadFailed', 'Failed to load members'))
+      const message = extractFnErr(e)
+      toast.error(message || tt('users.toast.loadFailed', 'Failed to load members'))
     } finally {
       setLoading(false)
     }
@@ -277,17 +275,20 @@ export default function Users() {
     }
 
     try {
-      const { error } = await supabase
-        .from('company_members')
-        .update(next)
-        .eq('company_id', companyId)
-        .eq('email', email)
-      if (error) throw error
+      await authFetch('admin-users/member', {
+        method: 'PATCH',
+        body: {
+          company_id: companyId,
+          email,
+          ...next,
+        },
+      })
       toast.success(t('users.memberUpdated'))
       await refreshMembers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || t('users.failedToUpdateMember'))
+      const message = extractFnErr(e)
+      toast.error(message || t('users.failedToUpdateMember'))
     }
   }
 
@@ -303,17 +304,19 @@ export default function Users() {
     }
 
     try {
-      const { error } = await supabase
-        .from('company_members')
-        .delete()
-        .eq('company_id', companyId)
-        .eq('email', email)
-      if (error) throw error
+      await authFetch('admin-users/member', {
+        method: 'DELETE',
+        body: {
+          company_id: companyId,
+          email,
+        },
+      })
       toast.success(tt('users.toast.memberRemoved', 'Member removed'))
       await refreshMembers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('users.toast.memberRemoveFailed', 'Failed to remove member'))
+      const message = extractFnErr(e)
+      toast.error(message || tt('users.toast.memberRemoveFailed', 'Failed to remove member'))
     }
   }
 

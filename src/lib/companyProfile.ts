@@ -24,7 +24,7 @@ export type CompanyProfile = {
 export async function getCompanyProfile(companyId: string) {
   const { data, error } = await supabase
     .from('companies')
-    .select('*')
+    .select('id,legal_name,trade_name,tax_id,registration_no,phone,email,website,address_line1,address_line2,city,state,postal_code,country_code,print_footer_note,logo_path,logo_updated_at')
     .eq('id', companyId)
     .maybeSingle<CompanyProfile>()
   if (error) throw error

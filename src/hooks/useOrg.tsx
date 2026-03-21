@@ -62,40 +62,7 @@ function roleRank(r: MemberRole) {
   )[r] ?? 9
 }
 
-/** Ensure the company claim is in the JWT & refresh token so RLS sees it */
-async function ensureCompanyClaim(id: string | null) {
-  if (!id) return;
-  try {
-    const { data: u } = await supabase.auth.getUser();
-    const current = (u.user?.user_metadata as any)?.company_id;
-    if (current === id) return;
-
-    const { error: updErr } = await supabase.auth.updateUser({
-      data: { company_id: id },
-    });
-    if (updErr) {
-      console.warn("[Org] updateUser(company_id) failed:", updErr);
-      return;
-    }
-
-    // Important: refresh to propagate the new JWT into the client
-    const { error: refErr } = await supabase.auth.refreshSession();
-    if (refErr) console.warn("[Org] refreshSession failed:", refErr);
-  } catch (e) {
-    console.warn("[Org] ensureCompanyClaim failed:", e);
-  }
-}
-
 async function syncActiveCompanyContext(id: string) {
-  let ok = true;
-
-  try {
-    await withTimeout(ensureCompanyClaim(id), ACTIVE_COMPANY_SYNC_TIMEOUT_MS, "ensureCompanyClaim");
-  } catch (e) {
-    ok = false;
-    console.warn("[Org] ensureCompanyClaim background sync failed:", e);
-  }
-
   try {
     const { error: rpcErr } = await withTimeout(
       supabase.rpc("set_active_company", { p_company_id: id }),
@@ -103,15 +70,15 @@ async function syncActiveCompanyContext(id: string) {
       "set_active_company"
     );
     if (rpcErr) {
-      ok = false;
       console.warn("[Org] set_active_company RPC failed:", rpcErr);
+      return false;
     }
   } catch (e) {
-    ok = false;
     console.warn("[Org] set_active_company background sync failed:", e);
+    return false;
   }
 
-  return ok;
+  return true;
 }
 
 export function OrgProvider({ children }: { children: ReactNode }) {
@@ -410,9 +377,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     setSwitching(true);
     (async () => {
       try {
-        await withTimeout(ensureCompanyClaim(id), ACTIVE_COMPANY_SYNC_TIMEOUT_MS, "ensureCompanyClaim");
-
-        // NEW: promote invited/email membership -> active user_id membership
+        // Promote invited/email membership before switching active company.
         const { error: acceptErr } = await withTimeout(
           supabase.rpc('accept_my_invite', {
             p_company_id: id,

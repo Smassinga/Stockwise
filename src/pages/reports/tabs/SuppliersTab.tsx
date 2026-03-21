@@ -32,6 +32,8 @@ type RowT = {
 type Supplier = { id: string; code: string | null; name: string; company_id: string | null }
 
 const num = (value: any, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback)
+const SUPPLIER_MOVEMENT_COLUMNS =
+  'id,created_at,supplier_id,supplier_code,supplier_name,ref_type,ref_no,item_id,item_name,item_sku,qty_base,total_value,notes,company_id'
 
 export default function SuppliersTab() {
   const { t, lang } = useI18n()
@@ -91,7 +93,7 @@ export default function SuppliersTab() {
     try {
       let queryBuilder = supabase
         .from('supplier_movements_view')
-        .select('*')
+        .select(SUPPLIER_MOVEMENT_COLUMNS)
         .eq('company_id', activeCompanyId)
         .gte('created_at', from)
         .lte('created_at', `${to} 23:59:59`)

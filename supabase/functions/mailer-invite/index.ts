@@ -8,6 +8,15 @@ import {
   requireMailConfig,
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
+import {
+  enforceRateLimit,
+  getClientIp,
+  HttpError,
+  optionalText,
+  readJsonBody,
+  requireEmail,
+  requireText,
+} from "../_shared/security.ts";
 
 type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 type Status = "invited" | "active" | "disabled";
@@ -66,6 +75,10 @@ function canInviteRole(actor: Role, target: Role): boolean {
   if (actor === "ADMIN") return ["ADMIN", "MANAGER", "OPERATOR", "VIEWER"].includes(target);
   if (actor === "MANAGER") return ["MANAGER", "OPERATOR", "VIEWER"].includes(target);
   return false;
+}
+
+function parseMode(value: unknown): "email" | "preview" {
+  return String(value ?? "email").trim().toLowerCase() === "preview" ? "preview" : "email";
 }
 
 function escapeHtml(value: string): string {
@@ -251,21 +264,15 @@ serve(async (req) => {
   if (req.method !== "POST") return j({ error: "method_not_allowed" }, 405);
 
   try {
-    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const body = await readJsonBody(req, 8192);
 
-    const companyId = String(body.company_id ?? "").trim();
-    const email = normalizeEmail(body.email);
-    const inviteLink = String(body.invite_link ?? body.link ?? "").trim();
-    const companyName = String(body.company_name ?? body.companyName ?? "Your company").trim();
-    const inviterName = body.inviter_name
-      ? String(body.inviter_name)
-      : body.inviterName
-      ? String(body.inviterName)
-      : undefined;
+    const companyId = requireText(body.company_id, "company_id", 64);
+    const email = requireEmail(body.email);
+    const inviteLink = requireText(body.invite_link ?? body.link, "invite_link", 2048);
+    const companyName = optionalText(body.company_name ?? body.companyName, 160) ?? "Your company";
+    const inviterName = optionalText(body.inviter_name ?? body.inviterName, 160);
+    const mode = parseMode(body.mode);
 
-    if (!companyId) return j({ error: "company_id_required" }, 400);
-    if (!email) return j({ error: "email_required" }, 400);
-    if (!inviteLink) return j({ error: "invite_link_required" }, 400);
     if (!isAllowedInviteLink(inviteLink)) return j({ error: "invite_link_not_allowed" }, 400);
 
     const jwt = getBearer(req);
@@ -277,6 +284,7 @@ serve(async (req) => {
 
     const userId = userData.user.id;
     const userEmail = normalizeEmail(userData.user.email);
+    const clientIp = getClientIp(req) ?? "unknown";
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
@@ -284,6 +292,19 @@ serve(async (req) => {
     if (!actorRole || roleRank(actorRole) > roleRank("MANAGER")) {
       return j({ error: "not_privileged" }, 403);
     }
+
+    await enforceRateLimit(admin, {
+      scope: mode === "preview" ? "mailer-invite:preview" : "mailer-invite:send",
+      subject: `${companyId}:${userId}:${clientIp}`,
+      windowSeconds: mode === "preview" ? 300 : 900,
+      maxHits: mode === "preview" ? 20 : 10,
+    });
+    await enforceRateLimit(admin, {
+      scope: "mailer-invite:recipient",
+      subject: `${companyId}:${email}:${clientIp}`,
+      windowSeconds: 1800,
+      maxHits: 3,
+    });
 
     const invite = await getInviteRow(admin, companyId, email);
     if (!invite) return j({ error: "invite_not_found" }, 404);
@@ -306,11 +327,13 @@ serve(async (req) => {
       brandName: MAIL_FROM_NAME,
     });
 
-    const mode = String(body.mode ?? "email");
     if (mode === "preview") return j({ ok: true, preview: { subject, text, html } });
 
     return await sendInviteEmail(email, subject, html, text);
   } catch (e) {
+    if (e instanceof HttpError) {
+      return j({ error: e.code, details: e.details }, e.status, { "x-error": e.code });
+    }
     const msg = e instanceof Error ? e.message : String(e);
     return j({ error: "unexpected", details: msg }, 500, { "x-error": msg });
   }

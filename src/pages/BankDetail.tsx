@@ -143,6 +143,7 @@ export default function BankDetail() {
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const canEditBank = hasRole(myRole, CanManageUsers)
+  const scopedBankId = bank && bank.company_id === companyId ? bank.id : null
 
   const [bank, setBank] = useState<Bank | null>(null)
   const [from, setFrom] = useState<string>(monthStartISO())
@@ -197,29 +198,41 @@ export default function BankDetail() {
   }, [bookBalance, statements])
 
   useEffect(() => {
-    if (!bankId) return
+    if (!bankId || !companyId) {
+      setBank(null)
+      return
+    }
     loadBank()
-  }, [bankId])
+  }, [bankId, companyId])
 
   useEffect(() => {
-    if (!bankId) return
+    if (!scopedBankId) {
+      setRows([])
+      setStatements([])
+      setBookBalance(0)
+      setOrderRefByKey({})
+      return
+    }
     loadTx()
     loadStatements()
     loadBookBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bankId, from, to, onlyUnreconciled])
+  }, [scopedBankId, from, to, onlyUnreconciled])
 
   async function loadBank() {
+    if (!bankId || !companyId) return
     const { data, error } = await supabase
       .from('bank_accounts')
       .select('id, company_id, name, bank_name, account_number, currency_code, tax_number, swift, nib')
-      .eq('id', bankId).maybeSingle()
+      .eq('id', bankId)
+      .eq('company_id', companyId)
+      .maybeSingle()
     if (error) { console.warn('bank_accounts not ready:', error.message); return }
     setBank(data as Bank)
   }
 
   async function saveBankDetails() {
-    if (!bank || !canEditBank) return
+    if (!bank || bank.company_id !== companyId || !canEditBank) return
     try {
       const payload: Partial<Bank> = {
         name: (bank.name ?? '').trim() || bank.name, // allow clearing if desired
@@ -230,7 +243,7 @@ export default function BankDetail() {
         swift: bank.swift ?? null,
         nib: bank.nib ?? null,
       }
-      const { error } = await supabase.from('bank_accounts').update(payload).eq('id', bank.id)
+      const { error } = await supabase.from('bank_accounts').update(payload).eq('id', bank.id).eq('company_id', bank.company_id)
       if (error) throw error
       toast.success(tf('bank.toast.saved', 'Bank details saved'))
     } catch (e: any) {
@@ -240,6 +253,7 @@ export default function BankDetail() {
   }
 
   async function loadTx() {
+    if (!scopedBankId) return
     const myReq = ++latestTxReq.current
     let data: any[] | null = null
     let error: any = null
@@ -248,7 +262,7 @@ export default function BankDetail() {
       const withRefs = await supabase
         .from('bank_transactions')
         .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at, ref_type, ref_id')
-        .eq('bank_id', bankId)
+        .eq('bank_id', scopedBankId)
         .gte('happened_at', from)
         .lte('happened_at', to)
         .order('happened_at', { ascending: true })
@@ -268,7 +282,7 @@ export default function BankDetail() {
       const fallback = await supabase
         .from('bank_transactions')
         .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at')
-        .eq('bank_id', bankId)
+        .eq('bank_id', scopedBankId)
         .gte('happened_at', from)
         .lte('happened_at', to)
         .order('happened_at', { ascending: true })
@@ -291,11 +305,12 @@ export default function BankDetail() {
   }
 
   async function loadStatements() {
+    if (!scopedBankId) return
     const myReq = ++latestStmtReq.current
     const { data, error } = await supabase
       .from('bank_statements')
       .select('id, bank_id, statement_date, closing_balance_base, file_path, reconciled, created_at')
-      .eq('bank_id', bankId)
+      .eq('bank_id', scopedBankId)
       .order('statement_date', { ascending: false })
       .order('created_at', { ascending: false })
     if (myReq !== latestStmtReq.current) return
@@ -304,20 +319,23 @@ export default function BankDetail() {
   }
 
   async function loadBookBalance() {
+    if (!scopedBankId) return
     const myReq = ++latestBalReq.current
-    const { data, error } = await supabase.rpc('bank_book_balance', { p_bank: bankId })
+    const { data, error } = await supabase.rpc('bank_book_balance', { p_bank: scopedBankId })
     if (myReq !== latestBalReq.current) return
     if (error) { console.warn('bank_book_balance not ready:', error.message); setBookBalance(0); return }
     setBookBalance(typeof data === 'number' ? data : (data as any)?.balance ?? 0)
   }
 
   async function toggleReconciled(txId: string, value: boolean) {
+    if (!scopedBankId) return
     setSavingTx(txId)
     try {
       const { error } = await supabase
         .from('bank_transactions')
         .update({ reconciled: value })
         .eq('id', txId)
+        .eq('bank_id', scopedBankId)
       if (error) throw error
       setRows(rs => rs.map(r => (r.id === txId ? { ...r, reconciled: value } : r)))
     } catch (e: any) {
@@ -331,7 +349,7 @@ export default function BankDetail() {
   // ----- Statements: upload, open (download), delete -----
 
   async function uploadStatement() {
-    if (!bankId) return
+    if (!scopedBankId) return
     if (!stDate) { toast.error(t('bank.statementDate')); return }
     const closing = Number(stClosing)
     if (Number.isNaN(closing)) { toast.error(t('common.headsUp')); return }
@@ -353,7 +371,7 @@ export default function BankDetail() {
       const { data: inserted, error } = await supabase
         .from('bank_statements')
         .insert({
-          bank_id: bankId,
+          bank_id: scopedBankId,
           statement_date: stDate,
           closing_balance_base: closing,
           file_path,
@@ -378,6 +396,7 @@ export default function BankDetail() {
   }
 
   async function openFile(key: string) {
+    if (!scopedBankId) return
     try {
       const { data, error } = await supabase.storage.from('bank-statements').download(key)
       if (error) {
@@ -397,6 +416,7 @@ export default function BankDetail() {
   }
 
   async function deleteStatement(s: Statement) {
+    if (!scopedBankId || s.bank_id !== scopedBankId) return
     if (s.reconciled) {
       toast.error(tf('bank.toast.statementLocked', 'Reconciled statements cannot be deleted'))
       return
@@ -409,7 +429,7 @@ export default function BankDetail() {
           console.warn('Storage remove error:', remErr.message)
         }
       }
-      const { error } = await supabase.from('bank_statements').delete().eq('id', s.id)
+      const { error } = await supabase.from('bank_statements').delete().eq('id', s.id).eq('bank_id', scopedBankId)
       if (error) throw error
       await loadBookBalance()
       await loadStatements()
@@ -423,7 +443,7 @@ export default function BankDetail() {
 
   // ----- CSV import (DD/MM/YYYY) -----
   async function importCsv() {
-    if (!bankId || !csvFile) { toast.error(tf('bank.toast.csvChoose', 'Choose a CSV file first')); return }
+    if (!scopedBankId || !csvFile) { toast.error(tf('bank.toast.csvChoose', 'Choose a CSV file first')); return }
     setImporting(true)
     try {
       const text = await csvFile.text()
@@ -442,7 +462,7 @@ export default function BankDetail() {
         const amt = parseAmount(cols[2] ?? '')
         if (!isoDate || amt === null || amt === 0) continue
         payload.push({
-          bank_id: bankId,
+          bank_id: scopedBankId,
           happened_at: isoDate,
           memo: (cols[1] ?? '') || null,
           amount_base: amt,
@@ -468,13 +488,13 @@ export default function BankDetail() {
 
   // Manual transaction add
   async function addTx() {
-    if (!bankId) return
+    if (!scopedBankId) return
     const amt = Number(txAmt)
     if (Number.isNaN(amt) || amt === 0) { toast.error(tf('bank.toast.amountNonZero', 'Amount must be a non-zero number')); return }
     setAddingTx(true)
     try {
       const { error } = await supabase.from('bank_transactions').insert({
-        bank_id: bankId,
+        bank_id: scopedBankId,
         happened_at: txDate,
         memo: txMemo || null,
         amount_base: amt,
@@ -767,7 +787,7 @@ export default function BankDetail() {
                           size="sm"
                           onClick={async () => {
                             const { error } = await supabase.from('bank_statements')
-                              .update({ reconciled: !s.reconciled }).eq('id', s.id)
+                              .update({ reconciled: !s.reconciled }).eq('id', s.id).eq('bank_id', scopedBankId)
                             if (error) { toast.error(t('bank.toast.toggleFailed')); return }
                             setStatements(prev => prev.map(x => x.id === s.id ? { ...x, reconciled: !x.reconciled } : x))
                             await loadBookBalance()
