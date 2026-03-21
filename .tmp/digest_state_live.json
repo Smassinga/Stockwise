@@ -1,0 +1,23 @@
+[
+  {
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "last_digest_local_date": "2026-03-21",
+    "last_attempt_at": "2026-03-21T21:54:42.903+00:00",
+    "last_status": "sent",
+    "last_error": null
+  },
+  {
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "last_digest_local_date": "2026-03-21",
+    "last_attempt_at": "2026-03-21T21:54:48.567+00:00",
+    "last_status": "sent",
+    "last_error": null
+  },
+  {
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "last_digest_local_date": "2026-03-21",
+    "last_attempt_at": "2026-03-21T21:54:45.499+00:00",
+    "last_status": "sent",
+    "last_error": null
+  }
+]

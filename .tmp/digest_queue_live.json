@@ -1,0 +1,2492 @@
+[
+  {
+    "id": 479,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-19",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-19T14:35:00.799033+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 480,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-19",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-19T15:00:01.685869+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 481,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-19",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-19T21:30:01.652287+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 482,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-20",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-20T14:35:01.125805+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 483,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-20",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-20T15:00:01.459187+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 484,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-20",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-20T21:30:01.825291+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 485,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-21",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-21T14:35:01.556579+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 486,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-21",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-21T15:00:01.796814+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 487,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-21",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-21T21:30:03.234819+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 488,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-22",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-22T14:35:01.773716+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 489,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-22",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-22T15:00:03.261033+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 490,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-22",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-22T21:30:01.79494+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 491,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-23",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-23T20:30:01.77049+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 492,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-23",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-23T20:30:01.77049+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 493,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-23",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-23T21:30:01.892369+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 494,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-24",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-24T20:25:01.157546+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 495,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-24",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-24T20:25:01.157546+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 496,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-24",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-24T21:30:01.852456+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 497,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-25",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-25T20:25:07.849331+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 498,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-25",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-25T20:25:07.849331+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 499,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-25",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-25T21:30:02.27438+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 500,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-26",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-26T20:25:01.921993+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 501,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-26",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-26T20:25:01.921993+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 502,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-26",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-26T21:30:02.819592+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 503,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-27",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-27T20:25:01.886971+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 504,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-27",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-27T20:25:01.886971+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 505,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-27",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-27T21:30:02.102987+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 506,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-02-28",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-28T20:25:01.771304+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 507,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-02-28",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-28T20:25:01.771304+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 508,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-02-28",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-02-28T21:30:03.815115+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 509,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-01",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-01T20:25:01.885265+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 510,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-01",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-01T20:25:01.885265+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 511,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-01",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-01T21:30:04.07442+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 512,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-02",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-02T20:25:02.566055+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 513,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-02",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-02T20:25:02.566055+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 514,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-02",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-02T21:30:02.044593+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 515,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-03",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-03T20:25:04.059656+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 516,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-03",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-03T20:25:04.059656+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 517,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-03",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "failed",
+    "created_at": "2026-03-03T21:30:03.12869+00:00",
+    "processed_at": null,
+    "error": "Recovered stale processing job",
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 518,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-04",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-04T20:25:04.940776+00:00",
+    "processed_at": "2026-03-21T21:54:17.636+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 519,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-04",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-04T20:25:04.940776+00:00",
+    "processed_at": "2026-03-21T21:54:22.584+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 520,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-04",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-04T21:30:03.731409+00:00",
+    "processed_at": "2026-03-21T21:54:25.613+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 521,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-05",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-05T20:25:02.535986+00:00",
+    "processed_at": "2026-03-21T21:54:28.336+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 522,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-05",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-05T20:25:02.535986+00:00",
+    "processed_at": "2026-03-21T21:54:31.378+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 523,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-05",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-05T21:30:02.336137+00:00",
+    "processed_at": "2026-03-21T21:54:34.104+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 524,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-06",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-06T20:25:02.258659+00:00",
+    "processed_at": "2026-03-21T21:54:36.877+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 525,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-06",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-06T20:25:02.258659+00:00",
+    "processed_at": "2026-03-21T21:54:39.663+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 526,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-06",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-06T21:30:10.116528+00:00",
+    "processed_at": "2026-03-21T21:54:42.726+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 527,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-07",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-07T20:30:06.148239+00:00",
+    "processed_at": "2026-03-21T21:54:45.321+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 528,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-07",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-07T20:30:06.148239+00:00",
+    "processed_at": "2026-03-21T21:54:48.38+00:00",
+    "error": null,
+    "attempts": 5,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 529,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-07",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-07T21:30:02.174729+00:00",
+    "processed_at": "2026-03-21T21:10:01.978+00:00",
+    "error": null,
+    "attempts": 4,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 530,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-08",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-08T20:25:04.260241+00:00",
+    "processed_at": "2026-03-21T21:19:06.612+00:00",
+    "error": null,
+    "attempts": 4,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 531,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-08",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-08T20:25:04.260241+00:00",
+    "processed_at": "2026-03-21T21:05:05.203+00:00",
+    "error": null,
+    "attempts": 3,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 532,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-08",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-08T21:30:04.480261+00:00",
+    "processed_at": "2026-03-21T21:15:02.27+00:00",
+    "error": null,
+    "attempts": 2,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 533,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-09",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-09T20:25:02.50063+00:00",
+    "processed_at": "2026-03-21T21:19:08.739+00:00",
+    "error": null,
+    "attempts": 2,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 534,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-09",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-09T20:25:02.50063+00:00",
+    "processed_at": "2026-03-21T21:19:10.799+00:00",
+    "error": null,
+    "attempts": 2,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 535,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-09",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-09T21:30:04.348744+00:00",
+    "processed_at": "2026-03-21T21:19:33.716+00:00",
+    "error": null,
+    "attempts": 2,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 536,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-11",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-11T20:00:00.253353+00:00",
+    "processed_at": "2026-03-21T21:19:36.84+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 537,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-11",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-11T20:00:00.253353+00:00",
+    "processed_at": "2026-03-21T21:19:39.952+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 538,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-11",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-11T21:30:00.346937+00:00",
+    "processed_at": "2026-03-21T21:19:43.018+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 539,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-12",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-12T15:00:00.178823+00:00",
+    "processed_at": "2026-03-21T21:19:45.698+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 540,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-12",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-12T15:00:00.178823+00:00",
+    "processed_at": "2026-03-21T21:19:48.616+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 541,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-12",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-12T21:30:00.279784+00:00",
+    "processed_at": "2026-03-21T21:19:51.312+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 542,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-13",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-13T15:00:00.268594+00:00",
+    "processed_at": "2026-03-21T21:19:54.37+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 543,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-13",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-13T15:00:00.268594+00:00",
+    "processed_at": "2026-03-21T21:19:57.108+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 544,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-13",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-13T21:30:00.139434+00:00",
+    "processed_at": "2026-03-21T21:20:00.399+00:00",
+    "error": null,
+    "attempts": 1,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 545,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-14",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-14T15:00:00.293871+00:00",
+    "processed_at": "2026-03-21T21:20:03.126+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 546,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-14",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-14T15:00:00.293871+00:00",
+    "processed_at": "2026-03-21T21:20:05.867+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 547,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-14",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-14T21:30:00.235364+00:00",
+    "processed_at": "2026-03-21T21:20:08.568+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 548,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-15",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-15T13:30:00.365254+00:00",
+    "processed_at": "2026-03-21T21:20:11.236+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 549,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-15",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-15T15:00:00.40959+00:00",
+    "processed_at": "2026-03-21T21:20:14.027+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 550,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-15",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-15T21:30:00.11844+00:00",
+    "processed_at": "2026-03-21T21:20:16.765+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 551,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-16",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-16T13:30:00.181666+00:00",
+    "processed_at": "2026-03-21T21:20:19.554+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 552,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-16",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-16T15:00:00.234597+00:00",
+    "processed_at": "2026-03-21T21:20:22.256+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 553,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-16",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-16T21:30:00.24126+00:00",
+    "processed_at": "2026-03-21T21:20:24.962+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 554,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-17",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-17T13:30:00.213349+00:00",
+    "processed_at": "2026-03-21T21:20:27.638+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 555,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-17",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-17T15:00:00.272042+00:00",
+    "processed_at": "2026-03-21T21:20:30.67+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 556,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-17",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-17T21:30:00.319544+00:00",
+    "processed_at": "2026-03-21T21:20:33.346+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 557,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-18",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-18T13:30:00.240939+00:00",
+    "processed_at": "2026-03-21T21:20:35.984+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 558,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-18",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-18T15:00:00.226614+00:00",
+    "processed_at": "2026-03-21T21:20:38.694+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 559,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-18",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-18T21:30:00.25146+00:00",
+    "processed_at": "2026-03-21T21:20:41.38+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 560,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-19",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-19T13:30:00.151539+00:00",
+    "processed_at": "2026-03-21T21:20:43.982+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 561,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-19",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-19T15:00:00.180907+00:00",
+    "processed_at": "2026-03-21T21:20:46.699+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 562,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-19",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-19T21:30:00.203153+00:00",
+    "processed_at": "2026-03-21T21:20:50.379+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 563,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-20",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-20T13:30:00.291318+00:00",
+    "processed_at": "2026-03-21T21:20:52.998+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 564,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-20",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-20T15:00:00.329182+00:00",
+    "processed_at": "2026-03-21T21:20:55.6+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 565,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-20",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-20T21:30:00.152535+00:00",
+    "processed_at": "2026-03-21T21:20:58.344+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 566,
+    "company_id": "54e38916-6ebd-470a-9e82-0d43f9ae1b31",
+    "run_for_local_date": "2026-03-21",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "massingasamuel@gmail.com;massingasamuel@hotmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-21T13:30:00.311256+00:00",
+    "processed_at": "2026-03-21T21:21:01.033+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 567,
+    "company_id": "c3bda041-6939-486f-86a7-c38fd39253fc",
+    "run_for_local_date": "2026-03-21",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "bomgostotalho@gmail.com"
+        ],
+        "phones": [],
+        "whatsapp": []
+      }
+    },
+    "status": "done",
+    "created_at": "2026-03-21T15:00:00.385047+00:00",
+    "processed_at": "2026-03-21T21:21:03.649+00:00",
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  },
+  {
+    "id": 568,
+    "company_id": "1adb8a8f-e42b-4737-be92-998e753ccc93",
+    "run_for_local_date": "2026-03-21",
+    "timezone": "Africa/Maputo",
+    "payload": {
+      "channels": {
+        "sms": false,
+        "email": true,
+        "whatsapp": false
+      },
+      "recipients": {
+        "emails": [
+          "franksimbine09@gmail.com"
+        ],
+        "phones": [
+          "+258843628582"
+        ],
+        "whatsapp": []
+      }
+    },
+    "status": "pending",
+    "created_at": "2026-03-21T21:30:00.284139+00:00",
+    "processed_at": null,
+    "error": null,
+    "attempts": 0,
+    "next_attempt_at": null,
+    "processing_started_at": null
+  }
+]
