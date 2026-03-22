@@ -36,14 +36,14 @@ export default function OrdersPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('orders.title', 'Orders')}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('orders.subtitle', 'Create, review, receive, and ship orders here. Open balances now live in a dedicated settlements workflow so the order list can stay operationally focused.')}
+              {tt('orders.subtitle', 'Create, review, approve, receive, and ship commercial orders here. Collections and payments stay in the settlements workspace so order workflow stays operationally focused.')}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link to="/settlements">{tt('settlements.title', 'Receivables & Payables')}</Link>
+            <Link to="/settlements">{tt('settlements.title', 'Collections & Payments')}</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/landed-cost">{tt('landedCost.title', 'Landed Cost')}</Link>
@@ -66,8 +66,8 @@ export default function OrdersPage() {
 
           <div className="text-sm text-muted-foreground">
             {tab === 'purchase'
-              ? tt('orders.purchaseHint', 'Use purchase orders for supplier commitments, receiving, and landed-cost prep.')
-              : tt('orders.salesHint', 'Use sales orders for customer commitments, fulfilment, and receivables tracking.')}
+              ? tt('orders.purchaseHint', 'Use purchase orders for supplier commitments, approvals, receiving, and landed-cost prep.')
+              : tt('orders.salesHint', 'Use sales orders for customer commitments, approvals, allocation, and fulfilment.')}
           </div>
         </div>
       </div>

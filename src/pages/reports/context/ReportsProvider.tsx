@@ -188,7 +188,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
   const { companyId, companyName: orgCompanyName } = useOrg()
 
   // UI + filters
-  const [ui, setUi] = useState({ companyName: orgCompanyName || user?.orgName || 'Your Company', subtitle: 'Inventory Reports', costMethod: 'WA' as CostMethod, fxNote: '' })
+  const [ui, setUi] = useState({ companyName: orgCompanyName || user?.orgName || 'Your Company', subtitle: 'Inventory & operational reports', costMethod: 'WA' as CostMethod, fxNote: '' })
   const def = lastNDays(90)
   const [startDate, setStartDate] = useState(def.start)
   const [endDate, setEndDate] = useState(def.end)
@@ -485,6 +485,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
   /* ---------- revenue aggregation ---------- */
   const revenueByCustomer = useMemo(() => {
     const BAD = new Set(['cancelled', 'canceled', 'void', 'draft', 'rejected', 'refunded'])
+    const SHIPPED_LIKE = new Set(['shipped', 'closed', 'completed', 'delivered'])
     const agg = new Map<string, number>()
     let grand = 0
     const getAmount = (o: any) => {
@@ -500,7 +501,10 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       agg.set(custId, (agg.get(custId) || 0) + amount)
       grand += amount
     }
-    for (const o of orders) addRow(o)
+    for (const o of orders) {
+      if (!SHIPPED_LIKE.has(getStatus(o))) continue
+      addRow(o)
+    }
     for (const c of cashSales) addRow(c)
     const rows = Array.from(agg.entries()).map(([customerId, baseAmount]) => {
       const c = customerById.get(customerId)
@@ -836,7 +840,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- subtitle (reactive) ---------- */
   useEffect(() => { setUi(s => ({ ...s, costMethod })) }, [costMethod])
-  const subtitle = useMemo(() => 'Inventory Reports', [])
+  const subtitle = useMemo(() => 'Inventory & operational reports', [])
   useEffect(() => { setUi(s => ({ ...s, subtitle, fxNote })) }, [subtitle, fxNote])
 
   const value: ReportsContextType = {

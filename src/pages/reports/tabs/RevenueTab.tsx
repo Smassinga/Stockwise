@@ -53,24 +53,28 @@ export default function RevenueTab() {
   return (
     <Card className="rounded-2xl border-border/80 shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle>{tt('reports.revenueByCustomer', 'Revenue by Customer')}</CardTitle>
+        <CardTitle>{tt('reports.revenueByCustomer', 'Operational revenue by customer')}</CardTitle>
         <p className="text-sm text-muted-foreground">
-          {tt('reports.revenueHelp', 'Review which customers generated revenue in the selected period and how much value they contributed in the reporting currency.')}
+          {tt('reports.revenueHelp', 'Review which customers contributed operational revenue in the selected period. This view follows the connected order and cash/POS sources and is not settlement-cleared revenue.')}
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          {tt('reports.revenueTransitionNote', 'This transition report reflects connected operational order and cash sources. It does not mean the underlying orders are invoiced, paid, or settled.')}
+        </div>
+
         <ExportButtons onCSV={onCSV} onXLSX={onXLSX} onPDF={onPDF} className="mt-0 justify-end" />
 
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.customerCoverage', 'Customer coverage')}</p>
             <div className="mt-2 text-lg font-semibold">{revenueByCustomer.rows.length}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.customerCoverageHelp', 'Customers with revenue in the selected period.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.customerCoverageHelp', 'Customers contributing to the current operational revenue view.')}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.revenueLabel', 'Revenue')}</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.revenueLabel', 'Operational revenue')}</p>
             <div className="mt-2 text-lg font-semibold">{moneyText(revenueByCustomer.grandTotalBase)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.revenueTotalHelp', 'Total revenue visible from the currently connected operational sources.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.revenueTotalHelp', 'Total revenue visible from the connected operational sources. Open balances and settlement timing are not reflected here.')}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('reports.dataSources', 'Data sources')}</p>
@@ -81,15 +85,15 @@ export default function RevenueTab() {
                 ? tt('reports.sourcePartial', 'Partial')
                 : tt('reports.sourceLive', 'Connected')}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.dataSourcesHelp', 'Orders and cash/POS sources should both be connected for the fullest revenue view.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('reports.dataSourcesHelp', 'Connect order and cash/POS sources for the fullest operational revenue view.')}</p>
           </div>
         </div>
 
         {(ordersUnavailable || cashUnavailable) && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-            {ordersUnavailable && cashUnavailable && tt('reports.revenueSourcesMissing', 'No revenue sources are connected. Review the product-level revenue configuration before relying on this report.')}
-            {ordersUnavailable && !cashUnavailable && tt('reports.revenueOrdersMissing', 'Orders are not connected, so this report is showing only cash/POS revenue.')}
-            {!ordersUnavailable && cashUnavailable && tt('reports.revenueCashMissing', 'Cash/POS is not connected, so this report is showing only order-based revenue.')}
+            {ordersUnavailable && cashUnavailable && tt('reports.revenueSourcesMissing', 'No revenue sources are connected. Review the product-level revenue configuration before relying on this operational revenue view.')}
+            {ordersUnavailable && !cashUnavailable && tt('reports.revenueOrdersMissing', 'Orders are not connected, so this report is showing cash/POS revenue only.')}
+            {!ordersUnavailable && cashUnavailable && tt('reports.revenueCashMissing', 'Cash/POS is not connected, so this report is showing operational order revenue only.')}
           </div>
         )}
 
@@ -105,7 +109,7 @@ export default function RevenueTab() {
               {revenueByCustomer.rows.length === 0 && (
                 <tr>
                   <td colSpan={2} className="px-3 py-6 text-sm text-muted-foreground">
-                    {tt('reports.noRevenueInPeriod', 'No revenue was recorded in the selected period.')}
+                    {tt('reports.noRevenueInPeriod', 'No operational revenue was recorded in the selected period.')}
                   </td>
                 </tr>
               )}

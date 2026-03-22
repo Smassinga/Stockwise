@@ -22,6 +22,14 @@ import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
+import { useSalesOrderState } from '../../hooks/useOrderState'
+import {
+  legacySalesFulfilmentStatus,
+  legacySalesWorkflowStatus,
+  salesFulfilmentLabelKey,
+  salesWorkflowLabelKey,
+  settlementLabelKey,
+} from '../../lib/orderState'
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 
 // NEW: company profile helper (DB companies + storage URL)
@@ -298,9 +306,13 @@ export default function SalesOrders() {
   const { t } = useI18n()
   const { companyId } = useOrg()
   const { user } = useAuth()
+  const salesOrderState = useSalesOrderState(companyId)
+  const salesStateById = salesOrderState.byId
   const [searchParams, setSearchParams] = useSearchParams()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
+  const workflowLabel = tt('orders.workflow', 'Workflow')
+  const workflowStagesLabel = tt('orders.workflowStages', 'Workflow stages')
 
   // masters
   const [items, setItems] = useState<Item[]>([])
@@ -1065,9 +1077,6 @@ export default function SalesOrders() {
     return null
   }
 
-  const calcFormSubtotal = (rows: Array<{ qty: string; unitPrice: string; discountPct: string }>) =>
-    rows.reduce((s, r) => s + discountedLineTotal(n(r.qty), n(r.unitPrice), n(r.discountPct, 0)), 0)
-
   async function createSO() {
     try {
       if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
@@ -1390,15 +1399,28 @@ export default function SalesOrders() {
 
   // computed
   const soOutstanding = useMemo(
-    () => sos.filter(s => ['draft','submitted','confirmed','allocated'].includes(String(s.status).toLowerCase())),
-    [sos]
+    () => sos.filter((so) => {
+      const state = salesStateById.get(so.id)
+      if (state) return state.workflow_status !== 'cancelled' && state.fulfilment_status !== 'complete'
+      return ['draft', 'submitted', 'confirmed', 'allocated'].includes(String(so.status).toLowerCase())
+    }),
+    [salesStateById, sos]
   )
   const soSubtotal = soLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const soTax = soSubtotal * (n(soTaxPct, 0) / 100)
   const openSalesBase = useMemo(() => soOutstanding.reduce((sum, so) => sum + amountSO(so).totalBase, 0), [soOutstanding, solines])
-  const draftSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'draft').length, [soOutstanding])
-  const submittedSalesCount = useMemo(() => soOutstanding.filter(so => String(so.status).toLowerCase() === 'submitted').length, [soOutstanding])
-  const confirmedSalesCount = useMemo(() => soOutstanding.filter(so => ['confirmed', 'allocated'].includes(String(so.status).toLowerCase())).length, [soOutstanding])
+  const draftSalesCount = useMemo(
+    () => soOutstanding.filter((so) => (salesStateById.get(so.id)?.workflow_status ?? legacySalesWorkflowStatus(so.status)) === 'draft').length,
+    [salesStateById, soOutstanding],
+  )
+  const submittedSalesCount = useMemo(
+    () => soOutstanding.filter((so) => (salesStateById.get(so.id)?.workflow_status ?? legacySalesWorkflowStatus(so.status)) === 'awaiting_approval').length,
+    [salesStateById, soOutstanding],
+  )
+  const confirmedSalesCount = useMemo(
+    () => soOutstanding.filter((so) => (salesStateById.get(so.id)?.workflow_status ?? legacySalesWorkflowStatus(so.status)) === 'approved').length,
+    [salesStateById, soOutstanding],
+  )
   const selectedSOLines = useMemo(
     () => (selectedSO ? solines.filter((line) => line.so_id === selectedSO.id) : []),
     [selectedSO, solines]
@@ -1412,31 +1434,57 @@ export default function SalesOrders() {
     [selectedSOOpenLines]
   )
 
-  function soHeaderSubtotal(so: SO): number {
-    return amountSO(so).subtotal
-  }
-
   function salesStatusClass(status?: string) {
-    const value = String(status || '').toLowerCase()
+    const value = legacySalesWorkflowStatus(status)
     if (value === 'draft') return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
-    if (value === 'submitted') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-    if (value === 'confirmed') return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
-    if (value === 'allocated') return 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300'
+    if (value === 'awaiting_approval') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    if (value === 'approved') return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
     if (value === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
-    if (value === 'shipped' || value === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
   }
 
   function salesStatusLabel(status?: string) {
-    const value = String(status || '').toLowerCase()
-    if (value === 'draft') return tt('orders.draftStatus', 'Draft')
-    if (value === 'submitted') return tt('orders.confirmedStatus', 'Confirmed')
-    if (value === 'confirmed') return tt('orders.approvedStatus', 'Approved')
-    if (value === 'allocated') return tt('orders.allocatedStatus', 'Allocated')
-    if (value === 'shipped') return tt('orders.shippedStatus', 'Shipped')
-    if (value === 'closed') return tt('orders.closedStatus', 'Closed')
-    if (value === 'cancelled') return tt('orders.cancelledStatus', 'Cancelled')
-    return tt(`orders.status.${value}`, value.replace('_', ' '))
+    const value = legacySalesWorkflowStatus(status)
+    if (value === 'draft') return tt(salesWorkflowLabelKey(value), 'Draft')
+    if (value === 'awaiting_approval') return tt(salesWorkflowLabelKey(value), 'Awaiting approval')
+    if (value === 'approved') return tt(salesWorkflowLabelKey(value), 'Approved')
+    if (value === 'cancelled') return tt(salesWorkflowLabelKey(value), 'Cancelled')
+    return tt('orders.status.unknown', 'Unknown')
+  }
+
+  function salesState(so?: SO | null) {
+    return so ? salesStateById.get(so.id) : undefined
+  }
+
+  function salesFulfilmentLabel(so?: SO | null) {
+    const value = salesState(so)?.fulfilment_status ?? legacySalesFulfilmentStatus(so?.status)
+    if (value === 'not_started') return tt(salesFulfilmentLabelKey(value), 'Not started')
+    if (value === 'partial') return tt(salesFulfilmentLabelKey(value), 'Partially fulfilled')
+    return tt(salesFulfilmentLabelKey('complete'), 'Fully fulfilled')
+  }
+
+  function salesFulfilmentClass(so?: SO | null) {
+    const value = salesState(so)?.fulfilment_status ?? legacySalesFulfilmentStatus(so?.status)
+    if (value === 'complete') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    if (value === 'partial') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+  }
+
+  function salesSettlementLabel(so?: SO | null) {
+    const value = salesState(so)?.settlement_status
+    if (value === 'unsettled') return tt(settlementLabelKey(value), 'Unsettled')
+    if (value === 'partially_settled') return tt(settlementLabelKey(value), 'Partially settled')
+    if (value === 'settled') return tt(settlementLabelKey(value), 'Settled')
+    if (value === 'overdue') return tt(settlementLabelKey(value), 'Overdue')
+    return tt('orders.status.unknown', 'Unknown')
+  }
+
+  function salesSettlementClass(so?: SO | null) {
+    const value = salesState(so)?.settlement_status
+    if (value === 'settled') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    if (value === 'overdue') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    if (value === 'partially_settled') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
   }
 
   const canIssueFromStatus = (status?: string) =>
@@ -1669,7 +1717,7 @@ export default function SalesOrders() {
       <div class="card">
         <h4>${tt('orders.order', 'Order')}</h4>
         <div class="kv">
-          <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${so.status}</b></div>
+          <div class="k">${tt('orders.workflow', 'Workflow')}</div><div><b class="cap">${salesStatusLabel(so.status)}</b></div>
           <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
           <div class="k">${tt('orders.fxToBaseShort', 'FX -> {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
           <div class="k">${tt('orders.expectedShip', 'Expected Ship')}</div><div><b>${(so as any).expected_ship_date || '-'}</b></div>
@@ -1822,20 +1870,20 @@ export default function SalesOrders() {
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSales', 'Open sales orders')}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSales', 'Sales orders in workflow')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{soOutstanding.length}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesHelp', 'Draft, submitted, confirmed, and allocated orders still need attention.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesHelp', 'Draft, confirmed, approved, and allocated orders still need operational attention.')}</p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSalesValue', 'Open sales value')}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSalesValue', 'Sales workflow value')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{formatMoneyBase(openSalesBase, baseCode)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesValueHelp', 'Gross order value in base currency, including tax.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesValueHelp', 'Gross value of sales orders still moving through review, approval, allocation, or shipment.')}</p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
@@ -1853,11 +1901,11 @@ export default function SalesOrders() {
       <Card className="border-dashed">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>{tt('orders.outstandingSOs', 'Outstanding Sales Orders')}</CardTitle>
+            <CardTitle>{tt('orders.outstandingSOs', 'Sales orders awaiting fulfilment')}</CardTitle>
 
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => setShippedOpen(true)}>
-                {tt('orders.shippedBrowser', 'Shipped SOs')}
+                {tt('orders.shippedBrowserCta', 'Completed workflow')}
               </Button>
 
               <Sheet open={soOpen} onOpenChange={setSoOpen}>
@@ -2200,7 +2248,7 @@ export default function SalesOrders() {
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.so', 'SO')}</th>
               <th className="py-2 pr-2">{tt('orders.customer', 'Customer')}</th>
-              <th className="py-2 pr-2">{tt('orders.status', 'Status')}</th>
+              <th className="py-2 pr-2">{workflowLabel}</th>
               <th className="py-2 pr-2">{tt('orders.total', 'Total')}</th>
               <th className="py-2 pr-2">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
@@ -2253,7 +2301,7 @@ export default function SalesOrders() {
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.so', 'SO')}</th>
               <th className="py-2 pr-2">{tt('orders.customer', 'Customer')}</th>
-              <th className="py-2 pr-2">{tt('orders.status', 'Status')}</th>
+              <th className="py-2 pr-2">{workflowLabel}</th>
               <th className="py-2 pr-2">{tt('orders.currency', 'Currency')}</th>
               <th className="py-2 pr-2">{tt('orders.total', 'Total')}</th>
             </tr></thead>
@@ -2306,17 +2354,34 @@ export default function SalesOrders() {
           ) : (
             <div className="mt-4 space-y-5">
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>
                 <div><Label>{tt('orders.customer', 'Customer')}</Label><div>{soCustomerLabel(selectedSO)}</div></div>
                 <div>
-                  <Label>{tt('orders.status', 'Status')}</Label>
+                  <Label>{workflowLabel}</Label>
                   <div>
                     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${salesStatusClass(selectedSO.status)}`}>
                       {salesStatusLabel(selectedSO.status)}
                     </span>
                   </div>
                 </div>
+                <div>
+                  <Label>{tt('orders.fulfilmentStatus', 'Fulfilment')}</Label>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${salesFulfilmentClass(selectedSO)}`}>
+                      {salesFulfilmentLabel(selectedSO)}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Label>{tt('orders.legacyBalanceStatus', 'Legacy balance')}</Label>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${salesSettlementClass(selectedSO)}`}>
+                      {salesSettlementLabel(selectedSO)}
+                    </span>
+                  </div>
+                </div>
+                <div><Label>{tt('orders.legacyOutstanding', 'Legacy outstanding')}</Label><div>{formatMoneyBase(n(salesState(selectedSO)?.legacy_outstanding_base), baseCode)}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curSO(selectedSO)}</div></div>
                 <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedSO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxSO(selectedSO))}</div></div>
@@ -2793,9 +2858,9 @@ export default function SalesOrders() {
       <Sheet open={shippedOpen} onOpenChange={setShippedOpen}>
         <SheetContent side="right" className="w-full sm:max-w-3xl max-w-none p-0 md:p-6">
           <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
-            <SheetTitle>{tt('orders.shippedBrowser', 'Shipped Sales Orders')}</SheetTitle>
+            <SheetTitle>{tt('orders.shippedBrowser', 'Completed sales workflow')}</SheetTitle>
             <SheetDescription className="sr-only">
-              {tt('orders.shippedBrowserDesc', 'Search, filter and print shipped/closed orders')}
+              {tt('orders.shippedBrowserDesc', 'Search, filter, and print operationally finished sales orders.')}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="px-4 pb-6 md:px-0">
@@ -2822,7 +2887,7 @@ export default function SalesOrders() {
 
           {/* Status checkboxes */}
           <div className="mt-2 flex flex-wrap gap-4 text-sm">
-            <div className="text-muted-foreground">{tt('orders.statuses', 'Statuses')}:</div>
+            <div className="text-muted-foreground">{workflowStagesLabel}:</div>
             {(['shipped','closed'] as const).map(sname => (
               <label key={sname} className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -2842,7 +2907,7 @@ export default function SalesOrders() {
                 <tr className="text-left">
                   <th className="py-2 px-3">{tt('orders.so', 'SO')}</th>
                   <th className="py-2 px-3">{tt('orders.customer', 'Customer')}</th>
-                  <th className="py-2 px-3">{tt('orders.status', 'Status')}</th>
+                  <th className="py-2 px-3">{tt('orders.fulfilmentStatus', 'Fulfilment')}</th>
                   <th className="py-2 px-3">{tt('orders.updated', 'Updated')}</th>
                   <th className="py-2 px-3">{tt('orders.total', 'Total')}</th>
                   <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
@@ -2860,8 +2925,8 @@ export default function SalesOrders() {
                       <td className="py-2 px-3">{soNo(so)}</td>
                       <td className="py-2 px-3">{soCustomerLabel(so)}</td>
                       <td className="py-2 px-3">
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
-                          {salesStatusLabel(so.status)}
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${salesFulfilmentClass(so)}`}>
+                          {salesFulfilmentLabel(so)}
                         </span>
                       </td>
                       <td className="py-2 px-3">{updated || '-'}</td>

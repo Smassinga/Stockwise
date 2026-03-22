@@ -17,6 +17,14 @@ import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
+import { usePurchaseOrderState } from '../../hooks/useOrderState'
+import {
+  legacyPurchaseReceiptStatus,
+  legacyPurchaseWorkflowStatus,
+  purchaseReceiptLabelKey,
+  purchaseWorkflowLabelKey,
+  settlementLabelKey,
+} from '../../lib/orderState'
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 
 // NEW: company profile helper (DB companies + storage URL)
@@ -247,9 +255,13 @@ export default function PurchaseOrders() {
   const { t } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
+  const { companyId } = useOrg()
+  const purchaseOrderState = usePurchaseOrderState(companyId)
+  const purchaseStateById = purchaseOrderState.byId
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
-  const { companyId } = useOrg()
+  const workflowLabel = tt('orders.workflow', 'Workflow')
+  const workflowStagesLabel = tt('orders.workflowStages', 'Workflow stages')
 
   // masters
   const [items, setItems] = useState<Item[]>([])
@@ -1064,14 +1076,24 @@ export default function PurchaseOrders() {
   // ---------------------------------------------------
 
   const poOutstanding = useMemo(
-    () => pos.filter(p => ['draft', 'approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(p.status).toLowerCase())),
-    [pos]
+    () => pos.filter((po) => {
+      const state = purchaseStateById.get(po.id)
+      if (state) return state.workflow_status !== 'cancelled' && state.receipt_status !== 'complete'
+      return ['draft', 'approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(po.status).toLowerCase())
+    }),
+    [pos, purchaseStateById]
   )
   const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
   const poTax = poSubtotal * (n(poTaxPct, 0) / 100)
   const openPurchaseBase = useMemo(() => poOutstanding.reduce((sum, po) => sum + amountPO(po).totalBase, 0), [poOutstanding, polines])
-  const draftPurchaseCount = useMemo(() => poOutstanding.filter(po => String(po.status).toLowerCase() === 'draft').length, [poOutstanding])
-  const receivingPurchaseCount = useMemo(() => poOutstanding.filter(po => ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received'].includes(String(po.status).toLowerCase())).length, [poOutstanding])
+  const draftPurchaseCount = useMemo(
+    () => poOutstanding.filter((po) => (purchaseStateById.get(po.id)?.workflow_status ?? legacyPurchaseWorkflowStatus(po.status)) === 'draft').length,
+    [poOutstanding, purchaseStateById],
+  )
+  const receivingPurchaseCount = useMemo(
+    () => poOutstanding.filter((po) => (purchaseStateById.get(po.id)?.workflow_status ?? legacyPurchaseWorkflowStatus(po.status)) === 'approved').length,
+    [poOutstanding, purchaseStateById],
+  )
   const selectedPOLines = useMemo(
     () => (selectedPO ? polines.filter((line) => line.po_id === selectedPO.id) : []),
     [selectedPO, polines]
@@ -1094,21 +1116,53 @@ export default function PurchaseOrders() {
   )
 
   function purchaseStatusClass(status?: string) {
-    const value = String(status || '').toLowerCase()
+    const value = legacyPurchaseWorkflowStatus(status)
     if (value === 'draft') return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
-    if (value === 'cancelled' || value === 'canceled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
-    if (value === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    if (value === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
   }
 
   function purchaseStatusLabel(status?: string) {
-    const value = String(status || '').toLowerCase()
-    if (value === 'draft') return tt('orders.draftStatus', 'Draft')
-    if (value === 'partially_received') return tt('orders.partiallyReceivedStatus', 'Partially received')
-    if (['approved', 'open', 'authorised', 'authorized', 'submitted'].includes(value)) return tt('orders.approvedStatus', 'Approved')
-    if (value === 'closed') return tt('orders.closedStatus', 'Closed')
-    if (value === 'cancelled' || value === 'canceled') return tt('orders.cancelledStatus', 'Cancelled')
-    return value.replace('_', ' ')
+    const value = legacyPurchaseWorkflowStatus(status)
+    if (value === 'draft') return tt(purchaseWorkflowLabelKey(value), 'Draft')
+    if (value === 'approved') return tt(purchaseWorkflowLabelKey(value), 'Approved')
+    if (value === 'cancelled') return tt(purchaseWorkflowLabelKey(value), 'Cancelled')
+    return tt('orders.status.unknown', 'Unknown')
+  }
+
+  function purchaseState(po?: PO | null) {
+    return po ? purchaseStateById.get(po.id) : undefined
+  }
+
+  function purchaseReceiptLabel(po?: PO | null) {
+    const value = purchaseState(po)?.receipt_status ?? legacyPurchaseReceiptStatus(po?.status)
+    if (value === 'not_started') return tt(purchaseReceiptLabelKey(value), 'Not started')
+    if (value === 'partial') return tt(purchaseReceiptLabelKey(value), 'Partially received')
+    return tt(purchaseReceiptLabelKey('complete'), 'Fully received')
+  }
+
+  function purchaseReceiptClass(po?: PO | null) {
+    const value = purchaseState(po)?.receipt_status ?? legacyPurchaseReceiptStatus(po?.status)
+    if (value === 'complete') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    if (value === 'partial') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+  }
+
+  function purchaseSettlementLabel(po?: PO | null) {
+    const value = purchaseState(po)?.settlement_status
+    if (value === 'unsettled') return tt(settlementLabelKey(value), 'Unsettled')
+    if (value === 'partially_settled') return tt(settlementLabelKey(value), 'Partially settled')
+    if (value === 'settled') return tt(settlementLabelKey(value), 'Settled')
+    if (value === 'overdue') return tt(settlementLabelKey(value), 'Overdue')
+    return tt('orders.status.unknown', 'Unknown')
+  }
+
+  function purchaseSettlementClass(po?: PO | null) {
+    const value = purchaseState(po)?.settlement_status
+    if (value === 'settled') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    if (value === 'overdue') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    if (value === 'partially_settled') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
   }
 
   function purchaseWorkflowSummary(status?: string) {
@@ -1442,7 +1496,7 @@ export default function PurchaseOrders() {
       <div class="card">
         <h4>${tt('orders.order', 'Order')}</h4>
         <div class="kv">
-          <div class="k">${tt('orders.status', 'Status')}</div><div><b class="cap">${po.status}</b></div>
+          <div class="k">${tt('orders.workflow', 'Workflow')}</div><div><b class="cap">${purchaseStatusLabel(po.status)}</b></div>
           <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
           <div class="k">${tt('orders.fxToBaseShort', 'FX → {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
           <div class="k">${tt('orders.expectedDate', 'Expected Date')}</div><div><b>${docDate((po as any).expected_date)}</b></div>
@@ -1562,7 +1616,7 @@ export default function PurchaseOrders() {
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchases', 'Open purchase orders')}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchases', 'Purchase orders in workflow')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{poOutstanding.length}</div>
@@ -1571,11 +1625,11 @@ export default function PurchaseOrders() {
         </Card>
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchaseValue', 'Open purchase value')}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchaseValue', 'Purchase workflow value')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{formatMoneyBase(openPurchaseBase, baseCode)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openPurchaseValueHelp', 'Gross order value in base currency, including tax.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openPurchaseValueHelp', 'Gross value of purchase orders still moving through approval or receipt.')}</p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
@@ -1593,11 +1647,11 @@ export default function PurchaseOrders() {
       <Card className="border-dashed">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>{tt('orders.outstandingPOs', 'Open & Approved Purchase Orders')}</CardTitle>
+            <CardTitle>{tt('orders.outstandingPOs', 'Purchase orders awaiting receipt')}</CardTitle>
 
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => setBrowserOpen(true)}>
-                {tt('orders.poBrowser', 'Closed/Received POs')}
+                {tt('orders.poBrowserCta', 'Completed workflow')}
               </Button>
 
               <Sheet open={poOpen} onOpenChange={setPoOpen}>
@@ -1860,7 +1914,7 @@ export default function PurchaseOrders() {
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.po', 'PO')}</th>
               <th className="py-2 pr-2">{tt('orders.supplier', 'Supplier')}</th>
-              <th className="py-2 pr-2">{tt('orders.status', 'Status')}</th>
+              <th className="py-2 pr-2">{workflowLabel}</th>
               <th className="py-2 pr-2">{tt('orders.total', 'Total')}</th>
               <th className="py-2 pr-2">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
@@ -1874,7 +1928,7 @@ export default function PurchaseOrders() {
                     <td className="py-3 pr-2">{poSupplierLabel(po)}</td>
                     <td className="py-3 pr-2">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${purchaseStatusClass(po.status)}`}>
-                        {String(po.status).replace('_', ' ')}
+                        {purchaseStatusLabel(po.status)}
                       </span>
                     </td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
@@ -1906,7 +1960,7 @@ export default function PurchaseOrders() {
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.po', 'PO')}</th>
               <th className="py-2 pr-2">{tt('orders.supplier', 'Supplier')}</th>
-              <th className="py-2 pr-2">{tt('orders.status', 'Status')}</th>
+              <th className="py-2 pr-2">{workflowLabel}</th>
               <th className="py-2 pr-2">{tt('orders.currency', 'Currency')}</th>
               <th className="py-2 pr-2">{tt('orders.total', 'Total')}</th>
             </tr></thead>
@@ -1920,7 +1974,7 @@ export default function PurchaseOrders() {
                     <td className="py-3 pr-2">{poSupplierLabel(po)}</td>
                     <td className="py-3 pr-2">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${purchaseStatusClass(po.status)}`}>
-                        {String(po.status).replace('_', ' ')}
+                        {purchaseStatusLabel(po.status)}
                       </span>
                     </td>
                     <td className="py-3 pr-2">{curPO(po)}</td>
@@ -1959,17 +2013,34 @@ export default function PurchaseOrders() {
           ) : (
             <div className="mt-4 space-y-5">
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
                 <div><Label>{tt('orders.po', 'PO')}</Label><div>{poNo(selectedPO)}</div></div>
                 <div><Label>{tt('orders.supplier', 'Supplier')}</Label><div>{poSupplierLabel(selectedPO)}</div></div>
                 <div>
-                  <Label>{tt('orders.status', 'Status')}</Label>
+                  <Label>{workflowLabel}</Label>
                   <div>
                     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseStatusClass(selectedPO.status)}`}>
                       {purchaseStatusLabel(selectedPO.status)}
                     </span>
                   </div>
                 </div>
+                <div>
+                  <Label>{tt('orders.receiptStatus', 'Receipt')}</Label>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseReceiptClass(selectedPO)}`}>
+                      {purchaseReceiptLabel(selectedPO)}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Label>{tt('orders.legacyBalanceStatus', 'Legacy balance')}</Label>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseSettlementClass(selectedPO)}`}>
+                      {purchaseSettlementLabel(selectedPO)}
+                    </span>
+                  </div>
+                </div>
+                <div><Label>{tt('orders.legacyOutstanding', 'Legacy outstanding')}</Label><div>{formatMoneyBase(n(purchaseState(selectedPO)?.legacy_outstanding_base), baseCode)}</div></div>
                 <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedPO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curPO(selectedPO)}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxPO(selectedPO))}</div></div>
@@ -2104,7 +2175,7 @@ export default function PurchaseOrders() {
 
               <OrderAuditGrid
                 title={tt('orders.auditTrail', 'Audit trail')}
-                description={tt('orders.purchaseAuditHelp', 'Shows who created, approved, received, and last paid this purchase order when the data is captured by the current workflow.')}
+                description={tt('orders.purchaseAuditHelp', 'Shows who created, approved, and received this purchase order. Any linked payment activity is shown separately from the operational workflow.')}
                 fields={[
                   {
                     label: tt('orders.createdBy', 'Created by'),
@@ -2287,9 +2358,9 @@ export default function PurchaseOrders() {
       <Sheet open={browserOpen} onOpenChange={setBrowserOpen}>
         <SheetContent side="right" className="w-full sm:max-w-3xl max-w-none p-0 md:p-6">
           <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
-            <SheetTitle>{tt('orders.poBrowser', 'Closed/Received POs')}</SheetTitle>
+            <SheetTitle>{tt('orders.poBrowser', 'Completed purchase workflow')}</SheetTitle>
             <SheetDescription className="sr-only">
-              {tt('orders.poBrowserDesc', 'Search, filter and print purchase orders')}
+              {tt('orders.poBrowserDesc', 'Search, filter, and print operationally completed purchase orders.')}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="px-4 pb-6 md:px-0">
@@ -2316,7 +2387,7 @@ export default function PurchaseOrders() {
 
           {/* Status checkboxes */}
           <div className="mt-2 flex flex-wrap gap-4 text-sm">
-            <div className="text-muted-foreground">{tt('orders.statuses', 'Statuses')}:</div>
+            <div className="text-muted-foreground">{workflowStagesLabel}:</div>
             {(['closed','partially_received'] as const).map(sname => (
               <label key={sname} className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -2336,7 +2407,7 @@ export default function PurchaseOrders() {
                 <tr className="text-left">
                   <th className="py-2 px-3">{tt('orders.po', 'PO')}</th>
                   <th className="py-2 px-3">{tt('orders.supplier', 'Supplier')}</th>
-                  <th className="py-2 px-3">{tt('orders.status', 'Status')}</th>
+                  <th className="py-2 px-3">{tt('orders.receiptStatus', 'Receipt')}</th>
                   <th className="py-2 px-3">{tt('orders.updated', 'Updated')}</th>
                   <th className="py-2 px-3">{tt('orders.total', 'Total')}</th>
                   <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
@@ -2354,11 +2425,11 @@ export default function PurchaseOrders() {
                       <td className="py-2 px-3">{poNo(po)}</td>
                       <td className="py-2 px-3">{poSupplierLabel(po)}</td>
                       <td className="py-2 px-3">
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${purchaseStatusClass(po.status)}`}>
-                          {String(po.status).replace('_', ' ')}
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseReceiptClass(po)}`}>
+                          {purchaseReceiptLabel(po)}
                         </span>
                       </td>
-                      <td className="py-2 px-3">{updated || '—'}</td>
+                      <td className="py-2 px-3">{updated || '-'}</td>
                       <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                       <td className="py-2 px-3 text-right">
                         <div className="flex justify-end gap-2">

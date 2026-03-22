@@ -24,6 +24,8 @@ export default function SearchResults() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
+  const orderWorkspaceUrl = (tab: 'purchase' | 'sales', orderId: string) =>
+    `/orders?tab=${tab}&orderId=${encodeURIComponent(orderId)}`
 
   // Get search query from URL parameters
   useEffect(() => {
@@ -118,7 +120,7 @@ export default function SearchResults() {
             type: 'purchase_order',
             name: `PO #${po.order_no}`,
             description: po.supplier_name,
-            url: `/orders/purchase/${po.id}`
+            url: orderWorkspaceUrl('purchase', po.id)
           })
         })
       }
@@ -138,7 +140,7 @@ export default function SearchResults() {
             type: 'sales_order',
             name: `SO #${so.order_no}`,
             description: so.bill_to_name,
-            url: `/orders/sales/${so.id}`
+            url: orderWorkspaceUrl('sales', so.id)
           })
         })
       }

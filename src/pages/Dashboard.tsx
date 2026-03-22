@@ -596,7 +596,7 @@ export default function Dashboard() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('dashboard.title')}</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {tt('dashboard.subtitle', 'Operational overview for the active company, time window, and warehouse selection.')}
+                {tt('dashboard.subtitle', 'Operational overview for the active company, time window, and warehouse selection. Revenue and margin remain shipment-linked operational indicators during the transition.')}
               </p>
             </div>
           </div>
@@ -774,8 +774,8 @@ export default function Dashboard() {
             <CardContent className="space-y-1">
               <div className="text-sm font-medium">
                 {hasRevenueData
-                  ? tt('dashboard.revenueOrders', '{count} finalized orders contributed to revenue.', { count: shippedInWindow.size })
-                  : tt('dashboard.revenueEmpty', 'No finalized sales are available in the selected window.')}
+                  ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedInWindow.size })
+                  : tt('dashboard.revenueEmpty', 'No shipment-linked order revenue is available in the selected window.')}
               </div>
               <div className="text-xs text-muted-foreground">{t('kpi.revenue.help')}</div>
             </CardContent>
@@ -817,12 +817,12 @@ export default function Dashboard() {
               <div className={`text-sm font-medium ${grossMargin < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>
                 {revenueWindow > 0
                   ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`
-                  : tt('dashboard.marginEmpty', 'Margin will appear once revenue posts in the selected window.')}
+                  : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.')}
               </div>
               <div className="text-xs text-muted-foreground">
                 {grossMargin >= 0
-                  ? tt('dashboard.marginPositive', 'Revenue remains ahead of COGS in the active window.')
-                  : tt('dashboard.marginNegative', 'COGS is currently higher than revenue in the active window.')}
+                  ? tt('dashboard.marginPositive', 'Operational revenue remains ahead of COGS in the active window.')
+                  : tt('dashboard.marginNegative', 'COGS is currently higher than operational revenue in the active window.')}
               </div>
             </CardContent>
           </Card>
@@ -968,8 +968,8 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.insightsSection', 'Performance insights')}</h2>
           <p className="text-sm text-muted-foreground">
             {topGM.length
-              ? tt('dashboard.insightsHelp', 'Revenue is attributed per item using line totals first, then shipment-linked COGS when line detail is missing.')
-              : tt('dashboard.insightsEmpty', 'No shipped sales were found in the active window, so the margin table is intentionally empty.')}
+              ? tt('dashboard.insightsHelp', 'Operational revenue is attributed per item using line totals first, then shipment-linked COGS when line detail is missing. This is not a settlement-cleared margin view.')
+              : tt('dashboard.insightsEmpty', 'No shipped orders were found in the active window, so the operational margin table is intentionally empty.')}
           </p>
         </div>
 
@@ -978,7 +978,7 @@ export default function Dashboard() {
             <CardTitle className="text-lg">{t('topProducts.title', { days: windowDays })}</CardTitle>
             <CardDescription>
               {topGM.length
-                ? tt('dashboard.topProductsHelp', 'Use this table to see which shipped products are creating or destroying margin in the selected window.')
+                ? tt('dashboard.topProductsHelp', 'Use this table to see which shipped products are creating or destroying operational margin in the selected window. It does not imply the related orders are settled.')
                 : t('topProducts.empty')}
             </CardDescription>
           </CardHeader>

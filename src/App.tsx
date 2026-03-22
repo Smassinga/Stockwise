@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import RouteMetadata from './components/RouteMetadata'
 import { AppLayout } from './components/layout/AppLayout'
 import { useAuth } from './hooks/useAuth'
@@ -103,6 +103,19 @@ function FallbackRoute() {
   return <Navigate to={user ? '/dashboard' : '/'} replace />
 }
 
+function LegacyOrderWorkspaceRedirect({ tab }: { tab: 'purchase' | 'sales' }) {
+  const { orderId } = useParams()
+
+  if (!orderId) {
+    return <Navigate to={`/orders?tab=${tab}`} replace />
+  }
+
+  const params = new URLSearchParams()
+  params.set('tab', tab)
+  params.set('orderId', orderId)
+  return <Navigate to={`/orders?${params.toString()}`} replace />
+}
+
 export default function App() {
   return (
     <>
@@ -137,6 +150,8 @@ export default function App() {
               </Route>
 
               <Route path="/reports" element={<Suspense fallback={<LoadingSplash />}><Reports /></Suspense>} />
+              <Route path="/orders/sales/:orderId" element={<LegacyOrderWorkspaceRedirect tab="sales" />} />
+              <Route path="/orders/purchase/:orderId" element={<LegacyOrderWorkspaceRedirect tab="purchase" />} />
               <Route path="/orders" element={<Suspense fallback={<LoadingSplash />}><Orders /></Suspense>} />
               <Route path="/settlements" element={<Suspense fallback={<LoadingSplash />}><Settlements /></Suspense>} />
               <Route path="/stock-levels" element={<Suspense fallback={<LoadingSplash />}><StockLevels /></Suspense>} />
