@@ -56,6 +56,7 @@ type CompanyRow = {
   state?: string | null;
   postal_code?: string | null;
   print_footer_note?: string | null;
+  logo_path?: string | null;
 };
 
 const MAIL = requireMailConfig(getMailConfig());
@@ -68,16 +69,6 @@ const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "false").toLowerCase() === "true";
 const MAX_ATTEMPTS = Number(Deno.env.get("DUE_REMINDER_MAX_ATTEMPTS") ?? "8");
 
 type Lang = "en" | "pt";
-
-function brandForSubject(company?: CompanyRow | null) {
-  return (
-    company?.email_subject_prefix?.trim() ||
-    company?.trade_name?.trim() ||
-    company?.legal_name?.trim() ||
-    company?.name?.trim() ||
-    FALLBACK_BRAND
-  );
-}
 
 function isPortugueseSpeakingCountry(countryCode: string | null | undefined) {
   if (!countryCode) return false;
@@ -102,7 +93,7 @@ function safeErr(error: unknown) {
   }
 }
 
-function currency(value: number) {
+function formatNumber(value: number) {
   try {
     return new Intl.NumberFormat(undefined, {
       minimumFractionDigits: 2,
@@ -110,6 +101,42 @@ function currency(value: number) {
     }).format(value);
   } catch {
     return value.toFixed(2);
+  }
+}
+
+function trimText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function formatAmount(value: number, currencyCode: string | null | undefined, lang: Lang) {
+  const code = trimText(currencyCode)?.toUpperCase() ?? "";
+  const locale = lang === "pt" ? "pt-PT" : "en-US";
+  if (code) {
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: code,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
+    } catch {
+      // ignore and fall back
+    }
+  }
+  return code ? `${formatNumber(value)} ${code}` : formatNumber(value);
+}
+
+function formatDate(value: string, lang: Lang) {
+  try {
+    return new Intl.DateTimeFormat(lang === "pt" ? "pt-PT" : "en-US", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${value}T00:00:00Z`));
+  } catch {
+    return value;
   }
 }
 
@@ -122,8 +149,41 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#39;");
 }
 
-function buildInvoiceUrl(base: string, code: string) {
-  if (!base) return undefined;
+function isAbsoluteUrl(value: string | null | undefined) {
+  return !!value && /^(https?:)?\/\//i.test(value);
+}
+
+function resolvePublicStorageUrl(
+  sb: ReturnType<typeof supa>,
+  raw: string | null | undefined,
+  fallbackBucket?: string,
+) {
+  const text = trimText(raw);
+  if (!text) return null;
+  if (isAbsoluteUrl(text)) return text;
+
+  const cleaned = text.replace(/^\/+/, "");
+  if (fallbackBucket) {
+    const { data } = sb.storage.from(fallbackBucket).getPublicUrl(cleaned);
+    return data?.publicUrl ?? null;
+  }
+
+  const slash = cleaned.indexOf("/");
+  if (slash <= 0) return null;
+  const bucket = cleaned.slice(0, slash);
+  const objectPath = cleaned.slice(slash + 1);
+  const { data } = sb.storage.from(bucket).getPublicUrl(objectPath);
+  return data?.publicUrl ?? null;
+}
+
+function normalizeWebsite(website: string | null | undefined) {
+  const text = trimText(website);
+  if (!text) return null;
+  return text.startsWith("http://") || text.startsWith("https://") ? text : `https://${text}`;
+}
+
+function buildDocumentUrl(base: string, code: string, download: boolean) {
+  if (!trimText(base)) return undefined;
   try {
     const url = new URL(base);
     const hasCodeParam = Array.from(url.searchParams.keys()).some((key) => key.toLowerCase() === "code");
@@ -136,66 +196,25 @@ function buildInvoiceUrl(base: string, code: string) {
       if (!url.pathname.endsWith("/")) url.pathname += "/";
       url.pathname += encodeURIComponent(code);
     }
-    if (![...url.searchParams.keys()].some((key) => key.toLowerCase() === "download")) {
-      url.searchParams.set("download", "1");
+    for (const key of [...url.searchParams.keys()]) {
+      if (key.toLowerCase() === "download") url.searchParams.delete(key);
     }
+    if (download) url.searchParams.set("download", "1");
     return url.toString();
   } catch {
-    return `${base.replace(/\/$/, "")}/${encodeURIComponent(code)}`;
+    const joiner = base.includes("?") ? "&" : "?";
+    return download
+      ? `${base.replace(/\/$/, "")}/${encodeURIComponent(code)}${joiner}download=1`
+      : `${base.replace(/\/$/, "")}/${encodeURIComponent(code)}`;
   }
 }
 
-function subjectFor(lang: Lang, prefix: string, code: string, days: number) {
-  if (lang === "pt") {
-    if (days > 0) return `${prefix}: ${code} vence em ${days} dia${days === 1 ? "" : "s"}`;
-    if (days === 0) return `${prefix}: ${code} vence hoje`;
-    return `${prefix}: ${code} está em atraso há ${Math.abs(days)} dia${Math.abs(days) === 1 ? "" : "s"}`;
-  }
-  if (days > 0) return `${prefix}: ${code} is due in ${days} day${days === 1 ? "" : "s"}`;
-  if (days === 0) return `${prefix}: ${code} is due today`;
-  return `${prefix}: ${code} is ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+function buildViewOrderUrl(base: string, code: string) {
+  return buildDocumentUrl(base, code, false);
 }
 
-function translations(lang: Lang) {
-  return lang === "pt"
-    ? {
-        hi: "Olá",
-        invoice: "Pedido",
-        dueIn: "vence em",
-        dueToday: "vence hoje",
-        overdueBy: "está em atraso há",
-        days: "dia(s)",
-        dueDate: "Data de vencimento",
-        amount: "Montante",
-        alreadyPaid: "Se o pagamento já foi efectuado, por favor ignore este aviso.",
-        pleaseContact: "Para regularizar ou esclarecer dúvidas, utilize os contactos abaixo.",
-        download: "Descarregar documento",
-        help: "Pedir ajuda",
-        phone: "Telefone",
-        website: "Website",
-        address: "Endereço",
-        email: "Email",
-        thanksLead: "Obrigado, equipa",
-      }
-    : {
-        hi: "Hi",
-        invoice: "Order",
-        dueIn: "is due in",
-        dueToday: "is due today",
-        overdueBy: "is overdue by",
-        days: "day(s)",
-        dueDate: "Due date",
-        amount: "Amount",
-        alreadyPaid: "If you have already paid, please ignore this notice.",
-        pleaseContact: "For settlement or questions, use the contact details below.",
-        download: "Download document",
-        help: "Need help",
-        phone: "Phone",
-        website: "Website",
-        address: "Address",
-        email: "Email",
-        thanksLead: "Thanks from",
-      };
+function buildDownloadPdfUrl(base: string, code: string) {
+  return buildDocumentUrl(base, code, true);
 }
 
 function companyAddress(company?: CompanyRow | null) {
@@ -206,114 +225,384 @@ function companyAddress(company?: CompanyRow | null) {
     company?.postal_code,
   ]
     .filter(Boolean)
-    .join(" | ");
+    .join(", ");
+}
+
+function buildDuePhrase(lang: Lang, days: number) {
+  if (lang === "pt") {
+    if (days > 0) {
+      return {
+        dueSentence: `vence em ${days} dia${days === 1 ? "" : "s"}`,
+        previewSuffix: `vence em ${days} dia${days === 1 ? "" : "s"}`,
+        statusLabel: "A vencer",
+      };
+    }
+    if (days === 0) {
+      return {
+        dueSentence: "vence hoje",
+        previewSuffix: "vence hoje",
+        statusLabel: "Vence hoje",
+      };
+    }
+    return {
+      dueSentence: `está vencido há ${Math.abs(days)} dia${Math.abs(days) === 1 ? "" : "s"}`,
+      previewSuffix: `está vencido há ${Math.abs(days)} dia${Math.abs(days) === 1 ? "" : "s"}`,
+      statusLabel: "Em atraso",
+    };
+  }
+
+  if (days > 0) {
+    return {
+      dueSentence: `is due in ${days} day${days === 1 ? "" : "s"}`,
+      previewSuffix: `is due in ${days} day${days === 1 ? "" : "s"}`,
+      statusLabel: "Due soon",
+    };
+  }
+  if (days === 0) {
+    return {
+      dueSentence: "is due today",
+      previewSuffix: "is due today",
+      statusLabel: "Due today",
+    };
+  }
+  return {
+    dueSentence: `is overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`,
+    previewSuffix: `is overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`,
+    statusLabel: "Overdue",
+  };
+}
+
+function reminderCopy(lang: Lang) {
+  return lang === "pt"
+    ? {
+        title: "Aviso de vencimento",
+        intro: (customerName?: string | null) => (customerName ? `Olá ${customerName},` : "Olá,"),
+        bodyLead: (orderNumber: string, dueSentence: string) =>
+          `Informamos que o pedido ${orderNumber} ${dueSentence}.`,
+        alreadyPaid: "Caso o pagamento já tenha sido efectuado, por favor desconsidere esta mensagem.",
+        actionsNote:
+          "Para consultar os detalhes do pedido ou descarregar o respectivo documento, utilize as opções abaixo.",
+        subject: (orderNumber: string) => `Aviso de vencimento, Pedido ${orderNumber}`,
+        preview: (orderNumber: string, previewSuffix: string) =>
+          `O pedido ${orderNumber} ${previewSuffix}. Consulte os detalhes e descarregue o documento.`,
+        labels: {
+          orderNumber: "Pedido",
+          dueDate: "Data de vencimento",
+          amount: "Montante em aberto",
+          status: "Estado",
+          fallbackLinks: "Se os botões não funcionarem, utilize estes links:",
+          viewLink: "Ver pedido",
+          downloadLink: "Descarregar PDF",
+          phone: "Telefone",
+          website: "Website",
+          address: "Endereço",
+          email: "Email",
+        },
+        buttons: {
+          view: "Ver pedido",
+          download: "Descarregar PDF",
+        },
+        supportTitle: "Precisa de apoio?",
+        supportText:
+          "Para regularizar a situação ou esclarecer qualquer dúvida, contacte-nos através dos meios abaixo.",
+        signatureLead: "Com os melhores cumprimentos,",
+        signatureTeam: (companyName: string) => `Equipa ${companyName}`,
+        footer: "Mensagem automática enviada pelo StockWise em nome da sua empresa.",
+      }
+    : {
+        title: "Payment reminder",
+        intro: (customerName?: string | null) => (customerName ? `Hello ${customerName},` : "Hello,"),
+        bodyLead: (orderNumber: string, dueSentence: string) =>
+          `This is a reminder that Sales Order ${orderNumber} ${dueSentence}.`,
+        alreadyPaid: "If payment has already been made, please disregard this message.",
+        actionsNote:
+          "To review the order details or download the document, please use the options below.",
+        subject: (orderNumber: string) => `Payment reminder, Sales Order ${orderNumber}`,
+        preview: (orderNumber: string, previewSuffix: string) =>
+          `Sales Order ${orderNumber} ${previewSuffix}. Review the details or download the document.`,
+        labels: {
+          orderNumber: "Sales Order",
+          dueDate: "Due date",
+          amount: "Outstanding amount",
+          status: "Status",
+          fallbackLinks: "If the buttons do not work, use these links:",
+          viewLink: "View order",
+          downloadLink: "Download PDF",
+          phone: "Phone",
+          website: "Website",
+          address: "Address",
+          email: "Email",
+        },
+        buttons: {
+          view: "View order",
+          download: "Download PDF",
+        },
+        supportTitle: "Need assistance?",
+        supportText: "If you need any help or clarification, please contact us using the details below.",
+        signatureLead: "Kind regards,",
+        signatureTeam: (companyName: string) => `${companyName} team`,
+        footer: "Automated message sent by StockWise on behalf of your company.",
+      };
+}
+
+function resolveCompanyBranding(
+  sb: ReturnType<typeof supa>,
+  company: CompanyRow | null | undefined,
+  settingsData: Record<string, unknown>,
+) {
+  const settingsBrand = ((settingsData?.documents as any)?.brand ?? {}) as { name?: unknown; logoUrl?: unknown };
+  const companyName =
+    trimText(settingsBrand.name) ||
+    trimText(company?.email_subject_prefix) ||
+    trimText(company?.trade_name) ||
+    trimText(company?.legal_name) ||
+    trimText(company?.name) ||
+    FALLBACK_BRAND;
+  const companyLogoUrl =
+    resolvePublicStorageUrl(sb, trimText(settingsBrand.logoUrl)) ||
+    resolvePublicStorageUrl(sb, company?.logo_path, "brand-logos");
+
+  return {
+    companyName,
+    companyLogoUrl,
+    companySupportEmail:
+      trimText(company?.email) || trimText(MAIL.defaultReplyToEmail) || trimText(MAIL.defaultFromEmail),
+    companyPhone: trimText(company?.phone),
+    companyWebsite: trimText(company?.website),
+    companyWebsiteUrl: normalizeWebsite(company?.website),
+    companyAddress: trimText(companyAddress(company)),
+    footerNote: trimText(company?.print_footer_note),
+  };
 }
 
 function htmlBody(opts: {
   lang: Lang;
-  customer?: string | null;
-  soCode: string;
-  dueDate: string;
-  amountText: string;
-  days: number;
-  invoiceUrl?: string;
-  brandForCopy: string;
-  company?: CompanyRow | null;
+  previewText: string;
+  companyName: string;
+  companyLogoUrl?: string | null;
+  customerName?: string | null;
+  orderNumber: string;
+  dueDateFormatted: string;
+  amountFormatted: string;
+  statusLabel: string;
+  dueSentence: string;
+  viewOrderUrl?: string;
+  downloadPdfUrl?: string;
+  companyPhone?: string | null;
+  companyWebsite?: string | null;
+  companyWebsiteUrl?: string | null;
+  companyAddress?: string | null;
+  companySupportEmail?: string | null;
+  footerNote?: string | null;
 }) {
-  const t = translations(opts.lang);
-  const greeting = opts.customer ? `${t.hi} ${escapeHtml(opts.customer)},` : `${t.hi},`;
-  const statusLine =
-    opts.days > 0
-      ? `${t.dueIn} <strong>${opts.days}</strong> ${t.days}`
-      : opts.days === 0
-        ? t.dueToday
-        : `${t.overdueBy} <strong>${Math.abs(opts.days)}</strong> ${t.days}`;
-  const address = escapeHtml(companyAddress(opts.company));
-  const companyName = escapeHtml(opts.company?.trade_name || opts.company?.legal_name || opts.company?.name || opts.brandForCopy);
-  const helpMail = `mailto:${encodeURIComponent(opts.company?.email || MAIL.defaultReplyToEmail)}?subject=${encodeURIComponent(`${opts.brandForCopy}: ${opts.soCode}`)}`;
+  const copy = reminderCopy(opts.lang);
+  const companyName = escapeHtml(opts.companyName);
+  const showDownload = !!opts.downloadPdfUrl && opts.downloadPdfUrl !== opts.viewOrderUrl;
+  const supportEmail = trimText(opts.companySupportEmail);
+  const websiteLabel = trimText(opts.companyWebsite);
+  const websiteUrl = trimText(opts.companyWebsiteUrl);
+  const address = trimText(opts.companyAddress);
+  const footerNote = trimText(opts.footerNote);
+  const logoBlock = opts.companyLogoUrl
+    ? `<img src="${escapeHtml(opts.companyLogoUrl)}" alt="${companyName}" width="160" style="display:block;max-width:160px;width:auto;height:auto;max-height:52px;border:0;outline:none;text-decoration:none;margin:0 auto;" />`
+    : "";
+  const brandTextStyle = opts.companyLogoUrl
+    ? "font-size:14px;line-height:20px;font-weight:600;color:#4b5563;margin-top:10px;"
+    : "font-size:26px;line-height:1.2;font-weight:700;color:#111827;";
 
   return `
-    <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:680px;padding:16px;line-height:1.5;color:#0f172a;">
-      <p style="margin:0 0 12px 0;">${greeting}</p>
-      <p style="margin:0 0 12px 0;">
-        ${t.invoice} <strong>${escapeHtml(opts.soCode)}</strong> ${statusLine}.<br/>
-        ${t.dueDate}: <strong>${escapeHtml(opts.dueDate)}</strong><br/>
-        ${t.amount}: <strong>${escapeHtml(opts.amountText)}</strong>
-      </p>
-      <p style="margin:0 0 12px 0;font-size:13px;color:#64748b;">${t.alreadyPaid}</p>
-      <p style="margin:0 0 12px 0;font-size:14px;color:#64748b;">${t.pleaseContact}</p>
-      <div style="margin:16px 0;display:flex;gap:8px;flex-wrap:wrap;">
-        ${
-          opts.invoiceUrl
-            ? `<a href="${escapeHtml(opts.invoiceUrl)}" target="_blank" style="display:inline-block;padding:10px 14px;border:1px solid #cbd5e1;border-radius:6px;text-decoration:none;color:#0f172a;">${t.download}</a>`
-            : ""
-        }
-        <a href="${helpMail}" style="display:inline-block;padding:10px 14px;border:1px solid #cbd5e1;border-radius:6px;text-decoration:none;color:#0f172a;">${t.help}</a>
-      </div>
-
-      <div style="margin-top:12px;padding:12px;border:1px solid #e2e8f0;border-radius:8px;">
-        <div style="font-weight:600;margin-bottom:6px;">${companyName}</div>
-        ${
-          opts.company?.phone
-            ? `<div style="font-size:13px;">${t.phone}: ${escapeHtml(opts.company.phone)}</div>`
-            : ""
-        }
-        ${
-          opts.company?.website
-            ? `<div style="font-size:13px;">${t.website}: <a href="${escapeHtml(opts.company.website.startsWith("http") ? opts.company.website : `https://${opts.company.website}`)}" target="_blank">${escapeHtml(opts.company.website)}</a></div>`
-            : ""
-        }
-        ${address ? `<div style="font-size:13px;">${t.address}: ${address}</div>` : ""}
-        ${opts.company?.email ? `<div style="font-size:13px;">${t.email}: ${escapeHtml(opts.company.email)}</div>` : ""}
-      </div>
-
-      ${
-        opts.company?.print_footer_note
-          ? `<div style="margin-top:12px;padding:8px;background:#f8fafc;border-radius:4px;font-size:12px;color:#64748b;">${escapeHtml(opts.company.print_footer_note)}</div>`
-          : ""
-      }
-
-      <p style="color:#64748b;margin-top:16px;">${t.thanksLead} ${escapeHtml(opts.brandForCopy)}.</p>
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      ${escapeHtml(opts.previewText)}
     </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0;padding:0;background:#f4f4f5;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;overflow:hidden;">
+            <tr>
+              <td align="center" style="padding:28px 32px 20px 32px;border-bottom:1px solid #e5e7eb;">
+                ${logoBlock}
+                <div style="${brandTextStyle}">${companyName}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 32px 20px 32px;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#111827;">
+                <div style="font-size:28px;line-height:1.2;font-weight:700;margin:0 0 12px 0;">${escapeHtml(copy.title)}</div>
+                <p style="margin:0 0 8px 0;font-size:16px;line-height:24px;">${escapeHtml(copy.intro(opts.customerName))}</p>
+                <p style="margin:0 0 20px 0;font-size:16px;line-height:24px;color:#374151;">
+                  ${escapeHtml(copy.bodyLead(opts.orderNumber, opts.dueSentence))}
+                </p>
+
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px 0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+                  <tr>
+                    <td style="padding:20px 22px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;">
+                        <tr>
+                          <td style="padding:0 0 10px 0;font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(copy.labels.orderNumber)}</td>
+                          <td style="padding:0 0 10px 0;font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;" align="right">${escapeHtml(copy.labels.status)}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 0 16px 0;font-size:18px;line-height:24px;color:#111827;font-weight:700;">${escapeHtml(opts.orderNumber)}</td>
+                          <td style="padding:0 0 16px 0;font-size:14px;line-height:20px;color:#0f172a;font-weight:600;" align="right">${escapeHtml(opts.statusLabel)}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 12px 0 0;width:50%;vertical-align:top;">
+                            <div style="font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin:0 0 6px 0;">${escapeHtml(copy.labels.dueDate)}</div>
+                            <div style="font-size:15px;line-height:22px;color:#111827;font-weight:600;">${escapeHtml(opts.dueDateFormatted)}</div>
+                          </td>
+                          <td style="padding:0 0 0 12px;width:50%;vertical-align:top;" align="right">
+                            <div style="font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin:0 0 6px 0;">${escapeHtml(copy.labels.amount)}</div>
+                            <div style="font-size:15px;line-height:22px;color:#111827;font-weight:700;">${escapeHtml(opts.amountFormatted)}</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0 0 8px 0;font-size:14px;line-height:22px;color:#475569;">
+                  ${escapeHtml(copy.alreadyPaid)}
+                </p>
+                <p style="margin:0 0 20px 0;font-size:14px;line-height:22px;color:#475569;">
+                  ${escapeHtml(copy.actionsNote)}
+                </p>
+
+                ${
+                  opts.viewOrderUrl
+                    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 12px 0;">
+                        <tr>
+                          <td>
+                            <a href="${escapeHtml(opts.viewOrderUrl)}" target="_blank" style="display:block;padding:14px 18px;border-radius:10px;background:#0f172a;color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:600;text-align:center;">
+                              ${escapeHtml(copy.buttons.view)}
+                            </a>
+                          </td>
+                        </tr>
+                      </table>`
+                    : ""
+                }
+                ${
+                  showDownload
+                    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 18px 0;">
+                        <tr>
+                          <td>
+                            <a href="${escapeHtml(opts.downloadPdfUrl)}" target="_blank" style="display:block;padding:14px 18px;border-radius:10px;background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;text-decoration:none;font-size:15px;line-height:20px;font-weight:600;text-align:center;">
+                              ${escapeHtml(copy.buttons.download)}
+                            </a>
+                          </td>
+                        </tr>
+                      </table>`
+                    : ""
+                }
+
+                ${
+                  opts.viewOrderUrl || showDownload
+                    ? `<div style="margin:0 0 24px 0;padding-top:4px;font-size:12px;line-height:18px;color:#6b7280;">
+                        <div style="margin:0 0 8px 0;font-weight:600;">${escapeHtml(copy.labels.fallbackLinks)}</div>
+                        ${
+                          opts.viewOrderUrl
+                            ? `<div style="margin:0 0 6px 0;">
+                                <strong>${escapeHtml(copy.labels.viewLink)}:</strong><br/>
+                                <a href="${escapeHtml(opts.viewOrderUrl)}" target="_blank" style="color:#2563eb;text-decoration:none;word-break:break-all;">${escapeHtml(opts.viewOrderUrl)}</a>
+                              </div>`
+                            : ""
+                        }
+                        ${
+                          showDownload
+                            ? `<div style="margin:0;">
+                                <strong>${escapeHtml(copy.labels.downloadLink)}:</strong><br/>
+                                <a href="${escapeHtml(opts.downloadPdfUrl)}" target="_blank" style="color:#2563eb;text-decoration:none;word-break:break-all;">${escapeHtml(opts.downloadPdfUrl)}</a>
+                              </div>`
+                            : ""
+                        }
+                      </div>`
+                    : ""
+                }
+
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px 0;background:#fafaf9;border:1px solid #e7e5e4;border-radius:14px;">
+                  <tr>
+                    <td style="padding:18px 20px;">
+                      <div style="font-size:18px;line-height:24px;font-weight:700;color:#111827;margin:0 0 8px 0;">${escapeHtml(copy.supportTitle)}</div>
+                      <p style="margin:0 0 14px 0;font-size:14px;line-height:22px;color:#57534e;">${escapeHtml(copy.supportText)}</p>
+                      ${
+                        supportEmail || trimText(opts.companyPhone) || websiteLabel || address
+                          ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;">
+                              ${supportEmail ? `<tr><td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#111827;"><strong>${escapeHtml(copy.labels.email)}:</strong> <a href="mailto:${escapeHtml(supportEmail)}" style="color:#2563eb;text-decoration:none;">${escapeHtml(supportEmail)}</a></td></tr>` : ""}
+                              ${trimText(opts.companyPhone) ? `<tr><td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#111827;"><strong>${escapeHtml(copy.labels.phone)}:</strong> ${escapeHtml(opts.companyPhone)}</td></tr>` : ""}
+                              ${websiteLabel && websiteUrl ? `<tr><td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#111827;"><strong>${escapeHtml(copy.labels.website)}:</strong> <a href="${escapeHtml(websiteUrl)}" target="_blank" style="color:#2563eb;text-decoration:none;">${escapeHtml(websiteLabel)}</a></td></tr>` : ""}
+                              ${address ? `<tr><td style="padding:0;font-size:14px;line-height:20px;color:#111827;"><strong>${escapeHtml(copy.labels.address)}:</strong> ${escapeHtml(address)}</td></tr>` : ""}
+                            </table>`
+                          : ""
+                      }
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0 0 6px 0;font-size:14px;line-height:22px;color:#111827;">${escapeHtml(copy.signatureLead)}</p>
+                <p style="margin:0;font-size:14px;line-height:22px;color:#111827;font-weight:600;">${escapeHtml(copy.signatureTeam(opts.companyName))}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 32px 24px 32px;background:#fafaf9;border-top:1px solid #e5e7eb;font-family:Segoe UI,Roboto,Arial,sans-serif;">
+                ${footerNote ? `<div style="font-size:12px;line-height:18px;color:#57534e;margin:0 0 8px 0;">${escapeHtml(footerNote)}</div>` : ""}
+                <div style="font-size:12px;line-height:18px;color:#78716c;">${escapeHtml(copy.footer)}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   `;
 }
 
 function textBody(opts: {
   lang: Lang;
-  customer?: string | null;
-  soCode: string;
-  dueDate: string;
-  amountText: string;
-  days: number;
-  invoiceUrl?: string;
-  brandForCopy: string;
-  company?: CompanyRow | null;
+  companyName: string;
+  customerName?: string | null;
+  orderNumber: string;
+  dueDateFormatted: string;
+  amountFormatted: string;
+  statusLabel: string;
+  dueSentence: string;
+  viewOrderUrl?: string;
+  downloadPdfUrl?: string;
+  companyPhone?: string | null;
+  companyWebsite?: string | null;
+  companyAddress?: string | null;
+  companySupportEmail?: string | null;
+  footerNote?: string | null;
 }) {
-  const t = translations(opts.lang);
+  const copy = reminderCopy(opts.lang);
+  const showDownload = !!opts.downloadPdfUrl && opts.downloadPdfUrl !== opts.viewOrderUrl;
   const lines = [
-    `${opts.customer ? `${t.hi} ${opts.customer},` : `${t.hi},`}`,
+    copy.title,
     "",
-    `${t.invoice} ${opts.soCode} ${
-      opts.days > 0
-        ? `${t.dueIn} ${opts.days} ${t.days}`
-        : opts.days === 0
-          ? t.dueToday
-          : `${t.overdueBy} ${Math.abs(opts.days)} ${t.days}`
-    }.`,
-    `${t.dueDate}: ${opts.dueDate}`,
-    `${t.amount}: ${opts.amountText}`,
-    opts.invoiceUrl ? `${t.download}: ${opts.invoiceUrl}` : "",
+    copy.intro(opts.customerName),
+    copy.bodyLead(opts.orderNumber, opts.dueSentence),
     "",
-    t.alreadyPaid,
+    `${copy.labels.orderNumber}: ${opts.orderNumber}`,
+    `${copy.labels.dueDate}: ${opts.dueDateFormatted}`,
+    `${copy.labels.amount}: ${opts.amountFormatted}`,
+    `${copy.labels.status}: ${opts.statusLabel}`,
     "",
-    `${t.thanksLead} ${opts.brandForCopy}.`,
+    copy.alreadyPaid,
+    copy.actionsNote,
+    "",
+    opts.viewOrderUrl ? `${copy.labels.viewLink}: ${opts.viewOrderUrl}` : "",
+    showDownload ? `${copy.labels.downloadLink}: ${opts.downloadPdfUrl}` : "",
+    "",
+    copy.supportTitle,
+    copy.supportText,
+    opts.companySupportEmail ? `${copy.labels.email}: ${opts.companySupportEmail}` : "",
+    opts.companyPhone ? `${copy.labels.phone}: ${opts.companyPhone}` : "",
+    opts.companyWebsite ? `${copy.labels.website}: ${opts.companyWebsite}` : "",
+    opts.companyAddress ? `${copy.labels.address}: ${opts.companyAddress}` : "",
+    "",
+    copy.signatureLead,
+    copy.signatureTeam(opts.companyName),
+    opts.footerNote ?? "",
   ].filter(Boolean);
 
-  if (opts.company?.email) lines.push(`${t.email}: ${opts.company.email}`);
-  if (opts.company?.phone) lines.push(`${t.phone}: ${opts.company.phone}`);
   return lines.join("\n");
 }
-
 function authorized(req: Request) {
   if (!REMINDER_HOOK_SECRET) return false;
   const headerSecret = req.headers.get("x-webhook-secret") ?? "";
@@ -462,17 +751,11 @@ serve(async (req) => {
 
     const { data: companyRow, error: companyError } = await sb
       .from("companies")
-      .select("name,trade_name,legal_name,email_subject_prefix,email,phone,website,country_code,preferred_lang,address_line1,address_line2,city,state,postal_code,print_footer_note")
+      .select("name,trade_name,legal_name,email_subject_prefix,email,phone,website,country_code,preferred_lang,address_line1,address_line2,city,state,postal_code,print_footer_note,logo_path")
       .eq("id", job.company_id)
       .single();
     if (companyError) throw new Error(`company.lookup: ${safeErr(companyError)}`);
     const company = (companyRow || {}) as CompanyRow;
-
-    const lang: Lang =
-      (job.payload?.lang as Lang) ||
-      (company.preferred_lang as Lang) ||
-      (isPortugueseSpeakingCountry(company.country_code) ? "pt" : "en");
-    const subjectPrefix = brandForSubject(company);
     const wantsEmail = job.payload?.channels?.email !== false;
     if (!wantsEmail) throw new Error("Email channel disabled for this job");
 
@@ -486,7 +769,20 @@ serve(async (req) => {
     }
     const settingsData = (settingsRow?.data ?? {}) as any;
     const settingsDue = settingsData?.dueReminders ?? {};
-    const baseUrl = job.payload?.invoice_base_url ?? settingsDue?.invoiceBaseUrl ?? "";
+    const langSetting = trimText(job.payload?.lang) || trimText(company.preferred_lang);
+    const lang: Lang =
+      langSetting?.toLowerCase() === "pt"
+        ? "pt"
+        : langSetting?.toLowerCase() === "en"
+          ? "en"
+          : isPortugueseSpeakingCountry(company.country_code)
+            ? "pt"
+            : "en";
+    const copy = reminderCopy(lang);
+    const documentBaseUrl = trimText(job.payload?.invoice_base_url) ||
+      trimText(settingsDue?.invoiceBaseUrl) ||
+      "";
+    const branding = resolveCompanyBranding(sb, company, settingsData);
     const bcc = (job.payload?.bcc?.length ? job.payload.bcc : (settingsDue?.bcc ?? [])) as string[];
 
     let sent = 0;
@@ -495,32 +791,51 @@ serve(async (req) => {
       if (!to.length) continue;
 
       const displayCode = row.so_code || row.so_id;
-      const amountText = (row as any)._currency
-        ? `${currency(row.amount)} ${(row as any)._currency}`
-        : currency(row.amount);
-      const invoiceUrl = baseUrl && displayCode ? buildInvoiceUrl(baseUrl, displayCode) : undefined;
-      const subject = subjectFor(lang, subjectPrefix, displayCode, row.days_until_due);
+      const dueMeta = buildDuePhrase(lang, row.days_until_due);
+      const amountFormatted = formatAmount(row.amount, (row as any)._currency, lang);
+      const dueDateFormatted = formatDate(row.due_date, lang);
+      const viewOrderUrl = documentBaseUrl && displayCode ? buildViewOrderUrl(documentBaseUrl, displayCode) : undefined;
+      const downloadPdfUrl = documentBaseUrl && displayCode
+        ? buildDownloadPdfUrl(documentBaseUrl, displayCode)
+        : undefined;
+      const previewText = copy.preview(displayCode, dueMeta.previewSuffix);
+      const subject = copy.subject(displayCode);
       const html = htmlBody({
         lang,
-        customer: row.customer_name ?? undefined,
-        soCode: displayCode,
-        dueDate: row.due_date,
-        amountText,
-        days: row.days_until_due,
-        invoiceUrl,
-        brandForCopy: subjectPrefix,
-        company,
+        previewText,
+        companyName: branding.companyName,
+        companyLogoUrl: branding.companyLogoUrl,
+        customerName: row.customer_name ?? undefined,
+        orderNumber: displayCode,
+        dueDateFormatted,
+        amountFormatted,
+        statusLabel: dueMeta.statusLabel,
+        dueSentence: dueMeta.dueSentence,
+        viewOrderUrl,
+        downloadPdfUrl,
+        companyPhone: branding.companyPhone,
+        companyWebsite: branding.companyWebsite,
+        companyWebsiteUrl: branding.companyWebsiteUrl,
+        companyAddress: branding.companyAddress,
+        companySupportEmail: branding.companySupportEmail,
+        footerNote: branding.footerNote,
       });
       const text = textBody({
         lang,
-        customer: row.customer_name ?? undefined,
-        soCode: displayCode,
-        dueDate: row.due_date,
-        amountText,
-        days: row.days_until_due,
-        invoiceUrl,
-        brandForCopy: subjectPrefix,
-        company,
+        companyName: branding.companyName,
+        customerName: row.customer_name ?? undefined,
+        orderNumber: displayCode,
+        dueDateFormatted,
+        amountFormatted,
+        statusLabel: dueMeta.statusLabel,
+        dueSentence: dueMeta.dueSentence,
+        viewOrderUrl,
+        downloadPdfUrl,
+        companyPhone: branding.companyPhone,
+        companyWebsite: branding.companyWebsite,
+        companyAddress: branding.companyAddress,
+        companySupportEmail: branding.companySupportEmail,
+        footerNote: branding.footerNote,
       });
 
       if (DRY_RUN) {
@@ -533,8 +848,8 @@ serve(async (req) => {
             subject,
             html,
             text,
-            fromName: subjectPrefix,
-            replyTo: company.email || MAIL.defaultReplyToEmail,
+            fromName: branding.companyName,
+            replyTo: branding.companySupportEmail || MAIL.defaultReplyToEmail,
           },
           MAIL,
           { notificationType: "due_reminder", jobId: job.id, workerId: "due-reminder-worker" },

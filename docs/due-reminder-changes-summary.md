@@ -102,7 +102,7 @@ This document summarizes all the changes made to implement the Due Reminder Work
     "emails": ["override@example.com"]
   },
   "lead_days": [3, 1, 0, -3],
-  "invoice_base_url": "https://app.stockwise.app/invoices",
+  "invoice_base_url": "https://app.stockwise.app/orders/share",
   "bcc": ["bcc@example.com"]
 }
 ```

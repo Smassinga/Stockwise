@@ -73,9 +73,9 @@ This document summarizes the internationalization changes made to the Stockwise 
 - `settings.dueReminders.bcc` - "BCC Emails"
 - `settings.dueReminders.bcc.placeholder` - "bcc1@example.com, bcc2@example.com"
 - `settings.dueReminders.bcc.helper` - "BCC recipients for all reminder emails (comma-separated)"
-- `settings.dueReminders.invoiceBaseUrl` - "Invoice Base URL"
-- `settings.dueReminders.invoiceBaseUrl.placeholder` - "https://app.stockwise.app/invoices"
-- `settings.dueReminders.invoiceBaseUrl.helper` - "Base URL for invoice links (will append invoice code)"
+- `settings.dueReminders.invoiceBaseUrl` - "Sales Order document URL"
+- `settings.dueReminders.invoiceBaseUrl.placeholder` - "https://app.stockwise.app/orders/share"
+- `settings.dueReminders.invoiceBaseUrl.helper` - "Legacy base URL for customer-facing sales-order links. The order code is appended automatically."
 
 ### Notifications
 - `notifications.title` - "Notifications"

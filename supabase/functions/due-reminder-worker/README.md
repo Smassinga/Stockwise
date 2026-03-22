@@ -1,6 +1,6 @@
 # Due Reminder Worker
 
-A Supabase Edge Function that sends automated invoice due date reminders via email using the shared Brevo SMTP mailer.
+A Supabase Edge Function that sends automated sales-order due date reminders via email using the shared Brevo SMTP mailer.
 
 ## Overview
 
@@ -27,7 +27,6 @@ The function requires these environment variables to be set in your Supabase pro
 - `BREVO_SENDER_NAME` - Sender display name (default: "StockWise")
 - `BREVO_REPLY_TO_EMAIL` - Default reply-to address
 - `BREVO_REPLY_TO_NAME` - Default reply-to display name
-- `PUBLIC_SITE_URL` - Canonical site URL used in generated document links
 - `SERVICE_ROLE_KEY` - Supabase service role key for database access
 - `REMINDER_HOOK_SECRET` - Secret key for authenticating webhook requests
 - `DRY_RUN` - Set to "true" to test without actually sending emails (default: "false")
@@ -45,7 +44,7 @@ Each job in the queue can have a payload with these options:
     "emails": ["override@example.com"]
   },
   "lead_days": [3, 1, 0, -3],
-  "invoice_base_url": "https://app.stockwise.app/invoices",
+  "invoice_base_url": "https://app.stockwise.app/orders/share",
   "bcc": ["bcc@example.com"]
 }
 ```
@@ -53,7 +52,7 @@ Each job in the queue can have a payload with these options:
 - `channels.email` - Whether to send email reminders (currently only email is supported)
 - `recipients.emails` - Override the customer emails (if empty, uses customer emails from the database)
 - `lead_days` - Days before/after due date to send reminders (negative numbers for overdue)
-- `invoice_base_url` - Base URL for invoice links (will append the invoice code)
+- `invoice_base_url` - Legacy sales-order document base URL used to build customer-facing order links
 - `bcc` - BCC recipients for all emails
 
 ## Enqueueing Jobs
@@ -69,7 +68,7 @@ SELECT public.enqueue_due_reminder(
     'channels', jsonb_build_object('email', true),
     'recipients', jsonb_build_object('emails', jsonb_build_array('test@example.com')),
     'lead_days', jsonb_build_array(3, 1, 0, -3),
-    'invoice_base_url', 'https://app.stockwise.app/invoices'
+    'invoice_base_url', 'https://app.stockwise.app/orders/share'
   )
 );
 ```

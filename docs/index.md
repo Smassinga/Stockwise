@@ -24,7 +24,7 @@ If you're new to Stockwise, start here:
 
 ### Features
 
-- [Due Reminders](due-reminders.md) - Automated invoice due date reminders system
+- [Due Reminders](due-reminders.md) - Automated sales-order due date reminder system
 
 ### Testing
 

@@ -1,6 +1,6 @@
 # Due Reminder System
 
-The Due Reminder System automatically sends email notifications to customers when their invoices are approaching their due dates.
+The Due Reminder System automatically sends email notifications to customers when their sales orders are approaching their due dates.
 
 ## Overview
 
@@ -21,7 +21,7 @@ In the Settings page, you can configure the Due Reminder Worker:
 - **Lead Days**: Days before/after due date to send reminders (negative for overdue)
 - **Recipient Emails**: Override customer emails (comma-separated)
 - **BCC Emails**: BCC recipients for all reminder emails
-- **Invoice Base URL**: Base URL for invoice links
+- **Sales Order Document URL**: Legacy base URL used to build customer-facing order detail and PDF links
 
 ### Environment Variables
 
@@ -33,7 +33,6 @@ The Edge Function requires these environment variables:
 - `BREVO_SENDER_NAME`: Sender display name
 - `BREVO_REPLY_TO_EMAIL`: Reply-to email address
 - `BREVO_REPLY_TO_NAME`: Reply-to display name
-- `PUBLIC_SITE_URL`: Base site URL for generated links
 - `SERVICE_ROLE_KEY`: Supabase service role key
 - `REMINDER_HOOK_SECRET`: Secret for webhook authentication
 - `DRY_RUN`: Set to "true" for testing without sending emails
