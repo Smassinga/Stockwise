@@ -143,7 +143,6 @@ export default function BankDetail() {
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const canEditBank = hasRole(myRole, CanManageUsers)
-  const scopedBankId = bank && bank.company_id === companyId ? bank.id : null
 
   const [bank, setBank] = useState<Bank | null>(null)
   const [from, setFrom] = useState<string>(monthStartISO())
@@ -156,6 +155,8 @@ export default function BankDetail() {
   const [savingTx, setSavingTx] = useState<string | null>(null)
 
   const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
+
+  const scopedBankId = bank && bank.company_id === companyId ? bank.id : null
 
   // Statement form
   const [stDate, setStDate] = useState<string>(todayISO())
