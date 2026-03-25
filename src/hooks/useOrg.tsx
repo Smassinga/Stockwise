@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "../lib/supabase";
+import { setActiveCompanyRpc } from "../lib/setActiveCompanyRpc";
 import type { CompanyRole } from "../lib/roles";
 import type { MemberRole, MemberStatus } from "../lib/enums";
 import { withTimeout } from "../lib/withTimeout";
@@ -65,7 +66,7 @@ function roleRank(r: MemberRole) {
 async function syncActiveCompanyContext(id: string) {
   try {
     const { error: rpcErr } = await withTimeout(
-      supabase.rpc("set_active_company", { p_company_id: id }),
+      setActiveCompanyRpc(id),
       ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
       "set_active_company"
     );
@@ -389,9 +390,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
         // Existing DB session context
         const { error: rpcErr } = await withTimeout(
-          supabase.rpc('set_active_company', {
-            p_company_id: id,
-          }),
+          setActiveCompanyRpc(id),
           ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
           'set_active_company'
         );

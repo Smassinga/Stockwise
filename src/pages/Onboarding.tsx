@@ -13,6 +13,7 @@ import { clearInviteToken, readInviteToken } from '../lib/inviteToken'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
+import { setActiveCompanyRpc } from '../lib/setActiveCompanyRpc'
 import { withTimeout } from '../lib/withTimeout'
 const SESSION_LOOKUP_TIMEOUT_MS = 5000
 const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
@@ -324,7 +325,7 @@ export default function Onboarding() {
       rememberCompanyLocally(companyId)
 
       const { error: activeErr } = await withTimeout(
-        supabase.rpc('set_active_company', { p_company_id: companyId }),
+        setActiveCompanyRpc(companyId),
         SET_ACTIVE_COMPANY_TIMEOUT_MS,
         'set active company'
       )

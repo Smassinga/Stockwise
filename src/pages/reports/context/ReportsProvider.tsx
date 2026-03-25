@@ -238,8 +238,8 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
     ;(async () => {
       try {
         // Settings (not company-scoped)
-        const { data: settingsRows } = await supabase.from('settings').select('data').eq('id', 'app').limit(1)
-        const setting: any = Array.isArray(settingsRows) && settingsRows.length ? settingsRows[0] : null
+        const { data: settingsRows } = await supabase.from('app_settings').select('data').eq('id', 'app').limit(1)
+        const setting: any = Array.isArray(settingsRows) && settingsRows.length ? settingsRows[0]?.data ?? null : null
 
         if (!companyId) {
           setWarehouses([]); setBins([]); setItems([]); setLevels([]); setMoves([]); setCustomers([])

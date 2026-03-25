@@ -818,6 +818,7 @@
   "settlements.statusOverdue": "Vencido",
   "settlements.statusPartial": "Parcialmente liquidado",
   "settlements.subtitle": "Acompanhe saldos legados ligados a pedidos durante a transição e depois lance recebimentos de caixa ou pagamentos a fornecedores sem procurar nas transacções recentes.",
+  "settlements.stateViewsUnavailable": "As vistas de estado do Step 1 ainda não estão disponíveis. Aplique a migração do Step 1 e actualize esta página.",
   "settlements.title": "Recebíveis e Pagáveis",
   "settlements.transitionNote": "Este ecrã ainda deriva saldos a partir de pedidos ligados e linhas de liquidação. Pedidos expedidos, recebidos, aprovados ou concluídos podem continuar por pagar, e os indicadores de saldo devem ser lidos separadamente do estado do fluxo do pedido.",
   "settlements.transitionTitle": "Vista legada ligada a pedidos",

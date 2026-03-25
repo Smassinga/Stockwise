@@ -90,6 +90,23 @@ type SettlementRow = {
   history: HistoryRow[]
 }
 
+function isMissingStateViewError(error: any, viewName: string) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  const details = String(error?.details || '').toLowerCase()
+  const hint = String(error?.hint || '').toLowerCase()
+  const name = viewName.toLowerCase()
+
+  return code === 'PGRST205'
+    || ((message.includes(name) || details.includes(name) || hint.includes(name))
+      && (
+        message.includes('could not find')
+        || message.includes('does not exist')
+        || details.includes('does not exist')
+        || hint.includes('schema cache')
+      ))
+}
+
 const n = (value: unknown, fallback = 0) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -164,6 +181,7 @@ export default function SettlementsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [baseCode, setBaseCode] = useState('MZN')
   const [rows, setRows] = useState(emptyRows)
+  const [stateViewsUnavailable, setStateViewsUnavailable] = useState(false)
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [bankRefsSupported, setBankRefsSupported] = useState<boolean | null>(() => getBankTransactionRefSupport())
 
@@ -203,6 +221,7 @@ export default function SettlementsPage() {
     if (!companyId) {
       setRows(emptyRows)
       setBanks([])
+      setStateViewsUnavailable(false)
       setActiveRow(null)
       setLoading(false)
       return
@@ -267,9 +286,22 @@ export default function SettlementsPage() {
         ])
 
         if (banksRes.error) throw banksRes.error
+        if (cashRes.error) throw cashRes.error
+
+        const salesStateViewMissing = isMissingStateViewError(soRes.error, 'v_sales_order_state')
+        const purchaseStateViewMissing = isMissingStateViewError(poRes.error, 'v_purchase_order_state')
+        if (salesStateViewMissing || purchaseStateViewMissing) {
+          if (!cancelled) {
+            setBaseCode(baseCurrency || 'MZN')
+            setBanks((banksRes.data || []) as BankAccount[])
+            setRows(emptyRows)
+            setStateViewsUnavailable(true)
+          }
+          return
+        }
+
         if (soRes.error) throw soRes.error
         if (poRes.error) throw poRes.error
-        if (cashRes.error) throw cashRes.error
 
         const bankList = (banksRes.data || []) as BankAccount[]
         const bankTxRows = await fetchBankTransactions(bankList.map(bank => bank.id))
@@ -372,12 +404,14 @@ export default function SettlementsPage() {
           setBaseCode(baseCurrency || 'MZN')
           setBanks(bankList)
           setRows({ receive: receiveRows, pay: payRows })
+          setStateViewsUnavailable(false)
         }
       } catch (error: any) {
         console.error(error)
         if (!cancelled) {
           setRows(emptyRows)
           setBanks([])
+          setStateViewsUnavailable(false)
           toast.error(error?.message || tt('settlements.loadFailed', 'Failed to load settlements'))
         }
       } finally {
@@ -676,6 +710,11 @@ export default function SettlementsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {stateViewsUnavailable && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              {tt('settlements.stateViewsUnavailable', 'The Step 1 order-state views are not available yet. Apply the Step 1 migration and refresh this page.')}
+            </div>
+          )}
           {loading ? (
             <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
           ) : filteredRows.length === 0 ? (

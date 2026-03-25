@@ -15,6 +15,23 @@ type StateHookResult<T extends { id: string }> = {
   refresh: () => void
 }
 
+function isMissingStateViewError(error: any, viewName: string) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  const details = String(error?.details || '').toLowerCase()
+  const hint = String(error?.hint || '').toLowerCase()
+  const name = viewName.toLowerCase()
+
+  return code === 'PGRST205'
+    || ((message.includes(name) || details.includes(name) || hint.includes(name))
+      && (
+        message.includes('could not find')
+        || message.includes('does not exist')
+        || details.includes('does not exist')
+        || hint.includes('schema cache')
+      ))
+}
+
 function useCompanyOrderState<T extends { id: string }>(
   viewName: string,
   companyId?: string | null,
@@ -44,7 +61,17 @@ function useCompanyOrderState<T extends { id: string }>(
           .select('*')
           .eq('company_id', companyId)
 
-        if (loadError) throw loadError
+        if (loadError) {
+          if (isMissingStateViewError(loadError, viewName)) {
+            console.warn(`[OrderState] ${viewName} is not available yet; falling back to legacy page logic.`, loadError)
+            if (active) {
+              setRows([])
+              setError(null)
+            }
+            return
+          }
+          throw loadError
+        }
         if (active) setRows((data || []) as T[])
       } catch (caught: any) {
         if (!active) return

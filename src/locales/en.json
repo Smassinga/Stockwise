@@ -856,6 +856,7 @@
   "settlements.statusOverdue": "Overdue",
   "settlements.statusPartial": "Partially settled",
   "settlements.subtitle": "Track legacy order-linked balances in one place during the transition, then post cash receipts or supplier payments without digging through recent transactions.",
+  "settlements.stateViewsUnavailable": "The Step 1 order-state views are not available yet. Apply the Step 1 migration and refresh this page.",
   "settlements.title": "Receivables & Payables",
   "settlements.transitionNote": "This screen still derives balances from linked orders and settlement rows. Shipped, received, approved, or completed orders can still be unpaid, and balance badges should be read separately from order workflow status.",
   "settlements.transitionTitle": "Legacy order-linked view",
