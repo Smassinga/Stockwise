@@ -17,6 +17,7 @@ import {
   LogOut,
   Layers,          // BOM
   Receipt,         // Transactions icon
+  FileText,        // Finance documents
   Wallet,          // Cash icon
   Banknote,        // Banks icon
   CreditCard,      // Settlements icon
@@ -70,6 +71,8 @@ function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
     { label: t('nav.cash'),         to: '/cash',         icon: Wallet },
     { label: t('nav.banks'),        to: '/banks',        icon: Banknote },
     { label: t('nav.orders'),       to: '/orders',       icon: ShoppingCart },
+    { label: t('nav.salesInvoices'),to: '/sales-invoices', icon: Receipt },
+    { label: t('nav.vendorBills'),  to: '/vendor-bills', icon: FileText },
     { label: t('nav.settlements'),  to: '/settlements',  icon: CreditCard },
     { label: t('nav.landedCost'),   to: '/landed-cost',  icon: Calculator },
     { label: t('nav.reports'),      to: '/reports',      icon: BarChart3 },
@@ -120,7 +123,7 @@ export function AppLayout({ user, children }: Props) {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const [searchQuery, setSearchQuery] = useState('')
-  const searchPlaceholder = tt('common.searchPlaceholder', 'Search items, orders, customers...')
+  const searchPlaceholder = tt('common.searchPlaceholder', 'Search items, orders, invoices, bills, customers...')
   const displayName = useMemo(() => {
     const rawName = user.name?.trim()
     if (rawName && rawName !== user.email) return rawName
@@ -153,7 +156,7 @@ export function AppLayout({ user, children }: Props) {
         ],
         [
           tt('shell.nav.commercial', 'Commercial & finance'),
-          ['/orders', '/settlements', '/transactions', '/cash', '/banks', '/landed-cost', '/reports'],
+          ['/orders', '/sales-invoices', '/vendor-bills', '/settlements', '/transactions', '/cash', '/banks', '/landed-cost', '/reports'],
         ],
         [
           tt('shell.nav.setup', 'Setup'),

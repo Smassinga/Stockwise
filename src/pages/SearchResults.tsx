@@ -5,12 +5,17 @@ import { useOrg } from '../hooks/useOrg'
 import { Card, CardContent, CardHeader, } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Search, Package, Users, Truck, ShoppingCart, Receipt } from 'lucide-react'
+import { Search, Package, Users, Truck, ShoppingCart, Receipt, FileText } from 'lucide-react'
 import { useI18n } from '../lib/i18n'
+import {
+  SALES_INVOICE_STATE_VIEW,
+  VENDOR_BILL_STATE_VIEW,
+  isMissingFinanceViewError,
+} from '../lib/financeDocuments'
 
 type SearchResult = {
   id: string
-  type: 'item' | 'customer' | 'supplier' | 'purchase_order' | 'sales_order'
+  type: 'item' | 'customer' | 'supplier' | 'purchase_order' | 'sales_order' | 'sales_invoice' | 'vendor_bill'
   name: string
   description?: string
   url: string
@@ -145,6 +150,53 @@ export default function SearchResults() {
         })
       }
 
+      const { data: salesInvoices, error: salesInvoicesError } = await supabase
+        .from(SALES_INVOICE_STATE_VIEW)
+        .select('id, internal_reference, counterparty_name, order_no')
+        .eq('company_id', companyId)
+        .or(`internal_reference.ilike.%${term}%,counterparty_name.ilike.%${term}%,order_no.ilike.%${term}%`)
+        .limit(10)
+
+      if (salesInvoicesError) {
+        if (!isMissingFinanceViewError(salesInvoicesError, SALES_INVOICE_STATE_VIEW)) {
+          throw salesInvoicesError
+        }
+      } else if (salesInvoices) {
+        salesInvoices.forEach((invoice) => {
+          allResults.push({
+            id: invoice.id,
+            type: 'sales_invoice',
+            name: invoice.internal_reference,
+            description: invoice.counterparty_name || (invoice.order_no ? `Order ${invoice.order_no}` : undefined),
+            url: `/sales-invoices/${invoice.id}`,
+          })
+        })
+      }
+
+      const { data: vendorBills, error: vendorBillsError } = await supabase
+        .from(VENDOR_BILL_STATE_VIEW)
+        .select('id, internal_reference, supplier_invoice_reference, primary_reference, counterparty_name, order_no')
+        .eq('company_id', companyId)
+        .or(`internal_reference.ilike.%${term}%,supplier_invoice_reference.ilike.%${term}%,counterparty_name.ilike.%${term}%,order_no.ilike.%${term}%`)
+        .limit(10)
+
+      if (vendorBillsError) {
+        if (!isMissingFinanceViewError(vendorBillsError, VENDOR_BILL_STATE_VIEW)) {
+          throw vendorBillsError
+        }
+      } else if (vendorBills) {
+        vendorBills.forEach((bill) => {
+          const secondary = bill.internal_reference !== bill.primary_reference ? `Internal: ${bill.internal_reference}` : undefined
+          allResults.push({
+            id: bill.id,
+            type: 'vendor_bill',
+            name: bill.primary_reference,
+            description: [bill.counterparty_name, secondary].filter(Boolean).join(' • ') || undefined,
+            url: `/vendor-bills/${bill.id}`,
+          })
+        })
+      }
+
       setResults(allResults)
     } catch (error) {
       console.error('Search error:', error)
@@ -167,6 +219,8 @@ export default function SearchResults() {
       case 'supplier': return <Truck className="h-4 w-4" />
       case 'purchase_order': return <ShoppingCart className="h-4 w-4" />
       case 'sales_order': return <Receipt className="h-4 w-4" />
+      case 'sales_invoice': return <FileText className="h-4 w-4" />
+      case 'vendor_bill': return <FileText className="h-4 w-4" />
       default: return <Search className="h-4 w-4" />
     }
   }
@@ -178,6 +232,8 @@ export default function SearchResults() {
       case 'supplier': return 'Supplier'
       case 'purchase_order': return 'Purchase Order'
       case 'sales_order': return 'Sales Order'
+      case 'sales_invoice': return 'Sales Invoice'
+      case 'vendor_bill': return 'Vendor Bill'
       default: return 'Result'
     }
   }

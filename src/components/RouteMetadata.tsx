@@ -79,6 +79,16 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
       description: t.appDescription,
       noindex: true,
     },
+    '/sales-invoices': {
+      title: 'Sales Invoices | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
+    '/vendor-bills': {
+      title: 'Vendor Bills | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
     '/settlements': {
       title: 'Receivables & Payables | StockWise',
       description: t.appDescription,
@@ -166,6 +176,22 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
   if (pathname.startsWith('/banks/')) {
     return {
       title: 'Bank Details | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    }
+  }
+
+  if (pathname.startsWith('/sales-invoices/')) {
+    return {
+      title: 'Sales Invoice Details | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    }
+  }
+
+  if (pathname.startsWith('/vendor-bills/')) {
+    return {
+      title: 'Vendor Bill Details | StockWise',
       description: t.appDescription,
       noindex: true,
     }

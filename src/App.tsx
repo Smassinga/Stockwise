@@ -15,6 +15,10 @@ const Warehouses = lazy(() => import('./pages/Warehouses').then((m) => ({ defaul
 const Users = lazy(() => import('./pages/Users'))
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })))
 const Orders = lazy(() => import('./pages/Orders'))
+const SalesInvoices = lazy(() => import('./pages/SalesInvoices'))
+const SalesInvoiceDetail = lazy(() => import('./pages/SalesInvoiceDetail'))
+const VendorBills = lazy(() => import('./pages/VendorBills'))
+const VendorBillDetail = lazy(() => import('./pages/VendorBillDetail'))
 const Settlements = lazy(() => import('./pages/Settlements'))
 const StockLevels = lazy(() => import('./pages/StockLevels'))
 const CurrencyPage = lazy(() => import('./pages/Currency'))
@@ -153,6 +157,10 @@ export default function App() {
               <Route path="/orders/sales/:orderId" element={<LegacyOrderWorkspaceRedirect tab="sales" />} />
               <Route path="/orders/purchase/:orderId" element={<LegacyOrderWorkspaceRedirect tab="purchase" />} />
               <Route path="/orders" element={<Suspense fallback={<LoadingSplash />}><Orders /></Suspense>} />
+              <Route path="/sales-invoices" element={<Suspense fallback={<LoadingSplash />}><SalesInvoices /></Suspense>} />
+              <Route path="/sales-invoices/:invoiceId" element={<Suspense fallback={<LoadingSplash />}><SalesInvoiceDetail /></Suspense>} />
+              <Route path="/vendor-bills" element={<Suspense fallback={<LoadingSplash />}><VendorBills /></Suspense>} />
+              <Route path="/vendor-bills/:billId" element={<Suspense fallback={<LoadingSplash />}><VendorBillDetail /></Suspense>} />
               <Route path="/settlements" element={<Suspense fallback={<LoadingSplash />}><Settlements /></Suspense>} />
               <Route path="/stock-levels" element={<Suspense fallback={<LoadingSplash />}><StockLevels /></Suspense>} />
               <Route path="/currency" element={<Suspense fallback={<LoadingSplash />}><CurrencyPage /></Suspense>} />
