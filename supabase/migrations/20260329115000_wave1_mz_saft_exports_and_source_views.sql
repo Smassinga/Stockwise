@@ -153,6 +153,11 @@ begin
       message = 'SAF-T export finalize access denied.';
   end if;
 
+  if v_export.status <> 'pending' then
+    raise exception using
+      message = format('SAF-T export can only transition from pending to generated, not %s.', coalesce(v_export.status, '<null>'));
+  end if;
+
   update public.saft_moz_exports sme
      set status = 'generated',
          generated_by = auth.uid(),
@@ -189,6 +194,62 @@ begin
 end;
 $$;
 
+create or replace function public.submit_saft_moz_export_run(
+  p_export_id uuid,
+  p_submission_reference text default null
+)
+returns public.saft_moz_exports
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_export public.saft_moz_exports;
+begin
+  select sme.*
+    into v_export
+  from public.saft_moz_exports sme
+  where sme.id = p_export_id;
+
+  if v_export.id is null then
+    raise exception using
+      message = 'SAF-T export run not found.';
+  end if;
+
+  if not public.finance_documents_can_write(v_export.company_id) then
+    raise exception using
+      message = 'SAF-T export submit access denied.';
+  end if;
+
+  if v_export.status <> 'generated' then
+    raise exception using
+      message = format('SAF-T export can only transition from generated to submitted, not %s.', coalesce(v_export.status, '<null>'));
+  end if;
+
+  update public.saft_moz_exports sme
+     set status = 'submitted',
+         submitted_by = auth.uid(),
+         submitted_at = now(),
+         submission_reference = nullif(btrim(coalesce(p_submission_reference, '')), '')
+   where sme.id = p_export_id
+  returning sme.* into v_export;
+
+  perform public.append_finance_document_event(
+    v_export.company_id,
+    'saft_moz_export',
+    v_export.id,
+    'saft_export_submitted',
+    'generated',
+    v_export.status,
+    jsonb_build_object(
+      'submission_reference', v_export.submission_reference
+    )
+  );
+
+  return v_export;
+end;
+$$;
+
 create or replace function public.fail_saft_moz_export_run(
   p_export_id uuid,
   p_error_message text
@@ -214,6 +275,11 @@ begin
   if not public.finance_documents_can_write(v_export.company_id) then
     raise exception using
       message = 'SAF-T export failure update access denied.';
+  end if;
+
+  if v_export.status <> 'pending' then
+    raise exception using
+      message = format('SAF-T export can only transition from pending to failed, not %s.', coalesce(v_export.status, '<null>'));
   end if;
 
   update public.saft_moz_exports sme
@@ -248,22 +314,10 @@ to authenticated
 using (public.finance_documents_can_read(company_id));
 
 drop policy if exists saft_moz_exports_insert on public.saft_moz_exports;
-create policy saft_moz_exports_insert
-on public.saft_moz_exports
-for insert
-to authenticated
-with check (public.finance_documents_can_write(company_id));
-
 drop policy if exists saft_moz_exports_update on public.saft_moz_exports;
-create policy saft_moz_exports_update
-on public.saft_moz_exports
-for update
-to authenticated
-using (public.finance_documents_can_write(company_id))
-with check (public.finance_documents_can_write(company_id));
 
 revoke all on public.saft_moz_exports from public, anon;
-grant select, insert, update on public.saft_moz_exports to authenticated;
+grant select on public.saft_moz_exports to authenticated;
 
 create or replace view public.v_saft_moz_master_company
 with (security_invoker = true)
@@ -730,9 +784,11 @@ grant select on public.v_saft_moz_source_documents_summary to authenticated;
 
 revoke all on function public.create_saft_moz_export_run(uuid, date, date) from public, anon;
 revoke all on function public.finalize_saft_moz_export_run(uuid, text, text, text, text, text, bigint, integer, numeric) from public, anon;
+revoke all on function public.submit_saft_moz_export_run(uuid, text) from public, anon;
 revoke all on function public.fail_saft_moz_export_run(uuid, text) from public, anon;
 grant execute on function public.create_saft_moz_export_run(uuid, date, date) to authenticated;
 grant execute on function public.finalize_saft_moz_export_run(uuid, text, text, text, text, text, bigint, integer, numeric) to authenticated;
+grant execute on function public.submit_saft_moz_export_run(uuid, text) to authenticated;
 grant execute on function public.fail_saft_moz_export_run(uuid, text) to authenticated;
 
 comment on table public.saft_moz_exports is

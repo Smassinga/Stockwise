@@ -136,7 +136,7 @@ begin
     end case;
   end if;
 
-  if old.document_workflow_status in ('posted', 'voided')
+  if old.document_workflow_status = 'posted'
      and row(
        old.company_id,
        old.purchase_order_id,
@@ -150,7 +150,11 @@ begin
        old.fx_to_base,
        old.subtotal,
        old.tax_total,
-       old.total_amount
+       old.total_amount,
+       old.posted_at,
+       old.posted_by,
+       old.created_by,
+       old.created_at
      ) is distinct from row(
        new.company_id,
        new.purchase_order_id,
@@ -164,10 +168,77 @@ begin
        new.fx_to_base,
        new.subtotal,
        new.tax_total,
-       new.total_amount
+       new.total_amount,
+       new.posted_at,
+       new.posted_by,
+       new.created_by,
+       new.created_at
      ) then
     raise exception using
-      message = 'Posted or voided vendor bills cannot change company, linkage, references, dates, currency, FX, or totals.';
+      message = 'Posted vendor bills cannot change company, linkage, references, dates, currency, FX, totals, posting audit fields, or creation audit fields.';
+  end if;
+
+  if old.document_workflow_status = 'posted'
+     and new.document_workflow_status = 'posted'
+     and row(
+       old.voided_at,
+       old.voided_by,
+       old.void_reason
+     ) is distinct from row(
+       new.voided_at,
+       new.voided_by,
+       new.void_reason
+     ) then
+    raise exception using
+      message = 'Posted vendor bills cannot change void metadata without transitioning to voided.';
+  end if;
+
+  if old.document_workflow_status = 'voided'
+     and row(
+       old.company_id,
+       old.purchase_order_id,
+       old.supplier_id,
+       old.internal_reference,
+       old.supplier_invoice_reference,
+       old.supplier_invoice_date,
+       old.bill_date,
+       old.due_date,
+       old.currency_code,
+       old.fx_to_base,
+       old.subtotal,
+       old.tax_total,
+       old.total_amount,
+       old.posted_at,
+       old.posted_by,
+       old.voided_at,
+       old.voided_by,
+       old.void_reason,
+       old.created_by,
+       old.created_at
+     ) is distinct from row(
+       new.company_id,
+       new.purchase_order_id,
+       new.supplier_id,
+       new.internal_reference,
+       new.supplier_invoice_reference,
+       new.supplier_invoice_date,
+       new.bill_date,
+       new.due_date,
+       new.currency_code,
+       new.fx_to_base,
+       new.subtotal,
+       new.tax_total,
+       new.total_amount,
+       new.posted_at,
+       new.posted_by,
+       new.voided_at,
+       new.voided_by,
+       new.void_reason,
+       new.created_by,
+       new.created_at
+     ) then
+    raise exception using
+      message = 'Voided vendor bills cannot change company, linkage, references, dates, currency, FX, totals, or audit fields.';
   end if;
 
   return new;
@@ -221,6 +292,31 @@ begin
   end if;
 
   return new;
+end;
+$$;
+
+create or replace function public.vendor_bill_lines_parent_post_guard()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+declare
+  v_bill_id uuid;
+  v_status text;
+begin
+  v_bill_id := case when tg_op = 'DELETE' then old.vendor_bill_id else new.vendor_bill_id end;
+
+  select vb.document_workflow_status
+    into v_status
+  from public.vendor_bills vb
+  where vb.id = v_bill_id;
+
+  if coalesce(v_status, '') in ('posted', 'voided') then
+    raise exception using
+      message = 'vendor_bill_lines_parent_locked';
+  end if;
+
+  return case when tg_op = 'DELETE' then old else new end;
 end;
 $$;
 
@@ -282,6 +378,16 @@ create trigger vendor_bill_lines_hardening
 before insert or update on public.vendor_bill_lines
 for each row execute function public.vendor_bill_line_hardening_guard();
 
+drop trigger if exists biu_30_vendor_bill_lines_parent_post_guard on public.vendor_bill_lines;
+create trigger biu_30_vendor_bill_lines_parent_post_guard
+before insert or update on public.vendor_bill_lines
+for each row execute function public.vendor_bill_lines_parent_post_guard();
+
+drop trigger if exists bd_30_vendor_bill_lines_parent_post_guard on public.vendor_bill_lines;
+create trigger bd_30_vendor_bill_lines_parent_post_guard
+before delete on public.vendor_bill_lines
+for each row execute function public.vendor_bill_lines_parent_post_guard();
+
 comment on function public.sales_invoice_hardening_guard() is
   'Hardens sales invoice workflow transitions and core-field immutability after issue or void.';
 
@@ -293,3 +399,6 @@ comment on function public.sales_invoice_line_hardening_guard() is
 
 comment on function public.vendor_bill_line_hardening_guard() is
   'Applies minimal vendor bill line consistency checks without enforcing exact cost arithmetic.';
+
+comment on function public.vendor_bill_lines_parent_post_guard() is
+  'Prevents insert, update, or delete on vendor bill lines after the parent vendor bill is posted or voided.';

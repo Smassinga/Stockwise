@@ -60,8 +60,10 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_row public.finance_document_fiscal_series%rowtype;
+  v_settings public.company_fiscal_settings%rowtype;
   v_count integer;
   v_fiscal_year integer;
+  v_expected_series_code text;
 begin
   if p_company_id is null then
     raise exception 'finance_document_company_required';
@@ -75,12 +77,13 @@ begin
     raise exception 'unsupported_fiscal_document_type: %', p_document_type;
   end if;
 
-  if not exists (
-    select 1
-    from public.company_fiscal_settings cfs
-    where cfs.company_id = p_company_id
-      and cfs.jurisdiction_code = 'MZ'
-  ) then
+  select cfs.*
+    into v_settings
+  from public.company_fiscal_settings cfs
+  where cfs.company_id = p_company_id
+    and cfs.jurisdiction_code = 'MZ';
+
+  if v_settings.company_id is null then
     raise exception 'company_fiscal_settings_missing';
   end if;
 
@@ -114,6 +117,17 @@ begin
     and (fdfs.valid_from is null or coalesce(p_document_date, current_date) >= fdfs.valid_from)
     and (fdfs.valid_to is null or coalesce(p_document_date, current_date) <= fdfs.valid_to)
   limit 1;
+
+  v_expected_series_code := case p_document_type
+    when 'sales_invoice' then v_settings.invoice_series_code
+    when 'sales_credit_note' then v_settings.credit_note_series_code
+    when 'sales_debit_note' then v_settings.debit_note_series_code
+    else null
+  end;
+
+  if v_expected_series_code is null or v_row.series_code is distinct from v_expected_series_code then
+    raise exception 'finance_document_fiscal_series_settings_mismatch';
+  end if;
 
   return v_row;
 end;

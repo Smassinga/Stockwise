@@ -390,20 +390,16 @@ to authenticated
 using (public.finance_documents_can_read(company_id));
 
 drop policy if exists fiscal_document_artifacts_insert on public.fiscal_document_artifacts;
-create policy fiscal_document_artifacts_insert
-on public.fiscal_document_artifacts
-for insert
-to authenticated
-with check (public.finance_documents_can_write(company_id));
 
 revoke all on public.finance_document_events from public, anon;
 revoke all on public.fiscal_document_artifacts from public, anon;
 
 grant select on public.finance_document_events to authenticated;
-grant select, insert on public.fiscal_document_artifacts to authenticated;
+grant select on public.fiscal_document_artifacts to authenticated;
 
 revoke all on function public.append_finance_document_event(uuid, text, uuid, text, text, text, jsonb) from public, anon;
 revoke all on function public.register_fiscal_document_artifact(uuid, text, uuid, text, text, text, text, text, text, bigint, boolean, date) from public, anon;
+grant execute on function public.append_finance_document_event(uuid, text, uuid, text, text, text, jsonb) to authenticated;
 grant execute on function public.register_fiscal_document_artifact(uuid, text, uuid, text, text, text, text, text, text, bigint, boolean, date) to authenticated;
 
 comment on table public.finance_document_events is

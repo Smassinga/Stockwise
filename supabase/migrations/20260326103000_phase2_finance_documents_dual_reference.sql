@@ -18,7 +18,7 @@ as $$
     from public.company_members cm
     where cm.company_id = p_company_id
       and cm.user_id = auth.uid()
-      and cm.status in ('active', 'invited')
+      and cm.status = 'active'
   );
 $$;
 
@@ -73,6 +73,10 @@ begin
     return 'CMP';
   end if;
 
+  if not public.finance_documents_can_read(p_company_id) then
+    raise exception 'finance_document_company_access_denied';
+  end if;
+
   if to_regprocedure('public.company_prefix3(uuid)') is not null then
     begin
       execute 'select public.company_prefix3($1)' into v_prefix using p_company_id;
@@ -112,6 +116,10 @@ declare
 begin
   if p_company_id is null then
     raise exception 'finance_document_company_required';
+  end if;
+
+  if not public.finance_documents_can_write(p_company_id) then
+    raise exception 'finance_document_company_write_denied';
   end if;
 
   if p_document_type not in ('sales_invoice', 'vendor_bill') then
@@ -534,11 +542,21 @@ revoke all on public.sales_invoice_lines from public, anon;
 revoke all on public.vendor_bills from public, anon;
 revoke all on public.vendor_bill_lines from public, anon;
 
+revoke all on function public.finance_documents_can_read(uuid) from public, anon;
+revoke all on function public.finance_documents_can_write(uuid) from public, anon;
+revoke all on function public.finance_document_company_prefix(uuid) from public, anon;
+revoke all on function public.next_finance_document_reference(uuid, text) from public, anon;
+
 grant select, insert, update on public.document_number_counters to authenticated;
 grant select, insert, update on public.sales_invoices to authenticated;
 grant select, insert, update on public.sales_invoice_lines to authenticated;
 grant select, insert, update on public.vendor_bills to authenticated;
 grant select, insert, update on public.vendor_bill_lines to authenticated;
+
+grant execute on function public.finance_documents_can_read(uuid) to authenticated;
+grant execute on function public.finance_documents_can_write(uuid) to authenticated;
+grant execute on function public.finance_document_company_prefix(uuid) to authenticated;
+grant execute on function public.next_finance_document_reference(uuid, text) to authenticated;
 
 comment on table public.sales_invoices is
   'Step 2 finance-document foundation. Sales invoices use Stockwise-generated internal references as the primary outbound AR document identity.';

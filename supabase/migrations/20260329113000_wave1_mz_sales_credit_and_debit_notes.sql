@@ -71,8 +71,9 @@ create table if not exists public.sales_credit_notes (
 create unique index if not exists sales_credit_notes_company_internal_reference_key
   on public.sales_credit_notes (company_id, internal_reference);
 
-create unique index if not exists sales_credit_notes_company_native_sequence_key
-  on public.sales_credit_notes (company_id, moz_document_code, fiscal_year, fiscal_sequence_number)
+drop index if exists public.sales_credit_notes_company_native_sequence_key;
+create unique index sales_credit_notes_company_native_sequence_key
+  on public.sales_credit_notes (company_id, moz_document_code, fiscal_series_code, fiscal_year, fiscal_sequence_number)
   where source_origin = 'native';
 
 create index if not exists sales_credit_notes_original_invoice_idx
@@ -182,8 +183,9 @@ create table if not exists public.sales_debit_notes (
 create unique index if not exists sales_debit_notes_company_internal_reference_key
   on public.sales_debit_notes (company_id, internal_reference);
 
-create unique index if not exists sales_debit_notes_company_native_sequence_key
-  on public.sales_debit_notes (company_id, moz_document_code, fiscal_year, fiscal_sequence_number)
+drop index if exists public.sales_debit_notes_company_native_sequence_key;
+create unique index sales_debit_notes_company_native_sequence_key
+  on public.sales_debit_notes (company_id, moz_document_code, fiscal_series_code, fiscal_year, fiscal_sequence_number)
   where source_origin = 'native';
 
 create index if not exists sales_debit_notes_original_invoice_idx
@@ -291,6 +293,9 @@ begin
       raise exception 'imported_sales_credit_note_reference_required';
     end if;
     new.internal_reference := btrim(new.internal_reference);
+    if new.fiscal_year is null then
+      new.fiscal_year := extract(year from coalesce(new.credit_note_date, current_date))::integer;
+    end if;
   elsif new.internal_reference is null or btrim(new.internal_reference) = '' then
     select *
       into v_reference
@@ -353,6 +358,9 @@ begin
       raise exception 'imported_sales_debit_note_reference_required';
     end if;
     new.internal_reference := btrim(new.internal_reference);
+    if new.fiscal_year is null then
+      new.fiscal_year := extract(year from coalesce(new.debit_note_date, current_date))::integer;
+    end if;
   elsif new.internal_reference is null or btrim(new.internal_reference) = '' then
     select *
       into v_reference
@@ -573,6 +581,7 @@ declare
   v_line_count integer;
   v_invoice public.sales_invoices%rowtype;
   v_series public.finance_document_fiscal_series%rowtype;
+  v_invalid_source_line_count integer;
 begin
   if tg_op <> 'UPDATE'
      or new.document_workflow_status <> 'issued'
@@ -686,6 +695,19 @@ begin
       message = 'Credit notes require at least one line before issue.';
   end if;
 
+  select count(*)
+    into v_invalid_source_line_count
+  from public.sales_credit_note_lines scnl
+  join public.sales_invoice_lines sil
+    on sil.id = scnl.sales_invoice_line_id
+  where scnl.sales_credit_note_id = new.id
+    and sil.sales_invoice_id is distinct from new.original_sales_invoice_id;
+
+  if coalesce(v_invalid_source_line_count, 0) > 0 then
+    raise exception using
+      message = 'Credit notes cannot issue with source-linked lines from a different original sales invoice.';
+  end if;
+
   return new;
 end;
 $$;
@@ -699,6 +721,7 @@ declare
   v_line_count integer;
   v_invoice public.sales_invoices%rowtype;
   v_series public.finance_document_fiscal_series%rowtype;
+  v_invalid_source_line_count integer;
 begin
   if tg_op <> 'UPDATE'
      or new.document_workflow_status <> 'issued'
@@ -817,6 +840,19 @@ begin
       message = 'Debit notes require at least one line before issue.';
   end if;
 
+  select count(*)
+    into v_invalid_source_line_count
+  from public.sales_debit_note_lines sdnl
+  join public.sales_invoice_lines sil
+    on sil.id = sdnl.sales_invoice_line_id
+  where sdnl.sales_debit_note_id = new.id
+    and sil.sales_invoice_id is distinct from new.original_sales_invoice_id;
+
+  if coalesce(v_invalid_source_line_count, 0) > 0 then
+    raise exception using
+      message = 'Debit notes cannot issue with source-linked lines from a different original sales invoice.';
+  end if;
+
   return new;
 end;
 $$;
@@ -827,6 +863,18 @@ language plpgsql
 set search_path = pg_catalog, public
 as $$
 begin
+  if tg_op = 'UPDATE'
+     and new.original_sales_invoice_id is distinct from old.original_sales_invoice_id
+     and exists (
+       select 1
+       from public.sales_credit_note_lines scnl
+       where scnl.sales_credit_note_id = old.id
+         and scnl.sales_invoice_line_id is not null
+     ) then
+    raise exception using
+      message = 'Credit notes cannot change the original sales invoice after source-linked lines exist.';
+  end if;
+
   if tg_op = 'INSERT' and new.document_workflow_status <> 'draft' then
     raise exception using
       message = 'Sales credit notes must be created in draft status.';
@@ -959,6 +1007,18 @@ language plpgsql
 set search_path = pg_catalog, public
 as $$
 begin
+  if tg_op = 'UPDATE'
+     and new.original_sales_invoice_id is distinct from old.original_sales_invoice_id
+     and exists (
+       select 1
+       from public.sales_debit_note_lines sdnl
+       where sdnl.sales_debit_note_id = old.id
+         and sdnl.sales_invoice_line_id is not null
+     ) then
+    raise exception using
+      message = 'Debit notes cannot change the original sales invoice after source-linked lines exist.';
+  end if;
+
   if tg_op = 'INSERT' and new.document_workflow_status <> 'draft' then
     raise exception using
       message = 'Sales debit notes must be created in draft status.';

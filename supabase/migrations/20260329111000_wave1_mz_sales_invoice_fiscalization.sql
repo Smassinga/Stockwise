@@ -132,8 +132,9 @@ begin
 end;
 $$;
 
-create unique index if not exists sales_invoices_company_native_sequence_key
-  on public.sales_invoices (company_id, moz_document_code, fiscal_year, fiscal_sequence_number)
+drop index if exists public.sales_invoices_company_native_sequence_key;
+create unique index sales_invoices_company_native_sequence_key
+  on public.sales_invoices (company_id, moz_document_code, fiscal_series_code, fiscal_year, fiscal_sequence_number)
   where source_origin = 'native';
 
 create index if not exists sales_invoices_company_fiscal_lookup_idx
@@ -162,6 +163,9 @@ begin
       raise exception 'imported_sales_invoice_reference_required';
     end if;
     new.internal_reference := btrim(new.internal_reference);
+    if new.fiscal_year is null then
+      new.fiscal_year := extract(year from coalesce(new.invoice_date, current_date))::integer;
+    end if;
   elsif new.internal_reference is null or btrim(new.internal_reference) = '' then
     select *
       into v_reference
