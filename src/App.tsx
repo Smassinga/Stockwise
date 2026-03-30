@@ -17,6 +17,7 @@ const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m
 const Orders = lazy(() => import('./pages/Orders'))
 const SalesInvoices = lazy(() => import('./pages/SalesInvoices'))
 const SalesInvoiceDetail = lazy(() => import('./pages/SalesInvoiceDetail'))
+const MozambiqueCompliance = lazy(() => import('./pages/MozambiqueCompliance'))
 const VendorBills = lazy(() => import('./pages/VendorBills'))
 const VendorBillDetail = lazy(() => import('./pages/VendorBillDetail'))
 const Settlements = lazy(() => import('./pages/Settlements'))
@@ -159,6 +160,7 @@ export default function App() {
               <Route path="/orders" element={<Suspense fallback={<LoadingSplash />}><Orders /></Suspense>} />
               <Route path="/sales-invoices" element={<Suspense fallback={<LoadingSplash />}><SalesInvoices /></Suspense>} />
               <Route path="/sales-invoices/:invoiceId" element={<Suspense fallback={<LoadingSplash />}><SalesInvoiceDetail /></Suspense>} />
+              <Route path="/compliance/mz" element={<Suspense fallback={<LoadingSplash />}><MozambiqueCompliance /></Suspense>} />
               <Route path="/vendor-bills" element={<Suspense fallback={<LoadingSplash />}><VendorBills /></Suspense>} />
               <Route path="/vendor-bills/:billId" element={<Suspense fallback={<LoadingSplash />}><VendorBillDetail /></Suspense>} />
               <Route path="/settlements" element={<Suspense fallback={<LoadingSplash />}><Settlements /></Suspense>} />

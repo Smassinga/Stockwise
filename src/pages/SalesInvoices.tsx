@@ -91,7 +91,7 @@ export default function SalesInvoicesPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.salesInvoices.title', 'Sales Invoices')}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('financeDocs.salesInvoices.subtitle', 'Outbound receivable documents keep a Stockwise internal reference as the primary business identity while orders remain operational.' )}
+              {tt('financeDocs.salesInvoices.subtitle', 'Issued sales invoices are the legal fiscal truth for Mozambique while sales orders remain operational and commercial documents only.')}
             </p>
           </div>
         </div>
@@ -99,6 +99,9 @@ export default function SalesInvoicesPage() {
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
             <Link to="/orders?tab=sales">{tt('financeDocs.salesInvoices.ordersLink', 'View sales orders')}</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/compliance/mz">{tt('nav.complianceMz', 'Mozambique compliance')}</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/settlements">{tt('financeDocs.salesInvoices.settlementsLink', 'Legacy settlements')}</Link>
@@ -110,7 +113,7 @@ export default function SalesInvoicesPage() {
         <CardHeader className="gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <CardTitle>{tt('financeDocs.salesInvoices.listTitle', 'Invoice register')}</CardTitle>
-            <CardDescription>{tt('financeDocs.salesInvoices.listHelp', 'Search by internal reference, customer, or linked order while the Step 2 finance-document layer comes online.')}</CardDescription>
+            <CardDescription>{tt('financeDocs.salesInvoices.listHelp', 'Search by legal reference, customer, or linked order. Draft invoices are created from sales orders, then issued through the compliance-gated runtime path.')}</CardDescription>
           </div>
           <div className="relative w-full sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -134,7 +137,7 @@ export default function SalesInvoicesPage() {
           ) : filteredRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
               <div className="text-lg font-medium">{tt('financeDocs.salesInvoices.emptyTitle', 'No sales invoices yet.')}</div>
-              <div className="mt-2 text-sm text-muted-foreground">{tt('financeDocs.salesInvoices.emptyBody', 'Sales invoice references will appear here once Step 3 document creation goes live.')}</div>
+              <div className="mt-2 text-sm text-muted-foreground">{tt('financeDocs.salesInvoices.emptyBody', 'Create the first draft from a confirmed sales order, then issue it from the sales invoice detail page.')}</div>
             </div>
           ) : (
             <Table>

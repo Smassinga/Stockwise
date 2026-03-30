@@ -1,7 +1,7 @@
 ﻿// src/pages/Orders/SalesOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { db, supabase } from '../../lib/db'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
@@ -31,6 +31,7 @@ import {
   settlementLabelKey,
 } from '../../lib/orderState'
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
+import { createDraftSalesInvoiceFromOrder } from '../../lib/mzFinance'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -306,6 +307,7 @@ export default function SalesOrders() {
   const { t } = useI18n()
   const { companyId } = useOrg()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const salesOrderState = useSalesOrderState(companyId)
   const salesStateById = salesOrderState.byId
   const [searchParams, setSearchParams] = useSearchParams()
@@ -466,6 +468,7 @@ export default function SalesOrders() {
   const [soViewOpen, setSoViewOpen] = useState(false)
   const [selectedSO, setSelectedSO] = useState<SO | null>(null)
   const [selectedSoMeta, setSelectedSoMeta] = useState<SoMetaDraft>(emptySoMetaDraft())
+  const [creatingInvoiceForOrderId, setCreatingInvoiceForOrderId] = useState<string | null>(null)
 
   // GLOBAL override/default warehouse (optional UX)
   const [shipWhId, setShipWhId] = useState<string>('')
@@ -1490,6 +1493,32 @@ export default function SalesOrders() {
   const canIssueFromStatus = (status?: string) =>
     ['confirmed', 'allocated'].includes(String(status || '').toLowerCase())
 
+  const canCreateFiscalInvoice = (status?: string) =>
+    ['confirmed', 'allocated', 'shipped', 'closed'].includes(String(status || '').toLowerCase())
+
+  async function openOrCreateFiscalInvoice(so: SO) {
+    if (!companyId) {
+      toast.error(tt('org.noCompany', 'Join or create a company first'))
+      return
+    }
+
+    try {
+      setCreatingInvoiceForOrderId(so.id)
+      const result = await createDraftSalesInvoiceFromOrder(companyId, so.id)
+      toast.success(
+        result.existed
+          ? tt('financeDocs.mz.invoiceOpened', 'Opened the existing fiscal invoice')
+          : tt('financeDocs.mz.invoiceDraftCreated', 'Created a fiscal invoice draft from the sales order'),
+      )
+      navigate(`/sales-invoices/${result.invoiceId}`)
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.mz.invoiceDraftCreateFailed', 'Failed to create the fiscal invoice draft'))
+    } finally {
+      setCreatingInvoiceForOrderId(null)
+    }
+  }
+
   function salesWorkflowSummary(status?: string) {
     const value = String(status || '').toLowerCase()
     if (value === 'draft') {
@@ -2411,6 +2440,17 @@ export default function SalesOrders() {
                     {canIssueFromStatus(selectedSO.status) && (
                       <Button onClick={() => doShipSO(selectedSO)}>
                         {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
+                      </Button>
+                    )}
+                    {canCreateFiscalInvoice(selectedSO.status) && (
+                      <Button
+                        variant="secondary"
+                        disabled={creatingInvoiceForOrderId === selectedSO.id}
+                        onClick={() => void openOrCreateFiscalInvoice(selectedSO)}
+                      >
+                        {creatingInvoiceForOrderId === selectedSO.id
+                          ? tt('financeDocs.mz.invoiceDraftCreating', 'Preparing invoice...')
+                          : tt('financeDocs.mz.openFiscalInvoice', 'Open fiscal invoice')}
                       </Button>
                     )}
                   </>

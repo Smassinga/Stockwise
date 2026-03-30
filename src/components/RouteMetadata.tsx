@@ -84,6 +84,11 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
       description: t.appDescription,
       noindex: true,
     },
+    '/compliance/mz': {
+      title: 'Mozambique Compliance | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
     '/vendor-bills': {
       title: 'Vendor Bills | StockWise',
       description: t.appDescription,

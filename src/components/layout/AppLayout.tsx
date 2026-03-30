@@ -24,6 +24,7 @@ import {
   Calculator,      // Landed cost icon
   Ruler,           // UoM
   ClipboardList,   // Stock Levels
+  ShieldCheck,     // Mozambique compliance
   X,
   Search,
   ChevronDown
@@ -61,29 +62,30 @@ type NavSection = {
   items: NavItem[]
 }
 
-function buildNavLabels(t: (k: string, v?: any) => string): NavItem[] {
+function buildNavLabels(tt: (key: string, fallback: string) => string): NavItem[] {
   return [
-    { label: t('nav.dashboard'),    to: '/dashboard',    icon: LayoutGrid },
-    { label: t('nav.items'),        to: '/items',        icon: Package },
-    { label: t('nav.bom'),          to: '/bom',          icon: Layers },
-    { label: t('nav.movements'),    to: '/movements',    icon: ArrowLeftRight },
-    { label: t('nav.transactions'), to: '/transactions', icon: Receipt },
-    { label: t('nav.cash'),         to: '/cash',         icon: Wallet },
-    { label: t('nav.banks'),        to: '/banks',        icon: Banknote },
-    { label: t('nav.orders'),       to: '/orders',       icon: ShoppingCart },
-    { label: t('nav.salesInvoices'),to: '/sales-invoices', icon: Receipt },
-    { label: t('nav.vendorBills'),  to: '/vendor-bills', icon: FileText },
-    { label: t('nav.settlements'),  to: '/settlements',  icon: CreditCard },
-    { label: t('nav.landedCost'),   to: '/landed-cost',  icon: Calculator },
-    { label: t('nav.reports'),      to: '/reports',      icon: BarChart3 },
-    { label: t('nav.stockLevels'),  to: '/stock-levels', icon: ClipboardList },
-    { label: t('nav.warehouses'),   to: '/warehouses',   icon: Boxes },
-    { label: t('nav.users'),        to: '/users',        icon: UsersIcon },
-    { label: t('nav.customers'),    to: '/customers',    icon: Users },
-    { label: t('nav.suppliers'),    to: '/suppliers',    icon: Truck },
-    { label: t('nav.currency'),     to: '/currency',     icon: Coins },
-    { label: t('nav.uom'),          to: '/uom',          icon: Ruler },
-    { label: t('nav.settings'),     to: '/settings',     icon: SettingsIcon },
+    { label: tt('nav.dashboard', 'Dashboard'), to: '/dashboard', icon: LayoutGrid },
+    { label: tt('nav.items', 'Items'), to: '/items', icon: Package },
+    { label: tt('nav.bom', 'BOM'), to: '/bom', icon: Layers },
+    { label: tt('nav.movements', 'Movements'), to: '/movements', icon: ArrowLeftRight },
+    { label: tt('nav.transactions', 'Transactions'), to: '/transactions', icon: Receipt },
+    { label: tt('nav.cash', 'Cash'), to: '/cash', icon: Wallet },
+    { label: tt('nav.banks', 'Banks'), to: '/banks', icon: Banknote },
+    { label: tt('nav.orders', 'Orders'), to: '/orders', icon: ShoppingCart },
+    { label: tt('nav.salesInvoices', 'Sales Invoices'), to: '/sales-invoices', icon: Receipt },
+    { label: tt('nav.complianceMz', 'Mozambique Compliance'), to: '/compliance/mz', icon: ShieldCheck },
+    { label: tt('nav.vendorBills', 'Vendor Bills'), to: '/vendor-bills', icon: FileText },
+    { label: tt('nav.settlements', 'Settlements'), to: '/settlements', icon: CreditCard },
+    { label: tt('nav.landedCost', 'Landed Cost'), to: '/landed-cost', icon: Calculator },
+    { label: tt('nav.reports', 'Reports'), to: '/reports', icon: BarChart3 },
+    { label: tt('nav.stockLevels', 'Stock Levels'), to: '/stock-levels', icon: ClipboardList },
+    { label: tt('nav.warehouses', 'Warehouses'), to: '/warehouses', icon: Boxes },
+    { label: tt('nav.users', 'Users'), to: '/users', icon: UsersIcon },
+    { label: tt('nav.customers', 'Customers'), to: '/customers', icon: Users },
+    { label: tt('nav.suppliers', 'Suppliers'), to: '/suppliers', icon: Truck },
+    { label: tt('nav.currency', 'Currency'), to: '/currency', icon: Coins },
+    { label: tt('nav.uom', 'UoM'), to: '/uom', icon: Ruler },
+    { label: tt('nav.settings', 'Settings'), to: '/settings', icon: SettingsIcon },
   ]
 }
 
@@ -143,9 +145,9 @@ export function AppLayout({ user, children }: Props) {
 
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, [...CanManageUsers])
-    const base = buildNavLabels(t)
+    const base = buildNavLabels((key, fallback) => tt(key, fallback))
     return base.filter(item => !(item.to === '/users' && !canManage))
-  }, [myRole, t])
+  }, [myRole, tt])
 
   const navSections = useMemo<NavSection[]>(
     () => {
@@ -156,7 +158,7 @@ export function AppLayout({ user, children }: Props) {
         ],
         [
           tt('shell.nav.commercial', 'Commercial & finance'),
-          ['/orders', '/sales-invoices', '/vendor-bills', '/settlements', '/transactions', '/cash', '/banks', '/landed-cost', '/reports'],
+          ['/orders', '/sales-invoices', '/compliance/mz', '/vendor-bills', '/settlements', '/transactions', '/cash', '/banks', '/landed-cost', '/reports'],
         ],
         [
           tt('shell.nav.setup', 'Setup'),
