@@ -587,15 +587,22 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     throw new Error('Only confirmed, allocated, shipped, or closed sales orders can become fiscal invoice drafts.')
   }
 
+  // sales_order_lines has no created_at column in the live schema.
+  // Keep fiscal draft preparation deterministic with line_no then id.
   const { data: lines, error: linesError } = await supabase
     .from('sales_order_lines')
     .select('id,so_id,item_id,description,line_no,qty,unit_price,discount_pct,line_total')
     .eq('so_id', salesOrderId)
     .order('line_no', { ascending: true })
-    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
 
   if (linesError) {
-    mzRuntimeError('salesInvoiceDraft.orderLinesLoad.failed', linesError, { companyId, salesOrderId })
+    mzRuntimeError('salesInvoiceDraft.orderLinesLoad.failed', linesError, {
+      companyId,
+      salesOrderId,
+      queryPurpose: 'fiscal-draft-preparation',
+      orderBy: ['line_no.asc', 'id.asc'],
+    })
     throw new Error(humanizeRuntimeError(linesError, 'Failed to load sales order lines for fiscalization', 'sales_order_lines.select'))
   }
 

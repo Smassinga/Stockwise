@@ -128,6 +128,14 @@ type SOL = {
   shipped_qty?: number
 }
 
+type LinkedSalesInvoiceSummary = {
+  id: string
+  sales_order_id: string
+  internal_reference: string
+  document_workflow_status: 'draft' | 'issued'
+  created_at: string
+}
+
 // NEW: UI mapping for Company Profile
 type CompanyProfileUI = {
   tradeName?: string
@@ -341,6 +349,7 @@ export default function SalesOrders() {
   // lists
   const [sos, setSOs] = useState<SO[]>([])
   const [solines, setSOLines] = useState<SOL[]>([])
+  const [salesInvoicesByOrderId, setSalesInvoicesByOrderId] = useState<Map<string, LinkedSalesInvoiceSummary>>(new Map())
 
   // create form
   const [soOpen, setSoOpen] = useState(false)
@@ -631,10 +640,11 @@ export default function SalesOrders() {
     if (!activeCompanyId) {
       setSOs([])
       setSOLines([])
+      setSalesInvoicesByOrderId(new Map())
       return
     }
 
-    const [soRes, solRes] = await Promise.all([
+    const [soRes, solRes, invoiceRes] = await Promise.all([
       supabase
         .from('sales_orders')
         .select('id,customer_id,customer,status,order_date,currency_code,fx_to_base,total_amount,tax_total,due_date,payment_terms_id,payment_terms,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,confirmed_by,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,created_by,public_id,created_at,updated_at,order_no,company_id')
@@ -643,10 +653,40 @@ export default function SalesOrders() {
         .from('sales_order_lines')
         .select('id,so_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total,is_shipped,shipped_at,shipped_qty')
         .eq('company_id', activeCompanyId),
+      supabase
+        .from('sales_invoices')
+        .select('id,sales_order_id,internal_reference,document_workflow_status,created_at')
+        .eq('company_id', activeCompanyId)
+        .not('sales_order_id', 'is', null)
+        .in('document_workflow_status', ['draft', 'issued'])
+        .order('created_at', { ascending: false }),
     ])
 
-    if (soRes.error) throw soRes.error
-    if (solRes.error) throw solRes.error
+    if (soRes.error) {
+      console.error('[mz-runtime] SalesOrders.refreshSalesData.salesOrders failed', {
+        companyId: activeCompanyId,
+        queryPurpose: 'order-detail-load',
+        error: soRes.error,
+      })
+      throw soRes.error
+    }
+    if (solRes.error) {
+      console.error('[mz-runtime] SalesOrders.refreshSalesData.salesOrderLines failed', {
+        companyId: activeCompanyId,
+        queryPurpose: 'order-detail-load',
+        orderBy: 'none',
+        error: solRes.error,
+      })
+      throw solRes.error
+    }
+    if (invoiceRes.error) {
+      console.error('[mz-runtime] SalesOrders.refreshSalesData.salesInvoices failed', {
+        companyId: activeCompanyId,
+        queryPurpose: 'order-detail-load',
+        error: invoiceRes.error,
+      })
+      throw invoiceRes.error
+    }
 
     const withFlags = (solRes.data || []).map((line: any) => ({
       ...line,
@@ -655,8 +695,15 @@ export default function SalesOrders() {
       shipped_qty: Number.isFinite(Number(line.shipped_qty)) ? Number(line.shipped_qty) : 0,
     })) as SOL[]
 
+    const nextInvoicesByOrderId = new Map<string, LinkedSalesInvoiceSummary>()
+    for (const row of (invoiceRes.data || []) as LinkedSalesInvoiceSummary[]) {
+      if (!row.sales_order_id || nextInvoicesByOrderId.has(row.sales_order_id)) continue
+      nextInvoicesByOrderId.set(row.sales_order_id, row)
+    }
+
     setSOs(((soRes.data || []) as SO[]).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
     setSOLines(withFlags)
+    setSalesInvoicesByOrderId(nextInvoicesByOrderId)
   }
 
   // load masters, conversions, settings, lists, defaults, (global) branding fallbacks
@@ -1436,6 +1483,10 @@ export default function SalesOrders() {
     () => selectedSOOpenLines.reduce((sum, line) => sum + remaining(line), 0),
     [selectedSOOpenLines]
   )
+  const linkedFiscalInvoice = useMemo(
+    () => (selectedSO ? salesInvoicesByOrderId.get(selectedSO.id) : undefined),
+    [salesInvoicesByOrderId, selectedSO],
+  )
 
   function salesStatusClass(status?: string) {
     const value = legacySalesWorkflowStatus(status)
@@ -1522,6 +1573,15 @@ export default function SalesOrders() {
     } finally {
       setCreatingInvoiceForOrderId(null)
     }
+  }
+
+  function openSalesOrderDetail(so: SO) {
+    setSelectedSO(so)
+    setSoViewOpen(true)
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', 'sales')
+    next.set('orderId', so.id)
+    setSearchParams(next, { replace: true })
   }
 
   function salesWorkflowSummary(status?: string) {
@@ -2302,7 +2362,7 @@ export default function SalesOrders() {
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                     <td className="py-3 pr-2">
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => { setSelectedSO(so); setSoViewOpen(true) }}>{tt('orders.view', 'View')}</Button>
+                        <Button size="sm" variant="secondary" onClick={() => openSalesOrderDetail(so)}>{tt('orders.view', 'View')}</Button>
                         <Button size="sm" variant="outline" onClick={() => printSO(so)}>{tt('orders.print', 'Print')}</Button>
                         <Button size="sm" variant="outline" onClick={() => printSO(so, true)}>{tt('orders.download', 'Download')}</Button>
                         {String(so.status).toLowerCase() === 'draft' && (
@@ -2421,6 +2481,8 @@ export default function SalesOrders() {
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxSO(selectedSO))}</div></div>
                 <div><Label>{tt('orders.expectedShip', 'Expected Ship')}</Label><div>{(selectedSO as any).expected_ship_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedSO as any).due_date || tt('none', '(none)')}</div></div>
+                <div><Label>{tt('financeDocs.fields.internalReference', 'Internal reference')}</Label><div>{linkedFiscalInvoice?.internal_reference || tt('common.none', 'None')}</div></div>
+                <div><Label>{tt('financeDocs.fields.workflow', 'Workflow')}</Label><div>{linkedFiscalInvoice ? linkedFiscalInvoice.document_workflow_status.toUpperCase() : tt('common.none', 'None')}</div></div>
               </div>
               </div>
 
@@ -2447,7 +2509,14 @@ export default function SalesOrders() {
                         {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
                       </Button>
                     )}
-                    {canCreateFiscalInvoice(selectedSO.status) && (
+                    {linkedFiscalInvoice ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => navigate(`/sales-invoices/${linkedFiscalInvoice.id}`)}
+                      >
+                        {tt('financeDocs.mz.openLinkedInvoice', 'Open linked invoice')}
+                      </Button>
+                    ) : canCreateFiscalInvoice(selectedSO.status) && (
                       <Button
                         variant="secondary"
                         disabled={creatingInvoiceForOrderId === selectedSO.id}
