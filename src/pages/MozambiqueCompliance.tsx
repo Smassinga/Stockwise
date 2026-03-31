@@ -49,6 +49,14 @@ export default function MozambiqueCompliancePage() {
   const [events, setEvents] = useState<FinanceDocumentEventRow[]>([])
   const [artifacts, setArtifacts] = useState<FiscalDocumentArtifactRow[]>([])
 
+  function reportRuntimeError(event: string, error: unknown, context: Record<string, unknown> = {}) {
+    console.error(`[mz-runtime] MozambiqueCompliance.${event}`, {
+      companyId,
+      ...context,
+      error,
+    })
+  }
+
   useEffect(() => {
     let active = true
 
@@ -80,7 +88,7 @@ export default function MozambiqueCompliancePage() {
         setEvents(nextEvents)
         setArtifacts(nextArtifacts)
       } catch (error: any) {
-        console.error(error)
+        reportRuntimeError('loadWorkspace', error)
         if (active) toast.error(error?.message || tt('financeDocs.mz.complianceLoadFailed', 'Failed to load Mozambique compliance data'))
       } finally {
         if (active) setLoading(false)

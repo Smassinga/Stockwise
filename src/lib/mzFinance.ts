@@ -221,6 +221,26 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
+function mzRuntimeDebugEnabled() {
+  try {
+    return Boolean(import.meta.env.DEV || globalThis.localStorage?.getItem('stockwise:debug:mz') === '1')
+  } catch {
+    return false
+  }
+}
+
+function mzRuntimeDebug(event: string, context: Record<string, unknown>) {
+  if (!mzRuntimeDebugEnabled()) return
+  console.debug(`[mz-runtime] ${event}`, context)
+}
+
+function mzRuntimeError(event: string, error: unknown, context: Record<string, unknown>) {
+  console.error(`[mz-runtime] ${event}`, {
+    ...context,
+    error,
+  })
+}
+
 function isoToday() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -268,10 +288,10 @@ function normalizeDueDate(order: SalesOrderDraftSource) {
   }
 }
 
-function humanizeError(error: any, fallback: string) {
+function humanizeRuntimeError(error: any, fallback: string, stage: string) {
   const message = String(error?.message || '').trim()
-  if (!message) return fallback
-  return message
+  if (!message) return `${fallback} [${stage}]`
+  return `${fallback} [${stage}]: ${message}`
 }
 
 function allowedSalesOrderForInvoice(status?: string | null) {
@@ -301,17 +321,23 @@ async function maybeVoidDraftCreditNote(companyId: string, noteId: string, reaso
 }
 
 export async function getCompanyFiscalSettings(companyId: string) {
+  mzRuntimeDebug('companyFiscalSettings.load.start', { companyId })
   const { data, error } = await supabase
     .from('company_fiscal_settings')
     .select('*')
     .eq('company_id', companyId)
     .maybeSingle<CompanyFiscalSettingsRow>()
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('companyFiscalSettings.load.failed', error, { companyId })
+    throw error
+  }
+  mzRuntimeDebug('companyFiscalSettings.load.success', { companyId, found: Boolean(data) })
   return data
 }
 
 export async function listCompanyFiscalSeries(companyId: string, fiscalYear?: number | null) {
+  mzRuntimeDebug('fiscalSeries.load.start', { companyId, fiscalYear: fiscalYear ?? null })
   let query = supabase
     .from('finance_document_fiscal_series')
     .select('*')
@@ -324,11 +350,16 @@ export async function listCompanyFiscalSeries(companyId: string, fiscalYear?: nu
 
   const { data, error } = await query
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('fiscalSeries.load.failed', error, { companyId, fiscalYear: fiscalYear ?? null })
+    throw error
+  }
+  mzRuntimeDebug('fiscalSeries.load.success', { companyId, fiscalYear: fiscalYear ?? null, rowCount: data?.length ?? 0 })
   return (data || []) as FinanceDocumentFiscalSeriesRow[]
 }
 
 export async function listSaftMozExports(companyId: string) {
+  mzRuntimeDebug('saftExports.load.start', { companyId })
   const { data, error } = await supabase
     .from('saft_moz_exports')
     .select('*')
@@ -336,7 +367,11 @@ export async function listSaftMozExports(companyId: string) {
     .order('period_start', { ascending: false })
     .order('created_at', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('saftExports.load.failed', error, { companyId })
+    throw error
+  }
+  mzRuntimeDebug('saftExports.load.success', { companyId, rowCount: data?.length ?? 0 })
   return (data || []) as SaftMozExportRow[]
 }
 
@@ -345,6 +380,11 @@ export async function listFinanceEvents(
   documentKind?: FinanceDocumentEventRow['document_kind'],
   documentId?: string,
 ) {
+  mzRuntimeDebug('financeEvents.load.start', {
+    companyId,
+    documentKind: documentKind ?? null,
+    documentId: documentId ?? null,
+  })
   let query = supabase
     .from('finance_document_events')
     .select('*')
@@ -356,7 +396,20 @@ export async function listFinanceEvents(
 
   const { data, error } = await query.limit(documentId ? 50 : 25)
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('financeEvents.load.failed', error, {
+      companyId,
+      documentKind: documentKind ?? null,
+      documentId: documentId ?? null,
+    })
+    throw error
+  }
+  mzRuntimeDebug('financeEvents.load.success', {
+    companyId,
+    documentKind: documentKind ?? null,
+    documentId: documentId ?? null,
+    rowCount: data?.length ?? 0,
+  })
   return (data || []) as FinanceDocumentEventRow[]
 }
 
@@ -365,6 +418,11 @@ export async function listFiscalArtifacts(
   documentKind?: FiscalDocumentArtifactRow['document_kind'],
   documentId?: string,
 ) {
+  mzRuntimeDebug('fiscalArtifacts.load.start', {
+    companyId,
+    documentKind: documentKind ?? null,
+    documentId: documentId ?? null,
+  })
   let query = supabase
     .from('fiscal_document_artifacts')
     .select('*')
@@ -376,11 +434,25 @@ export async function listFiscalArtifacts(
 
   const { data, error } = await query.limit(documentId ? 25 : 20)
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('fiscalArtifacts.load.failed', error, {
+      companyId,
+      documentKind: documentKind ?? null,
+      documentId: documentId ?? null,
+    })
+    throw error
+  }
+  mzRuntimeDebug('fiscalArtifacts.load.success', {
+    companyId,
+    documentKind: documentKind ?? null,
+    documentId: documentId ?? null,
+    rowCount: data?.length ?? 0,
+  })
   return (data || []) as FiscalDocumentArtifactRow[]
 }
 
 export async function getSalesInvoiceDocument(companyId: string, invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_invoices')
     .select('*')
@@ -388,11 +460,16 @@ export async function getSalesInvoiceDocument(companyId: string, invoiceId: stri
     .eq('id', invoiceId)
     .maybeSingle<SalesInvoiceDocumentRow>()
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('salesInvoice.load.failed', error, { companyId, invoiceId })
+    throw error
+  }
+  mzRuntimeDebug('salesInvoice.load.success', { companyId, invoiceId, found: Boolean(data) })
   return data
 }
 
 export async function listSalesInvoiceDocumentLines(companyId: string, invoiceId: string) {
+  mzRuntimeDebug('salesInvoiceLines.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_invoice_lines')
     .select('*')
@@ -401,11 +478,16 @@ export async function listSalesInvoiceDocumentLines(companyId: string, invoiceId
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('salesInvoiceLines.load.failed', error, { companyId, invoiceId })
+    throw error
+  }
+  mzRuntimeDebug('salesInvoiceLines.load.success', { companyId, invoiceId, rowCount: data?.length ?? 0 })
   return (data || []) as SalesInvoiceDocumentLineRow[]
 }
 
 export async function listSalesCreditNotesForInvoice(companyId: string, invoiceId: string) {
+  mzRuntimeDebug('creditNotes.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_credit_notes')
     .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,document_workflow_status,issued_at,created_at,updated_at')
@@ -413,7 +495,11 @@ export async function listSalesCreditNotesForInvoice(companyId: string, invoiceI
     .eq('original_sales_invoice_id', invoiceId)
     .order('created_at', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('creditNotes.load.failed', error, { companyId, invoiceId })
+    throw error
+  }
+  mzRuntimeDebug('creditNotes.load.success', { companyId, invoiceId, rowCount: data?.length ?? 0 })
   return (data || []) as SalesCreditNoteRow[]
 }
 
@@ -423,6 +509,7 @@ export async function updateSalesInvoiceDraftDates(
   invoiceDate: string,
   dueDate: string,
 ) {
+  mzRuntimeDebug('salesInvoiceDraftDates.save.start', { companyId, invoiceId, invoiceDate, dueDate })
   const { data, error } = await supabase
     .from('sales_invoices')
     .update({
@@ -434,20 +521,30 @@ export async function updateSalesInvoiceDraftDates(
     .select('*')
     .single<SalesInvoiceDocumentRow>()
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('salesInvoiceDraftDates.save.failed', error, { companyId, invoiceId, invoiceDate, dueDate })
+    throw error
+  }
+  mzRuntimeDebug('salesInvoiceDraftDates.save.success', { companyId, invoiceId })
   return data
 }
 
 export async function issueSalesInvoice(invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.issue.start', { invoiceId })
   const { data, error } = await supabase.rpc('issue_sales_invoice_mz', {
     p_invoice_id: invoiceId,
   })
 
-  if (error) throw error
+  if (error) {
+    mzRuntimeError('salesInvoice.issue.failed', error, { invoiceId, rpc: 'issue_sales_invoice_mz' })
+    throw new Error(humanizeRuntimeError(error, 'Sales invoice issuance failed', 'rpc.issue_sales_invoice_mz'))
+  }
+  mzRuntimeDebug('salesInvoice.issue.success', { invoiceId })
   return data as SalesInvoiceDocumentRow
 }
 
 export async function createDraftSalesInvoiceFromOrder(companyId: string, salesOrderId: string) {
+  mzRuntimeDebug('salesInvoiceDraft.create.start', { companyId, salesOrderId })
   const { data: existingInvoice, error: existingError } = await supabase
     .from('sales_invoices')
     .select('id,internal_reference,document_workflow_status')
@@ -458,8 +555,17 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     .limit(1)
     .maybeSingle<{ id: string; internal_reference: string; document_workflow_status: string }>()
 
-  if (existingError) throw existingError
+  if (existingError) {
+    mzRuntimeError('salesInvoiceDraft.lookup.failed', existingError, { companyId, salesOrderId })
+    throw new Error(humanizeRuntimeError(existingError, 'Failed to inspect existing fiscal invoices', 'sales_invoices.lookup'))
+  }
   if (existingInvoice) {
+    mzRuntimeDebug('salesInvoiceDraft.create.reused', {
+      companyId,
+      salesOrderId,
+      invoiceId: existingInvoice.id,
+      documentWorkflowStatus: existingInvoice.document_workflow_status,
+    })
     return { invoiceId: existingInvoice.id, internalReference: existingInvoice.internal_reference, existed: true }
   }
 
@@ -470,7 +576,10 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     .eq('id', salesOrderId)
     .maybeSingle<SalesOrderDraftSource>()
 
-  if (orderError) throw orderError
+  if (orderError) {
+    mzRuntimeError('salesInvoiceDraft.orderLoad.failed', orderError, { companyId, salesOrderId })
+    throw new Error(humanizeRuntimeError(orderError, 'Failed to load the source sales order', 'sales_orders.select'))
+  }
   if (!order) {
     throw new Error('Sales order not found for the active company.')
   }
@@ -485,7 +594,10 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     .order('line_no', { ascending: true })
     .order('created_at', { ascending: true })
 
-  if (linesError) throw linesError
+  if (linesError) {
+    mzRuntimeError('salesInvoiceDraft.orderLinesLoad.failed', linesError, { companyId, salesOrderId })
+    throw new Error(humanizeRuntimeError(linesError, 'Failed to load sales order lines for fiscalization', 'sales_order_lines.select'))
+  }
 
   const sourceLines = ((lines || []) as SalesOrderLineDraftSource[])
     .filter((line) => toNumber(line.qty) > 0)
@@ -532,7 +644,10 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     .select('id,internal_reference')
     .single<{ id: string; internal_reference: string }>()
 
-  if (invoiceError) throw invoiceError
+  if (invoiceError) {
+    mzRuntimeError('salesInvoiceDraft.headerInsert.failed', invoiceError, { companyId, salesOrderId })
+    throw new Error(humanizeRuntimeError(invoiceError, 'Failed to create the draft sales invoice header', 'sales_invoices.insert'))
+  }
 
   const linePayload = sourceLines.map((line, index) => ({
     company_id: companyId,
@@ -553,10 +668,26 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     .insert(linePayload)
 
   if (insertLineError) {
+    mzRuntimeError('salesInvoiceDraft.linesInsert.failed', insertLineError, {
+      companyId,
+      salesOrderId,
+      invoiceId: invoice.id,
+      lineCount: linePayload.length,
+    })
     await maybeVoidDraftInvoice(companyId, invoice.id, 'Automatic invoice draft creation failed while inserting line items.')
-    throw new Error(humanizeError(insertLineError, 'The invoice draft could not be completed. The draft was voided for manual review.'))
+    throw new Error(humanizeRuntimeError(insertLineError, 'The invoice draft could not be completed. The draft was voided for manual review.', 'sales_invoice_lines.insert'))
   }
 
+  mzRuntimeDebug('salesInvoiceDraft.create.success', {
+    companyId,
+    salesOrderId,
+    invoiceId: invoice.id,
+    internalReference: invoice.internal_reference,
+    lineCount: linePayload.length,
+    subtotal,
+    taxTotal: headerTaxTotal,
+    totalAmount,
+  })
   return { invoiceId: invoice.id, internalReference: invoice.internal_reference, existed: false }
 }
 
@@ -565,6 +696,7 @@ export async function createAndIssueFullCreditNoteForInvoice(
   invoiceId: string,
   correctionReasonText: string,
 ) {
+  mzRuntimeDebug('creditNote.issueFromInvoice.start', { companyId, invoiceId })
   const trimmedReason = correctionReasonText.trim()
   if (!trimmedReason) {
     throw new Error('A correction reason is required to issue a credit note.')
@@ -605,7 +737,10 @@ export async function createAndIssueFullCreditNoteForInvoice(
     .select('id,internal_reference')
     .single<{ id: string; internal_reference: string }>()
 
-  if (noteError) throw noteError
+  if (noteError) {
+    mzRuntimeError('creditNote.headerInsert.failed', noteError, { companyId, invoiceId })
+    throw new Error(humanizeRuntimeError(noteError, 'Failed to create the credit note draft header', 'sales_credit_notes.insert'))
+  }
 
   const noteLinePayload = lines.map((line, index) => ({
     company_id: companyId,
@@ -626,8 +761,14 @@ export async function createAndIssueFullCreditNoteForInvoice(
     .insert(noteLinePayload)
 
   if (noteLineError) {
+    mzRuntimeError('creditNote.linesInsert.failed', noteLineError, {
+      companyId,
+      invoiceId,
+      noteId: note.id,
+      lineCount: noteLinePayload.length,
+    })
     await maybeVoidDraftCreditNote(companyId, note.id, 'Automatic credit note creation failed while inserting line items.')
-    throw new Error(humanizeError(noteLineError, 'The credit note draft could not be completed. The draft was voided for manual review.'))
+    throw new Error(humanizeRuntimeError(noteLineError, 'The credit note draft could not be completed. The draft was voided for manual review.', 'sales_credit_note_lines.insert'))
   }
 
   const { data: issuedNote, error: issueError } = await supabase.rpc('issue_sales_credit_note_mz', {
@@ -635,8 +776,15 @@ export async function createAndIssueFullCreditNoteForInvoice(
   })
 
   if (issueError) {
-    throw issueError
+    mzRuntimeError('creditNote.issue.failed', issueError, { companyId, invoiceId, noteId: note.id, rpc: 'issue_sales_credit_note_mz' })
+    throw new Error(humanizeRuntimeError(issueError, 'Credit note issuance failed', 'rpc.issue_sales_credit_note_mz'))
   }
 
+  mzRuntimeDebug('creditNote.issueFromInvoice.success', {
+    companyId,
+    invoiceId,
+    noteId: (issuedNote as SalesCreditNoteRow).id,
+    internalReference: (issuedNote as SalesCreditNoteRow).internal_reference,
+  })
   return issuedNote as SalesCreditNoteRow
 }

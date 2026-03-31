@@ -80,6 +80,15 @@ export default function SalesInvoiceDetailPage() {
       currency: currencyCode || 'MZN',
     }).format(amount || 0)
 
+  function reportRuntimeError(event: string, error: unknown, context: Record<string, unknown> = {}) {
+    console.error(`[mz-runtime] SalesInvoiceDetail.${event}`, {
+      companyId,
+      invoiceId,
+      ...context,
+      error,
+    })
+  }
+
   async function loadWorkspace() {
     if (!companyId || !invoiceId) {
       setLoading(false)
@@ -109,7 +118,7 @@ export default function SalesInvoiceDetailPage() {
       setInvoiceDateDraft(nextInvoice?.invoice_date || '')
       setDueDateDraft(nextInvoice?.due_date || '')
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('loadWorkspace', error)
       toast.error(error?.message || tt('financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoice'))
       setInvoice(null)
     } finally {
@@ -137,7 +146,10 @@ export default function SalesInvoiceDetailPage() {
       toast.success(tt('financeDocs.mz.draftDatesSaved', 'Draft invoice dates saved'))
       await loadWorkspace()
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('saveDraftDates', error, {
+        draftInvoiceDate: invoiceDateDraft,
+        draftDueDate: dueDateDraft,
+      })
       toast.error(error?.message || tt('financeDocs.mz.draftDatesSaveFailed', 'Failed to save draft invoice dates'))
     } finally {
       setSavingDraft(false)
@@ -152,7 +164,9 @@ export default function SalesInvoiceDetailPage() {
       toast.success(tt('financeDocs.mz.issueSuccess', 'Sales invoice issued'))
       await loadWorkspace()
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('issueInvoice', error, {
+        documentWorkflowStatus: invoice.document_workflow_status,
+      })
       toast.error(error?.message || tt('financeDocs.mz.issueFailed', 'Failed to issue sales invoice'))
     } finally {
       setIssuing(false)
@@ -164,7 +178,9 @@ export default function SalesInvoiceDetailPage() {
     try {
       await printSalesInvoiceDocument(outputModel)
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('printInvoice', error, {
+        internalReference: outputModel.legalReference,
+      })
       toast.error(error?.message || tt('financeDocs.mz.printFailed', 'Unable to open the invoice print view'))
     }
   }
@@ -174,7 +190,9 @@ export default function SalesInvoiceDetailPage() {
     try {
       await downloadSalesInvoicePdf(outputModel)
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('downloadPdf', error, {
+        internalReference: outputModel.legalReference,
+      })
       toast.error(error?.message || tt('financeDocs.mz.pdfFailed', 'Unable to generate the invoice PDF'))
     }
   }
@@ -184,7 +202,9 @@ export default function SalesInvoiceDetailPage() {
     try {
       await shareSalesInvoiceDocument(outputModel)
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('shareInvoice', error, {
+        internalReference: outputModel.legalReference,
+      })
       toast.error(error?.message || tt('financeDocs.mz.shareFailed', 'Sharing is not available for this invoice on the current device'))
     }
   }
@@ -199,7 +219,9 @@ export default function SalesInvoiceDetailPage() {
       setCreditReason('')
       await loadWorkspace()
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('createCreditNote', error, {
+        correctionReasonLength: creditReason.trim().length,
+      })
       toast.error(error?.message || tt('financeDocs.mz.creditNoteFailed', 'Failed to issue the credit note'))
     } finally {
       setCreatingCredit(false)
@@ -220,7 +242,12 @@ export default function SalesInvoiceDetailPage() {
       if (error || !data?.signedUrl) throw error || new Error('Signed URL unavailable')
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
     } catch (error: any) {
-      console.error(error)
+      reportRuntimeError('openArtifact', error, {
+        artifactId: artifact.id,
+        artifactType: artifact.artifact_type,
+        storageBucket: artifact.storage_bucket,
+        storagePath: artifact.storage_path,
+      })
       toast.error(error?.message || tt('financeDocs.mz.archiveOpenFailed', 'Unable to open the archived file'))
     }
   }

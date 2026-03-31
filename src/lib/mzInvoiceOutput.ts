@@ -45,6 +45,26 @@ export type SalesInvoiceOutputModel = {
 
 let pdfSuitePromise: Promise<PdfSuite> | null = null
 
+function mzRuntimeDebugEnabled() {
+  try {
+    return Boolean(import.meta.env.DEV || globalThis.localStorage?.getItem('stockwise:debug:mz') === '1')
+  } catch {
+    return false
+  }
+}
+
+function mzRuntimeDebug(event: string, context: Record<string, unknown>) {
+  if (!mzRuntimeDebugEnabled()) return
+  console.debug(`[mz-runtime] ${event}`, context)
+}
+
+function mzRuntimeError(event: string, error: unknown, context: Record<string, unknown>) {
+  console.error(`[mz-runtime] ${event}`, {
+    ...context,
+    error,
+  })
+}
+
 function loadPdfSuite() {
   if (!pdfSuitePromise) {
     pdfSuitePromise = Promise.all([import('jspdf'), import('jspdf-autotable')]).then(
@@ -373,6 +393,11 @@ function htmlShell(title: string, css: string, html: string) {
 }
 
 async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
+  mzRuntimeDebug('salesInvoiceOutput.pdf.start', {
+    invoiceId: model.invoiceId,
+    legalReference: model.legalReference,
+    lineCount: model.lines.length,
+  })
   const { jsPDF, autoTable } = await loadPdfSuite()
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
 
@@ -495,73 +520,125 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
   doc.setFont('helvetica', 'normal')
   doc.text('Documento fiscal emitido com base nos dados congelados da fatura.', left, cursorY + 14)
 
-  return doc.output('blob') as Blob
+  const blob = doc.output('blob') as Blob
+  mzRuntimeDebug('salesInvoiceOutput.pdf.success', {
+    invoiceId: model.invoiceId,
+    legalReference: model.legalReference,
+    byteSize: blob.size,
+  })
+  return blob
 }
 
 export async function printSalesInvoiceDocument(model: SalesInvoiceOutputModel) {
-  const shell = htmlShell(
-    `Fatura ${model.legalReference}`,
-    buildSalesInvoiceCss(),
-    buildSalesInvoiceHtml(model),
-  )
-  const w = window.open('', '_blank', 'noopener,noreferrer')
-  if (!w) {
-    throw new Error('Não foi possível abrir a janela de impressão.')
-  }
-
-  w.document.write(shell)
-  w.document.close()
-  setTimeout(() => {
-    try {
-      w.focus()
-      w.print()
-    } catch {
-      w.alert('Use a função de impressão do navegador para continuar.')
+  try {
+    mzRuntimeDebug('salesInvoiceOutput.print.start', {
+      invoiceId: model.invoiceId,
+      legalReference: model.legalReference,
+    })
+    const shell = htmlShell(
+      `Fatura ${model.legalReference}`,
+      buildSalesInvoiceCss(),
+      buildSalesInvoiceHtml(model),
+    )
+    const w = window.open('', '_blank', 'noopener,noreferrer')
+    if (!w) {
+      throw new Error('Não foi possível abrir a janela de impressão.')
     }
-  }, 300)
+
+    w.document.write(shell)
+    w.document.close()
+    setTimeout(() => {
+      try {
+        w.focus()
+        w.print()
+      } catch {
+        w.alert('Use a função de impressão do navegador para continuar.')
+      }
+    }, 300)
+  } catch (error) {
+    mzRuntimeError('salesInvoiceOutput.print.failed', error, {
+      invoiceId: model.invoiceId,
+      legalReference: model.legalReference,
+    })
+    throw error
+  }
 }
 
 export async function downloadSalesInvoicePdf(model: SalesInvoiceOutputModel) {
-  const blob = await buildSalesInvoicePdfBlob(model)
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${model.legalReference}.pdf`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  try {
+    const blob = await buildSalesInvoicePdfBlob(model)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${model.legalReference}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    mzRuntimeDebug('salesInvoiceOutput.download.success', {
+      invoiceId: model.invoiceId,
+      legalReference: model.legalReference,
+    })
+  } catch (error) {
+    mzRuntimeError('salesInvoiceOutput.download.failed', error, {
+      invoiceId: model.invoiceId,
+      legalReference: model.legalReference,
+    })
+    throw error
+  }
 }
 
 export async function shareSalesInvoiceDocument(model: SalesInvoiceOutputModel) {
-  const navigatorWithShare = navigator as Navigator & {
-    share?: (data: ShareData) => Promise<void>
-    canShare?: (data: ShareData) => boolean
-  }
-  const summaryText =
-    `Fatura ${model.legalReference}\n` +
-    `Data: ${model.issueDate}\n` +
-    `Total fiscal (MZN): ${fmtCurrency(model.totalAmountMzn, 'MZN')}`
+  try {
+    mzRuntimeDebug('salesInvoiceOutput.share.start', {
+      invoiceId: model.invoiceId,
+      legalReference: model.legalReference,
+    })
+    const navigatorWithShare = navigator as Navigator & {
+      share?: (data: ShareData) => Promise<void>
+      canShare?: (data: ShareData) => boolean
+    }
+    const summaryText =
+      `Fatura ${model.legalReference}\n` +
+      `Data: ${model.issueDate}\n` +
+      `Total fiscal (MZN): ${fmtCurrency(model.totalAmountMzn, 'MZN')}`
 
-  if (navigatorWithShare.share) {
-    const blob = await buildSalesInvoicePdfBlob(model)
-    const file = new File([blob], `${model.legalReference}.pdf`, { type: 'application/pdf' })
+    if (navigatorWithShare.share) {
+      const blob = await buildSalesInvoicePdfBlob(model)
+      const file = new File([blob], `${model.legalReference}.pdf`, { type: 'application/pdf' })
 
-    if (navigatorWithShare.canShare?.({ files: [file] })) {
+      if (navigatorWithShare.canShare?.({ files: [file] })) {
+        await navigatorWithShare.share({
+          title: `Fatura ${model.legalReference}`,
+          text: summaryText,
+          files: [file],
+        })
+        mzRuntimeDebug('salesInvoiceOutput.share.success', {
+          invoiceId: model.invoiceId,
+          legalReference: model.legalReference,
+          mode: 'file',
+        })
+        return
+      }
+
       await navigatorWithShare.share({
         title: `Fatura ${model.legalReference}`,
         text: summaryText,
-        files: [file],
+      })
+      mzRuntimeDebug('salesInvoiceOutput.share.success', {
+        invoiceId: model.invoiceId,
+        legalReference: model.legalReference,
+        mode: 'text',
       })
       return
     }
 
-    await navigatorWithShare.share({
-      title: `Fatura ${model.legalReference}`,
-      text: summaryText,
+    throw new Error('A partilha não está disponível neste dispositivo.')
+  } catch (error) {
+    mzRuntimeError('salesInvoiceOutput.share.failed', error, {
+      invoiceId: model.invoiceId,
+      legalReference: model.legalReference,
     })
-    return
+    throw error
   }
-
-  throw new Error('A partilha não está disponível neste dispositivo.')
 }

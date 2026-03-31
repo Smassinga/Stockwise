@@ -1512,7 +1512,12 @@ export default function SalesOrders() {
       )
       navigate(`/sales-invoices/${result.invoiceId}`)
     } catch (error: any) {
-      console.error(error)
+      console.error('[mz-runtime] SalesOrders.openOrCreateFiscalInvoice failed', {
+        companyId,
+        salesOrderId: so.id,
+        salesOrderStatus: so.status,
+        error,
+      })
       toast.error(error?.message || tt('financeDocs.mz.invoiceDraftCreateFailed', 'Failed to create the fiscal invoice draft'))
     } finally {
       setCreatingInvoiceForOrderId(null)
