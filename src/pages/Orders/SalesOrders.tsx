@@ -2398,9 +2398,10 @@ export default function SalesOrders() {
               <th className="py-2 pr-2">{workflowLabel}</th>
               <th className="py-2 pr-2">{tt('orders.currency', 'Currency')}</th>
               <th className="py-2 pr-2">{tt('orders.total', 'Total')}</th>
+              <th className="py-2 pr-2">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
             <tbody>
-              {sos.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.noSOsYet', 'No SOs yet.')}</td></tr>}
+              {sos.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noSOsYet', 'No SOs yet.')}</td></tr>}
               {sos.map(so => {
                 const amounts = amountSO(so)
                 return (
@@ -2414,6 +2415,11 @@ export default function SalesOrders() {
                     </td>
                     <td className="py-3 pr-2">{curSO(so)}</td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
+                    <td className="py-3 pr-2">
+                      <Button size="sm" variant="secondary" onClick={() => openSalesOrderDetail(so)}>
+                        {tt('orders.view', 'View')}
+                      </Button>
+                    </td>
                   </tr>
                 )
               })}
