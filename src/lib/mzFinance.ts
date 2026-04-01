@@ -83,6 +83,28 @@ export type SalesInvoiceDocumentRow = {
   updated_at: string
 }
 
+export type SalesInvoiceDraftPreview = {
+  seller_legal_name: string | null
+  seller_trade_name: string | null
+  seller_nuit: string | null
+  seller_address_line1: string | null
+  seller_address_line2: string | null
+  seller_city: string | null
+  seller_state: string | null
+  seller_postal_code: string | null
+  seller_country_code: string | null
+  buyer_legal_name: string | null
+  buyer_nuit: string | null
+  buyer_address_line1: string | null
+  buyer_address_line2: string | null
+  buyer_city: string | null
+  buyer_state: string | null
+  buyer_postal_code: string | null
+  buyer_country_code: string | null
+  computer_processed_phrase: string | null
+  document_language_code: string | null
+}
+
 export type SalesInvoiceDocumentLineRow = {
   id: string
   company_id: string
@@ -212,6 +234,8 @@ type SalesOrderLineDraftSource = {
   line_total: number | null
 }
 
+type SalesInvoiceDraftPreviewSource = Pick<SalesInvoiceDocumentRow, 'company_id' | 'sales_order_id' | 'customer_id'>
+
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
@@ -290,8 +314,17 @@ function normalizeDueDate(order: SalesOrderDraftSource) {
 
 function humanizeRuntimeError(error: any, fallback: string, stage: string) {
   const message = String(error?.message || '').trim()
-  if (!message) return `${fallback} [${stage}]`
-  return `${fallback} [${stage}]: ${message}`
+  const details = String(error?.details || '').trim()
+  const hint = String(error?.hint || '').trim()
+  const code = String(error?.code || '').trim()
+  const parts = [message]
+
+  if (details && details !== message) parts.push(details)
+  if (hint) parts.push(`hint: ${hint}`)
+
+  const stageLabel = code ? `${stage}.${code}` : stage
+  if (!parts.filter(Boolean).length) return `${fallback} [${stageLabel}]`
+  return `${fallback} [${stageLabel}]: ${parts.filter(Boolean).join(' | ')}`
 }
 
 function allowedSalesOrderForInvoice(status?: string | null) {
@@ -466,6 +499,106 @@ export async function getSalesInvoiceDocument(companyId: string, invoiceId: stri
   }
   mzRuntimeDebug('salesInvoice.load.success', { companyId, invoiceId, found: Boolean(data) })
   return data
+}
+
+export async function getSalesInvoiceDraftPreview(
+  companyId: string,
+  invoice: SalesInvoiceDraftPreviewSource,
+) {
+  mzRuntimeDebug('salesInvoiceDraftPreview.load.start', {
+    companyId,
+    salesOrderId: invoice.sales_order_id,
+    customerId: invoice.customer_id,
+  })
+
+  const [companyRes, settingsRes, orderRes, customerRes] = await Promise.all([
+    supabase
+      .from('companies')
+      .select('id,name,trade_name,legal_name,tax_id,address_line1,address_line2,city,state,postal_code,country_code')
+      .eq('id', companyId)
+      .maybeSingle(),
+    supabase
+      .from('company_fiscal_settings')
+      .select('computer_processed_phrase_text,document_language_code')
+      .eq('company_id', companyId)
+      .maybeSingle(),
+    invoice.sales_order_id
+      ? supabase
+          .from('sales_orders')
+          .select('id,bill_to_name,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address')
+          .eq('company_id', companyId)
+          .eq('id', invoice.sales_order_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    invoice.customer_id
+      ? supabase
+          .from('customers')
+          .select('id,name,tax_id,billing_address,shipping_address')
+          .eq('company_id', companyId)
+          .eq('id', invoice.customer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (companyRes.error) {
+    mzRuntimeError('salesInvoiceDraftPreview.companyLoad.failed', companyRes.error, { companyId })
+    throw companyRes.error
+  }
+  if (settingsRes.error) {
+    mzRuntimeError('salesInvoiceDraftPreview.settingsLoad.failed', settingsRes.error, { companyId })
+    throw settingsRes.error
+  }
+  if (orderRes.error) {
+    mzRuntimeError('salesInvoiceDraftPreview.orderLoad.failed', orderRes.error, {
+      companyId,
+      salesOrderId: invoice.sales_order_id,
+    })
+    throw orderRes.error
+  }
+  if (customerRes.error) {
+    mzRuntimeError('salesInvoiceDraftPreview.customerLoad.failed', customerRes.error, {
+      companyId,
+      customerId: invoice.customer_id,
+    })
+    throw customerRes.error
+  }
+
+  const company = companyRes.data as any
+  const settings = settingsRes.data as any
+  const order = orderRes.data as any
+  const customer = customerRes.data as any
+
+  const preview: SalesInvoiceDraftPreview = {
+    seller_legal_name: company ? (company.legal_name || company.trade_name || company.name || null) : null,
+    seller_trade_name: company ? (company.trade_name || company.name || null) : null,
+    seller_nuit: company?.tax_id || null,
+    seller_address_line1: company?.address_line1 || null,
+    seller_address_line2: company?.address_line2 || null,
+    seller_city: company?.city || null,
+    seller_state: company?.state || null,
+    seller_postal_code: company?.postal_code || null,
+    seller_country_code: company?.country_code || null,
+    buyer_legal_name: order?.bill_to_name || customer?.name || null,
+    buyer_nuit: order?.bill_to_tax_id || customer?.tax_id || null,
+    buyer_address_line1: order?.bill_to_billing_address || customer?.billing_address || null,
+    buyer_address_line2: order?.bill_to_shipping_address || customer?.shipping_address || null,
+    buyer_city: null,
+    buyer_state: null,
+    buyer_postal_code: null,
+    buyer_country_code: company?.country_code || null,
+    computer_processed_phrase: settings?.computer_processed_phrase_text || null,
+    document_language_code: settings?.document_language_code || null,
+  }
+
+  mzRuntimeDebug('salesInvoiceDraftPreview.load.success', {
+    companyId,
+    salesOrderId: invoice.sales_order_id,
+    customerId: invoice.customer_id,
+    hasSellerPreview: Boolean(preview.seller_legal_name),
+    hasBuyerPreview: Boolean(preview.buyer_legal_name),
+    hasComputerPhrase: Boolean(preview.computer_processed_phrase),
+  })
+  return preview
 }
 
 export async function listSalesInvoiceDocumentLines(companyId: string, invoiceId: string) {

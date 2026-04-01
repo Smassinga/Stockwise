@@ -30,11 +30,12 @@ Munchythief is the first validation tenant:
 6. If a linked invoice already exists, the order workspace opens that invoice directly.
 7. A draft row is created in `sales_invoices` plus `sales_invoice_lines`.
 8. Operator opens `/sales-invoices/:invoiceId`.
-9. Draft dates can still be adjusted on the invoice detail page.
-10. `Issue invoice` calls `issue_sales_invoice_mz`.
-11. Database snapshots seller, buyer, numbering, series, and compliance fields on the invoice row.
-12. Invoice becomes immutable in DB and app.
-13. Corrections use `createAndIssueFullCreditNoteForInvoice(...)`, which creates a draft `sales_credit_notes` header and lines, then calls `issue_sales_credit_note_mz`.
+9. While the invoice is still draft, the page shows preview seller/buyer/company-phrase values sourced from the linked sales order, customer, and company settings.
+10. Draft dates can still be adjusted on the invoice detail page.
+11. `Issue invoice` calls `issue_sales_invoice_mz`.
+12. Database snapshots seller, buyer, numbering, series, and compliance fields on the invoice row.
+13. Invoice becomes immutable in DB and app.
+14. Corrections use `createAndIssueFullCreditNoteForInvoice(...)`, which creates a draft `sales_credit_notes` header and lines, then calls `issue_sales_credit_note_mz`.
 
 ## C. Renderer And Output Data Sources
 
@@ -52,6 +53,12 @@ The renderer intentionally uses stored fiscal snapshot fields on the invoice row
 - legal reference
 
 It does not re-read mutable `companies`, `customers`, or `sales_orders` to render legal output. That is required for compliance and must remain true in future refactors.
+
+Draft-only UI preview is different:
+
+- before issue, the invoice detail page may show non-authoritative preview values loaded from the linked sales order, customer, and company settings
+- those preview values are for operator visibility only
+- once issue succeeds, the renderer and all legal output must rely on stored invoice snapshots only
 
 ## D. Immutability Rules After Issue
 
@@ -92,9 +99,9 @@ The compliance workspace is currently observational, not fully operational.
 
 | Module | Purpose | Main Runtime Entry Points | Upstream Callers | Downstream Dependencies | Key Invariants / Compliance Assumptions | Failure Modes | Manual Verification |
 |---|---|---|---|---|---|---|---|
-| `src/lib/mzFinance.ts` | Finance runtime service layer for Mozambique issuance, notes, audit, artifacts, and SAF-T visibility | `createDraftSalesInvoiceFromOrder`, `issueSalesInvoice`, `getSalesInvoiceDocument`, `listSalesInvoiceDocumentLines`, `createAndIssueFullCreditNoteForInvoice`, `listFinanceEvents`, `listFiscalArtifacts`, `listSaftMozExports` | `SalesOrders.tsx`, `SalesInvoiceDetail.tsx`, `MozambiqueCompliance.tsx` | Supabase tables, RPCs, storage metadata | Sales invoices are fiscal truth; issue and note flows must go through DB helpers; imported/native reference rules live in DB; `sales_order_lines` must be ordered by `line_no` then `id` because there is no live `created_at` column | Order not eligible, missing order lines, invoice insert failure, line insert failure, RPC rejection, missing fiscal prerequisites | Open a confirmed order, create draft invoice, issue it, then issue a credit note |
-| `src/lib/mzInvoiceOutput.ts` | Snapshot-based invoice renderer, print, PDF, and share helper | `buildSalesInvoiceOutputModel`, `printSalesInvoiceDocument`, `downloadSalesInvoicePdf`, `shareSalesInvoiceDocument` | `SalesInvoiceDetail.tsx` | `sales_invoices` snapshots and `sales_invoice_lines`; `jspdf`; Web Share API | Output must use stored invoice snapshots only; must show legal reference and `PROCESSADO POR COMPUTADOR`; must support MZN totals | Window blocked, PDF generation failure, share API unavailable, malformed snapshot data | Issue an invoice, print it, download PDF, verify seller/buyer data comes from invoice snapshots |
-| `src/pages/SalesInvoiceDetail.tsx` | Main document workspace for draft save, issue, output actions, credit note, audit, and archive views | `loadWorkspace`, `handleSaveDraftDates`, `handleIssueInvoice`, `handlePrint`, `handleDownloadPdf`, `handleShare`, `handleCreateCreditNote`, `openArtifact` | Route `/sales-invoices/:invoiceId` | `mzFinance.ts`, `mzInvoiceOutput.ts`, Supabase storage signed URLs | No post-issue edit controls; credit notes only from issued invoices; audit/artifacts are read from DB, not inferred | Missing invoice, RPC rejection, output helper failure, artifact bucket/path missing, signed URL failure | Load a draft, save dates, issue it, verify buttons and sections change, then create a credit note |
+| `src/lib/mzFinance.ts` | Finance runtime service layer for Mozambique issuance, notes, audit, artifacts, SAF-T visibility, and draft preview loading | `createDraftSalesInvoiceFromOrder`, `issueSalesInvoice`, `getSalesInvoiceDocument`, `getSalesInvoiceDraftPreview`, `listSalesInvoiceDocumentLines`, `createAndIssueFullCreditNoteForInvoice`, `listFinanceEvents`, `listFiscalArtifacts`, `listSaftMozExports` | `SalesOrders.tsx`, `SalesInvoiceDetail.tsx`, `MozambiqueCompliance.tsx` | Supabase tables, RPCs, storage metadata | Sales invoices are fiscal truth; issue and note flows must go through DB helpers; imported/native reference rules live in DB; `sales_order_lines` must be ordered by `line_no` then `id` because there is no live `created_at` column | Order not eligible, missing order lines, invoice insert failure, line insert failure, RPC rejection, missing fiscal prerequisites, preview lookup failure | Open a confirmed order, create draft invoice, issue it, then issue a credit note |
+| `src/lib/mzInvoiceOutput.ts` | Snapshot-based invoice renderer, print, PDF, and share helper | `buildSalesInvoiceOutputModel`, `printSalesInvoiceDocument`, `downloadSalesInvoicePdf`, `shareSalesInvoiceDocument` | `SalesInvoiceDetail.tsx` | `sales_invoices` snapshots and `sales_invoice_lines`; `jspdf`; Web Share API | Output must use stored invoice snapshots only; must show legal reference and `PROCESSADO POR COMPUTADOR`; must support MZN totals; draft preview data must never leak into issued output rendering | Window blocked, PDF generation failure, share API unavailable, malformed snapshot data | Issue an invoice, print it, download PDF, verify seller/buyer data comes from invoice snapshots |
+| `src/pages/SalesInvoiceDetail.tsx` | Main document workspace for draft save, issue, draft preview, output actions, credit note, audit, and archive views | `loadWorkspace`, `handleSaveDraftDates`, `handleIssueInvoice`, `handlePrint`, `handleDownloadPdf`, `handleShare`, `handleCreateCreditNote`, `openArtifact` | Route `/sales-invoices/:invoiceId` | `mzFinance.ts`, `mzInvoiceOutput.ts`, Supabase storage signed URLs | No post-issue edit controls; draft preview values are informational until issue; credit notes only from issued invoices; audit/artifacts are read from DB, not inferred | Missing invoice, preview lookup failure, RPC rejection, output helper failure, artifact bucket/path missing, signed URL failure | Load a draft, verify source preview values, issue it, verify buttons and sections change, then create a credit note |
 | `src/pages/Orders/SalesOrders.tsx` | Operational entry point from sales order to persistent order detail, fiscal draft creation, and linked invoice navigation | `openSalesOrderDetail`, `openOrCreateFiscalInvoice` | Route `/orders?tab=sales` | `mzFinance.ts`, `sales_invoices` lookup | Orders stay operational; approved orders remain viewable from the order list; linked draft or issued invoices must stay reachable from the order workspace | Wrong status, duplicate/failed draft creation, missing company context, missing linked invoice summary | Open confirmed/allocated/shipped/closed order, use `View`, inspect lines/header, open linked invoice or create one |
 | `src/pages/SalesInvoices.tsx` | Register and discovery page for fiscal invoices | list page route and links to detail/compliance/orders | Route `/sales-invoices` | Step 2 read hook and detail route | Invoice register shows fiscal documents, not operational orders | Missing Step 2 state views, stale register data, search mismatch | Open register, search by legal reference, open detail |
 | `src/pages/MozambiqueCompliance.tsx` | Company-level compliance visibility workspace | page load | Route `/compliance/mz` | `mzFinance.ts` | Visibility-only for now; do not assume SAF-T actions exist yet | Missing settings, missing active series, export history empty, artifact history empty | Open compliance page for Munchythief and confirm settings/series load |
@@ -109,7 +116,7 @@ The compliance workspace is currently observational, not fully operational.
 |---|---|---|---|---|---|---|
 | Draft invoice creation | `/orders?tab=sales` in `SalesOrders.tsx` | `createDraftSalesInvoiceFromOrder` | `sales_orders`, `sales_order_lines`, `sales_invoices`, `sales_invoice_lines` | sales order -> draft invoice | button fails, duplicate draft not reused, draft voided on partial insert failure | `mzFinance.ts` draft creation logs and order status/line data |
 | Order detail loading | `/orders?tab=sales&orderId=<id>` in `SalesOrders.tsx` | `refreshSalesData`, `openSalesOrderDetail` | `sales_orders`, `sales_order_lines`, `sales_invoices` | order list -> persistent order detail drawer | `View` opens but drawer is blank, linked invoice summary missing, line query failure | `SalesOrders.refreshSalesData.*` console errors and the `orderId` query param |
-| Invoice issuance | `/sales-invoices/:invoiceId` | `issueSalesInvoice` | `issue_sales_invoice_mz`, `sales_invoices`, `sales_invoice_lines` | draft -> issued | RPC rejection, due-date or snapshot prerequisites missing, no refresh after issue | `mzFinance.ts` `salesInvoice.issue.*` log and DB issue guard message |
+| Invoice issuance | `/sales-invoices/:invoiceId` | `issueSalesInvoice` | `issue_sales_invoice_mz`, `sales_invoices`, `sales_invoice_lines` | draft -> issued | RPC rejection, due-date or snapshot prerequisites missing, line snapshot trigger failure, no refresh after issue | `mzFinance.ts` `salesInvoice.issue.*` log and DB issue guard message |
 | Invoice detail loading | `/sales-invoices/:invoiceId` | `getSalesInvoiceDocument`, `listSalesInvoiceDocumentLines`, `listFinanceEvents`, `listFiscalArtifacts`, `listSalesCreditNotesForInvoice` | `sales_invoices`, `sales_invoice_lines`, `finance_document_events`, `fiscal_document_artifacts`, `sales_credit_notes` | load current document workspace | blank page, missing sections, one subquery fails and page drops to error toast | `SalesInvoiceDetail.tsx` `loadWorkspace` error log |
 | Renderer / print / PDF / share | invoice detail actions | `buildSalesInvoiceOutputModel`, `printSalesInvoiceDocument`, `downloadSalesInvoicePdf`, `shareSalesInvoiceDocument` | snapshot fields from `sales_invoices` and `sales_invoice_lines` | issued invoice -> printable/shareable output | wrong seller/buyer data, blocked print window, PDF build failure, share unavailable | `mzInvoiceOutput.ts` output logs and snapshot field completeness |
 | Credit-note issuance | invoice detail dialog | `createAndIssueFullCreditNoteForInvoice` | `sales_credit_notes`, `sales_credit_note_lines`, `issue_sales_credit_note_mz` | issued invoice -> issued credit note | empty reason, header insert failure, line insert failure, RPC rejection | `mzFinance.ts` `creditNote.issueFromInvoice.*` log |
@@ -159,6 +166,11 @@ Inspect first:
 - `SalesInvoiceDetail.issueInvoice` console error
 - `mzFinance.ts` event `salesInvoice.issue.failed`
 - DB helper `issue_sales_invoice_mz` rejection message
+
+Specific symptom to recognize:
+
+- if the app shows a 404-looking RPC network failure but the runtime error text mentions `invalid reference to FROM-clause entry`, inspect the live snapshot trigger functions first
+- the concrete fix for that class of issue is the additive migration `20260401110000_wave1_mz_snapshot_issue_join_fix.sql`
 
 ### Output looks wrong
 
@@ -214,17 +226,18 @@ Checklist:
 6. If no linked invoice exists, click `Open fiscal invoice`.
 7. Confirm the app navigates to `/sales-invoices/:invoiceId`.
 8. Confirm the draft invoice shows a legal reference and draft dates.
-9. Issue the invoice.
-10. Confirm the page reloads with status `issued`.
-11. Confirm date inputs disappear and output buttons appear.
-12. Print and download the invoice.
-13. Confirm seller/buyer data in output matches invoice snapshots, not mutable masters.
-14. Return to the order workspace and confirm the linked fiscal invoice reference and workflow now appear.
-15. Use `Open linked invoice` and confirm it routes back to the same invoice.
-16. Issue a full credit note from the same invoice.
-17. Confirm the credit note appears in the credit-note section.
-18. Confirm audit events appear.
-19. Confirm the compliance page loads fiscal settings, series, and SAF-T history.
+9. Confirm the draft invoice preview shows seller, buyer, computer phrase, and MZN totals before issue.
+10. Issue the invoice.
+11. Confirm the page reloads with status `issued`.
+12. Confirm date inputs disappear and output buttons appear.
+13. Print and download the invoice.
+14. Confirm seller/buyer data in output matches invoice snapshots, not mutable masters.
+15. Return to the order workspace and confirm the linked fiscal invoice reference and workflow now appear.
+16. Use `Open linked invoice` and confirm it routes back to the same invoice.
+17. Issue a full credit note from the same invoice.
+18. Confirm the credit note appears in the credit-note section.
+19. Confirm audit events appear.
+20. Confirm the compliance page loads fiscal settings, series, and SAF-T history.
 
 ## J. Known Gaps And Next Package Boundaries
 
