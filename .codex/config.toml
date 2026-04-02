@@ -1,5 +1,10 @@
 [mcp_servers.supabase]
 url = "https://mcp.supabase.com/mcp?project_ref=ogzhwoqqumkuqhbvuzzp&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage"
+
 [features]
 rmcp_client = true
-\\?\C:\Dev\Stockwise
+
+[projects.stockwise]
+repo_dir = "C:\\Dev\\Stockwise"
+project_ref = "ogzhwoqqumkuqhbvuzzp"
+supabase_url = "https://ogzhwoqqumkuqhbvuzzp.supabase.co"
