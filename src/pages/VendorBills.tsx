@@ -135,7 +135,12 @@ export default function VendorBillsPage() {
           ) : filteredRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
               <div className="text-lg font-medium">{tt('financeDocs.vendorBills.emptyTitle', 'No vendor bills yet.')}</div>
-              <div className="mt-2 text-sm text-muted-foreground">{tt('financeDocs.vendorBills.emptyBody', 'Vendor bills will appear here once Step 3 AP document creation goes live.')}</div>
+              <div className="mt-2 text-sm text-muted-foreground">
+                {tt(
+                  'financeDocs.vendorBills.emptyBody',
+                  'Vendor bills appear here after approved purchase orders are booked into AP documents.',
+                )}
+              </div>
             </div>
           ) : (
             <Table>

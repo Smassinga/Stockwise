@@ -34,6 +34,7 @@ import {
   type SalesInvoiceDraftPreview,
   type SalesInvoiceDocumentLineRow,
   type SalesInvoiceDocumentRow,
+  prepareSalesInvoiceDraftForIssue,
   updateSalesInvoiceDraftDates,
 } from '../lib/mzFinance'
 import {
@@ -259,9 +260,10 @@ export default function SalesInvoiceDetailPage() {
   }
 
   async function handleIssueInvoice() {
-    if (!invoice || !isDraft) return
+    if (!companyId || !invoice || !isDraft) return
     try {
       setIssuing(true)
+      await prepareSalesInvoiceDraftForIssue(companyId, invoice.id)
       await issueSalesInvoice(invoice.id)
       toast.success(tt('financeDocs.mz.issueSuccess', 'Sales invoice issued'))
       await loadWorkspace()
@@ -637,8 +639,8 @@ export default function SalesInvoiceDetailPage() {
                     {lines.map((line) => (
                       <TableRow key={line.id}>
                         <TableCell>
-                          <div className="font-medium">{line.description || tt('common.dash', '-')}</div>
-                          {line.unit_of_measure_snapshot ? <div className="text-xs text-muted-foreground">{line.unit_of_measure_snapshot}</div> : null}
+                          <div className="font-medium">{line.display_description || line.description || tt('common.dash', '-')}</div>
+                          {line.display_unit_of_measure ? <div className="text-xs text-muted-foreground">{line.display_unit_of_measure}</div> : null}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{money(line.unit_price, invoice.currency_code)}</TableCell>

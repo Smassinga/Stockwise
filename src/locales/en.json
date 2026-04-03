@@ -1091,7 +1091,7 @@
   "financeDocs.vendorBills.listHelp": "Search by supplier invoice reference or internal reference. Draft duplicates are warned here before posting blocks them.",
   "financeDocs.vendorBills.searchPlaceholder": "Search supplier invoice or internal reference",
   "financeDocs.vendorBills.emptyTitle": "No vendor bills yet.",
-  "financeDocs.vendorBills.emptyBody": "Vendor bills will appear here once Step 3 AP document creation goes live.",
+  "financeDocs.vendorBills.emptyBody": "Vendor bills appear here after approved purchase orders are booked into AP documents.",
   "financeDocs.vendorBills.loadFailed": "Failed to load vendor bills",
   "financeDocs.vendorBills.notFound": "Vendor bill not found for the active company.",
   "financeDocs.vendorBills.duplicateWarning": "Duplicate supplier reference detected",

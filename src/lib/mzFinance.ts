@@ -123,6 +123,8 @@ export type SalesInvoiceDocumentLineRow = {
   sort_order: number
   created_at: string
   updated_at: string
+  display_description?: string
+  display_unit_of_measure?: string | null
 }
 
 export type SalesCreditNoteRow = {
@@ -234,7 +236,27 @@ type SalesOrderLineDraftSource = {
   line_total: number | null
 }
 
+type ItemDisplaySource = {
+  id: string
+  name: string | null
+  sku: string | null
+  base_uom_id: string | null
+}
+
+type SalesOrderLineDisplaySource = {
+  id: string
+  description: string | null
+  uom_id: string | null
+}
+
+type UomDisplaySource = {
+  id: string
+  code: string | null
+}
+
 type SalesInvoiceDraftPreviewSource = Pick<SalesInvoiceDocumentRow, 'company_id' | 'sales_order_id' | 'customer_id'>
+
+const UUID_LIKE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   const numeric = Number(value)
@@ -243,6 +265,67 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim()
+}
+
+function looksLikeUuid(value: string | null | undefined) {
+  return UUID_LIKE_PATTERN.test(normalizeText(value))
+}
+
+function isUnsafeDisplayText(value: string | null | undefined) {
+  const text = normalizeText(value)
+  return !text
+    || text === '-'
+    || text === '—'
+    || looksLikeUuid(text)
+    || ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']')))
+}
+
+function pickDisplayText(...candidates: Array<string | null | undefined>) {
+  for (const candidate of candidates) {
+    const text = normalizeText(candidate)
+    if (!isUnsafeDisplayText(text)) return text
+  }
+
+  for (const candidate of candidates) {
+    const text = normalizeText(candidate)
+    if (text) return text
+  }
+
+  return ''
+}
+
+function resolveInvoiceLineDescription(
+  lineDescription?: string | null,
+  orderLineDescription?: string | null,
+  itemName?: string | null,
+  itemSku?: string | null,
+) {
+  return pickDisplayText(lineDescription, orderLineDescription, itemName, itemSku) || 'Item'
+}
+
+function resolveInvoiceLineUnitOfMeasure(
+  snapshot?: string | null,
+  orderLineUomCode?: string | null,
+  itemBaseUomCode?: string | null,
+) {
+  const snapshotText = normalizeText(snapshot)
+  if (snapshotText && !looksLikeUuid(snapshotText)) return snapshotText
+  return pickDisplayText(orderLineUomCode, itemBaseUomCode, snapshotText) || null
+}
+
+function parseNativeSalesInvoiceReference(internalReference: string | null | undefined) {
+  const match = normalizeText(internalReference).match(/^[A-Z0-9]{3}-([A-Z0-9]{2,10})(\d{4})-(\d{5})$/)
+  if (!match) return null
+
+  return {
+    fiscal_series_code: match[1],
+    fiscal_year: Number(match[2]),
+    fiscal_sequence_number: Number(match[3]),
+  }
 }
 
 function mzRuntimeDebugEnabled() {
@@ -601,6 +684,104 @@ export async function getSalesInvoiceDraftPreview(
   return preview
 }
 
+async function enrichSalesInvoiceLines(companyId: string, lines: SalesInvoiceDocumentLineRow[]) {
+  if (!lines.length) return [] as SalesInvoiceDocumentLineRow[]
+
+  const itemIds = Array.from(new Set(lines.map((line) => line.item_id).filter(Boolean) as string[]))
+  const salesOrderLineIds = Array.from(new Set(lines.map((line) => line.sales_order_line_id).filter(Boolean) as string[]))
+
+  const [itemRes, orderLineRes] = await Promise.all([
+    itemIds.length
+      ? supabase
+          .from('items')
+          .select('id,name,sku,base_uom_id')
+          .eq('company_id', companyId)
+          .in('id', itemIds)
+      : Promise.resolve({ data: [], error: null }),
+    salesOrderLineIds.length
+      ? supabase
+          .from('sales_order_lines')
+          .select('id,description,uom_id')
+          .eq('company_id', companyId)
+          .in('id', salesOrderLineIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (itemRes.error) {
+    mzRuntimeError('salesInvoiceLines.itemsLoad.failed', itemRes.error, {
+      companyId,
+      itemCount: itemIds.length,
+    })
+  }
+  if (orderLineRes.error) {
+    mzRuntimeError('salesInvoiceLines.orderLinesLoad.failed', orderLineRes.error, {
+      companyId,
+      salesOrderLineCount: salesOrderLineIds.length,
+    })
+  }
+
+  const itemById = new Map<string, ItemDisplaySource>(((itemRes.data || []) as ItemDisplaySource[]).map((row) => [row.id, row]))
+  const orderLineById = new Map<string, SalesOrderLineDisplaySource>(((orderLineRes.data || []) as SalesOrderLineDisplaySource[]).map((row) => [row.id, row]))
+
+  const uomIds = Array.from(
+    new Set(
+      lines
+        .flatMap((line) => {
+          const orderLine = line.sales_order_line_id ? orderLineById.get(line.sales_order_line_id) : undefined
+          const item = line.item_id ? itemById.get(line.item_id) : undefined
+          const ids = [
+            looksLikeUuid(line.unit_of_measure_snapshot) ? normalizeText(line.unit_of_measure_snapshot) : null,
+            orderLine?.uom_id || null,
+            item?.base_uom_id || null,
+          ]
+          return ids.filter(Boolean)
+        }) as string[],
+    ),
+  )
+
+  let uomById = new Map<string, UomDisplaySource>()
+  if (uomIds.length) {
+    const { data: uoms, error: uomError } = await supabase
+      .from('uoms')
+      .select('id,code')
+      .in('id', uomIds)
+
+    if (uomError) {
+      mzRuntimeError('salesInvoiceLines.uomsLoad.failed', uomError, {
+        companyId,
+        uomCount: uomIds.length,
+      })
+    } else {
+      uomById = new Map<string, UomDisplaySource>(((uoms || []) as UomDisplaySource[]).map((row) => [row.id, row]))
+    }
+  }
+
+  return lines.map((line) => {
+    const item = line.item_id ? itemById.get(line.item_id) : undefined
+    const orderLine = line.sales_order_line_id ? orderLineById.get(line.sales_order_line_id) : undefined
+    const orderLineUomCode = orderLine?.uom_id ? uomById.get(orderLine.uom_id)?.code || null : null
+    const itemBaseUomCode = item?.base_uom_id ? uomById.get(item.base_uom_id)?.code || null : null
+    const snapshotUomCode = looksLikeUuid(line.unit_of_measure_snapshot)
+      ? uomById.get(normalizeText(line.unit_of_measure_snapshot))?.code || null
+      : null
+
+    return {
+      ...line,
+      display_description: resolveInvoiceLineDescription(
+        line.description,
+        orderLine?.description,
+        item?.name,
+        item?.sku,
+      ),
+      display_unit_of_measure: resolveInvoiceLineUnitOfMeasure(
+        snapshotUomCode || line.unit_of_measure_snapshot,
+        orderLineUomCode,
+        itemBaseUomCode,
+      ),
+    }
+  })
+}
+
 export async function listSalesInvoiceDocumentLines(companyId: string, invoiceId: string) {
   mzRuntimeDebug('salesInvoiceLines.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
@@ -616,7 +797,7 @@ export async function listSalesInvoiceDocumentLines(companyId: string, invoiceId
     throw error
   }
   mzRuntimeDebug('salesInvoiceLines.load.success', { companyId, invoiceId, rowCount: data?.length ?? 0 })
-  return (data || []) as SalesInvoiceDocumentLineRow[]
+  return await enrichSalesInvoiceLines(companyId, (data || []) as SalesInvoiceDocumentLineRow[])
 }
 
 export async function listSalesCreditNotesForInvoice(companyId: string, invoiceId: string) {
@@ -660,6 +841,132 @@ export async function updateSalesInvoiceDraftDates(
   }
   mzRuntimeDebug('salesInvoiceDraftDates.save.success', { companyId, invoiceId })
   return data
+}
+
+export async function prepareSalesInvoiceDraftForIssue(companyId: string, invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.prepare.start', { companyId, invoiceId })
+  const invoice = await getSalesInvoiceDocument(companyId, invoiceId)
+
+  if (!invoice) {
+    throw new Error('Sales invoice not found for the active company.')
+  }
+  if (invoice.document_workflow_status !== 'draft') {
+    return invoice
+  }
+
+  let preview: SalesInvoiceDraftPreview | null = null
+  try {
+    preview = await getSalesInvoiceDraftPreview(companyId, invoice)
+  } catch (error) {
+    mzRuntimeError('salesInvoice.prepare.preview.failed', error, { companyId, invoiceId })
+  }
+
+  const headerPatch: Partial<SalesInvoiceDocumentRow> = {}
+  if (invoice.source_origin === 'native') {
+    const parsedReference = parseNativeSalesInvoiceReference(invoice.internal_reference)
+    if (parsedReference) {
+      if (!invoice.fiscal_series_code) headerPatch.fiscal_series_code = parsedReference.fiscal_series_code
+      if (!invoice.fiscal_year) headerPatch.fiscal_year = parsedReference.fiscal_year
+      if (!invoice.fiscal_sequence_number) headerPatch.fiscal_sequence_number = parsedReference.fiscal_sequence_number
+    }
+  }
+
+  if (preview) {
+    if (!normalizeText(invoice.seller_legal_name_snapshot)) headerPatch.seller_legal_name_snapshot = preview.seller_legal_name
+    if (!normalizeText(invoice.seller_trade_name_snapshot) && normalizeText(preview.seller_trade_name)) headerPatch.seller_trade_name_snapshot = preview.seller_trade_name
+    if (!normalizeText(invoice.seller_nuit_snapshot) && normalizeText(preview.seller_nuit)) headerPatch.seller_nuit_snapshot = preview.seller_nuit
+    if (!normalizeText(invoice.seller_address_line1_snapshot) && normalizeText(preview.seller_address_line1)) headerPatch.seller_address_line1_snapshot = preview.seller_address_line1
+    if (!normalizeText(invoice.seller_address_line2_snapshot) && normalizeText(preview.seller_address_line2)) headerPatch.seller_address_line2_snapshot = preview.seller_address_line2
+    if (!normalizeText(invoice.seller_city_snapshot) && normalizeText(preview.seller_city)) headerPatch.seller_city_snapshot = preview.seller_city
+    if (!normalizeText(invoice.seller_state_snapshot) && normalizeText(preview.seller_state)) headerPatch.seller_state_snapshot = preview.seller_state
+    if (!normalizeText(invoice.seller_postal_code_snapshot) && normalizeText(preview.seller_postal_code)) headerPatch.seller_postal_code_snapshot = preview.seller_postal_code
+    if (!normalizeText(invoice.seller_country_code_snapshot) && normalizeText(preview.seller_country_code)) headerPatch.seller_country_code_snapshot = preview.seller_country_code
+
+    if (!normalizeText(invoice.buyer_legal_name_snapshot) && normalizeText(preview.buyer_legal_name)) headerPatch.buyer_legal_name_snapshot = preview.buyer_legal_name
+    if (!normalizeText(invoice.buyer_nuit_snapshot) && normalizeText(preview.buyer_nuit)) headerPatch.buyer_nuit_snapshot = preview.buyer_nuit
+    if (!normalizeText(invoice.buyer_address_line1_snapshot) && normalizeText(preview.buyer_address_line1)) headerPatch.buyer_address_line1_snapshot = preview.buyer_address_line1
+    if (!normalizeText(invoice.buyer_address_line2_snapshot) && normalizeText(preview.buyer_address_line2)) headerPatch.buyer_address_line2_snapshot = preview.buyer_address_line2
+    if (!normalizeText(invoice.buyer_city_snapshot) && normalizeText(preview.buyer_city)) headerPatch.buyer_city_snapshot = preview.buyer_city
+    if (!normalizeText(invoice.buyer_state_snapshot) && normalizeText(preview.buyer_state)) headerPatch.buyer_state_snapshot = preview.buyer_state
+    if (!normalizeText(invoice.buyer_postal_code_snapshot) && normalizeText(preview.buyer_postal_code)) headerPatch.buyer_postal_code_snapshot = preview.buyer_postal_code
+    if (!normalizeText(invoice.buyer_country_code_snapshot) && normalizeText(preview.buyer_country_code)) headerPatch.buyer_country_code_snapshot = preview.buyer_country_code
+
+    if (!normalizeText(invoice.document_language_code_snapshot) && normalizeText(preview.document_language_code)) {
+      headerPatch.document_language_code_snapshot = preview.document_language_code
+    }
+    if (!normalizeText(invoice.computer_processed_phrase_snapshot) && normalizeText(preview.computer_processed_phrase)) {
+      headerPatch.computer_processed_phrase_snapshot = preview.computer_processed_phrase
+    }
+  }
+
+  let patchedInvoice = invoice
+  if (Object.keys(headerPatch).length) {
+    const { data: updatedInvoice, error: updateError } = await supabase
+      .from('sales_invoices')
+      .update(headerPatch)
+      .eq('company_id', companyId)
+      .eq('id', invoiceId)
+      .select('*')
+      .single<SalesInvoiceDocumentRow>()
+
+    if (updateError) {
+      mzRuntimeError('salesInvoice.prepare.headerPatch.failed', updateError, {
+        companyId,
+        invoiceId,
+        patchKeys: Object.keys(headerPatch),
+      })
+      throw updateError
+    }
+    patchedInvoice = updatedInvoice
+  }
+
+  const lines = await listSalesInvoiceDocumentLines(companyId, invoiceId)
+  const linePatches = lines
+    .map((line) => {
+      const update: Partial<SalesInvoiceDocumentLineRow> = {}
+      const nextDescription = normalizeText(line.display_description)
+      const nextUnitOfMeasure = normalizeText(line.display_unit_of_measure)
+
+      if (nextDescription && isUnsafeDisplayText(line.description)) {
+        update.description = nextDescription
+      }
+      if (nextUnitOfMeasure && (!normalizeText(line.unit_of_measure_snapshot) || looksLikeUuid(line.unit_of_measure_snapshot))) {
+        update.unit_of_measure_snapshot = nextUnitOfMeasure
+      }
+
+      return { id: line.id, update }
+    })
+    .filter((entry) => Object.keys(entry.update).length)
+
+  if (linePatches.length) {
+    const results = await Promise.all(
+      linePatches.map(({ id, update }) =>
+        supabase
+          .from('sales_invoice_lines')
+          .update(update)
+          .eq('company_id', companyId)
+          .eq('id', id),
+      ),
+    )
+
+    const failedPatch = results.find((result) => result.error)
+    if (failedPatch?.error) {
+      mzRuntimeError('salesInvoice.prepare.linePatch.failed', failedPatch.error, {
+        companyId,
+        invoiceId,
+        linePatchCount: linePatches.length,
+      })
+      throw failedPatch.error
+    }
+  }
+
+  mzRuntimeDebug('salesInvoice.prepare.success', {
+    companyId,
+    invoiceId,
+    headerPatchCount: Object.keys(headerPatch).length,
+    linePatchCount: linePatches.length,
+  })
+  return patchedInvoice
 }
 
 export async function issueSalesInvoice(invoiceId: string) {
@@ -750,6 +1057,22 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     throw new Error('The selected sales order has no invoiceable lines.')
   }
 
+  const itemIds = Array.from(new Set(sourceLines.map((line) => line.item_id).filter(Boolean) as string[]))
+  const { data: items, error: itemsError } = itemIds.length
+    ? await supabase
+        .from('items')
+        .select('id,name,sku,base_uom_id')
+        .eq('company_id', companyId)
+        .in('id', itemIds)
+    : { data: [], error: null }
+
+  if (itemsError) {
+    mzRuntimeError('salesInvoiceDraft.itemsLoad.failed', itemsError, { companyId, salesOrderId, itemCount: itemIds.length })
+    throw new Error(humanizeRuntimeError(itemsError, 'Failed to load item descriptions for fiscalization', 'items.select'))
+  }
+
+  const itemById = new Map<string, ItemDisplaySource>(((items || []) as ItemDisplaySource[]).map((row) => [row.id, row]))
+
   const { invoiceDate, dueDate } = normalizeDueDate(order)
   const subtotal = roundMoney(sourceLines.reduce((sum, line) => sum + toNumber(line.line_total), 0))
   const headerTaxTotal = roundMoney(toNumber(order.tax_total))
@@ -790,11 +1113,16 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
   }
 
   const linePayload = sourceLines.map((line, index) => ({
+    ...(line.item_id ? { item_id: line.item_id } : {}),
     company_id: companyId,
     sales_invoice_id: invoice.id,
     sales_order_line_id: line.id,
-    item_id: line.item_id,
-    description: (line.description || '').trim(),
+    description: resolveInvoiceLineDescription(
+      line.description,
+      null,
+      line.item_id ? itemById.get(line.item_id)?.name : null,
+      line.item_id ? itemById.get(line.item_id)?.sku : null,
+    ),
     qty: toNumber(line.qty),
     unit_price: toNumber(line.unit_price),
     tax_rate: taxRate > 0 ? taxRate : 0,

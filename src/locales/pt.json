@@ -1052,7 +1052,7 @@
   "financeDocs.vendorBills.listHelp": "Pesquise pela referência da fatura do fornecedor ou pela referência interna. Duplicados em rascunho são sinalizados aqui antes do bloqueio na fase lançada.",
   "financeDocs.vendorBills.searchPlaceholder": "Pesquisar referência do fornecedor ou interna",
   "financeDocs.vendorBills.emptyTitle": "Ainda não existem faturas de fornecedor.",
-  "financeDocs.vendorBills.emptyBody": "As faturas de fornecedor aparecerão aqui quando a criação de documentos AP do Step 3 estiver activa.",
+  "financeDocs.vendorBills.emptyBody": "As faturas de fornecedor aparecem aqui depois de encomendas de compra aprovadas serem lançadas como documentos de contas a pagar.",
   "financeDocs.vendorBills.loadFailed": "Falha ao carregar as faturas de fornecedor",
   "financeDocs.vendorBills.notFound": "Fatura de fornecedor não encontrada para a empresa activa.",
   "financeDocs.vendorBills.duplicateWarning": "Referência de fornecedor duplicada detectada",
