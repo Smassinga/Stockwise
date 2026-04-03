@@ -104,7 +104,7 @@ export default function SalesInvoicesPage() {
             <Link to="/compliance/mz">{tt('nav.complianceMz', 'Mozambique compliance')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/settlements">{tt('financeDocs.salesInvoices.settlementsLink', 'Legacy settlements')}</Link>
+            <Link to="/settlements">{tt('financeDocs.salesInvoices.settlementsLink', 'Settlement workspace')}</Link>
           </Button>
         </div>
       </div>

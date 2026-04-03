@@ -25,7 +25,7 @@ export type PurchaseOrderReceiptStatus =
   | 'partial'
   | 'complete'
 
-export type LegacyFinancialAnchor = 'legacy_order_link'
+export type FinancialAnchor = 'legacy_order_link' | 'sales_invoice' | 'vendor_bill'
 
 type BaseOrderStateRow = {
   id: string
@@ -45,7 +45,9 @@ type BaseOrderStateRow = {
   legacy_bank_settled_base: number | null
   legacy_outstanding_base: number | null
   settlement_status: OrderSettlementStatus
-  financial_anchor: LegacyFinancialAnchor
+  financial_anchor: FinancialAnchor
+  financial_anchor_document_id?: string | null
+  financial_anchor_reference?: string | null
 }
 
 export type SalesOrderStateRow = BaseOrderStateRow & {

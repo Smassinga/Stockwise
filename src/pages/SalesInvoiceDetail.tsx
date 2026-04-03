@@ -11,8 +11,14 @@ import { Label } from '../components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Textarea } from '../components/ui/textarea'
 import { useOrg } from '../hooks/useOrg'
+import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import {
+  salesInvoiceResolutionLabelKey,
+  type SalesInvoiceStateRow,
+} from '../lib/financeDocuments'
+import { settlementLabelKey } from '../lib/orderState'
 import {
   createAndIssueFullCreditNoteForInvoice,
   getSalesInvoiceDraftPreview,
@@ -61,9 +67,11 @@ export default function SalesInvoiceDetailPage() {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const brand = useBrandForDocs(companyId)
 
   const [loading, setLoading] = useState(true)
   const [invoice, setInvoice] = useState<SalesInvoiceDocumentRow | null>(null)
+  const [invoiceState, setInvoiceState] = useState<SalesInvoiceStateRow | null>(null)
   const [lines, setLines] = useState<SalesInvoiceDocumentLineRow[]>([])
   const [events, setEvents] = useState<FinanceDocumentEventRow[]>([])
   const [artifacts, setArtifacts] = useState<FiscalDocumentArtifactRow[]>([])
@@ -99,6 +107,7 @@ export default function SalesInvoiceDetailPage() {
     if (!companyId || !invoiceId) {
       setLoading(false)
       setInvoice(null)
+      setInvoiceState(null)
       setLines([])
       setEvents([])
       setArtifacts([])
@@ -110,11 +119,17 @@ export default function SalesInvoiceDetailPage() {
     try {
       setLoading(true)
       const nextInvoice = await getSalesInvoiceDocument(companyId, invoiceId)
-      const [nextLines, nextEvents, nextArtifacts, nextCreditNotes] = await Promise.all([
+      const [nextLines, nextEvents, nextArtifacts, nextCreditNotes, nextInvoiceStateRes] = await Promise.all([
         listSalesInvoiceDocumentLines(companyId, invoiceId),
         listFinanceEvents(companyId, 'sales_invoice', invoiceId),
         listFiscalArtifacts(companyId, 'sales_invoice', invoiceId),
         listSalesCreditNotesForInvoice(companyId, invoiceId),
+        supabase
+          .from('v_sales_invoice_state')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('id', invoiceId)
+          .maybeSingle(),
       ])
       let nextDraftPreview: SalesInvoiceDraftPreview | null = null
 
@@ -130,6 +145,12 @@ export default function SalesInvoiceDetailPage() {
       }
 
       setInvoice(nextInvoice)
+      if (nextInvoiceStateRes.error) {
+        reportRuntimeError('loadInvoiceState', nextInvoiceStateRes.error)
+        setInvoiceState(null)
+      } else {
+        setInvoiceState((nextInvoiceStateRes.data || null) as SalesInvoiceStateRow | null)
+      }
       setLines(nextLines)
       setEvents(nextEvents)
       setArtifacts(nextArtifacts)
@@ -185,9 +206,38 @@ export default function SalesInvoiceDetailPage() {
     invoice?.buyer_country_code_snapshot || draftPreview?.buyer_country_code,
   ) || '-'
   const outputModel = useMemo(
-    () => (invoice && isIssued ? buildSalesInvoiceOutputModel(invoice, lines) : null),
-    [invoice, isIssued, lines],
+    () => (invoice && isIssued
+      ? buildSalesInvoiceOutputModel(invoice, lines, {
+        brandName: brand.name,
+        logoUrl: brand.logoUrl,
+      })
+      : null),
+    [brand.logoUrl, brand.name, invoice, isIssued, lines],
   )
+  const settlementStatusLabel = invoiceState?.settlement_status
+    ? tt(settlementLabelKey(invoiceState.settlement_status), invoiceState.settlement_status)
+    : tt('common.dash', '—')
+  const resolutionStatusLabel = invoiceState?.resolution_status
+    ? tt(salesInvoiceResolutionLabelKey(invoiceState.resolution_status), invoiceState.resolution_status)
+    : tt('common.dash', '—')
+  const creditStatusLabel = invoiceState?.credit_status === 'fully_credited'
+    ? tt('financeDocs.mz.creditStatus.fullyCredited', 'Fully credited')
+    : invoiceState?.credit_status === 'partially_credited'
+      ? tt('financeDocs.mz.creditStatus.partiallyCredited', 'Partially credited')
+      : tt('financeDocs.mz.creditStatus.notCredited', 'Not credited')
+  const canIssueFullCreditNote = isIssued && (invoiceState ? invoiceState.credit_status === 'not_credited' : creditNotes.length === 0)
+
+  function resolutionTone(status?: SalesInvoiceStateRow['resolution_status'] | null) {
+    switch (status) {
+      case 'issued_fully_credited':
+      case 'issued_settled':
+        return 'default'
+      case 'issued_overdue':
+        return 'destructive'
+      default:
+        return 'secondary'
+    }
+  }
 
   async function handleSaveDraftDates() {
     if (!companyId || !invoice || !isDraft) return
@@ -468,6 +518,69 @@ export default function SalesInvoiceDetailPage() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-border/80 shadow-sm lg:col-span-2">
+              <CardHeader>
+                <CardTitle>{tt('financeDocs.mz.resolutionTitle', 'Settlement and resolution')}</CardTitle>
+                <CardDescription>
+                  {tt('financeDocs.mz.resolutionHelp', 'Once issued, the invoice becomes the receivable anchor. Receipts and credit notes reduce the same outstanding balance instead of leaving the original order as a duplicate settlement target.')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={resolutionTone(invoiceState?.resolution_status)}>{resolutionStatusLabel}</Badge>
+                  <Badge variant={invoiceState?.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
+                  <Badge variant={invoiceState?.settlement_status === 'overdue' ? 'destructive' : 'secondary'}>{settlementStatusLabel}</Badge>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums">{money(invoiceState?.settled_base || 0, 'MZN')}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {tt('financeDocs.mz.receiptsBreakdown', 'Cash {cash} · Bank {bank}', {
+                          cash: money(invoiceState?.cash_received_base || 0, 'MZN'),
+                          bank: money(invoiceState?.bank_received_base || 0, 'MZN'),
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.creditedAmount', 'Credited')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums">{money(invoiceState?.credited_total_base || 0, 'MZN')}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {tt('financeDocs.mz.creditNotesCount', '{count} credit notes issued', { count: invoiceState?.credit_note_count || 0 })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums font-semibold">{money(invoiceState?.outstanding_base || 0, 'MZN')}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {tt('financeDocs.mz.anchorReference', 'Settlement anchor: issued sales invoice')}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                  {invoiceState?.credit_status === 'fully_credited'
+                    ? tt('financeDocs.mz.invoiceResolvedFullyCredited', 'This invoice has been fully credited. It no longer carries an open receivable balance and should be treated as operationally resolved.')
+                    : invoiceState?.credit_status === 'partially_credited'
+                      ? tt('financeDocs.mz.invoiceResolvedPartiallyCredited', 'This invoice has already been partially credited. The remaining balance reflects receipts and issued credit notes together.')
+                      : tt('financeDocs.mz.invoiceResolvedOpen', 'Outstanding exposure now belongs to this invoice, not to the linked sales order.')}
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.mz.sellerSnapshot', 'Seller snapshot')}</CardTitle>
@@ -544,14 +657,22 @@ export default function SalesInvoiceDetailPage() {
             <CardHeader>
               <CardTitle>{tt('financeDocs.mz.creditNotes', 'Credit notes')}</CardTitle>
               <CardDescription>
-                {tt('financeDocs.mz.creditNotesHelp', 'Corrections must flow through credit notes. The invoice itself is not edited after issue.')}
+                {tt('financeDocs.mz.creditNotesHelp', 'Corrections must flow through credit notes. The invoice itself is not edited after issue, and full credits resolve the original invoice instead of leaving it operationally open.')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {isIssued ? (
-                <Button onClick={() => setCreditDialogOpen(true)}>
-                  {tt('financeDocs.mz.issueCreditNote', 'Issue full credit note')}
-                </Button>
+                canIssueFullCreditNote ? (
+                  <Button onClick={() => setCreditDialogOpen(true)}>
+                    {tt('financeDocs.mz.issueCreditNote', 'Issue full credit note')}
+                  </Button>
+                ) : (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                    {invoiceState?.credit_status === 'fully_credited'
+                      ? tt('financeDocs.mz.creditNotesFullyResolved', 'A full credit note already resolved this invoice. No further one-click full credit action is available here.')
+                      : tt('financeDocs.mz.creditNotesPartialResolved', 'This invoice already has credit-note adjustments. Review the issued notes below and use the dedicated adjustment workflow for any further correction.')}
+                  </div>
+                )
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
                   {tt('financeDocs.mz.creditNotesIssueOnly', 'Credit notes can only be created from issued invoices.')}

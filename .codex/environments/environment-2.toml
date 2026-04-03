@@ -18,14 +18,6 @@ npm run build
 '''
 
 [[actions]]
-name = "env"
-icon = "tool"
-command = '''
-$env:SUPABASE_ACCESS_TOKEN="sbp_a61815ccb8ee38a147ed74c180bfbbe27e67fed5"
-$env:SUPABASE_DB_PASSWORD="honeyThief@01"
-'''
-
-[[actions]]
 name = "spb"
 icon = "tool"
 command = '''

@@ -26,6 +26,13 @@ import {
 } from '../lib/orderFinance'
 import { buildSettlementMemo } from '../lib/orderRefs'
 import {
+  salesInvoiceWorkflowLabelKey,
+  vendorBillWorkflowLabelKey,
+  type FinanceDocumentSettlementStatus,
+  type SalesInvoiceStateRow,
+  type VendorBillStateRow,
+} from '../lib/financeDocuments'
+import {
   purchaseWorkflowLabelKey,
   salesWorkflowLabelKey,
   settlementLabelKey,
@@ -70,17 +77,19 @@ type HistoryRow = {
   memo: string | null
 }
 
+type SettlementBalanceStatus = OrderSettlementStatus | FinanceDocumentSettlementStatus
+
 type SettlementRow = {
   kind: SettlementKind
   id: string
-  orderNo: string
+  reference: string
   counterparty: string
-  orderDate: string | null
+  documentDate: string | null
   dueDate: string | null
   currency: string
   workflowStatus: string
   workflowLabel: string
-  balanceStatus: OrderSettlementStatus
+  balanceStatus: SettlementBalanceStatus
   balanceLabel: string
   originalAmount: number
   originalBase: number
@@ -88,6 +97,7 @@ type SettlementRow = {
   outstandingBase: number
   agingDays: number
   history: HistoryRow[]
+  sourceLabel: string
 }
 
 function isMissingStateViewError(error: any, viewName: string) {
@@ -161,7 +171,31 @@ export default function SettlementsPage() {
         return tt('orders.status.unknown', 'Unknown')
     }
   }
-  const settlementSummaryLabel = (status?: OrderSettlementStatus | null) => {
+  const invoiceWorkflowLabel = (status?: SalesInvoiceStateRow['document_workflow_status'] | null) => {
+    switch (status) {
+      case 'draft':
+        return tt(salesInvoiceWorkflowLabelKey(status), 'Draft')
+      case 'issued':
+        return tt(salesInvoiceWorkflowLabelKey(status), 'Issued')
+      case 'voided':
+        return tt(salesInvoiceWorkflowLabelKey(status), 'Voided')
+      default:
+        return tt('orders.status.unknown', 'Unknown')
+    }
+  }
+  const vendorBillWorkflowLabel = (status?: VendorBillStateRow['document_workflow_status'] | null) => {
+    switch (status) {
+      case 'draft':
+        return tt(vendorBillWorkflowLabelKey(status), 'Draft')
+      case 'posted':
+        return tt(vendorBillWorkflowLabelKey(status), 'Posted')
+      case 'voided':
+        return tt(vendorBillWorkflowLabelKey(status), 'Voided')
+      default:
+        return tt('orders.status.unknown', 'Unknown')
+    }
+  }
+  const settlementSummaryLabel = (status?: SettlementBalanceStatus | null) => {
     switch (status) {
       case 'unsettled':
         return tt(settlementLabelKey(status), 'Unsettled')
@@ -175,6 +209,26 @@ export default function SettlementsPage() {
         return tt('orders.status.unknown', 'Unknown')
     }
   }
+  const rowSourceLabel = (kind: SettlementKind) => {
+    switch (kind) {
+      case 'SI':
+        return tt('financeDocs.salesInvoices.title', 'Sales Invoices')
+      case 'VB':
+        return tt('financeDocs.vendorBills.title', 'Vendor Bills')
+      case 'SO':
+        return tt('orders.sales', 'Sales')
+      default:
+        return tt('orders.purchase', 'Purchase')
+    }
+  }
+  const settlementActionLabel = (kind: SettlementKind) =>
+    kind === 'SO' || kind === 'SI'
+      ? tt('settlements.receiveAction', 'Receive cash')
+      : tt('settlements.payAction', 'Pay cash')
+  const viewAnchorLabel = (kind: SettlementKind) =>
+    kind === 'SI' || kind === 'VB'
+      ? tt('financeDocs.viewDocument', 'View')
+      : tt('settlements.viewOrder', 'View order')
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -268,7 +322,7 @@ export default function SettlementsPage() {
         setLoading(true)
         const baseCurrency = await getBaseCurrencyCode(companyId)
 
-        const [banksRes, soRes, poRes, cashRes] = await Promise.all([
+        const [banksRes, soRes, poRes, siRes, vbRes, cashRes] = await Promise.all([
           supabase.from('bank_accounts').select('id,name,currency_code').eq('company_id', companyId).order('name', { ascending: true }),
           supabase
             .from('v_sales_order_state')
@@ -279,18 +333,30 @@ export default function SettlementsPage() {
             .select('*')
             .eq('company_id', companyId),
           supabase
+            .from('v_sales_invoice_state')
+            .select('*')
+            .eq('company_id', companyId),
+          supabase
+            .from('v_vendor_bill_state')
+            .select('*')
+            .eq('company_id', companyId),
+          supabase
             .from('cash_transactions')
             .select('id,happened_at,type,ref_type,ref_id,memo,amount_base')
             .eq('company_id', companyId)
-            .in('ref_type', ['SO', 'PO']),
+            .in('ref_type', ['SO', 'PO', 'SI', 'VB']),
         ])
 
         if (banksRes.error) throw banksRes.error
         if (cashRes.error) throw cashRes.error
 
-        const salesStateViewMissing = isMissingStateViewError(soRes.error, 'v_sales_order_state')
-        const purchaseStateViewMissing = isMissingStateViewError(poRes.error, 'v_purchase_order_state')
-        if (salesStateViewMissing || purchaseStateViewMissing) {
+        const missingViews = [
+          ['v_sales_order_state', soRes.error],
+          ['v_purchase_order_state', poRes.error],
+          ['v_sales_invoice_state', siRes.error],
+          ['v_vendor_bill_state', vbRes.error],
+        ].some(([viewName, error]) => isMissingStateViewError(error, String(viewName)))
+        if (missingViews) {
           if (!cancelled) {
             setBaseCode(baseCurrency || 'MZN')
             setBanks((banksRes.data || []) as BankAccount[])
@@ -302,22 +368,21 @@ export default function SettlementsPage() {
 
         if (soRes.error) throw soRes.error
         if (poRes.error) throw poRes.error
+        if (siRes.error) throw siRes.error
+        if (vbRes.error) throw vbRes.error
 
         const bankList = (banksRes.data || []) as BankAccount[]
         const bankTxRows = await fetchBankTransactions(bankList.map(bank => bank.id))
         const bankById = new Map(bankList.map(bank => [bank.id, bank]))
 
         const historyByKey = new Map<string, HistoryRow[]>()
-        const settledByKey = new Map<string, number>()
-
-        const pushHistory = (kind: SettlementKind, refId: string, entry: HistoryRow, amountBase: number) => {
+        const pushHistory = (kind: SettlementKind, refId: string, entry: HistoryRow) => {
           const key = `${kind}:${refId}`
           historyByKey.set(key, [...(historyByKey.get(key) || []), entry])
-          settledByKey.set(key, (settledByKey.get(key) || 0) + normalizeSettledAmount(kind, amountBase))
         }
 
         for (const tx of (cashRes.data || []) as CashTx[]) {
-          if ((tx.ref_type !== 'SO' && tx.ref_type !== 'PO') || !tx.ref_id) continue
+          if ((tx.ref_type !== 'SO' && tx.ref_type !== 'PO' && tx.ref_type !== 'SI' && tx.ref_type !== 'VB') || !tx.ref_id) continue
           pushHistory(tx.ref_type, tx.ref_id, {
             id: tx.id,
             source: 'cash',
@@ -325,11 +390,11 @@ export default function SettlementsPage() {
             happenedAt: tx.happened_at,
             amountBase: normalizeSettledAmount(tx.ref_type, n(tx.amount_base)),
             memo: tx.memo,
-          }, n(tx.amount_base))
+          })
         }
 
         for (const tx of bankTxRows) {
-          if ((tx.ref_type !== 'SO' && tx.ref_type !== 'PO') || !tx.ref_id) continue
+          if ((tx.ref_type !== 'SO' && tx.ref_type !== 'PO' && tx.ref_type !== 'SI' && tx.ref_type !== 'VB') || !tx.ref_id) continue
           pushHistory(tx.ref_type, tx.ref_id, {
             id: tx.id,
             source: 'bank',
@@ -337,22 +402,23 @@ export default function SettlementsPage() {
             happenedAt: tx.happened_at,
             amountBase: normalizeSettledAmount(tx.ref_type, n(tx.amount_base)),
             memo: tx.memo,
-          }, n(tx.amount_base))
+          })
         }
 
-        const receiveRows = ((soRes.data || []) as SalesOrderStateRow[])
-          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status !== 'cancelled')
+        const receiveRows = [
+          ...((soRes.data || []) as SalesOrderStateRow[])
+          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status !== 'cancelled' && order.financial_anchor === 'legacy_order_link')
           .map(order => {
-            const settled = n(order.legacy_settled_base ?? settledByKey.get(`SO:${order.id}`))
+            const settled = n(order.legacy_settled_base)
             const outstanding = n(order.legacy_outstanding_base)
             const balanceStatus = order.settlement_status
 
             return {
               kind: 'SO' as const,
               id: order.id,
-              orderNo: order.order_no || order.id,
+              reference: order.order_no || order.id,
               counterparty: order.counterparty_name || tt('common.none', 'None'),
-              orderDate: order.order_date,
+              documentDate: order.order_date,
               dueDate: order.due_date,
               currency: order.currency_code || baseCurrency || 'MZN',
               workflowStatus: order.workflow_status,
@@ -365,24 +431,55 @@ export default function SettlementsPage() {
               outstandingBase: outstanding,
               agingDays: daysOverdue(order.due_date),
               history: (historyByKey.get(`SO:${order.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
+              sourceLabel: rowSourceLabel('SO'),
             }
           })
           .filter(row => row.outstandingBase > 0.005)
-          .sort((a, b) => (b.agingDays - a.agingDays) || String(a.orderDate || '').localeCompare(String(b.orderDate || '')))
+          .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
+          ...((siRes.data || []) as SalesInvoiceStateRow[])
+          .filter(invoice => invoice.document_workflow_status === 'issued')
+          .map(invoice => {
+            const balanceStatus = invoice.settlement_status
 
-        const payRows = ((poRes.data || []) as PurchaseOrderStateRow[])
-          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status !== 'cancelled')
+            return {
+              kind: 'SI' as const,
+              id: invoice.id,
+              reference: invoice.internal_reference,
+              counterparty: invoice.counterparty_name || tt('common.none', 'None'),
+              documentDate: invoice.invoice_date,
+              dueDate: invoice.due_date,
+              currency: invoice.currency_code || baseCurrency || 'MZN',
+              workflowStatus: invoice.document_workflow_status,
+              workflowLabel: invoiceWorkflowLabel(invoice.document_workflow_status),
+              balanceStatus,
+              balanceLabel: settlementSummaryLabel(balanceStatus),
+              originalAmount: n(invoice.total_amount),
+              originalBase: n(invoice.total_amount_base),
+              settledBase: n(invoice.settled_base) + n(invoice.credited_total_base),
+              outstandingBase: n(invoice.outstanding_base),
+              agingDays: daysOverdue(invoice.due_date),
+              history: (historyByKey.get(`SI:${invoice.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
+              sourceLabel: rowSourceLabel('SI'),
+            }
+          })
+          .filter(row => row.outstandingBase > 0.005)
+          .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
+        ]
+
+        const payRows = [
+          ...((poRes.data || []) as PurchaseOrderStateRow[])
+          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status !== 'cancelled' && order.financial_anchor === 'legacy_order_link')
           .map(order => {
-            const settled = n(order.legacy_paid_base ?? settledByKey.get(`PO:${order.id}`))
+            const settled = n(order.legacy_paid_base)
             const outstanding = n(order.legacy_outstanding_base)
             const balanceStatus = order.settlement_status
 
             return {
               kind: 'PO' as const,
               id: order.id,
-              orderNo: order.order_no || order.id,
+              reference: order.order_no || order.id,
               counterparty: order.counterparty_name || tt('common.none', 'None'),
-              orderDate: order.order_date,
+              documentDate: order.order_date,
               dueDate: order.due_date,
               currency: order.currency_code || baseCurrency || 'MZN',
               workflowStatus: order.workflow_status,
@@ -395,10 +492,40 @@ export default function SettlementsPage() {
               outstandingBase: outstanding,
               agingDays: daysOverdue(order.due_date),
               history: (historyByKey.get(`PO:${order.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
+              sourceLabel: rowSourceLabel('PO'),
             }
           })
           .filter(row => row.outstandingBase > 0.005)
-          .sort((a, b) => (b.agingDays - a.agingDays) || String(a.orderDate || '').localeCompare(String(b.orderDate || '')))
+          .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
+          ...((vbRes.data || []) as VendorBillStateRow[])
+          .filter(bill => bill.document_workflow_status === 'posted')
+          .map(bill => {
+            const balanceStatus = bill.settlement_status
+
+            return {
+              kind: 'VB' as const,
+              id: bill.id,
+              reference: bill.primary_reference,
+              counterparty: bill.counterparty_name || tt('common.none', 'None'),
+              documentDate: bill.bill_date,
+              dueDate: bill.due_date,
+              currency: bill.currency_code || baseCurrency || 'MZN',
+              workflowStatus: bill.document_workflow_status,
+              workflowLabel: vendorBillWorkflowLabel(bill.document_workflow_status),
+              balanceStatus,
+              balanceLabel: settlementSummaryLabel(balanceStatus),
+              originalAmount: n(bill.total_amount),
+              originalBase: n(bill.total_amount_base),
+              settledBase: n(bill.settled_base),
+              outstandingBase: n(bill.outstanding_base),
+              agingDays: daysOverdue(bill.due_date),
+              history: (historyByKey.get(`VB:${bill.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
+              sourceLabel: rowSourceLabel('VB'),
+            }
+          })
+          .filter(row => row.outstandingBase > 0.005)
+          .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
+        ]
 
         if (!cancelled) {
           setBaseCode(baseCurrency || 'MZN')
@@ -435,14 +562,14 @@ export default function SettlementsPage() {
     const query = search.trim().toLowerCase()
     return currentRows.filter(row => {
       if (query) {
-        const haystack = `${row.orderNo} ${row.counterparty} ${row.workflowStatus} ${row.workflowLabel} ${row.balanceStatus} ${row.balanceLabel}`.toLowerCase()
+        const haystack = `${row.reference} ${row.counterparty} ${row.workflowStatus} ${row.workflowLabel} ${row.balanceStatus} ${row.balanceLabel} ${row.sourceLabel}`.toLowerCase()
         if (!haystack.includes(query)) return false
       }
       if (partyFilter !== 'ALL' && row.counterparty !== partyFilter) return false
       if (statusFilter !== 'ALL' && String(row.workflowStatus).toLowerCase() !== statusFilter.toLowerCase()) return false
       if (currencyFilter !== 'ALL' && row.currency !== currencyFilter) return false
-      if (fromDate && row.orderDate && row.orderDate < fromDate) return false
-      if (toDate && row.orderDate && row.orderDate > toDate) return false
+      if (fromDate && row.documentDate && row.documentDate < fromDate) return false
+      if (toDate && row.documentDate && row.documentDate > toDate) return false
       if (dueFilter === 'overdue' && row.agingDays <= 0) return false
       if (dueFilter === 'current' && row.agingDays > 0) return false
       if (dueFilter === 'due_soon') {
@@ -460,7 +587,7 @@ export default function SettlementsPage() {
     setSettleMethod('cash')
     setSettleAmount(row.outstandingBase.toFixed(2))
     setSettleDate(todayISO())
-    setSettleMemo(buildSettlementMemo(row.kind, row.orderNo, {
+    setSettleMemo(buildSettlementMemo(row.kind, row.reference, {
       receive: tt('settlements.defaultReceiveMemo', 'Receipt for {orderNo}'),
       pay: tt('settlements.defaultPayMemo', 'Payment for {orderNo}'),
     }))
@@ -480,7 +607,7 @@ export default function SettlementsPage() {
       return
     }
 
-    const signedAmount = activeRow.kind === 'SO' ? amount : amount * -1
+    const signedAmount = activeRow.kind === 'SO' || activeRow.kind === 'SI' ? amount : amount * -1
     setSaving(true)
 
     try {
@@ -488,7 +615,7 @@ export default function SettlementsPage() {
         const { error } = await supabase.from('cash_transactions').insert({
           company_id: companyId,
           happened_at: settleDate,
-          type: activeRow.kind === 'SO' ? 'sale_receipt' : 'purchase_payment',
+          type: activeRow.kind === 'SO' || activeRow.kind === 'SI' ? 'sale_receipt' : 'purchase_payment',
           ref_type: activeRow.kind,
           ref_id: activeRow.id,
           memo: settleMemo || null,
@@ -525,7 +652,9 @@ export default function SettlementsPage() {
         }
       }
 
-      toast.success(activeRow.kind === 'SO' ? tt('settlements.receiptSaved', 'Receipt saved') : tt('settlements.paymentSaved', 'Payment saved'))
+      toast.success(activeRow.kind === 'SO' || activeRow.kind === 'SI'
+        ? tt('settlements.receiptSaved', 'Receipt saved')
+        : tt('settlements.paymentSaved', 'Payment saved'))
       setActiveRow(null)
       setDialogTab('settle')
       setSettleAmount('')
@@ -541,6 +670,14 @@ export default function SettlementsPage() {
   }
 
   function viewOrder(row: SettlementRow) {
+    if (row.kind === 'SI') {
+      navigate(`/sales-invoices/${row.id}`)
+      return
+    }
+    if (row.kind === 'VB') {
+      navigate(`/vendor-bills/${row.id}`)
+      return
+    }
     navigate(`/orders?tab=${row.kind === 'SO' ? 'sales' : 'purchase'}&orderId=${row.id}`)
   }
 
@@ -556,7 +693,7 @@ export default function SettlementsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('settlements.title', 'Receivables & Payables')}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('settlements.subtitle', 'Track legacy order-linked balances in one place during the transition, then post cash receipts or supplier payments without digging through recent transactions.')}
+              {tt('settlements.subtitle', 'Track receivables and payables from the current settlement truth. Orders remain temporary placeholders only until a sales invoice or vendor bill becomes the anchor.')}
             </p>
           </div>
         </div>
@@ -567,11 +704,11 @@ export default function SettlementsPage() {
       </div>
 
       <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-        <p className="font-medium">{tt('settlements.transitionTitle', 'Legacy order-linked view')}</p>
+        <p className="font-medium">{tt('settlements.transitionTitle', 'Settlement anchor policy')}</p>
         <p className="mt-1 leading-6">
           {tt(
             'settlements.transitionNote',
-            'This screen still derives balances from linked orders and settlement rows. Shipped, received, approved, or completed orders can still be unpaid, and balance badges should be read separately from order workflow status.',
+            'Approved orders can hold temporary settlement exposure only until the finance document exists. Once a sales invoice is issued or a vendor bill is posted, the finance document becomes the single settlement anchor and prior cash links are reassociated there.',
           )}
         </p>
       </div>
@@ -583,7 +720,7 @@ export default function SettlementsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{money(receiveTotal)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.pendingReceiveHelp', '{count} sales orders still appear with legacy order-linked balances to collect.', { count: rows.receive.length })}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.pendingReceiveHelp', '{count} receivable anchors are open across sales orders awaiting issue and issued sales invoices.', { count: rows.receive.length })}</p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
@@ -592,7 +729,7 @@ export default function SettlementsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{money(payTotal)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.pendingPayHelp', '{count} purchase orders still appear with legacy order-linked balances to pay.', { count: rows.pay.length })}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.pendingPayHelp', '{count} payable anchors are open across purchase orders awaiting booking and posted vendor bills.', { count: rows.pay.length })}</p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
@@ -601,7 +738,7 @@ export default function SettlementsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tracking-tight">{overdueCount}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.overdueHelp', 'Rows flagged overdue are ordered to the top using the currently derived order-linked due dates.')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.overdueHelp', 'Overdue rows are ranked using the due date of the active settlement anchor, whether that anchor is still an order or already a finance document.')}</p>
           </CardContent>
         </Card>
       </div>
@@ -609,7 +746,7 @@ export default function SettlementsPage() {
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle>{tt('settlements.filters', 'Filters')}</CardTitle>
-          <CardDescription>{tt('settlements.filtersHelp', 'Narrow by counterparty, order workflow status, order date, or derived due state without leaving the active company context.')}</CardDescription>
+          <CardDescription>{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Tabs value={tab} onValueChange={(value) => setTab(value as 'receive' | 'pay')}>
@@ -621,7 +758,7 @@ export default function SettlementsPage() {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <div className="xl:col-span-2">
                   <Label>{tt('common.search', 'Search')}</Label>
-                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tt('settlements.searchPlaceholder', 'Order number, customer, supplier, or workflow status')} />
+                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tt('settlements.searchPlaceholder', 'Reference, counterparty, anchor type, or workflow status')} />
                 </div>
                 <div>
                   <Label>{tt('settlements.counterparty', 'Counterparty')}</Label>
@@ -705,25 +842,25 @@ export default function SettlementsPage() {
           <CardTitle>{tab === 'receive' ? tt('settlements.pendingReceive', 'Pending to receive') : tt('settlements.pendingPay', 'Pending to pay')}</CardTitle>
           <CardDescription>
             {tab === 'receive'
-              ? tt('settlements.receiveHelp', 'Sales orders stay here while this transition view still tracks outstanding balances against linked orders.')
-              : tt('settlements.payHelp', 'Purchase orders stay here while this transition view still tracks outstanding balances against linked orders.')}
+              ? tt('settlements.receiveHelp', 'Receivables appear here from approved sales orders before issue and from issued sales invoices after issue. Once issued, the invoice becomes the canonical settlement anchor.')
+              : tt('settlements.payHelp', 'Payables appear here from approved purchase orders before booking and from posted vendor bills after booking. Once posted, the vendor bill becomes the canonical settlement anchor.')}
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {stateViewsUnavailable && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-              {tt('settlements.stateViewsUnavailable', 'The Step 1 order-state views are not available yet. Apply the Step 1 migration and refresh this page.')}
+              {tt('settlements.stateViewsUnavailable', 'The settlement state views are not available yet. Apply the settlement-anchor migration and refresh this page.')}
             </div>
           )}
           {loading ? (
             <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
           ) : filteredRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{tt('settlements.empty', 'No legacy order-linked balances match the current filters.')}</p>
+            <p className="text-sm text-muted-foreground">{tt('settlements.empty', 'No settlement anchors match the current filters.')}</p>
           ) : (
             <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b text-left">
-                  <th className="py-2 pr-3">{tt('orders.order', 'Order')}</th>
+                  <th className="py-2 pr-3">{tt('table.ref', 'Reference')}</th>
                   <th className="py-2 pr-3">{tt('settlements.counterparty', 'Counterparty')}</th>
                   <th className="py-2 pr-3">{tt('table.date', 'Date')}</th>
                   <th className="py-2 pr-3">{tt('orders.dueDate', 'Due Date')}</th>
@@ -739,11 +876,11 @@ export default function SettlementsPage() {
                 {filteredRows.map(row => (
                   <tr key={`${row.kind}:${row.id}`} className="border-b align-top">
                     <td className="py-3 pr-3">
-                      <div className="font-medium">{row.orderNo}</div>
-                      <div className="text-xs text-muted-foreground">{row.workflowLabel ? `${row.kind} - ${row.workflowLabel}` : row.kind}</div>
+                      <div className="font-medium">{row.reference}</div>
+                      <div className="text-xs text-muted-foreground">{`${row.sourceLabel} · ${row.workflowLabel || row.kind}`}</div>
                     </td>
                     <td className="py-3 pr-3">{row.counterparty}</td>
-                    <td className="py-3 pr-3 whitespace-nowrap">{row.orderDate || tt('common.dash', '-')}</td>
+                    <td className="py-3 pr-3 whitespace-nowrap">{row.documentDate || tt('common.dash', '-')}</td>
                     <td className={`py-3 pr-3 whitespace-nowrap ${dueTone(row)}`}>
                       {row.dueDate || tt('common.dash', '-')}
                     </td>
@@ -764,10 +901,10 @@ export default function SettlementsPage() {
                     <td className="py-3 text-right">
                       <div className="flex justify-end gap-2">
                         <Button size="sm" onClick={() => openSettlement(row, 'settle')}>
-                          {row.kind === 'SO' ? tt('settlements.receiveAction', 'Receive cash') : tt('settlements.payAction', 'Pay cash')}
+                          {settlementActionLabel(row.kind)}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => viewOrder(row)}>
-                          {tt('settlements.viewOrder', 'View order')}
+                          {viewAnchorLabel(row.kind)}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => openSettlement(row, 'history')}>
                           {tt('settlements.viewHistory', 'History')}
@@ -787,13 +924,13 @@ export default function SettlementsPage() {
           <DialogHeader>
             <DialogTitle>
               {activeRow
-                ? `${activeRow.kind === 'SO' ? tt('settlements.receiveAction', 'Receive cash') : tt('settlements.payAction', 'Pay cash')} - ${activeRow.orderNo}`
+                ? `${settlementActionLabel(activeRow.kind)} - ${activeRow.reference}`
                 : tt('settlements.title', 'Receivables & Payables')}
             </DialogTitle>
             <DialogDescription>
               {activeRow
-                ? tt('settlements.dialogHelp', 'Post a full or partial settlement, or review prior entries linked to this order. Order workflow and balance status can diverge during the transition.')
-                : tt('settlements.subtitle', 'Track legacy order-linked balances')}
+                ? tt('settlements.dialogHelp', 'Post a full or partial settlement, or review prior entries linked to the active settlement anchor. This workspace follows the current source of truth, not a duplicated order/document exposure.')
+                : tt('settlements.subtitle', 'Track receivables and payables from the active settlement anchor')}
             </DialogDescription>
           </DialogHeader>
 
@@ -877,14 +1014,14 @@ export default function SettlementsPage() {
                       {tt('settlements.fillOutstanding', 'Fill outstanding')}
                     </Button>
                     <Button variant="outline" onClick={() => viewOrder(activeRow)}>
-                      {tt('settlements.viewOrder', 'View order')}
+                      {viewAnchorLabel(activeRow.kind)}
                     </Button>
                   </div>
                 </TabsContent>
 
                 <TabsContent value="history" className="mt-4">
                   {activeHistory.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">{tt('settlements.historyEmpty', 'No settlements have been posted for this order yet.')}</p>
+                    <p className="text-sm text-muted-foreground">{tt('settlements.historyEmpty', 'No settlements have been posted for this anchor yet.')}</p>
                   ) : (
                     <div className="max-h-[320px] overflow-auto rounded-xl border">
                       <table className="w-full text-sm">
@@ -919,7 +1056,7 @@ export default function SettlementsPage() {
             <Button variant="outline" onClick={() => setActiveRow(null)}>{tt('common.cancel', 'Cancel')}</Button>
             {dialogTab === 'settle' && (
               <Button onClick={submitSettlement} disabled={saving}>
-                {saving ? tt('actions.saving', 'Saving') : activeRow?.kind === 'SO' ? tt('settlements.receiveAction', 'Receive cash') : tt('settlements.payAction', 'Pay cash')}
+                {saving ? tt('actions.saving', 'Saving') : activeRow ? settlementActionLabel(activeRow.kind) : tt('settlements.title', 'Receivables & Payables')}
               </Button>
             )}
           </DialogFooter>

@@ -12,6 +12,7 @@ import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetTrigger, 
 import toast from 'react-hot-toast'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 
 type CashSummary = { beginning: number; inflows: number; outflows: number; net: number; ending: number }
@@ -19,7 +20,7 @@ type CashTx = {
   id: string
   happened_at: string
   type: 'sale_receipt' | 'purchase_payment' | 'adjustment'
-  ref_type: 'SO' | 'PO' | 'ADJ' | null
+  ref_type: SettlementKind | 'ADJ' | null
   ref_id: string | null
   memo: string | null
   amount_base: number
@@ -64,7 +65,7 @@ export default function CashPage() {
     type: CashTx['type']
     amount: string
     memo: string
-    refType: 'SO' | 'PO' | 'ADJ' | 'none'
+    refType: SettlementKind | 'ADJ' | 'none'
     refId: string
   }>({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
 
@@ -208,11 +209,26 @@ export default function CashPage() {
     }
 
     // ✅ enforce ref semantics BEFORE hitting the DB
-    const needsRef = addForm.refType === 'SO' || addForm.refType === 'PO'
+    const needsRef = addForm.refType === 'SO' || addForm.refType === 'PO' || addForm.refType === 'SI' || addForm.refType === 'VB'
     const disallowRef = addForm.refType === 'ADJ'
+    const receiveAnchor = addForm.refType === 'SO' || addForm.refType === 'SI'
+    const payAnchor = addForm.refType === 'PO' || addForm.refType === 'VB'
+
+    if (receiveAnchor && addForm.type !== 'sale_receipt') {
+      toast.error(tf('cash.toast.receiveAnchorTypeMismatch', 'Sales-order and sales-invoice references must use the sale receipt cash type.'))
+      return
+    }
+    if (payAnchor && addForm.type !== 'purchase_payment') {
+      toast.error(tf('cash.toast.payAnchorTypeMismatch', 'Purchase-order and vendor-bill references must use the purchase payment cash type.'))
+      return
+    }
+    if (addForm.refType === 'ADJ' && addForm.type !== 'adjustment') {
+      toast.error(tf('cash.toast.adjustmentTypeMismatch', 'Adjustment references must use the adjustment cash type.'))
+      return
+    }
 
     if (needsRef && !UUID_RE.test(addForm.refId)) {
-      toast.error(tf('cash.toast.invalidRefUuid', 'Provide a valid internal reference ID (UUID) for the selected order.'))
+      toast.error(tf('cash.toast.invalidRefUuid', 'Provide a valid internal reference ID (UUID) for the selected settlement anchor.'))
       return
     }
     if (disallowRef && addForm.refId.trim()) {
@@ -251,6 +267,14 @@ export default function CashPage() {
     if (type === 'sale_receipt') return t('cash.saleReceipt')
     if (type === 'purchase_payment') return t('cash.purchasePayment')
     return t('cash.adjustment')
+  }
+  const referenceHref = (type: CashTx['ref_type'], id: string | null) => {
+    if (!id) return null
+    if (type === 'SI') return `/sales-invoices/${id}`
+    if (type === 'VB') return `/vendor-bills/${id}`
+    if (type === 'SO') return `/orders?tab=sales&orderId=${encodeURIComponent(id)}`
+    if (type === 'PO') return `/orders?tab=purchase&orderId=${encodeURIComponent(id)}`
+    return null
   }
 
   return (
@@ -338,6 +362,8 @@ export default function CashPage() {
                           <SelectItem value="none">{t('common.none')}</SelectItem>
                           <SelectItem value="SO">SO</SelectItem>
                           <SelectItem value="PO">PO</SelectItem>
+                          <SelectItem value="SI">SI</SelectItem>
+                          <SelectItem value="VB">VB</SelectItem>
                           <SelectItem value="ADJ">ADJ</SelectItem>
                         </SelectContent>
                       </Select>
@@ -451,7 +477,15 @@ export default function CashPage() {
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
                   <td className="py-2 pr-3">{cashTypeLabel(r.type)}</td>
-                  <td className="py-2 pr-3">{formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}</td>
+                  <td className="py-2 pr-3">
+                    {referenceHref(r.ref_type, r.ref_id) ? (
+                      <Link className="text-primary underline-offset-4 hover:underline" to={referenceHref(r.ref_type, r.ref_id)!}>
+                        {formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}
+                      </Link>
+                    ) : (
+                      formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))
+                    )}
+                  </td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right font-medium">{formatMoneyBase(r.running_balance)}</td>

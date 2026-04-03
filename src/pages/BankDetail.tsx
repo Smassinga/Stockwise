@@ -1,6 +1,6 @@
 // src/pages/BankDetail.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../lib/db'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -16,6 +16,7 @@ import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg'
 import { hasRole, CanManageUsers } from '../lib/roles'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 
 type Bank = {
@@ -38,7 +39,7 @@ type Tx = {
   amount_base: number
   reconciled: boolean
   created_at: string
-  ref_type?: 'SO' | 'PO' | null
+  ref_type?: SettlementKind | null
   ref_id?: string | null
 }
 
@@ -514,6 +515,15 @@ export default function BankDetail() {
     }
   }
 
+  const referenceHref = (type: Tx['ref_type'], id: string | null | undefined) => {
+    if (!id) return null
+    if (type === 'SI') return `/sales-invoices/${id}`
+    if (type === 'VB') return `/vendor-bills/${id}`
+    if (type === 'SO') return `/orders?tab=sales&orderId=${encodeURIComponent(id)}`
+    if (type === 'PO') return `/orders?tab=purchase&orderId=${encodeURIComponent(id)}`
+    return null
+  }
+
   return (
     <div className="space-y-4">
       {/* Header + filters */}
@@ -714,7 +724,15 @@ export default function BankDetail() {
               {rows.map(r => (
                 <tr key={r.id} className="border-t">
                   <td className="py-2 pr-3">{r.happened_at}</td>
-                  <td className="py-2 pr-3">{formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}</td>
+                  <td className="py-2 pr-3">
+                    {referenceHref(r.ref_type, r.ref_id) ? (
+                      <Link className="text-primary underline-offset-4 hover:underline" to={referenceHref(r.ref_type, r.ref_id)!}>
+                        {formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}
+                      </Link>
+                    ) : (
+                      formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))
+                    )}
+                  </td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
                   <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
                   <td className="py-2 pl-3 text-right">

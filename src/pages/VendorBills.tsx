@@ -102,7 +102,7 @@ export default function VendorBillsPage() {
             <Link to="/orders?tab=purchase">{tt('financeDocs.vendorBills.ordersLink', 'View purchase orders')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/settlements">{tt('financeDocs.vendorBills.settlementsLink', 'Legacy settlements')}</Link>
+            <Link to="/settlements">{tt('financeDocs.vendorBills.settlementsLink', 'Settlement workspace')}</Link>
           </Button>
         </div>
       </div>

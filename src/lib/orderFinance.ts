@@ -1,4 +1,4 @@
-export type SettlementKind = 'SO' | 'PO'
+export type SettlementKind = 'SO' | 'PO' | 'SI' | 'VB'
 
 type LineLike = {
   qty?: number | null
@@ -142,7 +142,7 @@ export function purchaseOrderAmounts(order: PurchaseOrderLike, lines: LineLike[]
 
 export function normalizeSettledAmount(kind: SettlementKind, amountBase: number) {
   const signed = n(amountBase)
-  return kind === 'SO' ? signed : signed * -1
+  return kind === 'SO' || kind === 'SI' ? signed : signed * -1
 }
 
 export function outstandingAmount(totalBase: number, settledBase: number) {

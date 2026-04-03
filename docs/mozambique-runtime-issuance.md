@@ -8,10 +8,13 @@ Locked architecture:
 
 - `sales_orders` remain operational and commercial documents.
 - `sales_invoices` are the legal fiscal truth for outbound invoicing.
+- `purchase_orders` remain operational documents until a vendor bill is booked.
+- `vendor_bills` become the payable settlement truth once booked.
 - `sales_invoices.internal_reference` is the visible legal/display reference.
 - Internal workflow uses stable ids, not parsed document references.
 - Issued invoices are immutable and corrections flow through `sales_credit_notes`.
-- Vendor bills keep the existing dual-reference AP model and are not part of the Mozambique sales issuance runtime in this package.
+- Settlement anchors support `SO`, `PO`, `SI`, and `VB`, but once a finance document exists the finance document becomes the canonical settlement anchor.
+- Vendor bills keep the existing dual-reference AP model and now participate in the same settlement-anchor rules.
 
 Munchythief is the first validation tenant:
 
@@ -54,6 +57,11 @@ The renderer intentionally uses stored fiscal snapshot fields on the invoice row
 
 It does not re-read mutable `companies`, `customers`, or `sales_orders` to render legal output. That is required for compliance and must remain true in future refactors.
 
+Branding overlay:
+
+- If a company logo is configured, the print/PDF output may show it as a branding element.
+- This does not change the legal data source. Seller, buyer, fiscal totals, reference, and compliance phrase still come only from frozen invoice snapshots.
+
 Draft-only UI preview is different:
 
 - before issue, the invoice detail page may show non-authoritative preview values loaded from the linked sales order, customer, and company settings
@@ -73,6 +81,13 @@ DB-side source of truth:
 - `issue_sales_invoice_mz`
 - `sales_invoice_hardening_guard()`
 - line parent-status guards
+- settlement-anchor transfer helpers and read models:
+  - `transfer_sales_order_settlement_anchor(...)`
+  - `transfer_purchase_order_settlement_anchor(...)`
+  - `v_sales_order_state`
+  - `v_purchase_order_state`
+  - `v_sales_invoice_state`
+  - `v_vendor_bill_state`
 
 The app must treat DB rejection as authoritative. Do not add client-only shortcuts that mutate issued headers or lines.
 
@@ -104,6 +119,9 @@ The compliance workspace is currently observational, not fully operational.
 | `src/pages/SalesInvoiceDetail.tsx` | Main document workspace for draft save, issue, draft preview, output actions, credit note, audit, and archive views | `loadWorkspace`, `handleSaveDraftDates`, `handleIssueInvoice`, `handlePrint`, `handleDownloadPdf`, `handleShare`, `handleCreateCreditNote`, `openArtifact` | Route `/sales-invoices/:invoiceId` | `mzFinance.ts`, `mzInvoiceOutput.ts`, Supabase storage signed URLs | No post-issue edit controls; draft preview values are informational until issue; credit notes only from issued invoices; audit/artifacts are read from DB, not inferred | Missing invoice, preview lookup failure, RPC rejection, output helper failure, artifact bucket/path missing, signed URL failure | Load a draft, verify source preview values, issue it, verify buttons and sections change, then create a credit note |
 | `src/pages/Orders/SalesOrders.tsx` | Operational entry point from sales order to persistent order detail, fiscal draft creation, and linked invoice navigation | `openSalesOrderDetail`, `openOrCreateFiscalInvoice` | Route `/orders?tab=sales` | `mzFinance.ts`, `sales_invoices` lookup | Orders stay operational; approved orders remain viewable from the order list; linked draft or issued invoices must stay reachable from the order workspace | Wrong status, duplicate/failed draft creation, missing company context, missing linked invoice summary | Open confirmed/allocated/shipped/closed order, use `View`, inspect lines/header, open linked invoice or create one |
 | `src/pages/SalesInvoices.tsx` | Register and discovery page for fiscal invoices | list page route and links to detail/compliance/orders | Route `/sales-invoices` | Step 2 read hook and detail route | Invoice register shows fiscal documents, not operational orders | Missing Step 2 state views, stale register data, search mismatch | Open register, search by legal reference, open detail |
+| `src/pages/Settlements.tsx` | Canonical receivables/payables workspace across orders and finance documents | `load`, `openSettlement`, `submitSettlement`, `viewOrder` | Route `/settlements` | `v_sales_order_state`, `v_purchase_order_state`, `v_sales_invoice_state`, `v_vendor_bill_state`, cash/bank transactions | Orders only remain anchors until issue/booking; once `SI` or `VB` exists it becomes the single settlement truth; no duplicate open exposure should remain | Missing settlement views, wrong ref_type reassociation, stale order-only wording, wrong drill-down target | Post a partial order settlement, issue the finance document, then confirm the settlement row moves to the document anchor |
+| `src/pages/Cash.tsx` | Cash ledger and manual cash posting | `loadBook`, `loadData`, `addTransaction`, beginning-balance save | Route `/cash` | `cash_books`, `cash_transactions`, settlement reference helpers | Manual cash entries must accept `SO`, `PO`, `SI`, `VB`, or `ADJ`; sales anchors use receipts, purchase anchors use payments | Invalid UUID, anchor/type mismatch, wrong drill-down target | Post receipts/payments against `SO`, `SI`, `PO`, and `VB`, then open the linked anchor from the ledger |
+| `src/pages/BankDetail.tsx` | Bank ledger and reconciliation visibility | `loadTx`, `loadStatements`, `loadBookBalance`, reconciliation actions | Route `/banks/:id` | `bank_transactions`, `bank_statements`, settlement reference helpers | Bank ledger must resolve `SO`, `PO`, `SI`, and `VB` references consistently with the settlements workspace | Missing ref columns, unresolved reference text, wrong drill-down target | Open bank ledger rows linked to orders/invoices/bills and confirm each opens the correct anchor |
 | `src/pages/MozambiqueCompliance.tsx` | Company-level compliance visibility workspace | page load | Route `/compliance/mz` | `mzFinance.ts` | Visibility-only for now; do not assume SAF-T actions exist yet | Missing settings, missing active series, export history empty, artifact history empty | Open compliance page for Munchythief and confirm settings/series load |
 | `src/App.tsx` | Route registration | `/sales-invoices/:invoiceId`, `/compliance/mz` | Root app router | lazy-loaded pages | Must expose the Mozambique pages under authenticated org routes | route missing, lazy import failure | Navigate directly to the routes |
 | `src/components/layout/AppLayout.tsx` | Navigation exposure for Mozambique runtime pages | nav item generation | App shell | route paths and i18n fallback labels | Compliance route must be discoverable even if locale key is missing | missing nav label, wrong route grouping | Confirm sidebar shows `Mozambique Compliance` |
@@ -119,6 +137,7 @@ The compliance workspace is currently observational, not fully operational.
 | Invoice issuance | `/sales-invoices/:invoiceId` | `issueSalesInvoice` | `issue_sales_invoice_mz`, `sales_invoices`, `sales_invoice_lines` | draft -> issued | RPC rejection, due-date or snapshot prerequisites missing, line snapshot trigger failure, no refresh after issue | `mzFinance.ts` `salesInvoice.issue.*` log and DB issue guard message |
 | Invoice detail loading | `/sales-invoices/:invoiceId` | `getSalesInvoiceDocument`, `listSalesInvoiceDocumentLines`, `listFinanceEvents`, `listFiscalArtifacts`, `listSalesCreditNotesForInvoice` | `sales_invoices`, `sales_invoice_lines`, `finance_document_events`, `fiscal_document_artifacts`, `sales_credit_notes` | load current document workspace | blank page, missing sections, one subquery fails and page drops to error toast | `SalesInvoiceDetail.tsx` `loadWorkspace` error log |
 | Renderer / print / PDF / share | invoice detail actions | `buildSalesInvoiceOutputModel`, `printSalesInvoiceDocument`, `downloadSalesInvoicePdf`, `shareSalesInvoiceDocument` | snapshot fields from `sales_invoices` and `sales_invoice_lines` | issued invoice -> printable/shareable output | wrong seller/buyer data, blocked print window, PDF build failure, share unavailable | `mzInvoiceOutput.ts` output logs and snapshot field completeness |
+| Settlement anchor transition | settlements, cash, bank, invoice/vendor bill detail | settlement state views plus re-anchor triggers | `cash_transactions`, `bank_transactions`, `v_sales_order_state`, `v_purchase_order_state`, `v_sales_invoice_state`, `v_vendor_bill_state` | order anchor -> finance-document anchor | order still looks collectible after invoice issue, duplicate exposure, pre-issue cash not carried onto invoice/bill | settlement read models and `20260401120000_finance_document_settlement_anchor_transition.sql` |
 | Credit-note issuance | invoice detail dialog | `createAndIssueFullCreditNoteForInvoice` | `sales_credit_notes`, `sales_credit_note_lines`, `issue_sales_credit_note_mz` | issued invoice -> issued credit note | empty reason, header insert failure, line insert failure, RPC rejection | `mzFinance.ts` `creditNote.issueFromInvoice.*` log |
 | Audit trail loading | invoice detail and compliance page | `listFinanceEvents` | `finance_document_events` | read recent events | empty or failed event panel | `mzFinance.ts` `financeEvents.load.*` log and RLS |
 | Archive / artifact retrieval | invoice detail | `listFiscalArtifacts`, `openArtifact` | `fiscal_document_artifacts`, Supabase storage signed URL | read artifact rows -> open storage file | row exists but file cannot open, missing bucket/path, signed URL failure | `SalesInvoiceDetail.tsx` `openArtifact` error log |
@@ -182,6 +201,22 @@ Check:
 
 Do not debug by looking at mutable company/customer masters first. The renderer intentionally ignores them once the invoice exists.
 
+### Print falls back or PDF warns about layout
+
+Check:
+
+- the browser allowed iframe-based print execution
+- the configured company logo URL is reachable if branding is expected
+- the PDF log no longer shows `jspdf-autotable` width overflow
+
+Inspect first:
+
+- `salesInvoiceOutput.print.start`
+- `salesInvoiceOutput.print.fallbackPdf`
+- `salesInvoiceOutput.pdf.failed`
+
+The runtime now prefers iframe print and falls back to PDF download if the browser cannot open a print surface safely.
+
 ### Credit note fails
 
 Check:
@@ -197,6 +232,23 @@ Inspect first:
   - `creditNote.headerInsert.failed`
   - `creditNote.linesInsert.failed`
   - `creditNote.issue.failed`
+
+### Settlement anchor looks wrong
+
+Check:
+
+- whether the order is still pre-issue / pre-booking or a finance document already exists
+- whether earlier receipts/payments were reassociated onto `SI` or `VB`
+- whether the correct state view is being queried on the current screen
+
+Inspect first:
+
+- `v_sales_order_state`
+- `v_purchase_order_state`
+- `v_sales_invoice_state`
+- `v_vendor_bill_state`
+- `cash_transactions.ref_type/ref_id`
+- `bank_transactions.ref_type/ref_id`
 
 ### Artifact row exists but file will not open
 
@@ -238,6 +290,9 @@ Checklist:
 18. Confirm the credit note appears in the credit-note section.
 19. Confirm audit events appear.
 20. Confirm the compliance page loads fiscal settings, series, and SAF-T history.
+21. Post a receipt against an approved sales order, issue the invoice, then confirm the receivable moves from `SO` to `SI`.
+22. Post a payment against an approved purchase order, book the vendor bill, then confirm the payable moves from `PO` to `VB`.
+23. After a full credit note, confirm the invoice shows a fully credited resolution state with no remaining open balance.
 
 ## J. Known Gaps And Next Package Boundaries
 
@@ -246,7 +301,7 @@ Known gaps:
 - No canonical artifact registration for locally generated invoice outputs yet.
 - No app-driven SAF-T generation or submission actions yet.
 - No historical fiscal import/onboarding UI yet.
-- Live browser proof for first invoice issuance and first credit note was not completed in this implementation session.
+- Partial-credit and debit-note operator flows still need their own dedicated runtime workspace beyond the one-click full credit helper.
 
 Active diagnostic risk:
 
@@ -260,3 +315,93 @@ Transitional / deprecated paths:
 - They are not legal fiscal truth.
 - The invoice register is active.
 - The compliance page is active but visibility-only for SAF-T and artifact history.
+
+## K. Forward-State Settlement And Output Package Status
+
+This section records the current implementation state so a later session can continue without relying on thread history.
+
+Package intent:
+
+- professional issued invoice output and more reliable print/PDF behavior
+- forward-state settlement anchors across `SO`, `PO`, `SI`, and `VB`
+- invoice resolution visibility after full or partial credit notes
+- no tenant-specific branching or hardcoded company logic
+
+Implemented locally in repo:
+
+- `src/lib/mzInvoiceOutput.ts`
+  - professional print/PDF layout
+  - logo/brand support when available
+  - only `PROCESSADO POR COMPUTADOR` remains; the extra explanatory sentence was removed
+  - iframe print with PDF fallback when direct print fails
+- `src/pages/SalesInvoiceDetail.tsx`
+  - settlement/resolution card for issued invoices
+  - explicit credited / settled / outstanding visibility
+  - full-credit-note outcome shown as operationally resolved
+- `src/pages/Settlements.tsx`
+  - active settlement anchors now support `SO`, `PO`, `SI`, and `VB`
+  - orders only remain collectible/payable until a finance document becomes the anchor
+  - drill-down and dialog copy now follow the active anchor, not legacy order wording
+- `src/pages/Cash.tsx`
+  - manual cash entries and ledger links now support `SI` and `VB`
+- `src/pages/BankDetail.tsx`
+  - bank-ledger reference resolution and drill-down now support `SI` and `VB`
+- `src/lib/orderFinance.ts`
+- `src/lib/orderRefs.ts`
+- `src/lib/orderState.ts`
+  - shared settlement typing, labels, and anchor helpers now align to the forward-state model
+- `src/lib/financeDocuments.ts`
+  - settlement / resolution label helpers and state typing for invoice and vendor-bill read models
+- `src/locales/en.json`
+- `src/locales/pt.json`
+  - settlement wording updated to anchor-centric copy
+- `supabase/migrations/20260401120000_finance_document_settlement_anchor_transition.sql`
+  - DB-side re-anchor helpers, triggers, and state views for settlement truth transfer
+
+Local validation completed:
+
+- `npm run lint:js` passed from `C:\Dev\Stockwise`
+- `npm run build` passed from `C:\Dev\Stockwise`
+
+Important environment correction:
+
+- earlier Windows/UNC working-directory problems were real, but they were not the full explanation for prior build failures
+- the package was revalidated from the correct repo root `C:\Dev\Stockwise`
+- final local result for this package is green: lint and build both pass
+
+Live rollout status from the last implementation session:
+
+- no live frontend deployment was completed in that session
+- no live DB migration for `20260401120000_finance_document_settlement_anchor_transition.sql` was completed in that session
+
+Concrete live rollout blocker observed:
+
+- direct Supabase CLI against the linked project failed on Postgres pooler auth with `password authentication failed for user "postgres"`
+- direct `--db-url` attempts to the `db.<project-ref>.supabase.co` host failed with hostname resolution errors from that environment
+- MCP Supabase connector token exchange also failed in that session
+
+So the package should be treated as:
+
+- code-complete locally
+- locally validated
+- not yet proven live for settlement-anchor transfer until the DB migration is applied from a healthy authenticated environment
+
+Next session / rollout checklist:
+
+1. deploy the frontend build containing the files listed above
+2. apply `20260401120000_finance_document_settlement_anchor_transition.sql` from a healthy authenticated Supabase environment
+3. retest these flows live:
+   - approved sales order before invoice issue settles on `SO`
+   - issued sales invoice with prior receipt/deposit re-anchors to `SI`
+   - approved purchase order before bill posting settles on `PO`
+   - posted vendor bill with prior payment re-anchors to `VB`
+   - full credit note resolves the original invoice state correctly
+   - partial credit note leaves the correct residual state
+   - Cash, Bank Detail, Settlements, Orders, and finance-document views all point to the same active anchor
+   - issued invoice print / PDF output is professionally formatted and no longer depends on a fragile popup-only flow
+
+Non-goals preserved for this package:
+
+- no rollback to order-centric fiscal truth
+- no mutation of issued invoice output from live company/customer rows
+- no heavy legacy-compatibility layer beyond what was needed to transition anchors cleanly
