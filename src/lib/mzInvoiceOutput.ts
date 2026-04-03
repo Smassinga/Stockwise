@@ -143,12 +143,50 @@ function softWrapPdfText(value: string | null | undefined) {
   return text
     .split(/(\s+)/)
     .map((token) => {
-      if (/^\s+$/.test(token) || token.length <= 22) return token
+      if (/^\s+$/.test(token) || token.length <= 28) return token
       const withBreakableSeparators = token.replace(/([/_.:-])/g, '$1 ')
-      if (withBreakableSeparators.length <= 24) return withBreakableSeparators
-      return withBreakableSeparators.replace(/(.{20})/g, '$1 ')
+      if (withBreakableSeparators.length <= 30) return withBreakableSeparators
+      return withBreakableSeparators.replace(/(.{26})/g, '$1 ')
     })
     .join('')
+}
+
+function stablePdfValue(value: string | null | undefined) {
+  const text = String(value || '').trim()
+  return text ? text.replace(/\s+/g, '\u00A0') : '-'
+}
+
+function fitPdfTextSize(
+  doc: InstanceType<typeof import('jspdf').default>,
+  text: string,
+  maxWidth: number,
+  startSize: number,
+  minSize: number,
+) {
+  let size = startSize
+  doc.setFontSize(size)
+  while (size > minSize && doc.getTextWidth(text) > maxWidth) {
+    size -= 0.5
+    doc.setFontSize(size)
+  }
+  return size
+}
+
+function drawPdfBrandFallback(
+  doc: InstanceType<typeof import('jspdf').default>,
+  x: number,
+  y: number,
+  size: number,
+  initials: string,
+) {
+  doc.setFillColor(255, 255, 255)
+  doc.roundedRect(x, y, size, size, 16, 16, 'F')
+  doc.setDrawColor(219, 228, 239)
+  doc.roundedRect(x, y, size, size, 16, 16, 'S')
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(29, 78, 216)
+  doc.setFontSize(21)
+  doc.text(initials, x + size / 2, y + size / 2 + 8, { align: 'center' })
 }
 
 async function fetchDataUrl(src?: string | null): Promise<string | null> {
@@ -254,31 +292,30 @@ function buildSalesInvoiceCss() {
     }
     .hero {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 260px;
-      gap: 16px;
-      margin-bottom: 16px;
-      padding: 16px 18px;
-      border: 1px solid #d7dee8;
-      border-radius: 18px;
+      grid-template-columns: 86px minmax(0, 1fr) 272px;
+      gap: 18px;
+      align-items: stretch;
+      margin-bottom: 18px;
+      padding: 18px 20px;
+      border: 1px solid #dbe4ef;
+      border-radius: 20px;
       background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
     }
-    .hero-brand {
+    .hero-logo {
       display: flex;
-      gap: 14px;
-      align-items: flex-start;
-      min-width: 0;
+      align-items: center;
+      justify-content: center;
     }
     .brand-mark {
-      width: 68px;
-      height: 68px;
-      border-radius: 18px;
-      border: 1px solid #d7dee8;
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      border: 1px solid #dbe4ef;
       background: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      flex: 0 0 auto;
     }
     .brand-logo {
       display: block;
@@ -292,122 +329,148 @@ function buildSalesInvoiceCss() {
       justify-content: center;
       width: 100%;
       height: 100%;
-      font-size: 22px;
+      font-size: 23px;
       font-weight: 800;
       letter-spacing: 0.06em;
       color: #1d4ed8;
       background: linear-gradient(180deg, #e8f1ff 0%, #ffffff 100%);
     }
-    .brand-copy {
+    .hero-copy {
       min-width: 0;
-      display: grid;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
       gap: 4px;
+      padding: 4px 0;
     }
     .brand-name {
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #475569;
+      color: #64748b;
     }
     .doc-type {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 800;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: #1d4ed8;
     }
     .reference {
       margin: 0;
-      font-size: 28px;
-      line-height: 1.05;
-      letter-spacing: -0.03em;
+      font-size: 30px;
+      line-height: 1.04;
+      letter-spacing: -0.04em;
       overflow-wrap: anywhere;
     }
     .hero-meta {
-      border: 1px solid #d7dee8;
-      border-radius: 16px;
+      border: 1px solid #dbe4ef;
+      border-radius: 18px;
       background: #ffffff;
-      padding: 14px 16px;
+      padding: 16px 18px 17px;
       display: grid;
-      gap: 10px;
-      align-content: start;
+      gap: 14px;
+      align-content: center;
+      min-width: 0;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
     }
     .status-chip {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       width: fit-content;
-      padding: 5px 10px;
+      padding: 6px 12px;
       border-radius: 999px;
       background: #e0f2fe;
       color: #0c4a6e;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 800;
     }
     .meta-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px 12px;
+      gap: 8px;
+    }
+    .meta-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: end;
+      padding-bottom: 7px;
+      border-bottom: 1px solid #eef3f8;
+    }
+    .meta-row:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
     }
     .meta-label {
       color: #64748b;
-      font-size: 10px;
+      font-size: 9.5px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-weight: 700;
-      margin-bottom: 4px;
     }
     .meta-value {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 700;
-      overflow-wrap: anywhere;
+      white-space: nowrap;
+      text-align: right;
+      line-height: 1.2;
     }
     .party-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 16px;
+      gap: 16px;
+      margin-bottom: 18px;
     }
     .party-card,
     .table-card,
     .totals-card,
     .note-card {
-      border: 1px solid #d7dee8;
-      border-radius: 16px;
+      border: 1px solid #dbe4ef;
+      border-radius: 18px;
       background: #ffffff;
       overflow: hidden;
       page-break-inside: avoid;
     }
     .card-heading {
-      padding: 11px 14px;
-      border-bottom: 1px solid #e2e8f0;
-      background: #f8fafc;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e7edf4;
+      background: #f8fbff;
       color: #1e3a8a;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      font-size: 10px;
+      font-size: 9.7px;
       font-weight: 800;
     }
     .party-body {
-      padding: 14px;
+      padding: 16px 18px 17px;
       display: grid;
-      gap: 4px;
-      min-height: 116px;
+      gap: 6px;
+      min-height: 128px;
       align-content: start;
+      line-height: 1.55;
     }
     .party-name {
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 800;
       color: #0f172a;
     }
     .party-muted {
       color: #475569;
+      line-height: 1.55;
+    }
+    .party-address {
+      color: #475569;
+      line-height: 1.6;
     }
     .table-card {
-      margin-bottom: 16px;
+      margin-bottom: 18px;
     }
     table {
       width: 100%;
@@ -418,22 +481,22 @@ function buildSalesInvoiceCss() {
       display: table-header-group;
     }
     thead th {
-      padding: 10px 12px;
+      padding: 12px 14px;
       background: #eff6ff;
-      border-bottom: 1px solid #d7dee8;
+      border-bottom: 1px solid #dbe4ef;
       color: #1e3a8a;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 10px;
+      letter-spacing: 0.07em;
+      font-size: 9.5px;
       font-weight: 800;
       text-align: left;
+      line-height: 1.2;
     }
     tbody td {
-      padding: 10px 12px;
-      border-bottom: 1px solid #e2e8f0;
+      padding: 14px;
+      border-bottom: 1px solid #e7edf4;
       vertical-align: top;
-      overflow-wrap: break-word;
-      word-break: break-word;
+      line-height: 1.5;
     }
     tbody tr:last-child td {
       border-bottom: none;
@@ -441,35 +504,47 @@ function buildSalesInvoiceCss() {
     tbody tr {
       page-break-inside: avoid;
     }
-    .col-description { width: 42%; }
-    .col-qty { width: 10%; }
-    .col-unit { width: 10%; }
+    .col-description {
+      width: 45%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .col-qty { width: 7%; }
+    .col-unit { width: 8%; }
     .col-unit-price { width: 14%; }
-    .col-tax { width: 10%; }
+    .col-tax { width: 12%; }
     .col-total { width: 14%; }
     .right { text-align: right; }
+    .table-value {
+      display: inline-block;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
     .line-description {
       font-weight: 700;
+      font-size: 11.1px;
+      line-height: 1.52;
       color: #0f172a;
     }
     .line-tax-rate {
-      margin-top: 3px;
-      font-size: 10px;
+      margin-top: 4px;
+      font-size: 9.2px;
       color: #64748b;
+      line-height: 1.4;
     }
     .summary {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 320px;
-      gap: 14px;
+      grid-template-columns: minmax(0, 1fr) 326px;
+      gap: 16px;
       align-items: start;
     }
     .note-card {
-      padding: 14px;
+      padding: 16px 18px 18px;
       background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
     }
     .note-title {
-      margin: 0 0 8px 0;
-      font-size: 10px;
+      margin: 0 0 10px 0;
+      font-size: 9.7px;
       text-transform: uppercase;
       letter-spacing: 0.12em;
       font-weight: 800;
@@ -478,18 +553,20 @@ function buildSalesInvoiceCss() {
     .note-body {
       margin: 0;
       color: #475569;
+      line-height: 1.6;
     }
     .totals-card {
-      padding: 14px;
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 16px;
     }
     .totals-section + .totals-section {
-      margin-top: 14px;
-      padding-top: 14px;
-      border-top: 1px solid #e2e8f0;
+      padding-top: 16px;
+      border-top: 1px solid #e7edf4;
     }
     .totals-heading {
-      margin: 0 0 8px 0;
-      font-size: 10px;
+      margin: 0 0 10px 0;
+      font-size: 9.4px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-weight: 800;
@@ -498,29 +575,33 @@ function buildSalesInvoiceCss() {
     .totals-row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-      margin: 5px 0;
+      gap: 14px;
+      margin: 0;
+      padding: 5px 0;
+      line-height: 1.45;
+      font-variant-numeric: tabular-nums;
     }
     .totals-row.grand {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid #d7dee8;
+      margin-top: 4px;
+      padding-top: 12px;
+      padding-bottom: 8px;
+      border-top: 1px solid #dbe4ef;
       font-size: 14px;
       font-weight: 800;
       color: #0f172a;
     }
     .footer {
-      margin-top: 16px;
+      margin-top: 18px;
       padding-top: 10px;
-      border-top: 1px solid #d7dee8;
+      border-top: 1px solid #e2e8f0;
       page-break-inside: avoid;
     }
     .footer-phrase {
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.1em;
+      font-size: 8.8px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #0f172a;
+      color: #64748b;
     }
   `
 }
@@ -542,48 +623,47 @@ function buildSalesInvoiceHtml(model: SalesInvoiceOutputModel) {
           <div class="line-description">${escapeHtml(line.description)}</div>
           ${taxRate}
         </td>
-        <td class="right col-qty">${escapeHtml(fmtNumber(line.qty, 2))}</td>
-        <td class="right col-unit">${escapeHtml(textOrDash(line.unitOfMeasure))}</td>
-        <td class="right col-unit-price">${escapeHtml(fmtCurrency(line.unitPrice, model.currencyCode))}</td>
-        <td class="right col-tax">${escapeHtml(fmtCurrency(line.taxAmount, model.currencyCode))}</td>
-        <td class="right col-total">${escapeHtml(fmtCurrency(line.lineGrossTotal, model.currencyCode))}</td>
+        <td class="right col-qty"><span class="table-value">${escapeHtml(fmtNumber(line.qty, 2))}</span></td>
+        <td class="right col-unit"><span class="table-value">${escapeHtml(textOrDash(line.unitOfMeasure))}</span></td>
+        <td class="right col-unit-price"><span class="table-value">${escapeHtml(fmtCurrency(line.unitPrice, model.currencyCode))}</span></td>
+        <td class="right col-tax"><span class="table-value">${escapeHtml(fmtCurrency(line.taxAmount, model.currencyCode))}</span></td>
+        <td class="right col-total"><span class="table-value">${escapeHtml(fmtCurrency(line.lineGrossTotal, model.currencyCode))}</span></td>
       </tr>`
     })
     .join('')
 
   return `<div class="document">
     <header class="hero">
-      <div class="hero-brand">
+      <div class="hero-logo">
         <div class="brand-mark">
           ${model.brand.logoUrl
             ? `<img src="${escapeHtml(model.brand.logoUrl)}" alt="${escapeHtml(model.brand.name)}" class="brand-logo"/>`
             : `<div class="brand-fallback">${escapeHtml(brandInitials)}</div>`}
         </div>
-        <div class="brand-copy">
-          <div class="brand-name">${escapeHtml(model.brand.name)}</div>
-          <div class="doc-type">Fatura</div>
-          <h1 class="reference">${escapeHtml(model.legalReference)}</h1>
-        </div>
+      </div>
+
+      <div class="hero-copy">
+        <div class="brand-name">${escapeHtml(model.brand.name)}</div>
+        <div class="doc-type">Fatura</div>
+        <h1 class="reference">${escapeHtml(model.legalReference)}</h1>
       </div>
 
       <div class="hero-meta">
-        <div class="status-chip">${escapeHtml(statusLabel(model.status))}</div>
+        <div class="status-row">
+          <div class="status-chip">${escapeHtml(statusLabel(model.status))}</div>
+        </div>
         <div class="meta-grid">
-          <div>
+          <div class="meta-row">
             <div class="meta-label">Data da fatura</div>
             <div class="meta-value">${escapeHtml(model.issueDate)}</div>
           </div>
-          <div>
+          <div class="meta-row">
             <div class="meta-label">Vencimento</div>
             <div class="meta-value">${escapeHtml(model.dueDate)}</div>
           </div>
-          <div>
+          <div class="meta-row">
             <div class="meta-label">Moeda</div>
             <div class="meta-value">${escapeHtml(model.currencyCode)}</div>
-          </div>
-          <div>
-            <div class="meta-label">Estado</div>
-            <div class="meta-value">${escapeHtml(statusLabel(model.status))}</div>
           </div>
         </div>
       </div>
@@ -596,7 +676,7 @@ function buildSalesInvoiceHtml(model: SalesInvoiceOutputModel) {
           <div class="party-name">${escapeHtml(model.seller.tradeName || model.seller.legalName)}</div>
           ${model.seller.tradeName ? `<div class="party-muted">${escapeHtml(model.seller.legalName)}</div>` : ''}
           <div class="party-muted">NUIT: ${escapeHtml(model.seller.nuit)}</div>
-          <div class="party-muted">${multilineHtml(model.seller.address)}</div>
+          <div class="party-address">${multilineHtml(model.seller.address)}</div>
         </div>
       </section>
 
@@ -605,7 +685,7 @@ function buildSalesInvoiceHtml(model: SalesInvoiceOutputModel) {
         <div class="party-body">
           <div class="party-name">${escapeHtml(model.buyer.legalName)}</div>
           <div class="party-muted">NUIT: ${escapeHtml(model.buyer.nuit)}</div>
-          <div class="party-muted">${multilineHtml(model.buyer.address)}</div>
+          <div class="party-address">${multilineHtml(model.buyer.address)}</div>
         </div>
       </section>
     </div>
@@ -635,16 +715,16 @@ function buildSalesInvoiceHtml(model: SalesInvoiceOutputModel) {
       <section class="totals-card">
         <div class="totals-section">
           <p class="totals-heading">${escapeHtml(model.currencyCode)}</p>
-          <div class="totals-row"><div>Subtotal</div><div>${escapeHtml(fmtCurrency(model.subtotal, model.currencyCode))}</div></div>
-          <div class="totals-row"><div>IVA</div><div>${escapeHtml(fmtCurrency(model.taxTotal, model.currencyCode))}</div></div>
-          <div class="totals-row grand"><div>Total</div><div>${escapeHtml(fmtCurrency(model.totalAmount, model.currencyCode))}</div></div>
+          <div class="totals-row"><div>Subtotal</div><div><span class="table-value">${escapeHtml(fmtCurrency(model.subtotal, model.currencyCode))}</span></div></div>
+          <div class="totals-row"><div>IVA</div><div><span class="table-value">${escapeHtml(fmtCurrency(model.taxTotal, model.currencyCode))}</span></div></div>
+          <div class="totals-row grand"><div>Total</div><div><span class="table-value">${escapeHtml(fmtCurrency(model.totalAmount, model.currencyCode))}</span></div></div>
         </div>
 
         <div class="totals-section">
           <p class="totals-heading">MZN</p>
-          <div class="totals-row"><div>Subtotal fiscal</div><div>${escapeHtml(fmtCurrency(model.subtotalMzn, 'MZN'))}</div></div>
-          <div class="totals-row"><div>IVA fiscal</div><div>${escapeHtml(fmtCurrency(model.taxTotalMzn, 'MZN'))}</div></div>
-          <div class="totals-row grand"><div>Total fiscal</div><div>${escapeHtml(fmtCurrency(model.totalAmountMzn, 'MZN'))}</div></div>
+          <div class="totals-row"><div>Subtotal fiscal</div><div><span class="table-value">${escapeHtml(fmtCurrency(model.subtotalMzn, 'MZN'))}</span></div></div>
+          <div class="totals-row"><div>IVA fiscal</div><div><span class="table-value">${escapeHtml(fmtCurrency(model.taxTotalMzn, 'MZN'))}</span></div></div>
+          <div class="totals-row grand"><div>Total fiscal</div><div><span class="table-value">${escapeHtml(fmtCurrency(model.totalAmountMzn, 'MZN'))}</span></div></div>
         </div>
       </section>
     </div>
@@ -663,8 +743,8 @@ function measureWrappedHeight(doc: InstanceType<typeof import('jspdf').default>,
   let y = baseY
   lines.forEach((line, index) => {
     const wrapped = doc.splitTextToSize(String(line), width)
-    y += wrapped.length * 11
-    if (index < lines.length - 1) y += 4
+    y += wrapped.length * 12
+    if (index < lines.length - 1) y += 5
   })
   return y
 }
@@ -678,26 +758,26 @@ function drawPartyCard(
   lines: string[],
   height: number,
 ) {
-  doc.setDrawColor(215, 222, 232)
+  doc.setDrawColor(219, 228, 239)
   doc.setFillColor(255, 255, 255)
-  doc.roundedRect(x, y, width, height, 14, 14, 'FD')
-  doc.setFillColor(248, 250, 252)
-  doc.roundedRect(x, y, width, 26, 14, 14, 'F')
-  doc.rect(x, y + 18, width, 8, 'F')
+  doc.roundedRect(x, y, width, height, 16, 16, 'FD')
+  doc.setFillColor(248, 251, 255)
+  doc.roundedRect(x, y, width, 28, 16, 16, 'F')
+  doc.rect(x, y + 18, width, 10, 'F')
 
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(30, 58, 138)
-  doc.setFontSize(10)
-  doc.text(title.toUpperCase(), x + 12, y + 17)
+  doc.setFontSize(9.5)
+  doc.text(title.toUpperCase(), x + 14, y + 18)
 
-  let lineY = y + 42
+  let lineY = y + 46
   lines.forEach((line, index) => {
-    const wrapped = doc.splitTextToSize(String(line), width - 24)
+    const wrapped = doc.splitTextToSize(String(line), width - 28)
     doc.setFont('helvetica', index === 0 ? 'bold' : 'normal')
     doc.setTextColor(index === 0 ? 15 : 71, index === 0 ? 23 : 85, index === 0 ? 42 : 105)
-    doc.setFontSize(index === 0 ? 10.5 : 9.5)
-    doc.text(wrapped, x + 12, lineY)
-    lineY += wrapped.length * 11 + 4
+    doc.setFontSize(index === 0 ? 10.8 : 9.5)
+    doc.text(wrapped, x + 14, lineY)
+    lineY += wrapped.length * 12 + 5
   })
 }
 
@@ -716,82 +796,83 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
   const marginRight = 42
   const contentWidth = pageWidth - marginLeft - marginRight
   const logoDataUrl = await fetchDataUrl(model.brand.logoUrl)
+  const brandInitials = (model.brand.name || model.seller.tradeName || model.seller.legalName || 'SW')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'SW'
   let cursorY = 42
+  const headerHeight = 108
+  const metaWidth = 218
+  const metaHeight = 80
+  const metaX = pageWidth - marginRight - metaWidth
 
   doc.setFillColor(248, 251, 255)
-  doc.setDrawColor(215, 222, 232)
-  doc.roundedRect(marginLeft, cursorY, contentWidth, 96, 16, 16, 'FD')
+  doc.setDrawColor(219, 228, 239)
+  doc.roundedRect(marginLeft, cursorY, contentWidth, headerHeight, 18, 18, 'FD')
 
   if (logoDataUrl) {
     try {
       const format = logoDataUrl.startsWith('data:image/jpeg') || logoDataUrl.startsWith('data:image/jpg')
         ? 'JPEG'
         : 'PNG'
-      doc.addImage(logoDataUrl, format, marginLeft + 16, cursorY + 14, 56, 56, undefined, 'FAST')
+      doc.addImage(logoDataUrl, format, marginLeft + 18, cursorY + 18, 62, 62, undefined, 'FAST')
     } catch {
-      // Ignore logo rendering failures and keep generation resilient.
+      drawPdfBrandFallback(doc, marginLeft + 18, cursorY + 18, 62, brandInitials)
     }
   } else {
-    const initials = (model.brand.name || model.seller.tradeName || model.seller.legalName || 'SW')
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() || '')
-      .join('') || 'SW'
-    doc.setFillColor(255, 255, 255)
-    doc.roundedRect(marginLeft + 16, cursorY + 14, 56, 56, 14, 14, 'F')
-    doc.setDrawColor(215, 222, 232)
-    doc.roundedRect(marginLeft + 16, cursorY + 14, 56, 56, 14, 14, 'S')
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(29, 78, 216)
-    doc.setFontSize(20)
-    doc.text(initials, marginLeft + 44, cursorY + 49, { align: 'center' })
+    drawPdfBrandFallback(doc, marginLeft + 18, cursorY + 18, 62, brandInitials)
   }
 
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(100, 116, 139)
-  doc.setFontSize(10)
-  doc.text(model.brand.name, marginLeft + 88, cursorY + 20)
+  doc.setFontSize(9.5)
+  doc.text(model.brand.name, marginLeft + 98, cursorY + 25)
 
   doc.setTextColor(29, 78, 216)
-  doc.setFontSize(12)
-  doc.text('FATURA', marginLeft + 88, cursorY + 38)
+  doc.setFontSize(13)
+  doc.text('FATURA', marginLeft + 98, cursorY + 46)
 
   doc.setTextColor(15, 23, 42)
-  doc.setFontSize(25)
-  doc.text(model.legalReference, marginLeft + 88, cursorY + 64)
+  fitPdfTextSize(doc, model.legalReference, metaX - (marginLeft + 98) - 18, 30, 18)
+  doc.text(model.legalReference, marginLeft + 98, cursorY + 76)
 
-  const metaX = pageWidth - marginRight - 210
   doc.setFillColor(255, 255, 255)
-  doc.roundedRect(metaX, cursorY + 14, 194, 68, 14, 14, 'F')
-  doc.setDrawColor(215, 222, 232)
-  doc.roundedRect(metaX, cursorY + 14, 194, 68, 14, 14, 'S')
+  doc.roundedRect(metaX, cursorY + 14, metaWidth, metaHeight, 16, 16, 'F')
+  doc.setDrawColor(219, 228, 239)
+  doc.roundedRect(metaX, cursorY + 14, metaWidth, metaHeight, 16, 16, 'S')
 
   doc.setFillColor(224, 242, 254)
-  doc.roundedRect(metaX + 12, cursorY + 22, 72, 18, 9, 9, 'F')
+  doc.roundedRect(metaX + 16, cursorY + 22, 82, 20, 10, 10, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(12, 74, 110)
-  doc.setFontSize(9.5)
-  doc.text(statusLabel(model.status).toUpperCase(), metaX + 48, cursorY + 34, { align: 'center' })
+  doc.setFontSize(9.2)
+  doc.text(statusLabel(model.status).toUpperCase(), metaX + 57, cursorY + 36, { align: 'center' })
 
-  const drawMetaPair = (label: string, value: string, x: number, y: number) => {
+  const drawMetaRow = (label: string, value: string, y: number, isLast = false) => {
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(100, 116, 139)
-    doc.setFontSize(8.5)
-    doc.text(label.toUpperCase(), x, y)
+    doc.setFontSize(8.3)
+    doc.text(label.toUpperCase(), metaX + 16, y)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(15, 23, 42)
-    doc.setFontSize(10)
-    doc.text(value, x, y + 13)
+    doc.setFontSize(10.3)
+    doc.text(stablePdfValue(value), metaX + metaWidth - 16, y, { align: 'right' })
+    if (!isLast) {
+      doc.setDrawColor(238, 243, 248)
+      doc.line(metaX + 16, y + 7, metaX + metaWidth - 16, y + 7)
+    }
   }
 
-  drawMetaPair('Data da fatura', model.issueDate, metaX + 12, cursorY + 54)
-  drawMetaPair('Vencimento', model.dueDate, metaX + 106, cursorY + 54)
-  drawMetaPair('Moeda', model.currencyCode, metaX + 12, cursorY + 74)
+  drawMetaRow('Data da fatura', model.issueDate, cursorY + 56)
+  drawMetaRow('Vencimento', model.dueDate, cursorY + 74)
+  drawMetaRow('Moeda', model.currencyCode, cursorY + 92, true)
 
-  cursorY += 114
+  cursorY += headerHeight + 18
 
-  const partyWidth = (contentWidth - 14) / 2
+  const partyGap = 16
+  const partyWidth = (contentWidth - partyGap) / 2
   const sellerLines = [
     model.seller.tradeName || model.seller.legalName,
     ...(model.seller.tradeName ? [model.seller.legalName] : []),
@@ -803,44 +884,52 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
     `NUIT: ${model.buyer.nuit}`,
     ...model.buyer.address,
   ]
-  const bodyTop = cursorY + 42
-  const sellerHeight = measureWrappedHeight(doc, sellerLines, partyWidth - 24, bodyTop)
-  const buyerHeight = measureWrappedHeight(doc, buyerLines, partyWidth - 24, bodyTop)
-  const partyHeight = Math.max(116, Math.max(sellerHeight, buyerHeight) - cursorY + 14)
+  const bodyTop = cursorY + 46
+  const sellerHeight = measureWrappedHeight(doc, sellerLines, partyWidth - 28, bodyTop)
+  const buyerHeight = measureWrappedHeight(doc, buyerLines, partyWidth - 28, bodyTop)
+  const partyHeight = Math.max(128, Math.max(sellerHeight, buyerHeight) - cursorY + 17)
 
   drawPartyCard(doc, marginLeft, cursorY, partyWidth, 'Emitente', sellerLines, partyHeight)
-  drawPartyCard(doc, marginLeft + partyWidth + 14, cursorY, partyWidth, 'Cliente', buyerLines, partyHeight)
+  drawPartyCard(doc, marginLeft + partyWidth + partyGap, cursorY, partyWidth, 'Cliente', buyerLines, partyHeight)
 
-  cursorY += partyHeight + 16
+  cursorY += partyHeight + 18
 
-  const descriptionWidth = Math.round(contentWidth * 0.42)
-  const qtyWidth = Math.round(contentWidth * 0.10)
-  const unitWidth = Math.round(contentWidth * 0.10)
+  const descriptionWidth = Math.round(contentWidth * 0.45)
+  const qtyWidth = Math.round(contentWidth * 0.07)
+  const unitWidth = Math.round(contentWidth * 0.08)
   const unitPriceWidth = Math.round(contentWidth * 0.14)
-  const taxWidth = Math.round(contentWidth * 0.10)
+  const taxWidth = Math.round(contentWidth * 0.12)
   const totalWidth = contentWidth - descriptionWidth - qtyWidth - unitWidth - unitPriceWidth - taxWidth
+  const tableRows = model.lines.map((line) => ({
+    description: softWrapPdfText(line.description),
+    taxLine: line.taxRate == null ? null : `IVA ${fmtNumber(line.taxRate, 2)}%`,
+    qty: stablePdfValue(fmtNumber(line.qty, 2)),
+    unit: stablePdfValue(textOrDash(line.unitOfMeasure)),
+    unitPrice: stablePdfValue(fmtCurrency(line.unitPrice, model.currencyCode)),
+    tax: stablePdfValue(fmtCurrency(line.taxAmount, model.currencyCode)),
+    total: stablePdfValue(fmtCurrency(line.lineGrossTotal, model.currencyCode)),
+  }))
 
   autoTable(doc as any, {
     startY: cursorY,
     margin: { left: marginLeft, right: marginRight },
     tableWidth: contentWidth,
-    head: [['Descrição', 'Qtd.', 'Un.', 'Preço unit.', 'IVA', 'Total']],
-    body: model.lines.map((line) => [
-      line.taxRate == null
-        ? softWrapPdfText(line.description)
-        : `${softWrapPdfText(line.description)}\nIVA ${fmtNumber(line.taxRate, 2)}%`,
-      fmtNumber(line.qty, 2),
-      softWrapPdfText(textOrDash(line.unitOfMeasure)),
-      fmtCurrency(line.unitPrice, model.currencyCode),
-      fmtCurrency(line.taxAmount, model.currencyCode),
-      fmtCurrency(line.lineGrossTotal, model.currencyCode),
-    ]),
+    columns: [
+      { header: 'Descrição', dataKey: 'description' },
+      { header: 'Qtd.', dataKey: 'qty' },
+      { header: 'Un.', dataKey: 'unit' },
+      { header: 'Preço unit.', dataKey: 'unitPrice' },
+      { header: 'IVA', dataKey: 'tax' },
+      { header: 'Total', dataKey: 'total' },
+    ],
+    body: tableRows,
     theme: 'grid',
     styles: {
-      fontSize: 8.6,
-      cellPadding: { top: 6, right: 5, bottom: 6, left: 5 },
-      lineColor: [226, 232, 240],
-      lineWidth: 0.7,
+      fontSize: 8.5,
+      cellPadding: { top: 8, right: 6, bottom: 8, left: 6 },
+      minCellHeight: 24,
+      lineColor: [231, 237, 244],
+      lineWidth: 0.55,
       textColor: [15, 23, 42],
       overflow: 'linebreak',
       valign: 'top',
@@ -850,93 +939,128 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
       fillColor: [239, 246, 255],
       textColor: [30, 58, 138],
       fontStyle: 'bold',
+      fontSize: 8.7,
       halign: 'left',
     },
     columnStyles: {
-      0: { cellWidth: descriptionWidth, halign: 'left' },
-      1: { cellWidth: qtyWidth, halign: 'right' },
-      2: { cellWidth: unitWidth, halign: 'right' },
-      3: { cellWidth: unitPriceWidth, halign: 'right' },
-      4: { cellWidth: taxWidth, halign: 'right' },
-      5: { cellWidth: totalWidth, halign: 'right' },
+      description: { cellWidth: descriptionWidth, halign: 'left' },
+      qty: { cellWidth: qtyWidth, halign: 'right' },
+      unit: { cellWidth: unitWidth, halign: 'right' },
+      unitPrice: { cellWidth: unitPriceWidth, halign: 'right' },
+      tax: { cellWidth: taxWidth, halign: 'right' },
+      total: { cellWidth: totalWidth, halign: 'right' },
+    },
+    didParseCell: (hookData: any) => {
+      if (hookData.section === 'body' && hookData.column.dataKey === 'description') {
+        const raw = hookData.row.raw as (typeof tableRows)[number]
+        hookData.cell.text = raw.taxLine ? [raw.description, raw.taxLine] : [raw.description]
+        hookData.cell.styles.textColor = [255, 255, 255]
+      } else if (hookData.section === 'body') {
+        hookData.cell.styles.fontSize = 8.1
+      }
+    },
+    didDrawCell: (hookData: any) => {
+      if (hookData.section !== 'body' || hookData.column.dataKey !== 'description') return
+
+      const raw = hookData.row.raw as (typeof tableRows)[number]
+      const textX = hookData.cell.x + 6
+      let textY = hookData.cell.y + 13
+      const descriptionLines = doc.splitTextToSize(raw.description, hookData.cell.width - 12)
+
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(15, 23, 42)
+      doc.setFontSize(9.1)
+      doc.text(descriptionLines, textX, textY)
+
+      if (raw.taxLine) {
+        textY += descriptionLines.length * 10.8 + 2
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(100, 116, 139)
+        doc.setFontSize(8)
+        doc.text(doc.splitTextToSize(raw.taxLine, hookData.cell.width - 12), textX, textY)
+      }
     },
   })
 
-  cursorY = (((doc as any).lastAutoTable?.finalY as number | undefined) ?? cursorY) + 16
+  cursorY = (((doc as any).lastAutoTable?.finalY as number | undefined) ?? cursorY) + 18
 
-  const summaryGap = 14
-  const totalsWidth = 226
+  const summaryGap = 16
+  const totalsWidth = 232
   const noteWidth = contentWidth - totalsWidth - summaryGap
-  if (cursorY + 206 > pageHeight) {
+  const noteHeight = 106
+  const totalsHeight = 198
+  if (cursorY + totalsHeight + 34 > pageHeight) {
     doc.addPage()
     cursorY = 42
   }
 
-  doc.setDrawColor(215, 222, 232)
+  doc.setDrawColor(219, 228, 239)
   doc.setFillColor(251, 253, 255)
-  doc.roundedRect(marginLeft, cursorY, noteWidth, 92, 14, 14, 'FD')
+  doc.roundedRect(marginLeft, cursorY, noteWidth, noteHeight, 16, 16, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(30, 58, 138)
-  doc.setFontSize(9)
-  doc.text('RESUMO FISCAL', marginLeft + 12, cursorY + 18)
+  doc.setFontSize(9.5)
+  doc.text('RESUMO FISCAL', marginLeft + 16, cursorY + 22)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(71, 85, 105)
   doc.setFontSize(9.3)
   doc.text(
     doc.splitTextToSize(
       'Os dados comerciais e fiscais deste documento ficam congelados na emissão. Os totais em MZN representam a base legal usada para arquivo e conformidade.',
-      noteWidth - 24,
+      noteWidth - 32,
     ),
-    marginLeft + 12,
-    cursorY + 36,
+    marginLeft + 16,
+    cursorY + 46,
   )
 
   const totalsX = marginLeft + noteWidth + summaryGap
   doc.setFillColor(255, 255, 255)
-  doc.roundedRect(totalsX, cursorY, totalsWidth, 152, 14, 14, 'FD')
+  doc.roundedRect(totalsX, cursorY, totalsWidth, totalsHeight, 16, 16, 'FD')
 
   const drawTotalRow = (label: string, value: string, y: number, grand = false) => {
     doc.setFont('helvetica', grand ? 'bold' : 'normal')
     doc.setTextColor(15, 23, 42)
     doc.setFontSize(grand ? 11.5 : 9.4)
-    doc.text(label, totalsX + 12, y)
-    doc.text(value, totalsX + totalsWidth - 12, y, { align: 'right' })
+    doc.text(label, totalsX + 16, y)
+    doc.text(stablePdfValue(value), totalsX + totalsWidth - 16, y, { align: 'right' })
   }
 
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(100, 116, 139)
   doc.setFontSize(9)
-  doc.text(model.currencyCode.toUpperCase(), totalsX + 12, cursorY + 18)
-  drawTotalRow('Subtotal', fmtCurrency(model.subtotal, model.currencyCode), cursorY + 40)
-  drawTotalRow('IVA', fmtCurrency(model.taxTotal, model.currencyCode), cursorY + 56)
-  doc.line(totalsX + 12, cursorY + 66, totalsX + totalsWidth - 12, cursorY + 66)
-  drawTotalRow('Total', fmtCurrency(model.totalAmount, model.currencyCode), cursorY + 84, true)
+  doc.text(model.currencyCode.toUpperCase(), totalsX + 16, cursorY + 22)
+  drawTotalRow('Subtotal', fmtCurrency(model.subtotal, model.currencyCode), cursorY + 50)
+  drawTotalRow('IVA', fmtCurrency(model.taxTotal, model.currencyCode), cursorY + 70)
+  doc.setDrawColor(219, 228, 239)
+  doc.line(totalsX + 16, cursorY + 82, totalsX + totalsWidth - 16, cursorY + 82)
+  drawTotalRow('Total', fmtCurrency(model.totalAmount, model.currencyCode), cursorY + 102, true)
 
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(100, 116, 139)
   doc.setFontSize(9)
-  doc.text('MZN', totalsX + 12, cursorY + 108)
-  drawTotalRow('Subtotal fiscal', fmtCurrency(model.subtotalMzn, 'MZN'), cursorY + 126)
-  drawTotalRow('IVA fiscal', fmtCurrency(model.taxTotalMzn, 'MZN'), cursorY + 142)
-  doc.line(totalsX + 12, cursorY + 152, totalsX + totalsWidth - 12, cursorY + 152)
-  drawTotalRow('Total fiscal', fmtCurrency(model.totalAmountMzn, 'MZN'), cursorY + 170, true)
+  doc.text('MZN', totalsX + 16, cursorY + 130)
+  drawTotalRow('Subtotal fiscal', fmtCurrency(model.subtotalMzn, 'MZN'), cursorY + 158)
+  drawTotalRow('IVA fiscal', fmtCurrency(model.taxTotalMzn, 'MZN'), cursorY + 178)
+  doc.setDrawColor(219, 228, 239)
+  doc.line(totalsX + 16, cursorY + 190, totalsX + totalsWidth - 16, cursorY + 190)
+  drawTotalRow('Total fiscal', fmtCurrency(model.totalAmountMzn, 'MZN'), cursorY + 210, true)
 
-  const footerY = Math.max(cursorY + 170, (((doc as any).lastAutoTable?.finalY as number | undefined) ?? cursorY) + 18)
-  if (footerY + 26 > pageHeight) {
+  const footerY = Math.max(cursorY + totalsHeight + 14, (((doc as any).lastAutoTable?.finalY as number | undefined) ?? cursorY) + 20)
+  if (footerY + 24 > pageHeight) {
     doc.addPage()
-    doc.setDrawColor(215, 222, 232)
+    doc.setDrawColor(226, 232, 240)
     doc.line(marginLeft, 44, pageWidth - marginRight, 44)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(15, 23, 42)
-    doc.setFontSize(10)
-    doc.text(model.computerPhrase, marginLeft, 60)
+    doc.setTextColor(100, 116, 139)
+    doc.setFontSize(8.5)
+    doc.text(model.computerPhrase, marginLeft, 58)
   } else {
-    doc.setDrawColor(215, 222, 232)
+    doc.setDrawColor(226, 232, 240)
     doc.line(marginLeft, footerY, pageWidth - marginRight, footerY)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(15, 23, 42)
-    doc.setFontSize(10)
-    doc.text(model.computerPhrase, marginLeft, footerY + 16)
+    doc.setTextColor(100, 116, 139)
+    doc.setFontSize(8.5)
+    doc.text(model.computerPhrase, marginLeft, footerY + 14)
   }
 
   const blob = doc.output('blob') as Blob
