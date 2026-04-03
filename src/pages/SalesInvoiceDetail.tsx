@@ -17,12 +17,14 @@ import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import {
+  salesInvoiceAdjustmentLabelKey,
   salesInvoiceResolutionLabelKey,
   type SalesInvoiceStateRow,
 } from '../lib/financeDocuments'
 import { settlementLabelKey } from '../lib/orderState'
 import {
   createAndIssueSalesCreditNoteForInvoice,
+  createAndIssueSalesDebitNoteForInvoice,
   getSalesInvoiceDraftPreview,
   getSalesInvoiceDocument,
   issueSalesInvoice,
@@ -30,12 +32,17 @@ import {
   listFiscalArtifacts,
   listSalesCreditNoteLines,
   listSalesCreditNotesForInvoice,
+  listSalesDebitNoteLines,
+  listSalesDebitNotesForInvoice,
   listSalesInvoiceDocumentLines,
   type CreateSalesCreditNoteInput,
+  type CreateSalesDebitNoteInput,
   type FinanceDocumentEventRow,
   type FiscalDocumentArtifactRow,
   type SalesCreditNoteLineRow,
   type SalesCreditNoteRow,
+  type SalesDebitNoteLineRow,
+  type SalesDebitNoteRow,
   type SalesInvoiceDraftPreview,
   type SalesInvoiceDocumentLineRow,
   type SalesInvoiceDocumentRow,
@@ -43,11 +50,16 @@ import {
   updateSalesInvoiceDraftDates,
 } from '../lib/mzFinance'
 import {
+  buildSalesCreditNoteOutputModel,
+  buildSalesDebitNoteOutputModel,
   buildSalesInvoiceOutputModel,
+  downloadFinanceDocumentPdf,
   downloadSalesInvoicePdf,
+  printFinanceDocument,
   printSalesInvoiceDocument,
+  shareFinanceDocument,
   shareSalesInvoiceDocument,
-} from '../lib/mzInvoiceOutput'
+} from '../lib/financeDocumentOutput'
 
 function workflowTone(status: SalesInvoiceDocumentRow['document_workflow_status']) {
   switch (status) {
@@ -66,8 +78,15 @@ function shortDate(value?: string | null) {
 }
 
 type CreditMode = 'full' | 'partial'
+type DebitMode = 'full' | 'partial'
 
 type CreditLineDraft = {
+  selected: boolean
+  quantity: string
+  amount: string
+}
+
+type DebitLineDraft = {
   selected: boolean
   quantity: string
   amount: string
@@ -119,6 +138,8 @@ export default function SalesInvoiceDetailPage() {
   const [artifacts, setArtifacts] = useState<FiscalDocumentArtifactRow[]>([])
   const [creditNotes, setCreditNotes] = useState<SalesCreditNoteRow[]>([])
   const [creditNoteLines, setCreditNoteLines] = useState<SalesCreditNoteLineRow[]>([])
+  const [debitNotes, setDebitNotes] = useState<SalesDebitNoteRow[]>([])
+  const [debitNoteLines, setDebitNoteLines] = useState<SalesDebitNoteLineRow[]>([])
   const [draftPreview, setDraftPreview] = useState<SalesInvoiceDraftPreview | null>(null)
   const [invoiceDateDraft, setInvoiceDateDraft] = useState('')
   const [dueDateDraft, setDueDateDraft] = useState('')
@@ -131,6 +152,11 @@ export default function SalesInvoiceDetailPage() {
   const [creditVatExemptionReason, setCreditVatExemptionReason] = useState('')
   const [creditLineDrafts, setCreditLineDrafts] = useState<Record<string, CreditLineDraft>>({})
   const [creatingCredit, setCreatingCredit] = useState(false)
+  const [debitDialogOpen, setDebitDialogOpen] = useState(false)
+  const [debitMode, setDebitMode] = useState<DebitMode>('full')
+  const [debitReason, setDebitReason] = useState('')
+  const [debitLineDrafts, setDebitLineDrafts] = useState<Record<string, DebitLineDraft>>({})
+  const [creatingDebit, setCreatingDebit] = useState(false)
 
   const money = (amount: number, currencyCode: string) =>
     new Intl.NumberFormat(locale, {
@@ -160,6 +186,8 @@ export default function SalesInvoiceDetailPage() {
       setArtifacts([])
       setCreditNotes([])
       setCreditNoteLines([])
+      setDebitNotes([])
+      setDebitNoteLines([])
       setDraftPreview(null)
       return
     }
@@ -167,11 +195,12 @@ export default function SalesInvoiceDetailPage() {
     try {
       setLoading(true)
       const nextInvoice = await getSalesInvoiceDocument(companyId, invoiceId)
-      const [nextLines, nextEvents, nextArtifacts, nextCreditNotes, nextInvoiceStateRes] = await Promise.all([
+      const [nextLines, nextEvents, nextArtifacts, nextCreditNotes, nextDebitNotes, nextInvoiceStateRes] = await Promise.all([
         listSalesInvoiceDocumentLines(companyId, invoiceId),
         listFinanceEvents(companyId, 'sales_invoice', invoiceId),
         listFiscalArtifacts(companyId, 'sales_invoice', invoiceId),
         listSalesCreditNotesForInvoice(companyId, invoiceId),
+        listSalesDebitNotesForInvoice(companyId, invoiceId),
         supabase
           .from('v_sales_invoice_state')
           .select('*')
@@ -181,6 +210,7 @@ export default function SalesInvoiceDetailPage() {
       ])
       let nextDraftPreview: SalesInvoiceDraftPreview | null = null
       let nextCreditNoteLines: SalesCreditNoteLineRow[] = []
+      let nextDebitNoteLines: SalesDebitNoteLineRow[] = []
 
       if (nextInvoice?.document_workflow_status === 'draft') {
         try {
@@ -204,6 +234,17 @@ export default function SalesInvoiceDetailPage() {
         })
       }
 
+      try {
+        nextDebitNoteLines = await listSalesDebitNoteLines(
+          companyId,
+          nextDebitNotes.map((note) => note.id),
+        )
+      } catch (error) {
+        reportRuntimeError('loadDebitNoteLines', error, {
+          debitNoteCount: nextDebitNotes.length,
+        })
+      }
+
       setInvoice(nextInvoice)
       if (nextInvoiceStateRes.error) {
         reportRuntimeError('loadInvoiceState', nextInvoiceStateRes.error)
@@ -216,6 +257,8 @@ export default function SalesInvoiceDetailPage() {
       setArtifacts(nextArtifacts)
       setCreditNotes(nextCreditNotes)
       setCreditNoteLines(nextCreditNoteLines)
+      setDebitNotes(nextDebitNotes)
+      setDebitNoteLines(nextDebitNoteLines)
       setDraftPreview(nextDraftPreview)
       setInvoiceDateDraft(nextInvoice?.invoice_date || '')
       setDueDateDraft(nextInvoice?.due_date || '')
@@ -224,7 +267,10 @@ export default function SalesInvoiceDetailPage() {
       reportRuntimeError('loadWorkspace', error)
       toast.error(error?.message || tt('financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoice'))
       setInvoice(null)
+      setCreditNotes([])
       setCreditNoteLines([])
+      setDebitNotes([])
+      setDebitNoteLines([])
       setDraftPreview(null)
     } finally {
       setLoading(false)
@@ -278,6 +324,24 @@ export default function SalesInvoiceDetailPage() {
       : null),
     [brand.logoUrl, brand.name, invoice, isIssued, lines],
   )
+  const creditNoteLinesByNoteId = useMemo(() => {
+    const map = new Map<string, SalesCreditNoteLineRow[]>()
+    creditNoteLines.forEach((line) => {
+      const current = map.get(line.sales_credit_note_id) || []
+      current.push(line)
+      map.set(line.sales_credit_note_id, current)
+    })
+    return map
+  }, [creditNoteLines])
+  const debitNoteLinesByNoteId = useMemo(() => {
+    const map = new Map<string, SalesDebitNoteLineRow[]>()
+    debitNoteLines.forEach((line) => {
+      const current = map.get(line.sales_debit_note_id) || []
+      current.push(line)
+      map.set(line.sales_debit_note_id, current)
+    })
+    return map
+  }, [debitNoteLines])
   const invoiceHasExemptLines = useMemo(
     () => lines.some((line) => Number(line.line_total || 0) > 0 && Number(line.tax_rate || 0) <= 0),
     [lines],
@@ -293,9 +357,16 @@ export default function SalesInvoiceDetailPage() {
     : invoiceState?.credit_status === 'partially_credited'
       ? tt('financeDocs.mz.creditStatus.partiallyCredited', 'Partially credited')
       : tt('financeDocs.mz.creditStatus.notCredited', 'Not credited')
+  const adjustmentStatusLabel = invoiceState?.adjustment_status
+    ? tt(salesInvoiceAdjustmentLabelKey(invoiceState.adjustment_status), invoiceState.adjustment_status)
+    : tt('financeDocs.adjustments.none', 'No adjustments')
   const issuedCreditNoteIds = useMemo(
     () => new Set(creditNotes.filter((note) => note.document_workflow_status === 'issued').map((note) => note.id)),
     [creditNotes],
+  )
+  const issuedDebitNoteIds = useMemo(
+    () => new Set(debitNotes.filter((note) => note.document_workflow_status === 'issued').map((note) => note.id)),
+    [debitNotes],
   )
   const creditAvailability = useMemo<CreditAvailabilityRow[]>(() => {
     const rollupByLineId = new Map<string, { qty: number; lineTotal: number; taxAmount: number }>()
@@ -327,6 +398,20 @@ export default function SalesInvoiceDetailPage() {
       }
     })
   }, [creditNoteLines, issuedCreditNoteIds, lines])
+  const debitRollupByLineId = useMemo(() => {
+    const rollupByLineId = new Map<string, { qty: number; lineTotal: number; taxAmount: number }>()
+
+    debitNoteLines.forEach((line) => {
+      if (!issuedDebitNoteIds.has(line.sales_debit_note_id) || !line.sales_invoice_line_id) return
+      const current = rollupByLineId.get(line.sales_invoice_line_id) || { qty: 0, lineTotal: 0, taxAmount: 0 }
+      current.qty = roundMoney(current.qty + Number(line.qty || 0))
+      current.lineTotal = roundMoney(current.lineTotal + Number(line.line_total || 0))
+      current.taxAmount = roundMoney(current.taxAmount + Number(line.tax_amount || 0))
+      rollupByLineId.set(line.sales_invoice_line_id, current)
+    })
+
+    return rollupByLineId
+  }, [debitNoteLines, issuedDebitNoteIds])
 
   useEffect(() => {
     if (!creditDialogOpen) return
@@ -343,12 +428,32 @@ export default function SalesInvoiceDetailPage() {
       ),
     )
   }, [creditAvailability, creditDialogOpen, invoice?.vat_exemption_reason_text])
+  useEffect(() => {
+    if (!debitDialogOpen) return
+
+    setDebitMode('full')
+    setDebitReason('')
+    setDebitLineDrafts(
+      Object.fromEntries(
+        lines.map((line) => [
+          line.id,
+          { selected: false, quantity: '', amount: '' },
+        ]),
+      ),
+    )
+  }, [debitDialogOpen, lines])
 
   const issuedCreditedDocumentTotal = useMemo(
     () => roundMoney(creditNotes
       .filter((note) => note.document_workflow_status === 'issued')
       .reduce((sum, note) => sum + Number(note.total_amount || 0), 0)),
     [creditNotes],
+  )
+  const issuedDebitedDocumentTotal = useMemo(
+    () => roundMoney(debitNotes
+      .filter((note) => note.document_workflow_status === 'issued')
+      .reduce((sum, note) => sum + Number(note.total_amount || 0), 0)),
+    [debitNotes],
   )
   const creditPreview = useMemo(() => {
     const previewLines: CreateSalesCreditNoteInput['lines'] = []
@@ -455,7 +560,9 @@ export default function SalesInvoiceDetailPage() {
     const noteTax = roundMoney(previewLines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0))
     const noteTotal = roundMoney(noteNet + noteTax)
     const creditedAfterThisNote = roundMoney(issuedCreditedDocumentTotal + noteTotal)
-    const residualAfterThisNote = roundMoney(Math.max(Number(invoice?.total_amount || 0) - creditedAfterThisNote, 0))
+    const residualAfterThisNote = roundMoney(
+      Math.max(Number(invoice?.total_amount || 0) + issuedDebitedDocumentTotal - creditedAfterThisNote, 0),
+    )
 
     return {
       lines: previewLines,
@@ -467,8 +574,121 @@ export default function SalesInvoiceDetailPage() {
       requiresVatExemptionReason,
       validationErrors: Array.from(new Set(validationErrors)),
     }
-  }, [creditAvailability, creditLineDrafts, creditMode, invoice?.total_amount, issuedCreditedDocumentTotal, tt])
+  }, [
+    creditAvailability,
+    creditLineDrafts,
+    creditMode,
+    invoice?.total_amount,
+    issuedCreditedDocumentTotal,
+    issuedDebitedDocumentTotal,
+    tt,
+  ])
   const canCreateCreditNote = isIssued && (invoiceState ? invoiceState.credit_status !== 'fully_credited' : true)
+  const debitPreview = useMemo(() => {
+    const previewLines: CreateSalesDebitNoteInput['lines'] = []
+    const validationErrors: string[] = []
+
+    lines.forEach((line) => {
+      const lineDescription = line.display_description || line.description
+      const lineNet = roundMoney(Number(line.line_total || 0))
+      const lineTax = roundMoney(Number(line.tax_amount || 0))
+
+      if (debitMode === 'full') {
+        if (lineNet <= 0 && lineTax <= 0) return
+        previewLines.push({
+          salesInvoiceLineId: line.id,
+          itemId: line.item_id,
+          description: lineDescription,
+          qty: roundMoney(Number(line.qty || 0)),
+          unitPrice: roundMoney(Number(line.unit_price || 0)),
+          taxRate: line.tax_rate,
+          taxAmount: lineTax,
+          lineTotal: lineNet,
+          sortOrder: line.sort_order,
+        })
+        return
+      }
+
+      const draft = debitLineDrafts[line.id]
+      if (!draft?.selected) return
+
+      const requestedQty = roundMoney(parseDraftNumber(draft.quantity))
+      const requestedAmount = roundMoney(parseDraftNumber(draft.amount))
+
+      if (requestedQty <= 0 && requestedAmount <= 0) {
+        validationErrors.push(
+          tt('financeDocs.mz.debitLineEmpty', 'Enter a quantity and/or amount for {description}.', {
+            description: lineDescription,
+          }),
+        )
+        return
+      }
+
+      const derivedAmount = requestedAmount > 0
+        ? requestedAmount
+        : requestedQty > 0 && Number(line.qty || 0) > 0
+          ? roundMoney((lineNet / Number(line.qty || 0)) * requestedQty)
+          : 0
+
+      if (derivedAmount <= 0) {
+        validationErrors.push(
+          tt('financeDocs.mz.debitAmountRequired', 'Enter a debit amount for {description}.', {
+            description: lineDescription,
+          }),
+        )
+        return
+      }
+
+      const taxRatio = lineNet > 0
+        ? lineTax / lineNet
+        : 0
+      const lineTaxAmount = roundMoney(derivedAmount * taxRatio)
+
+      previewLines.push({
+        salesInvoiceLineId: line.id,
+        itemId: line.item_id,
+        description: lineDescription,
+        qty: requestedQty,
+        unitPrice: requestedQty > 0 ? roundMoney(derivedAmount / requestedQty) : roundMoney(derivedAmount),
+        taxRate: line.tax_rate,
+        taxAmount: lineTaxAmount,
+        lineTotal: derivedAmount,
+        sortOrder: line.sort_order,
+      })
+    })
+
+    const noteNet = roundMoney(previewLines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0))
+    const noteTax = roundMoney(previewLines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0))
+    const noteTotal = roundMoney(noteNet + noteTax)
+    const debitedAfterThisNote = roundMoney(issuedDebitedDocumentTotal + noteTotal)
+    const adjustedLegalAfterThisNote = roundMoney(
+      Math.max(Number(invoice?.total_amount || 0) - issuedCreditedDocumentTotal + debitedAfterThisNote, 0),
+    )
+    const outstandingAfterThisNote = roundMoney(
+      Math.max(adjustedLegalAfterThisNote - Number(invoiceState?.settled_base || 0), 0),
+    )
+
+    return {
+      lines: previewLines,
+      noteNet,
+      noteTax,
+      noteTotal,
+      debitedAfterThisNote,
+      adjustedLegalAfterThisNote,
+      outstandingAfterThisNote,
+      validationErrors: Array.from(new Set(validationErrors)),
+    }
+  }, [
+    debitLineDrafts,
+    debitMode,
+    invoice?.total_amount,
+    invoiceState?.settled_base,
+    issuedCreditedDocumentTotal,
+    issuedDebitedDocumentTotal,
+    lines,
+    tt,
+  ])
+  const canCreateDebitNote = isIssued
 
   function resolutionTone(status?: SalesInvoiceStateRow['resolution_status'] | null) {
     switch (status) {
@@ -617,8 +837,58 @@ export default function SalesInvoiceDetailPage() {
     }
   }
 
+  async function handleCreateDebitNote() {
+    if (!companyId || !invoice) return
+    if (!debitReason.trim()) {
+      toast.error(tt('financeDocs.mz.debitReasonRequired', 'A correction reason is required before issuing the debit note.'))
+      return
+    }
+    if (!debitPreview.lines.length) {
+      toast.error(tt('financeDocs.mz.debitSelectionRequired', 'Select at least one invoice line to debit.'))
+      return
+    }
+    if (debitPreview.validationErrors.length) {
+      toast.error(debitPreview.validationErrors[0])
+      return
+    }
+
+    try {
+      setCreatingDebit(true)
+      const note = await createAndIssueSalesDebitNoteForInvoice(companyId, invoice.id, {
+        correctionReasonText: debitReason,
+        lines: debitPreview.lines,
+      })
+      toast.success(tt('financeDocs.mz.debitNoteIssued', 'Debit note {reference} issued', { reference: note.internal_reference }))
+      setDebitDialogOpen(false)
+      setDebitReason('')
+      setDebitLineDrafts({})
+      await loadWorkspace()
+    } catch (error: any) {
+      reportRuntimeError('createDebitNote', error, {
+        correctionReasonLength: debitReason.trim().length,
+        debitMode,
+        requestedLineCount: debitPreview.lines.length,
+      })
+      toast.error(error?.message || tt('financeDocs.mz.debitNoteFailed', 'Failed to issue the debit note'))
+    } finally {
+      setCreatingDebit(false)
+    }
+  }
+
   function updateCreditLineDraft(lineId: string, patch: Partial<CreditLineDraft>) {
     setCreditLineDrafts((current) => ({
+      ...current,
+      [lineId]: {
+        selected: current[lineId]?.selected || false,
+        quantity: current[lineId]?.quantity || '',
+        amount: current[lineId]?.amount || '',
+        ...patch,
+      },
+    }))
+  }
+
+  function updateDebitLineDraft(lineId: string, patch: Partial<DebitLineDraft>) {
+    setDebitLineDrafts((current) => ({
       ...current,
       [lineId]: {
         selected: current[lineId]?.selected || false,
@@ -644,6 +914,56 @@ export default function SalesInvoiceDetailPage() {
       quantity: formatDraftNumber(availability.availableQty),
       amount: '',
     })
+  }
+
+  function toggleDebitLineSelection(line: SalesInvoiceDocumentLineRow, checked: boolean) {
+    if (!checked) {
+      updateDebitLineDraft(line.id, {
+        selected: false,
+        quantity: '',
+        amount: '',
+      })
+      return
+    }
+
+    updateDebitLineDraft(line.id, {
+      selected: true,
+      quantity: formatDraftNumber(Number(line.qty || 0)),
+      amount: '',
+    })
+  }
+
+  async function handlePrintAdjustment(model: ReturnType<typeof buildSalesCreditNoteOutputModel> | ReturnType<typeof buildSalesDebitNoteOutputModel>) {
+    try {
+      await printFinanceDocument(model)
+    } catch (error: any) {
+      reportRuntimeError('printAdjustment', error, {
+        internalReference: model.legalReference,
+      })
+      toast.error(error?.message || tt('financeDocs.mz.printFailed', 'Unable to open the invoice print view'))
+    }
+  }
+
+  async function handleDownloadAdjustmentPdf(model: ReturnType<typeof buildSalesCreditNoteOutputModel> | ReturnType<typeof buildSalesDebitNoteOutputModel>) {
+    try {
+      await downloadFinanceDocumentPdf(model)
+    } catch (error: any) {
+      reportRuntimeError('downloadAdjustmentPdf', error, {
+        internalReference: model.legalReference,
+      })
+      toast.error(error?.message || tt('financeDocs.mz.pdfFailed', 'Unable to generate the invoice PDF'))
+    }
+  }
+
+  async function handleShareAdjustment(model: ReturnType<typeof buildSalesCreditNoteOutputModel> | ReturnType<typeof buildSalesDebitNoteOutputModel>) {
+    try {
+      await shareFinanceDocument(model)
+    } catch (error: any) {
+      reportRuntimeError('shareAdjustment', error, {
+        internalReference: model.legalReference,
+      })
+      toast.error(error?.message || tt('financeDocs.mz.shareFailed', 'Sharing is not available for this invoice on the current device'))
+    }
   }
 
   async function openArtifact(artifact: FiscalDocumentArtifactRow) {
@@ -709,7 +1029,7 @@ export default function SalesInvoiceDetailPage() {
               <h1 className="mt-2 text-3xl font-bold tracking-tight">{invoice.internal_reference}</h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 {isIssued
-                  ? tt('financeDocs.mz.issuedHelper', 'Issued invoices are immutable. Corrections must be issued as credit notes.')
+                  ? tt('financeDocs.mz.issuedHelper', 'Issued invoices are immutable. Corrections must be issued as credit notes or debit notes.')
                   : tt('financeDocs.mz.draftHelper', 'Draft invoices remain editable only for minimal preparation dates until the compliance-gated issue action is run.')}
               </p>
             </div>
@@ -858,17 +1178,18 @@ export default function SalesInvoiceDetailPage() {
               <CardHeader>
                 <CardTitle>{tt('financeDocs.mz.resolutionTitle', 'Settlement and resolution')}</CardTitle>
                 <CardDescription>
-                  {tt('financeDocs.mz.resolutionHelp', 'Once issued, the invoice becomes the receivable anchor. Receipts and credit notes reduce the same outstanding balance instead of leaving the original order as a duplicate settlement target.')}
+                  {tt('financeDocs.mz.resolutionHelp', 'Once issued, the invoice becomes the receivable anchor. Receipts, credit notes, and debit notes all recalculate the same legal balance instead of leaving the original order as a duplicate settlement target.')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant={resolutionTone(invoiceState?.resolution_status)}>{resolutionStatusLabel}</Badge>
                   <Badge variant={invoiceState?.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
+                  <Badge variant={invoiceState?.adjustment_status === 'debited' || invoiceState?.adjustment_status === 'credited_and_debited' ? 'outline' : 'secondary'}>{adjustmentStatusLabel}</Badge>
                   <Badge variant={invoiceState?.settlement_status === 'overdue' ? 'destructive' : 'secondary'}>{settlementStatusLabel}</Badge>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                   <Card className="border-border/70 shadow-none">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.originalAmount', 'Original total')}</CardTitle>
@@ -907,6 +1228,28 @@ export default function SalesInvoiceDetailPage() {
                   </Card>
                   <Card className="border-border/70 shadow-none">
                     <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.debitedAmount', 'Debited')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums">{money(invoiceState?.debited_total_base || 0, 'MZN')}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {tt('financeDocs.mz.debitNotesCount', '{count} debit notes issued', { count: invoiceState?.debit_note_count || 0 })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.currentLegalAmount', 'Current legal amount')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums">{money(invoiceState?.current_legal_total_base || invoice.total_amount_mzn, 'MZN')}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {tt('financeDocs.mz.currentLegalAmountHelp', 'Original invoice minus credits plus debits')}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
                       <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-1">
@@ -921,6 +1264,10 @@ export default function SalesInvoiceDetailPage() {
                 <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
                   {invoiceState?.credit_status === 'fully_credited'
                     ? tt('financeDocs.mz.invoiceResolvedFullyCredited', 'This invoice has been fully credited. It no longer carries an open receivable balance and should be treated as operationally resolved.')
+                    : invoiceState?.adjustment_status === 'credited_and_debited'
+                      ? tt('financeDocs.mz.invoiceResolvedCreditedAndDebited', 'This invoice has both credit and debit note adjustments. The current legal amount reflects the net chain before receipts are deducted.')
+                      : invoiceState?.adjustment_status === 'debited'
+                        ? tt('financeDocs.mz.invoiceResolvedDebited', 'This invoice has debit-note adjustments that increased the legal value of the receivable. Outstanding exposure reflects the adjusted amount.')
                     : invoiceState?.credit_status === 'partially_credited'
                       ? tt('financeDocs.mz.invoiceResolvedPartiallyCredited', 'This invoice has already been partially credited. The remaining balance reflects receipts and issued credit notes together.')
                       : tt('financeDocs.mz.invoiceResolvedOpen', 'Outstanding exposure now belongs to this invoice, not to the linked sales order.')}
@@ -1004,7 +1351,7 @@ export default function SalesInvoiceDetailPage() {
             <CardHeader>
               <CardTitle>{tt('financeDocs.mz.creditNotes', 'Credit notes')}</CardTitle>
               <CardDescription>
-                {tt('financeDocs.mz.creditNotesHelp', 'Corrections must flow through credit notes. Choose a full remaining reversal or a partial line-by-line credit without editing the issued invoice itself.')}
+                {tt('financeDocs.mz.creditNotesHelp', 'Use credit notes for downward adjustments. Choose a full remaining reversal or a partial line-by-line credit without editing the issued invoice itself.')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1037,6 +1384,7 @@ export default function SalesInvoiceDetailPage() {
                       <TableHead>{tt('financeDocs.fields.workflow', 'Workflow')}</TableHead>
                       <TableHead>{tt('orders.notes', 'Notes')}</TableHead>
                       <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
+                      <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1051,6 +1399,148 @@ export default function SalesInvoiceDetailPage() {
                         </TableCell>
                         <TableCell>{note.correction_reason_text}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{money(note.total_amount, note.currency_code)}</TableCell>
+                        <TableCell className="text-right">
+                          {note.document_workflow_status === 'issued' ? (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const model = buildSalesCreditNoteOutputModel(
+                                    note,
+                                    creditNoteLinesByNoteId.get(note.id) || [],
+                                    {
+                                      brandName: brand.name,
+                                      logoUrl: brand.logoUrl,
+                                      originalInvoiceReference: invoice.internal_reference,
+                                    },
+                                  )
+                                  void handlePrintAdjustment(model)
+                                }}
+                              >
+                                <Printer className="mr-2 h-4 w-4" />
+                                {tt('financeDocs.mz.printInvoice', 'Print')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const model = buildSalesCreditNoteOutputModel(
+                                    note,
+                                    creditNoteLinesByNoteId.get(note.id) || [],
+                                    {
+                                      brandName: brand.name,
+                                      logoUrl: brand.logoUrl,
+                                      originalInvoiceReference: invoice.internal_reference,
+                                    },
+                                  )
+                                  void handleDownloadAdjustmentPdf(model)
+                                }}
+                              >
+                                <Download className="mr-2 h-4 w-4" />
+                                {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
+                              </Button>
+                            </div>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle>{tt('financeDocs.mz.debitNotes', 'Debit notes')}</CardTitle>
+              <CardDescription>
+                {tt('financeDocs.mz.debitNotesHelp', 'Use debit notes for upward adjustments, underbilling corrections, and additional value that must remain linked to the issued invoice chain.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isIssued ? (
+                canCreateDebitNote ? (
+                  <Button onClick={() => setDebitDialogOpen(true)}>
+                    {tt('financeDocs.mz.issueDebitNote', 'Issue debit note')}
+                  </Button>
+                ) : null
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  {tt('financeDocs.mz.debitNotesIssueOnly', 'Debit notes can only be created from issued invoices.')}
+                </div>
+              )}
+
+              {debitNotes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.debitNotesEmpty', 'No debit notes have been issued against this invoice yet.')}</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{tt('financeDocs.fields.internalReference', 'Internal reference')}</TableHead>
+                      <TableHead>{tt('financeDocs.fields.invoiceDate', 'Date')}</TableHead>
+                      <TableHead>{tt('financeDocs.fields.workflow', 'Workflow')}</TableHead>
+                      <TableHead>{tt('orders.notes', 'Notes')}</TableHead>
+                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
+                      <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {debitNotes.map((note) => (
+                      <TableRow key={note.id}>
+                        <TableCell className="font-medium">{note.internal_reference}</TableCell>
+                        <TableCell>{shortDate(note.debit_note_date)}</TableCell>
+                        <TableCell>
+                          <Badge variant={note.document_workflow_status === 'issued' ? 'default' : 'secondary'}>
+                            {note.document_workflow_status.toUpperCase()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{note.correction_reason_text}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{money(note.total_amount, note.currency_code)}</TableCell>
+                        <TableCell className="text-right">
+                          {note.document_workflow_status === 'issued' ? (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const model = buildSalesDebitNoteOutputModel(
+                                    note,
+                                    debitNoteLinesByNoteId.get(note.id) || [],
+                                    {
+                                      brandName: brand.name,
+                                      logoUrl: brand.logoUrl,
+                                      originalInvoiceReference: invoice.internal_reference,
+                                    },
+                                  )
+                                  void handlePrintAdjustment(model)
+                                }}
+                              >
+                                <Printer className="mr-2 h-4 w-4" />
+                                {tt('financeDocs.mz.printInvoice', 'Print')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const model = buildSalesDebitNoteOutputModel(
+                                    note,
+                                    debitNoteLinesByNoteId.get(note.id) || [],
+                                    {
+                                      brandName: brand.name,
+                                      logoUrl: brand.logoUrl,
+                                      originalInvoiceReference: invoice.internal_reference,
+                                    },
+                                  )
+                                  void handleDownloadAdjustmentPdf(model)
+                                }}
+                              >
+                                <Download className="mr-2 h-4 w-4" />
+                                {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
+                              </Button>
+                            </div>
+                          ) : null}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1323,6 +1813,197 @@ export default function SalesInvoiceDetailPage() {
                   }
                 >
                   {creatingCredit ? tt('financeDocs.mz.crediting', 'Issuing...') : tt('financeDocs.mz.confirmCreditNote', 'Issue credit note')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={debitDialogOpen} onOpenChange={setDebitDialogOpen}>
+            <DialogContent className="max-w-5xl">
+              <DialogHeader>
+                <DialogTitle>{tt('financeDocs.mz.debitDialogTitle', 'Issue debit note')}</DialogTitle>
+                <DialogDescription>
+                  {tt('financeDocs.mz.debitDialogHelp', 'Choose a full invoice uplift or build a partial debit note from selected invoice lines. The original invoice remains issued while the legal amount increases through the linked debit-note chain.')}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogBody>
+                <div className="space-y-5">
+                  <RadioGroup
+                    value={debitMode}
+                    onValueChange={(value) => setDebitMode(value as DebitMode)}
+                    className="grid gap-3 md:grid-cols-2"
+                  >
+                    <label
+                      htmlFor="debit-mode-full"
+                      className={`rounded-2xl border p-4 ${debitMode === 'full' ? 'border-primary bg-primary/5' : 'border-border/70 bg-background'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <RadioGroupItem id="debit-mode-full" value="full" className="mt-1" />
+                        <div className="space-y-1">
+                          <div className="font-medium">{tt('financeDocs.mz.debitModeFull', 'Full invoice uplift')}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {tt('financeDocs.mz.debitModeFullHelp', 'Replicate the issued invoice lines as a full upward adjustment when the original billing was understated as a whole.')}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                    <label
+                      htmlFor="debit-mode-partial"
+                      className={`rounded-2xl border p-4 ${debitMode === 'partial' ? 'border-primary bg-primary/5' : 'border-border/70 bg-background'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <RadioGroupItem id="debit-mode-partial" value="partial" className="mt-1" />
+                        <div className="space-y-1">
+                          <div className="font-medium">{tt('financeDocs.mz.debitModePartial', 'Partial debit')}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {tt('financeDocs.mz.debitModePartialHelp', 'Select individual lines, add extra quantity, or enter a value-only increase for omitted charges and underbilling corrections.')}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  </RadioGroup>
+
+                  <div>
+                    <Label htmlFor="debit-note-reason">{tt('financeDocs.mz.debitReason', 'Correction reason')}</Label>
+                    <Textarea
+                      id="debit-note-reason"
+                      value={debitReason}
+                      onChange={(event) => setDebitReason(event.target.value)}
+                      placeholder={tt('financeDocs.mz.debitReasonPlaceholder', 'Describe why the invoice legal value must increase')}
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.originalAmount', 'Original total')}</div>
+                      <div className="mt-2 font-mono tabular-nums font-semibold">{money(invoice.total_amount, invoice.currency_code)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.alreadyCredited', 'Already credited')}</div>
+                      <div className="mt-2 font-mono tabular-nums font-semibold">{money(issuedCreditedDocumentTotal, invoice.currency_code)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.alreadyDebited', 'Already debited')}</div>
+                      <div className="mt-2 font-mono tabular-nums font-semibold">{money(issuedDebitedDocumentTotal, invoice.currency_code)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.currentLegalAmount', 'Current legal amount')}</div>
+                      <div className="mt-2 font-mono tabular-nums font-semibold">{money(debitPreview.adjustedLegalAfterThisNote, invoice.currency_code)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.outstandingAfterThisNote', 'Outstanding after this note')}</div>
+                      <div className="mt-2 font-mono tabular-nums font-semibold">{money(debitPreview.outstandingAfterThisNote, invoice.currency_code)}</div>
+                    </div>
+                  </div>
+
+                  {debitMode === 'partial' ? (
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium">{tt('financeDocs.mz.debitLinesTitle', 'Select invoice lines to debit')}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {tt('financeDocs.mz.debitLinesHelp', 'Use quantity when the original line was short-billed, or enter a net amount for a pure value adjustment linked back to the invoice line.')}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {lines.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
+                            {tt('financeDocs.mz.debitLinesEmpty', 'No invoice lines are available for debit adjustments.')}
+                          </div>
+                        ) : (
+                          lines.map((line) => {
+                            const lineDraft = debitLineDrafts[line.id] || { selected: false, quantity: '', amount: '' }
+                            const rollup = debitRollupByLineId.get(line.id)
+                            const lineDescription = line.display_description || line.description || tt('common.dash', '-')
+
+                            return (
+                              <div key={line.id} className="rounded-2xl border border-border/70 bg-background p-4">
+                                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                                  <div className="min-w-0 flex-1">
+                                    <label className="flex items-start gap-3">
+                                      <Checkbox
+                                        checked={lineDraft.selected}
+                                        onCheckedChange={(checked) => toggleDebitLineSelection(line, checked === true)}
+                                        aria-label={lineDescription}
+                                      />
+                                      <div className="min-w-0">
+                                        <div className="font-medium">{lineDescription}</div>
+                                        {line.display_unit_of_measure ? (
+                                          <div className="mt-1 text-xs text-muted-foreground">{line.display_unit_of_measure}</div>
+                                        ) : null}
+                                      </div>
+                                    </label>
+
+                                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                                      <div>{tt('financeDocs.mz.originalQty', 'Original qty')}: <span className="font-mono tabular-nums">{Number(line.qty || 0)}</span></div>
+                                      <div>{tt('financeDocs.mz.originalNet', 'Original net')}: <span className="font-mono tabular-nums">{money(Number(line.line_total || 0), invoice.currency_code)}</span></div>
+                                      <div>{tt('financeDocs.mz.originalTax', 'Original VAT')}: <span className="font-mono tabular-nums">{money(Number(line.tax_amount || 0), invoice.currency_code)}</span></div>
+                                      <div>{tt('financeDocs.mz.alreadyDebitedShort', 'Already debited')}: <span className="font-mono tabular-nums">{money((rollup?.lineTotal || 0) + (rollup?.taxAmount || 0), invoice.currency_code)}</span></div>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[320px]">
+                                    <div className="space-y-2">
+                                      <Label htmlFor={`debit-line-qty-${line.id}`}>{tt('financeDocs.mz.debitQty', 'Debited qty')}</Label>
+                                      <Input
+                                        id={`debit-line-qty-${line.id}`}
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={lineDraft.quantity}
+                                        onChange={(event) => updateDebitLineDraft(line.id, { quantity: event.target.value, selected: true })}
+                                        disabled={!lineDraft.selected}
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor={`debit-line-amount-${line.id}`}>{tt('financeDocs.mz.debitAmount', 'Debited net amount')}</Label>
+                                      <Input
+                                        id={`debit-line-amount-${line.id}`}
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={lineDraft.amount}
+                                        onChange={(event) => updateDebitLineDraft(line.id, { amount: event.target.value, selected: true })}
+                                        disabled={!lineDraft.selected}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                      {debitPreview.lines.length > 0
+                        ? tt('financeDocs.mz.debitFullPreview', 'This action will replicate the issued invoice lines as a full upward adjustment tied back to the same invoice chain.')
+                        : tt('financeDocs.mz.debitNothingAvailable', 'No debitable source lines are stored on this invoice.')}
+                    </div>
+                  )}
+
+                  {debitPreview.validationErrors.length > 0 ? (
+                    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                      {debitPreview.validationErrors[0]}
+                    </div>
+                  ) : null}
+                </div>
+              </DialogBody>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDebitDialogOpen(false)} disabled={creatingDebit}>
+                  {tt('common.cancel', 'Cancel')}
+                </Button>
+                <Button
+                  onClick={() => void handleCreateDebitNote()}
+                  disabled={
+                    creatingDebit
+                    || !debitPreview.lines.length
+                    || debitPreview.validationErrors.length > 0
+                  }
+                >
+                  {creatingDebit ? tt('financeDocs.mz.debiting', 'Issuing...') : tt('financeDocs.mz.confirmDebitNote', 'Issue debit note')}
                 </Button>
               </DialogFooter>
             </DialogContent>

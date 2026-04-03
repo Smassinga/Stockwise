@@ -10,7 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { useOrg } from '../hooks/useOrg'
 import { useVendorBills } from '../hooks/useFinanceDocuments'
 import { getBaseCurrencyCode } from '../lib/currency'
-import { vendorBillWorkflowLabelKey, type VendorBillStateRow } from '../lib/financeDocuments'
+import { vendorBillResolutionLabelKey, vendorBillWorkflowLabelKey, type VendorBillStateRow } from '../lib/financeDocuments'
+import { settlementLabelKey } from '../lib/orderState'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 
 function workflowTone(status: VendorBillStateRow['document_workflow_status']) {
@@ -151,7 +152,9 @@ export default function VendorBillsPage() {
                   <TableHead>{tt('financeDocs.fields.supplierInvoiceDate', 'Supplier invoice date')}</TableHead>
                   <TableHead>{tt('financeDocs.fields.dueDate', 'Due date')}</TableHead>
                   <TableHead>{tt('financeDocs.fields.workflow', 'Workflow')}</TableHead>
+                  <TableHead>{tt('financeDocs.fields.status', 'Status')}</TableHead>
                   <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
+                  <TableHead className="text-right">{tt('settlements.outstandingAmount', 'Outstanding')}</TableHead>
                   <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -183,9 +186,22 @@ export default function VendorBillsPage() {
                         {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={row.resolution_status === 'posted_overdue' ? 'destructive' : row.resolution_status === 'posted_settled' ? 'default' : 'secondary'}>
+                          {tt(vendorBillResolutionLabelKey(row.resolution_status), row.resolution_status)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {tt(settlementLabelKey(row.settlement_status), row.settlement_status)}
+                        </span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="font-mono tabular-nums">{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
                       <div className="text-xs text-muted-foreground">{formatBaseMoney(row.total_amount_base)}</div>
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatBaseMoney(row.outstanding_base)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button asChild size="sm" variant="outline">

@@ -1,28 +1,55 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { AlertTriangle, ArrowLeft } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { AlertTriangle, ArrowLeft, Download, Printer, Share2 } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
+import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { getBaseCurrencyCode } from '../lib/currency'
+import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
 import {
   VENDOR_BILL_STATE_VIEW,
   isMissingFinanceViewError,
+  vendorBillResolutionLabelKey,
   vendorBillWorkflowLabelKey,
   type VendorBillLineRow,
   type VendorBillStateRow,
 } from '../lib/financeDocuments'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import type { FinanceDocumentEventRow } from '../lib/mzFinance'
+import { settlementLabelKey } from '../lib/orderState'
+import {
+  buildVendorBillOutputModel,
+  downloadFinanceDocumentPdf,
+  printFinanceDocument,
+  shareFinanceDocument,
+} from '../lib/financeDocumentOutput'
+
+type SupplierProfile = {
+  name: string | null
+  tax_id: string | null
+}
 
 function workflowTone(status: VendorBillStateRow['document_workflow_status']) {
   switch (status) {
     case 'posted':
       return 'default'
     case 'voided':
+      return 'destructive'
+    default:
+      return 'secondary'
+  }
+}
+
+function resolutionTone(status: VendorBillStateRow['resolution_status']) {
+  switch (status) {
+    case 'posted_settled':
+      return 'default'
+    case 'posted_overdue':
       return 'destructive'
     default:
       return 'secondary'
@@ -36,12 +63,18 @@ export default function VendorBillDetailPage() {
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
+  const brand = useBrandForDocs(companyId)
 
   const [loading, setLoading] = useState(true)
   const [missingView, setMissingView] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const [voiding, setVoiding] = useState(false)
   const [row, setRow] = useState<VendorBillStateRow | null>(null)
   const [lines, setLines] = useState<VendorBillLineRow[]>([])
+  const [events, setEvents] = useState<FinanceDocumentEventRow[]>([])
   const [baseCode, setBaseCode] = useState('MZN')
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null)
+  const [supplierProfile, setSupplierProfile] = useState<SupplierProfile | null>(null)
 
   useEffect(() => {
     if (!companyId || !billId) return
@@ -55,76 +88,99 @@ export default function VendorBillDetailPage() {
     })()
   }, [companyId, billId])
 
-  useEffect(() => {
-    let cancelled = false
+  const loadWorkspace = useCallback(async () => {
+    if (!companyId || !billId) {
+      setLoading(false)
+      setRow(null)
+      setLines([])
+      setEvents([])
+      setCompanyProfile(null)
+      setSupplierProfile(null)
+      return
+    }
 
-    ;(async () => {
-      if (!companyId || !billId) {
-        setLoading(false)
+    try {
+      setLoading(true)
+      setMissingView(false)
+
+      const { data, error } = await supabase
+        .from(VENDOR_BILL_STATE_VIEW)
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('id', billId)
+        .maybeSingle()
+
+      if (error) {
+        if (isMissingFinanceViewError(error, VENDOR_BILL_STATE_VIEW)) {
+          setMissingView(true)
+          setRow(null)
+          setLines([])
+          setEvents([])
+          return
+        }
+        throw error
+      }
+
+      if (!data) {
+        setRow(null)
+        setLines([])
+        setEvents([])
         return
       }
 
-      try {
-        setLoading(true)
-        setMissingView(false)
-
-        const { data, error } = await supabase
-          .from(VENDOR_BILL_STATE_VIEW)
-          .select('*')
-          .eq('company_id', companyId)
-          .eq('id', billId)
-          .maybeSingle()
-
-        if (error) {
-          if (isMissingFinanceViewError(error, VENDOR_BILL_STATE_VIEW)) {
-            if (!cancelled) {
-              setMissingView(true)
-              setRow(null)
-              setLines([])
-            }
-            return
-          }
-          throw error
-        }
-
-        if (!data) {
-          if (!cancelled) {
-            setRow(null)
-            setLines([])
-          }
-          return
-        }
-
-        const lineRes = await supabase
+      const nextRow = data as VendorBillStateRow
+      const [lineRes, eventRes, nextCompanyProfile, supplierRes] = await Promise.all([
+        supabase
           .from('vendor_bill_lines')
           .select('id,vendor_bill_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order')
           .eq('company_id', companyId)
           .eq('vendor_bill_id', billId)
           .order('sort_order', { ascending: true })
-          .order('created_at', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('finance_document_events')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('document_kind', 'vendor_bill')
+          .eq('document_id', billId)
+          .order('occurred_at', { ascending: false }),
+        getCompanyProfile(companyId),
+        nextRow.supplier_id
+          ? supabase
+              .from('suppliers')
+              .select('name,tax_id')
+              .eq('company_id', companyId)
+              .eq('id', nextRow.supplier_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ])
 
-        if (lineRes.error) throw lineRes.error
+      if (lineRes.error) throw lineRes.error
+      if (eventRes.error) throw eventRes.error
+      if (supplierRes.error) throw supplierRes.error
 
-        if (!cancelled) {
-          setRow(data as VendorBillStateRow)
-          setLines((lineRes.data || []) as VendorBillLineRow[])
-        }
-      } catch (error: any) {
-        console.error(error)
-        if (!cancelled) {
-          toast.error(error?.message || tt('financeDocs.vendorBills.loadFailed', 'Failed to load vendor bills'))
-          setRow(null)
-          setLines([])
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
+      setRow(nextRow)
+      setLines((lineRes.data || []) as VendorBillLineRow[])
+      setEvents((eventRes.data || []) as FinanceDocumentEventRow[])
+      setCompanyProfile(nextCompanyProfile)
+      setSupplierProfile((supplierRes.data || null) as SupplierProfile | null)
+    } catch (error: any) {
+      console.error(error)
+      toast.error(
+        error?.message
+        || withI18nFallback(t, 'financeDocs.vendorBills.loadFailed', 'Failed to load vendor bills'),
+      )
+      setRow(null)
+      setLines([])
+      setEvents([])
+    } finally {
+      setLoading(false)
     }
-  }, [billId, companyId, tt])
+  }, [billId, companyId, t])
+
+  useEffect(() => {
+    void loadWorkspace()
+  }, [loadWorkspace])
 
   const formatDocumentMoney = (amount: number, code: string) =>
     new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
@@ -143,6 +199,101 @@ export default function VendorBillDetailPage() {
     return `/orders?tab=purchase&orderId=${encodeURIComponent(row.purchase_order_id)}`
   }, [row])
 
+  const outputModel = useMemo(() => {
+    if (!row || !companyProfile) return null
+    return buildVendorBillOutputModel(row, lines, {
+      brandName: brand.name,
+      logoUrl: brand.logoUrl,
+      supplier: {
+        name: supplierProfile?.name || row.counterparty_name,
+        taxId: supplierProfile?.tax_id || null,
+      },
+      company: {
+        legalName: companyProfile.legal_name,
+        tradeName: companyProfile.trade_name,
+        taxId: companyProfile.tax_id,
+        address: [
+          companyProfile.address_line1,
+          companyProfile.address_line2,
+          [companyProfile.city, companyProfile.state].filter(Boolean).join(', '),
+          companyProfile.postal_code,
+          companyProfile.country_code,
+        ],
+      },
+    })
+  }, [brand.logoUrl, brand.name, companyProfile, lines, row, supplierProfile?.name, supplierProfile?.tax_id])
+
+  async function handleWorkflowChange(nextStatus: 'posted' | 'voided') {
+    if (!companyId || !billId || !row) return
+    const confirmMessage = nextStatus === 'posted'
+      ? tt('financeDocs.vendorBills.confirmPost', 'Post this vendor bill and move settlement truth to the AP document?')
+      : tt('financeDocs.vendorBills.confirmVoid', 'Void this vendor bill?')
+    if (!window.confirm(confirmMessage)) return
+
+    try {
+      if (nextStatus === 'posted') setPosting(true)
+      else setVoiding(true)
+
+      const patch = nextStatus === 'posted'
+        ? { document_workflow_status: 'posted' as const }
+        : { document_workflow_status: 'voided' as const }
+
+      const { error } = await supabase
+        .from('vendor_bills')
+        .update(patch)
+        .eq('company_id', companyId)
+        .eq('id', billId)
+
+      if (error) throw error
+
+      toast.success(
+        nextStatus === 'posted'
+          ? tt('financeDocs.vendorBills.postSuccess', 'Vendor bill posted')
+          : tt('financeDocs.vendorBills.voidSuccess', 'Vendor bill voided'),
+      )
+      await loadWorkspace()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(
+        error?.message || (
+          nextStatus === 'posted'
+            ? tt('financeDocs.vendorBills.postFailed', 'Failed to post the vendor bill')
+            : tt('financeDocs.vendorBills.voidFailed', 'Failed to void the vendor bill')
+        ),
+      )
+    } finally {
+      setPosting(false)
+      setVoiding(false)
+    }
+  }
+
+  async function handlePrint() {
+    if (!outputModel) return
+    try {
+      await printFinanceDocument(outputModel)
+    } catch (error: any) {
+      toast.error(error?.message || tt('financeDocs.mz.printFailed', 'Unable to open the invoice print view'))
+    }
+  }
+
+  async function handleDownloadPdf() {
+    if (!outputModel) return
+    try {
+      await downloadFinanceDocumentPdf(outputModel)
+    } catch (error: any) {
+      toast.error(error?.message || tt('financeDocs.mz.pdfFailed', 'Unable to generate the invoice PDF'))
+    }
+  }
+
+  async function handleShare() {
+    if (!outputModel) return
+    try {
+      await shareFinanceDocument(outputModel)
+    } catch (error: any) {
+      toast.error(error?.message || tt('financeDocs.mz.shareFailed', 'Sharing is not available for this invoice on the current device'))
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
@@ -158,6 +309,9 @@ export default function VendorBillDetailPage() {
             <Link to={orderLink}>{tt('financeDocs.viewLinkedOrder', 'View linked order')}</Link>
           </Button>
         )}
+        <Button asChild variant="outline">
+          <Link to="/settlements">{tt('financeDocs.vendorBills.settlementsLink', 'Settlement workspace')}</Link>
+        </Button>
       </div>
 
       {missingView ? (
@@ -174,10 +328,59 @@ export default function VendorBillDetailPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
+                {tt('financeDocs.eyebrow', 'Finance documents')}
+              </div>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight">{row.primary_reference}</h1>
+              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+                {row.document_workflow_status === 'posted'
+                  ? tt('financeDocs.vendorBills.postedHelper', 'Posted vendor bills are the AP settlement anchor. Payments and outstanding exposure now belong to this document, not to the original purchase order.')
+                  : tt('financeDocs.vendorBills.draftHelper', 'Draft vendor bills stay editable until posting. Posting transfers settlement truth from the purchase order into the AP document.')}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={workflowTone(row.document_workflow_status)}>
+                {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
+              </Badge>
+              {outputModel ? (
+                <>
+                  <Button variant="outline" onClick={() => void handlePrint()}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    {tt('financeDocs.mz.printInvoice', 'Print')}
+                  </Button>
+                  <Button variant="outline" onClick={() => void handleDownloadPdf()}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
+                  </Button>
+                  <Button variant="outline" onClick={() => void handleShare()}>
+                    <Share2 className="mr-2 h-4 w-4" />
+                    {tt('financeDocs.mz.shareInvoice', 'Share')}
+                  </Button>
+                </>
+              ) : null}
+              {row.document_workflow_status === 'draft' ? (
+                <Button onClick={() => void handleWorkflowChange('posted')} disabled={posting || voiding}>
+                  {posting ? tt('financeDocs.vendorBills.posting', 'Posting...') : tt('financeDocs.vendorBills.postBill', 'Post vendor bill')}
+                </Button>
+              ) : null}
+              {row.document_workflow_status !== 'voided' ? (
+                <Button variant="outline" onClick={() => void handleWorkflowChange('voided')} disabled={posting || voiding}>
+                  {voiding ? tt('financeDocs.vendorBills.voiding', 'Voiding...') : tt('financeDocs.vendorBills.voidBill', 'Void bill')}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
-                <CardTitle>{row.primary_reference}</CardTitle>
+                <CardTitle>{tt('financeDocs.vendorBills.apIdentity', 'AP identity')}</CardTitle>
+                <CardDescription>
+                  {tt('financeDocs.vendorBills.apIdentityHelp', 'Supplier-facing references stay visible, while the internal reference and linked purchase order remain the controlled audit trail.')}
+                </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/20 p-3">
@@ -236,21 +439,54 @@ export default function VendorBillDetailPage() {
 
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
-                <CardTitle>{tt('financeDocs.fields.total', 'Total')}</CardTitle>
+                <CardTitle>{tt('financeDocs.vendorBills.settlementTitle', 'Settlement and resolution')}</CardTitle>
+                <CardDescription>
+                  {tt('financeDocs.vendorBills.settlementHelp', 'Once posted, this vendor bill becomes the payable anchor. Payments reduce the same AP document instead of leaving the purchase order as a duplicate liability target.')}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.subtotal', 'Subtotal')}</div>
-                  <div className="mt-1 font-mono tabular-nums">{formatDocumentMoney(row.subtotal, row.currency_code)}</div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={resolutionTone(row.resolution_status)}>
+                    {tt(vendorBillResolutionLabelKey(row.resolution_status), row.resolution_status)}
+                  </Badge>
+                  <Badge variant={row.settlement_status === 'overdue' ? 'destructive' : 'secondary'}>
+                    {tt(settlementLabelKey(row.settlement_status), row.settlement_status)}
+                  </Badge>
                 </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.taxTotal', 'Tax')}</div>
-                  <div className="mt-1 font-mono tabular-nums">{formatDocumentMoney(row.tax_total, row.currency_code)}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.total', 'Total')}</div>
-                  <div className="mt-1 font-mono tabular-nums text-lg font-semibold">{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
-                  <div className="text-xs text-muted-foreground">{formatBaseMoney(row.total_amount_base)}</div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.total', 'Total')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums">{formatBaseMoney(row.total_amount_base)}</div>
+                      <div className="text-xs text-muted-foreground">{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums">{formatBaseMoney(row.settled_base)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {tt('financeDocs.vendorBills.paymentsBreakdown', 'Cash {cash} · Bank {bank}', {
+                          cash: formatBaseMoney(row.cash_paid_base),
+                          bank: formatBaseMoney(row.bank_paid_base),
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      <div className="font-mono tabular-nums font-semibold">{formatBaseMoney(row.outstanding_base)}</div>
+                      <div className="text-xs text-muted-foreground">{tt('financeDocs.vendorBills.anchorReference', 'Settlement anchor: vendor bill')}</div>
+                    </CardContent>
+                  </Card>
                 </div>
               </CardContent>
             </Card>
@@ -259,6 +495,9 @@ export default function VendorBillDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.fields.lines', 'Lines')}</CardTitle>
+              <CardDescription>
+                {tt('financeDocs.vendorBills.linesHelp', 'Posted vendor bills keep their line values immutable and separate from the source purchase order.')}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {lines.length === 0 ? (
@@ -281,11 +520,38 @@ export default function VendorBillDetailPage() {
                         <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.unit_cost, row.currency_code)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.tax_amount, row.currency_code)}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.line_total, row.currency_code)}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.line_total + line.tax_amount, row.currency_code)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle>{tt('financeDocs.mz.auditTrail', 'Audit trail')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {events.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.auditEmpty', 'No audit events have been captured for this document yet.')}</p>
+              ) : (
+                <div className="space-y-3">
+                  {events.map((event) => (
+                    <div key={event.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-medium">{event.event_type}</div>
+                        <div className="text-xs text-muted-foreground">{event.occurred_at.replace('T', ' ').slice(0, 19)}</div>
+                      </div>
+                      {(event.from_status || event.to_status) ? (
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {event.from_status || '-'} {'->'} {event.to_status || '-'}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

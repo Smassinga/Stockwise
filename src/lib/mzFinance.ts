@@ -154,6 +154,26 @@ export type SalesCreditNoteRow = {
   vat_exemption_reason_text: string | null
   document_workflow_status: 'draft' | 'issued' | 'voided'
   issued_at: string | null
+  seller_legal_name_snapshot: string | null
+  seller_trade_name_snapshot: string | null
+  seller_nuit_snapshot: string | null
+  seller_address_line1_snapshot: string | null
+  seller_address_line2_snapshot: string | null
+  seller_city_snapshot: string | null
+  seller_state_snapshot: string | null
+  seller_postal_code_snapshot: string | null
+  seller_country_code_snapshot: string | null
+  buyer_legal_name_snapshot: string | null
+  buyer_nuit_snapshot: string | null
+  buyer_address_line1_snapshot: string | null
+  buyer_address_line2_snapshot: string | null
+  buyer_city_snapshot: string | null
+  buyer_state_snapshot: string | null
+  buyer_postal_code_snapshot: string | null
+  buyer_country_code_snapshot: string | null
+  document_language_code_snapshot: string | null
+  computer_processed_phrase_snapshot: string | null
+  compliance_rule_version_snapshot: string | null
   created_at: string
   updated_at: string
 }
@@ -176,6 +196,8 @@ export type SalesCreditNoteLineRow = {
   sort_order: number
   created_at: string
   updated_at: string
+  display_description?: string
+  display_unit_of_measure?: string | null
 }
 
 export type SalesCreditNoteDraftLineInput = {
@@ -188,6 +210,96 @@ export type SalesCreditNoteDraftLineInput = {
   taxAmount: number
   lineTotal: number
   sortOrder?: number | null
+}
+
+export type SalesDebitNoteRow = {
+  id: string
+  company_id: string
+  original_sales_invoice_id: string
+  customer_id: string | null
+  internal_reference: string
+  source_origin: 'native' | 'imported'
+  moz_document_code: 'ND'
+  fiscal_series_code: string | null
+  fiscal_year: number | null
+  fiscal_sequence_number: number | null
+  debit_note_date: string
+  due_date: string
+  currency_code: string
+  fx_to_base: number
+  subtotal: number
+  tax_total: number
+  total_amount: number
+  subtotal_mzn: number
+  tax_total_mzn: number
+  total_amount_mzn: number
+  correction_reason_code: string | null
+  correction_reason_text: string
+  seller_legal_name_snapshot: string | null
+  seller_trade_name_snapshot: string | null
+  seller_nuit_snapshot: string | null
+  seller_address_line1_snapshot: string | null
+  seller_address_line2_snapshot: string | null
+  seller_city_snapshot: string | null
+  seller_state_snapshot: string | null
+  seller_postal_code_snapshot: string | null
+  seller_country_code_snapshot: string | null
+  buyer_legal_name_snapshot: string | null
+  buyer_nuit_snapshot: string | null
+  buyer_address_line1_snapshot: string | null
+  buyer_address_line2_snapshot: string | null
+  buyer_city_snapshot: string | null
+  buyer_state_snapshot: string | null
+  buyer_postal_code_snapshot: string | null
+  buyer_country_code_snapshot: string | null
+  document_language_code_snapshot: string | null
+  computer_processed_phrase_snapshot: string | null
+  compliance_rule_version_snapshot: string | null
+  document_workflow_status: 'draft' | 'issued' | 'voided'
+  issued_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type SalesDebitNoteLineRow = {
+  id: string
+  company_id: string
+  sales_debit_note_id: string
+  sales_invoice_line_id: string | null
+  item_id: string | null
+  description: string
+  qty: number
+  unit_price: number
+  tax_rate: number | null
+  tax_amount: number
+  line_total: number
+  product_code_snapshot: string | null
+  unit_of_measure_snapshot: string | null
+  tax_category_code: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+  display_description?: string
+  display_unit_of_measure?: string | null
+}
+
+export type SalesDebitNoteDraftLineInput = {
+  salesInvoiceLineId: string
+  itemId?: string | null
+  description?: string | null
+  qty: number
+  unitPrice?: number | null
+  taxRate?: number | null
+  taxAmount: number
+  lineTotal: number
+  sortOrder?: number | null
+}
+
+export type CreateSalesDebitNoteInput = {
+  correctionReasonText: string
+  debitNoteDate?: string | null
+  dueDate?: string | null
+  lines: SalesDebitNoteDraftLineInput[]
 }
 
 export type CreateSalesCreditNoteInput = {
@@ -469,6 +581,17 @@ async function maybeVoidDraftInvoice(companyId: string, invoiceId: string, reaso
 async function maybeVoidDraftCreditNote(companyId: string, noteId: string, reason: string) {
   await supabase
     .from('sales_credit_notes')
+    .update({
+      document_workflow_status: 'voided',
+      void_reason: reason,
+    })
+    .eq('company_id', companyId)
+    .eq('id', noteId)
+}
+
+async function maybeVoidDraftDebitNote(companyId: string, noteId: string, reason: string) {
+  await supabase
+    .from('sales_debit_notes')
     .update({
       document_workflow_status: 'voided',
       void_reason: reason,
@@ -823,6 +946,117 @@ async function enrichSalesInvoiceLines(companyId: string, lines: SalesInvoiceDoc
   })
 }
 
+async function enrichSalesAdjustmentLines<T extends {
+  id: string
+  item_id: string | null
+  sales_invoice_line_id: string | null
+  description: string
+  unit_of_measure_snapshot: string | null
+}>(companyId: string, lines: T[]) {
+  if (!lines.length) return [] as Array<T & { display_description: string; display_unit_of_measure: string | null }>
+
+  const itemIds = Array.from(new Set(lines.map((line) => line.item_id).filter(Boolean) as string[]))
+  const invoiceLineIds = Array.from(new Set(lines.map((line) => line.sales_invoice_line_id).filter(Boolean) as string[]))
+
+  const [itemRes, invoiceLineRes] = await Promise.all([
+    itemIds.length
+      ? supabase
+          .from('items')
+          .select('id,name,sku,base_uom_id')
+          .eq('company_id', companyId)
+          .in('id', itemIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceLineIds.length
+      ? supabase
+          .from('sales_invoice_lines')
+          .select('id,description,unit_of_measure_snapshot')
+          .eq('company_id', companyId)
+          .in('id', invoiceLineIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (itemRes.error) {
+    mzRuntimeError('salesAdjustmentLines.itemsLoad.failed', itemRes.error, {
+      companyId,
+      itemCount: itemIds.length,
+    })
+  }
+  if (invoiceLineRes.error) {
+    mzRuntimeError('salesAdjustmentLines.invoiceLinesLoad.failed', invoiceLineRes.error, {
+      companyId,
+      invoiceLineCount: invoiceLineIds.length,
+    })
+  }
+
+  const itemById = new Map<string, ItemDisplaySource>(((itemRes.data || []) as ItemDisplaySource[]).map((row) => [row.id, row]))
+  const sourceLineById = new Map<string, Pick<SalesInvoiceDocumentLineRow, 'id' | 'description' | 'unit_of_measure_snapshot'>>(
+    (((invoiceLineRes.data || []) as Array<Pick<SalesInvoiceDocumentLineRow, 'id' | 'description' | 'unit_of_measure_snapshot'>>)
+      .map((row) => [row.id, row])),
+  )
+
+  const uomIds = Array.from(
+    new Set(
+      lines
+        .flatMap((line) => {
+          const sourceLine = line.sales_invoice_line_id ? sourceLineById.get(line.sales_invoice_line_id) : undefined
+          const item = line.item_id ? itemById.get(line.item_id) : undefined
+          const ids = [
+            looksLikeUuid(line.unit_of_measure_snapshot) ? normalizeText(line.unit_of_measure_snapshot) : null,
+            sourceLine?.unit_of_measure_snapshot && looksLikeUuid(sourceLine.unit_of_measure_snapshot)
+              ? normalizeText(sourceLine.unit_of_measure_snapshot)
+              : null,
+            item?.base_uom_id || null,
+          ]
+          return ids.filter(Boolean)
+        }) as string[],
+    ),
+  )
+
+  let uomById = new Map<string, UomDisplaySource>()
+  if (uomIds.length) {
+    const { data: uoms, error: uomError } = await supabase
+      .from('uoms')
+      .select('id,code')
+      .in('id', uomIds)
+
+    if (uomError) {
+      mzRuntimeError('salesAdjustmentLines.uomsLoad.failed', uomError, {
+        companyId,
+        uomCount: uomIds.length,
+      })
+    } else {
+      uomById = new Map<string, UomDisplaySource>(((uoms || []) as UomDisplaySource[]).map((row) => [row.id, row]))
+    }
+  }
+
+  return lines.map((line) => {
+    const item = line.item_id ? itemById.get(line.item_id) : undefined
+    const sourceLine = line.sales_invoice_line_id ? sourceLineById.get(line.sales_invoice_line_id) : undefined
+    const sourceUnitOfMeasure = sourceLine?.unit_of_measure_snapshot && looksLikeUuid(sourceLine.unit_of_measure_snapshot)
+      ? uomById.get(normalizeText(sourceLine.unit_of_measure_snapshot))?.code || null
+      : sourceLine?.unit_of_measure_snapshot || null
+    const snapshotUnitOfMeasure = looksLikeUuid(line.unit_of_measure_snapshot)
+      ? uomById.get(normalizeText(line.unit_of_measure_snapshot))?.code || null
+      : null
+    const itemUnitOfMeasure = item?.base_uom_id ? uomById.get(item.base_uom_id)?.code || null : null
+
+    return {
+      ...line,
+      display_description: resolveInvoiceLineDescription(
+        line.description,
+        sourceLine?.description,
+        item?.name,
+        item?.sku,
+      ),
+      display_unit_of_measure: resolveInvoiceLineUnitOfMeasure(
+        snapshotUnitOfMeasure || line.unit_of_measure_snapshot,
+        sourceUnitOfMeasure,
+        itemUnitOfMeasure,
+      ),
+    }
+  })
+}
+
 export async function listSalesInvoiceDocumentLines(companyId: string, invoiceId: string) {
   mzRuntimeDebug('salesInvoiceLines.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
@@ -845,7 +1079,7 @@ export async function listSalesCreditNotesForInvoice(companyId: string, invoiceI
   mzRuntimeDebug('creditNotes.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_credit_notes')
-    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,vat_exemption_reason_text,document_workflow_status,issued_at,created_at,updated_at')
+    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,vat_exemption_reason_text,document_workflow_status,issued_at,seller_legal_name_snapshot,seller_trade_name_snapshot,seller_nuit_snapshot,seller_address_line1_snapshot,seller_address_line2_snapshot,seller_city_snapshot,seller_state_snapshot,seller_postal_code_snapshot,seller_country_code_snapshot,buyer_legal_name_snapshot,buyer_nuit_snapshot,buyer_address_line1_snapshot,buyer_address_line2_snapshot,buyer_city_snapshot,buyer_state_snapshot,buyer_postal_code_snapshot,buyer_country_code_snapshot,document_language_code_snapshot,computer_processed_phrase_snapshot,compliance_rule_version_snapshot,created_at,updated_at')
     .eq('company_id', companyId)
     .eq('original_sales_invoice_id', invoiceId)
     .order('created_at', { ascending: false })
@@ -877,7 +1111,46 @@ export async function listSalesCreditNoteLines(companyId: string, noteIds: strin
   }
 
   mzRuntimeDebug('creditNoteLines.load.success', { companyId, noteCount: distinctIds.length, rowCount: data?.length ?? 0 })
-  return (data || []) as SalesCreditNoteLineRow[]
+  return await enrichSalesAdjustmentLines(companyId, (data || []) as SalesCreditNoteLineRow[])
+}
+
+export async function listSalesDebitNotesForInvoice(companyId: string, invoiceId: string) {
+  mzRuntimeDebug('debitNotes.load.start', { companyId, invoiceId })
+  const { data, error } = await supabase
+    .from('sales_debit_notes')
+    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,debit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,seller_legal_name_snapshot,seller_trade_name_snapshot,seller_nuit_snapshot,seller_address_line1_snapshot,seller_address_line2_snapshot,seller_city_snapshot,seller_state_snapshot,seller_postal_code_snapshot,seller_country_code_snapshot,buyer_legal_name_snapshot,buyer_nuit_snapshot,buyer_address_line1_snapshot,buyer_address_line2_snapshot,buyer_city_snapshot,buyer_state_snapshot,buyer_postal_code_snapshot,buyer_country_code_snapshot,document_language_code_snapshot,computer_processed_phrase_snapshot,compliance_rule_version_snapshot,document_workflow_status,issued_at,created_at,updated_at')
+    .eq('company_id', companyId)
+    .eq('original_sales_invoice_id', invoiceId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    mzRuntimeError('debitNotes.load.failed', error, { companyId, invoiceId })
+    throw error
+  }
+  mzRuntimeDebug('debitNotes.load.success', { companyId, invoiceId, rowCount: data?.length ?? 0 })
+  return (data || []) as SalesDebitNoteRow[]
+}
+
+export async function listSalesDebitNoteLines(companyId: string, noteIds: string[]) {
+  const distinctIds = Array.from(new Set(noteIds.filter(Boolean)))
+  if (!distinctIds.length) return [] as SalesDebitNoteLineRow[]
+
+  mzRuntimeDebug('debitNoteLines.load.start', { companyId, noteCount: distinctIds.length })
+  const { data, error } = await supabase
+    .from('sales_debit_note_lines')
+    .select('*')
+    .eq('company_id', companyId)
+    .in('sales_debit_note_id', distinctIds)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    mzRuntimeError('debitNoteLines.load.failed', error, { companyId, noteCount: distinctIds.length })
+    throw error
+  }
+
+  mzRuntimeDebug('debitNoteLines.load.success', { companyId, noteCount: distinctIds.length, rowCount: data?.length ?? 0 })
+  return await enrichSalesAdjustmentLines(companyId, (data || []) as SalesDebitNoteLineRow[])
 }
 
 export async function updateSalesInvoiceDraftDates(
@@ -1240,7 +1513,9 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
   return { invoiceId: invoice.id, internalReference: invoice.internal_reference, existed: false }
 }
 
-function normalizeCreditNoteDraftLine(line: SalesCreditNoteDraftLineInput) {
+function normalizeSalesNoteDraftLine(
+  line: SalesCreditNoteDraftLineInput | SalesDebitNoteDraftLineInput,
+) {
   const qty = roundMoney(toNumber(line.qty))
   const lineTotal = roundMoney(toNumber(line.lineTotal))
   const taxAmount = roundMoney(toNumber(line.taxAmount))
@@ -1261,13 +1536,15 @@ function normalizeCreditNoteDraftLine(line: SalesCreditNoteDraftLineInput) {
   }
 }
 
-function buildCreditAvailabilityBySourceLine(
-  invoiceLines: SalesInvoiceDocumentLineRow[],
-  issuedCreditNoteLines: SalesCreditNoteLineRow[],
-) {
+function buildSourceLineRollupById<T extends {
+  sales_invoice_line_id: string | null
+  qty: number
+  line_total: number
+  tax_amount: number
+}>(lines: T[]) {
   const rollupBySourceLineId = new Map<string, { qty: number; lineTotal: number; taxAmount: number }>()
 
-  issuedCreditNoteLines.forEach((line) => {
+  lines.forEach((line) => {
     const sourceLineId = normalizeText(line.sales_invoice_line_id)
     if (!sourceLineId) return
     const current = rollupBySourceLineId.get(sourceLineId) || { qty: 0, lineTotal: 0, taxAmount: 0 }
@@ -1276,6 +1553,15 @@ function buildCreditAvailabilityBySourceLine(
     current.taxAmount = roundMoney(current.taxAmount + toNumber(line.tax_amount))
     rollupBySourceLineId.set(sourceLineId, current)
   })
+
+  return rollupBySourceLineId
+}
+
+function buildCreditAvailabilityBySourceLine(
+  invoiceLines: SalesInvoiceDocumentLineRow[],
+  issuedCreditNoteLines: SalesCreditNoteLineRow[],
+) {
+  const rollupBySourceLineId = buildSourceLineRollupById(issuedCreditNoteLines)
 
   return invoiceLines.map((line) => {
     const alreadyCredited = rollupBySourceLineId.get(line.id) || { qty: 0, lineTotal: 0, taxAmount: 0 }
@@ -1300,7 +1586,7 @@ export async function createAndIssueSalesCreditNoteForInvoice(
   }
 
   const normalizedLines = input.lines
-    .map(normalizeCreditNoteDraftLine)
+    .map(normalizeSalesNoteDraftLine)
     .filter((line) =>
       line.salesInvoiceLineId
       && (line.lineTotal > 0 || line.taxAmount > 0)
@@ -1412,6 +1698,134 @@ export async function createAndIssueSalesCreditNoteForInvoice(
   return issuedNote as SalesCreditNoteRow
 }
 
+export async function createAndIssueSalesDebitNoteForInvoice(
+  companyId: string,
+  invoiceId: string,
+  input: CreateSalesDebitNoteInput,
+) {
+  mzRuntimeDebug('debitNote.issueFromInvoice.start', { companyId, invoiceId, requestedLineCount: input.lines.length })
+  const trimmedReason = normalizeText(input.correctionReasonText)
+  if (!trimmedReason) {
+    throw new Error('A correction reason is required to issue a debit note.')
+  }
+
+  const normalizedLines = input.lines
+    .map(normalizeSalesNoteDraftLine)
+    .filter((line) =>
+      line.salesInvoiceLineId
+      && (line.lineTotal > 0 || line.taxAmount > 0)
+      && line.qty >= 0,
+    )
+
+  if (!normalizedLines.length) {
+    throw new Error('Select at least one invoice line with a positive debit value before issuing the debit note.')
+  }
+
+  const [invoice, invoiceLines] = await Promise.all([
+    getSalesInvoiceDocument(companyId, invoiceId),
+    listSalesInvoiceDocumentLines(companyId, invoiceId),
+  ])
+
+  if (!invoice) {
+    throw new Error('Sales invoice not found for the active company.')
+  }
+  if (invoice.document_workflow_status !== 'issued') {
+    throw new Error('Debit notes can only be created from issued sales invoices.')
+  }
+  if (!invoiceLines.length) {
+    throw new Error('The issued sales invoice has no source lines for a debit note.')
+  }
+
+  const invoiceLineById = new Map(invoiceLines.map((line) => [line.id, line]))
+  const invalidLine = normalizedLines.find((line) => !invoiceLineById.has(line.salesInvoiceLineId))
+  if (invalidLine) {
+    throw new Error('Every debit note line must point to a source line on the original issued invoice.')
+  }
+
+  const debitNoteDate = normalizeText(input.debitNoteDate) || isoToday()
+  const dueDateCandidate = normalizeText(input.dueDate) || normalizeText(invoice.due_date) || debitNoteDate
+  const dueDate = dueDateCandidate >= debitNoteDate ? dueDateCandidate : debitNoteDate
+  const subtotal = roundMoney(normalizedLines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0))
+  const taxTotal = roundMoney(normalizedLines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0))
+  const totalAmount = roundMoney(subtotal + taxTotal)
+
+  const { data: note, error: noteError } = await supabase
+    .from('sales_debit_notes')
+    .insert({
+      company_id: companyId,
+      original_sales_invoice_id: invoice.id,
+      customer_id: invoice.customer_id,
+      debit_note_date: debitNoteDate,
+      due_date: dueDate,
+      currency_code: invoice.currency_code,
+      fx_to_base: invoice.fx_to_base,
+      subtotal,
+      tax_total: taxTotal,
+      total_amount: totalAmount,
+      correction_reason_text: trimmedReason,
+      source_origin: 'native',
+      document_workflow_status: 'draft',
+    })
+    .select('id,internal_reference')
+    .single<{ id: string; internal_reference: string }>()
+
+  if (noteError) {
+    mzRuntimeError('debitNote.headerInsert.failed', noteError, { companyId, invoiceId })
+    throw new Error(humanizeRuntimeError(noteError, 'Failed to create the debit note draft header', 'sales_debit_notes.insert'))
+  }
+
+  const noteLinePayload = normalizedLines.map((line, index) => {
+    const sourceLine = invoiceLineById.get(line.salesInvoiceLineId)!
+    return {
+      company_id: companyId,
+      sales_debit_note_id: note.id,
+      sales_invoice_line_id: sourceLine.id,
+      item_id: line.itemId ?? sourceLine.item_id,
+      description: line.description || sourceLine.display_description || sourceLine.description,
+      qty: line.qty,
+      unit_price: line.unitPrice,
+      tax_rate: line.taxRate ?? sourceLine.tax_rate,
+      tax_amount: line.taxAmount,
+      line_total: line.lineTotal,
+      unit_of_measure_snapshot: sourceLine.display_unit_of_measure || sourceLine.unit_of_measure_snapshot,
+      sort_order: line.sortOrder ?? sourceLine.sort_order ?? index,
+    }
+  })
+
+  const { error: noteLineError } = await supabase
+    .from('sales_debit_note_lines')
+    .insert(noteLinePayload)
+
+  if (noteLineError) {
+    mzRuntimeError('debitNote.linesInsert.failed', noteLineError, {
+      companyId,
+      invoiceId,
+      noteId: note.id,
+      lineCount: noteLinePayload.length,
+    })
+    await maybeVoidDraftDebitNote(companyId, note.id, 'Automatic debit note creation failed while inserting line items.')
+    throw new Error(humanizeRuntimeError(noteLineError, 'The debit note draft could not be completed. The draft was voided for manual review.', 'sales_debit_note_lines.insert'))
+  }
+
+  const { data: issuedNote, error: issueError } = await supabase.rpc('issue_sales_debit_note_mz', {
+    p_note_id: note.id,
+  })
+
+  if (issueError) {
+    mzRuntimeError('debitNote.issue.failed', issueError, { companyId, invoiceId, noteId: note.id, rpc: 'issue_sales_debit_note_mz' })
+    throw new Error(humanizeRuntimeError(issueError, 'Debit note issuance failed', 'rpc.issue_sales_debit_note_mz'))
+  }
+
+  mzRuntimeDebug('debitNote.issueFromInvoice.success', {
+    companyId,
+    invoiceId,
+    noteId: (issuedNote as SalesDebitNoteRow).id,
+    internalReference: (issuedNote as SalesDebitNoteRow).internal_reference,
+    issuedLineCount: noteLinePayload.length,
+  })
+  return issuedNote as SalesDebitNoteRow
+}
+
 export async function createAndIssueFullCreditNoteForInvoice(
   companyId: string,
   invoiceId: string,
@@ -1464,5 +1878,45 @@ export async function createAndIssueFullCreditNoteForInvoice(
     correctionReasonText,
     vatExemptionReasonText: vatExemptionReasonText ?? invoice.vat_exemption_reason_text,
     lines: fullCreditLines,
+  })
+}
+
+export async function createAndIssueFullSalesDebitNoteForInvoice(
+  companyId: string,
+  invoiceId: string,
+  correctionReasonText: string,
+  debitNoteDate?: string | null,
+  dueDate?: string | null,
+) {
+  const [invoice, invoiceLines] = await Promise.all([
+    getSalesInvoiceDocument(companyId, invoiceId),
+    listSalesInvoiceDocumentLines(companyId, invoiceId),
+  ])
+
+  if (!invoice) {
+    throw new Error('Sales invoice not found for the active company.')
+  }
+  if (invoice.document_workflow_status !== 'issued') {
+    throw new Error('Debit notes can only be created from issued sales invoices.')
+  }
+  if (!invoiceLines.length) {
+    throw new Error('The issued sales invoice has no source lines for a debit note.')
+  }
+
+  return await createAndIssueSalesDebitNoteForInvoice(companyId, invoiceId, {
+    correctionReasonText,
+    debitNoteDate,
+    dueDate,
+    lines: invoiceLines.map((line) => ({
+      salesInvoiceLineId: line.id,
+      itemId: line.item_id,
+      description: line.display_description || line.description,
+      qty: roundMoney(toNumber(line.qty)),
+      unitPrice: roundMoney(toNumber(line.unit_price)),
+      taxRate: line.tax_rate,
+      taxAmount: roundMoney(toNumber(line.tax_amount)),
+      lineTotal: roundMoney(toNumber(line.line_total)),
+      sortOrder: line.sort_order,
+    })),
   })
 }

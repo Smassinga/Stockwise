@@ -1,6 +1,7 @@
 export type SalesInvoiceWorkflowStatus = 'draft' | 'issued' | 'voided'
 export type VendorBillWorkflowStatus = 'draft' | 'posted' | 'voided'
 export type FinanceDocumentSettlementStatus = 'unsettled' | 'partially_settled' | 'settled' | 'overdue'
+export type SalesInvoiceAdjustmentStatus = 'none' | 'credited' | 'debited' | 'credited_and_debited'
 export type SalesInvoiceResolutionStatus =
   | 'draft'
   | 'voided'
@@ -43,7 +44,11 @@ export type SalesInvoiceStateRow = {
   settled_base: number
   credit_note_count: number
   credited_total_base: number
+  debit_note_count: number
+  debited_total_base: number
+  current_legal_total_base: number
   outstanding_base: number
+  adjustment_status: SalesInvoiceAdjustmentStatus
   credit_status: 'not_credited' | 'partially_credited' | 'fully_credited'
   settlement_status: FinanceDocumentSettlementStatus
   resolution_status: SalesInvoiceResolutionStatus
@@ -171,6 +176,20 @@ export function salesInvoiceResolutionLabelKey(status?: SalesInvoiceResolutionSt
       return 'financeDocs.resolution.issuedFullyCredited'
     default:
       return 'orders.status.unknown'
+  }
+}
+
+export function salesInvoiceAdjustmentLabelKey(status?: SalesInvoiceAdjustmentStatus | null) {
+  switch (status) {
+    case 'credited':
+      return 'financeDocs.adjustments.credited'
+    case 'debited':
+      return 'financeDocs.adjustments.debited'
+    case 'credited_and_debited':
+      return 'financeDocs.adjustments.creditedAndDebited'
+    case 'none':
+    default:
+      return 'financeDocs.adjustments.none'
   }
 }
 
