@@ -71,6 +71,7 @@ export type SalesInvoiceDocumentRow = {
   buyer_country_code_snapshot: string | null
   document_language_code_snapshot: string | null
   computer_processed_phrase_snapshot: string | null
+  vat_exemption_reason_text: string | null
   compliance_rule_version_snapshot: string | null
   document_workflow_status: 'draft' | 'issued' | 'voided'
   issued_at: string | null
@@ -150,10 +151,50 @@ export type SalesCreditNoteRow = {
   total_amount_mzn: number
   correction_reason_code: string | null
   correction_reason_text: string
+  vat_exemption_reason_text: string | null
   document_workflow_status: 'draft' | 'issued' | 'voided'
   issued_at: string | null
   created_at: string
   updated_at: string
+}
+
+export type SalesCreditNoteLineRow = {
+  id: string
+  company_id: string
+  sales_credit_note_id: string
+  sales_invoice_line_id: string | null
+  item_id: string | null
+  description: string
+  qty: number
+  unit_price: number
+  tax_rate: number | null
+  tax_amount: number
+  line_total: number
+  product_code_snapshot: string | null
+  unit_of_measure_snapshot: string | null
+  tax_category_code: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type SalesCreditNoteDraftLineInput = {
+  salesInvoiceLineId: string
+  itemId?: string | null
+  description?: string | null
+  qty: number
+  unitPrice?: number | null
+  taxRate?: number | null
+  taxAmount: number
+  lineTotal: number
+  sortOrder?: number | null
+}
+
+export type CreateSalesCreditNoteInput = {
+  correctionReasonText: string
+  vatExemptionReasonText?: string | null
+  creditNoteDate?: string | null
+  lines: SalesCreditNoteDraftLineInput[]
 }
 
 export type FinanceDocumentEventRow = {
@@ -804,7 +845,7 @@ export async function listSalesCreditNotesForInvoice(companyId: string, invoiceI
   mzRuntimeDebug('creditNotes.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_credit_notes')
-    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,document_workflow_status,issued_at,created_at,updated_at')
+    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,vat_exemption_reason_text,document_workflow_status,issued_at,created_at,updated_at')
     .eq('company_id', companyId)
     .eq('original_sales_invoice_id', invoiceId)
     .order('created_at', { ascending: false })
@@ -817,18 +858,48 @@ export async function listSalesCreditNotesForInvoice(companyId: string, invoiceI
   return (data || []) as SalesCreditNoteRow[]
 }
 
+export async function listSalesCreditNoteLines(companyId: string, noteIds: string[]) {
+  const distinctIds = Array.from(new Set(noteIds.filter(Boolean)))
+  if (!distinctIds.length) return [] as SalesCreditNoteLineRow[]
+
+  mzRuntimeDebug('creditNoteLines.load.start', { companyId, noteCount: distinctIds.length })
+  const { data, error } = await supabase
+    .from('sales_credit_note_lines')
+    .select('*')
+    .eq('company_id', companyId)
+    .in('sales_credit_note_id', distinctIds)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    mzRuntimeError('creditNoteLines.load.failed', error, { companyId, noteCount: distinctIds.length })
+    throw error
+  }
+
+  mzRuntimeDebug('creditNoteLines.load.success', { companyId, noteCount: distinctIds.length, rowCount: data?.length ?? 0 })
+  return (data || []) as SalesCreditNoteLineRow[]
+}
+
 export async function updateSalesInvoiceDraftDates(
   companyId: string,
   invoiceId: string,
   invoiceDate: string,
   dueDate: string,
+  vatExemptionReasonText?: string | null,
 ) {
-  mzRuntimeDebug('salesInvoiceDraftDates.save.start', { companyId, invoiceId, invoiceDate, dueDate })
+  mzRuntimeDebug('salesInvoiceDraftDates.save.start', {
+    companyId,
+    invoiceId,
+    invoiceDate,
+    dueDate,
+    hasVatExemptionReason: Boolean(normalizeText(vatExemptionReasonText)),
+  })
   const { data, error } = await supabase
     .from('sales_invoices')
     .update({
       invoice_date: invoiceDate,
       due_date: dueDate,
+      vat_exemption_reason_text: normalizeText(vatExemptionReasonText) || null,
     })
     .eq('company_id', companyId)
     .eq('id', invoiceId)
@@ -836,7 +907,13 @@ export async function updateSalesInvoiceDraftDates(
     .single<SalesInvoiceDocumentRow>()
 
   if (error) {
-    mzRuntimeError('salesInvoiceDraftDates.save.failed', error, { companyId, invoiceId, invoiceDate, dueDate })
+    mzRuntimeError('salesInvoiceDraftDates.save.failed', error, {
+      companyId,
+      invoiceId,
+      invoiceDate,
+      dueDate,
+      hasVatExemptionReason: Boolean(normalizeText(vatExemptionReasonText)),
+    })
     throw error
   }
   mzRuntimeDebug('salesInvoiceDraftDates.save.success', { companyId, invoiceId })
@@ -897,6 +974,10 @@ export async function prepareSalesInvoiceDraftForIssue(companyId: string, invoic
     if (!normalizeText(invoice.computer_processed_phrase_snapshot) && normalizeText(preview.computer_processed_phrase)) {
       headerPatch.computer_processed_phrase_snapshot = preview.computer_processed_phrase
     }
+  }
+
+  if (invoice.vat_exemption_reason_text != null && !normalizeText(invoice.vat_exemption_reason_text)) {
+    headerPatch.vat_exemption_reason_text = null
   }
 
   let patchedInvoice = invoice
@@ -1159,18 +1240,78 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
   return { invoiceId: invoice.id, internalReference: invoice.internal_reference, existed: false }
 }
 
-export async function createAndIssueFullCreditNoteForInvoice(
+function normalizeCreditNoteDraftLine(line: SalesCreditNoteDraftLineInput) {
+  const qty = roundMoney(toNumber(line.qty))
+  const lineTotal = roundMoney(toNumber(line.lineTotal))
+  const taxAmount = roundMoney(toNumber(line.taxAmount))
+  const unitPrice = qty > 0
+    ? roundMoney(toNumber(line.unitPrice, lineTotal / qty))
+    : roundMoney(toNumber(line.unitPrice, lineTotal))
+
+  return {
+    salesInvoiceLineId: normalizeText(line.salesInvoiceLineId),
+    itemId: line.itemId ?? null,
+    description: normalizeText(line.description),
+    qty,
+    unitPrice,
+    taxRate: line.taxRate == null ? null : roundMoney(toNumber(line.taxRate, 0)),
+    taxAmount,
+    lineTotal,
+    sortOrder: line.sortOrder == null ? null : Math.trunc(toNumber(line.sortOrder, 0)),
+  }
+}
+
+function buildCreditAvailabilityBySourceLine(
+  invoiceLines: SalesInvoiceDocumentLineRow[],
+  issuedCreditNoteLines: SalesCreditNoteLineRow[],
+) {
+  const rollupBySourceLineId = new Map<string, { qty: number; lineTotal: number; taxAmount: number }>()
+
+  issuedCreditNoteLines.forEach((line) => {
+    const sourceLineId = normalizeText(line.sales_invoice_line_id)
+    if (!sourceLineId) return
+    const current = rollupBySourceLineId.get(sourceLineId) || { qty: 0, lineTotal: 0, taxAmount: 0 }
+    current.qty = roundMoney(current.qty + toNumber(line.qty))
+    current.lineTotal = roundMoney(current.lineTotal + toNumber(line.line_total))
+    current.taxAmount = roundMoney(current.taxAmount + toNumber(line.tax_amount))
+    rollupBySourceLineId.set(sourceLineId, current)
+  })
+
+  return invoiceLines.map((line) => {
+    const alreadyCredited = rollupBySourceLineId.get(line.id) || { qty: 0, lineTotal: 0, taxAmount: 0 }
+    return {
+      sourceLine: line,
+      availableQty: roundMoney(Math.max(toNumber(line.qty) - alreadyCredited.qty, 0)),
+      availableLineTotal: roundMoney(Math.max(toNumber(line.line_total) - alreadyCredited.lineTotal, 0)),
+      availableTaxAmount: roundMoney(Math.max(toNumber(line.tax_amount) - alreadyCredited.taxAmount, 0)),
+    }
+  })
+}
+
+export async function createAndIssueSalesCreditNoteForInvoice(
   companyId: string,
   invoiceId: string,
-  correctionReasonText: string,
+  input: CreateSalesCreditNoteInput,
 ) {
-  mzRuntimeDebug('creditNote.issueFromInvoice.start', { companyId, invoiceId })
-  const trimmedReason = correctionReasonText.trim()
+  mzRuntimeDebug('creditNote.issueFromInvoice.start', { companyId, invoiceId, requestedLineCount: input.lines.length })
+  const trimmedReason = normalizeText(input.correctionReasonText)
   if (!trimmedReason) {
     throw new Error('A correction reason is required to issue a credit note.')
   }
 
-  const [invoice, lines] = await Promise.all([
+  const normalizedLines = input.lines
+    .map(normalizeCreditNoteDraftLine)
+    .filter((line) =>
+      line.salesInvoiceLineId
+      && (line.lineTotal > 0 || line.taxAmount > 0)
+      && line.qty >= 0,
+    )
+
+  if (!normalizedLines.length) {
+    throw new Error('Select at least one invoice line with a positive credit value before issuing the credit note.')
+  }
+
+  const [invoice, invoiceLines] = await Promise.all([
     getSalesInvoiceDocument(companyId, invoiceId),
     listSalesInvoiceDocumentLines(companyId, invoiceId),
   ])
@@ -1181,9 +1322,18 @@ export async function createAndIssueFullCreditNoteForInvoice(
   if (invoice.document_workflow_status !== 'issued') {
     throw new Error('Credit notes can only be created from issued sales invoices.')
   }
-  if (!lines.length) {
+  if (!invoiceLines.length) {
     throw new Error('The issued sales invoice has no source lines for a credit note.')
   }
+
+  const invoiceLineById = new Map(invoiceLines.map((line) => [line.id, line]))
+  const invalidLine = normalizedLines.find((line) => !invoiceLineById.has(line.salesInvoiceLineId))
+  if (invalidLine) {
+    throw new Error('Every credit note line must point to a source line on the original issued invoice.')
+  }
+
+  const trimmedVatExemptionReason = normalizeText(input.vatExemptionReasonText) || null
+  const creditNoteDate = normalizeText(input.creditNoteDate) || isoToday()
 
   const { data: note, error: noteError } = await supabase
     .from('sales_credit_notes')
@@ -1191,14 +1341,15 @@ export async function createAndIssueFullCreditNoteForInvoice(
       company_id: companyId,
       original_sales_invoice_id: invoice.id,
       customer_id: invoice.customer_id,
-      credit_note_date: isoToday(),
+      credit_note_date: creditNoteDate,
       due_date: null,
       currency_code: invoice.currency_code,
       fx_to_base: invoice.fx_to_base,
-      subtotal: invoice.subtotal,
-      tax_total: invoice.tax_total,
-      total_amount: invoice.total_amount,
+      subtotal: 0,
+      tax_total: 0,
+      total_amount: 0,
       correction_reason_text: trimmedReason,
+      vat_exemption_reason_text: trimmedVatExemptionReason,
       source_origin: 'native',
       document_workflow_status: 'draft',
     })
@@ -1210,19 +1361,22 @@ export async function createAndIssueFullCreditNoteForInvoice(
     throw new Error(humanizeRuntimeError(noteError, 'Failed to create the credit note draft header', 'sales_credit_notes.insert'))
   }
 
-  const noteLinePayload = lines.map((line, index) => ({
-    company_id: companyId,
-    sales_credit_note_id: note.id,
-    sales_invoice_line_id: line.id,
-    item_id: line.item_id,
-    description: line.description,
-    qty: line.qty,
-    unit_price: line.unit_price,
-    tax_rate: line.tax_rate,
-    tax_amount: line.tax_amount,
-    line_total: line.line_total,
-    sort_order: line.sort_order ?? index,
-  }))
+  const noteLinePayload = normalizedLines.map((line, index) => {
+    const sourceLine = invoiceLineById.get(line.salesInvoiceLineId)!
+    return {
+      company_id: companyId,
+      sales_credit_note_id: note.id,
+      sales_invoice_line_id: sourceLine.id,
+      item_id: line.itemId ?? sourceLine.item_id,
+      description: line.description || sourceLine.description,
+      qty: line.qty,
+      unit_price: line.unitPrice,
+      tax_rate: line.taxRate ?? sourceLine.tax_rate,
+      tax_amount: line.taxAmount,
+      line_total: line.lineTotal,
+      sort_order: line.sortOrder ?? sourceLine.sort_order ?? index,
+    }
+  })
 
   const { error: noteLineError } = await supabase
     .from('sales_credit_note_lines')
@@ -1253,6 +1407,62 @@ export async function createAndIssueFullCreditNoteForInvoice(
     invoiceId,
     noteId: (issuedNote as SalesCreditNoteRow).id,
     internalReference: (issuedNote as SalesCreditNoteRow).internal_reference,
+    issuedLineCount: noteLinePayload.length,
   })
   return issuedNote as SalesCreditNoteRow
+}
+
+export async function createAndIssueFullCreditNoteForInvoice(
+  companyId: string,
+  invoiceId: string,
+  correctionReasonText: string,
+  vatExemptionReasonText?: string | null,
+) {
+  const [invoice, invoiceLines, creditNotes] = await Promise.all([
+    getSalesInvoiceDocument(companyId, invoiceId),
+    listSalesInvoiceDocumentLines(companyId, invoiceId),
+    listSalesCreditNotesForInvoice(companyId, invoiceId),
+  ])
+
+  if (!invoice) {
+    throw new Error('Sales invoice not found for the active company.')
+  }
+  if (invoice.document_workflow_status !== 'issued') {
+    throw new Error('Credit notes can only be created from issued sales invoices.')
+  }
+
+  const issuedNoteIds = creditNotes
+    .filter((note) => note.document_workflow_status === 'issued')
+    .map((note) => note.id)
+  const issuedLines = await listSalesCreditNoteLines(companyId, issuedNoteIds)
+
+  const fullCreditLines = buildCreditAvailabilityBySourceLine(invoiceLines, issuedLines)
+    .map(({ sourceLine, availableQty, availableLineTotal, availableTaxAmount }) => {
+      const unitPrice = availableQty > 0
+        ? roundMoney(availableLineTotal / availableQty)
+        : roundMoney(availableLineTotal)
+
+      return {
+        salesInvoiceLineId: sourceLine.id,
+        itemId: sourceLine.item_id,
+        description: sourceLine.description,
+        qty: availableQty,
+        unitPrice,
+        taxRate: sourceLine.tax_rate,
+        taxAmount: availableTaxAmount,
+        lineTotal: availableLineTotal,
+        sortOrder: sourceLine.sort_order,
+      }
+    })
+    .filter((line) => line.lineTotal > 0 || line.taxAmount > 0)
+
+  if (!fullCreditLines.length) {
+    throw new Error('This invoice has no remaining creditable value. It may already be fully credited.')
+  }
+
+  return await createAndIssueSalesCreditNoteForInvoice(companyId, invoiceId, {
+    correctionReasonText,
+    vatExemptionReasonText: vatExemptionReasonText ?? invoice.vat_exemption_reason_text,
+    lines: fullCreditLines,
+  })
 }

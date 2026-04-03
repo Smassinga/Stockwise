@@ -19,6 +19,7 @@ export type SalesInvoiceOutputModel = {
   taxTotalMzn: number
   totalAmountMzn: number
   computerPhrase: string
+  vatExemptionReasonText: string | null
   brand: {
     name: string
     logoUrl: string | null
@@ -232,6 +233,7 @@ export function buildSalesInvoiceOutputModel(
     taxTotalMzn: Number(invoice.tax_total_mzn || 0),
     totalAmountMzn: Number(invoice.total_amount_mzn || 0),
     computerPhrase: textOrDash(invoice.computer_processed_phrase_snapshot),
+    vatExemptionReasonText: invoice.vat_exemption_reason_text?.trim() || null,
     brand: {
       name: textOrDash(options?.brandName || invoice.seller_trade_name_snapshot || invoice.seller_legal_name_snapshot),
       logoUrl: options?.logoUrl?.trim() || null,
@@ -708,8 +710,8 @@ function buildSalesInvoiceHtml(model: SalesInvoiceOutputModel) {
 
     <div class="summary">
       <section class="note-card">
-        <p class="note-title">Resumo fiscal</p>
-        <p class="note-body">Os dados comerciais e fiscais deste documento ficam congelados na emissão. Os totais em MZN representam a base legal utilizada para arquivo e conformidade.</p>
+        <p class="note-title">Motivo de isenção do IVA</p>
+        <p class="note-body">${escapeHtml(model.vatExemptionReasonText || 'Não aplicável a esta fatura.')}</p>
       </section>
 
       <section class="totals-card">
@@ -987,9 +989,16 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
   const summaryGap = 16
   const totalsWidth = 232
   const noteWidth = contentWidth - totalsWidth - summaryGap
-  const noteHeight = 106
   const totalsHeight = 198
-  if (cursorY + totalsHeight + 34 > pageHeight) {
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9.3)
+  const noteBodyLines = doc.splitTextToSize(
+    model.vatExemptionReasonText || 'Não aplicável a esta fatura.',
+    noteWidth - 32,
+  )
+  const noteHeight = Math.max(106, 56 + noteBodyLines.length * 11)
+  const lowerSectionHeight = Math.max(noteHeight, totalsHeight)
+  if (cursorY + lowerSectionHeight + 34 > pageHeight) {
     doc.addPage()
     cursorY = 42
   }
@@ -1000,15 +1009,12 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(30, 58, 138)
   doc.setFontSize(9.5)
-  doc.text('RESUMO FISCAL', marginLeft + 16, cursorY + 22)
+  doc.text('MOTIVO DE ISENÇÃO DO IVA', marginLeft + 16, cursorY + 22)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(71, 85, 105)
   doc.setFontSize(9.3)
   doc.text(
-    doc.splitTextToSize(
-      'Os dados comerciais e fiscais deste documento ficam congelados na emissão. Os totais em MZN representam a base legal usada para arquivo e conformidade.',
-      noteWidth - 32,
-    ),
+    noteBodyLines,
     marginLeft + 16,
     cursorY + 46,
   )
@@ -1045,7 +1051,7 @@ async function buildSalesInvoicePdfBlob(model: SalesInvoiceOutputModel) {
   doc.line(totalsX + 16, cursorY + 190, totalsX + totalsWidth - 16, cursorY + 190)
   drawTotalRow('Total fiscal', fmtCurrency(model.totalAmountMzn, 'MZN'), cursorY + 210, true)
 
-  const footerY = Math.max(cursorY + totalsHeight + 14, (((doc as any).lastAutoTable?.finalY as number | undefined) ?? cursorY) + 20)
+  const footerY = Math.max(cursorY + lowerSectionHeight + 14, (((doc as any).lastAutoTable?.finalY as number | undefined) ?? cursorY) + 20)
   if (footerY + 24 > pageHeight) {
     doc.addPage()
     doc.setDrawColor(226, 232, 240)
