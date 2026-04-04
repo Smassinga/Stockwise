@@ -45,6 +45,7 @@ const LAST_COMPANY_KEY = (userId: string | undefined) =>
 
 const ORG_QUERY_TIMEOUT_MS = 8000;
 const ACTIVE_COMPANY_SYNC_TIMEOUT_MS = 6000;
+const ORG_REFRESH_RETRY_MS = 700;
 
 function statusRank(s: MemberStatus) {
   return { active: 0, invited: 1, disabled: 2 }[s] ?? 3;
@@ -61,6 +62,26 @@ function roleRank(r: MemberRole) {
       VIEWER: 4,
     } as Record<string, number>
   )[r] ?? 9
+}
+
+function normalizeErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message.trim()
+  if (typeof error === 'string') return error.trim()
+  return String((error as any)?.message || '').trim()
+}
+
+function isTransientOrgFetchError(error: unknown) {
+  const message = normalizeErrorMessage(error).toLowerCase()
+  const code = String((error as any)?.code || '').trim().toLowerCase()
+
+  return (
+    message.includes('failed to fetch')
+    || message.includes('networkerror')
+    || message.includes('network request failed')
+    || message.includes('load failed')
+    || message.includes('timeout')
+    || code === 'aborterror'
+  )
 }
 
 async function syncActiveCompanyContext(id: string) {
@@ -94,6 +115,31 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const lastResolvedUserRef = useRef<string | null>(null);
   const lastSyncedContextRef = useRef<string | null>(null);
   const syncInFlightRef = useRef<string | null>(null);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
+  const orgSnapshotRef = useRef<{
+    companyId: string | null
+    companyName: string | null
+    myRole: CompanyRole | null
+    memberStatus: MemberStatus | null
+    companies: OrgCompany[]
+  }>({
+    companyId: null,
+    companyName: null,
+    myRole: null,
+    memberStatus: null,
+    companies: [],
+  });
+
+  useEffect(() => {
+    orgSnapshotRef.current = {
+      companyId,
+      companyName,
+      myRole,
+      memberStatus,
+      companies,
+    };
+  }, [companies, companyId, companyName, memberStatus, myRole]);
 
   function pickBest(
     rows: Array<{ company_id: string; role: MemberRole; status: MemberStatus; created_at?: string; user_id?: string | null }>
@@ -147,6 +193,15 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         syncInFlightRef.current = null;
       }
     }
+  };
+
+  const scheduleRetryRefresh = () => {
+    if (typeof window === 'undefined') return;
+    if (retryTimerRef.current != null) return;
+    retryTimerRef.current = window.setTimeout(() => {
+      retryTimerRef.current = null;
+      void refresh();
+    }, ORG_REFRESH_RETRY_MS);
   };
 
   const resolve = async () => {
@@ -211,6 +266,20 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     }
 
     if (memErr) {
+      const snapshot = orgSnapshotRef.current;
+      const keepCurrentOrg =
+        isTransientOrgFetchError(memErr)
+        && (
+          Boolean(snapshot.companyId)
+          || snapshot.companies.length > 0
+          || lastResolvedUserRef.current === user.id
+        );
+
+      if (keepCurrentOrg) {
+        scheduleRetryRefresh();
+        return;
+      }
+
       console.error("[Org] load memberships:", memErr);
       toast({
         title: "Error",
@@ -255,12 +324,18 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       compErr = e;
     }
     if (compErr) {
-      console.error("[Org] load companies:", compErr);
-      toast({
-        title: "Error",
-        description: "Failed to load company information",
-        variant: "destructive",
-      });
+      if (isTransientOrgFetchError(compErr) && orgSnapshotRef.current.companies.length > 0) {
+        scheduleRetryRefresh();
+        rows = orgSnapshotRef.current.companies;
+        compErr = null;
+      } else {
+        console.error("[Org] load companies:", compErr);
+        toast({
+          title: "Error",
+          description: "Failed to load company information",
+          variant: "destructive",
+        });
+      }
     }
 
     const list: OrgCompany[] = (rows ?? ids.map((id) => ({ id, name: null }))).map((r) => ({
@@ -300,19 +375,39 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   };
 
   const refresh = async () => {
-    setLoading(true);
-    try {
-      await resolve();
-    } catch (e) {
-      console.error("[Org] refresh failed:", e);
-      setCompanies([]);
-      setCompanyId(null);
-      setCompanyName(null);
-      setMyRole(null);
-      setMemberStatus(null);
-    } finally {
-      setLoading(false);
+    if (refreshInFlightRef.current) {
+      return await refreshInFlightRef.current;
     }
+
+    const work = (async () => {
+      if (retryTimerRef.current != null && typeof window !== 'undefined') {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+
+      setLoading(true);
+      try {
+        await resolve();
+      } catch (e) {
+        if (isTransientOrgFetchError(e) && (orgSnapshotRef.current.companyId || orgSnapshotRef.current.companies.length > 0)) {
+          scheduleRetryRefresh();
+          return;
+        }
+
+        console.error("[Org] refresh failed:", e);
+        setCompanies([]);
+        setCompanyId(null);
+        setCompanyName(null);
+        setMyRole(null);
+        setMemberStatus(null);
+      } finally {
+        setLoading(false);
+        refreshInFlightRef.current = null;
+      }
+    })();
+
+    refreshInFlightRef.current = work;
+    return await work;
   };
 
   useEffect(() => {
@@ -330,8 +425,8 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (!["SIGNED_IN", "SIGNED_OUT", "INITIAL_SESSION"].includes(event)) return;
-      refresh();
+      if (!["SIGNED_IN", "SIGNED_OUT"].includes(event)) return;
+      void refresh();
     });
 
     // Cross-tab sync of chosen company
@@ -351,6 +446,10 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      if (retryTimerRef.current != null && typeof window !== 'undefined') {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       sub?.subscription?.unsubscribe?.();
       if (isBrowser) {
         window.removeEventListener("storage", onStorage);

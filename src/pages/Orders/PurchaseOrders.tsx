@@ -1,7 +1,7 @@
 // src/pages/Orders/PurchaseOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/db'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -1098,6 +1098,17 @@ export default function PurchaseOrders() {
     () => (selectedPO ? polines.filter((line) => line.po_id === selectedPO.id) : []),
     [selectedPO, polines]
   )
+  const selectedPOState = useMemo(
+    () => (selectedPO ? purchaseStateById.get(selectedPO.id) : undefined),
+    [purchaseStateById, selectedPO],
+  )
+  const selectedPOAnchorHref = useMemo(
+    () =>
+      selectedPOState?.financial_anchor === 'vendor_bill' && selectedPOState.financial_anchor_document_id
+        ? `/vendor-bills/${encodeURIComponent(selectedPOState.financial_anchor_document_id)}`
+        : null,
+    [selectedPOState],
+  )
   const selectedPOOpenLines = useMemo(
     () => selectedPOLines.filter((line) => {
       const lineId = String(line.id || '')
@@ -1132,6 +1143,15 @@ export default function PurchaseOrders() {
 
   function purchaseState(po?: PO | null) {
     return po ? purchaseStateById.get(po.id) : undefined
+  }
+
+  function openPurchaseOrderDetail(po: PO) {
+    setSelectedPO(po)
+    setPoViewOpen(true)
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', 'purchase')
+    next.set('orderId', po.id)
+    setSearchParams(next, { replace: true })
   }
 
   function purchaseReceiptLabel(po?: PO | null) {
@@ -1934,7 +1954,7 @@ export default function PurchaseOrders() {
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                     <td className="py-3 pr-2">
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => { setSelectedPO(po); setPoViewOpen(true) }}>{tt('orders.view', 'View')}</Button>
+                        <Button size="sm" variant="secondary" onClick={() => openPurchaseOrderDetail(po)}>{tt('orders.view', 'View')}</Button>
                         <Button size="sm" variant="outline" onClick={() => printPO(po)}>{tt('orders.print', 'Print')}</Button>
                         {String(po.status).toLowerCase() === 'draft' && (
                           <>
@@ -2055,6 +2075,11 @@ export default function PurchaseOrders() {
                 description={purchaseWorkflowSummary(selectedPO.status).help}
                 actions={
                   <>
+                    {selectedPOAnchorHref ? (
+                      <Button asChild variant="outline">
+                        <Link to={selectedPOAnchorHref}>{tt('orders.viewVendorBill', 'View vendor bill')}</Link>
+                      </Button>
+                    ) : null}
                     <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
                     {String(selectedPO.status).toLowerCase() === 'draft' && (
                       <Button variant="outline" onClick={() => approvePO(selectedPO.id)}>{tt('orders.approve', 'Approve')}</Button>
@@ -2082,6 +2107,37 @@ export default function PurchaseOrders() {
                   },
                 ]}
               />
+
+              <OrderDetailSection
+                title={tt('orders.billingAnchorTitle', 'Billing and settlement anchor')}
+                description={tt('orders.purchaseBillingAnchorHelp', 'Purchase orders stay operational until a vendor bill is posted. After posting, the vendor bill becomes the AP anchor and carries the live liability, adjustments, and settlement truth.')}
+              >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div>
+                    <Label>{tt('orders.purchaseBillingStatus', 'Billing status')}</Label>
+                    <div>{selectedPOState?.billing_status || tt('common.dash', '-')}</div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.purchaseFinancialAnchor', 'Active anchor')}</Label>
+                    <div>{selectedPOState?.financial_anchor === 'vendor_bill' ? tt('financeDocs.vendorBills.title', 'Vendor Bills') : tt('orders.po', 'PO')}</div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.purchaseFinancialAnchorReference', 'Anchor reference')}</Label>
+                    <div>{selectedPOState?.financial_anchor_reference || tt('common.dash', '-')}</div>
+                  </div>
+                  <div>
+                    <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
+                    <div>{formatMoneyBase(n(selectedPOState?.outstanding_base), baseCode)}</div>
+                  </div>
+                </div>
+                {selectedPOAnchorHref ? (
+                  <div className="mt-4">
+                    <Button asChild variant="outline">
+                      <Link to={selectedPOAnchorHref}>{tt('orders.viewVendorBill', 'View vendor bill')}</Link>
+                    </Button>
+                  </div>
+                ) : null}
+              </OrderDetailSection>
 
               <OrderDetailSection
                 title={tt('orders.documentDetails', 'Document details')}
@@ -2433,6 +2489,9 @@ export default function PurchaseOrders() {
                       <td className="py-2 px-3 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                       <td className="py-2 px-3 text-right">
                         <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="secondary" onClick={() => { setBrowserOpen(false); openPurchaseOrderDetail(po) }}>
+                            {tt('orders.view', 'View')}
+                          </Button>
                           <Button size="sm" variant="outline" onClick={() => printPO(po)}>
                             {tt('orders.print', 'Print')}
                           </Button>

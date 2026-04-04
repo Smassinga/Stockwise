@@ -2,6 +2,7 @@ export type SalesInvoiceWorkflowStatus = 'draft' | 'issued' | 'voided'
 export type VendorBillWorkflowStatus = 'draft' | 'posted' | 'voided'
 export type FinanceDocumentSettlementStatus = 'unsettled' | 'partially_settled' | 'settled' | 'overdue'
 export type SalesInvoiceAdjustmentStatus = 'none' | 'credited' | 'debited' | 'credited_and_debited'
+export type VendorBillAdjustmentStatus = 'none' | 'credited' | 'debited' | 'credited_and_debited'
 export type SalesInvoiceResolutionStatus =
   | 'draft'
   | 'voided'
@@ -18,6 +19,8 @@ export type VendorBillResolutionStatus =
   | 'posted_overdue'
   | 'posted_partially_settled'
   | 'posted_settled'
+  | 'posted_partially_credited'
+  | 'posted_fully_credited'
 
 export type SalesInvoiceStateRow = {
   id: string
@@ -81,7 +84,14 @@ export type VendorBillStateRow = {
   cash_paid_base: number
   bank_paid_base: number
   settled_base: number
+  credit_note_count: number
+  credited_total_base: number
+  debit_note_count: number
+  debited_total_base: number
+  current_legal_total_base: number
   outstanding_base: number
+  credit_status: 'not_credited' | 'partially_credited' | 'fully_credited'
+  adjustment_status: VendorBillAdjustmentStatus
   settlement_status: FinanceDocumentSettlementStatus
   resolution_status: VendorBillResolutionStatus
 }
@@ -199,6 +209,10 @@ export function vendorBillResolutionLabelKey(status?: VendorBillResolutionStatus
       return 'financeDocs.resolution.draft'
     case 'voided':
       return 'financeDocs.resolution.voided'
+    case 'posted_partially_credited':
+      return 'financeDocs.resolution.postedPartiallyCredited'
+    case 'posted_fully_credited':
+      return 'financeDocs.resolution.postedFullyCredited'
     case 'posted_open':
       return 'financeDocs.resolution.postedOpen'
     case 'posted_overdue':
@@ -209,5 +223,19 @@ export function vendorBillResolutionLabelKey(status?: VendorBillResolutionStatus
       return 'financeDocs.resolution.postedSettled'
     default:
       return 'orders.status.unknown'
+  }
+}
+
+export function vendorBillAdjustmentLabelKey(status?: VendorBillAdjustmentStatus | null) {
+  switch (status) {
+    case 'credited':
+      return 'financeDocs.adjustments.credited'
+    case 'debited':
+      return 'financeDocs.adjustments.debited'
+    case 'credited_and_debited':
+      return 'financeDocs.adjustments.creditedAndDebited'
+    case 'none':
+    default:
+      return 'financeDocs.adjustments.none'
   }
 }

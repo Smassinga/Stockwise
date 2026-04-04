@@ -309,10 +309,121 @@ export type CreateSalesCreditNoteInput = {
   lines: SalesCreditNoteDraftLineInput[]
 }
 
+export type VendorCreditNoteRow = {
+  id: string
+  company_id: string
+  original_vendor_bill_id: string
+  supplier_id: string | null
+  internal_reference: string
+  supplier_document_reference: string | null
+  supplier_document_reference_normalized: string | null
+  note_date: string
+  due_date: string | null
+  currency_code: string
+  fx_to_base: number
+  subtotal: number
+  tax_total: number
+  total_amount: number
+  subtotal_base: number
+  tax_total_base: number
+  total_amount_base: number
+  adjustment_reason_text: string
+  document_workflow_status: 'draft' | 'posted' | 'voided'
+  posted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type VendorCreditNoteLineRow = {
+  id: string
+  company_id: string
+  vendor_credit_note_id: string
+  vendor_bill_line_id: string | null
+  item_id: string | null
+  description: string
+  qty: number
+  unit_cost: number
+  tax_rate: number | null
+  tax_amount: number
+  line_total: number
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type VendorDebitNoteRow = {
+  id: string
+  company_id: string
+  original_vendor_bill_id: string
+  supplier_id: string | null
+  internal_reference: string
+  supplier_document_reference: string | null
+  supplier_document_reference_normalized: string | null
+  note_date: string
+  due_date: string
+  currency_code: string
+  fx_to_base: number
+  subtotal: number
+  tax_total: number
+  total_amount: number
+  subtotal_base: number
+  tax_total_base: number
+  total_amount_base: number
+  adjustment_reason_text: string
+  document_workflow_status: 'draft' | 'posted' | 'voided'
+  posted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type VendorDebitNoteLineRow = {
+  id: string
+  company_id: string
+  vendor_debit_note_id: string
+  vendor_bill_line_id: string | null
+  item_id: string | null
+  description: string
+  qty: number
+  unit_cost: number
+  tax_rate: number | null
+  tax_amount: number
+  line_total: number
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type VendorNoteDraftLineInput = {
+  vendorBillLineId: string
+  itemId?: string | null
+  description?: string | null
+  qty: number
+  unitCost?: number | null
+  taxRate?: number | null
+  taxAmount: number
+  lineTotal: number
+  sortOrder?: number | null
+}
+
+export type CreateVendorCreditNoteInput = {
+  adjustmentReasonText: string
+  supplierDocumentReference?: string | null
+  noteDate?: string | null
+  lines: VendorNoteDraftLineInput[]
+}
+
+export type CreateVendorDebitNoteInput = {
+  adjustmentReasonText: string
+  supplierDocumentReference?: string | null
+  noteDate?: string | null
+  dueDate?: string | null
+  lines: VendorNoteDraftLineInput[]
+}
+
 export type FinanceDocumentEventRow = {
   id: string
   company_id: string
-  document_kind: 'sales_invoice' | 'sales_credit_note' | 'sales_debit_note' | 'vendor_bill' | 'saft_moz_export'
+  document_kind: 'sales_invoice' | 'sales_credit_note' | 'sales_debit_note' | 'vendor_bill' | 'vendor_credit_note' | 'vendor_debit_note' | 'saft_moz_export'
   document_id: string
   event_type: string
   from_status: string | null
@@ -1919,4 +2030,398 @@ export async function createAndIssueFullSalesDebitNoteForInvoice(
       sortOrder: line.sort_order,
     })),
   })
+}
+
+type VendorBillAdjustmentSourceRow = {
+  id: string
+  company_id: string
+  supplier_id: string | null
+  purchase_order_id: string | null
+  internal_reference: string
+  supplier_invoice_reference: string | null
+  bill_date: string
+  due_date: string
+  currency_code: string
+  fx_to_base: number
+  document_workflow_status: 'draft' | 'posted' | 'voided'
+}
+
+type VendorBillAdjustmentLineSource = {
+  id: string
+  vendor_bill_id: string
+  item_id: string | null
+  description: string
+  qty: number
+  unit_cost: number
+  tax_rate: number | null
+  tax_amount: number
+  line_total: number
+  sort_order: number
+}
+
+function normalizeVendorNoteDraftLine(line: VendorNoteDraftLineInput) {
+  const qty = roundMoney(toNumber(line.qty))
+  const lineTotal = roundMoney(toNumber(line.lineTotal))
+  const taxAmount = roundMoney(toNumber(line.taxAmount))
+  const unitCost = qty > 0
+    ? roundMoney(toNumber(line.unitCost, lineTotal / qty))
+    : roundMoney(toNumber(line.unitCost, lineTotal))
+
+  return {
+    vendorBillLineId: normalizeText(line.vendorBillLineId),
+    itemId: line.itemId ?? null,
+    description: normalizeText(line.description),
+    qty,
+    unitCost,
+    taxRate: line.taxRate == null ? null : roundMoney(toNumber(line.taxRate, 0)),
+    taxAmount,
+    lineTotal,
+    sortOrder: line.sortOrder == null ? null : Math.trunc(toNumber(line.sortOrder, 0)),
+  }
+}
+
+async function maybeVoidDraftVendorCreditNote(companyId: string, noteId: string, reason: string) {
+  await supabase
+    .from('vendor_credit_notes')
+    .update({
+      document_workflow_status: 'voided',
+      void_reason: reason,
+    })
+    .eq('company_id', companyId)
+    .eq('id', noteId)
+}
+
+async function maybeVoidDraftVendorDebitNote(companyId: string, noteId: string, reason: string) {
+  await supabase
+    .from('vendor_debit_notes')
+    .update({
+      document_workflow_status: 'voided',
+      void_reason: reason,
+    })
+    .eq('company_id', companyId)
+    .eq('id', noteId)
+}
+
+async function getVendorBillForAdjustments(companyId: string, billId: string) {
+  const { data, error } = await supabase
+    .from('vendor_bills')
+    .select('id,company_id,supplier_id,purchase_order_id,internal_reference,supplier_invoice_reference,bill_date,due_date,currency_code,fx_to_base,document_workflow_status')
+    .eq('company_id', companyId)
+    .eq('id', billId)
+    .maybeSingle<VendorBillAdjustmentSourceRow>()
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to load the vendor bill for AP adjustments', 'vendor_bills.select'))
+  }
+
+  return data || null
+}
+
+async function listVendorBillLinesForAdjustments(companyId: string, billId: string) {
+  const { data, error } = await supabase
+    .from('vendor_bill_lines')
+    .select('id,vendor_bill_id,item_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order')
+    .eq('company_id', companyId)
+    .eq('vendor_bill_id', billId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to load the vendor bill lines for AP adjustments', 'vendor_bill_lines.select'))
+  }
+
+  return (data || []) as VendorBillAdjustmentLineSource[]
+}
+
+export async function listVendorCreditNotesForBill(companyId: string, billId: string) {
+  const { data, error } = await supabase
+    .from('vendor_credit_notes')
+    .select('id,company_id,original_vendor_bill_id,supplier_id,internal_reference,supplier_document_reference,supplier_document_reference_normalized,note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_base,tax_total_base,total_amount_base,adjustment_reason_text,document_workflow_status,posted_at,created_at,updated_at')
+    .eq('company_id', companyId)
+    .eq('original_vendor_bill_id', billId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to load supplier credit notes', 'vendor_credit_notes.select'))
+  }
+
+  return (data || []) as VendorCreditNoteRow[]
+}
+
+export async function listVendorCreditNoteLines(companyId: string, noteIds: string[]) {
+  const distinctIds = Array.from(new Set(noteIds.filter(Boolean)))
+  if (!distinctIds.length) return [] as VendorCreditNoteLineRow[]
+
+  const { data, error } = await supabase
+    .from('vendor_credit_note_lines')
+    .select('id,company_id,vendor_credit_note_id,vendor_bill_line_id,item_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order,created_at,updated_at')
+    .eq('company_id', companyId)
+    .in('vendor_credit_note_id', distinctIds)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to load supplier credit note lines', 'vendor_credit_note_lines.select'))
+  }
+
+  return (data || []) as VendorCreditNoteLineRow[]
+}
+
+export async function listVendorDebitNotesForBill(companyId: string, billId: string) {
+  const { data, error } = await supabase
+    .from('vendor_debit_notes')
+    .select('id,company_id,original_vendor_bill_id,supplier_id,internal_reference,supplier_document_reference,supplier_document_reference_normalized,note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_base,tax_total_base,total_amount_base,adjustment_reason_text,document_workflow_status,posted_at,created_at,updated_at')
+    .eq('company_id', companyId)
+    .eq('original_vendor_bill_id', billId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to load supplier debit notes', 'vendor_debit_notes.select'))
+  }
+
+  return (data || []) as VendorDebitNoteRow[]
+}
+
+export async function listVendorDebitNoteLines(companyId: string, noteIds: string[]) {
+  const distinctIds = Array.from(new Set(noteIds.filter(Boolean)))
+  if (!distinctIds.length) return [] as VendorDebitNoteLineRow[]
+
+  const { data, error } = await supabase
+    .from('vendor_debit_note_lines')
+    .select('id,company_id,vendor_debit_note_id,vendor_bill_line_id,item_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order,created_at,updated_at')
+    .eq('company_id', companyId)
+    .in('vendor_debit_note_id', distinctIds)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to load supplier debit note lines', 'vendor_debit_note_lines.select'))
+  }
+
+  return (data || []) as VendorDebitNoteLineRow[]
+}
+
+export async function createAndPostVendorCreditNoteForBill(
+  companyId: string,
+  billId: string,
+  input: CreateVendorCreditNoteInput,
+) {
+  const trimmedReason = normalizeText(input.adjustmentReasonText)
+  if (!trimmedReason) {
+    throw new Error('An adjustment reason is required before posting the supplier credit note.')
+  }
+
+  const normalizedLines = input.lines
+    .map(normalizeVendorNoteDraftLine)
+    .filter((line) =>
+      line.vendorBillLineId
+      && (line.lineTotal > 0 || line.taxAmount > 0)
+      && line.qty >= 0,
+    )
+
+  if (!normalizedLines.length) {
+    throw new Error('Select at least one vendor bill line with a positive credit value before posting the supplier credit note.')
+  }
+
+  const [bill, billLines] = await Promise.all([
+    getVendorBillForAdjustments(companyId, billId),
+    listVendorBillLinesForAdjustments(companyId, billId),
+  ])
+
+  if (!bill) {
+    throw new Error('Vendor bill not found for the active company.')
+  }
+  if (bill.document_workflow_status !== 'posted') {
+    throw new Error('Supplier credit notes can only be created from posted vendor bills.')
+  }
+  if (!billLines.length) {
+    throw new Error('The posted vendor bill has no source lines for a supplier credit note.')
+  }
+
+  const billLineById = new Map(billLines.map((line) => [line.id, line]))
+  const invalidLine = normalizedLines.find((line) => !billLineById.has(line.vendorBillLineId))
+  if (invalidLine) {
+    throw new Error('Every supplier credit note line must point to a source line on the original posted vendor bill.')
+  }
+
+  const supplierDocumentReference = normalizeText(input.supplierDocumentReference) || null
+  const noteDate = normalizeText(input.noteDate) || isoToday()
+
+  const { data: note, error: noteError } = await supabase
+    .from('vendor_credit_notes')
+    .insert({
+      company_id: companyId,
+      original_vendor_bill_id: bill.id,
+      supplier_id: bill.supplier_id,
+      supplier_document_reference: supplierDocumentReference,
+      note_date: noteDate,
+      due_date: null,
+      currency_code: bill.currency_code,
+      fx_to_base: bill.fx_to_base,
+      subtotal: 0,
+      tax_total: 0,
+      total_amount: 0,
+      subtotal_base: 0,
+      tax_total_base: 0,
+      total_amount_base: 0,
+      adjustment_reason_text: trimmedReason,
+      document_workflow_status: 'draft',
+    })
+    .select('id,internal_reference')
+    .single<{ id: string; internal_reference: string }>()
+
+  if (noteError) {
+    throw new Error(humanizeRuntimeError(noteError, 'Failed to create the supplier credit note draft header', 'vendor_credit_notes.insert'))
+  }
+
+  const noteLinePayload = normalizedLines.map((line, index) => {
+    const sourceLine = billLineById.get(line.vendorBillLineId)!
+    return {
+      company_id: companyId,
+      vendor_credit_note_id: note.id,
+      vendor_bill_line_id: sourceLine.id,
+      item_id: line.itemId ?? sourceLine.item_id,
+      description: line.description || sourceLine.description,
+      qty: line.qty,
+      unit_cost: line.unitCost,
+      tax_rate: line.taxRate ?? sourceLine.tax_rate,
+      tax_amount: line.taxAmount,
+      line_total: line.lineTotal,
+      sort_order: line.sortOrder ?? sourceLine.sort_order ?? index,
+    }
+  })
+
+  const { error: noteLineError } = await supabase
+    .from('vendor_credit_note_lines')
+    .insert(noteLinePayload)
+
+  if (noteLineError) {
+    await maybeVoidDraftVendorCreditNote(companyId, note.id, 'Automatic supplier credit note creation failed while inserting line items.')
+    throw new Error(humanizeRuntimeError(noteLineError, 'The supplier credit note draft could not be completed. The draft was voided for manual review.', 'vendor_credit_note_lines.insert'))
+  }
+
+  const { data: postedNote, error: postError } = await supabase.rpc('post_vendor_credit_note', {
+    p_note_id: note.id,
+  })
+
+  if (postError) {
+    throw new Error(humanizeRuntimeError(postError, 'Supplier credit note posting failed', 'rpc.post_vendor_credit_note'))
+  }
+
+  return postedNote as VendorCreditNoteRow
+}
+
+export async function createAndPostVendorDebitNoteForBill(
+  companyId: string,
+  billId: string,
+  input: CreateVendorDebitNoteInput,
+) {
+  const trimmedReason = normalizeText(input.adjustmentReasonText)
+  if (!trimmedReason) {
+    throw new Error('An adjustment reason is required before posting the supplier debit note.')
+  }
+
+  const normalizedLines = input.lines
+    .map(normalizeVendorNoteDraftLine)
+    .filter((line) =>
+      line.vendorBillLineId
+      && (line.lineTotal > 0 || line.taxAmount > 0)
+      && line.qty >= 0,
+    )
+
+  if (!normalizedLines.length) {
+    throw new Error('Select at least one vendor bill line with a positive debit value before posting the supplier debit note.')
+  }
+
+  const [bill, billLines] = await Promise.all([
+    getVendorBillForAdjustments(companyId, billId),
+    listVendorBillLinesForAdjustments(companyId, billId),
+  ])
+
+  if (!bill) {
+    throw new Error('Vendor bill not found for the active company.')
+  }
+  if (bill.document_workflow_status !== 'posted') {
+    throw new Error('Supplier debit notes can only be created from posted vendor bills.')
+  }
+  if (!billLines.length) {
+    throw new Error('The posted vendor bill has no source lines for a supplier debit note.')
+  }
+
+  const billLineById = new Map(billLines.map((line) => [line.id, line]))
+  const invalidLine = normalizedLines.find((line) => !billLineById.has(line.vendorBillLineId))
+  if (invalidLine) {
+    throw new Error('Every supplier debit note line must point to a source line on the original posted vendor bill.')
+  }
+
+  const supplierDocumentReference = normalizeText(input.supplierDocumentReference) || null
+  const noteDate = normalizeText(input.noteDate) || isoToday()
+  const dueDateCandidate = normalizeText(input.dueDate) || normalizeText(bill.due_date) || noteDate
+  const dueDate = dueDateCandidate >= noteDate ? dueDateCandidate : noteDate
+  const subtotal = roundMoney(normalizedLines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0))
+  const taxTotal = roundMoney(normalizedLines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0))
+  const totalAmount = roundMoney(subtotal + taxTotal)
+
+  const { data: note, error: noteError } = await supabase
+    .from('vendor_debit_notes')
+    .insert({
+      company_id: companyId,
+      original_vendor_bill_id: bill.id,
+      supplier_id: bill.supplier_id,
+      supplier_document_reference: supplierDocumentReference,
+      note_date: noteDate,
+      due_date: dueDate,
+      currency_code: bill.currency_code,
+      fx_to_base: bill.fx_to_base,
+      subtotal,
+      tax_total: taxTotal,
+      total_amount: totalAmount,
+      subtotal_base: roundMoney(subtotal * bill.fx_to_base),
+      tax_total_base: roundMoney(taxTotal * bill.fx_to_base),
+      total_amount_base: roundMoney(totalAmount * bill.fx_to_base),
+      adjustment_reason_text: trimmedReason,
+      document_workflow_status: 'draft',
+    })
+    .select('id,internal_reference')
+    .single<{ id: string; internal_reference: string }>()
+
+  if (noteError) {
+    throw new Error(humanizeRuntimeError(noteError, 'Failed to create the supplier debit note draft header', 'vendor_debit_notes.insert'))
+  }
+
+  const noteLinePayload = normalizedLines.map((line, index) => {
+    const sourceLine = billLineById.get(line.vendorBillLineId)!
+    return {
+      company_id: companyId,
+      vendor_debit_note_id: note.id,
+      vendor_bill_line_id: sourceLine.id,
+      item_id: line.itemId ?? sourceLine.item_id,
+      description: line.description || sourceLine.description,
+      qty: line.qty,
+      unit_cost: line.unitCost,
+      tax_rate: line.taxRate ?? sourceLine.tax_rate,
+      tax_amount: line.taxAmount,
+      line_total: line.lineTotal,
+      sort_order: line.sortOrder ?? sourceLine.sort_order ?? index,
+    }
+  })
+
+  const { error: noteLineError } = await supabase
+    .from('vendor_debit_note_lines')
+    .insert(noteLinePayload)
+
+  if (noteLineError) {
+    await maybeVoidDraftVendorDebitNote(companyId, note.id, 'Automatic supplier debit note creation failed while inserting line items.')
+    throw new Error(humanizeRuntimeError(noteLineError, 'The supplier debit note draft could not be completed. The draft was voided for manual review.', 'vendor_debit_note_lines.insert'))
+  }
+
+  const { data: postedNote, error: postError } = await supabase.rpc('post_vendor_debit_note', {
+    p_note_id: note.id,
+  })
+
+  if (postError) {
+    throw new Error(humanizeRuntimeError(postError, 'Supplier debit note posting failed', 'rpc.post_vendor_debit_note'))
+  }
+
+  return postedNote as VendorDebitNoteRow
 }
