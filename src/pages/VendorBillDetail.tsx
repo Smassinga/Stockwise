@@ -350,10 +350,11 @@ export default function VendorBillDetailPage() {
     return buildVendorBillOutputModel(row, lines, {
       brandName: brand.name,
       logoUrl: brand.logoUrl,
+      lang,
       supplier: supplierParty,
       company: companyParty,
     })
-  }, [brand.logoUrl, brand.name, companyParty, companyProfile, lines, row, supplierParty])
+  }, [brand.logoUrl, brand.name, companyParty, companyProfile, lang, lines, row, supplierParty])
 
   const creditNoteLinesByNoteId = useMemo(() => {
     const map = new Map<string, VendorCreditNoteLineRow[]>()
@@ -767,6 +768,7 @@ export default function VendorBillDetailPage() {
     return buildVendorCreditNoteOutputModel(note, creditNoteLinesByNoteId.get(note.id) || [], {
       brandName: brand.name,
       logoUrl: brand.logoUrl,
+      lang,
       originalBillReference: row.primary_reference || row.internal_reference,
       supplier: supplierParty,
       company: companyParty,
@@ -778,6 +780,7 @@ export default function VendorBillDetailPage() {
     return buildVendorDebitNoteOutputModel(note, debitNoteLinesByNoteId.get(note.id) || [], {
       brandName: brand.name,
       logoUrl: brand.logoUrl,
+      lang,
       originalBillReference: row.primary_reference || row.internal_reference,
       supplier: supplierParty,
       company: companyParty,

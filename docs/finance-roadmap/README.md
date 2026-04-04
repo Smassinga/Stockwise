@@ -25,6 +25,7 @@ Finance-document foundation already in place:
 - AR supports issuance plus credit notes and debit notes, including partial and cumulative adjustments
 - AP supports vendor bills plus supplier credit notes and supplier debit notes, including partial and cumulative adjustments
 - invoice and finance-document output already uses snapshot-backed legal fields rather than mutable masters
+- finance-document output now resolves language from the stored document snapshot first, then from the active app/document language fallback, with bilingual `pt` / `en` rendering
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -102,13 +103,15 @@ Target rule:
 Current state:
 
 - app locale selection exists in settings and UI
-- Mozambique fiscal settings also store `document_language_code`
-- finance-document outputs still contain hardcoded Portuguese labels and `pt-MZ` formatting paths
-- current output helpers do not yet branch on the active document/app language or the stored snapshot language code
+- Mozambique fiscal settings store `document_language_code`
+- finance-document output now uses this precedence rule:
+  - if the issued/post document has a stored language snapshot, use it
+  - otherwise fall back to the active app/document language
+- shared output helpers now render labels, headings, section names, footer wording, and date/number formatting in `pt` or `en` consistently across AR and AP documents
 
 Result:
 
-- this remains a tracked implementation gap, not completed behavior
+- this is now implemented behavior and should stay snapshot-first for issued/post documents
 
 ## F. Update Protocol
 
@@ -130,7 +133,6 @@ Status vocabulary:
 
 Current open decisions that need explicit closure in future work:
 
-- whether document language should follow the live app locale at render time or the snapshot language captured at issue/post time, while still meeting the requirement that current document selection drives the issued output language
 - whether approval escalation thresholds should be universal or company-configurable
 - whether month-close review should live in a dedicated finance workspace or be embedded into existing Settlements / document registers
 - whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
@@ -148,4 +150,3 @@ Current blocker summary:
 
 - no hard blocker prevents roadmap execution
 - the main risk is drift, not immediate technical blockage
-

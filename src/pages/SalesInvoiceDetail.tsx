@@ -320,9 +320,10 @@ export default function SalesInvoiceDetailPage() {
       ? buildSalesInvoiceOutputModel(invoice, lines, {
         brandName: brand.name,
         logoUrl: brand.logoUrl,
+        lang,
       })
       : null),
-    [brand.logoUrl, brand.name, invoice, isIssued, lines],
+    [brand.logoUrl, brand.name, invoice, isIssued, lang, lines],
   )
   const creditNoteLinesByNoteId = useMemo(() => {
     const map = new Map<string, SalesCreditNoteLineRow[]>()
@@ -1412,6 +1413,7 @@ export default function SalesInvoiceDetailPage() {
                                     {
                                       brandName: brand.name,
                                       logoUrl: brand.logoUrl,
+                                      lang,
                                       originalInvoiceReference: invoice.internal_reference,
                                     },
                                   )
@@ -1431,6 +1433,7 @@ export default function SalesInvoiceDetailPage() {
                                     {
                                       brandName: brand.name,
                                       logoUrl: brand.logoUrl,
+                                      lang,
                                       originalInvoiceReference: invoice.internal_reference,
                                     },
                                   )
@@ -1510,6 +1513,7 @@ export default function SalesInvoiceDetailPage() {
                                     {
                                       brandName: brand.name,
                                       logoUrl: brand.logoUrl,
+                                      lang,
                                       originalInvoiceReference: invoice.internal_reference,
                                     },
                                   )
@@ -1529,6 +1533,7 @@ export default function SalesInvoiceDetailPage() {
                                     {
                                       brandName: brand.name,
                                       logoUrl: brand.logoUrl,
+                                      lang,
                                       originalInvoiceReference: invoice.internal_reference,
                                     },
                                   )

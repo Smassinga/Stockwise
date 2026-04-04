@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   SalesCreditNoteLineRow,
   SalesCreditNoteRow,
   SalesDebitNoteLineRow,
@@ -11,6 +11,15 @@ import type {
   VendorDebitNoteRow,
 } from './mzFinance'
 import type { VendorBillLineRow, VendorBillStateRow } from './financeDocuments'
+import {
+  formatOutputCurrency,
+  formatOutputDate,
+  formatOutputNumber,
+  getOutputCopy,
+  localizeComputerPhrase,
+  resolveDocumentOutputLanguage,
+  type OutputLanguage,
+} from './financeDocumentOutputLanguage'
 
 type PdfSuite = { jsPDF: typeof import('jspdf').default; autoTable: (...args: any[]) => void }
 type OutputParty = {
@@ -32,6 +41,7 @@ type OutputLine = {
 }
 
 export type FinanceDocumentOutputModel = {
+  language: OutputLanguage
   documentId: string
   legalReference: string
   documentTypeLabel: string
@@ -58,6 +68,12 @@ export type FinanceDocumentOutputModel = {
 
 export type SalesInvoiceOutputModel = FinanceDocumentOutputModel
 
+type BrandOptions = {
+  brandName?: string | null
+  logoUrl?: string | null
+  lang?: string | null
+}
+
 let pdfSuitePromise: Promise<PdfSuite> | null = null
 
 const css = `
@@ -65,10 +81,10 @@ const css = `
 `
 
 const textOrDash = (value: string | null | undefined) => String(value || '').trim() || '-'
-const fmtCurrency = (amount: number, currencyCode: string) =>
-  new Intl.NumberFormat('pt-MZ', { style: 'currency', currency: currencyCode || 'MZN' }).format(amount || 0)
-const fmtNumber = (value: number, digits = 2) =>
-  new Intl.NumberFormat('pt-MZ', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value || 0)
+const fmtCurrency = (language: OutputLanguage, amount: number, currencyCode: string) =>
+  formatOutputCurrency(language, amount, currencyCode)
+const fmtNumber = (language: OutputLanguage, value: number, digits = 2) =>
+  formatOutputNumber(language, value, digits)
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -81,25 +97,17 @@ const buildAddressLines = (parts: Array<string | null | undefined>) =>
 const noteText = (...parts: Array<string | null | undefined>) =>
   parts.map((part) => String(part || '').trim()).filter(Boolean).join('\n\n').trim()
 
-function invoiceWorkflowText(status: 'draft' | 'issued' | 'voided') {
+function workflowText(language: OutputLanguage, status: 'draft' | 'issued' | 'posted' | 'voided') {
+  const copy = getOutputCopy(language)
   switch (status) {
     case 'issued':
-      return 'Emitida'
-    case 'voided':
-      return 'Anulada'
-    default:
-      return 'Rascunho'
-  }
-}
-
-function apWorkflowText(status: 'draft' | 'posted' | 'voided') {
-  switch (status) {
+      return copy.workflow.issued
     case 'posted':
-      return 'Lançada'
+      return copy.workflow.posted
     case 'voided':
-      return 'Anulada'
+      return copy.workflow.voided
     default:
-      return 'Rascunho'
+      return copy.workflow.draft
   }
 }
 
@@ -139,28 +147,31 @@ function toVendorLines(
 export function buildSalesInvoiceOutputModel(
   invoice: SalesInvoiceDocumentRow,
   lines: SalesInvoiceDocumentLineRow[],
-  options?: { brandName?: string | null; logoUrl?: string | null },
+  options?: BrandOptions,
 ): SalesInvoiceOutputModel {
+  const language = resolveDocumentOutputLanguage(invoice.document_language_code_snapshot, options?.lang)
+  const copy = getOutputCopy(language)
   return {
+    language,
     documentId: invoice.id,
     legalReference: invoice.internal_reference,
-    documentTypeLabel: 'Fatura',
-    statusText: invoiceWorkflowText(invoice.document_workflow_status),
+    documentTypeLabel: copy.documentTypes.salesInvoice,
+    statusText: workflowText(language, invoice.document_workflow_status),
     brand: {
       name: textOrDash(options?.brandName || invoice.seller_trade_name_snapshot || invoice.seller_legal_name_snapshot),
       logoUrl: options?.logoUrl?.trim() || null,
     },
     metaRows: [
-      { label: 'Data da fatura', value: textOrDash(invoice.invoice_date) },
-      { label: 'Vencimento', value: textOrDash(invoice.due_date) },
-      { label: 'Moeda', value: textOrDash(invoice.currency_code || 'MZN') },
+      { label: copy.meta.invoiceDate, value: formatOutputDate(language, invoice.invoice_date) },
+      { label: copy.meta.dueDate, value: formatOutputDate(language, invoice.due_date) },
+      { label: copy.meta.currency, value: textOrDash(invoice.currency_code || 'MZN') },
     ],
-    leftPartyTitle: 'Emitente',
-    rightPartyTitle: 'Cliente',
+    leftPartyTitle: copy.parties.issuer,
+    rightPartyTitle: copy.parties.client,
     leftParty: {
       legalName: textOrDash(invoice.seller_legal_name_snapshot),
       tradeName: invoice.seller_trade_name_snapshot?.trim() || null,
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(invoice.seller_nuit_snapshot),
       address: buildAddressLines([
         invoice.seller_address_line1_snapshot,
@@ -172,7 +183,7 @@ export function buildSalesInvoiceOutputModel(
     },
     rightParty: {
       legalName: textOrDash(invoice.buyer_legal_name_snapshot),
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(invoice.buyer_nuit_snapshot),
       address: buildAddressLines([
         invoice.buyer_address_line1_snapshot,
@@ -183,8 +194,8 @@ export function buildSalesInvoiceOutputModel(
       ]),
     },
     lines: toSalesLines(lines),
-    noteTitle: 'Motivo de isenção do IVA',
-    noteBody: invoice.vat_exemption_reason_text?.trim() || 'Não aplicável a esta fatura.',
+    noteTitle: copy.notes.vatExemptionReason,
+    noteBody: invoice.vat_exemption_reason_text?.trim() || copy.notes.notApplicable,
     currencyCode: invoice.currency_code || 'MZN',
     subtotal: Number(invoice.subtotal || 0),
     taxTotal: Number(invoice.tax_total || 0),
@@ -193,35 +204,38 @@ export function buildSalesInvoiceOutputModel(
     subtotalBase: Number(invoice.subtotal_mzn || 0),
     taxTotalBase: Number(invoice.tax_total_mzn || 0),
     totalAmountBase: Number(invoice.total_amount_mzn || 0),
-    computerPhrase: textOrDash(invoice.computer_processed_phrase_snapshot),
+    computerPhrase: localizeComputerPhrase(language, invoice.computer_processed_phrase_snapshot),
   }
 }
 
 export function buildSalesCreditNoteOutputModel(
   note: SalesCreditNoteRow,
   lines: SalesCreditNoteLineRow[],
-  options?: { brandName?: string | null; logoUrl?: string | null; originalInvoiceReference?: string | null },
+  options?: BrandOptions & { originalInvoiceReference?: string | null },
 ): FinanceDocumentOutputModel {
+  const language = resolveDocumentOutputLanguage(note.document_language_code_snapshot, options?.lang)
+  const copy = getOutputCopy(language)
   return {
+    language,
     documentId: note.id,
     legalReference: note.internal_reference,
-    documentTypeLabel: 'Nota de crédito',
-    statusText: invoiceWorkflowText(note.document_workflow_status),
+    documentTypeLabel: copy.documentTypes.salesCreditNote,
+    statusText: workflowText(language, note.document_workflow_status),
     brand: {
       name: textOrDash(options?.brandName || note.seller_trade_name_snapshot || note.seller_legal_name_snapshot),
       logoUrl: options?.logoUrl?.trim() || null,
     },
     metaRows: [
-      { label: 'Data da nota', value: textOrDash(note.credit_note_date) },
-      { label: 'Fatura original', value: textOrDash(options?.originalInvoiceReference) },
-      { label: 'Moeda', value: textOrDash(note.currency_code || 'MZN') },
+      { label: copy.meta.noteDate, value: formatOutputDate(language, note.credit_note_date) },
+      { label: copy.meta.originalInvoice, value: textOrDash(options?.originalInvoiceReference) },
+      { label: copy.meta.currency, value: textOrDash(note.currency_code || 'MZN') },
     ],
-    leftPartyTitle: 'Emitente',
-    rightPartyTitle: 'Cliente',
+    leftPartyTitle: copy.parties.issuer,
+    rightPartyTitle: copy.parties.client,
     leftParty: {
       legalName: textOrDash(note.seller_legal_name_snapshot),
       tradeName: note.seller_trade_name_snapshot?.trim() || null,
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(note.seller_nuit_snapshot),
       address: buildAddressLines([
         note.seller_address_line1_snapshot,
@@ -233,7 +247,7 @@ export function buildSalesCreditNoteOutputModel(
     },
     rightParty: {
       legalName: textOrDash(note.buyer_legal_name_snapshot),
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(note.buyer_nuit_snapshot),
       address: buildAddressLines([
         note.buyer_address_line1_snapshot,
@@ -244,14 +258,14 @@ export function buildSalesCreditNoteOutputModel(
       ]),
     },
     lines: toSalesLines(lines),
-    noteTitle: 'Motivo da correção',
+    noteTitle: copy.notes.correctionReason,
     noteBody:
       noteText(
         note.correction_reason_text,
         note.vat_exemption_reason_text
-          ? `Motivo de isenção do IVA: ${note.vat_exemption_reason_text}`
+          ? `${copy.notes.vatExemptionReason}: ${note.vat_exemption_reason_text}`
           : null,
-      ) || 'Correção fiscal.',
+      ) || copy.notes.fiscalCorrection,
     currencyCode: note.currency_code || 'MZN',
     subtotal: Number(note.subtotal || 0),
     taxTotal: Number(note.tax_total || 0),
@@ -260,35 +274,38 @@ export function buildSalesCreditNoteOutputModel(
     subtotalBase: Number(note.subtotal_mzn || 0),
     taxTotalBase: Number(note.tax_total_mzn || 0),
     totalAmountBase: Number(note.total_amount_mzn || 0),
-    computerPhrase: textOrDash(note.computer_processed_phrase_snapshot),
+    computerPhrase: localizeComputerPhrase(language, note.computer_processed_phrase_snapshot),
   }
 }
 
 export function buildSalesDebitNoteOutputModel(
   note: SalesDebitNoteRow,
   lines: SalesDebitNoteLineRow[],
-  options?: { brandName?: string | null; logoUrl?: string | null; originalInvoiceReference?: string | null },
+  options?: BrandOptions & { originalInvoiceReference?: string | null },
 ): FinanceDocumentOutputModel {
+  const language = resolveDocumentOutputLanguage(note.document_language_code_snapshot, options?.lang)
+  const copy = getOutputCopy(language)
   return {
+    language,
     documentId: note.id,
     legalReference: note.internal_reference,
-    documentTypeLabel: 'Nota de débito',
-    statusText: invoiceWorkflowText(note.document_workflow_status),
+    documentTypeLabel: copy.documentTypes.salesDebitNote,
+    statusText: workflowText(language, note.document_workflow_status),
     brand: {
       name: textOrDash(options?.brandName || note.seller_trade_name_snapshot || note.seller_legal_name_snapshot),
       logoUrl: options?.logoUrl?.trim() || null,
     },
     metaRows: [
-      { label: 'Data da nota', value: textOrDash(note.debit_note_date) },
-      { label: 'Fatura original', value: textOrDash(options?.originalInvoiceReference) },
-      { label: 'Moeda', value: textOrDash(note.currency_code || 'MZN') },
+      { label: copy.meta.noteDate, value: formatOutputDate(language, note.debit_note_date) },
+      { label: copy.meta.originalInvoice, value: textOrDash(options?.originalInvoiceReference) },
+      { label: copy.meta.currency, value: textOrDash(note.currency_code || 'MZN') },
     ],
-    leftPartyTitle: 'Emitente',
-    rightPartyTitle: 'Cliente',
+    leftPartyTitle: copy.parties.issuer,
+    rightPartyTitle: copy.parties.client,
     leftParty: {
       legalName: textOrDash(note.seller_legal_name_snapshot),
       tradeName: note.seller_trade_name_snapshot?.trim() || null,
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(note.seller_nuit_snapshot),
       address: buildAddressLines([
         note.seller_address_line1_snapshot,
@@ -300,7 +317,7 @@ export function buildSalesDebitNoteOutputModel(
     },
     rightParty: {
       legalName: textOrDash(note.buyer_legal_name_snapshot),
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(note.buyer_nuit_snapshot),
       address: buildAddressLines([
         note.buyer_address_line1_snapshot,
@@ -311,8 +328,8 @@ export function buildSalesDebitNoteOutputModel(
       ]),
     },
     lines: toSalesLines(lines),
-    noteTitle: 'Motivo da correção',
-    noteBody: note.correction_reason_text?.trim() || 'Ajuste fiscal.',
+    noteTitle: copy.notes.correctionReason,
+    noteBody: note.correction_reason_text?.trim() || copy.notes.fiscalAdjustment,
     currencyCode: note.currency_code || 'MZN',
     subtotal: Number(note.subtotal || 0),
     taxTotal: Number(note.tax_total || 0),
@@ -321,57 +338,58 @@ export function buildSalesDebitNoteOutputModel(
     subtotalBase: Number(note.subtotal_mzn || 0),
     taxTotalBase: Number(note.tax_total_mzn || 0),
     totalAmountBase: Number(note.total_amount_mzn || 0),
-    computerPhrase: textOrDash(note.computer_processed_phrase_snapshot),
+    computerPhrase: localizeComputerPhrase(language, note.computer_processed_phrase_snapshot),
   }
 }
 
 export function buildVendorBillOutputModel(
   bill: VendorBillStateRow,
   lines: VendorBillLineRow[],
-  options: {
-    brandName?: string | null
-    logoUrl?: string | null
+  options: BrandOptions & {
     supplier: { name: string | null; taxId?: string | null; address?: Array<string | null | undefined> }
     company: { legalName: string | null; tradeName?: string | null; taxId?: string | null; address?: Array<string | null | undefined> }
   },
 ): FinanceDocumentOutputModel {
+  const language = resolveDocumentOutputLanguage(null, options.lang)
+  const copy = getOutputCopy(language)
   return {
+    language,
     documentId: bill.id,
     legalReference: textOrDash(bill.primary_reference || bill.internal_reference),
-    documentTypeLabel: 'Fatura de fornecedor',
-    statusText: apWorkflowText(bill.document_workflow_status),
+    documentTypeLabel: copy.documentTypes.vendorBill,
+    statusText: workflowText(language, bill.document_workflow_status),
     brand: {
       name: textOrDash(options.brandName || options.company.tradeName || options.company.legalName),
       logoUrl: options.logoUrl?.trim() || null,
     },
     metaRows: [
-      { label: 'Data da fatura', value: textOrDash(bill.supplier_invoice_date || bill.bill_date) },
-      { label: 'Vencimento', value: textOrDash(bill.due_date) },
-      { label: 'Moeda', value: textOrDash(bill.currency_code || 'MZN') },
+      { label: copy.meta.invoiceDate, value: formatOutputDate(language, bill.supplier_invoice_date || bill.bill_date) },
+      { label: copy.meta.dueDate, value: formatOutputDate(language, bill.due_date) },
+      { label: copy.meta.currency, value: textOrDash(bill.currency_code || 'MZN') },
     ],
-    leftPartyTitle: 'Fornecedor',
-    rightPartyTitle: 'Empresa',
+    leftPartyTitle: copy.parties.supplier,
+    rightPartyTitle: copy.parties.company,
     leftParty: {
       legalName: textOrDash(options.supplier.name || bill.counterparty_name),
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(options.supplier.taxId),
       address: buildAddressLines(options.supplier.address || []),
     },
     rightParty: {
       legalName: textOrDash(options.company.legalName),
       tradeName: options.company.tradeName?.trim() || null,
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(options.company.taxId),
       address: buildAddressLines(options.company.address || []),
     },
     lines: toVendorLines(lines),
-    noteTitle: 'Referências',
+    noteTitle: copy.notes.references,
     noteBody:
       noteText(
-        bill.supplier_invoice_reference ? `Referência da fatura do fornecedor: ${bill.supplier_invoice_reference}` : null,
-        bill.internal_reference ? `Chave interna Stockwise: ${bill.internal_reference}` : null,
-        bill.order_no ? `Pedido de compra associado: ${bill.order_no}` : null,
-      ) || 'Documento de contas a pagar.',
+        bill.supplier_invoice_reference ? `${copy.references.supplierInvoiceReference}: ${bill.supplier_invoice_reference}` : null,
+        bill.internal_reference ? `${copy.references.stockwiseKey}: ${bill.internal_reference}` : null,
+        bill.order_no ? `${copy.references.linkedPurchaseOrder}: ${bill.order_no}` : null,
+      ) || copy.notes.apDocument,
     currencyCode: bill.currency_code || 'MZN',
     subtotal: Number(bill.subtotal || 0),
     taxTotal: Number(bill.tax_total || 0),
@@ -380,58 +398,59 @@ export function buildVendorBillOutputModel(
     subtotalBase: Number(bill.subtotal || 0) * Number(bill.fx_to_base || 1),
     taxTotalBase: Number(bill.tax_total || 0) * Number(bill.fx_to_base || 1),
     totalAmountBase: Number(bill.total_amount_base || 0),
-    computerPhrase: 'PROCESSADO POR COMPUTADOR',
+    computerPhrase: localizeComputerPhrase(language),
   }
 }
 
 export function buildVendorCreditNoteOutputModel(
   note: VendorCreditNoteRow,
   lines: VendorCreditNoteLineRow[],
-  options: {
-    brandName?: string | null
-    logoUrl?: string | null
+  options: BrandOptions & {
     originalBillReference?: string | null
     supplier: { name: string | null; taxId?: string | null; address?: Array<string | null | undefined> }
     company: { legalName: string | null; tradeName?: string | null; taxId?: string | null; address?: Array<string | null | undefined> }
   },
 ): FinanceDocumentOutputModel {
+  const language = resolveDocumentOutputLanguage(null, options.lang)
+  const copy = getOutputCopy(language)
   return {
+    language,
     documentId: note.id,
     legalReference: textOrDash(note.supplier_document_reference || note.internal_reference),
-    documentTypeLabel: 'Nota de crédito do fornecedor',
-    statusText: apWorkflowText(note.document_workflow_status),
+    documentTypeLabel: copy.documentTypes.vendorCreditNote,
+    statusText: workflowText(language, note.document_workflow_status),
     brand: {
       name: textOrDash(options.brandName || options.company.tradeName || options.company.legalName),
       logoUrl: options.logoUrl?.trim() || null,
     },
     metaRows: [
-      { label: 'Data da nota', value: textOrDash(note.note_date) },
-      { label: 'Documento original', value: textOrDash(options.originalBillReference) },
-      { label: 'Moeda', value: textOrDash(note.currency_code || 'MZN') },
+      { label: copy.meta.noteDate, value: formatOutputDate(language, note.note_date) },
+      { label: copy.meta.originalBill, value: textOrDash(options.originalBillReference) },
+      { label: copy.meta.currency, value: textOrDash(note.currency_code || 'MZN') },
     ],
-    leftPartyTitle: 'Fornecedor',
-    rightPartyTitle: 'Empresa',
+    leftPartyTitle: copy.parties.supplier,
+    rightPartyTitle: copy.parties.company,
     leftParty: {
       legalName: textOrDash(options.supplier.name),
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(options.supplier.taxId),
       address: buildAddressLines(options.supplier.address || []),
     },
     rightParty: {
       legalName: textOrDash(options.company.legalName),
       tradeName: options.company.tradeName?.trim() || null,
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(options.company.taxId),
       address: buildAddressLines(options.company.address || []),
     },
     lines: toVendorLines(lines),
-    noteTitle: 'Motivo do ajuste',
+    noteTitle: copy.notes.correctionReason,
     noteBody:
       noteText(
         note.adjustment_reason_text,
-        note.supplier_document_reference ? `Referência do fornecedor: ${note.supplier_document_reference}` : null,
-        note.internal_reference ? `Chave interna Stockwise: ${note.internal_reference}` : null,
-      ) || 'Redução do passivo com fornecedor.',
+        note.supplier_document_reference ? `${copy.references.supplierInvoiceReference}: ${note.supplier_document_reference}` : null,
+        note.internal_reference ? `${copy.references.stockwiseKey}: ${note.internal_reference}` : null,
+      ) || copy.notes.supplierCreditAdjustment,
     currencyCode: note.currency_code || 'MZN',
     subtotal: Number(note.subtotal || 0),
     taxTotal: Number(note.tax_total || 0),
@@ -440,58 +459,59 @@ export function buildVendorCreditNoteOutputModel(
     subtotalBase: Number(note.subtotal_base || 0),
     taxTotalBase: Number(note.tax_total_base || 0),
     totalAmountBase: Number(note.total_amount_base || 0),
-    computerPhrase: 'PROCESSADO POR COMPUTADOR',
+    computerPhrase: localizeComputerPhrase(language),
   }
 }
 
 export function buildVendorDebitNoteOutputModel(
   note: VendorDebitNoteRow,
   lines: VendorDebitNoteLineRow[],
-  options: {
-    brandName?: string | null
-    logoUrl?: string | null
+  options: BrandOptions & {
     originalBillReference?: string | null
     supplier: { name: string | null; taxId?: string | null; address?: Array<string | null | undefined> }
     company: { legalName: string | null; tradeName?: string | null; taxId?: string | null; address?: Array<string | null | undefined> }
   },
 ): FinanceDocumentOutputModel {
+  const language = resolveDocumentOutputLanguage(null, options.lang)
+  const copy = getOutputCopy(language)
   return {
+    language,
     documentId: note.id,
     legalReference: textOrDash(note.supplier_document_reference || note.internal_reference),
-    documentTypeLabel: 'Nota de débito do fornecedor',
-    statusText: apWorkflowText(note.document_workflow_status),
+    documentTypeLabel: copy.documentTypes.vendorDebitNote,
+    statusText: workflowText(language, note.document_workflow_status),
     brand: {
       name: textOrDash(options.brandName || options.company.tradeName || options.company.legalName),
       logoUrl: options.logoUrl?.trim() || null,
     },
     metaRows: [
-      { label: 'Data da nota', value: textOrDash(note.note_date) },
-      { label: 'Documento original', value: textOrDash(options.originalBillReference) },
-      { label: 'Moeda', value: textOrDash(note.currency_code || 'MZN') },
+      { label: copy.meta.noteDate, value: formatOutputDate(language, note.note_date) },
+      { label: copy.meta.originalBill, value: textOrDash(options.originalBillReference) },
+      { label: copy.meta.currency, value: textOrDash(note.currency_code || 'MZN') },
     ],
-    leftPartyTitle: 'Fornecedor',
-    rightPartyTitle: 'Empresa',
+    leftPartyTitle: copy.parties.supplier,
+    rightPartyTitle: copy.parties.company,
     leftParty: {
       legalName: textOrDash(options.supplier.name),
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(options.supplier.taxId),
       address: buildAddressLines(options.supplier.address || []),
     },
     rightParty: {
       legalName: textOrDash(options.company.legalName),
       tradeName: options.company.tradeName?.trim() || null,
-      taxIdLabel: 'NUIT',
+      taxIdLabel: copy.parties.taxIdLabel,
       taxId: textOrDash(options.company.taxId),
       address: buildAddressLines(options.company.address || []),
     },
     lines: toVendorLines(lines),
-    noteTitle: 'Motivo do ajuste',
+    noteTitle: copy.notes.correctionReason,
     noteBody:
       noteText(
         note.adjustment_reason_text,
-        note.supplier_document_reference ? `Referência do fornecedor: ${note.supplier_document_reference}` : null,
-        note.internal_reference ? `Chave interna Stockwise: ${note.internal_reference}` : null,
-      ) || 'Aumento do passivo com fornecedor.',
+        note.supplier_document_reference ? `${copy.references.supplierInvoiceReference}: ${note.supplier_document_reference}` : null,
+        note.internal_reference ? `${copy.references.stockwiseKey}: ${note.internal_reference}` : null,
+      ) || copy.notes.supplierDebitAdjustment,
     currencyCode: note.currency_code || 'MZN',
     subtotal: Number(note.subtotal || 0),
     taxTotal: Number(note.tax_total || 0),
@@ -500,7 +520,7 @@ export function buildVendorDebitNoteOutputModel(
     subtotalBase: Number(note.subtotal_base || 0),
     taxTotalBase: Number(note.tax_total_base || 0),
     totalAmountBase: Number(note.total_amount_base || 0),
-    computerPhrase: 'PROCESSADO POR COMPUTADOR',
+    computerPhrase: localizeComputerPhrase(language),
   }
 }
 
@@ -508,7 +528,8 @@ function escapeBody(text: string) {
   return escapeHtml(text).replace(/\n/g, '<br/>')
 }
 
-function html(model: FinanceDocumentOutputModel) {
+export function renderFinanceDocumentHtml(model: FinanceDocumentOutputModel) {
+  const copy = getOutputCopy(model.language)
   const initials =
     (model.brand.name || model.leftParty.tradeName || model.leftParty.legalName || 'SW')
       .split(/\s+/)
@@ -518,8 +539,10 @@ function html(model: FinanceDocumentOutputModel) {
       .join('') || 'SW'
   const rows = model.lines
     .map((line) => {
-      const taxRate = line.taxRate == null ? '' : `<div class="taxRate">IVA ${escapeHtml(fmtNumber(line.taxRate, 2))}%</div>`
-      return `<tr><td class="descCol"><div class="desc">${escapeHtml(line.description)}</div>${taxRate}</td><td class="r qtyCol"><span class="tv">${escapeHtml(fmtNumber(line.qty, 2))}</span></td><td class="r unitCol"><span class="tv">${escapeHtml(textOrDash(line.unitOfMeasure))}</span></td><td class="r priceCol"><span class="tv">${escapeHtml(fmtCurrency(line.unitPrice, model.currencyCode))}</span></td><td class="r taxCol"><span class="tv">${escapeHtml(fmtCurrency(line.taxAmount, model.currencyCode))}</span></td><td class="r totalCol"><span class="tv">${escapeHtml(fmtCurrency(line.lineGrossTotal, model.currencyCode))}</span></td></tr>`
+      const taxRate = line.taxRate == null
+        ? ''
+        : `<div class="taxRate">${escapeHtml(copy.table.taxRatePrefix)} ${escapeHtml(fmtNumber(model.language, line.taxRate, 2))}%</div>`
+      return `<tr><td class="descCol"><div class="desc">${escapeHtml(line.description)}</div>${taxRate}</td><td class="r qtyCol"><span class="tv">${escapeHtml(fmtNumber(model.language, line.qty, 2))}</span></td><td class="r unitCol"><span class="tv">${escapeHtml(textOrDash(line.unitOfMeasure))}</span></td><td class="r priceCol"><span class="tv">${escapeHtml(fmtCurrency(model.language, line.unitPrice, model.currencyCode))}</span></td><td class="r taxCol"><span class="tv">${escapeHtml(fmtCurrency(model.language, line.taxAmount, model.currencyCode))}</span></td><td class="r totalCol"><span class="tv">${escapeHtml(fmtCurrency(model.language, line.lineGrossTotal, model.currencyCode))}</span></td></tr>`
     })
     .join('')
   const metaRows = model.metaRows
@@ -527,7 +550,7 @@ function html(model: FinanceDocumentOutputModel) {
     .join('')
   const leftTax = `${escapeHtml(model.leftParty.taxIdLabel)}: ${escapeHtml(model.leftParty.taxId)}`
   const rightTax = `${escapeHtml(model.rightParty.taxIdLabel)}: ${escapeHtml(model.rightParty.taxId)}`
-  return `<!doctype html><html><head><meta charset="utf-8"/><title>${escapeHtml(model.documentTypeLabel)} ${escapeHtml(model.legalReference)}</title><style>${css}</style></head><body><div class="doc"><header class="hero"><div class="logoWrap"><div class="logoMark">${model.brand.logoUrl ? `<img src="${escapeHtml(model.brand.logoUrl)}" alt="${escapeHtml(model.brand.name)}" class="logo"/>` : `<div class="logoFallback">${escapeHtml(initials)}</div>`}</div></div><div class="heroCopy"><div class="brand">${escapeHtml(model.brand.name)}</div><div class="docType">${escapeHtml(model.documentTypeLabel)}</div><h1 class="ref">${escapeHtml(model.legalReference)}</h1></div><div class="meta"><div><div class="chip">${escapeHtml(model.statusText)}</div></div><div class="metaGrid">${metaRows}</div></div></header><div class="parties"><section class="card"><div class="head">${escapeHtml(model.leftPartyTitle)}</div><div class="partyBody"><div class="partyName">${escapeHtml(model.leftParty.tradeName || model.leftParty.legalName)}</div>${model.leftParty.tradeName ? `<div class="muted">${escapeHtml(model.leftParty.legalName)}</div>` : ''}<div class="muted">${leftTax}</div><div class="address">${buildAddressLines(model.leftParty.address).map(escapeHtml).join('<br/>') || '&mdash;'}</div></div></section><section class="card"><div class="head">${escapeHtml(model.rightPartyTitle)}</div><div class="partyBody"><div class="partyName">${escapeHtml(model.rightParty.tradeName || model.rightParty.legalName)}</div>${model.rightParty.tradeName ? `<div class="muted">${escapeHtml(model.rightParty.legalName)}</div>` : ''}<div class="muted">${rightTax}</div><div class="address">${buildAddressLines(model.rightParty.address).map(escapeHtml).join('<br/>') || '&mdash;'}</div></div></section></div><section class="tableCard"><table><thead><tr><th class="descCol">Descrição</th><th class="r qtyCol">Qtd.</th><th class="r unitCol">Un.</th><th class="r priceCol">Preço unit.</th><th class="r taxCol">IVA</th><th class="r totalCol">Total</th></tr></thead><tbody>${rows}</tbody></table></section><div class="summary"><section class="note"><p class="noteTitle">${escapeHtml(model.noteTitle)}</p><p class="noteBody">${escapeBody(model.noteBody)}</p></section><section class="totals"><div class="section"><p class="totHead">${escapeHtml(model.currencyCode)}</p><div class="row"><div>Subtotal</div><div><span class="tv">${escapeHtml(fmtCurrency(model.subtotal, model.currencyCode))}</span></div></div><div class="row"><div>IVA</div><div><span class="tv">${escapeHtml(fmtCurrency(model.taxTotal, model.currencyCode))}</span></div></div><div class="row grand"><div>Total</div><div><span class="tv">${escapeHtml(fmtCurrency(model.totalAmount, model.currencyCode))}</span></div></div></div><div class="section"><p class="totHead">${escapeHtml(model.baseCurrencyCode)}</p><div class="row"><div>Subtotal fiscal</div><div><span class="tv">${escapeHtml(fmtCurrency(model.subtotalBase, model.baseCurrencyCode))}</span></div></div><div class="row"><div>IVA fiscal</div><div><span class="tv">${escapeHtml(fmtCurrency(model.taxTotalBase, model.baseCurrencyCode))}</span></div></div><div class="row grand"><div>Total fiscal</div><div><span class="tv">${escapeHtml(fmtCurrency(model.totalAmountBase, model.baseCurrencyCode))}</span></div></div></div></section></div><footer class="foot"><div class="footText">${escapeHtml(model.computerPhrase)}</div></footer></div></body></html>`
+  return `<!doctype html><html lang="${escapeHtml(model.language)}"><head><meta charset="utf-8"/><title>${escapeHtml(model.documentTypeLabel)} ${escapeHtml(model.legalReference)}</title><style>${css}</style></head><body><div class="doc"><header class="hero"><div class="logoWrap"><div class="logoMark">${model.brand.logoUrl ? `<img src="${escapeHtml(model.brand.logoUrl)}" alt="${escapeHtml(model.brand.name)}" class="logo"/>` : `<div class="logoFallback">${escapeHtml(initials)}</div>`}</div></div><div class="heroCopy"><div class="brand">${escapeHtml(model.brand.name)}</div><div class="docType">${escapeHtml(model.documentTypeLabel)}</div><h1 class="ref">${escapeHtml(model.legalReference)}</h1></div><div class="meta"><div><div class="chip">${escapeHtml(model.statusText)}</div></div><div class="metaGrid">${metaRows}</div></div></header><div class="parties"><section class="card"><div class="head">${escapeHtml(model.leftPartyTitle)}</div><div class="partyBody"><div class="partyName">${escapeHtml(model.leftParty.tradeName || model.leftParty.legalName)}</div>${model.leftParty.tradeName ? `<div class="muted">${escapeHtml(model.leftParty.legalName)}</div>` : ''}<div class="muted">${leftTax}</div><div class="address">${buildAddressLines(model.leftParty.address).map(escapeHtml).join('<br/>') || '&mdash;'}</div></div></section><section class="card"><div class="head">${escapeHtml(model.rightPartyTitle)}</div><div class="partyBody"><div class="partyName">${escapeHtml(model.rightParty.tradeName || model.rightParty.legalName)}</div>${model.rightParty.tradeName ? `<div class="muted">${escapeHtml(model.rightParty.legalName)}</div>` : ''}<div class="muted">${rightTax}</div><div class="address">${buildAddressLines(model.rightParty.address).map(escapeHtml).join('<br/>') || '&mdash;'}</div></div></section></div><section class="tableCard"><table><thead><tr><th class="descCol">${escapeHtml(copy.table.description)}</th><th class="r qtyCol">${escapeHtml(copy.table.qty)}</th><th class="r unitCol">${escapeHtml(copy.table.unit)}</th><th class="r priceCol">${escapeHtml(copy.table.unitPrice)}</th><th class="r taxCol">${escapeHtml(copy.table.vat)}</th><th class="r totalCol">${escapeHtml(copy.table.total)}</th></tr></thead><tbody>${rows}</tbody></table></section><div class="summary"><section class="note"><p class="noteTitle">${escapeHtml(model.noteTitle)}</p><p class="noteBody">${escapeBody(model.noteBody)}</p></section><section class="totals"><div class="section"><p class="totHead">${escapeHtml(model.currencyCode)}</p><div class="row"><div>${escapeHtml(copy.totals.subtotal)}</div><div><span class="tv">${escapeHtml(fmtCurrency(model.language, model.subtotal, model.currencyCode))}</span></div></div><div class="row"><div>${escapeHtml(copy.totals.vat)}</div><div><span class="tv">${escapeHtml(fmtCurrency(model.language, model.taxTotal, model.currencyCode))}</span></div></div><div class="row grand"><div>${escapeHtml(copy.totals.total)}</div><div><span class="tv">${escapeHtml(fmtCurrency(model.language, model.totalAmount, model.currencyCode))}</span></div></div></div><div class="section"><p class="totHead">${escapeHtml(model.baseCurrencyCode)}</p><div class="row"><div>${escapeHtml(copy.totals.baseSubtotal)}</div><div><span class="tv">${escapeHtml(fmtCurrency(model.language, model.subtotalBase, model.baseCurrencyCode))}</span></div></div><div class="row"><div>${escapeHtml(copy.totals.baseVat)}</div><div><span class="tv">${escapeHtml(fmtCurrency(model.language, model.taxTotalBase, model.baseCurrencyCode))}</span></div></div><div class="row grand"><div>${escapeHtml(copy.totals.baseTotal)}</div><div><span class="tv">${escapeHtml(fmtCurrency(model.language, model.totalAmountBase, model.baseCurrencyCode))}</span></div></div></div></section></div><footer class="foot"><div class="footText">${escapeHtml(model.computerPhrase)}</div></footer></div></body></html>`
 }
 
 function stablePdfValue(value: string | null | undefined) {
@@ -570,7 +593,8 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
   }
 }
 
-async function pdfBlob(model: FinanceDocumentOutputModel) {
+export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutputModel) {
+  const copy = getOutputCopy(model.language)
   const { jsPDF, autoTable } = await loadPdfSuite()
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -710,12 +734,12 @@ async function pdfBlob(model: FinanceDocumentOutputModel) {
   const totalWidth = contentWidth - descriptionWidth - qtyWidth - unitWidth - unitPriceWidth - taxWidth
   const rows = model.lines.map((line) => ({
     description: String(line.description || '-').replace(/([/_.:-])/g, '$1 ').replace(/(.{28})/g, '$1 '),
-    taxLine: line.taxRate == null ? null : `IVA ${fmtNumber(line.taxRate, 2)}%`,
-    qty: stablePdfValue(fmtNumber(line.qty, 2)),
+    taxLine: line.taxRate == null ? null : `${copy.table.taxRatePrefix} ${fmtNumber(model.language, line.taxRate, 2)}%`,
+    qty: stablePdfValue(fmtNumber(model.language, line.qty, 2)),
     unit: stablePdfValue(textOrDash(line.unitOfMeasure)),
-    unitPrice: stablePdfValue(fmtCurrency(line.unitPrice, model.currencyCode)),
-    tax: stablePdfValue(fmtCurrency(line.taxAmount, model.currencyCode)),
-    total: stablePdfValue(fmtCurrency(line.lineGrossTotal, model.currencyCode)),
+    unitPrice: stablePdfValue(fmtCurrency(model.language, line.unitPrice, model.currencyCode)),
+    tax: stablePdfValue(fmtCurrency(model.language, line.taxAmount, model.currencyCode)),
+    total: stablePdfValue(fmtCurrency(model.language, line.lineGrossTotal, model.currencyCode)),
   }))
 
   autoTable(doc as any, {
@@ -723,12 +747,12 @@ async function pdfBlob(model: FinanceDocumentOutputModel) {
     margin: { left: marginLeft, right: marginRight },
     tableWidth: contentWidth,
     columns: [
-      { header: 'Descrição', dataKey: 'description' },
-      { header: 'Qtd.', dataKey: 'qty' },
-      { header: 'Un.', dataKey: 'unit' },
-      { header: 'Preço unit.', dataKey: 'unitPrice' },
-      { header: 'IVA', dataKey: 'tax' },
-      { header: 'Total', dataKey: 'total' },
+      { header: copy.table.description, dataKey: 'description' },
+      { header: copy.table.qty, dataKey: 'qty' },
+      { header: copy.table.unit, dataKey: 'unit' },
+      { header: copy.table.unitPrice, dataKey: 'unitPrice' },
+      { header: copy.table.vat, dataKey: 'tax' },
+      { header: copy.table.total, dataKey: 'total' },
     ],
     body: rows,
     theme: 'grid',
@@ -823,20 +847,20 @@ async function pdfBlob(model: FinanceDocumentOutputModel) {
   doc.setTextColor(100, 116, 139)
   doc.setFontSize(9)
   doc.text(model.currencyCode.toUpperCase(), totalsX + 16, y + 22)
-  totalRow('Subtotal', fmtCurrency(model.subtotal, model.currencyCode), y + 50)
-  totalRow('IVA', fmtCurrency(model.taxTotal, model.currencyCode), y + 70)
+  totalRow(copy.totals.subtotal, fmtCurrency(model.language, model.subtotal, model.currencyCode), y + 50)
+  totalRow(copy.totals.vat, fmtCurrency(model.language, model.taxTotal, model.currencyCode), y + 70)
   doc.setDrawColor(219, 228, 239)
   doc.line(totalsX + 16, y + 82, totalsX + 216, y + 82)
-  totalRow('Total', fmtCurrency(model.totalAmount, model.currencyCode), y + 102, true)
+  totalRow(copy.totals.total, fmtCurrency(model.language, model.totalAmount, model.currencyCode), y + 102, true)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(100, 116, 139)
   doc.setFontSize(9)
   doc.text(model.baseCurrencyCode.toUpperCase(), totalsX + 16, y + 130)
-  totalRow('Subtotal fiscal', fmtCurrency(model.subtotalBase, model.baseCurrencyCode), y + 158)
-  totalRow('IVA fiscal', fmtCurrency(model.taxTotalBase, model.baseCurrencyCode), y + 178)
+  totalRow(copy.totals.baseSubtotal, fmtCurrency(model.language, model.subtotalBase, model.baseCurrencyCode), y + 158)
+  totalRow(copy.totals.baseVat, fmtCurrency(model.language, model.taxTotalBase, model.baseCurrencyCode), y + 178)
   doc.setDrawColor(219, 228, 239)
   doc.line(totalsX + 16, y + 190, totalsX + 216, y + 190)
-  totalRow('Total fiscal', fmtCurrency(model.totalAmountBase, model.baseCurrencyCode), y + 210, true)
+  totalRow(copy.totals.baseTotal, fmtCurrency(model.language, model.totalAmountBase, model.baseCurrencyCode), y + 210, true)
 
   const footerY = Math.max(y + sectionHeight + 14, ((((doc as any).lastAutoTable?.finalY as number | undefined) ?? y) + 20))
   doc.setDrawColor(226, 232, 240)
@@ -859,7 +883,8 @@ async function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
-async function triggerIframePrint(srcDoc: string) {
+async function triggerIframePrint(srcDoc: string, language: OutputLanguage) {
+  const errors = getOutputCopy(language).errors
   const iframe = document.createElement('iframe')
   iframe.setAttribute('aria-hidden', 'true')
   iframe.style.position = 'fixed'
@@ -872,7 +897,7 @@ async function triggerIframePrint(srcDoc: string) {
   document.body.appendChild(iframe)
   try {
     await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error('Não foi possível preparar o documento para impressão.')), 2500)
+      const timeout = window.setTimeout(() => reject(new Error(errors.printPrepFailed)), 2500)
       iframe.onload = () => {
         window.clearTimeout(timeout)
         resolve()
@@ -881,7 +906,7 @@ async function triggerIframePrint(srcDoc: string) {
     })
     const frameWindow = iframe.contentWindow
     if (!frameWindow || !iframe.contentDocument) {
-      throw new Error('Não foi possível abrir a janela de impressão.')
+      throw new Error(errors.printOpenFailed)
     }
     await new Promise((resolve) => window.setTimeout(resolve, 250))
     const cleanup = () => window.setTimeout(() => iframe.remove(), 1200)
@@ -897,30 +922,31 @@ async function triggerIframePrint(srcDoc: string) {
 
 export async function printFinanceDocument(model: FinanceDocumentOutputModel) {
   try {
-    await triggerIframePrint(html(model))
+    await triggerIframePrint(renderFinanceDocumentHtml(model), model.language)
   } catch {
-    await downloadBlob(await pdfBlob(model), `${safeFileName(model.legalReference)}.pdf`)
+    await downloadBlob(await generateFinanceDocumentPdfBlob(model), `${safeFileName(model.legalReference)}.pdf`)
   }
 }
 
 export async function downloadFinanceDocumentPdf(model: FinanceDocumentOutputModel) {
-  await downloadBlob(await pdfBlob(model), `${safeFileName(model.legalReference)}.pdf`)
+  await downloadBlob(await generateFinanceDocumentPdfBlob(model), `${safeFileName(model.legalReference)}.pdf`)
 }
 
 export async function shareFinanceDocument(model: FinanceDocumentOutputModel) {
+  const copy = getOutputCopy(model.language)
   if (!('share' in navigator) || typeof navigator.share !== 'function') {
-    throw new Error('Sharing is not available on the current device.')
+    throw new Error(copy.errors.shareUnavailable)
   }
-  const blob = await pdfBlob(model)
+  const blob = await generateFinanceDocumentPdfBlob(model)
   const file = new File([blob], `${safeFileName(model.legalReference)}.pdf`, { type: 'application/pdf' })
   const payload = {
     title: `${model.documentTypeLabel} ${model.legalReference}`,
-    text: `${model.documentTypeLabel} ${model.legalReference}`,
+    text: `${model.documentTypeLabel} ${model.legalReference}\n${copy.share.dateLabel}: ${model.metaRows[0]?.value || '-'}\n${copy.share.baseTotalLabel}: ${fmtCurrency(model.language, model.totalAmountBase, model.baseCurrencyCode)}`,
     files: [file],
   }
   const canShare = typeof (navigator as any).canShare === 'function' ? (navigator as any).canShare(payload) : true
   if (!canShare) {
-    throw new Error('Sharing the generated PDF is not supported on the current device.')
+    throw new Error(copy.errors.shareUnsupported)
   }
   await navigator.share(payload)
 }

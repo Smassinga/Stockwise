@@ -1,4 +1,4 @@
-# Finance Roadmap Decision Log
+﻿# Finance Roadmap Decision Log
 
 Record durable implementation decisions here so future sessions do not re-argue settled architecture.
 
@@ -14,6 +14,7 @@ Record durable implementation decisions here so future sessions do not re-argue 
 | 2026-04-04 | Legacy `COD-*` internal references remain for audit continuity, but new internal AP references use clear prefixes such as `VB`, `VCN`, and `VDN`. | `COD` is a legacy company-derived prefix, not a finance document-type code. | Avoid introducing unexplained prefixes on new finance screens. |
 | 2026-04-04 | Due reminders must be redesigned to follow the active finance anchor once an invoice exists. | Sales-order reminders contradict the settlement-anchor model after invoice issuance. | Track this in Phase 3 until implemented. |
 | 2026-04-04 | Document language behavior remains a tracked gap. | The app supports `pt`/`en` selection and stores document language, but output helpers still render Portuguese-first. | Resolve source-of-truth and implement bilingual output in a future roadmap item. |
+| 2026-04-04 | Finance-document output language is snapshot-first, with app/document language as fallback only when no snapshot exists. | Issued/post output must remain stable, while unsnapshotted documents still need to follow the currently selected language. | Keep HTML, PDF, print, and share output on the same bilingual helper and do not reintroduce Portuguese-only labels. |
 | 2026-04-04 | Engineering roadmap tracking stays repo-first for now. | Current Settings and Mozambique Compliance screens are tenant-facing operational/compliance surfaces, not the right place for engineering execution status. | If in-app visibility is ever needed, add a restricted internal/admin route rather than cluttering tenant-facing UI. |
 
 ## Implementation Notes
@@ -21,3 +22,4 @@ Record durable implementation decisions here so future sessions do not re-argue 
 - When a phase item is completed, add a new dated row instead of rewriting older decisions.
 - If a prior decision is superseded, add a new row that explicitly replaces it and reference the older decision in the description.
 - Keep this log focused on architecture and behavior decisions, not generic activity summaries.
+
