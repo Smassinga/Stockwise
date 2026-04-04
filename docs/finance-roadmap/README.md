@@ -85,10 +85,12 @@ Target rule:
 - if a sales invoice exists, reminders must anchor to the sales invoice
 - only if no sales invoice exists should reminder logic remain on the sales order
 
-Current state:
+Implemented behavior:
 
-- current docs, settings copy, and worker flow are still sales-order based
-- the current reminder worker still calls `build_due_reminder_batch` for sales-order reminders and still refers to order-oriented document links
+- reminders stay on the sales order only while no issued sales invoice exists
+- once an issued sales invoice exists, reminder anchor moves to the sales invoice
+- reminder eligibility now follows invoice outstanding and current legal value, including settlement and credit/debit adjustments
+- reminder language uses the invoice language snapshot when the active anchor is an invoice, otherwise company/app reminder language fallback applies
 
 ### Document language behavior
 
@@ -142,8 +144,7 @@ Current open decisions that need explicit closure in future work:
 Known risks:
 
 - finance-document behavior is already broad enough that undocumented assumptions can cause drift between sessions
-- reminder logic is currently misaligned with the settlement-anchor model
-- document language behavior can create incorrect user expectations because the app supports `pt`/`en` but output still behaves Portuguese-first
+- reminder logic now follows the active AR anchor, but still needs regression coverage to prevent drift
 - regression coverage is still largely manual
 
 Current blocker summary:

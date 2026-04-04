@@ -97,7 +97,7 @@ type SettingsData = {
     recipients?: string[];
     bcc?: string[];
     timezone?: string;
-    invoiceBaseUrl?: string;
+    invoiceBaseUrl?: string; // hidden legacy fallback for app/document links
     hours?: number[];
     sendAt?: string;
   };
@@ -146,7 +146,7 @@ const DEFAULTS: SettingsData = {
     recipients: [],
     bcc: [],
     timezone: "Africa/Maputo",
-    invoiceBaseUrl: "https://app.stockwise.app/invoices",
+    invoiceBaseUrl: "https://stockwiseapp.com",
     hours: [9],
     sendAt: "09:00",
   },
@@ -1384,7 +1384,7 @@ function Settings() {
           <div className="md:col-span-2 text-sm text-muted-foreground">
             {tt(
               "settings.dueReminders.help",
-              "Due reminders run on your company timezone, send to the billing email on each sales order, and can add internal BCC copies when needed."
+              "Due reminders run on your company timezone, follow the active AR anchor, and use the billing email on the active order or invoice chain by default."
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -1493,7 +1493,7 @@ function Settings() {
                 <div className="mt-1 text-xs text-muted-foreground">
                   {tt(
                     "settings.dueReminders.before.help",
-                    "Use this for early reminders such as 7, 3, or 1 day before the invoice is due."
+                    "Use this for early reminders such as 7, 3, or 1 day before the active receivable document is due."
                   )}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1672,7 +1672,7 @@ function Settings() {
           <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
             {tt(
               "settings.dueReminders.linkingHelp",
-              "Invoice links in reminders follow the app's document routing automatically. The document URL pattern is product logic, not a company setup field."
+              "Reminder links follow the active AR anchor automatically. Sales orders are used only until an issued sales invoice becomes the legal reminder anchor."
             )}
           </div>
         </CardContent>

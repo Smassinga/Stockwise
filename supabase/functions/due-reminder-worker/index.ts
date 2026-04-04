@@ -15,6 +15,7 @@ type QueueRow = {
     channels?: { email?: boolean };
     recipients?: { emails?: string[] };
     lead_days?: number[];
+    document_base_url?: string;
     invoice_base_url?: string;
     bcc?: string[];
     lang?: "en" | "pt";
@@ -26,18 +27,34 @@ type QueueRow = {
   created_at: string;
 };
 
+type Lang = "en" | "pt";
+type ReminderAnchorKind = "sales_order" | "sales_invoice";
+
+type BatchReminderRow = {
+  anchor_kind?: ReminderAnchorKind | null;
+  anchor_id?: string | null;
+  document_reference?: string | null;
+  due_date: string;
+  amount: number;
+  email: string | null;
+  customer_name?: string | null;
+  days_until_due: number;
+  currency_code?: string | null;
+  settlement_status?: string | null;
+  resolution_status?: string | null;
+  sales_order_id?: string | null;
+  sales_order_reference?: string | null;
+  sales_invoice_id?: string | null;
+  sales_invoice_reference?: string | null;
+  language_hint?: Lang | null;
+  so_id?: string | null;
+  so_code?: string | null;
+  _currency?: string | null;
+};
+
 type Batch = {
   window: { local_day: string; timezone: string; start_utc: string; end_utc: string };
-  reminders: Array<{
-    so_id: string;
-    so_code: string | null;
-    due_date: string;
-    amount: number;
-    email: string | null;
-    customer_name?: string | null;
-    days_until_due: number;
-    _currency?: string;
-  }>;
+  reminders: BatchReminderRow[];
 };
 
 type CompanyRow = {
@@ -59,6 +76,56 @@ type CompanyRow = {
   logo_path?: string | null;
 };
 
+type ReminderCopy = {
+  title: string;
+  intro: (customerName?: string | null) => string;
+  bodyLead: (documentReference: string, dueSentence: string) => string;
+  alreadyPaid: string;
+  actionsNote: string;
+  subject: (documentReference: string) => string;
+  preview: (documentReference: string, previewSuffix: string) => string;
+  labels: {
+    documentReference: string;
+    dueDate: string;
+    amount: string;
+    status: string;
+    linkedOrder: string;
+    fallbackLinks: string;
+    viewLink: string;
+    phone: string;
+    website: string;
+    address: string;
+    email: string;
+  };
+  buttons: {
+    view: string;
+  };
+  supportTitle: string;
+  supportText: string;
+  signatureLead: string;
+  signatureTeam: (companyName: string) => string;
+  footer: string;
+};
+
+type NormalizedReminder = {
+  anchorKind: ReminderAnchorKind;
+  anchorId: string;
+  documentReference: string;
+  dueDate: string;
+  amount: number;
+  email: string | null;
+  customerName: string | null;
+  daysUntilDue: number;
+  currencyCode: string | null;
+  settlementStatus: string | null;
+  resolutionStatus: string | null;
+  salesOrderId: string | null;
+  salesOrderReference: string | null;
+  salesInvoiceId: string | null;
+  salesInvoiceReference: string | null;
+  languageHint: Lang | null;
+};
+
 const MAIL = requireMailConfig(getMailConfig());
 const FALLBACK_BRAND = MAIL.defaultFromName || "StockWise";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -67,12 +134,39 @@ const REMINDER_HOOK_SECRET = Deno.env.get("REMINDER_HOOK_SECRET") ?? "";
 const DEBUG_LOG = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
 const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "false").toLowerCase() === "true";
 const MAX_ATTEMPTS = Number(Deno.env.get("DUE_REMINDER_MAX_ATTEMPTS") ?? "8");
-
-type Lang = "en" | "pt";
+const PUBLIC_SITE_URL =
+  trimText(Deno.env.get("PUBLIC_SITE_URL")) ||
+  trimText(Deno.env.get("VITE_SITE_URL")) ||
+  trimText(Deno.env.get("SITE_URL"));
 
 function isPortugueseSpeakingCountry(countryCode: string | null | undefined) {
   if (!countryCode) return false;
   return ["PT", "BR", "MZ", "AO", "CV", "GW", "ST", "TL"].includes(countryCode.toUpperCase());
+}
+
+function trimText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function normalizeReminderLang(value: string | null | undefined): Lang | null {
+  const text = trimText(value)?.toLowerCase() ?? "";
+  if (text.startsWith("pt")) return "pt";
+  if (text.startsWith("en")) return "en";
+  return null;
+}
+
+function normalizeEmailList(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of values) {
+    const email = trimText(value)?.toLowerCase();
+    if (!email || !/\S+@\S+\.\S+/.test(email) || seen.has(email)) continue;
+    seen.add(email);
+    normalized.push(email);
+  }
+  return normalized;
 }
 
 function supa() {
@@ -104,11 +198,6 @@ function formatNumber(value: number) {
   }
 }
 
-function trimText(value: unknown) {
-  const text = String(value ?? "").trim();
-  return text || null;
-}
-
 function formatAmount(value: number, currencyCode: string | null | undefined, lang: Lang) {
   const code = trimText(currencyCode)?.toUpperCase() ?? "";
   const locale = lang === "pt" ? "pt-PT" : "en-US";
@@ -121,7 +210,7 @@ function formatAmount(value: number, currencyCode: string | null | undefined, la
         maximumFractionDigits: 2,
       }).format(value);
     } catch {
-      // ignore and fall back
+      // fall through
     }
   }
   return code ? `${formatNumber(value)} ${code}` : formatNumber(value);
@@ -153,6 +242,25 @@ function isAbsoluteUrl(value: string | null | undefined) {
   return !!value && /^(https?:)?\/\//i.test(value);
 }
 
+function resolveUrlOrigin(raw: string | null | undefined) {
+  const text = trimText(raw);
+  if (!text || !isAbsoluteUrl(text)) return null;
+  try {
+    const url = new URL(text);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
+
+function resolveAppBaseUrl(...candidates: Array<string | null | undefined>) {
+  for (const candidate of candidates) {
+    const origin = resolveUrlOrigin(candidate);
+    if (origin) return origin;
+  }
+  return null;
+}
+
 function resolvePublicStorageUrl(
   sb: ReturnType<typeof supa>,
   raw: string | null | undefined,
@@ -182,39 +290,19 @@ function normalizeWebsite(website: string | null | undefined) {
   return text.startsWith("http://") || text.startsWith("https://") ? text : `https://${text}`;
 }
 
-function buildDocumentUrl(base: string, code: string, download: boolean) {
-  if (!trimText(base)) return undefined;
-  try {
-    const url = new URL(base);
-    const hasCodeParam = Array.from(url.searchParams.keys()).some((key) => key.toLowerCase() === "code");
-    if (hasCodeParam) {
-      for (const key of [...url.searchParams.keys()]) {
-        if (key.toLowerCase() === "code") url.searchParams.delete(key);
-      }
-      url.searchParams.set("code", code);
-    } else {
-      if (!url.pathname.endsWith("/")) url.pathname += "/";
-      url.pathname += encodeURIComponent(code);
-    }
-    for (const key of [...url.searchParams.keys()]) {
-      if (key.toLowerCase() === "download") url.searchParams.delete(key);
-    }
-    if (download) url.searchParams.set("download", "1");
-    return url.toString();
-  } catch {
-    const joiner = base.includes("?") ? "&" : "?";
-    return download
-      ? `${base.replace(/\/$/, "")}/${encodeURIComponent(code)}${joiner}download=1`
-      : `${base.replace(/\/$/, "")}/${encodeURIComponent(code)}`;
+function buildAnchorViewUrl(base: string | null | undefined, row: NormalizedReminder) {
+  const origin = resolveUrlOrigin(base);
+  if (!origin) return undefined;
+
+  if (row.anchorKind === "sales_invoice") {
+    return `${origin}/sales-invoices/${encodeURIComponent(row.anchorId)}`;
   }
-}
 
-function buildViewOrderUrl(base: string, code: string) {
-  return buildDocumentUrl(base, code, false);
-}
-
-function buildDownloadPdfUrl(base: string, code: string) {
-  return buildDocumentUrl(base, code, true);
+  const orderId = row.salesOrderId || row.anchorId;
+  const url = new URL(`${origin}/orders`);
+  url.searchParams.set("tab", "sales");
+  url.searchParams.set("orderId", orderId);
+  return url.toString();
 }
 
 function companyAddress(company?: CompanyRow | null) {
@@ -272,77 +360,79 @@ function buildDuePhrase(lang: Lang, days: number) {
   };
 }
 
-function reminderCopy(lang: Lang) {
-  return lang === "pt"
-    ? {
-        title: "Aviso de vencimento",
-        intro: (customerName?: string | null) => (customerName ? `Olá ${customerName},` : "Olá,"),
-        bodyLead: (orderNumber: string, dueSentence: string) =>
-          `Informamos que o pedido ${orderNumber} ${dueSentence}.`,
-        alreadyPaid: "Caso o pagamento já tenha sido efectuado, por favor desconsidere esta mensagem.",
-        actionsNote:
-          "Para consultar os detalhes do pedido ou descarregar o respectivo documento, utilize as opções abaixo.",
-        subject: (orderNumber: string) => `Aviso de vencimento, Pedido ${orderNumber}`,
-        preview: (orderNumber: string, previewSuffix: string) =>
-          `O pedido ${orderNumber} ${previewSuffix}. Consulte os detalhes e descarregue o documento.`,
-        labels: {
-          orderNumber: "Pedido",
-          dueDate: "Data de vencimento",
-          amount: "Montante em aberto",
-          status: "Estado",
-          fallbackLinks: "Se os botões não funcionarem, utilize estes links:",
-          viewLink: "Ver pedido",
-          downloadLink: "Descarregar PDF",
-          phone: "Telefone",
-          website: "Website",
-          address: "Endereço",
-          email: "Email",
-        },
-        buttons: {
-          view: "Ver pedido",
-          download: "Descarregar PDF",
-        },
-        supportTitle: "Precisa de apoio?",
-        supportText:
-          "Para regularizar a situação ou esclarecer qualquer dúvida, contacte-nos através dos meios abaixo.",
-        signatureLead: "Com os melhores cumprimentos,",
-        signatureTeam: (companyName: string) => `Equipa ${companyName}`,
-        footer: "Mensagem automática enviada pelo StockWise em nome da sua empresa.",
-      }
-    : {
-        title: "Payment reminder",
-        intro: (customerName?: string | null) => (customerName ? `Hello ${customerName},` : "Hello,"),
-        bodyLead: (orderNumber: string, dueSentence: string) =>
-          `This is a reminder that Sales Order ${orderNumber} ${dueSentence}.`,
-        alreadyPaid: "If payment has already been made, please disregard this message.",
-        actionsNote:
-          "To review the order details or download the document, please use the options below.",
-        subject: (orderNumber: string) => `Payment reminder, Sales Order ${orderNumber}`,
-        preview: (orderNumber: string, previewSuffix: string) =>
-          `Sales Order ${orderNumber} ${previewSuffix}. Review the details or download the document.`,
-        labels: {
-          orderNumber: "Sales Order",
-          dueDate: "Due date",
-          amount: "Outstanding amount",
-          status: "Status",
-          fallbackLinks: "If the buttons do not work, use these links:",
-          viewLink: "View order",
-          downloadLink: "Download PDF",
-          phone: "Phone",
-          website: "Website",
-          address: "Address",
-          email: "Email",
-        },
-        buttons: {
-          view: "View order",
-          download: "Download PDF",
-        },
-        supportTitle: "Need assistance?",
-        supportText: "If you need any help or clarification, please contact us using the details below.",
-        signatureLead: "Kind regards,",
-        signatureTeam: (companyName: string) => `${companyName} team`,
-        footer: "Automated message sent by StockWise on behalf of your company.",
-      };
+function reminderCopy(lang: Lang, anchorKind: ReminderAnchorKind): ReminderCopy {
+  const documentLabelPt = anchorKind === "sales_invoice" ? "Fatura" : "Pedido";
+  const documentLabelEn = anchorKind === "sales_invoice" ? "Sales Invoice" : "Sales Order";
+  const viewLabelPt = anchorKind === "sales_invoice" ? "Ver fatura" : "Ver pedido";
+  const viewLabelEn = anchorKind === "sales_invoice" ? "View invoice" : "View order";
+
+  if (lang === "pt") {
+    return {
+      title: "Aviso de vencimento",
+      intro: (customerName?: string | null) => (customerName ? `Olá ${customerName},` : "Olá,"),
+      bodyLead: (documentReference: string, dueSentence: string) =>
+        `Informamos que ${documentLabelPt.toLowerCase()} ${documentReference} ${dueSentence}.`,
+      alreadyPaid: "Caso o pagamento já tenha sido efectuado, por favor desconsidere esta mensagem.",
+      actionsNote: "Para consultar os detalhes do documento, utilize a ligação abaixo.",
+      subject: (documentReference: string) => `Aviso de vencimento, ${documentLabelPt} ${documentReference}`,
+      preview: (documentReference: string, previewSuffix: string) =>
+        `${documentLabelPt} ${documentReference} ${previewSuffix}. Consulte os detalhes do documento.`,
+      labels: {
+        documentReference: documentLabelPt,
+        dueDate: "Data de vencimento",
+        amount: "Montante em aberto",
+        status: "Estado",
+        linkedOrder: "Pedido associado",
+        fallbackLinks: "Se o botão não funcionar, utilize este link:",
+        viewLink: viewLabelPt,
+        phone: "Telefone",
+        website: "Website",
+        address: "Endereço",
+        email: "Email",
+      },
+      buttons: {
+        view: viewLabelPt,
+      },
+      supportTitle: "Precisa de apoio?",
+      supportText: "Para regularizar a situação ou esclarecer qualquer dúvida, contacte-nos através dos meios abaixo.",
+      signatureLead: "Com os melhores cumprimentos,",
+      signatureTeam: (companyName: string) => `Equipa ${companyName}`,
+      footer: "Mensagem automática enviada pelo StockWise em nome da sua empresa.",
+    };
+  }
+
+  return {
+    title: "Payment reminder",
+    intro: (customerName?: string | null) => (customerName ? `Hello ${customerName},` : "Hello,"),
+    bodyLead: (documentReference: string, dueSentence: string) =>
+      `This is a reminder that ${documentLabelEn} ${documentReference} ${dueSentence}.`,
+    alreadyPaid: "If payment has already been made, please disregard this message.",
+    actionsNote: "To review the document details, please use the link below.",
+    subject: (documentReference: string) => `Payment reminder, ${documentLabelEn} ${documentReference}`,
+    preview: (documentReference: string, previewSuffix: string) =>
+      `${documentLabelEn} ${documentReference} ${previewSuffix}. Review the document details.`,
+    labels: {
+      documentReference: documentLabelEn,
+      dueDate: "Due date",
+      amount: "Outstanding amount",
+      status: "Status",
+      linkedOrder: "Linked sales order",
+      fallbackLinks: "If the button does not work, use this link:",
+      viewLink: viewLabelEn,
+      phone: "Phone",
+      website: "Website",
+      address: "Address",
+      email: "Email",
+    },
+    buttons: {
+      view: viewLabelEn,
+    },
+    supportTitle: "Need assistance?",
+    supportText: "If you need any help or clarification, please contact us using the details below.",
+    signatureLead: "Kind regards,",
+    signatureTeam: (companyName: string) => `${companyName} team`,
+    footer: "Automated message sent by StockWise on behalf of your company.",
+  };
 }
 
 function resolveCompanyBranding(
@@ -381,13 +471,14 @@ function htmlBody(opts: {
   companyName: string;
   companyLogoUrl?: string | null;
   customerName?: string | null;
-  orderNumber: string;
+  anchorKind: ReminderAnchorKind;
+  documentReference: string;
+  linkedOrderReference?: string | null;
   dueDateFormatted: string;
   amountFormatted: string;
   statusLabel: string;
   dueSentence: string;
-  viewOrderUrl?: string;
-  downloadPdfUrl?: string;
+  viewDocumentUrl?: string;
   companyPhone?: string | null;
   companyWebsite?: string | null;
   companyWebsiteUrl?: string | null;
@@ -395,14 +486,14 @@ function htmlBody(opts: {
   companySupportEmail?: string | null;
   footerNote?: string | null;
 }) {
-  const copy = reminderCopy(opts.lang);
+  const copy = reminderCopy(opts.lang, opts.anchorKind);
   const companyName = escapeHtml(opts.companyName);
-  const showDownload = !!opts.downloadPdfUrl && opts.downloadPdfUrl !== opts.viewOrderUrl;
   const supportEmail = trimText(opts.companySupportEmail);
   const websiteLabel = trimText(opts.companyWebsite);
   const websiteUrl = trimText(opts.companyWebsiteUrl);
   const address = trimText(opts.companyAddress);
   const footerNote = trimText(opts.footerNote);
+  const linkedOrderReference = trimText(opts.linkedOrderReference);
   const logoBlock = opts.companyLogoUrl
     ? `<img src="${escapeHtml(opts.companyLogoUrl)}" alt="${companyName}" width="160" style="display:block;max-width:160px;width:auto;height:auto;max-height:52px;border:0;outline:none;text-decoration:none;margin:0 auto;" />`
     : "";
@@ -429,7 +520,7 @@ function htmlBody(opts: {
                 <div style="font-size:28px;line-height:1.2;font-weight:700;margin:0 0 12px 0;">${escapeHtml(copy.title)}</div>
                 <p style="margin:0 0 8px 0;font-size:16px;line-height:24px;">${escapeHtml(copy.intro(opts.customerName))}</p>
                 <p style="margin:0 0 20px 0;font-size:16px;line-height:24px;color:#374151;">
-                  ${escapeHtml(copy.bodyLead(opts.orderNumber, opts.dueSentence))}
+                  ${escapeHtml(copy.bodyLead(opts.documentReference, opts.dueSentence))}
                 </p>
 
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px 0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
@@ -437,13 +528,22 @@ function htmlBody(opts: {
                     <td style="padding:20px 22px;">
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;">
                         <tr>
-                          <td style="padding:0 0 10px 0;font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(copy.labels.orderNumber)}</td>
+                          <td style="padding:0 0 10px 0;font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(copy.labels.documentReference)}</td>
                           <td style="padding:0 0 10px 0;font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;" align="right">${escapeHtml(copy.labels.status)}</td>
                         </tr>
                         <tr>
-                          <td style="padding:0 0 16px 0;font-size:18px;line-height:24px;color:#111827;font-weight:700;">${escapeHtml(opts.orderNumber)}</td>
+                          <td style="padding:0 0 16px 0;font-size:18px;line-height:24px;color:#111827;font-weight:700;">${escapeHtml(opts.documentReference)}</td>
                           <td style="padding:0 0 16px 0;font-size:14px;line-height:20px;color:#0f172a;font-weight:600;" align="right">${escapeHtml(opts.statusLabel)}</td>
                         </tr>
+                        ${
+                          linkedOrderReference && opts.anchorKind === "sales_invoice"
+                            ? `<tr>
+                                 <td colspan="2" style="padding:0 0 16px 0;font-size:13px;line-height:20px;color:#475569;">
+                                   <strong>${escapeHtml(copy.labels.linkedOrder)}:</strong> ${escapeHtml(linkedOrderReference)}
+                                 </td>
+                               </tr>`
+                            : ""
+                        }
                         <tr>
                           <td style="padding:0 12px 0 0;width:50%;vertical-align:top;">
                             <div style="font-size:12px;line-height:18px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin:0 0 6px 0;">${escapeHtml(copy.labels.dueDate)}</div>
@@ -462,16 +562,17 @@ function htmlBody(opts: {
                 <p style="margin:0 0 8px 0;font-size:14px;line-height:22px;color:#475569;">
                   ${escapeHtml(copy.alreadyPaid)}
                 </p>
-                <p style="margin:0 0 20px 0;font-size:14px;line-height:22px;color:#475569;">
-                  ${escapeHtml(copy.actionsNote)}
-                </p>
-
                 ${
-                  opts.viewOrderUrl
-                    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 12px 0;">
+                  opts.viewDocumentUrl
+                    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 18px 0;">
+                        <tr>
+                          <td style="padding:0 0 12px 0;font-size:14px;line-height:22px;color:#475569;">
+                            ${escapeHtml(copy.actionsNote)}
+                          </td>
+                        </tr>
                         <tr>
                           <td>
-                            <a href="${escapeHtml(opts.viewOrderUrl)}" target="_blank" style="display:block;padding:14px 18px;border-radius:10px;background:#0f172a;color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:600;text-align:center;">
+                            <a href="${escapeHtml(opts.viewDocumentUrl)}" target="_blank" style="display:block;padding:14px 18px;border-radius:10px;background:#0f172a;color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:600;text-align:center;">
                               ${escapeHtml(copy.buttons.view)}
                             </a>
                           </td>
@@ -479,40 +580,15 @@ function htmlBody(opts: {
                       </table>`
                     : ""
                 }
-                ${
-                  showDownload
-                    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 18px 0;">
-                        <tr>
-                          <td>
-                            <a href="${escapeHtml(opts.downloadPdfUrl)}" target="_blank" style="display:block;padding:14px 18px;border-radius:10px;background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;text-decoration:none;font-size:15px;line-height:20px;font-weight:600;text-align:center;">
-                              ${escapeHtml(copy.buttons.download)}
-                            </a>
-                          </td>
-                        </tr>
-                      </table>`
-                    : ""
-                }
 
                 ${
-                  opts.viewOrderUrl || showDownload
+                  opts.viewDocumentUrl
                     ? `<div style="margin:0 0 24px 0;padding-top:4px;font-size:12px;line-height:18px;color:#6b7280;">
                         <div style="margin:0 0 8px 0;font-weight:600;">${escapeHtml(copy.labels.fallbackLinks)}</div>
-                        ${
-                          opts.viewOrderUrl
-                            ? `<div style="margin:0 0 6px 0;">
-                                <strong>${escapeHtml(copy.labels.viewLink)}:</strong><br/>
-                                <a href="${escapeHtml(opts.viewOrderUrl)}" target="_blank" style="color:#2563eb;text-decoration:none;word-break:break-all;">${escapeHtml(opts.viewOrderUrl)}</a>
-                              </div>`
-                            : ""
-                        }
-                        ${
-                          showDownload
-                            ? `<div style="margin:0;">
-                                <strong>${escapeHtml(copy.labels.downloadLink)}:</strong><br/>
-                                <a href="${escapeHtml(opts.downloadPdfUrl)}" target="_blank" style="color:#2563eb;text-decoration:none;word-break:break-all;">${escapeHtml(opts.downloadPdfUrl)}</a>
-                              </div>`
-                            : ""
-                        }
+                        <div style="margin:0;">
+                          <strong>${escapeHtml(copy.labels.viewLink)}:</strong><br/>
+                          <a href="${escapeHtml(opts.viewDocumentUrl)}" target="_blank" style="color:#2563eb;text-decoration:none;word-break:break-all;">${escapeHtml(opts.viewDocumentUrl)}</a>
+                        </div>
                       </div>`
                     : ""
                 }
@@ -557,37 +633,39 @@ function textBody(opts: {
   lang: Lang;
   companyName: string;
   customerName?: string | null;
-  orderNumber: string;
+  anchorKind: ReminderAnchorKind;
+  documentReference: string;
+  linkedOrderReference?: string | null;
   dueDateFormatted: string;
   amountFormatted: string;
   statusLabel: string;
   dueSentence: string;
-  viewOrderUrl?: string;
-  downloadPdfUrl?: string;
+  viewDocumentUrl?: string;
   companyPhone?: string | null;
   companyWebsite?: string | null;
   companyAddress?: string | null;
   companySupportEmail?: string | null;
   footerNote?: string | null;
 }) {
-  const copy = reminderCopy(opts.lang);
-  const showDownload = !!opts.downloadPdfUrl && opts.downloadPdfUrl !== opts.viewOrderUrl;
+  const copy = reminderCopy(opts.lang, opts.anchorKind);
   const lines = [
     copy.title,
     "",
     copy.intro(opts.customerName),
-    copy.bodyLead(opts.orderNumber, opts.dueSentence),
+    copy.bodyLead(opts.documentReference, opts.dueSentence),
     "",
-    `${copy.labels.orderNumber}: ${opts.orderNumber}`,
+    `${copy.labels.documentReference}: ${opts.documentReference}`,
+    opts.linkedOrderReference && opts.anchorKind === "sales_invoice"
+      ? `${copy.labels.linkedOrder}: ${opts.linkedOrderReference}`
+      : "",
     `${copy.labels.dueDate}: ${opts.dueDateFormatted}`,
     `${copy.labels.amount}: ${opts.amountFormatted}`,
     `${copy.labels.status}: ${opts.statusLabel}`,
     "",
     copy.alreadyPaid,
-    copy.actionsNote,
+    opts.viewDocumentUrl ? copy.actionsNote : "",
     "",
-    opts.viewOrderUrl ? `${copy.labels.viewLink}: ${opts.viewOrderUrl}` : "",
-    showDownload ? `${copy.labels.downloadLink}: ${opts.downloadPdfUrl}` : "",
+    opts.viewDocumentUrl ? `${copy.labels.viewLink}: ${opts.viewDocumentUrl}` : "",
     "",
     copy.supportTitle,
     copy.supportText,
@@ -603,6 +681,41 @@ function textBody(opts: {
 
   return lines.join("\n");
 }
+
+function normalizeBatchReminder(row: BatchReminderRow): NormalizedReminder | null {
+  const anchorKind = row.anchor_kind === "sales_invoice" ? "sales_invoice" : "sales_order";
+  const salesOrderId = trimText(row.sales_order_id) || trimText(row.so_id);
+  const salesInvoiceId = trimText(row.sales_invoice_id);
+  const anchorId =
+    trimText(row.anchor_id) ||
+    (anchorKind === "sales_invoice" ? salesInvoiceId : salesOrderId);
+
+  if (!anchorId) return null;
+
+  return {
+    anchorKind,
+    anchorId,
+    documentReference:
+      trimText(row.document_reference) ||
+      trimText(anchorKind === "sales_invoice" ? row.sales_invoice_reference : row.sales_order_reference) ||
+      trimText(row.so_code) ||
+      anchorId,
+    dueDate: row.due_date,
+    amount: Number(row.amount ?? 0),
+    email: trimText(row.email),
+    customerName: trimText(row.customer_name),
+    daysUntilDue: Number(row.days_until_due ?? 0),
+    currencyCode: trimText(row.currency_code) || trimText(row._currency),
+    settlementStatus: trimText(row.settlement_status),
+    resolutionStatus: trimText(row.resolution_status),
+    salesOrderId,
+    salesOrderReference: trimText(row.sales_order_reference) || trimText(row.so_code),
+    salesInvoiceId,
+    salesInvoiceReference: trimText(row.sales_invoice_reference),
+    languageHint: normalizeReminderLang(row.language_hint),
+  };
+}
+
 function authorized(req: Request) {
   if (!REMINDER_HOOK_SECRET) return false;
   const headerSecret = req.headers.get("x-webhook-secret") ?? "";
@@ -644,28 +757,29 @@ async function updateDueReminderJob(
   expectedStatus?: QueueRow["status"],
 ) {
   const withProcessingStarted = await (() => {
-    let query = sb.from("due_reminder_queue").update(values).eq("id", jobId)
-    if (expectedStatus) query = query.eq("status", expectedStatus)
-    return query
-  })()
+    let query = sb.from("due_reminder_queue").update(values).eq("id", jobId);
+    if (expectedStatus) query = query.eq("status", expectedStatus);
+    return query;
+  })();
 
   if (!isMissingProcessingStartedAtColumn(withProcessingStarted.error) || !Object.prototype.hasOwnProperty.call(values, "processing_started_at")) {
-    return withProcessingStarted
+    return withProcessingStarted;
   }
 
-  const fallbackValues = { ...values }
-  delete fallbackValues.processing_started_at
+  const fallbackValues = { ...values };
+  delete fallbackValues.processing_started_at;
 
   return await (() => {
-    let query = sb.from("due_reminder_queue").update(fallbackValues).eq("id", jobId)
-    if (expectedStatus) query = query.eq("status", expectedStatus)
-    return query
-  })()
+    let query = sb.from("due_reminder_queue").update(fallbackValues).eq("id", jobId);
+    if (expectedStatus) query = query.eq("status", expectedStatus);
+    return query;
+  })();
 }
 
 serve(async (req) => {
   let claimedJobId: number | null = null;
   let claimedAttempts = 0;
+
   try {
     if (!authorized(req)) {
       return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401 });
@@ -704,38 +818,76 @@ serve(async (req) => {
       p_lead_days: leadDays,
     });
     if (batchError) throw new Error(`rpc.build_due_reminder_batch: ${safeErr(batchError)}`);
-    const reminderBatch = batch as Batch;
+    const reminderBatch = (batch as Batch) ?? { window: {} as Batch["window"], reminders: [] };
+    const reminders = (reminderBatch.reminders || [])
+      .map(normalizeBatchReminder)
+      .filter((row): row is NormalizedReminder => !!row);
 
-    const needsCodes = (reminderBatch.reminders || [])
-      .filter((row) => !row.so_code || row.so_code === row.so_id)
-      .map((row) => row.so_id);
-    if (needsCodes.length) {
-      const { data: rows, error } = await sb.from("sales_orders").select("id, code").in("id", needsCodes);
-      if (error) throw new Error(`lookup.so_codes: ${safeErr(error)}`);
-      const codeById = new Map((rows || []).map((row: any) => [row.id, row.code]));
-      for (const row of reminderBatch.reminders) {
-        if (!row.so_code || row.so_code === row.so_id) {
-          const code = codeById.get(row.so_id);
-          if (code && typeof code === "string") row.so_code = code;
-        }
+    const orderIds = Array.from(
+      new Set(reminders.map((row) => row.salesOrderId).filter((value): value is string => !!value)),
+    );
+    const invoiceIds = Array.from(
+      new Set(
+        reminders
+          .map((row) => row.salesInvoiceId || (row.anchorKind === "sales_invoice" ? row.anchorId : null))
+          .filter((value): value is string => !!value),
+      ),
+    );
+
+    const orderMetaById = new Map<string, { id: string; order_no?: string | null; code?: string | null; currency_code?: string | null; bill_to_email?: string | null }>();
+    if (orderIds.length) {
+      const { data: orderRows, error: orderMetaError } = await sb
+        .from("sales_orders")
+        .select("id, order_no, code, currency_code, bill_to_email")
+        .in("id", orderIds);
+      if (orderMetaError) throw new Error(`lookup.so_meta: ${safeErr(orderMetaError)}`);
+      for (const row of orderRows || []) {
+        orderMetaById.set(row.id, row as any);
       }
     }
 
-    const orderIds = (reminderBatch.reminders || []).map((row) => row.so_id);
-    const { data: orderMetaRows, error: orderMetaError } = await sb
-      .from("sales_orders")
-      .select("id, order_no, code, currency_code, bill_to_email")
-      .in("id", orderIds);
-    if (orderMetaError) throw new Error(`lookup.so_meta: ${safeErr(orderMetaError)}`);
-    const orderMeta = new Map((orderMetaRows || []).map((row: any) => [row.id, row]));
-    for (const row of reminderBatch.reminders) {
-      const meta = orderMeta.get(row.so_id);
-      row.so_code = meta?.order_no || meta?.code || row.so_id;
-      (row as any)._currency = meta?.currency_code || "";
-      (row as any)._toEmail = meta?.bill_to_email || row.email || null;
+    const invoiceMetaById = new Map<string, { id: string; internal_reference?: string | null; document_language_code_snapshot?: string | null; sales_order_id?: string | null }>();
+    if (invoiceIds.length) {
+      const { data: invoiceRows, error: invoiceMetaError } = await sb
+        .from("sales_invoices")
+        .select("id, internal_reference, document_language_code_snapshot, sales_order_id")
+        .in("id", invoiceIds);
+      if (invoiceMetaError) throw new Error(`lookup.si_meta: ${safeErr(invoiceMetaError)}`);
+      for (const row of invoiceRows || []) {
+        invoiceMetaById.set(row.id, row as any);
+      }
     }
 
-    if (!reminderBatch?.reminders?.length) {
+    for (const row of reminders) {
+      const invoiceId = row.salesInvoiceId || (row.anchorKind === "sales_invoice" ? row.anchorId : null);
+      if (invoiceId) {
+        const invoiceMeta = invoiceMetaById.get(invoiceId);
+        if (invoiceMeta) {
+          row.salesInvoiceId = invoiceId;
+          row.salesInvoiceReference = row.salesInvoiceReference || trimText(invoiceMeta.internal_reference) || row.documentReference;
+          row.languageHint = row.languageHint || normalizeReminderLang(invoiceMeta.document_language_code_snapshot);
+          row.salesOrderId = row.salesOrderId || trimText(invoiceMeta.sales_order_id);
+        }
+      }
+
+      const orderId = row.salesOrderId;
+      if (orderId) {
+        const orderMeta = orderMetaById.get(orderId);
+        if (orderMeta) {
+          row.salesOrderReference = row.salesOrderReference || trimText(orderMeta.order_no) || trimText(orderMeta.code) || orderId;
+          row.currencyCode = row.currencyCode || trimText(orderMeta.currency_code);
+          row.email = row.email || trimText(orderMeta.bill_to_email);
+        }
+      }
+
+      if (row.anchorKind === "sales_invoice") {
+        row.documentReference = row.salesInvoiceReference || row.documentReference;
+      } else {
+        row.documentReference = row.salesOrderReference || row.documentReference;
+      }
+    }
+
+    if (!reminders.length) {
       await updateDueReminderJob(
         sb,
         job.id,
@@ -769,50 +921,53 @@ serve(async (req) => {
     }
     const settingsData = (settingsRow?.data ?? {}) as any;
     const settingsDue = settingsData?.dueReminders ?? {};
-    const langSetting = trimText(job.payload?.lang) || trimText(company.preferred_lang);
-    const lang: Lang =
-      langSetting?.toLowerCase() === "pt"
-        ? "pt"
-        : langSetting?.toLowerCase() === "en"
-          ? "en"
-          : isPortugueseSpeakingCountry(company.country_code)
-            ? "pt"
-            : "en";
-    const copy = reminderCopy(lang);
-    const documentBaseUrl = trimText(job.payload?.invoice_base_url) ||
-      trimText(settingsDue?.invoiceBaseUrl) ||
-      "";
+    const defaultLang =
+      normalizeReminderLang(job.payload?.lang) ||
+      normalizeReminderLang(company.preferred_lang) ||
+      (isPortugueseSpeakingCountry(company.country_code) ? "pt" : "en");
+    const documentBaseUrl = resolveAppBaseUrl(
+      PUBLIC_SITE_URL,
+      job.payload?.document_base_url,
+      job.payload?.invoice_base_url,
+      trimText(settingsDue?.documentBaseUrl),
+      trimText(settingsDue?.invoiceBaseUrl),
+    );
     const branding = resolveCompanyBranding(sb, company, settingsData);
-    const bcc = (job.payload?.bcc?.length ? job.payload.bcc : (settingsDue?.bcc ?? [])) as string[];
+    const bcc = normalizeEmailList(job.payload?.bcc?.length ? job.payload.bcc : settingsDue?.bcc ?? []);
+    const overrideRecipients = normalizeEmailList(job.payload?.recipients?.emails ?? settingsDue?.recipients ?? []);
 
     let sent = 0;
-    for (const row of reminderBatch.reminders) {
-      const to = (row as any)._toEmail && /\S+@\S+\.\S+/.test((row as any)._toEmail) ? [(row as any)._toEmail] : [];
+    for (const row of reminders) {
+      const to = overrideRecipients.length
+        ? overrideRecipients
+        : row.email && /\S+@\S+\.\S+/.test(row.email)
+          ? [row.email]
+          : [];
       if (!to.length) continue;
 
-      const displayCode = row.so_code || row.so_id;
-      const dueMeta = buildDuePhrase(lang, row.days_until_due);
-      const amountFormatted = formatAmount(row.amount, (row as any)._currency, lang);
-      const dueDateFormatted = formatDate(row.due_date, lang);
-      const viewOrderUrl = documentBaseUrl && displayCode ? buildViewOrderUrl(documentBaseUrl, displayCode) : undefined;
-      const downloadPdfUrl = documentBaseUrl && displayCode
-        ? buildDownloadPdfUrl(documentBaseUrl, displayCode)
-        : undefined;
-      const previewText = copy.preview(displayCode, dueMeta.previewSuffix);
-      const subject = copy.subject(displayCode);
+      const lang = row.languageHint || defaultLang;
+      const copy = reminderCopy(lang, row.anchorKind);
+      const dueMeta = buildDuePhrase(lang, row.daysUntilDue);
+      const amountFormatted = formatAmount(row.amount, row.currencyCode, lang);
+      const dueDateFormatted = formatDate(row.dueDate, lang);
+      const viewDocumentUrl = buildAnchorViewUrl(documentBaseUrl, row);
+      const previewText = copy.preview(row.documentReference, dueMeta.previewSuffix);
+      const subject = copy.subject(row.documentReference);
+      const linkedOrderReference = row.anchorKind === "sales_invoice" ? row.salesOrderReference : null;
       const html = htmlBody({
         lang,
         previewText,
         companyName: branding.companyName,
         companyLogoUrl: branding.companyLogoUrl,
-        customerName: row.customer_name ?? undefined,
-        orderNumber: displayCode,
+        customerName: row.customerName ?? undefined,
+        anchorKind: row.anchorKind,
+        documentReference: row.documentReference,
+        linkedOrderReference,
         dueDateFormatted,
         amountFormatted,
         statusLabel: dueMeta.statusLabel,
         dueSentence: dueMeta.dueSentence,
-        viewOrderUrl,
-        downloadPdfUrl,
+        viewDocumentUrl,
         companyPhone: branding.companyPhone,
         companyWebsite: branding.companyWebsite,
         companyWebsiteUrl: branding.companyWebsiteUrl,
@@ -823,14 +978,15 @@ serve(async (req) => {
       const text = textBody({
         lang,
         companyName: branding.companyName,
-        customerName: row.customer_name ?? undefined,
-        orderNumber: displayCode,
+        customerName: row.customerName ?? undefined,
+        anchorKind: row.anchorKind,
+        documentReference: row.documentReference,
+        linkedOrderReference,
         dueDateFormatted,
         amountFormatted,
         statusLabel: dueMeta.statusLabel,
         dueSentence: dueMeta.dueSentence,
-        viewOrderUrl,
-        downloadPdfUrl,
+        viewDocumentUrl,
         companyPhone: branding.companyPhone,
         companyWebsite: branding.companyWebsite,
         companyAddress: branding.companyAddress,
@@ -839,7 +995,7 @@ serve(async (req) => {
       });
 
       if (DRY_RUN) {
-        log("[DRY_RUN] would send reminder", { to, subject });
+        log("[DRY_RUN] would send reminder", { to, subject, anchorKind: row.anchorKind, reference: row.documentReference });
       } else {
         await sendTransactionalEmail(
           {

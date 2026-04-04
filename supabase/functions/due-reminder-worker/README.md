@@ -1,39 +1,36 @@
 # Due Reminder Worker
 
-A Supabase Edge Function that sends automated sales-order due date reminders via email using the shared Brevo SMTP mailer.
+Supabase Edge Function that sends customer AR due reminders by email using the shared Brevo SMTP mailer.
 
-## Overview
+## Reminder Anchor Model
 
-The Due Reminder Worker processes jobs from a queue to send email reminders for sales orders that are approaching their due dates. It uses a flexible configuration system that allows you to customize when reminders are sent and to whom.
+The worker does not decide reminder truth on its own. It consumes the active AR reminder anchor emitted by `build_due_reminder_batch(...)`.
 
-## How It Works
+Current rule:
 
-1. Jobs are enqueued in the `due_reminder_queue` table
-2. The worker picks up pending jobs and processes them
-3. For each job, it calls the `build_due_reminder_batch` RPC function to find qualifying sales orders
-4. It sends email reminders via the shared Brevo SMTP mailer for each qualifying order
+- `sales_order` only while no issued sales invoice exists
+- `sales_invoice` once an issued invoice exists
 
-## Configuration
+This prevents duplicate reminder exposure across the operational order and the legal invoice.
 
-### Environment Variables
+## What the Worker Sends
 
-The function requires these environment variables to be set in your Supabase project:
+For each queued reminder row, the worker renders:
 
-- `BREVO_SMTP_HOST` - Brevo SMTP relay host (default: `smtp-relay.brevo.com`)
-- `BREVO_SMTP_PORT` - Brevo SMTP relay port (default: `587`)
-- `BREVO_SMTP_LOGIN` - Your Brevo SMTP login
-- `BREVO_SMTP_KEY` - Your Brevo SMTP key
-- `BREVO_SENDER_EMAIL` - Default sender address for outgoing mail
-- `BREVO_SENDER_NAME` - Sender display name (default: "StockWise")
-- `BREVO_REPLY_TO_EMAIL` - Default reply-to address
-- `BREVO_REPLY_TO_NAME` - Default reply-to display name
-- `SERVICE_ROLE_KEY` - Supabase service role key for database access
-- `REMINDER_HOOK_SECRET` - Secret key for authenticating webhook requests
-- `DRY_RUN` - Set to "true" to test without actually sending emails (default: "false")
+- document reference
+- due date
+- outstanding amount
+- linked order traceability when the active anchor is an invoice
+- localized reminder copy in `pt` or `en`
 
-### Job Payload
+The worker supports both:
 
-Each job in the queue can have a payload with these options:
+- legacy sales-order-only batch rows
+- anchor-aware AR reminder rows
+
+That backward compatibility allows the function to be deployed safely before or alongside the updated RPC.
+
+## Job Payload
 
 ```json
 {
@@ -44,63 +41,46 @@ Each job in the queue can have a payload with these options:
     "emails": ["override@example.com"]
   },
   "lead_days": [3, 1, 0, -3],
-  "invoice_base_url": "https://app.stockwise.app/orders/share",
-  "bcc": ["bcc@example.com"]
+  "document_base_url": "https://stockwiseapp.com",
+  "bcc": ["finance@example.com"],
+  "lang": "pt"
 }
 ```
 
-- `channels.email` - Whether to send email reminders (currently only email is supported)
-- `recipients.emails` - Override the customer emails (if empty, uses customer emails from the database)
-- `lead_days` - Days before/after due date to send reminders (negative numbers for overdue)
-- `invoice_base_url` - Legacy sales-order document base URL used to build customer-facing order links
-- `bcc` - BCC recipients for all emails
+Notes:
 
-## Enqueueing Jobs
+- `document_base_url` is optional and only used to build app links
+- `invoice_base_url` is still accepted as a legacy fallback field
+- invoice-anchored reminders use invoice language snapshot when available
 
-To enqueue a job, call the `enqueue_due_reminder` RPC function:
+## Configuration
 
-```sql
-SELECT public.enqueue_due_reminder(
-  'company-uuid-here',
-  '2025-10-11',
-  'Africa/Maputo',
-  jsonb_build_object(
-    'channels', jsonb_build_object('email', true),
-    'recipients', jsonb_build_object('emails', jsonb_build_array('test@example.com')),
-    'lead_days', jsonb_build_array(3, 1, 0, -3),
-    'invoice_base_url', 'https://app.stockwise.app/orders/share'
-  )
-);
-```
+Required secrets/environment variables:
 
-## Triggering the Worker
+- `BREVO_SMTP_HOST`
+- `BREVO_SMTP_PORT`
+- `BREVO_SMTP_LOGIN`
+- `BREVO_SMTP_KEY`
+- `BREVO_SENDER_EMAIL`
+- `BREVO_SENDER_NAME`
+- `BREVO_REPLY_TO_EMAIL`
+- `BREVO_REPLY_TO_NAME`
+- `SERVICE_ROLE_KEY`
+- `REMINDER_HOOK_SECRET`
 
-To trigger the worker, make a POST request to the function endpoint:
+Optional:
 
-```bash
-curl -i -X POST \
-  "https://your-project.supabase.co/functions/v1/due-reminder-worker" \
-  -H "X-Webhook-Secret: your-secret-key"
-```
-
-## Testing
-
-For testing, you can enable dry run mode:
-
-```bash
-supabase secrets set DRY_RUN="true"
-```
-
-In dry run mode, the function will log what emails would be sent without actually sending them.
+- `DRY_RUN`
+- `DEBUG_LOG`
+- `DUE_REMINDER_MAX_ATTEMPTS`
+- `PUBLIC_SITE_URL` or equivalent site URL fallback for link generation
 
 ## Troubleshooting
 
-If you're getting "no reminders for window", check:
+If you get `no reminders for window`, verify:
 
-1. The job exists in `due_reminder_queue` with status "done"
-2. Sales orders exist with:
-   - Matching company_id
-   - Due dates that match the lead days
-   - Positive amounts
-   - Status not in (cancelled, void, draft)
-3. Customers have email addresses
+1. qualifying AR anchors exist for the selected local day and lead offsets
+2. sales orders are still on `legacy_order_link` if they have no issued invoice yet
+3. invoice reminders are using positive invoice `outstanding_base`
+4. fully settled or fully credited invoices are not expected to appear
+5. customer billing email exists or override recipients were provided
