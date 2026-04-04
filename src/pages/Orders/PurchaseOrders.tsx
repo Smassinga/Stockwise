@@ -1983,9 +1983,10 @@ export default function PurchaseOrders() {
               <th className="py-2 pr-2">{workflowLabel}</th>
               <th className="py-2 pr-2">{tt('orders.currency', 'Currency')}</th>
               <th className="py-2 pr-2">{tt('orders.total', 'Total')}</th>
+              <th className="py-2 pr-2 text-right">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
             <tbody>
-              {pos.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</td></tr>}
+              {pos.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</td></tr>}
               {pos.map(po => {
                 const amounts = amountPO(po)
                 return (
@@ -1999,6 +2000,11 @@ export default function PurchaseOrders() {
                     </td>
                     <td className="py-3 pr-2">{curPO(po)}</td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
+                    <td className="py-3 pr-2 text-right">
+                      <Button size="sm" variant="secondary" onClick={() => openPurchaseOrderDetail(po)}>
+                        {tt('orders.view', 'View')}
+                      </Button>
+                    </td>
                   </tr>
                 )
               })}
