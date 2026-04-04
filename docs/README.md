@@ -26,6 +26,12 @@ If you're new to Stockwise, start here:
 
 - [Testing Strategy](TESTING.md) - Comprehensive testing approach
 
+### Finance Platform
+
+- [Finance Roadmap](finance-roadmap/README.md) - Master roadmap for finance-document evolution
+- [Finance Phase Tracker](finance-roadmap/phase-tracker.md) - Phase-by-phase status board with dependencies and validation needs
+- [Finance Decision Log](finance-roadmap/decision-log.md) - Durable implementation and architecture decisions
+
 ### Mobile & Desktop
 
 - [Mobile Optimization Guide](MOBILE_OPTIMIZATION.md) - Comprehensive mobile optimization approach

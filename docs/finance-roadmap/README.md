@@ -1,0 +1,151 @@
+# Finance Document Roadmap
+
+## A. Overview
+
+This roadmap is the durable execution guide for the finance-document platform after the settlement-anchor transition, AR/AP adjustment rollout, and Mozambique issuance work.
+
+Use this folder to preserve:
+
+- roadmap intent across sessions
+- current implementation status
+- phase dependencies
+- architecture guardrails
+- open decisions
+- implementation notes that should not be rediscovered repeatedly
+
+The detailed phase tracker lives in [phase-tracker.md](phase-tracker.md). The running decision log lives in [decision-log.md](decision-log.md).
+
+## B. Current State Summary
+
+Finance-document foundation already in place:
+
+- `sales_orders` and `purchase_orders` remain operational/commercial documents
+- `sales_invoices` and `vendor_bills` are the legal/financial settlement anchors once issued/posted
+- pre-finance settlements re-anchor from `SO` to `SI` and from `PO` to `VB`
+- AR supports issuance plus credit notes and debit notes, including partial and cumulative adjustments
+- AP supports vendor bills plus supplier credit notes and supplier debit notes, including partial and cumulative adjustments
+- invoice and finance-document output already uses snapshot-backed legal fields rather than mutable masters
+
+This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
+
+## C. Architecture Guardrails
+
+These rules must not be broken by future work:
+
+1. Finance-document truth
+   - `SO` and `PO` are operational documents.
+   - `SI` and `VB` become the finance/legal truth once issued or posted.
+   - Reminders, settlements, balances, and exposure must follow the active finance anchor once it exists.
+
+2. Adjustment-document model
+   - issued/post documents are not edited in place for legal value changes
+   - corrections must flow through credit/debit note chains
+   - cumulative credits/debits must never exceed coherent legal bounds
+
+3. Snapshot-backed legal output
+   - issued/downloaded output must render from frozen document snapshots
+   - mutable company/customer/supplier/order masters are not the legal render source after issue/post
+   - branding may overlay output, but it must not replace fiscal snapshot truth
+
+4. Dual-reference AP model
+   - supplier invoice reference is supplier-origin and manually writable
+   - Stockwise internal reference is system-generated and used for audit/system lookup
+   - legacy prefixes may remain for audit continuity, but new UX must explain or replace ambiguity
+
+5. No duplicate exposure
+   - balances due, settled amount, credited amount, debited amount, current legal amount, and outstanding amount must resolve from one active chain only
+   - no double charging, double counting, or duplicate receivable/payable exposure
+
+6. AR/AP parity by principle, not by blind symmetry
+   - close unjustified product gaps between AR and AP
+   - do not force identical behavior where accounting or document law differs
+
+7. Repo-first execution tracking
+   - roadmap tracking belongs in repo documentation first
+   - do not add tenant-facing product clutter for engineering roadmap status unless there is a clearly restricted internal/admin route
+
+## D. Phase Roadmap
+
+| Phase | Purpose | Why It Matters | Current Status | Depends On |
+|---|---|---|---|---|
+| Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | In progress | Current finance-document lifecycle baseline |
+| Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | In progress | Phase 1 controls for sensitive actions |
+| Phase 3 | Reconciliation and month-close readiness | Finance needs current-legal-value bridges, exception handling, and close-ready review surfaces | In progress | Phase 2 traceability and stable state views |
+| Phase 4 | Automated finance regression suite | The platform is now too finance-critical to rely on manual smoke tests alone | Not started | Stable Phase 1-3 workflows and validations |
+
+## E. Cross-Phase Tracked Items
+
+### Due reminders anchor redesign
+
+This item is tracked under Phase 3 because it depends on the settlement-anchor model and current-legal receivable logic.
+
+Target rule:
+
+- if a sales invoice exists, reminders must anchor to the sales invoice
+- only if no sales invoice exists should reminder logic remain on the sales order
+
+Current state:
+
+- current docs, settings copy, and worker flow are still sales-order based
+- the current reminder worker still calls `build_due_reminder_batch` for sales-order reminders and still refers to order-oriented document links
+
+### Document language behavior
+
+This item is tracked under Phase 2 because it affects issued output correctness and audit/compliance visibility.
+
+Target rule:
+
+- documents must render in the selected document/app language
+- Portuguese selection should produce Portuguese output
+- English selection should produce English output
+
+Current state:
+
+- app locale selection exists in settings and UI
+- Mozambique fiscal settings also store `document_language_code`
+- finance-document outputs still contain hardcoded Portuguese labels and `pt-MZ` formatting paths
+- current output helpers do not yet branch on the active document/app language or the stored snapshot language code
+
+Result:
+
+- this remains a tracked implementation gap, not completed behavior
+
+## F. Update Protocol
+
+When any finance-document work lands:
+
+1. Update the relevant phase and work-item status in [phase-tracker.md](phase-tracker.md).
+2. Record any architecture or behavior decision in [decision-log.md](decision-log.md).
+3. If a dependency or scope changed, update this master roadmap summary.
+4. If a work item changed the forward-state model, update [mozambique-runtime-issuance.md](../mozambique-runtime-issuance.md) only where it affects live runtime truth.
+
+Status vocabulary:
+
+- `Not started`
+- `In progress`
+- `Completed`
+- `Blocked`
+
+## G. Open Decisions
+
+Current open decisions that need explicit closure in future work:
+
+- whether document language should follow the live app locale at render time or the snapshot language captured at issue/post time, while still meeting the requirement that current document selection drives the issued output language
+- whether approval escalation thresholds should be universal or company-configurable
+- whether month-close review should live in a dedicated finance workspace or be embedded into existing Settlements / document registers
+- whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
+
+## H. Risks / Blockers
+
+Known risks:
+
+- finance-document behavior is already broad enough that undocumented assumptions can cause drift between sessions
+- reminder logic is currently misaligned with the settlement-anchor model
+- document language behavior can create incorrect user expectations because the app supports `pt`/`en` but output still behaves Portuguese-first
+- regression coverage is still largely manual
+
+Current blocker summary:
+
+- no hard blocker prevents roadmap execution
+- the main risk is drift, not immediate technical blockage
+

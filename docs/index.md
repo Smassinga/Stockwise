@@ -25,6 +25,9 @@ If you're new to Stockwise, start here:
 ### Features
 
 - [Due Reminders](due-reminders.md) - Automated sales-order due date reminder system
+- [Finance Roadmap](finance-roadmap/README.md) - Finance-document roadmap, architecture guardrails, and execution phases
+- [Finance Phase Tracker](finance-roadmap/phase-tracker.md) - Updateable implementation tracker for the next finance phases
+- [Finance Decision Log](finance-roadmap/decision-log.md) - Durable finance architecture and implementation decisions
 
 ### Testing
 
