@@ -25,6 +25,7 @@ import {
   toIsoDate,
 } from '../lib/orderFinance'
 import { buildSettlementMemo } from '../lib/orderRefs'
+import { financeCan } from '../lib/permissions'
 import {
   salesInvoiceWorkflowLabelKey,
   vendorBillWorkflowLabelKey,
@@ -140,7 +141,7 @@ const dueTone = (row: SettlementRow) => {
 }
 
 export default function SettlementsPage() {
-  const { companyId, companyName } = useOrg()
+  const { companyId, companyName, myRole } = useOrg()
   const { t, lang } = useI18n()
   const navigate = useNavigate()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
@@ -229,6 +230,7 @@ export default function SettlementsPage() {
     kind === 'SI' || kind === 'VB'
       ? tt('financeDocs.viewDocument', 'View')
       : tt('settlements.viewOrder', 'View order')
+  const canManageSettlement = financeCan.settlementSensitive(myRole)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -583,7 +585,7 @@ export default function SettlementsPage() {
 
   function openSettlement(row: SettlementRow, nextDialogTab: 'settle' | 'history' = 'settle') {
     setActiveRow(row)
-    setDialogTab(nextDialogTab)
+    setDialogTab(nextDialogTab === 'settle' && !canManageSettlement ? 'history' : nextDialogTab)
     setSettleMethod('cash')
     setSettleAmount(row.outstandingBase.toFixed(2))
     setSettleDate(todayISO())
@@ -596,6 +598,10 @@ export default function SettlementsPage() {
 
   async function submitSettlement() {
     if (!companyId || !activeRow) return
+    if (!canManageSettlement) {
+      toast.error(tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.'))
+      return
+    }
 
     const amount = n(settleAmount, Number.NaN)
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -712,6 +718,12 @@ export default function SettlementsPage() {
           )}
         </p>
       </div>
+
+      {!canManageSettlement ? (
+        <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+          {tt('settlements.financeAuthorityNotice', 'Settlement history remains visible, but only finance-authority users can post settlement entries from this workspace.')}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
@@ -900,9 +912,11 @@ export default function SettlementsPage() {
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" onClick={() => openSettlement(row, 'settle')}>
-                          {settlementActionLabel(row.kind)}
-                        </Button>
+                        {canManageSettlement ? (
+                          <Button size="sm" onClick={() => openSettlement(row, 'settle')}>
+                            {settlementActionLabel(row.kind)}
+                          </Button>
+                        ) : null}
                         <Button size="sm" variant="outline" onClick={() => viewOrder(row)}>
                           {viewAnchorLabel(row.kind)}
                         </Button>
@@ -958,11 +972,14 @@ export default function SettlementsPage() {
 
               <Tabs value={dialogTab} onValueChange={(value) => setDialogTab(value as 'settle' | 'history')}>
                 <TabsList className="h-auto w-full justify-start gap-1 rounded-xl bg-muted/70 p-1 md:w-auto">
-                  <TabsTrigger value="settle" className="min-w-[140px] rounded-lg">{tt('settlements.settleTab', 'Settle')}</TabsTrigger>
+                  {canManageSettlement ? (
+                    <TabsTrigger value="settle" className="min-w-[140px] rounded-lg">{tt('settlements.settleTab', 'Settle')}</TabsTrigger>
+                  ) : null}
                   <TabsTrigger value="history" className="min-w-[140px] rounded-lg">{tt('settlements.historyTab', 'History')}</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="settle" className="mt-4 space-y-4">
+                {canManageSettlement ? (
+                  <TabsContent value="settle" className="mt-4 space-y-4">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
                       <Label>{tt('settlements.method', 'Method')}</Label>
@@ -1017,7 +1034,8 @@ export default function SettlementsPage() {
                       {viewAnchorLabel(activeRow.kind)}
                     </Button>
                   </div>
-                </TabsContent>
+                  </TabsContent>
+                ) : null}
 
                 <TabsContent value="history" className="mt-4">
                   {activeHistory.length === 0 ? (
@@ -1054,7 +1072,7 @@ export default function SettlementsPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setActiveRow(null)}>{tt('common.cancel', 'Cancel')}</Button>
-            {dialogTab === 'settle' && (
+            {canManageSettlement && dialogTab === 'settle' && (
               <Button onClick={submitSettlement} disabled={saving}>
                 {saving ? tt('actions.saving', 'Saving') : activeRow ? settlementActionLabel(activeRow.kind) : tt('settlements.title', 'Receivables & Payables')}
               </Button>

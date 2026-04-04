@@ -14,9 +14,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Textarea } from '../components/ui/textarea'
 import { useOrg } from '../hooks/useOrg'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
+import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import {
+  financeDocumentApprovalLabelKey,
   salesInvoiceAdjustmentLabelKey,
   salesInvoiceResolutionLabelKey,
   type SalesInvoiceStateRow,
@@ -27,6 +29,7 @@ import {
   createAndIssueSalesDebitNoteForInvoice,
   getSalesInvoiceDraftPreview,
   getSalesInvoiceDocument,
+  approveSalesInvoice,
   issueSalesInvoice,
   listFinanceEvents,
   listFiscalArtifacts,
@@ -47,6 +50,8 @@ import {
   type SalesInvoiceDocumentLineRow,
   type SalesInvoiceDocumentRow,
   prepareSalesInvoiceDraftForIssue,
+  requestSalesInvoiceApproval,
+  returnSalesInvoiceToDraft,
   updateSalesInvoiceDraftDates,
 } from '../lib/mzFinance'
 import {
@@ -69,6 +74,17 @@ function workflowTone(status: SalesInvoiceDocumentRow['document_workflow_status'
       return 'destructive'
     default:
       return 'secondary'
+  }
+}
+
+function approvalTone(status: SalesInvoiceDocumentRow['approval_status']) {
+  switch (status) {
+    case 'approved':
+      return 'default'
+    case 'pending_approval':
+      return 'secondary'
+    default:
+      return 'outline'
   }
 }
 
@@ -123,7 +139,7 @@ function formatDraftNumber(value: number, digits = 2) {
 export default function SalesInvoiceDetailPage() {
   const { invoiceId } = useParams()
   const navigate = useNavigate()
-  const { companyId } = useOrg()
+  const { companyId, myRole } = useOrg()
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
@@ -283,6 +299,7 @@ export default function SalesInvoiceDetailPage() {
 
   const isDraft = invoice?.document_workflow_status === 'draft'
   const isIssued = invoice?.document_workflow_status === 'issued'
+  const approvalStatus = invoice?.approval_status || 'draft'
   const mznPreview = useMemo(() => {
     if (!invoice) return null
     const fxToBase = Number(invoice.fx_to_base || 0) > 0 ? Number(invoice.fx_to_base) : 1
@@ -361,6 +378,16 @@ export default function SalesInvoiceDetailPage() {
   const adjustmentStatusLabel = invoiceState?.adjustment_status
     ? tt(salesInvoiceAdjustmentLabelKey(invoiceState.adjustment_status), invoiceState.adjustment_status)
     : tt('financeDocs.adjustments.none', 'No adjustments')
+  const approvalStatusLabel = tt(
+    financeDocumentApprovalLabelKey(approvalStatus),
+    approvalStatus,
+  )
+  const canEditDraft = Boolean(invoice && isDraft && isFinanceDraftEditable(myRole, approvalStatus))
+  const canSubmitDraftForApproval = Boolean(invoice && isDraft && approvalStatus === 'draft' && financeCan.submitForApproval(myRole))
+  const canApproveDraft = Boolean(invoice && isDraft && approvalStatus === 'pending_approval' && financeCan.approve(myRole))
+  const canReturnDraftToEdit = Boolean(invoice && isDraft && approvalStatus !== 'draft' && financeCan.approve(myRole))
+  const canIssueApprovedDraft = Boolean(invoice && isDraft && approvalStatus === 'approved' && financeCan.issueSalesInvoice(myRole))
+  const canIssueSalesAdjustments = Boolean(invoice && isIssued && financeCan.issueSalesAdjustment(myRole))
   const issuedCreditNoteIds = useMemo(
     () => new Set(creditNotes.filter((note) => note.document_workflow_status === 'issued').map((note) => note.id)),
     [creditNotes],
@@ -584,7 +611,7 @@ export default function SalesInvoiceDetailPage() {
     issuedDebitedDocumentTotal,
     tt,
   ])
-  const canCreateCreditNote = isIssued && (invoiceState ? invoiceState.credit_status !== 'fully_credited' : true)
+  const canCreateCreditNote = canIssueSalesAdjustments && (invoiceState ? invoiceState.credit_status !== 'fully_credited' : true)
   const debitPreview = useMemo(() => {
     const previewLines: CreateSalesDebitNoteInput['lines'] = []
     const validationErrors: string[] = []
@@ -689,7 +716,7 @@ export default function SalesInvoiceDetailPage() {
     lines,
     tt,
   ])
-  const canCreateDebitNote = isIssued
+  const canCreateDebitNote = canIssueSalesAdjustments
 
   function resolutionTone(status?: SalesInvoiceStateRow['resolution_status'] | null) {
     switch (status) {
@@ -704,7 +731,7 @@ export default function SalesInvoiceDetailPage() {
   }
 
   async function handleSaveDraftDates() {
-    if (!companyId || !invoice || !isDraft) return
+    if (!companyId || !invoice || !isDraft || !canEditDraft) return
     try {
       setSavingDraft(true)
       const updated = await updateSalesInvoiceDraftDates(
@@ -729,8 +756,78 @@ export default function SalesInvoiceDetailPage() {
     }
   }
 
+  async function handleSubmitForApproval() {
+    if (!companyId || !invoice || !canSubmitDraftForApproval) return
+    try {
+      setSavingDraft(true)
+      await updateSalesInvoiceDraftDates(
+        companyId,
+        invoice.id,
+        invoiceDateDraft,
+        dueDateDraft,
+        vatExemptionReasonDraft,
+      )
+      await prepareSalesInvoiceDraftForIssue(companyId, invoice.id)
+      await requestSalesInvoiceApproval(invoice.id)
+      toast.success(tt('financeDocs.approval.requested', 'Document sent for approval'))
+      await loadWorkspace()
+    } catch (error: any) {
+      reportRuntimeError('requestApproval', error, {
+        approvalStatus: invoice.approval_status,
+        documentWorkflowStatus: invoice.document_workflow_status,
+      })
+      toast.error(error?.message || tt('financeDocs.approval.requestFailed', 'Failed to send the document for approval'))
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  async function handleApproveInvoice() {
+    if (!companyId || !invoice || !canApproveDraft) return
+    try {
+      setSavingDraft(true)
+      await updateSalesInvoiceDraftDates(
+        companyId,
+        invoice.id,
+        invoiceDateDraft,
+        dueDateDraft,
+        vatExemptionReasonDraft,
+      )
+      await prepareSalesInvoiceDraftForIssue(companyId, invoice.id)
+      await approveSalesInvoice(invoice.id)
+      toast.success(tt('financeDocs.approval.approved', 'Document approved'))
+      await loadWorkspace()
+    } catch (error: any) {
+      reportRuntimeError('approveDraft', error, {
+        approvalStatus: invoice.approval_status,
+        documentWorkflowStatus: invoice.document_workflow_status,
+      })
+      toast.error(error?.message || tt('financeDocs.approval.approveFailed', 'Failed to approve the document'))
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  async function handleReturnDraftToEdit() {
+    if (!invoice || !canReturnDraftToEdit) return
+    try {
+      setSavingDraft(true)
+      await returnSalesInvoiceToDraft(invoice.id)
+      toast.success(tt('financeDocs.approval.returnedToDraft', 'Document returned to draft'))
+      await loadWorkspace()
+    } catch (error: any) {
+      reportRuntimeError('returnToDraft', error, {
+        approvalStatus: invoice.approval_status,
+        documentWorkflowStatus: invoice.document_workflow_status,
+      })
+      toast.error(error?.message || tt('financeDocs.approval.returnFailed', 'Failed to return the document to draft'))
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
   async function handleIssueInvoice() {
-    if (!companyId || !invoice || !isDraft) return
+    if (!companyId || !invoice || !isDraft || !canIssueApprovedDraft) return
     if (invoiceHasExemptLines && !vatExemptionReasonDraft.trim()) {
       toast.error(tt('financeDocs.mz.vatExemptionReasonRequired', 'A VAT exemption reason is required for exempt lines.'))
       return
@@ -744,7 +841,6 @@ export default function SalesInvoiceDetailPage() {
         dueDateDraft,
         vatExemptionReasonDraft,
       )
-      await prepareSalesInvoiceDraftForIssue(companyId, invoice.id)
       await issueSalesInvoice(invoice.id)
       toast.success(tt('financeDocs.mz.issueSuccess', 'Sales invoice issued'))
       await loadWorkspace()
@@ -795,7 +891,7 @@ export default function SalesInvoiceDetailPage() {
   }
 
   async function handleCreateCreditNote() {
-    if (!companyId || !invoice) return
+    if (!companyId || !invoice || !canIssueSalesAdjustments) return
     if (!creditReason.trim()) {
       toast.error(tt('financeDocs.mz.creditReasonRequired', 'A correction reason is required before issuing the credit note.'))
       return
@@ -839,7 +935,7 @@ export default function SalesInvoiceDetailPage() {
   }
 
   async function handleCreateDebitNote() {
-    if (!companyId || !invoice) return
+    if (!companyId || !invoice || !canIssueSalesAdjustments) return
     if (!debitReason.trim()) {
       toast.error(tt('financeDocs.mz.debitReasonRequired', 'A correction reason is required before issuing the debit note.'))
       return
@@ -1031,13 +1127,20 @@ export default function SalesInvoiceDetailPage() {
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 {isIssued
                   ? tt('financeDocs.mz.issuedHelper', 'Issued invoices are immutable. Corrections must be issued as credit notes or debit notes.')
-                  : tt('financeDocs.mz.draftHelper', 'Draft invoices remain editable only for minimal preparation dates until the compliance-gated issue action is run.')}
+                  : approvalStatus === 'pending_approval'
+                    ? tt('financeDocs.approval.pendingHelp', 'This draft is locked while it waits for finance approval. Return it to draft before making further edits.')
+                    : approvalStatus === 'approved'
+                      ? tt('financeDocs.approval.approvedHelp', 'This draft has finance approval and is now locked pending the legal issue action.')
+                      : tt('financeDocs.mz.draftHelper', 'Draft invoices remain editable only for minimal preparation dates until the compliance-gated issue action is run.')}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <Badge variant={workflowTone(invoice.document_workflow_status)}>
                 {invoice.document_workflow_status.toUpperCase()}
+              </Badge>
+              <Badge variant={approvalTone(approvalStatus)}>
+                {approvalStatusLabel}
               </Badge>
               {outputModel ? (
                 <>
@@ -1078,7 +1181,7 @@ export default function SalesInvoiceDetailPage() {
                 <div>
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.invoiceDate', 'Invoice date')}</div>
                   {isDraft ? (
-                    <Input type="date" value={invoiceDateDraft} onChange={(event) => setInvoiceDateDraft(event.target.value)} />
+                    <Input type="date" value={invoiceDateDraft} onChange={(event) => setInvoiceDateDraft(event.target.value)} disabled={!canEditDraft} />
                   ) : (
                     <div className="mt-1">{shortDate(invoice.invoice_date)}</div>
                   )}
@@ -1086,10 +1189,24 @@ export default function SalesInvoiceDetailPage() {
                 <div>
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.dueDate', 'Due date')}</div>
                   {isDraft ? (
-                    <Input type="date" value={dueDateDraft} onChange={(event) => setDueDateDraft(event.target.value)} />
+                    <Input type="date" value={dueDateDraft} onChange={(event) => setDueDateDraft(event.target.value)} disabled={!canEditDraft} />
                   ) : (
                     <div className="mt-1">{shortDate(invoice.due_date)}</div>
                   )}
+                </div>
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.approval', 'Approval')}</div>
+                  <div className="mt-1">{approvalStatusLabel}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.approvalTimestamp', 'Approval checkpoint')}</div>
+                  <div className="mt-1">
+                    {approvalStatus === 'approved'
+                      ? shortDate(invoice.approved_at)
+                      : approvalStatus === 'pending_approval'
+                        ? shortDate(invoice.approval_requested_at)
+                        : tt('common.dash', '-')}
+                  </div>
                 </div>
                 <div className="md:col-span-2">
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.computerPhrase', 'Computer processed wording')}</div>
@@ -1113,6 +1230,7 @@ export default function SalesInvoiceDetailPage() {
                         onChange={(event) => setVatExemptionReasonDraft(event.target.value)}
                         placeholder={tt('financeDocs.mz.vatExemptionReasonPlaceholder', 'State the Mozambique VAT exemption reason when exempt lines are present')}
                         rows={3}
+                        disabled={!canEditDraft}
                       />
                       <div className="text-xs text-muted-foreground">
                         {tt('financeDocs.mz.vatExemptionReasonHelp', 'Required only when the invoice contains exempt VAT lines. The stored wording is frozen on issue and used on the final document output.')}
@@ -1124,13 +1242,37 @@ export default function SalesInvoiceDetailPage() {
                 </div>
                 {isDraft ? (
                   <div className="md:col-span-2 flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => void handleSaveDraftDates()} disabled={savingDraft || issuing}>
-                      {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.mz.saveDraftDates', 'Save draft dates')}
-                    </Button>
-                    <Button onClick={() => void handleIssueInvoice()} disabled={savingDraft || issuing}>
-                      <ReceiptText className="mr-2 h-4 w-4" />
-                      {issuing ? tt('financeDocs.mz.issuing', 'Issuing...') : tt('financeDocs.mz.issueInvoice', 'Issue invoice')}
-                    </Button>
+                    {canEditDraft ? (
+                      <Button variant="outline" onClick={() => void handleSaveDraftDates()} disabled={savingDraft || issuing}>
+                        {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.mz.saveDraftDates', 'Save draft dates')}
+                      </Button>
+                    ) : null}
+                    {canSubmitDraftForApproval ? (
+                      <Button variant="outline" onClick={() => void handleSubmitForApproval()} disabled={savingDraft || issuing}>
+                        {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.submit', 'Submit for approval')}
+                      </Button>
+                    ) : null}
+                    {canApproveDraft ? (
+                      <Button variant="outline" onClick={() => void handleApproveInvoice()} disabled={savingDraft || issuing}>
+                        {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.approveAction', 'Approve')}
+                      </Button>
+                    ) : null}
+                    {canReturnDraftToEdit ? (
+                      <Button variant="outline" onClick={() => void handleReturnDraftToEdit()} disabled={savingDraft || issuing}>
+                        {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.returnToDraft', 'Return to draft')}
+                      </Button>
+                    ) : null}
+                    {canIssueApprovedDraft ? (
+                      <Button onClick={() => void handleIssueInvoice()} disabled={savingDraft || issuing}>
+                        <ReceiptText className="mr-2 h-4 w-4" />
+                        {issuing ? tt('financeDocs.mz.issuing', 'Issuing...') : tt('financeDocs.mz.issueInvoice', 'Issue invoice')}
+                      </Button>
+                    ) : null}
+                    {!canEditDraft && !canSubmitDraftForApproval && !canApproveDraft && !canReturnDraftToEdit && !canIssueApprovedDraft ? (
+                      <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                        {tt('financeDocs.permissions.noDraftActions', 'Your role can review this draft but cannot change its approval or issue state.')}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </CardContent>
@@ -1363,7 +1505,9 @@ export default function SalesInvoiceDetailPage() {
                   </Button>
                 ) : (
                   <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
-                    {invoiceState?.credit_status === 'fully_credited'
+                    {!canIssueSalesAdjustments
+                      ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
+                      : invoiceState?.credit_status === 'fully_credited'
                       ? tt('financeDocs.mz.creditNotesFullyResolved', 'This invoice is already fully credited. No further credit note can be issued against it.')
                       : tt('financeDocs.mz.creditNotesPartialResolved', 'This invoice already has credit-note adjustments. Open the credit-note workflow again if more remaining value still needs to be credited.')}
                   </div>
@@ -1467,7 +1611,11 @@ export default function SalesInvoiceDetailPage() {
                   <Button onClick={() => setDebitDialogOpen(true)}>
                     {tt('financeDocs.mz.issueDebitNote', 'Issue debit note')}
                   </Button>
-                ) : null
+                ) : (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                    {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
+                  </div>
+                )
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
                   {tt('financeDocs.mz.debitNotesIssueOnly', 'Debit notes can only be created from issued invoices.')}

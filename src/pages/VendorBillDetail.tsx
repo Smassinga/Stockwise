@@ -19,6 +19,7 @@ import { getBaseCurrencyCode } from '../lib/currency'
 import { supabase } from '../lib/db'
 import {
   VENDOR_BILL_STATE_VIEW,
+  financeDocumentApprovalLabelKey,
   isMissingFinanceViewError,
   vendorBillAdjustmentLabelKey,
   vendorBillResolutionLabelKey,
@@ -36,18 +37,24 @@ import {
   type FinanceDocumentOutputModel,
 } from '../lib/financeDocumentOutput'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { financeCan } from '../lib/permissions'
 import {
+  approveVendorBill,
   createAndPostVendorCreditNoteForBill,
   createAndPostVendorDebitNoteForBill,
   listVendorCreditNoteLines,
   listVendorCreditNotesForBill,
   listVendorDebitNoteLines,
   listVendorDebitNotesForBill,
+  postVendorBill,
+  requestVendorBillApproval,
+  returnVendorBillToDraft,
   type FinanceDocumentEventRow,
   type VendorCreditNoteLineRow,
   type VendorCreditNoteRow,
   type VendorDebitNoteLineRow,
   type VendorDebitNoteRow,
+  voidVendorBill,
 } from '../lib/mzFinance'
 import { settlementLabelKey } from '../lib/orderState'
 
@@ -83,6 +90,17 @@ function workflowTone(status: 'draft' | 'posted' | 'voided') {
       return 'destructive'
     default:
       return 'secondary'
+  }
+}
+
+function approvalTone(status: VendorBillStateRow['approval_status']) {
+  switch (status) {
+    case 'approved':
+      return 'default'
+    case 'pending_approval':
+      return 'secondary'
+    default:
+      return 'outline'
   }
 }
 
@@ -122,7 +140,7 @@ function isoToday() {
 export default function VendorBillDetailPage() {
   const { billId } = useParams()
   const navigate = useNavigate()
-  const { companyId } = useOrg()
+  const { companyId, myRole } = useOrg()
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
@@ -688,11 +706,16 @@ export default function VendorBillDetailPage() {
     }
   }, [debitLineDrafts, debitMode, lines, postedCreditedDocumentTotal, postedDebitedDocumentTotal, row?.settled_base, row?.total_amount, tt])
 
-  const canCreateCreditNote = row?.document_workflow_status === 'posted' && row.credit_status !== 'fully_credited'
-  const canCreateDebitNote = row?.document_workflow_status === 'posted'
+  const canCreateCreditNote = canPostVendorAdjustments && row?.credit_status !== 'fully_credited'
+  const canCreateDebitNote = canPostVendorAdjustments
   const adjustmentStatusLabel = row?.adjustment_status
     ? tt(vendorBillAdjustmentLabelKey(row.adjustment_status), row.adjustment_status)
     : tt('financeDocs.adjustments.none', 'No adjustments')
+  const approvalStatus = row?.approval_status || 'draft'
+  const approvalStatusLabel = tt(
+    financeDocumentApprovalLabelKey(approvalStatus),
+    approvalStatus,
+  )
   const creditStatusLabel = row?.credit_status === 'fully_credited'
     ? tt('financeDocs.mz.creditStatus.fullyCredited', 'Fully credited')
     : row?.credit_status === 'partially_credited'
@@ -704,6 +727,42 @@ export default function VendorBillDetailPage() {
   const resolutionStatusLabel = row?.resolution_status
     ? tt(vendorBillResolutionLabelKey(row.resolution_status), row.resolution_status)
     : tt('common.dash', '-')
+  const canSubmitDraftForApproval = Boolean(
+    row
+    && row.document_workflow_status === 'draft'
+    && approvalStatus === 'draft'
+    && financeCan.submitForApproval(myRole),
+  )
+  const canApproveDraft = Boolean(
+    row
+    && row.document_workflow_status === 'draft'
+    && approvalStatus === 'pending_approval'
+    && financeCan.approve(myRole),
+  )
+  const canReturnDraftToEdit = Boolean(
+    row
+    && row.document_workflow_status === 'draft'
+    && approvalStatus !== 'draft'
+    && financeCan.approve(myRole),
+  )
+  const canPostApprovedDraft = Boolean(
+    row
+    && row.document_workflow_status === 'draft'
+    && approvalStatus === 'approved'
+    && financeCan.postVendorBill(myRole),
+  )
+  const canVoidBill = Boolean(
+    row
+    && row.document_workflow_status !== 'voided'
+    && (row.document_workflow_status === 'draft'
+      ? financeCan.voidDraft(myRole)
+      : financeCan.voidIssuedOrPosted(myRole)),
+  )
+  const canPostVendorAdjustments = Boolean(
+    row
+    && row.document_workflow_status === 'posted'
+    && financeCan.postVendorAdjustment(myRole),
+  )
 
   function updateCreditLineDraft(lineId: string, patch: Partial<AdjustmentLineDraft>) {
     setCreditLineDrafts((current) => ({
@@ -787,48 +846,90 @@ export default function VendorBillDetailPage() {
     })
   }
 
-  async function handleWorkflowChange(nextStatus: 'posted' | 'voided') {
-    if (!companyId || !billId || !row) return
-    const confirmMessage = nextStatus === 'posted'
-      ? tt('financeDocs.vendorBills.confirmPost', 'Post this vendor bill and move settlement truth to the AP document?')
-      : tt('financeDocs.vendorBills.confirmVoid', 'Void this vendor bill?')
-    if (!window.confirm(confirmMessage)) return
+  async function handleSubmitForApproval() {
+    if (!row || !canSubmitDraftForApproval) return
 
     try {
-      if (nextStatus === 'posted') setPosting(true)
-      else setVoiding(true)
-
-      const { error } = await supabase
-        .from('vendor_bills')
-        .update({ document_workflow_status: nextStatus })
-        .eq('company_id', companyId)
-        .eq('id', billId)
-
-      if (error) throw error
-
-      toast.success(
-        nextStatus === 'posted'
-          ? tt('financeDocs.vendorBills.postSuccess', 'Vendor bill posted')
-          : tt('financeDocs.vendorBills.voidSuccess', 'Vendor bill voided'),
-      )
+      setPosting(true)
+      await requestVendorBillApproval(row.id)
+      toast.success(tt('financeDocs.approval.requested', 'Document sent for approval'))
       await loadWorkspace()
     } catch (error: any) {
       console.error(error)
-      toast.error(
-        error?.message || (
-          nextStatus === 'posted'
-            ? tt('financeDocs.vendorBills.postFailed', 'Failed to post the vendor bill')
-            : tt('financeDocs.vendorBills.voidFailed', 'Failed to void the vendor bill')
-        ),
-      )
+      toast.error(error?.message || tt('financeDocs.approval.requestFailed', 'Failed to send the document for approval'))
     } finally {
       setPosting(false)
+    }
+  }
+
+  async function handleApproveDraft() {
+    if (!row || !canApproveDraft) return
+
+    try {
+      setPosting(true)
+      await approveVendorBill(row.id)
+      toast.success(tt('financeDocs.approval.approvedToast', 'Document approved'))
+      await loadWorkspace()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.approval.approveFailed', 'Failed to approve the document'))
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  async function handleReturnDraftToEdit() {
+    if (!row || !canReturnDraftToEdit) return
+
+    try {
+      setPosting(true)
+      await returnVendorBillToDraft(row.id)
+      toast.success(tt('financeDocs.approval.returnedToast', 'Document returned to draft'))
+      await loadWorkspace()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.approval.returnFailed', 'Failed to return the document to draft'))
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  async function handlePostBill() {
+    if (!row || !canPostApprovedDraft) return
+    if (!window.confirm(tt('financeDocs.vendorBills.confirmPost', 'Post this vendor bill and move settlement truth to the AP document?'))) return
+
+    try {
+      setPosting(true)
+      await postVendorBill(row.id)
+      toast.success(tt('financeDocs.vendorBills.postSuccess', 'Vendor bill posted'))
+      await loadWorkspace()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.vendorBills.postFailed', 'Failed to post the vendor bill'))
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  async function handleVoidBill() {
+    if (!row || !canVoidBill) return
+    if (!window.confirm(tt('financeDocs.vendorBills.confirmVoid', 'Void this vendor bill?'))) return
+
+    try {
+      setVoiding(true)
+      await voidVendorBill(row.id)
+      toast.success(tt('financeDocs.vendorBills.voidSuccess', 'Vendor bill voided'))
+      await loadWorkspace()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.vendorBills.voidFailed', 'Failed to void the vendor bill'))
+    } finally {
       setVoiding(false)
     }
   }
 
   async function handleCreateCreditNote() {
-    if (!companyId || !row) return
+    if (!companyId || !row || !canPostVendorAdjustments) return
     if (!creditReason.trim()) {
       toast.error(tt('financeDocs.vendorBills.creditReasonRequired', 'An adjustment reason is required before posting the supplier credit note.'))
       return
@@ -869,7 +970,7 @@ export default function VendorBillDetailPage() {
   }
 
   async function handleCreateDebitNote() {
-    if (!companyId || !row) return
+    if (!companyId || !row || !canPostVendorAdjustments) return
     if (!debitReason.trim()) {
       toast.error(tt('financeDocs.vendorBills.debitReasonRequired', 'An adjustment reason is required before posting the supplier debit note.'))
       return
@@ -976,27 +1077,34 @@ export default function VendorBillDetailPage() {
       ) : (
         <>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-                {tt('financeDocs.eyebrow', 'Finance documents')}
+              <div>
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
+                  {tt('financeDocs.eyebrow', 'Finance documents')}
+                </div>
+                <h1 className="mt-2 text-3xl font-bold tracking-tight">{row.primary_reference}</h1>
+                <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+                  {row.document_workflow_status === 'posted'
+                    ? tt('financeDocs.vendorBills.postedHelper', 'Posted vendor bills are the AP settlement anchor. Supplier credit notes, supplier debit notes, payments, and outstanding exposure all resolve against this document chain instead of the original purchase order.')
+                    : approvalStatus === 'pending_approval'
+                      ? tt('financeDocs.approval.pendingHelp', 'This draft is locked while it waits for finance approval. Return it to draft before making further edits.')
+                      : approvalStatus === 'approved'
+                        ? tt('financeDocs.approval.approvedHelp', 'This draft has finance approval and is now locked pending the legal issue action.')
+                        : tt('financeDocs.vendorBills.draftHelper', 'Draft vendor bills stay editable until posting. Posting transfers settlement truth from the purchase order into the AP document.')}
+                </p>
               </div>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight">{row.primary_reference}</h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                {row.document_workflow_status === 'posted'
-                  ? tt('financeDocs.vendorBills.postedHelper', 'Posted vendor bills are the AP settlement anchor. Supplier credit notes, supplier debit notes, payments, and outstanding exposure all resolve against this document chain instead of the original purchase order.')
-                  : tt('financeDocs.vendorBills.draftHelper', 'Draft vendor bills stay editable until posting. Posting transfers settlement truth from the purchase order into the AP document.')}
-              </p>
-            </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={workflowTone(row.document_workflow_status)}>
-                {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
-              </Badge>
-              <Badge variant={resolutionTone(row.resolution_status)}>{resolutionStatusLabel}</Badge>
-              <Badge variant={row.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
-              <Badge variant={row.adjustment_status === 'debited' || row.adjustment_status === 'credited_and_debited' ? 'outline' : 'secondary'}>
-                {adjustmentStatusLabel}
-              </Badge>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={workflowTone(row.document_workflow_status)}>
+                  {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
+                </Badge>
+                <Badge variant={approvalTone(approvalStatus)}>
+                  {approvalStatusLabel}
+                </Badge>
+                <Badge variant={resolutionTone(row.resolution_status)}>{resolutionStatusLabel}</Badge>
+                <Badge variant={row.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
+                <Badge variant={row.adjustment_status === 'debited' || row.adjustment_status === 'credited_and_debited' ? 'outline' : 'secondary'}>
+                  {adjustmentStatusLabel}
+                </Badge>
               <Badge variant={row.settlement_status === 'overdue' ? 'destructive' : 'secondary'}>
                 {settlementStatusLabel}
               </Badge>
@@ -1016,12 +1124,27 @@ export default function VendorBillDetailPage() {
                   </Button>
                 </>
               ) : null}
-              {row.document_workflow_status === 'draft' ? (
-                <Button onClick={() => void handleWorkflowChange('posted')} disabled={posting || voiding}>
+              {canSubmitDraftForApproval ? (
+                <Button variant="outline" onClick={() => void handleSubmitForApproval()} disabled={posting || voiding}>
+                  {posting ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.submit', 'Submit for approval')}
+                </Button>
+              ) : null}
+              {canApproveDraft ? (
+                <Button variant="outline" onClick={() => void handleApproveDraft()} disabled={posting || voiding}>
+                  {posting ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.approveAction', 'Approve')}
+                </Button>
+              ) : null}
+              {canReturnDraftToEdit ? (
+                <Button variant="outline" onClick={() => void handleReturnDraftToEdit()} disabled={posting || voiding}>
+                  {posting ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.returnToDraft', 'Return to draft')}
+                </Button>
+              ) : null}
+              {canPostApprovedDraft ? (
+                <Button onClick={() => void handlePostBill()} disabled={posting || voiding}>
                   {posting ? tt('financeDocs.vendorBills.posting', 'Posting...') : tt('financeDocs.vendorBills.postBill', 'Post vendor bill')}
                 </Button>
               ) : null}
-              {row.document_workflow_status === 'posted' ? (
+              {row.document_workflow_status === 'posted' && canPostVendorAdjustments ? (
                 <>
                   <Button variant="outline" onClick={() => setCreditDialogOpen(true)}>
                     {tt('financeDocs.vendorBills.issueCreditNote', 'Issue supplier credit note')}
@@ -1031,8 +1154,8 @@ export default function VendorBillDetailPage() {
                   </Button>
                 </>
               ) : null}
-              {row.document_workflow_status !== 'voided' ? (
-                <Button variant="outline" onClick={() => void handleWorkflowChange('voided')} disabled={posting || voiding}>
+              {canVoidBill ? (
+                <Button variant="outline" onClick={() => void handleVoidBill()} disabled={posting || voiding}>
                   {voiding ? tt('financeDocs.vendorBills.voiding', 'Voiding...') : tt('financeDocs.vendorBills.voidBill', 'Void bill')}
                 </Button>
               ) : null}
@@ -1101,6 +1224,24 @@ export default function VendorBillDetailPage() {
                     <Badge variant={workflowTone(row.document_workflow_status)}>
                       {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
                     </Badge>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.approval', 'Approval')}</div>
+                  <div className="mt-1">
+                    <Badge variant={approvalTone(approvalStatus)}>
+                      {approvalStatusLabel}
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.approvalTimestamp', 'Approval checkpoint')}</div>
+                  <div className="mt-1">
+                    {approvalStatus === 'approved'
+                      ? row.approved_at || tt('common.dash', '-')
+                      : approvalStatus === 'pending_approval'
+                        ? row.approval_requested_at || tt('common.dash', '-')
+                        : tt('common.dash', '-')}
                   </div>
                 </div>
                 <div>
@@ -1247,7 +1388,9 @@ export default function VendorBillDetailPage() {
                   </Button>
                 ) : (
                   <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
-                    {tt('financeDocs.vendorBills.creditNotesResolved', 'This vendor bill is already fully credited. No further supplier credit note can be posted against it.')}
+                    {!canPostVendorAdjustments
+                      ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
+                      : tt('financeDocs.vendorBills.creditNotesResolved', 'This vendor bill is already fully credited. No further supplier credit note can be posted against it.')}
                   </div>
                 )
               ) : (
@@ -1327,9 +1470,15 @@ export default function VendorBillDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {row.document_workflow_status === 'posted' ? (
-                <Button onClick={() => setDebitDialogOpen(true)}>
-                  {tt('financeDocs.vendorBills.issueDebitNote', 'Issue supplier debit note')}
-                </Button>
+                canCreateDebitNote ? (
+                  <Button onClick={() => setDebitDialogOpen(true)}>
+                    {tt('financeDocs.vendorBills.issueDebitNote', 'Issue supplier debit note')}
+                  </Button>
+                ) : (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                    {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
+                  </div>
+                )
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
                   {tt('financeDocs.vendorBills.debitNotesPostedOnly', 'Supplier debit notes can only be created from posted vendor bills.')}

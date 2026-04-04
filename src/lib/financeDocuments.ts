@@ -1,5 +1,6 @@
 export type SalesInvoiceWorkflowStatus = 'draft' | 'issued' | 'voided'
 export type VendorBillWorkflowStatus = 'draft' | 'posted' | 'voided'
+export type FinanceDocumentApprovalStatus = 'draft' | 'pending_approval' | 'approved'
 export type FinanceDocumentSettlementStatus = 'unsettled' | 'partially_settled' | 'settled' | 'overdue'
 export type SalesInvoiceAdjustmentStatus = 'none' | 'credited' | 'debited' | 'credited_and_debited'
 export type VendorBillAdjustmentStatus = 'none' | 'credited' | 'debited' | 'credited_and_debited'
@@ -39,6 +40,9 @@ export type SalesInvoiceStateRow = {
   total_amount: number
   total_amount_base: number
   document_workflow_status: SalesInvoiceWorkflowStatus
+  approval_status: FinanceDocumentApprovalStatus
+  approval_requested_at: string | null
+  approved_at: string | null
   line_count: number
   state_warning: boolean
   financial_anchor: 'sales_invoice'
@@ -78,6 +82,9 @@ export type VendorBillStateRow = {
   total_amount: number
   total_amount_base: number
   document_workflow_status: VendorBillWorkflowStatus
+  approval_status: FinanceDocumentApprovalStatus
+  approval_requested_at: string | null
+  approved_at: string | null
   line_count: number
   duplicate_supplier_reference_exists: boolean
   financial_anchor: 'vendor_bill'
@@ -122,6 +129,19 @@ export type VendorBillLineRow = {
 
 export const SALES_INVOICE_STATE_VIEW = 'v_sales_invoice_state'
 export const VENDOR_BILL_STATE_VIEW = 'v_vendor_bill_state'
+
+export function financeDocumentApprovalLabelKey(status?: FinanceDocumentApprovalStatus | null) {
+  switch (status) {
+    case 'draft':
+      return 'financeDocs.approval.draft'
+    case 'pending_approval':
+      return 'financeDocs.approval.pendingApproval'
+    case 'approved':
+      return 'financeDocs.approval.approved'
+    default:
+      return 'orders.status.unknown'
+  }
+}
 
 export function isMissingFinanceViewError(error: any, viewName: string) {
   const code = String(error?.code || '')

@@ -14,6 +14,7 @@ import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
+import { financeCan } from '../lib/permissions'
 
 type CashSummary = { beginning: number; inflows: number; outflows: number; net: number; ending: number }
 type CashTx = {
@@ -44,9 +45,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 
 export default function CashPage() {
   const { t } = useI18n()
-  const { companyId } = useOrg()
+  const { companyId, myRole } = useOrg()
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
+  const canManageSettlement = financeCan.settlementSensitive(myRole)
   const [from, setFrom] = useState<string>(monthStartISO())
   const [to, setTo] = useState<string>(todayISO())
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -68,6 +70,19 @@ export default function CashPage() {
     refType: SettlementKind | 'ADJ' | 'none'
     refId: string
   }>({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
+
+  useEffect(() => {
+    if (canManageSettlement) return
+    setAddForm((current) => {
+      if (current.type === 'adjustment' && (current.refType === 'none' || current.refType === 'ADJ')) return current
+      return {
+        ...current,
+        type: 'adjustment',
+        refType: 'none',
+        refId: '',
+      }
+    })
+  }, [canManageSettlement])
 
   useEffect(() => {
     let mounted = true
@@ -231,10 +246,14 @@ export default function CashPage() {
       toast.error(tf('cash.toast.invalidRefUuid', 'Provide a valid internal reference ID (UUID) for the selected settlement anchor.'))
       return
     }
-    if (disallowRef && addForm.refId.trim()) {
-      toast.error(tf('cash.toast.adjustmentNoRef', 'Adjustments (ADJ) must not carry a reference ID.'))
-      return
-    }
+      if (disallowRef && addForm.refId.trim()) {
+        toast.error(tf('cash.toast.adjustmentNoRef', 'Adjustments (ADJ) must not carry a reference ID.'))
+        return
+      }
+      if (!canManageSettlement && (needsRef || addForm.type !== 'adjustment')) {
+        toast.error(tf('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.'))
+        return
+      }
 
     // ✅ normalize payload (null out ref_id unless needed)
     const payload = {
@@ -332,11 +351,16 @@ export default function CashPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="sale_receipt">{t('cash.saleReceipt')}</SelectItem>
-                        <SelectItem value="purchase_payment">{t('cash.purchasePayment')}</SelectItem>
+                        <SelectItem value="sale_receipt" disabled={!canManageSettlement}>{t('cash.saleReceipt')}</SelectItem>
+                        <SelectItem value="purchase_payment" disabled={!canManageSettlement}>{t('cash.purchasePayment')}</SelectItem>
                         <SelectItem value="adjustment">{t('cash.adjustment')}</SelectItem>
                       </SelectContent>
                     </Select>
+                    {!canManageSettlement ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {tf('cash.financeAuthorityNotice', 'Only finance-authority users can post settlement-linked cash receipts and payments.')}
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <Label>{t('cash.amount', { code: baseCurrency || 'MZN' })}</Label>
@@ -360,10 +384,10 @@ export default function CashPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">{t('common.none')}</SelectItem>
-                          <SelectItem value="SO">SO</SelectItem>
-                          <SelectItem value="PO">PO</SelectItem>
-                          <SelectItem value="SI">SI</SelectItem>
-                          <SelectItem value="VB">VB</SelectItem>
+                          <SelectItem value="SO" disabled={!canManageSettlement}>SO</SelectItem>
+                          <SelectItem value="PO" disabled={!canManageSettlement}>PO</SelectItem>
+                          <SelectItem value="SI" disabled={!canManageSettlement}>SI</SelectItem>
+                          <SelectItem value="VB" disabled={!canManageSettlement}>VB</SelectItem>
                           <SelectItem value="ADJ">ADJ</SelectItem>
                         </SelectContent>
                       </Select>

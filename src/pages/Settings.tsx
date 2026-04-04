@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useI18n, withI18nFallback } from "../lib/i18n";
 import { useOrg } from "../hooks/useOrg";
+import { financeCan } from "../lib/permissions";
 
 import {
   Card,
@@ -291,6 +292,10 @@ function Settings() {
     () => canEditAll || roleUpper === "MANAGER",
     [canEditAll, roleUpper],
   );
+  const canEditDueReminders = useMemo(
+    () => financeCan.reminderSettings(myRole),
+    [myRole],
+  );
   const settingsSummary = useMemo(() => {
     const companyLabel =
       profile?.trade_name ||
@@ -486,25 +491,27 @@ function Settings() {
     try {
       setSaving(true);
       const normalized = clone(data);
-      const reminderTime = parseDueReminderTime(dueReminderTimeInput);
-      if (!reminderTime) {
-        toast.error(
-          tt(
-            "settings.toast.reminderTimeInvalid",
-            "Choose a valid due-reminder time in HH:MM format."
-          )
-        );
-        return;
-      }
+      const reminderTime = canEditDueReminders ? parseDueReminderTime(dueReminderTimeInput) : null;
+      if (canEditDueReminders) {
+        if (!reminderTime) {
+          toast.error(
+            tt(
+              "settings.toast.reminderTimeInvalid",
+              "Choose a valid due-reminder time in HH:MM format."
+            )
+          );
+          return;
+        }
 
-      if (!reminderLeadDays.length) {
-        const message = tt(
-          "settings.toast.reminderOffsetRequired",
-          "Add at least one reminder offset before saving."
-        );
-        setDueReminderLeadDaysError(message);
-        toast.error(message);
-        return;
+        if (!reminderLeadDays.length) {
+          const message = tt(
+            "settings.toast.reminderOffsetRequired",
+            "Add at least one reminder offset before saving."
+          );
+          setDueReminderLeadDaysError(message);
+          toast.error(message);
+          return;
+        }
       }
 
       normalized.notifications = {
@@ -530,12 +537,16 @@ function Settings() {
         return;
       }
 
-      normalized.dueReminders = {
-        ...normalized.dueReminders,
-        sendAt: reminderTime.normalized,
-        hours: [reminderTime.legacyHourValue],
-        leadDays: reminderLeadDays,
-      };
+      if (canEditDueReminders && reminderTime) {
+        normalized.dueReminders = {
+          ...normalized.dueReminders,
+          sendAt: reminderTime.normalized,
+          hours: [reminderTime.legacyHourValue],
+          leadDays: reminderLeadDays,
+        };
+      } else {
+        delete normalized.dueReminders;
+      }
 
       const { data: updated, error } = await supabase.rpc(
         "update_company_settings",
@@ -1387,6 +1398,14 @@ function Settings() {
               "Due reminders run on your company timezone, follow the active AR anchor, and use the billing email on the active order or invoice chain by default."
             )}
           </div>
+          {!canEditDueReminders ? (
+            <div className="md:col-span-2 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+              {tt(
+                "settings.dueReminders.restricted",
+                "Only finance-authority users can change due-reminder settings because reminder policy follows the active legal receivable anchor."
+              )}
+            </div>
+          ) : null}
           <div className="flex items-center gap-3">
             <Switch
               checked={
@@ -1395,7 +1414,7 @@ function Settings() {
                 true
               }
               onCheckedChange={(v) => setField("dueReminders.enabled", v)}
-              disabled={!canEditOps}
+              disabled={!canEditDueReminders}
             />
             <Label>{t("settings.dueReminders.enable")}</Label>
           </div>
@@ -1409,11 +1428,11 @@ function Settings() {
                 DEFAULTS.dueReminders?.timezone ||
                 "Africa/Maputo"
               }
-              onChange={(e) =>
-                setField("dueReminders.timezone", e.target.value)
-              }
-              disabled={!canEditOps}
-            />
+                onChange={(e) =>
+                  setField("dueReminders.timezone", e.target.value)
+                }
+                disabled={!canEditDueReminders}
+              />
             <div className="text-xs text-muted-foreground mt-1">
               {t("settings.dueReminders.timezone.helper")}
             </div>
@@ -1443,7 +1462,7 @@ function Settings() {
                   setField("dueReminders.sendAt", parsed.normalized);
                   setField("dueReminders.hours", [parsed.legacyHourValue]);
                 }}
-                disabled={!canEditOps}
+                  disabled={!canEditDueReminders}
               />
               {/* <Button 
                 variant="outline" 
@@ -1460,7 +1479,7 @@ function Settings() {
                     toast.error(e?.message || 'Failed to enqueue reminders');
                   }
                 }}
-                disabled={!canEditOps}
+                      disabled={!canEditDueReminders}
                 className="shrink-0"
               >
                 Run Now
@@ -1504,7 +1523,7 @@ function Settings() {
                         type="button"
                         className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background px-3 py-1.5 text-sm"
                         onClick={() => removeReminderOffset(offset)}
-                        disabled={!canEditOps}
+                      disabled={!canEditDueReminders}
                       >
                         <span>
                           {tt(
@@ -1536,14 +1555,14 @@ function Settings() {
                       if (dueReminderLeadDaysError) setDueReminderLeadDaysError(null);
                     }}
                     placeholder={tt("settings.dueReminders.before.placeholder", "Add days before")}
-                    disabled={!canEditOps}
+                      disabled={!canEditDueReminders}
                   />
                   <Button
                     type="button"
                     variant="outline"
                     className="shrink-0"
                     onClick={() => addReminderOffset("before")}
-                    disabled={!canEditOps}
+                disabled={!canEditDueReminders}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     {tt("settings.dueReminders.addOffset", "Add")}
@@ -1571,7 +1590,7 @@ function Settings() {
                       const withoutCurrentDay = reminderLeadDays.filter((value) => value !== 0);
                       setReminderLeadDays(enabled ? [...withoutCurrentDay, 0] : withoutCurrentDay);
                     }}
-                    disabled={!canEditOps}
+                    disabled={!canEditDueReminders}
                   />
                 </div>
               </div>
@@ -1594,7 +1613,7 @@ function Settings() {
                         type="button"
                         className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background px-3 py-1.5 text-sm"
                         onClick={() => removeReminderOffset(offset)}
-                        disabled={!canEditOps}
+                        disabled={!canEditDueReminders}
                       >
                         <span>
                           {tt(
@@ -1626,14 +1645,14 @@ function Settings() {
                       if (dueReminderLeadDaysError) setDueReminderLeadDaysError(null);
                     }}
                     placeholder={tt("settings.dueReminders.after.placeholder", "Add days after")}
-                    disabled={!canEditOps}
+                    disabled={!canEditDueReminders}
                   />
                   <Button
                     type="button"
                     variant="outline"
                     className="shrink-0"
                     onClick={() => addReminderOffset("after")}
-                    disabled={!canEditOps}
+                    disabled={!canEditDueReminders}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     {tt("settings.dueReminders.addOffset", "Add")}
@@ -1659,7 +1678,7 @@ function Settings() {
               onChange={(e) =>
                 setField("dueReminders.bcc", csvToList(e.target.value))
               }
-              disabled={!canEditOps}
+              disabled={!canEditDueReminders}
             />
             <div className="text-xs text-muted-foreground mt-1">
               {tt(

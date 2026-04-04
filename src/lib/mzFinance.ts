@@ -74,6 +74,11 @@ export type SalesInvoiceDocumentRow = {
   vat_exemption_reason_text: string | null
   compliance_rule_version_snapshot: string | null
   document_workflow_status: 'draft' | 'issued' | 'voided'
+  approval_status: 'draft' | 'pending_approval' | 'approved'
+  approval_requested_at: string | null
+  approval_requested_by: string | null
+  approved_at: string | null
+  approved_by: string | null
   issued_at: string | null
   issued_by: string | null
   voided_at: string | null
@@ -1448,6 +1453,60 @@ export async function issueSalesInvoice(invoiceId: string) {
   return data as SalesInvoiceDocumentRow
 }
 
+export async function requestSalesInvoiceApproval(invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.approval.request.start', { invoiceId })
+  const { data, error } = await supabase.rpc('request_sales_invoice_approval_mz', {
+    p_invoice_id: invoiceId,
+  })
+
+  if (error) {
+    mzRuntimeError('salesInvoice.approval.request.failed', error, {
+      invoiceId,
+      rpc: 'request_sales_invoice_approval_mz',
+    })
+    throw new Error(humanizeRuntimeError(error, 'Sales invoice approval request failed', 'rpc.request_sales_invoice_approval_mz'))
+  }
+
+  mzRuntimeDebug('salesInvoice.approval.request.success', { invoiceId })
+  return data as SalesInvoiceDocumentRow
+}
+
+export async function approveSalesInvoice(invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.approval.approve.start', { invoiceId })
+  const { data, error } = await supabase.rpc('approve_sales_invoice_mz', {
+    p_invoice_id: invoiceId,
+  })
+
+  if (error) {
+    mzRuntimeError('salesInvoice.approval.approve.failed', error, {
+      invoiceId,
+      rpc: 'approve_sales_invoice_mz',
+    })
+    throw new Error(humanizeRuntimeError(error, 'Sales invoice approval failed', 'rpc.approve_sales_invoice_mz'))
+  }
+
+  mzRuntimeDebug('salesInvoice.approval.approve.success', { invoiceId })
+  return data as SalesInvoiceDocumentRow
+}
+
+export async function returnSalesInvoiceToDraft(invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.approval.returnToDraft.start', { invoiceId })
+  const { data, error } = await supabase.rpc('return_sales_invoice_to_draft_mz', {
+    p_invoice_id: invoiceId,
+  })
+
+  if (error) {
+    mzRuntimeError('salesInvoice.approval.returnToDraft.failed', error, {
+      invoiceId,
+      rpc: 'return_sales_invoice_to_draft_mz',
+    })
+    throw new Error(humanizeRuntimeError(error, 'Sales invoice draft reopen failed', 'rpc.return_sales_invoice_to_draft_mz'))
+  }
+
+  mzRuntimeDebug('salesInvoice.approval.returnToDraft.success', { invoiceId })
+  return data as SalesInvoiceDocumentRow
+}
+
 export async function createDraftSalesInvoiceFromOrder(companyId: string, salesOrderId: string) {
   mzRuntimeDebug('salesInvoiceDraft.create.start', { companyId, salesOrderId })
   const { data: existingInvoice, error: existingError } = await supabase
@@ -2043,7 +2102,22 @@ type VendorBillAdjustmentSourceRow = {
   due_date: string
   currency_code: string
   fx_to_base: number
+  approval_status: 'draft' | 'pending_approval' | 'approved'
+  approval_requested_at: string | null
+  approval_requested_by: string | null
+  approved_at: string | null
+  approved_by: string | null
   document_workflow_status: 'draft' | 'posted' | 'voided'
+}
+
+type VendorBillWorkflowMutationRow = {
+  id: string
+  company_id: string
+  internal_reference: string
+  document_workflow_status: 'draft' | 'posted' | 'voided'
+  approval_status: 'draft' | 'pending_approval' | 'approved'
+  approval_requested_at: string | null
+  approved_at: string | null
 }
 
 type VendorBillAdjustmentLineSource = {
@@ -2102,10 +2176,70 @@ async function maybeVoidDraftVendorDebitNote(companyId: string, noteId: string, 
     .eq('id', noteId)
 }
 
+export async function requestVendorBillApproval(billId: string) {
+  const { data, error } = await supabase.rpc('request_vendor_bill_approval_mz', {
+    p_bill_id: billId,
+  })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Vendor bill approval request failed', 'rpc.request_vendor_bill_approval_mz'))
+  }
+
+  return data as VendorBillWorkflowMutationRow
+}
+
+export async function approveVendorBill(billId: string) {
+  const { data, error } = await supabase.rpc('approve_vendor_bill_mz', {
+    p_bill_id: billId,
+  })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Vendor bill approval failed', 'rpc.approve_vendor_bill_mz'))
+  }
+
+  return data as VendorBillWorkflowMutationRow
+}
+
+export async function returnVendorBillToDraft(billId: string) {
+  const { data, error } = await supabase.rpc('return_vendor_bill_to_draft_mz', {
+    p_bill_id: billId,
+  })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Vendor bill draft reopen failed', 'rpc.return_vendor_bill_to_draft_mz'))
+  }
+
+  return data as VendorBillWorkflowMutationRow
+}
+
+export async function postVendorBill(billId: string) {
+  const { data, error } = await supabase.rpc('post_vendor_bill_mz', {
+    p_bill_id: billId,
+  })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Vendor bill posting failed', 'rpc.post_vendor_bill_mz'))
+  }
+
+  return data as VendorBillWorkflowMutationRow
+}
+
+export async function voidVendorBill(billId: string) {
+  const { data, error } = await supabase.rpc('void_vendor_bill_mz', {
+    p_bill_id: billId,
+  })
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Vendor bill void failed', 'rpc.void_vendor_bill_mz'))
+  }
+
+  return data as VendorBillWorkflowMutationRow
+}
+
 async function getVendorBillForAdjustments(companyId: string, billId: string) {
   const { data, error } = await supabase
     .from('vendor_bills')
-    .select('id,company_id,supplier_id,purchase_order_id,internal_reference,supplier_invoice_reference,bill_date,due_date,currency_code,fx_to_base,document_workflow_status')
+    .select('id,company_id,supplier_id,purchase_order_id,internal_reference,supplier_invoice_reference,bill_date,due_date,currency_code,fx_to_base,approval_status,approval_requested_at,approval_requested_by,approved_at,approved_by,document_workflow_status')
     .eq('company_id', companyId)
     .eq('id', billId)
     .maybeSingle<VendorBillAdjustmentSourceRow>()

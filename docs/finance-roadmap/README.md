@@ -69,7 +69,7 @@ These rules must not be broken by future work:
 
 | Phase | Purpose | Why It Matters | Current Status | Depends On |
 |---|---|---|---|---|
-| Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | In progress | Current finance-document lifecycle baseline |
+| Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | Completed | Current finance-document lifecycle baseline |
 | Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | In progress | Phase 1 controls for sensitive actions |
 | Phase 3 | Reconciliation and month-close readiness | Finance needs current-legal-value bridges, exception handling, and close-ready review surfaces | In progress | Phase 2 traceability and stable state views |
 | Phase 4 | Automated finance regression suite | The platform is now too finance-critical to rely on manual smoke tests alone | Not started | Stable Phase 1-3 workflows and validations |
