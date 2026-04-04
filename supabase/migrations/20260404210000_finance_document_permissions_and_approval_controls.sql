@@ -232,6 +232,16 @@ as $function$
   select public.finance_documents_can_prepare_draft(p_company_id);
 $function$;
 
+create or replace function public.finance_documents_internal_transition_bypass()
+returns boolean
+language sql
+stable
+set search_path to 'pg_catalog', 'public'
+as $function$
+  select public.finance_documents_is_system_context()
+      or coalesce(current_setting('stockwise.finance_transition_bypass', true), '') = 'on';
+$function$;
+
 create or replace function public.finance_document_header_event_journal()
 returns trigger
 language plpgsql
@@ -618,9 +628,9 @@ begin
     end case;
 
     if new.document_workflow_status = old.document_workflow_status
-       and (to_jsonb(new) - array['updated_at', 'approval_status', 'approval_requested_at', 'approval_requested_by', 'approved_at', 'approved_by'])
+       and (to_jsonb(new) - array['updated_at', 'supplier_invoice_reference_normalized', 'approval_status', 'approval_requested_at', 'approval_requested_by', 'approved_at', 'approved_by'])
          is distinct from
-           (to_jsonb(old) - array['updated_at', 'approval_status', 'approval_requested_at', 'approval_requested_by', 'approved_at', 'approved_by']) then
+           (to_jsonb(old) - array['updated_at', 'supplier_invoice_reference_normalized', 'approval_status', 'approval_requested_at', 'approval_requested_by', 'approved_at', 'approved_by']) then
       raise exception using
         message = 'Vendor bill approval transitions cannot edit draft content. Save draft changes before approval routing.';
     end if;
@@ -632,17 +642,23 @@ begin
           message = 'Vendor bill draft edit access denied.';
       end if;
     elsif new.document_workflow_status = old.document_workflow_status
-       and (to_jsonb(new) - 'updated_at') is distinct from (to_jsonb(old) - 'updated_at') then
+       and (to_jsonb(new) - array['updated_at', 'supplier_invoice_reference_normalized'])
+         is distinct from
+           (to_jsonb(old) - array['updated_at', 'supplier_invoice_reference_normalized']) then
       raise exception using
         message = 'Vendor bills are locked once they are pending approval or approved. Return the document to draft before editing it.';
     end if;
   elsif old.document_workflow_status = 'posted'
      and new.document_workflow_status = old.document_workflow_status
-     and (to_jsonb(new) - 'updated_at') is distinct from (to_jsonb(old) - 'updated_at') then
+     and (to_jsonb(new) - array['updated_at', 'supplier_invoice_reference_normalized'])
+       is distinct from
+         (to_jsonb(old) - array['updated_at', 'supplier_invoice_reference_normalized']) then
     raise exception using
       message = 'Posted vendor bills are immutable.';
   elsif old.document_workflow_status = 'voided'
-     and (to_jsonb(new) - 'updated_at') is distinct from (to_jsonb(old) - 'updated_at') then
+     and (to_jsonb(new) - array['updated_at', 'supplier_invoice_reference_normalized'])
+       is distinct from
+         (to_jsonb(old) - array['updated_at', 'supplier_invoice_reference_normalized']) then
     raise exception using
       message = 'Voided vendor bills are immutable.';
   end if;
@@ -685,9 +701,9 @@ begin
           raise exception using
             message = 'Vendor bill void access denied.';
         end if;
-        if (to_jsonb(new) - array['updated_at', 'document_workflow_status', 'voided_at', 'voided_by', 'void_reason'])
+        if (to_jsonb(new) - array['updated_at', 'supplier_invoice_reference_normalized', 'document_workflow_status', 'voided_at', 'voided_by', 'void_reason'])
              is distinct from
-           (to_jsonb(old) - array['updated_at', 'document_workflow_status', 'voided_at', 'voided_by', 'void_reason']) then
+           (to_jsonb(old) - array['updated_at', 'supplier_invoice_reference_normalized', 'document_workflow_status', 'voided_at', 'voided_by', 'void_reason']) then
           raise exception using
             message = 'Posted vendor bills can only change workflow and void metadata during a void transition.';
         end if;
@@ -1031,6 +1047,19 @@ begin
       message = format('%s lines require a parent draft document.', v_label);
   end if;
 
+  if public.finance_documents_internal_transition_bypass() then
+    if tg_op <> 'DELETE' then
+      new.company_id := coalesce(new.company_id, v_company_id);
+      if new.company_id is distinct from v_company_id then
+        raise exception using
+          message = format('%s line company must match the parent document company.', v_label);
+      end if;
+      return new;
+    end if;
+
+    return old;
+  end if;
+
   if not public.finance_documents_can_prepare_draft(v_company_id) then
     raise exception using
       message = format('%s draft line access denied.', v_label);
@@ -1139,6 +1168,19 @@ begin
   if v_company_id is null then
     raise exception using
       message = format('%s lines require a parent draft document.', v_label);
+  end if;
+
+  if public.finance_documents_internal_transition_bypass() then
+    if tg_op <> 'DELETE' then
+      new.company_id := coalesce(new.company_id, v_company_id);
+      if new.company_id is distinct from v_company_id then
+        raise exception using
+          message = format('%s line company must match the parent document company.', v_label);
+      end if;
+      return new;
+    end if;
+
+    return old;
   end if;
 
   if not coalesce(v_can_adjust, false) then
@@ -1569,6 +1611,8 @@ begin
       message = 'Vendor bills must be approved before posting.';
   end if;
 
+  perform set_config('stockwise.finance_transition_bypass', 'on', true);
+
   update public.vendor_bills vb
      set document_workflow_status = 'posted'
    where vb.id = p_bill_id
@@ -1671,6 +1715,8 @@ begin
     raise exception 'sales_invoice_issue_requires_approved_status';
   end if;
 
+  perform set_config('stockwise.finance_transition_bypass', 'on', true);
+
   update public.sales_invoices si
      set document_workflow_status = 'issued'
    where si.id = p_invoice_id
@@ -1708,6 +1754,8 @@ begin
     raise exception using
       message = 'Only draft sales credit notes can be issued.';
   end if;
+
+  perform set_config('stockwise.finance_transition_bypass', 'on', true);
 
   update public.sales_credit_notes scn
      set document_workflow_status = 'issued'
@@ -1747,6 +1795,8 @@ begin
       message = 'Only draft sales debit notes can be issued.';
   end if;
 
+  perform set_config('stockwise.finance_transition_bypass', 'on', true);
+
   update public.sales_debit_notes sdn
      set document_workflow_status = 'issued'
    where sdn.id = p_note_id
@@ -1785,6 +1835,8 @@ begin
       message = 'Only draft supplier credit notes can be posted.';
   end if;
 
+  perform set_config('stockwise.finance_transition_bypass', 'on', true);
+
   update public.vendor_credit_notes vcn
      set document_workflow_status = 'posted'
    where vcn.id = p_note_id
@@ -1822,6 +1874,8 @@ begin
     raise exception using
       message = 'Only draft supplier debit notes can be posted.';
   end if;
+
+  perform set_config('stockwise.finance_transition_bypass', 'on', true);
 
   update public.vendor_debit_notes vdn
      set document_workflow_status = 'posted'

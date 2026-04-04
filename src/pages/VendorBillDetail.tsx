@@ -706,8 +706,6 @@ export default function VendorBillDetailPage() {
     }
   }, [debitLineDrafts, debitMode, lines, postedCreditedDocumentTotal, postedDebitedDocumentTotal, row?.settled_base, row?.total_amount, tt])
 
-  const canCreateCreditNote = canPostVendorAdjustments && row?.credit_status !== 'fully_credited'
-  const canCreateDebitNote = canPostVendorAdjustments
   const adjustmentStatusLabel = row?.adjustment_status
     ? tt(vendorBillAdjustmentLabelKey(row.adjustment_status), row.adjustment_status)
     : tt('financeDocs.adjustments.none', 'No adjustments')
@@ -763,6 +761,8 @@ export default function VendorBillDetailPage() {
     && row.document_workflow_status === 'posted'
     && financeCan.postVendorAdjustment(myRole),
   )
+  const canCreateCreditNote = canPostVendorAdjustments && row?.credit_status !== 'fully_credited'
+  const canCreateDebitNote = canPostVendorAdjustments
 
   function updateCreditLineDraft(lineId: string, patch: Partial<AdjustmentLineDraft>) {
     setCreditLineDrafts((current) => ({
