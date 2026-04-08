@@ -1220,15 +1220,15 @@ declare
   v_ref_type text;
   v_tx_type text;
 begin
-  if tg_op = 'INSERT' then
-    v_ref_type := new.ref_type;
-    v_tx_type := new.type;
-  else
-    v_ref_type := coalesce(new.ref_type, old.ref_type);
-    v_tx_type := coalesce(new.type, old.type);
-  end if;
-
   if tg_table_name = 'cash_transactions' then
+    if tg_op = 'INSERT' then
+      v_ref_type := new.ref_type;
+      v_tx_type := new.type;
+    else
+      v_ref_type := coalesce(new.ref_type, old.ref_type);
+      v_tx_type := coalesce(new.type, old.type);
+    end if;
+
     if tg_op = 'INSERT' then
       v_company_id := new.company_id;
     else
@@ -1246,6 +1246,12 @@ begin
   end if;
 
   if tg_table_name = 'bank_transactions' then
+    if tg_op = 'INSERT' then
+      v_ref_type := new.ref_type;
+    else
+      v_ref_type := coalesce(new.ref_type, old.ref_type);
+    end if;
+
     if tg_op = 'INSERT' then
       v_bank_id := new.bank_id;
     else

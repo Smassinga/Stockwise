@@ -1168,6 +1168,14 @@ export default function PurchaseOrders() {
     }),
     [receivedMap, selectedPOLines]
   )
+  const selectedPOBillableLines = useMemo(
+    () => selectedPOLines.filter((line) => {
+      const qty = n(line.qty)
+      const lineTotal = n(line.line_total, qty * n(line.unit_price))
+      return qty > 0 && lineTotal > 0
+    }),
+    [selectedPOLines],
+  )
   const selectedPORemainingQty = useMemo(
     () => selectedPOOpenLines.reduce((sum, line) => {
       const lineId = String(line.id || '')
@@ -1180,6 +1188,7 @@ export default function PurchaseOrders() {
     companyId
     && selectedPO
     && !selectedPOVendorBill
+    && selectedPOBillableLines.length > 0
     && financeCan.createDraft(myRole)
     && ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received', 'closed'].includes(
       String(selectedPO.status || '').toLowerCase(),
