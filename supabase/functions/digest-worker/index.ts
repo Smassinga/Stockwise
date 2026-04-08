@@ -64,7 +64,10 @@ const FALLBACK_BRAND = MAIL.defaultFromName || "StockWise";
 const DRY_RUN = (Deno.env.get("DRY_RUN") ?? "").toLowerCase() === "true";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const DIGEST_HOOK_SECRET = Deno.env.get("DIGEST_HOOK_SECRET") ?? "";
+const DIGEST_HOOK_SECRET =
+  Deno.env.get("DIGEST_HOOK_SECRET")
+  ?? Deno.env.get("DIGEST_FN_KEY")
+  ?? "";
 const DEBUG_ACCEPT_QUERY_KEY = (Deno.env.get("DEBUG_ACCEPT_QUERY_KEY") ?? "false").toLowerCase() === "true";
 const DEBUG_LOG = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
 const MAX_ATTEMPTS = Number(Deno.env.get("DIGEST_MAX_ATTEMPTS") ?? "5");

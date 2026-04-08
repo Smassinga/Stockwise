@@ -358,7 +358,7 @@ BEGIN
         p_purchase_order_id::text,
         CASE
           WHEN v_bucket.po_line_id IS NULL THEN NULL
-          ELSE v_bucket.po_line_id::text
+          ELSE v_bucket.po_line_id
         END
       )
       RETURNING id INTO v_stock_movement_id;

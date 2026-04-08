@@ -505,6 +505,30 @@ type SalesOrderLineDraftSource = {
   line_total: number | null
 }
 
+type PurchaseOrderDraftSource = {
+  id: string
+  company_id: string
+  supplier_id: string | null
+  order_no: string | null
+  status: string | null
+  currency_code: string | null
+  fx_to_base: number | null
+  order_date: string | null
+  due_date: string | null
+  tax_total: number | null
+}
+
+type PurchaseOrderLineDraftSource = {
+  id: string
+  po_id: string
+  item_id: string | null
+  description: string | null
+  line_no: number | null
+  qty: number | null
+  unit_price: number | null
+  line_total: number | null
+}
+
 type ItemDisplaySource = {
   id: string
   name: string | null
@@ -628,6 +652,12 @@ function fallbackLineTotal(line: SalesOrderLineDraftSource) {
   return roundMoney(qty * unitPrice * (1 - discountPct / 100))
 }
 
+function fallbackPurchaseLineTotal(line: PurchaseOrderLineDraftSource) {
+  const qty = toNumber(line.qty)
+  const unitPrice = toNumber(line.unit_price)
+  return roundMoney(qty * unitPrice)
+}
+
 function allocateHeaderTaxAmounts(lineTotals: number[], headerTaxTotal: number) {
   if (headerTaxTotal <= 0 || !lineTotals.length) {
     return lineTotals.map(() => 0)
@@ -681,6 +711,12 @@ function humanizeRuntimeError(error: any, fallback: string, stage: string) {
 
 function allowedSalesOrderForInvoice(status?: string | null) {
   return ['confirmed', 'allocated', 'shipped', 'closed'].includes(String(status || '').toLowerCase())
+}
+
+function allowedPurchaseOrderForVendorBill(status?: string | null) {
+  return ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received', 'closed'].includes(
+    String(status || '').toLowerCase(),
+  )
 }
 
 async function maybeVoidDraftInvoice(companyId: string, invoiceId: string, reason: string) {
@@ -1681,6 +1717,185 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     totalAmount,
   })
   return { invoiceId: invoice.id, internalReference: invoice.internal_reference, existed: false }
+}
+
+export type CreateVendorBillDraftFromPurchaseOrderInput = {
+  supplierInvoiceReference?: string | null
+  supplierInvoiceDate?: string | null
+  billDate?: string | null
+  dueDate?: string | null
+}
+
+export async function createDraftVendorBillFromPurchaseOrder(
+  companyId: string,
+  purchaseOrderId: string,
+  input: CreateVendorBillDraftFromPurchaseOrderInput = {},
+) {
+  const { data: existingBill, error: existingError } = await supabase
+    .from('vendor_bills')
+    .select('id,internal_reference,document_workflow_status')
+    .eq('company_id', companyId)
+    .eq('purchase_order_id', purchaseOrderId)
+    .in('document_workflow_status', ['draft', 'posted'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; internal_reference: string; document_workflow_status: string }>()
+
+  if (existingError) {
+    throw new Error(humanizeRuntimeError(existingError, 'Failed to inspect existing vendor bills', 'vendor_bills.lookup'))
+  }
+  if (existingBill) {
+    return { billId: existingBill.id, internalReference: existingBill.internal_reference, existed: true }
+  }
+
+  const { data: order, error: orderError } = await supabase
+    .from('purchase_orders')
+    .select('id,company_id,supplier_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total')
+    .eq('company_id', companyId)
+    .eq('id', purchaseOrderId)
+    .maybeSingle<PurchaseOrderDraftSource>()
+
+  if (orderError) {
+    throw new Error(humanizeRuntimeError(orderError, 'Failed to load the source purchase order', 'purchase_orders.select'))
+  }
+  if (!order) {
+    throw new Error('Purchase order not found for the active company.')
+  }
+  if (!allowedPurchaseOrderForVendorBill(order.status)) {
+    throw new Error('Only approved, receiving, or closed purchase orders can create vendor bill drafts.')
+  }
+
+  const { data: lines, error: linesError } = await supabase
+    .from('purchase_order_lines')
+    .select('id,po_id,item_id,description,line_no,qty,unit_price,line_total')
+    .eq('company_id', companyId)
+    .eq('po_id', purchaseOrderId)
+    .order('line_no', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (linesError) {
+    throw new Error(humanizeRuntimeError(linesError, 'Failed to load purchase order lines for vendor-bill drafting', 'purchase_order_lines.select'))
+  }
+
+  const sourceLines = ((lines || []) as PurchaseOrderLineDraftSource[])
+    .filter((line) => toNumber(line.qty) > 0)
+    .map((line) => ({
+      ...line,
+      line_total: roundMoney(line.line_total == null ? fallbackPurchaseLineTotal(line) : toNumber(line.line_total)),
+    }))
+
+  if (!sourceLines.length) {
+    throw new Error('The selected purchase order has no billable lines.')
+  }
+
+  const itemIds = Array.from(new Set(sourceLines.map((line) => line.item_id).filter(Boolean) as string[]))
+  const { data: items, error: itemsError } = itemIds.length
+    ? await supabase
+        .from('items')
+        .select('id,name,sku,base_uom_id')
+        .eq('company_id', companyId)
+        .in('id', itemIds)
+    : { data: [], error: null }
+
+  if (itemsError) {
+    throw new Error(humanizeRuntimeError(itemsError, 'Failed to load item descriptions for vendor-bill drafting', 'items.select'))
+  }
+
+  const itemById = new Map<string, ItemDisplaySource>(((items || []) as ItemDisplaySource[]).map((row) => [row.id, row]))
+  const headerTaxTotal = roundMoney(toNumber(order.tax_total))
+  const subtotal = roundMoney(sourceLines.reduce((sum, line) => sum + toNumber(line.line_total), 0))
+  if (headerTaxTotal > 0 && subtotal <= 0) {
+    throw new Error('The selected purchase order has tax recorded but no positive subtotal to bill.')
+  }
+
+  const taxRate = subtotal > 0 && headerTaxTotal > 0
+    ? Math.round(((headerTaxTotal / subtotal) * 100) * 10000) / 10000
+    : 0
+  const lineTaxAmounts = allocateHeaderTaxAmounts(
+    sourceLines.map((line) => toNumber(line.line_total)),
+    headerTaxTotal,
+  )
+
+  const supplierInvoiceDate = normalizeText(input.supplierInvoiceDate) || null
+  const billDate = normalizeText(input.billDate) || supplierInvoiceDate || isoToday()
+  const dueDateCandidate = normalizeText(input.dueDate) || normalizeText(order.due_date) || billDate
+  const dueDate = dueDateCandidate >= billDate ? dueDateCandidate : billDate
+
+  const linePayload = sourceLines.map((line, index) => ({
+    purchase_order_line_id: line.id,
+    item_id: line.item_id,
+    description: resolveInvoiceLineDescription(
+      line.description,
+      null,
+      line.item_id ? itemById.get(line.item_id)?.name : null,
+      line.item_id ? itemById.get(line.item_id)?.sku : null,
+    ),
+    qty: toNumber(line.qty),
+    unit_cost: roundMoney(toNumber(line.unit_price)),
+    tax_rate: taxRate > 0 ? taxRate : 0,
+    tax_amount: lineTaxAmounts[index] || 0,
+    line_total: toNumber(line.line_total),
+    sort_order: line.line_no ?? index,
+  }))
+
+  const { data: bill, error: billError } = await supabase.rpc('create_vendor_bill_draft_from_purchase_order', {
+    p_company_id: companyId,
+    p_purchase_order_id: purchaseOrderId,
+    p_supplier_invoice_reference: normalizeText(input.supplierInvoiceReference) || null,
+    p_supplier_invoice_date: supplierInvoiceDate,
+    p_bill_date: billDate,
+    p_due_date: dueDate,
+    p_currency_code: normalizeText(order.currency_code) || null,
+    p_fx_to_base: toNumber(order.fx_to_base, 1) > 0 ? toNumber(order.fx_to_base, 1) : 1,
+    p_lines: linePayload,
+  })
+
+  if (billError) {
+    throw new Error(humanizeRuntimeError(billError, 'Failed to create the vendor bill draft', 'rpc.create_vendor_bill_draft_from_purchase_order'))
+  }
+
+  const createdBill = Array.isArray(bill) ? bill[0] : bill
+  return {
+    billId: String(createdBill?.id || ''),
+    internalReference: String(createdBill?.internal_reference || ''),
+    existed: false,
+  }
+}
+
+export type UpdateVendorBillDraftHeaderInput = {
+  supplierInvoiceReference?: string | null
+  supplierInvoiceDate?: string | null
+  billDate?: string | null
+  dueDate?: string | null
+}
+
+export async function updateVendorBillDraftHeader(
+  companyId: string,
+  billId: string,
+  input: UpdateVendorBillDraftHeaderInput,
+) {
+  const billDate = normalizeText(input.billDate) || isoToday()
+  const dueDateCandidate = normalizeText(input.dueDate) || billDate
+  const dueDate = dueDateCandidate >= billDate ? dueDateCandidate : billDate
+
+  const { data, error } = await supabase
+    .from('vendor_bills')
+    .update({
+      supplier_invoice_reference: normalizeText(input.supplierInvoiceReference) || null,
+      supplier_invoice_date: normalizeText(input.supplierInvoiceDate) || null,
+      bill_date: billDate,
+      due_date: dueDate,
+    })
+    .eq('company_id', companyId)
+    .eq('id', billId)
+    .select('id')
+    .single<{ id: string }>()
+
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to save the vendor bill draft header', 'vendor_bills.update'))
+  }
+
+  return data
 }
 
 function normalizeSalesNoteDraftLine(

@@ -260,24 +260,22 @@ export default function BankDetail() {
     let data: any[] | null = null
     let error: any = null
 
-    if (getBankTransactionRefSupport() !== false) {
-      const withRefs = await supabase
-        .from('bank_transactions')
-        .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at, ref_type, ref_id')
-        .eq('bank_id', scopedBankId)
-        .gte('happened_at', from)
-        .lte('happened_at', to)
-        .order('happened_at', { ascending: true })
-        .order('created_at', { ascending: true })
+    const withRefs = await supabase
+      .from('bank_transactions')
+      .select('id, bank_id, happened_at, memo, amount_base, reconciled, created_at, ref_type, ref_id')
+      .eq('bank_id', scopedBankId)
+      .gte('happened_at', from)
+      .lte('happened_at', to)
+      .order('happened_at', { ascending: true })
+      .order('created_at', { ascending: true })
 
-      data = withRefs.data || null
-      error = withRefs.error
+    data = withRefs.data || null
+    error = withRefs.error
 
-      if (!error) {
-        setBankTransactionRefSupport(true)
-      } else if (isMissingBankTransactionRefColumns(error)) {
-        setBankTransactionRefSupport(false)
-      }
+    if (!error) {
+      setBankTransactionRefSupport(true)
+    } else if (isMissingBankTransactionRefColumns(error)) {
+      setBankTransactionRefSupport(false)
     }
 
     if (getBankTransactionRefSupport() === false) {

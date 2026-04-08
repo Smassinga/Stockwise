@@ -12,8 +12,8 @@ function readCachedSupport(): boolean | null {
     return cachedSupport
   }
   if (stored === '0') {
-    cachedSupport = false
-    return cachedSupport
+    window.sessionStorage.removeItem(STORAGE_KEY)
+    return null
   }
   return null
 }
@@ -25,7 +25,11 @@ export function getBankTransactionRefSupport() {
 export function setBankTransactionRefSupport(value: boolean) {
   cachedSupport = value
   if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') return
-  window.sessionStorage.setItem(STORAGE_KEY, value ? '1' : '0')
+  if (value) {
+    window.sessionStorage.setItem(STORAGE_KEY, '1')
+  } else {
+    window.sessionStorage.removeItem(STORAGE_KEY)
+  }
 }
 
 export function isMissingBankTransactionRefColumns(error: { code?: string | null } | null | undefined) {

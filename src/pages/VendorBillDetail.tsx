@@ -49,6 +49,7 @@ import {
   postVendorBill,
   requestVendorBillApproval,
   returnVendorBillToDraft,
+  updateVendorBillDraftHeader,
   type FinanceDocumentEventRow,
   type VendorCreditNoteLineRow,
   type VendorCreditNoteRow,
@@ -160,6 +161,11 @@ export default function VendorBillDetailPage() {
   const [baseCode, setBaseCode] = useState('MZN')
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null)
   const [supplierProfile, setSupplierProfile] = useState<SupplierProfile | null>(null)
+  const [draftSupplierInvoiceReference, setDraftSupplierInvoiceReference] = useState('')
+  const [draftSupplierInvoiceDate, setDraftSupplierInvoiceDate] = useState('')
+  const [draftBillDate, setDraftBillDate] = useState(isoToday())
+  const [draftDueDate, setDraftDueDate] = useState(isoToday())
+  const [savingDraftHeader, setSavingDraftHeader] = useState(false)
 
   const [creditDialogOpen, setCreditDialogOpen] = useState(false)
   const [creditMode, setCreditMode] = useState<AdjustmentMode>('full')
@@ -743,6 +749,12 @@ export default function VendorBillDetailPage() {
     && approvalStatus !== 'draft'
     && financeCan.approve(myRole),
   )
+  const canEditDraft = Boolean(
+    row
+    && row.document_workflow_status === 'draft'
+    && approvalStatus === 'draft'
+    && financeCan.editDraft(myRole),
+  )
   const canPostApprovedDraft = Boolean(
     row
     && row.document_workflow_status === 'draft'
@@ -763,6 +775,14 @@ export default function VendorBillDetailPage() {
   )
   const canCreateCreditNote = canPostVendorAdjustments && row?.credit_status !== 'fully_credited'
   const canCreateDebitNote = canPostVendorAdjustments
+
+  useEffect(() => {
+    if (!row) return
+    setDraftSupplierInvoiceReference(row.supplier_invoice_reference || '')
+    setDraftSupplierInvoiceDate(row.supplier_invoice_date || '')
+    setDraftBillDate(row.bill_date || isoToday())
+    setDraftDueDate(row.due_date || row.bill_date || isoToday())
+  }, [row])
 
   function updateCreditLineDraft(lineId: string, patch: Partial<AdjustmentLineDraft>) {
     setCreditLineDrafts((current) => ({
@@ -844,6 +864,27 @@ export default function VendorBillDetailPage() {
       supplier: supplierParty,
       company: companyParty,
     })
+  }
+
+  async function handleSaveDraftHeader() {
+    if (!companyId || !row || !canEditDraft) return
+
+    try {
+      setSavingDraftHeader(true)
+      await updateVendorBillDraftHeader(companyId, row.id, {
+        supplierInvoiceReference: draftSupplierInvoiceReference,
+        supplierInvoiceDate: draftSupplierInvoiceDate,
+        billDate: draftBillDate,
+        dueDate: draftDueDate,
+      })
+      toast.success(tt('financeDocs.vendorBills.draftSaved', 'Vendor bill draft saved'))
+      await loadWorkspace()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.vendorBills.draftSaveFailed', 'Failed to save the vendor bill draft'))
+    } finally {
+      setSavingDraftHeader(false)
+    }
   }
 
   async function handleSubmitForApproval() {
@@ -1129,6 +1170,11 @@ export default function VendorBillDetailPage() {
                   {posting ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.submit', 'Submit for approval')}
                 </Button>
               ) : null}
+              {canEditDraft ? (
+                <Button variant="outline" onClick={() => void handleSaveDraftHeader()} disabled={posting || voiding || savingDraftHeader}>
+                  {savingDraftHeader ? tt('common.saving', 'Saving...') : tt('financeDocs.vendorBills.saveDraft', 'Save draft')}
+                </Button>
+              ) : null}
               {canApproveDraft ? (
                 <Button variant="outline" onClick={() => void handleApproveDraft()} disabled={posting || voiding}>
                   {posting ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.approveAction', 'Approve')}
@@ -1175,7 +1221,16 @@ export default function VendorBillDetailPage() {
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
                     {tt('financeDocs.fields.supplierInvoiceReference', 'Supplier invoice reference')}
                   </div>
-                  <div className="mt-1 font-medium">{row.supplier_invoice_reference || tt('common.dash', '-')}</div>
+                  {canEditDraft ? (
+                    <Input
+                      className="mt-2 bg-background"
+                      value={draftSupplierInvoiceReference}
+                      onChange={(event) => setDraftSupplierInvoiceReference(event.target.value)}
+                      placeholder={tt('financeDocs.vendorBills.supplierReferencePlaceholder', 'Enter the supplier invoice reference')}
+                    />
+                  ) : (
+                    <div className="mt-1 font-medium">{row.supplier_invoice_reference || tt('common.dash', '-')}</div>
+                  )}
                   <div className="mt-1 text-xs text-muted-foreground">
                     {tt('financeDocs.vendorBills.supplierReferenceHelp', 'Supplier-origin document reference, entered manually and kept visible for AP operations.')}
                   </div>
@@ -1212,11 +1267,42 @@ export default function VendorBillDetailPage() {
                 </div>
                 <div>
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.supplierInvoiceDate', 'Supplier invoice date')}</div>
-                  <div className="mt-1">{row.supplier_invoice_date || tt('common.dash', '-')}</div>
+                  {canEditDraft ? (
+                    <Input
+                      className="mt-2 bg-background"
+                      type="date"
+                      value={draftSupplierInvoiceDate}
+                      onChange={(event) => setDraftSupplierInvoiceDate(event.target.value)}
+                    />
+                  ) : (
+                    <div className="mt-1">{row.supplier_invoice_date || tt('common.dash', '-')}</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.date', 'Date')}</div>
+                  {canEditDraft ? (
+                    <Input
+                      className="mt-2 bg-background"
+                      type="date"
+                      value={draftBillDate}
+                      onChange={(event) => setDraftBillDate(event.target.value)}
+                    />
+                  ) : (
+                    <div className="mt-1">{row.bill_date}</div>
+                  )}
                 </div>
                 <div>
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.dueDate', 'Due date')}</div>
-                  <div className="mt-1">{row.due_date}</div>
+                  {canEditDraft ? (
+                    <Input
+                      className="mt-2 bg-background"
+                      type="date"
+                      value={draftDueDate}
+                      onChange={(event) => setDraftDueDate(event.target.value)}
+                    />
+                  ) : (
+                    <div className="mt-1">{row.due_date}</div>
+                  )}
                 </div>
                 <div>
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.workflow', 'Workflow')}</div>

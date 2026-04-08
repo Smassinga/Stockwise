@@ -1,12 +1,13 @@
 // src/pages/Orders/PurchaseOrders.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/db'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog'
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
 import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
@@ -26,6 +27,8 @@ import {
   settlementLabelKey,
 } from '../../lib/orderState'
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
+import { financeCan } from '../../lib/permissions'
+import { createDraftVendorBillFromPurchaseOrder } from '../../lib/mzFinance'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -132,6 +135,15 @@ type POL = {
   unit_price: number
   discount_pct?: number|null
   line_total: number
+}
+
+type PurchaseOrderVendorBillSummary = {
+  id: string
+  purchase_order_id: string | null
+  internal_reference: string
+  supplier_invoice_reference: string | null
+  document_workflow_status: 'draft' | 'posted' | 'voided'
+  created_at?: string | null
 }
 
 const nowISO = () => new Date().toISOString()
@@ -253,9 +265,10 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
 
 export default function PurchaseOrders() {
   const { t } = useI18n()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
-  const { companyId } = useOrg()
+  const { companyId, myRole } = useOrg()
   const purchaseOrderState = usePurchaseOrderState(companyId)
   const purchaseStateById = purchaseOrderState.byId
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
@@ -289,6 +302,7 @@ export default function PurchaseOrders() {
   // lists
   const [pos, setPOs] = useState<PO[]>([])
   const [polines, setPOLines] = useState<POL[]>([])
+  const [vendorBillSummaries, setVendorBillSummaries] = useState<PurchaseOrderVendorBillSummary[]>([])
 
   // create form
   const [poOpen, setPoOpen] = useState(false)
@@ -309,6 +323,12 @@ export default function PurchaseOrders() {
   const [poApprovedBy, setPoApprovedBy] = useState('')
   const [poReceivedBy, setPoReceivedBy] = useState('')
   const [poLinesForm, setPoLinesForm] = useState<PurchaseLineDraft[]>([blankPurchaseLine()])
+  const [createVendorBillOpen, setCreateVendorBillOpen] = useState(false)
+  const [creatingVendorBill, setCreatingVendorBill] = useState(false)
+  const [vendorBillSupplierReference, setVendorBillSupplierReference] = useState('')
+  const [vendorBillSupplierInvoiceDate, setVendorBillSupplierInvoiceDate] = useState<string>(() => todayYmd())
+  const [vendorBillBillDate, setVendorBillBillDate] = useState<string>(() => todayYmd())
+  const [vendorBillDueDate, setVendorBillDueDate] = useState<string>(() => todayYmd())
 
   const paymentTermById = useMemo(() => new Map(paymentTermsList.map(pt => [pt.id, pt])), [paymentTermsList])
   const paymentTermLabel = (termId?: string | null, fallback?: string | null) => {
@@ -570,17 +590,22 @@ export default function PurchaseOrders() {
         setMemberIdentityByUserId(memberMap)
 
         // POs + lines for this company
-        const [poRes, polRes] = await Promise.all([
+        const [poRes, polRes, vendorBillRes] = await Promise.all([
           supabase.from('purchase_orders')
             .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
             .eq('company_id', companyId),
           supabase.from('purchase_order_lines')
             .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
             .eq('company_id', companyId),
+          supabase.from('vendor_bills')
+            .select('id,purchase_order_id,internal_reference,supplier_invoice_reference,document_workflow_status,created_at')
+            .eq('company_id', companyId)
+            .neq('document_workflow_status', 'voided'),
         ])
         const poRows = (poRes.data || []) as PO[]
         setPOs(poRows.sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
         setPOLines((polRes.data || []) as POL[])
+        setVendorBillSummaries((vendorBillRes.data || []) as PurchaseOrderVendorBillSummary[])
 
         const [whRes, binRes] = await Promise.all([
           supabase
@@ -855,7 +880,7 @@ export default function PurchaseOrders() {
   // Refresh all PO + POL company-scoped lists
   async function refreshPOData() {
     if (!companyId) return
-    const [poRes, polRes] = await Promise.all([
+    const [poRes, polRes, vendorBillRes] = await Promise.all([
       supabase
         .from('purchase_orders')
         .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
@@ -864,9 +889,15 @@ export default function PurchaseOrders() {
         .from('purchase_order_lines')
         .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
         .eq('company_id', companyId),
+      supabase
+        .from('vendor_bills')
+        .select('id,purchase_order_id,internal_reference,supplier_invoice_reference,document_workflow_status,created_at')
+        .eq('company_id', companyId)
+        .neq('document_workflow_status', 'voided'),
     ])
     setPOs(((poRes.data || []) as PO[]).sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime()))
     setPOLines((polRes.data || []) as POL[])
+    setVendorBillSummaries((vendorBillRes.data || []) as PurchaseOrderVendorBillSummary[])
   }
 
   // DRY: post one receipt movement for a single line
@@ -1102,12 +1133,32 @@ export default function PurchaseOrders() {
     () => (selectedPO ? purchaseStateById.get(selectedPO.id) : undefined),
     [purchaseStateById, selectedPO],
   )
+  const vendorBillByPurchaseOrderId = useMemo(() => {
+    const map = new Map<string, PurchaseOrderVendorBillSummary>()
+    vendorBillSummaries
+      .filter((bill) => bill.purchase_order_id)
+      .sort((left, right) => new Date(ts(right)).getTime() - new Date(ts(left)).getTime())
+      .forEach((bill) => {
+        const purchaseOrderId = String(bill.purchase_order_id || '')
+        if (!purchaseOrderId || map.has(purchaseOrderId)) return
+        map.set(purchaseOrderId, bill)
+      })
+    return map
+  }, [vendorBillSummaries])
+  const selectedPOVendorBill = useMemo(
+    () => (selectedPO ? vendorBillByPurchaseOrderId.get(selectedPO.id) ?? null : null),
+    [selectedPO, vendorBillByPurchaseOrderId],
+  )
   const selectedPOAnchorHref = useMemo(
     () =>
       selectedPOState?.financial_anchor === 'vendor_bill' && selectedPOState.financial_anchor_document_id
         ? `/vendor-bills/${encodeURIComponent(selectedPOState.financial_anchor_document_id)}`
         : null,
     [selectedPOState],
+  )
+  const selectedPOVendorBillHref = useMemo(
+    () => selectedPOVendorBill?.id ? `/vendor-bills/${encodeURIComponent(selectedPOVendorBill.id)}` : selectedPOAnchorHref,
+    [selectedPOAnchorHref, selectedPOVendorBill],
   )
   const selectedPOOpenLines = useMemo(
     () => selectedPOLines.filter((line) => {
@@ -1124,6 +1175,15 @@ export default function PurchaseOrders() {
       return sum + Math.max(0, n(line.qty) - received)
     }, 0),
     [receivedMap, selectedPOOpenLines]
+  )
+  const canCreateVendorBillDraft = Boolean(
+    companyId
+    && selectedPO
+    && !selectedPOVendorBill
+    && financeCan.createDraft(myRole)
+    && ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received', 'closed'].includes(
+      String(selectedPO.status || '').toLowerCase(),
+    ),
   )
 
   function purchaseStatusClass(status?: string) {
@@ -1152,6 +1212,59 @@ export default function PurchaseOrders() {
     next.set('tab', 'purchase')
     next.set('orderId', po.id)
     setSearchParams(next, { replace: true })
+  }
+
+  useEffect(() => {
+    if (!selectedPO) return
+    const today = todayYmd()
+    const supplierInvoiceDate = selectedPO.order_date || today
+    const billDate = supplierInvoiceDate || today
+    const dueDateCandidate = selectedPO.due_date || billDate
+    setVendorBillSupplierReference('')
+    setVendorBillSupplierInvoiceDate(supplierInvoiceDate)
+    setVendorBillBillDate(billDate)
+    setVendorBillDueDate(dueDateCandidate >= billDate ? dueDateCandidate : billDate)
+  }, [selectedPO])
+
+  async function openOrCreateVendorBill(po: PO) {
+    if (!companyId) {
+      toast.error(tt('org.noCompany', 'Join or create a company first'))
+      return
+    }
+
+    const existingBill = vendorBillByPurchaseOrderId.get(po.id)
+    if (existingBill?.id) {
+      toast.success(
+        existingBill.document_workflow_status === 'draft'
+          ? tt('financeDocs.vendorBills.draftOpened', 'Opened the existing vendor bill draft')
+          : tt('financeDocs.vendorBills.opened', 'Opened the existing vendor bill'),
+      )
+      navigate(`/vendor-bills/${existingBill.id}`)
+      return
+    }
+
+    try {
+      setCreatingVendorBill(true)
+      const result = await createDraftVendorBillFromPurchaseOrder(companyId, po.id, {
+        supplierInvoiceReference: vendorBillSupplierReference,
+        supplierInvoiceDate: vendorBillSupplierInvoiceDate,
+        billDate: vendorBillBillDate,
+        dueDate: vendorBillDueDate,
+      })
+      toast.success(
+        result.existed
+          ? tt('financeDocs.vendorBills.draftOpened', 'Opened the existing vendor bill draft')
+          : tt('financeDocs.vendorBills.draftCreated', 'Created a vendor bill draft from the purchase order'),
+      )
+      setCreateVendorBillOpen(false)
+      await refreshPOData()
+      navigate(`/vendor-bills/${result.billId}`)
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('financeDocs.vendorBills.draftCreateFailed', 'Failed to create the vendor bill draft'))
+    } finally {
+      setCreatingVendorBill(false)
+    }
   }
 
   function purchaseReceiptLabel(po?: PO | null) {
@@ -2081,9 +2194,18 @@ export default function PurchaseOrders() {
                 description={purchaseWorkflowSummary(selectedPO.status).help}
                 actions={
                   <>
-                    {selectedPOAnchorHref ? (
+                    {selectedPOVendorBillHref ? (
                       <Button asChild variant="outline">
-                        <Link to={selectedPOAnchorHref}>{tt('orders.viewVendorBill', 'View vendor bill')}</Link>
+                        <Link to={selectedPOVendorBillHref}>
+                          {selectedPOVendorBill?.document_workflow_status === 'draft'
+                            ? tt('orders.viewVendorBillDraft', 'View vendor bill draft')
+                            : tt('orders.viewVendorBill', 'View vendor bill')}
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {canCreateVendorBillDraft ? (
+                      <Button variant="outline" onClick={() => setCreateVendorBillOpen(true)}>
+                        {tt('orders.createVendorBill', 'Raise vendor bill')}
                       </Button>
                     ) : null}
                     <Button variant="outline" onClick={() => printPO(selectedPO)}>{tt('orders.print', 'Print')}</Button>
@@ -2136,13 +2258,34 @@ export default function PurchaseOrders() {
                     <div>{formatMoneyBase(n(selectedPOState?.outstanding_base), baseCode)}</div>
                   </div>
                 </div>
-                {selectedPOAnchorHref ? (
-                  <div className="mt-4">
-                    <Button asChild variant="outline">
-                      <Link to={selectedPOAnchorHref}>{tt('orders.viewVendorBill', 'View vendor bill')}</Link>
-                    </Button>
+                {selectedPOVendorBill ? (
+                  <div className="mt-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <div className="text-sm font-medium">
+                      {selectedPOVendorBill.document_workflow_status === 'draft'
+                        ? tt('orders.purchaseVendorBillDraftReady', 'A vendor bill draft already exists for this purchase order.')
+                        : tt('orders.purchaseVendorBillPosted', 'A vendor bill is already linked to this purchase order.')}
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {selectedPOVendorBill.supplier_invoice_reference || selectedPOVendorBill.internal_reference}
+                    </div>
                   </div>
                 ) : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {selectedPOVendorBillHref ? (
+                    <Button asChild variant="outline">
+                      <Link to={selectedPOVendorBillHref}>
+                        {selectedPOVendorBill?.document_workflow_status === 'draft'
+                          ? tt('orders.viewVendorBillDraft', 'View vendor bill draft')
+                          : tt('orders.viewVendorBill', 'View vendor bill')}
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {canCreateVendorBillDraft ? (
+                    <Button variant="outline" onClick={() => setCreateVendorBillOpen(true)}>
+                      {tt('orders.createVendorBill', 'Raise vendor bill')}
+                    </Button>
+                  ) : null}
+                </div>
               </OrderDetailSection>
 
               <OrderDetailSection
@@ -2524,6 +2667,77 @@ export default function PurchaseOrders() {
           </SheetBody>
         </SheetContent>
       </Sheet>
+
+      <Dialog open={createVendorBillOpen} onOpenChange={setCreateVendorBillOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{tt('orders.createVendorBill', 'Raise vendor bill')}</DialogTitle>
+            <DialogDescription>
+              {tt('orders.createVendorBillHelp', 'Create a draft vendor bill from this approved purchase order. Stockwise keeps the purchase order as the operational source until the vendor bill is posted as the AP anchor.')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                {tt('orders.createVendorBillSummary', 'The draft bill copies the current purchase-order lines and amounts. Confirm the supplier document reference and dates before sending it for approval.')}
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="po-vendor-bill-supplier-reference">{tt('financeDocs.fields.supplierInvoiceReference', 'Supplier invoice reference')}</Label>
+                <Input
+                  id="po-vendor-bill-supplier-reference"
+                  value={vendorBillSupplierReference}
+                  onChange={(event) => setVendorBillSupplierReference(event.target.value)}
+                  placeholder={tt('orders.supplierInvoiceReferencePlaceholder', 'Enter the supplier invoice reference')}
+                />
+              </div>
+              <div>
+                <Label htmlFor="po-vendor-bill-supplier-date">{tt('financeDocs.fields.supplierInvoiceDate', 'Supplier invoice date')}</Label>
+                <Input
+                  id="po-vendor-bill-supplier-date"
+                  type="date"
+                  value={vendorBillSupplierInvoiceDate}
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                    setVendorBillSupplierInvoiceDate(nextValue)
+                    if (!vendorBillBillDate || vendorBillBillDate === vendorBillSupplierInvoiceDate) {
+                      setVendorBillBillDate(nextValue || todayYmd())
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <Label htmlFor="po-vendor-bill-bill-date">{tt('financeDocs.fields.date', 'Date')}</Label>
+                <Input
+                  id="po-vendor-bill-bill-date"
+                  type="date"
+                  value={vendorBillBillDate}
+                  onChange={(event) => setVendorBillBillDate(event.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="po-vendor-bill-due-date">{tt('financeDocs.fields.dueDate', 'Due date')}</Label>
+                <Input
+                  id="po-vendor-bill-due-date"
+                  type="date"
+                  value={vendorBillDueDate}
+                  onChange={(event) => setVendorBillDueDate(event.target.value)}
+                />
+              </div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateVendorBillOpen(false)} disabled={creatingVendorBill}>
+              {tt('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              onClick={() => selectedPO && void openOrCreateVendorBill(selectedPO)}
+              disabled={creatingVendorBill || !selectedPO}
+            >
+              {creatingVendorBill ? tt('financeDocs.vendorBills.creatingDraft', 'Creating...') : tt('orders.createVendorBill', 'Raise vendor bill')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
