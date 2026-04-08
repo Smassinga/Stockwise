@@ -25,10 +25,11 @@ import {
   purchaseReceiptLabelKey,
   purchaseWorkflowLabelKey,
   settlementLabelKey,
+  type PurchaseOrderStateRow,
 } from '../../lib/orderState'
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 import { financeCan } from '../../lib/permissions'
-import { createDraftVendorBillFromPurchaseOrder } from '../../lib/mzFinance'
+import { createDraftVendorBillFromPurchaseOrder, findExistingVendorBillForPurchaseOrder } from '../../lib/mzFinance'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -153,6 +154,14 @@ type PurchaseOrderVendorBillSummary = {
   credit_note_count: number
   debit_note_count: number
   resolution_status: string
+}
+
+type PurchaseOrderVendorBillActionState = {
+  kind: 'open_existing' | 'create' | 'blocked'
+  href: string | null
+  existingBill: PurchaseOrderVendorBillSummary | null
+  billableLineCount: number
+  reason: string
 }
 
 const nowISO = () => new Date().toISOString()
@@ -1154,21 +1163,110 @@ export default function PurchaseOrders() {
       })
     return map
   }, [vendorBillSummaries])
+  const billableLineCountByPurchaseOrderId = useMemo(() => {
+    const map = new Map<string, number>()
+    polines.forEach((line) => {
+      const qty = n(line.qty)
+      const lineTotal = n(line.line_total, qty * n(line.unit_price))
+      if (!line.po_id || qty <= 0 || lineTotal <= 0) return
+      map.set(line.po_id, (map.get(line.po_id) ?? 0) + 1)
+    })
+    return map
+  }, [polines])
+  const vendorBillHref = (billId?: string | null) =>
+    billId ? `/vendor-bills/${encodeURIComponent(billId)}` : null
+  const vendorBillOpenLabel = (bill?: Pick<PurchaseOrderVendorBillSummary, 'document_workflow_status'> | null) =>
+    bill?.document_workflow_status === 'draft'
+      ? tt('orders.viewVendorBillDraft', 'View vendor bill draft')
+      : tt('orders.viewVendorBill', 'View vendor bill')
+  const getPurchaseOrderVendorBillActionState = (po?: PO | null): PurchaseOrderVendorBillActionState => {
+    if (!po) {
+      return {
+        kind: 'blocked',
+        href: null,
+        existingBill: null,
+        billableLineCount: 0,
+        reason: tt('orders.poSelectionRequired', 'Select a purchase order first.'),
+      }
+    }
+
+    const state = purchaseStateById.get(po.id) as PurchaseOrderStateRow | undefined
+    const existingBill = vendorBillByPurchaseOrderId.get(po.id) ?? null
+    const href = existingBill?.id
+      ? vendorBillHref(existingBill.id)
+      : (state?.financial_anchor === 'vendor_bill' ? vendorBillHref(state.financial_anchor_document_id) : null)
+    const workflowStatus = state?.workflow_status ?? legacyPurchaseWorkflowStatus(po.status)
+    const legacyStatus = String(po.status || '').toLowerCase()
+    const billableLineCount = billableLineCountByPurchaseOrderId.get(po.id) ?? 0
+
+    if (href) {
+      return {
+        kind: 'open_existing',
+        href,
+        existingBill,
+        billableLineCount,
+        reason: existingBill?.document_workflow_status === 'draft'
+          ? tt('orders.vendorBillDraftAlreadyExists', 'A vendor bill draft already exists for this purchase order.')
+          : tt('orders.vendorBillAlreadyLinked', 'A vendor bill is already linked to this purchase order.'),
+      }
+    }
+
+    if (!financeCan.createDraft(myRole)) {
+      return {
+        kind: 'blocked',
+        href: null,
+        existingBill: null,
+        billableLineCount,
+        reason: tt('orders.vendorBillPermissionRequired', 'Only users who can prepare finance drafts may raise vendor bills.'),
+      }
+    }
+
+    if (workflowStatus === 'cancelled' || ['cancelled', 'canceled'].includes(legacyStatus)) {
+      return {
+        kind: 'blocked',
+        href: null,
+        existingBill: null,
+        billableLineCount,
+        reason: tt('orders.vendorBillCancelledBlocked', 'Cancelled purchase orders cannot raise vendor bills.'),
+      }
+    }
+
+    if (workflowStatus !== 'approved') {
+      return {
+        kind: 'blocked',
+        href: null,
+        existingBill: null,
+        billableLineCount,
+        reason: tt('orders.vendorBillApprovalRequired', 'Approve the purchase order before raising a vendor bill.'),
+      }
+    }
+
+    if (billableLineCount <= 0) {
+      return {
+        kind: 'blocked',
+        href: null,
+        existingBill: null,
+        billableLineCount,
+        reason: tt('orders.vendorBillNoBillableLines', 'This purchase order has no positive-quantity, positive-value lines to bill.'),
+      }
+    }
+
+    return {
+      kind: 'create',
+      href: null,
+      existingBill: null,
+      billableLineCount,
+      reason: tt('orders.vendorBillReady', 'Ready to raise a vendor bill from {count} billable line(s).', {
+        count: billableLineCount,
+      }),
+    }
+  }
   const selectedPOVendorBill = useMemo(
     () => (selectedPO ? vendorBillByPurchaseOrderId.get(selectedPO.id) ?? null : null),
     [selectedPO, vendorBillByPurchaseOrderId],
   )
-  const selectedPOAnchorHref = useMemo(
-    () =>
-      selectedPOState?.financial_anchor === 'vendor_bill' && selectedPOState.financial_anchor_document_id
-        ? `/vendor-bills/${encodeURIComponent(selectedPOState.financial_anchor_document_id)}`
-        : null,
-    [selectedPOState],
-  )
-  const selectedPOVendorBillHref = useMemo(
-    () => selectedPOVendorBill?.id ? `/vendor-bills/${encodeURIComponent(selectedPOVendorBill.id)}` : selectedPOAnchorHref,
-    [selectedPOAnchorHref, selectedPOVendorBill],
-  )
+  const selectedPOVendorBillAction = getPurchaseOrderVendorBillActionState(selectedPO)
+  const selectedPOVendorBillHref = selectedPOVendorBillAction.href
   const selectedPOOpenLines = useMemo(
     () => selectedPOLines.filter((line) => {
       const lineId = String(line.id || '')
@@ -1176,14 +1274,6 @@ export default function PurchaseOrders() {
       return Math.max(0, n(line.qty) - received) > 0
     }),
     [receivedMap, selectedPOLines]
-  )
-  const selectedPOBillableLines = useMemo(
-    () => selectedPOLines.filter((line) => {
-      const qty = n(line.qty)
-      const lineTotal = n(line.line_total, qty * n(line.unit_price))
-      return qty > 0 && lineTotal > 0
-    }),
-    [selectedPOLines],
   )
   const selectedPORemainingQty = useMemo(
     () => selectedPOOpenLines.reduce((sum, line) => {
@@ -1196,12 +1286,7 @@ export default function PurchaseOrders() {
   const canCreateVendorBillDraft = Boolean(
     companyId
     && selectedPO
-    && !selectedPOVendorBill
-    && selectedPOBillableLines.length > 0
-    && financeCan.createDraft(myRole)
-    && ['approved', 'open', 'authorised', 'authorized', 'submitted', 'partially_received', 'closed'].includes(
-      String(selectedPO.status || '').toLowerCase(),
-    ),
+    && selectedPOVendorBillAction.kind === 'create',
   )
 
   function purchaseStatusClass(status?: string) {
@@ -1244,20 +1329,30 @@ export default function PurchaseOrders() {
     setVendorBillDueDate(dueDateCandidate >= billDate ? dueDateCandidate : billDate)
   }, [selectedPO])
 
+  function openVendorBillDraftDialog(po: PO) {
+    setSelectedPO(po)
+    setCreateVendorBillOpen(true)
+  }
+
   async function openOrCreateVendorBill(po: PO) {
     if (!companyId) {
       toast.error(tt('org.noCompany', 'Join or create a company first'))
       return
     }
 
-    const existingBill = vendorBillByPurchaseOrderId.get(po.id)
-    if (existingBill?.id) {
+    const actionState = getPurchaseOrderVendorBillActionState(po)
+    if (actionState.kind === 'open_existing' && actionState.href) {
       toast.success(
-        existingBill.document_workflow_status === 'draft'
+        actionState.existingBill?.document_workflow_status === 'draft'
           ? tt('financeDocs.vendorBills.draftOpened', 'Opened the existing vendor bill draft')
           : tt('financeDocs.vendorBills.opened', 'Opened the existing vendor bill'),
       )
-      navigate(`/vendor-bills/${existingBill.id}`)
+      navigate(actionState.href)
+      return
+    }
+
+    if (actionState.kind !== 'create') {
+      toast.error(actionState.reason)
       return
     }
 
@@ -1279,6 +1374,25 @@ export default function PurchaseOrders() {
       navigate(`/vendor-bills/${result.billId}`)
     } catch (error: any) {
       console.error(error)
+      const message = String(error?.message || '').toLowerCase()
+      if (message.includes('already exists for this purchase order')) {
+        await refreshPOData()
+        try {
+          const existingBill = await findExistingVendorBillForPurchaseOrder(companyId, po.id)
+          if (existingBill?.id) {
+            setCreateVendorBillOpen(false)
+            toast.success(
+              existingBill.document_workflow_status === 'draft'
+                ? tt('financeDocs.vendorBills.draftOpened', 'Opened the existing vendor bill draft')
+                : tt('financeDocs.vendorBills.opened', 'Opened the existing vendor bill'),
+            )
+            navigate(`/vendor-bills/${existingBill.id}`)
+            return
+          }
+        } catch (lookupError) {
+          console.error(lookupError)
+        }
+      }
       toast.error(error?.message || tt('financeDocs.vendorBills.draftCreateFailed', 'Failed to create the vendor bill draft'))
     } finally {
       setCreatingVendorBill(false)
@@ -2073,6 +2187,7 @@ export default function PurchaseOrders() {
               {poOutstanding.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
               {poOutstanding.map(po => {
                 const amounts = amountPO(po)
+                const vendorBillAction = getPurchaseOrderVendorBillActionState(po)
                 return (
                   <tr key={po.id} className="border-b align-top">
                     <td className="py-3 pr-2 font-medium">{poNo(po)}</td>
@@ -2086,6 +2201,18 @@ export default function PurchaseOrders() {
                     <td className="py-3 pr-2">
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => openPurchaseOrderDetail(po)}>{tt('orders.view', 'View')}</Button>
+                        {vendorBillAction.kind === 'open_existing' && vendorBillAction.href ? (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link to={vendorBillAction.href}>
+                              {vendorBillOpenLabel(vendorBillAction.existingBill)}
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {vendorBillAction.kind === 'create' ? (
+                          <Button size="sm" variant="outline" onClick={() => openVendorBillDraftDialog(po)}>
+                            {tt('orders.createVendorBill', 'Raise vendor bill')}
+                          </Button>
+                        ) : null}
                         <Button size="sm" variant="outline" onClick={() => printPO(po)}>{tt('orders.print', 'Print')}</Button>
                         {String(po.status).toLowerCase() === 'draft' && (
                           <>
@@ -2094,6 +2221,9 @@ export default function PurchaseOrders() {
                           </>
                         )}
                       </div>
+                      {vendorBillAction.kind === 'blocked' ? (
+                        <div className="mt-2 max-w-sm text-xs text-muted-foreground">{vendorBillAction.reason}</div>
+                      ) : null}
                     </td>
                   </tr>
                 )
@@ -2120,6 +2250,7 @@ export default function PurchaseOrders() {
               {pos.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</td></tr>}
               {pos.map(po => {
                 const amounts = amountPO(po)
+                const vendorBillAction = getPurchaseOrderVendorBillActionState(po)
                 return (
                   <tr key={po.id} className="border-b align-top">
                     <td className="py-3 pr-2 font-medium">{poNo(po)}</td>
@@ -2132,9 +2263,26 @@ export default function PurchaseOrders() {
                     <td className="py-3 pr-2">{curPO(po)}</td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                     <td className="py-3 pr-2 text-right">
-                      <Button size="sm" variant="secondary" onClick={() => openPurchaseOrderDetail(po)}>
-                        {tt('orders.view', 'View')}
-                      </Button>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => openPurchaseOrderDetail(po)}>
+                          {tt('orders.view', 'View')}
+                        </Button>
+                        {vendorBillAction.kind === 'open_existing' && vendorBillAction.href ? (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link to={vendorBillAction.href}>
+                              {vendorBillOpenLabel(vendorBillAction.existingBill)}
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {vendorBillAction.kind === 'create' ? (
+                          <Button size="sm" variant="outline" onClick={() => openVendorBillDraftDialog(po)}>
+                            {tt('orders.createVendorBill', 'Raise vendor bill')}
+                          </Button>
+                        ) : null}
+                      </div>
+                      {vendorBillAction.kind === 'blocked' ? (
+                        <div className="mt-2 text-right text-xs text-muted-foreground">{vendorBillAction.reason}</div>
+                      ) : null}
                     </td>
                   </tr>
                 )
@@ -2212,17 +2360,15 @@ export default function PurchaseOrders() {
                 description={purchaseWorkflowSummary(selectedPO.status).help}
                 actions={
                   <>
-                    {selectedPOVendorBillHref ? (
+                    {selectedPOVendorBillAction.kind === 'open_existing' && selectedPOVendorBillHref ? (
                       <Button asChild variant="outline">
                         <Link to={selectedPOVendorBillHref}>
-                          {selectedPOVendorBill?.document_workflow_status === 'draft'
-                            ? tt('orders.viewVendorBillDraft', 'View vendor bill draft')
-                            : tt('orders.viewVendorBill', 'View vendor bill')}
+                          {vendorBillOpenLabel(selectedPOVendorBillAction.existingBill)}
                         </Link>
                       </Button>
                     ) : null}
                     {canCreateVendorBillDraft ? (
-                      <Button variant="outline" onClick={() => setCreateVendorBillOpen(true)}>
+                      <Button variant="outline" onClick={() => openVendorBillDraftDialog(selectedPO)}>
                         {tt('orders.createVendorBill', 'Raise vendor bill')}
                       </Button>
                     ) : null}
@@ -2273,8 +2419,16 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
-                    <div>{formatMoneyBase(n(selectedPOState?.outstanding_base), baseCode)}</div>
+                    <div>
+                      {formatMoneyBase(
+                        n(selectedPOVendorBill?.outstanding_base, selectedPOState?.legacy_outstanding_base),
+                        baseCode,
+                      )}
+                    </div>
                   </div>
+                </div>
+                <div className="mt-4 rounded-2xl border border-border/70 bg-card/70 px-4 py-3 text-sm text-muted-foreground shadow-sm">
+                  {selectedPOVendorBillAction.reason}
                 </div>
                 {selectedPOVendorBill ? (
                   <div className="mt-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
@@ -2318,17 +2472,15 @@ export default function PurchaseOrders() {
                   </div>
                 ) : null}
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {selectedPOVendorBillHref ? (
+                  {selectedPOVendorBillAction.kind === 'open_existing' && selectedPOVendorBillHref ? (
                     <Button asChild variant="outline">
                       <Link to={selectedPOVendorBillHref}>
-                        {selectedPOVendorBill?.document_workflow_status === 'draft'
-                          ? tt('orders.viewVendorBillDraft', 'View vendor bill draft')
-                          : tt('orders.viewVendorBill', 'View vendor bill')}
+                        {vendorBillOpenLabel(selectedPOVendorBillAction.existingBill)}
                       </Link>
                     </Button>
                   ) : null}
                   {canCreateVendorBillDraft ? (
-                    <Button variant="outline" onClick={() => setCreateVendorBillOpen(true)}>
+                    <Button variant="outline" onClick={() => openVendorBillDraftDialog(selectedPO)}>
                       {tt('orders.createVendorBill', 'Raise vendor bill')}
                     </Button>
                   ) : null}
@@ -2672,6 +2824,7 @@ export default function PurchaseOrders() {
                 {browserRows.map(po => {
                   const amounts = amountPO(po)
                   const updated = (po.updated_at || po.created_at || '').slice(0, 19).replace('T', ' ')
+                  const vendorBillAction = getPurchaseOrderVendorBillActionState(po)
                   return (
                     <tr key={po.id} className="border-t">
                       <td className="py-2 px-3">{poNo(po)}</td>
@@ -2688,10 +2841,25 @@ export default function PurchaseOrders() {
                           <Button size="sm" variant="secondary" onClick={() => { setBrowserOpen(false); openPurchaseOrderDetail(po) }}>
                             {tt('orders.view', 'View')}
                           </Button>
+                          {vendorBillAction.kind === 'open_existing' && vendorBillAction.href ? (
+                            <Button size="sm" variant="outline" asChild>
+                              <Link to={vendorBillAction.href}>
+                                {vendorBillOpenLabel(vendorBillAction.existingBill)}
+                              </Link>
+                            </Button>
+                          ) : null}
+                          {vendorBillAction.kind === 'create' ? (
+                            <Button size="sm" variant="outline" onClick={() => openVendorBillDraftDialog(po)}>
+                              {tt('orders.createVendorBill', 'Raise vendor bill')}
+                            </Button>
+                          ) : null}
                           <Button size="sm" variant="outline" onClick={() => printPO(po)}>
                             {tt('orders.print', 'Print')}
                           </Button>
                         </div>
+                        {vendorBillAction.kind === 'blocked' ? (
+                          <div className="mt-2 text-right text-xs text-muted-foreground">{vendorBillAction.reason}</div>
+                        ) : null}
                       </td>
                     </tr>
                   )

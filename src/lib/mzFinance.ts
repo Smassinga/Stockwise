@@ -725,12 +725,31 @@ function humanizeRuntimeError(error: any, fallback: string, stage: string) {
   const details = String(error?.details || '').trim()
   const hint = String(error?.hint || '').trim()
   const code = String(error?.code || '').trim()
+  const haystack = `${message} ${details} ${hint}`.toLowerCase()
   const parts = [message]
+
+  const matches = (...needles: string[]) => needles.some((needle) => haystack.includes(needle))
+
+  let friendlyMessage: string | null = null
+  if (matches('company_fiscal_settings_missing')) {
+    friendlyMessage = 'Mozambique fiscal document defaults are not ready for this company yet. Try opening the draft again, then complete the company tax profile before issuing legal documents.'
+  } else if (matches('finance_document_fiscal_series_missing')) {
+    friendlyMessage = 'The active Mozambique fiscal series for this document year is missing. Stockwise needs one series per document type before it can allocate the legal reference.'
+  } else if (matches('finance_document_fiscal_series_ambiguous')) {
+    friendlyMessage = 'More than one active Mozambique fiscal series matches this document year. Keep exactly one active series per document type and fiscal year.'
+  } else if (matches('finance_document_fiscal_series_settings_mismatch')) {
+    friendlyMessage = 'The active Mozambique fiscal series does not match this company’s finance-document settings. Review the invoice, credit-note, and debit-note series configuration.'
+  } else if (matches('sales_invoice_issue_missing_fiscal_identity')) {
+    friendlyMessage = 'The company legal tax identity is incomplete. Add the company NUIT and seller legal details before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_missing_buyer_identity')) {
+    friendlyMessage = 'The customer legal identity is incomplete. Capture the buyer name and fiscal details before issuing the invoice.'
+  }
 
   if (details && details !== message) parts.push(details)
   if (hint) parts.push(`hint: ${hint}`)
 
   const stageLabel = code ? `${stage}.${code}` : stage
+  if (friendlyMessage) return `${friendlyMessage} [${stageLabel}]`
   if (!parts.filter(Boolean).length) return `${fallback} [${stageLabel}]`
   return `${fallback} [${stageLabel}]: ${parts.filter(Boolean).join(' | ')}`
 }
@@ -1752,12 +1771,17 @@ export type CreateVendorBillDraftFromPurchaseOrderInput = {
   dueDate?: string | null
 }
 
-export async function createDraftVendorBillFromPurchaseOrder(
+type ExistingVendorBillForPurchaseOrderRow = {
+  id: string
+  internal_reference: string
+  document_workflow_status: 'draft' | 'posted'
+}
+
+export async function findExistingVendorBillForPurchaseOrder(
   companyId: string,
   purchaseOrderId: string,
-  input: CreateVendorBillDraftFromPurchaseOrderInput = {},
 ) {
-  const { data: existingBill, error: existingError } = await supabase
+  const { data, error } = await supabase
     .from('vendor_bills')
     .select('id,internal_reference,document_workflow_status')
     .eq('company_id', companyId)
@@ -1765,11 +1789,21 @@ export async function createDraftVendorBillFromPurchaseOrder(
     .in('document_workflow_status', ['draft', 'posted'])
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle<{ id: string; internal_reference: string; document_workflow_status: string }>()
+    .maybeSingle<ExistingVendorBillForPurchaseOrderRow>()
 
-  if (existingError) {
-    throw new Error(humanizeRuntimeError(existingError, 'Failed to inspect existing vendor bills', 'vendor_bills.lookup'))
+  if (error) {
+    throw new Error(humanizeRuntimeError(error, 'Failed to inspect existing vendor bills', 'vendor_bills.lookup'))
   }
+
+  return data || null
+}
+
+export async function createDraftVendorBillFromPurchaseOrder(
+  companyId: string,
+  purchaseOrderId: string,
+  input: CreateVendorBillDraftFromPurchaseOrderInput = {},
+) {
+  const existingBill = await findExistingVendorBillForPurchaseOrder(companyId, purchaseOrderId)
   if (existingBill) {
     return { billId: existingBill.id, internalReference: existingBill.internal_reference, existed: true }
   }

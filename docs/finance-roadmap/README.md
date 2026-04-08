@@ -28,6 +28,8 @@ Finance-document foundation already in place:
 - finance-document output now resolves language from the stored document snapshot first, then from the active app/document language fallback, with bilingual `pt` / `en` rendering
 - finance documents now surface actor-aware activity journals, linked document-chain views, settlement events, and structured adjustment reasons on the core AR/AP detail pages
 - order detail screens now expose the active finance anchor and linked finance-document bridge from `SO -> SI` and `PO -> VB`
+- native sales-invoice draft creation now bootstraps the minimum Mozambique fiscal settings and current-year fiscal series when they are missing, while issue-time legal tax identity validation remains strict
+- purchase-order list and detail surfaces now share a single vendor-bill action model: open the existing bill when one already exists, raise a new draft when the PO is approved and billable, or explain exactly why billing is blocked
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
