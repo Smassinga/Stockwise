@@ -103,6 +103,20 @@ function ddmmyyyy(localDayISO: string) {
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
 }
 
+function localDateIso(timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone || "Africa/Maputo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+  return `${year}-${month}-${day}`;
+}
+
 function companyBrand(company?: CompanyRow | null) {
   return (
     company?.email_subject_prefix?.trim() ||
@@ -391,6 +405,31 @@ serve(async (req: Request) => {
     claimedCompanyId = job.company_id;
     claimedAttempts = Number(job.attempts ?? 0);
     log("[job] claimed", { id: job.id, company: job.company_id, attempts: claimedAttempts });
+
+    const currentLocalDay = localDateIso(job.timezone);
+    if (job.run_for_local_date < currentLocalDay) {
+      await updateDigestJob(
+        supabase,
+        job.id,
+        {
+          status: "failed",
+          processed_at: new Date().toISOString(),
+          error: "Skipped stale digest backlog after worker recovery",
+          next_attempt_at: null,
+          processing_started_at: null,
+        },
+        "processing",
+      );
+
+      return new Response(JSON.stringify({
+        ok: true,
+        mode: DRY_RUN ? "dry" : "live",
+        message: "skipped stale backlog",
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
 
     const { data: payload, error: payloadError } = await supabase.rpc("build_daily_digest_payload", {
       p_company_id: job.company_id,
