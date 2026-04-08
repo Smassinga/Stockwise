@@ -94,8 +94,13 @@ type SettlementRow = {
   balanceLabel: string
   originalAmount: number
   originalBase: number
+  creditedBase: number
+  debitedBase: number
+  currentLegalBase: number
   settledBase: number
   outstandingBase: number
+  cashBase: number
+  bankBase: number
   agingDays: number
   history: HistoryRow[]
   sourceLabel: string
@@ -139,6 +144,8 @@ const dueTone = (row: SettlementRow) => {
   if (row.agingDays > 0) return 'text-rose-600 dark:text-rose-300'
   return 'text-foreground'
 }
+
+const isFinanceDocumentRow = (row: SettlementRow) => row.kind === 'SI' || row.kind === 'VB'
 
 export default function SettlementsPage() {
   const { companyId, companyName, myRole } = useOrg()
@@ -374,6 +381,15 @@ export default function SettlementsPage() {
           const key = `${kind}:${refId}`
           historyByKey.set(key, [...(historyByKey.get(key) || []), entry])
         }
+        const settlementBreakdown = (kind: SettlementKind, refId: string) =>
+          (historyByKey.get(`${kind}:${refId}`) || []).reduce(
+            (totals, entry) => {
+              if (entry.source === 'cash') totals.cash += n(entry.amountBase)
+              if (entry.source === 'bank') totals.bank += n(entry.amountBase)
+              return totals
+            },
+            { cash: 0, bank: 0 },
+          )
 
         for (const tx of (cashRes.data || []) as CashTx[]) {
           if ((tx.ref_type !== 'SO' && tx.ref_type !== 'PO' && tx.ref_type !== 'SI' && tx.ref_type !== 'VB') || !tx.ref_id) continue
@@ -406,6 +422,7 @@ export default function SettlementsPage() {
             const settled = n(order.legacy_settled_base)
             const outstanding = n(order.legacy_outstanding_base)
             const balanceStatus = order.settlement_status
+            const breakdown = settlementBreakdown('SO', order.id)
 
             return {
               kind: 'SO' as const,
@@ -421,8 +438,13 @@ export default function SettlementsPage() {
               balanceLabel: settlementSummaryLabel(balanceStatus),
               originalAmount: n(order.total_amount_ccy),
               originalBase: n(order.total_amount_base),
+              creditedBase: 0,
+              debitedBase: 0,
+              currentLegalBase: n(order.total_amount_base),
               settledBase: settled,
               outstandingBase: outstanding,
+              cashBase: breakdown.cash,
+              bankBase: breakdown.bank,
               agingDays: daysOverdue(order.due_date),
               history: (historyByKey.get(`SO:${order.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
               sourceLabel: rowSourceLabel('SO'),
@@ -434,6 +456,7 @@ export default function SettlementsPage() {
           .filter(invoice => invoice.document_workflow_status === 'issued')
           .map(invoice => {
             const balanceStatus = invoice.settlement_status
+            const breakdown = settlementBreakdown('SI', invoice.id)
 
             return {
               kind: 'SI' as const,
@@ -449,8 +472,16 @@ export default function SettlementsPage() {
               balanceLabel: settlementSummaryLabel(balanceStatus),
               originalAmount: n(invoice.total_amount),
               originalBase: n(invoice.total_amount_base),
+              creditedBase: n(invoice.credited_total_base),
+              debitedBase: n(invoice.debited_total_base),
+              currentLegalBase: n(
+                invoice.current_legal_total_base,
+                n(invoice.total_amount_base) - n(invoice.credited_total_base) + n(invoice.debited_total_base),
+              ),
               settledBase: n(invoice.settled_base),
               outstandingBase: n(invoice.outstanding_base),
+              cashBase: breakdown.cash,
+              bankBase: breakdown.bank,
               agingDays: daysOverdue(invoice.due_date),
               history: (historyByKey.get(`SI:${invoice.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
               sourceLabel: rowSourceLabel('SI'),
@@ -467,6 +498,7 @@ export default function SettlementsPage() {
             const settled = n(order.legacy_paid_base)
             const outstanding = n(order.legacy_outstanding_base)
             const balanceStatus = order.settlement_status
+            const breakdown = settlementBreakdown('PO', order.id)
 
             return {
               kind: 'PO' as const,
@@ -482,8 +514,13 @@ export default function SettlementsPage() {
               balanceLabel: settlementSummaryLabel(balanceStatus),
               originalAmount: n(order.total_amount_ccy),
               originalBase: n(order.total_amount_base),
+              creditedBase: 0,
+              debitedBase: 0,
+              currentLegalBase: n(order.total_amount_base),
               settledBase: settled,
               outstandingBase: outstanding,
+              cashBase: breakdown.cash,
+              bankBase: breakdown.bank,
               agingDays: daysOverdue(order.due_date),
               history: (historyByKey.get(`PO:${order.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
               sourceLabel: rowSourceLabel('PO'),
@@ -495,6 +532,7 @@ export default function SettlementsPage() {
           .filter(bill => bill.document_workflow_status === 'posted')
           .map(bill => {
             const balanceStatus = bill.settlement_status
+            const breakdown = settlementBreakdown('VB', bill.id)
 
             return {
               kind: 'VB' as const,
@@ -510,8 +548,16 @@ export default function SettlementsPage() {
               balanceLabel: settlementSummaryLabel(balanceStatus),
               originalAmount: n(bill.total_amount),
               originalBase: n(bill.total_amount_base),
+              creditedBase: n(bill.credited_total_base),
+              debitedBase: n(bill.debited_total_base),
+              currentLegalBase: n(
+                bill.current_legal_total_base,
+                n(bill.total_amount_base) - n(bill.credited_total_base) + n(bill.debited_total_base),
+              ),
               settledBase: n(bill.settled_base),
               outstandingBase: n(bill.outstanding_base),
+              cashBase: breakdown.cash,
+              bankBase: breakdown.bank,
               agingDays: daysOverdue(bill.due_date),
               history: (historyByKey.get(`VB:${bill.id}`) || []).sort((a, b) => String(b.happenedAt).localeCompare(String(a.happenedAt))),
               sourceLabel: rowSourceLabel('VB'),
@@ -574,6 +620,14 @@ export default function SettlementsPage() {
       return true
     })
   }, [currentRows, currencyFilter, dueFilter, fromDate, partyFilter, search, statusFilter, toDate])
+  const filteredBridgeTotals = useMemo(() => ({
+    originalBase: filteredRows.reduce((sum, row) => sum + row.originalBase, 0),
+    creditedBase: filteredRows.reduce((sum, row) => sum + row.creditedBase, 0),
+    debitedBase: filteredRows.reduce((sum, row) => sum + row.debitedBase, 0),
+    currentLegalBase: filteredRows.reduce((sum, row) => sum + row.currentLegalBase, 0),
+    settledBase: filteredRows.reduce((sum, row) => sum + row.settledBase, 0),
+    outstandingBase: filteredRows.reduce((sum, row) => sum + row.outstandingBase, 0),
+  }), [filteredRows])
 
   function openSettlement(row: SettlementRow, nextDialogTab: 'settle' | 'history' = 'settle') {
     setActiveRow(row)
@@ -746,7 +800,7 @@ export default function SettlementsPage() {
         </Card>
       </div>
 
-      <Card className="border-border/80 shadow-sm">
+      <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)]">
         <CardHeader className="pb-3">
           <CardTitle>{tt('settlements.filters', 'Filters')}</CardTitle>
           <CardDescription>{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
@@ -849,7 +903,7 @@ export default function SettlementsPage() {
               : tt('settlements.payHelp', 'Payables appear here from approved purchase orders before booking and from posted vendor bills after booking. Once posted, the vendor bill becomes the canonical settlement anchor.')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="space-y-4">
           {stateViewsUnavailable && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
               {tt('settlements.stateViewsUnavailable', 'The settlement state views are not available yet. Apply the settlement-anchor migration and refresh this page.')}
@@ -860,58 +914,155 @@ export default function SettlementsPage() {
           ) : filteredRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">{tt('settlements.empty', 'No settlement anchors match the current filters.')}</p>
           ) : (
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead>
-                <tr className="border-b text-left">
-                  <th className="py-2 pr-3">{tt('table.ref', 'Reference')}</th>
-                  <th className="py-2 pr-3">{tt('settlements.counterparty', 'Counterparty')}</th>
-                  <th className="py-2 pr-3">{tt('table.date', 'Date')}</th>
-                  <th className="py-2 pr-3">{tt('orders.dueDate', 'Due Date')}</th>
-                  <th className="py-2 pr-3 text-right">{tt('settlements.originalAmount', 'Original')}</th>
-                  <th className="py-2 pr-3 text-right">{tt('settlements.settledAmount', 'Settled')}</th>
-                  <th className="py-2 pr-3 text-right">{tt('settlements.outstandingAmount', 'Outstanding')}</th>
-                  <th className="py-2 pr-3">{tt('settlements.balanceStatus', 'Balance status')}</th>
-                  <th className="py-2 pr-3 text-right">{tt('settlements.aging', 'Aging')}</th>
-                  <th className="py-2 text-right">{tt('orders.actions', 'Actions')}</th>
-                </tr>
-              </thead>
+            <>
+              <div className="rounded-2xl border border-border/70 bg-muted/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
+                      {tt('settlements.reconciliationTitle', 'Settlement bridge')}
+                    </div>
+                    <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                      {tt('settlements.reconciliationHelp', 'Current legal equals original minus credits plus debits. Outstanding equals current legal minus actual cash and bank settlement.')}
+                    </p>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {tt('settlements.filteredAnchorsCount', '{count} active anchors in the current view', { count: filteredRows.length })}
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-5">
+                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</div>
+                    <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.originalBase)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.originalAmountHelp', 'Issued or posted starting amount before adjustments and settlements')}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
+                    <div className="mt-2 space-y-1 text-sm">
+                      <div className="flex items-center justify-between gap-3 text-rose-700 dark:text-rose-300">
+                        <span>{tt('settlements.creditedAmount', 'Credited')}</span>
+                        <span className="font-mono font-semibold tabular-nums">{money(filteredBridgeTotals.creditedBase)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sky-700 dark:text-sky-300">
+                        <span>{tt('settlements.debitedAmount', 'Debited')}</span>
+                        <span className="font-mono font-semibold tabular-nums">{money(filteredBridgeTotals.debitedBase)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.currentLegalAmount', 'Current legal')}</div>
+                    <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.currentLegalBase)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.currentLegalHelp', 'Original minus credits plus debits')}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</div>
+                    <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.settledBase)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.settledAmountHelp', 'Actual cash and bank settlement only')}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</div>
+                    <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.outstandingBase)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.outstandingHelp', 'Current legal minus settled')}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/95 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.48)]">
+                <table className="w-full min-w-[1480px] text-sm">
+                  <thead className="bg-muted/30">
+                    <tr className="border-b border-border/60 text-left">
+                      <th className="px-4 py-3">{tt('table.ref', 'Reference')}</th>
+                      <th className="px-4 py-3">{tt('settlements.counterparty', 'Counterparty')}</th>
+                      <th className="px-4 py-3">{tt('table.date', 'Date')}</th>
+                      <th className="px-4 py-3">{tt('orders.dueDate', 'Due Date')}</th>
+                      <th className="px-4 py-3 text-right">{tt('settlements.originalAmount', 'Original')}</th>
+                      <th className="px-4 py-3">{tt('settlements.adjustmentsAmount', 'Adjustments')}</th>
+                      <th className="px-4 py-3 text-right">{tt('settlements.currentLegalAmount', 'Current legal')}</th>
+                      <th className="px-4 py-3 text-right">{tt('settlements.settledAmount', 'Settled')}</th>
+                      <th className="px-4 py-3 text-right">{tt('settlements.outstandingAmount', 'Outstanding')}</th>
+                      <th className="px-4 py-3">{tt('settlements.balanceStatus', 'Balance status')}</th>
+                      <th className="px-4 py-3 text-right">{tt('settlements.aging', 'Aging')}</th>
+                      <th className="px-4 py-3 text-right">{tt('orders.actions', 'Actions')}</th>
+                    </tr>
+                  </thead>
               <tbody>
                 {filteredRows.map(row => (
-                  <tr key={`${row.kind}:${row.id}`} className="border-b align-top">
-                    <td className="py-3 pr-3">
+                  <tr key={`${row.kind}:${row.id}`} className="border-b border-border/50 align-top transition-colors duration-200 hover:bg-muted/20">
+                    <td className="px-4 py-4 [&>div:last-child]:hidden">
                       <div className="font-medium">{row.reference}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{`${row.sourceLabel} / ${row.workflowLabel || row.kind}`}</div>
+                      <div className="mt-2 inline-flex rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                        {isFinanceDocumentRow(row)
+                          ? tt('settlements.financeAnchor', 'Finance anchor')
+                          : tt('settlements.orderStageAnchor', 'Order-stage anchor')}
+                      </div>
                       <div className="text-xs text-muted-foreground">{`${row.sourceLabel} · ${row.workflowLabel || row.kind}`}</div>
                     </td>
-                    <td className="py-3 pr-3">{row.counterparty}</td>
-                    <td className="py-3 pr-3 whitespace-nowrap">{row.documentDate || tt('common.dash', '-')}</td>
-                    <td className={`py-3 pr-3 whitespace-nowrap ${dueTone(row)}`}>
+                    <td className="px-4 py-4">
+                      <div className="font-medium text-foreground">{row.counterparty}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">{row.documentDate || tt('common.dash', '-')}</td>
+                    <td className={`px-4 py-4 whitespace-nowrap ${dueTone(row)}`}>
                       {row.dueDate || tt('common.dash', '-')}
                     </td>
-                    <td className="py-3 pr-3 text-right">
+                    <td className="px-4 py-4 text-right">
                       <div className="font-mono tabular-nums">{row.originalAmount.toLocaleString(lang === 'pt' ? 'pt-MZ' : 'en-MZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {row.currency}</div>
-                      <div className="text-xs text-muted-foreground">{money(row.originalBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{money(row.originalBase)}</div>
                     </td>
-                    <td className="py-3 pr-3 text-right font-mono tabular-nums">{money(row.settledBase)}</td>
-                    <td className="py-3 pr-3 text-right font-mono tabular-nums font-semibold">{money(row.outstandingBase)}</td>
-                    <td className="py-3 pr-3">
+                    <td className="px-4 py-4">
+                      <div className="min-w-[180px] rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-muted-foreground">{tt('settlements.creditedAmount', 'Credited')}</span>
+                          <span className="font-mono tabular-nums text-rose-700 dark:text-rose-300">{money(row.creditedBase)}</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</span>
+                          <span className="font-mono tabular-nums text-sky-700 dark:text-sky-300">{money(row.debitedBase)}</span>
+                        </div>
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          {isFinanceDocumentRow(row)
+                            ? tt('settlements.adjustmentNote', 'Legal adjustments from linked notes stay separate from settlement.')
+                            : tt('settlements.noAdjustments', 'No document adjustments are active on order-stage anchors.')}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <div className="font-mono text-base font-semibold tabular-nums">{money(row.currentLegalBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {row.creditedBase > 0.005 || row.debitedBase > 0.005
+                          ? tt('settlements.currentLegalHelp', 'Original minus credits plus debits')
+                          : tt('settlements.currentLegalMatchesOriginal', 'Matches the original legal amount')}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <div className="font-mono text-base tabular-nums">{money(row.settledBase)}</div>
+                      <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                        <div>{tt('settlements.cashShort', 'Cash')}: <span className="font-mono tabular-nums">{money(row.cashBase)}</span></div>
+                        <div>{tt('settlements.bankShort', 'Bank')}: <span className="font-mono tabular-nums">{money(row.bankBase)}</span></div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <div className="font-mono text-base font-semibold tabular-nums">{money(row.outstandingBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.outstandingHelp', 'Current legal minus settled')}</div>
+                    </td>
+                    <td className="px-4 py-4">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(row)}`}>
                         {row.balanceLabel}
                       </span>
                     </td>
-                    <td className={`py-3 pr-3 text-right font-mono tabular-nums ${row.agingDays > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-muted-foreground'}`}>
+                    <td className={`px-4 py-4 text-right font-mono tabular-nums ${row.agingDays > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-muted-foreground'}`}>
                       {row.agingDays > 0 ? `${row.agingDays}d` : tt('common.dash', '-')}
                     </td>
-                    <td className="py-3 text-right">
+                    <td className="px-4 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         {canManageSettlement ? (
-                          <Button size="sm" onClick={() => openSettlement(row, 'settle')}>
+                          <Button size="sm" className="shadow-sm transition-transform duration-200 hover:-translate-y-0.5" onClick={() => openSettlement(row, 'settle')}>
                             {settlementActionLabel(row.kind)}
                           </Button>
                         ) : null}
-                        <Button size="sm" variant="outline" onClick={() => viewOrder(row)}>
+                        <Button size="sm" variant="outline" className="transition-colors duration-200 hover:bg-muted" onClick={() => viewOrder(row)}>
                           {viewAnchorLabel(row.kind)}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => openSettlement(row, 'history')}>
+                        <Button size="sm" variant="outline" className="transition-colors duration-200 hover:bg-muted" onClick={() => openSettlement(row, 'history')}>
                           {tt('settlements.viewHistory', 'History')}
                         </Button>
                       </div>
@@ -919,13 +1070,15 @@ export default function SettlementsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={!!activeRow} onOpenChange={(open) => { if (!open) setActiveRow(null) }}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>
               {activeRow
@@ -942,24 +1095,93 @@ export default function SettlementsPage() {
           <DialogBody className="pr-1">
             {activeRow && (
               <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-4">
-                <Card className="border-border/70 shadow-none">
-                  <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</CardTitle></CardHeader>
-                  <CardContent className="font-mono tabular-nums">{money(activeRow.originalBase)}</CardContent>
-                </Card>
-                <Card className="border-border/70 shadow-none">
-                  <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle></CardHeader>
-                  <CardContent className="font-mono tabular-nums">{money(activeRow.settledBase)}</CardContent>
-                </Card>
-                <Card className="border-border/70 shadow-none">
-                  <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle></CardHeader>
-                  <CardContent className="font-mono tabular-nums font-semibold">{money(activeRow.outstandingBase)}</CardContent>
-                </Card>
-                <Card className="border-border/70 shadow-none">
-                  <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('orders.dueDate', 'Due Date')}</CardTitle></CardHeader>
-                  <CardContent className={dueTone(activeRow)}>{activeRow.dueDate || tt('common.dash', '-')}</CardContent>
-                </Card>
-              </div>
+                <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-5 shadow-[0_28px_80px_-52px_rgba(15,23,42,0.55)]">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
+                        {isFinanceDocumentRow(activeRow)
+                          ? tt('settlements.financeAnchor', 'Finance anchor')
+                          : tt('settlements.orderStageAnchor', 'Order-stage anchor')}
+                      </div>
+                      <div>
+                        <div className="text-2xl font-semibold tracking-tight">{activeRow.reference}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{activeRow.counterparty}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{`${activeRow.sourceLabel} / ${activeRow.workflowLabel}`}</div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.55)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('table.date', 'Date')}</div>
+                        <div className="mt-2 text-sm font-medium">{activeRow.documentDate || tt('common.dash', '-')}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.55)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.dueDate', 'Due Date')}</div>
+                        <div className={`mt-2 text-sm font-medium ${dueTone(activeRow)}`}>{activeRow.dueDate || tt('common.dash', '-')}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.55)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('settlements.balanceStatus', 'Balance status')}</div>
+                        <div className="mt-2">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(activeRow)}`}>
+                            {activeRow.balanceLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{tt('settlements.reconciliationTitle', 'Settlement bridge')}:</span>{' '}
+                  {tt('settlements.dialogBridgeHelp', 'Current legal = original - credits + debits. Outstanding = current legal - settled. Credits never count as settlement.')}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                    <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="font-mono tabular-nums">{money(activeRow.originalBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.originalAmountHelp', 'Issued or posted starting amount before adjustments and settlements')}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                    <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.creditedAmount', 'Credited')}</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="font-mono tabular-nums text-rose-700 dark:text-rose-300">{money(activeRow.creditedBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.creditedHelp', 'Reductions from issued or posted credit notes')}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                    <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="font-mono tabular-nums text-sky-700 dark:text-sky-300">{money(activeRow.debitedBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.debitedHelp', 'Increases from issued or posted debit notes')}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 bg-background/95 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.56)]">
+                    <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.currentLegalAmount', 'Current legal')}</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="font-mono tabular-nums font-semibold">{money(activeRow.currentLegalBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.currentLegalHelp', 'Original minus credits plus debits')}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                    <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="font-mono tabular-nums">{money(activeRow.settledBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {tt('settlements.cashShort', 'Cash')}: <span className="font-mono tabular-nums">{money(activeRow.cashBase)}</span>{' '}
+                        / {tt('settlements.bankShort', 'Bank')}: <span className="font-mono tabular-nums">{money(activeRow.bankBase)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/70 bg-background/95 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.56)]">
+                    <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="font-mono tabular-nums font-semibold">{money(activeRow.outstandingBase)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.outstandingHelp', 'Current legal minus settled')}</div>
+                    </CardContent>
+                  </Card>
+                </div>
 
               <Tabs value={dialogTab} onValueChange={(value) => setDialogTab(value as 'settle' | 'history')}>
                 <TabsList className="h-auto w-full justify-start gap-1 rounded-xl bg-muted/70 p-1 md:w-auto">
