@@ -10,13 +10,31 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Textarea } from '../components/ui/textarea'
+import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
+import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { useOrg } from '../hooks/useOrg'
 import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { supabase } from '../lib/db'
+import {
+  financeActorLabel,
+  financeEventSummary,
+  financeEventTitle,
+  financeEventTone,
+  financeEventTransition,
+  getAdjustmentReasonLabel,
+  getAdjustmentReasonOptions,
+  listFinanceActorDirectory,
+  listFinanceSettlementAuditEvents,
+  type FinanceActorDirectory,
+  type FinanceSettlementAuditEvent,
+  type FinanceTimelineEntry,
+  type VendorBillRowLike,
+} from '../lib/financeAudit'
 import {
   VENDOR_BILL_STATE_VIEW,
   financeDocumentApprovalLabelKey,
@@ -152,8 +170,11 @@ export default function VendorBillDetailPage() {
   const [posting, setPosting] = useState(false)
   const [voiding, setVoiding] = useState(false)
   const [row, setRow] = useState<VendorBillStateRow | null>(null)
+  const [billAuditRow, setBillAuditRow] = useState<VendorBillRowLike | null>(null)
   const [lines, setLines] = useState<VendorBillLineRow[]>([])
   const [events, setEvents] = useState<FinanceDocumentEventRow[]>([])
+  const [actorDirectory, setActorDirectory] = useState<FinanceActorDirectory>({})
+  const [settlementEvents, setSettlementEvents] = useState<FinanceSettlementAuditEvent[]>([])
   const [creditNotes, setCreditNotes] = useState<VendorCreditNoteRow[]>([])
   const [creditNoteLines, setCreditNoteLines] = useState<VendorCreditNoteLineRow[]>([])
   const [debitNotes, setDebitNotes] = useState<VendorDebitNoteRow[]>([])
@@ -169,6 +190,7 @@ export default function VendorBillDetailPage() {
 
   const [creditDialogOpen, setCreditDialogOpen] = useState(false)
   const [creditMode, setCreditMode] = useState<AdjustmentMode>('full')
+  const [creditReasonCode, setCreditReasonCode] = useState('')
   const [creditReason, setCreditReason] = useState('')
   const [creditSupplierReference, setCreditSupplierReference] = useState('')
   const [creditNoteDate, setCreditNoteDate] = useState(isoToday())
@@ -177,6 +199,7 @@ export default function VendorBillDetailPage() {
 
   const [debitDialogOpen, setDebitDialogOpen] = useState(false)
   const [debitMode, setDebitMode] = useState<AdjustmentMode>('full')
+  const [debitReasonCode, setDebitReasonCode] = useState('')
   const [debitReason, setDebitReason] = useState('')
   const [debitSupplierReference, setDebitSupplierReference] = useState('')
   const [debitNoteDate, setDebitNoteDate] = useState(isoToday())
@@ -200,8 +223,11 @@ export default function VendorBillDetailPage() {
     if (!companyId || !billId) {
       setLoading(false)
       setRow(null)
+      setBillAuditRow(null)
       setLines([])
       setEvents([])
+      setActorDirectory({})
+      setSettlementEvents([])
       setCreditNotes([])
       setCreditNoteLines([])
       setDebitNotes([])
@@ -226,8 +252,11 @@ export default function VendorBillDetailPage() {
         if (isMissingFinanceViewError(error, VENDOR_BILL_STATE_VIEW)) {
           setMissingView(true)
           setRow(null)
+          setBillAuditRow(null)
           setLines([])
           setEvents([])
+          setActorDirectory({})
+          setSettlementEvents([])
           setCreditNotes([])
           setCreditNoteLines([])
           setDebitNotes([])
@@ -239,8 +268,11 @@ export default function VendorBillDetailPage() {
 
       if (!data) {
         setRow(null)
+        setBillAuditRow(null)
         setLines([])
         setEvents([])
+        setActorDirectory({})
+        setSettlementEvents([])
         setCreditNotes([])
         setCreditNoteLines([])
         setDebitNotes([])
@@ -249,7 +281,7 @@ export default function VendorBillDetailPage() {
       }
 
       const nextRow = data as VendorBillStateRow
-      const [lineRes, eventRes, nextCompanyProfile, supplierRes, nextCreditNotes, nextDebitNotes] = await Promise.all([
+      const [lineRes, eventRes, rawBillRes, nextCompanyProfile, supplierRes, nextCreditNotes, nextDebitNotes] = await Promise.all([
         supabase
           .from('vendor_bill_lines')
           .select('id,vendor_bill_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order')
@@ -264,6 +296,12 @@ export default function VendorBillDetailPage() {
           .eq('document_kind', 'vendor_bill')
           .eq('document_id', billId)
           .order('occurred_at', { ascending: false }),
+        supabase
+          .from('vendor_bills')
+          .select('id,internal_reference,supplier_invoice_reference,purchase_order_id,created_by,approval_requested_at,approval_requested_by,approved_at,approved_by,posted_at,posted_by,voided_at,voided_by,void_reason,created_at')
+          .eq('company_id', companyId)
+          .eq('id', billId)
+          .maybeSingle<VendorBillRowLike>(),
         getCompanyProfile(companyId),
         nextRow.supplier_id
           ? supabase
@@ -279,16 +317,47 @@ export default function VendorBillDetailPage() {
 
       if (lineRes.error) throw lineRes.error
       if (eventRes.error) throw eventRes.error
+      if (rawBillRes.error) throw rawBillRes.error
       if (supplierRes.error) throw supplierRes.error
 
+      let nextActorDirectory: FinanceActorDirectory = {}
+      let nextSettlementEvents: FinanceSettlementAuditEvent[] = []
       const [nextCreditNoteLines, nextDebitNoteLines] = await Promise.all([
         listVendorCreditNoteLines(companyId, nextCreditNotes.map((note) => note.id)),
         listVendorDebitNoteLines(companyId, nextDebitNotes.map((note) => note.id)),
       ])
 
+      try {
+        const actorIds = Array.from(new Set([
+          rawBillRes.data?.created_by,
+          rawBillRes.data?.approval_requested_by,
+          rawBillRes.data?.approved_by,
+          rawBillRes.data?.posted_by,
+          rawBillRes.data?.voided_by,
+          ...((eventRes.data || []) as FinanceDocumentEventRow[]).map((event) => event.actor_user_id),
+          ...nextCreditNotes.flatMap((note) => [note.created_by, note.posted_by, note.voided_by]),
+          ...nextDebitNotes.flatMap((note) => [note.created_by, note.posted_by, note.voided_by]),
+        ].filter(Boolean) as string[]))
+
+        const [actorRes, settlementRes] = await Promise.all([
+          listFinanceActorDirectory(companyId, actorIds),
+          nextRow.document_workflow_status === 'posted'
+            ? listFinanceSettlementAuditEvents(companyId, 'vendor_bill', billId)
+            : Promise.resolve([] as FinanceSettlementAuditEvent[]),
+        ])
+
+        nextActorDirectory = actorRes
+        nextSettlementEvents = settlementRes
+      } catch (auditError) {
+        console.warn('[finance-audit] VendorBillDetail audit context fallback', auditError)
+      }
+
       setRow(nextRow)
+      setBillAuditRow((rawBillRes.data || null) as VendorBillRowLike | null)
       setLines((lineRes.data || []) as VendorBillLineRow[])
       setEvents((eventRes.data || []) as FinanceDocumentEventRow[])
+      setActorDirectory(nextActorDirectory)
+      setSettlementEvents(nextSettlementEvents)
       setCreditNotes(nextCreditNotes)
       setCreditNoteLines(nextCreditNoteLines)
       setDebitNotes(nextDebitNotes)
@@ -302,8 +371,11 @@ export default function VendorBillDetailPage() {
         || withI18nFallback(t, 'financeDocs.vendorBills.loadFailed', 'Failed to load vendor bills'),
       )
       setRow(null)
+      setBillAuditRow(null)
       setLines([])
       setEvents([])
+      setActorDirectory({})
+      setSettlementEvents([])
       setCreditNotes([])
       setCreditNoteLines([])
       setDebitNotes([])
@@ -462,10 +534,13 @@ export default function VendorBillDetailPage() {
     () => roundMoney(debitNotes.filter((note) => note.document_workflow_status === 'posted').reduce((sum, note) => sum + Number(note.total_amount || 0), 0)),
     [debitNotes],
   )
+  const creditReasonOptions = useMemo(() => getAdjustmentReasonOptions('vendor_credit', lang), [lang])
+  const debitReasonOptions = useMemo(() => getAdjustmentReasonOptions('vendor_debit', lang), [lang])
 
   useEffect(() => {
     if (!creditDialogOpen) return
     setCreditMode('full')
+    setCreditReasonCode('')
     setCreditReason('')
     setCreditSupplierReference('')
     setCreditNoteDate(isoToday())
@@ -483,6 +558,7 @@ export default function VendorBillDetailPage() {
     if (!debitDialogOpen) return
     const today = isoToday()
     setDebitMode('full')
+    setDebitReasonCode('')
     setDebitReason('')
     setDebitSupplierReference('')
     setDebitNoteDate(today)
@@ -971,6 +1047,10 @@ export default function VendorBillDetailPage() {
 
   async function handleCreateCreditNote() {
     if (!companyId || !row || !canPostVendorAdjustments) return
+    if (!creditReasonCode) {
+      toast.error(tt('financeDocs.audit.reasonCodeRequired', 'Select a structured reason code before issuing the adjustment document.'))
+      return
+    }
     if (!creditReason.trim()) {
       toast.error(tt('financeDocs.vendorBills.creditReasonRequired', 'An adjustment reason is required before posting the supplier credit note.'))
       return
@@ -987,6 +1067,7 @@ export default function VendorBillDetailPage() {
     try {
       setCreatingCredit(true)
       const note = await createAndPostVendorCreditNoteForBill(companyId, row.id, {
+        adjustmentReasonCode: creditReasonCode,
         adjustmentReasonText: creditReason,
         supplierDocumentReference: creditSupplierReference,
         noteDate: creditNoteDate,
@@ -998,6 +1079,7 @@ export default function VendorBillDetailPage() {
         }),
       )
       setCreditDialogOpen(false)
+      setCreditReasonCode('')
       setCreditReason('')
       setCreditSupplierReference('')
       setCreditLineDrafts({})
@@ -1012,6 +1094,10 @@ export default function VendorBillDetailPage() {
 
   async function handleCreateDebitNote() {
     if (!companyId || !row || !canPostVendorAdjustments) return
+    if (!debitReasonCode) {
+      toast.error(tt('financeDocs.audit.reasonCodeRequired', 'Select a structured reason code before issuing the adjustment document.'))
+      return
+    }
     if (!debitReason.trim()) {
       toast.error(tt('financeDocs.vendorBills.debitReasonRequired', 'An adjustment reason is required before posting the supplier debit note.'))
       return
@@ -1028,6 +1114,7 @@ export default function VendorBillDetailPage() {
     try {
       setCreatingDebit(true)
       const note = await createAndPostVendorDebitNoteForBill(companyId, row.id, {
+        adjustmentReasonCode: debitReasonCode,
         adjustmentReasonText: debitReason,
         supplierDocumentReference: debitSupplierReference,
         noteDate: debitNoteDate,
@@ -1040,6 +1127,7 @@ export default function VendorBillDetailPage() {
         }),
       )
       setDebitDialogOpen(false)
+      setDebitReasonCode('')
       setDebitReason('')
       setDebitSupplierReference('')
       setDebitLineDrafts({})
@@ -1082,6 +1170,263 @@ export default function VendorBillDetailPage() {
   const currentLegalDocumentTotal = roundMoney(
     Math.max(Number(row?.total_amount || 0) - postedCreditedDocumentTotal + postedDebitedDocumentTotal, 0),
   )
+  const formatAuditTimestamp = (value?: string | null) => {
+    const text = String(value || '').trim()
+    if (!text) return tt('common.dash', '-')
+    return new Intl.DateTimeFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(text))
+  }
+  const settlementEventIdsInJournal = useMemo(
+    () => new Set(
+      events
+        .map((event) => String(event.payload?.transaction_id || '').trim())
+        .filter(Boolean),
+    ),
+    [events],
+  )
+  const auditTimelineEntries = useMemo<FinanceTimelineEntry[]>(() => {
+    if (!row) return []
+
+    const entries: FinanceTimelineEntry[] = events.map((event) => ({
+      id: `event:${event.id}`,
+      sortAt: event.occurred_at,
+      occurredAt: formatAuditTimestamp(event.occurred_at),
+      title: financeEventTitle(event.event_type, lang),
+      summary: financeEventSummary(event, lang),
+      transition: financeEventTransition(event, lang),
+      actorLabel: financeActorLabel(event.actor_user_id, actorDirectory, lang),
+      tone: financeEventTone(event.event_type),
+    }))
+
+    const source = billAuditRow || row
+    const hasEvent = (type: string) => events.some((event) => event.event_type === type)
+
+    if (!hasEvent('draft_created') && source.created_at) {
+      entries.push({
+        id: `synthetic:created:${row.id}`,
+        sortAt: source.created_at,
+        occurredAt: formatAuditTimestamp(source.created_at),
+        title: financeEventTitle('draft_created', lang),
+        summary: row.primary_reference,
+        transition: '- -> draft',
+        actorLabel: financeActorLabel(source.created_by, actorDirectory, lang),
+        tone: financeEventTone('draft_created'),
+      })
+    }
+
+    if (!hasEvent('approval_requested') && source.approval_requested_at) {
+      entries.push({
+        id: `synthetic:approvalRequested:${row.id}`,
+        sortAt: source.approval_requested_at,
+        occurredAt: formatAuditTimestamp(source.approval_requested_at),
+        title: financeEventTitle('approval_requested', lang),
+        summary: row.primary_reference,
+        transition: 'draft -> pending_approval',
+        actorLabel: financeActorLabel(source.approval_requested_by, actorDirectory, lang),
+        tone: financeEventTone('approval_requested'),
+      })
+    }
+
+    if (!hasEvent('approved') && source.approved_at) {
+      entries.push({
+        id: `synthetic:approved:${row.id}`,
+        sortAt: source.approved_at,
+        occurredAt: formatAuditTimestamp(source.approved_at),
+        title: financeEventTitle('approved', lang),
+        summary: row.primary_reference,
+        transition: 'pending_approval -> approved',
+        actorLabel: financeActorLabel(source.approved_by, actorDirectory, lang),
+        tone: financeEventTone('approved'),
+      })
+    }
+
+    if (!hasEvent('posted') && source.posted_at) {
+      entries.push({
+        id: `synthetic:posted:${row.id}`,
+        sortAt: source.posted_at,
+        occurredAt: formatAuditTimestamp(source.posted_at),
+        title: financeEventTitle('posted', lang),
+        summary: row.primary_reference,
+        transition: 'approved -> posted',
+        actorLabel: financeActorLabel(source.posted_by, actorDirectory, lang),
+        tone: financeEventTone('posted'),
+      })
+    }
+
+    if (!hasEvent('voided') && source.voided_at) {
+      entries.push({
+        id: `synthetic:voided:${row.id}`,
+        sortAt: source.voided_at,
+        occurredAt: formatAuditTimestamp(source.voided_at),
+        title: financeEventTitle('voided', lang),
+        summary: source.void_reason || row.primary_reference,
+        transition: `${row.document_workflow_status} -> voided`,
+        actorLabel: financeActorLabel(source.voided_by, actorDirectory, lang),
+        tone: financeEventTone('voided'),
+      })
+    }
+
+    creditNotes.forEach((note) => {
+      const noteSummary = [
+        note.supplier_document_reference || note.internal_reference,
+        getAdjustmentReasonLabel('vendor_credit', note.adjustment_reason_code, lang),
+        note.adjustment_reason_text,
+      ].filter(Boolean).join(' - ')
+
+      if (!events.some((event) => event.payload?.related_document_id === note.id)) {
+        entries.push({
+          id: `synthetic:vendorCreditCreated:${note.id}`,
+          sortAt: note.created_at,
+          occurredAt: formatAuditTimestamp(note.created_at),
+          title: financeEventTitle('related_vendor_credit_note_created', lang),
+          summary: noteSummary,
+          actorLabel: financeActorLabel(note.created_by, actorDirectory, lang),
+          tone: financeEventTone('related_vendor_credit_note_created'),
+        })
+        if (note.posted_at && note.document_workflow_status === 'posted') {
+          entries.push({
+            id: `synthetic:vendorCreditPosted:${note.id}`,
+            sortAt: note.posted_at,
+            occurredAt: formatAuditTimestamp(note.posted_at),
+            title: financeEventTitle('related_vendor_credit_note_posted', lang),
+            summary: noteSummary,
+            actorLabel: financeActorLabel(note.posted_by, actorDirectory, lang),
+            tone: financeEventTone('related_vendor_credit_note_posted'),
+          })
+        }
+      }
+    })
+
+    debitNotes.forEach((note) => {
+      const noteSummary = [
+        note.supplier_document_reference || note.internal_reference,
+        getAdjustmentReasonLabel('vendor_debit', note.adjustment_reason_code, lang),
+        note.adjustment_reason_text,
+      ].filter(Boolean).join(' - ')
+
+      if (!events.some((event) => event.payload?.related_document_id === note.id)) {
+        entries.push({
+          id: `synthetic:vendorDebitCreated:${note.id}`,
+          sortAt: note.created_at,
+          occurredAt: formatAuditTimestamp(note.created_at),
+          title: financeEventTitle('related_vendor_debit_note_created', lang),
+          summary: noteSummary,
+          actorLabel: financeActorLabel(note.created_by, actorDirectory, lang),
+          tone: financeEventTone('related_vendor_debit_note_created'),
+        })
+        if (note.posted_at && note.document_workflow_status === 'posted') {
+          entries.push({
+            id: `synthetic:vendorDebitPosted:${note.id}`,
+            sortAt: note.posted_at,
+            occurredAt: formatAuditTimestamp(note.posted_at),
+            title: financeEventTitle('related_vendor_debit_note_posted', lang),
+            summary: noteSummary,
+            actorLabel: financeActorLabel(note.posted_by, actorDirectory, lang),
+            tone: financeEventTone('related_vendor_debit_note_posted'),
+          })
+        }
+      }
+    })
+
+    settlementEvents
+      .filter((event) => !settlementEventIdsInJournal.has(event.id))
+      .forEach((event) => {
+        const eventType = event.channel === 'cash' ? 'cash_payment_recorded' : 'bank_payment_recorded'
+        entries.push({
+          id: `settlement:${event.channel}:${event.id}`,
+          sortAt: event.createdAt,
+          occurredAt: formatAuditTimestamp(event.createdAt),
+          title: financeEventTitle(eventType, lang),
+          summary: event.memo || row.primary_reference,
+          actorLabel: financeActorLabel(null, actorDirectory, lang, event.actorLabel),
+          amount: formatBaseMoney(event.amountBase),
+          tone: financeEventTone(eventType),
+        })
+      })
+
+    return entries.sort((left, right) => right.sortAt.localeCompare(left.sortAt))
+  }, [
+    actorDirectory,
+    billAuditRow,
+    creditNotes,
+    debitNotes,
+    events,
+    formatBaseMoney,
+    lang,
+    row,
+    settlementEventIdsInJournal,
+    settlementEvents,
+  ])
+  const chainItems = useMemo<FinanceChainItem[]>(() => {
+    if (!row) return []
+
+    const items: FinanceChainItem[] = []
+
+    if (orderLink) {
+      items.push({
+        id: `po:${row.purchase_order_id}`,
+        eyebrow: tt('orders.po', 'PO'),
+        title: row.order_no || tt('financeDocs.viewLinkedOrder', 'Linked purchase order'),
+        description: tt('financeDocs.audit.purchaseChainHelp', 'Operational source before the legal liability moved into the posted vendor bill.'),
+        status: tt('orders.po', 'PO'),
+        href: orderLink,
+        hrefLabel: tt('financeDocs.viewLinkedOrder', 'View linked order'),
+        metrics: [
+          { label: tt('orders.anchorStatus', 'Anchor'), value: tt('orders.po', 'PO') },
+        ],
+      })
+    }
+
+    items.push({
+      id: `bill:${row.id}`,
+      eyebrow: tt('financeDocs.vendorBills.title', 'Vendor Bills'),
+      title: row.primary_reference,
+      description: tt('financeDocs.audit.vendorBillChainHelp', 'This posted vendor bill is the active AP anchor for payments, supplier credit notes, supplier debit notes, and residual liability.'),
+      status: resolutionStatusLabel,
+      metrics: [
+        { label: tt('financeDocs.vendorBills.originalTotal', 'Original total'), value: formatBaseMoney(row.total_amount_base) },
+        { label: tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total'), value: formatBaseMoney(row.current_legal_total_base) },
+        { label: tt('settlements.settledAmount', 'Settled'), value: formatBaseMoney(row.settled_base) },
+        { label: tt('settlements.outstandingAmount', 'Outstanding'), value: formatBaseMoney(row.outstanding_base) },
+      ],
+    })
+
+    creditNotes.forEach((note) => {
+      items.push({
+        id: `vendor-credit:${note.id}`,
+        eyebrow: tt('financeDocs.vendorBills.creditNotesTitle', 'Supplier credit notes'),
+        title: note.supplier_document_reference || note.internal_reference,
+        description: [getAdjustmentReasonLabel('vendor_credit', note.adjustment_reason_code, lang), note.adjustment_reason_text].filter(Boolean).join(' - '),
+        status: note.document_workflow_status === 'posted'
+          ? tt('financeDocs.workflow.posted', 'Posted')
+          : note.document_workflow_status,
+        metrics: [
+          { label: tt('financeDocs.audit.noteDate', 'Document date'), value: note.note_date || tt('common.dash', '-') },
+          { label: tt('financeDocs.vendorBills.currentCredit', 'Credited'), value: formatBaseMoney(note.total_amount_base) },
+        ],
+      })
+    })
+
+    debitNotes.forEach((note) => {
+      items.push({
+        id: `vendor-debit:${note.id}`,
+        eyebrow: tt('financeDocs.vendorBills.debitNotesTitle', 'Supplier debit notes'),
+        title: note.supplier_document_reference || note.internal_reference,
+        description: [getAdjustmentReasonLabel('vendor_debit', note.adjustment_reason_code, lang), note.adjustment_reason_text].filter(Boolean).join(' - '),
+        status: note.document_workflow_status === 'posted'
+          ? tt('financeDocs.workflow.posted', 'Posted')
+          : note.document_workflow_status,
+        metrics: [
+          { label: tt('financeDocs.audit.noteDate', 'Document date'), value: note.note_date || tt('common.dash', '-') },
+          { label: tt('financeDocs.vendorBills.currentDebit', 'Debited'), value: formatBaseMoney(note.total_amount_base) },
+        ],
+      })
+    })
+
+    return items
+  }, [creditNotes, debitNotes, formatBaseMoney, lang, orderLink, resolutionStatusLabel, row, tt])
 
   return (
     <div className="space-y-6">
@@ -1422,6 +1767,12 @@ export default function VendorBillDetailPage() {
             </Card>
           </div>
 
+          <FinanceChainCard
+            title={tt('financeDocs.audit.chainTitle', 'Document chain')}
+            description={tt('financeDocs.audit.apChainHelp', 'See the operational source, the active vendor bill, and every linked supplier adjustment in the same AP chain.')}
+            items={chainItems}
+          />
+
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.fields.lines', 'Lines')}</CardTitle>
@@ -1508,6 +1859,13 @@ export default function VendorBillDetailPage() {
                             <div className="text-xs text-muted-foreground">
                               {tt('financeDocs.vendorBills.internalKeyValue', 'Stockwise key {reference}', { reference: note.internal_reference })}
                             </div>
+                            {note.adjustment_reason_code ? (
+                              <div className="mt-2">
+                                <Badge variant="outline">
+                                  {getAdjustmentReasonLabel('vendor_credit', note.adjustment_reason_code, lang)}
+                                </Badge>
+                              </div>
+                            ) : null}
                             {note.adjustment_reason_text ? (
                               <div className="mt-1 text-xs text-muted-foreground">{note.adjustment_reason_text}</div>
                             ) : null}
@@ -1594,6 +1952,13 @@ export default function VendorBillDetailPage() {
                             <div className="text-xs text-muted-foreground">
                               {tt('financeDocs.vendorBills.internalKeyValue', 'Stockwise key {reference}', { reference: note.internal_reference })}
                             </div>
+                            {note.adjustment_reason_code ? (
+                              <div className="mt-2">
+                                <Badge variant="outline">
+                                  {getAdjustmentReasonLabel('vendor_debit', note.adjustment_reason_code, lang)}
+                                </Badge>
+                              </div>
+                            ) : null}
                             {note.adjustment_reason_text ? (
                               <div className="mt-1 text-xs text-muted-foreground">{note.adjustment_reason_text}</div>
                             ) : null}
@@ -1633,9 +1998,18 @@ export default function VendorBillDetailPage() {
             </CardContent>
           </Card>
 
+          <FinanceTimelineCard
+            title={tt('financeDocs.audit.timelineTitle', 'Activity journal')}
+            emptyLabel={tt('financeDocs.mz.auditEmpty', 'No audit events have been captured for this document yet.')}
+            entries={auditTimelineEntries}
+          />
+
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
-              <CardTitle>{tt('financeDocs.mz.auditTrail', 'Audit trail')}</CardTitle>
+              <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>
+              <CardDescription>
+                {tt('financeDocs.audit.rawHelp', 'Underlying finance-document event rows kept for low-level inspection and troubleshooting.')}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {events.length === 0 ? (
@@ -1700,6 +2074,27 @@ export default function VendorBillDetailPage() {
                       <Label htmlFor="vendor-credit-note-date">{tt('financeDocs.fields.date', 'Date')}</Label>
                       <Input id="vendor-credit-note-date" type="date" value={creditNoteDate} onChange={(event) => setCreditNoteDate(event.target.value)} />
                     </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="vendor-credit-reason-code">{tt('financeDocs.audit.reasonCode', 'Reason code')}</Label>
+                    <Select value={creditReasonCode} onValueChange={setCreditReasonCode}>
+                      <SelectTrigger id="vendor-credit-reason-code" className="mt-2">
+                        <SelectValue placeholder={tt('financeDocs.audit.reasonCodePlaceholder', 'Select a structured reason code')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {creditReasonOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {creditReasonCode ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {creditReasonOptions.find((option) => option.code === creditReasonCode)?.help || ''}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div>
@@ -1768,7 +2163,7 @@ export default function VendorBillDetailPage() {
               </DialogBody>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreditDialogOpen(false)} disabled={creatingCredit}>{tt('common.cancel', 'Cancel')}</Button>
-                <Button onClick={() => void handleCreateCreditNote()} disabled={creatingCredit || !creditPreview.lines.length || creditPreview.validationErrors.length > 0}>
+                <Button onClick={() => void handleCreateCreditNote()} disabled={creatingCredit || !creditReasonCode || !creditPreview.lines.length || creditPreview.validationErrors.length > 0}>
                   {creatingCredit ? tt('financeDocs.vendorBills.crediting', 'Posting...') : tt('financeDocs.vendorBills.confirmCreditNote', 'Post supplier credit note')}
                 </Button>
               </DialogFooter>
@@ -1810,6 +2205,27 @@ export default function VendorBillDetailPage() {
                     <div><Label htmlFor="vendor-debit-supplier-reference">{tt('financeDocs.fields.supplierInvoiceReference', 'Supplier invoice reference')}</Label><Input id="vendor-debit-supplier-reference" value={debitSupplierReference} onChange={(event) => setDebitSupplierReference(event.target.value)} placeholder={tt('financeDocs.vendorBills.adjustmentReferencePlaceholder', 'Enter the supplier note reference if available')} /></div>
                     <div><Label htmlFor="vendor-debit-note-date">{tt('financeDocs.fields.date', 'Date')}</Label><Input id="vendor-debit-note-date" type="date" value={debitNoteDate} onChange={(event) => setDebitNoteDate(event.target.value)} /></div>
                     <div><Label htmlFor="vendor-debit-due-date">{tt('financeDocs.fields.dueDate', 'Due date')}</Label><Input id="vendor-debit-due-date" type="date" value={debitDueDate} onChange={(event) => setDebitDueDate(event.target.value)} /></div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="vendor-debit-reason-code">{tt('financeDocs.audit.reasonCode', 'Reason code')}</Label>
+                    <Select value={debitReasonCode} onValueChange={setDebitReasonCode}>
+                      <SelectTrigger id="vendor-debit-reason-code" className="mt-2">
+                        <SelectValue placeholder={tt('financeDocs.audit.reasonCodePlaceholder', 'Select a structured reason code')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {debitReasonOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {debitReasonCode ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {debitReasonOptions.find((option) => option.code === debitReasonCode)?.help || ''}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div>
@@ -1879,7 +2295,7 @@ export default function VendorBillDetailPage() {
               </DialogBody>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDebitDialogOpen(false)} disabled={creatingDebit}>{tt('common.cancel', 'Cancel')}</Button>
-                <Button onClick={() => void handleCreateDebitNote()} disabled={creatingDebit || !debitPreview.lines.length || debitPreview.validationErrors.length > 0}>
+                <Button onClick={() => void handleCreateDebitNote()} disabled={creatingDebit || !debitReasonCode || !debitPreview.lines.length || debitPreview.validationErrors.length > 0}>
                   {creatingDebit ? tt('financeDocs.vendorBills.debiting', 'Posting...') : tt('financeDocs.vendorBills.confirmDebitNote', 'Post supplier debit note')}
                 </Button>
               </DialogFooter>

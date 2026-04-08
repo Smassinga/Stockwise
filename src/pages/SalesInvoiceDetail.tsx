@@ -10,13 +10,30 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Textarea } from '../components/ui/textarea'
+import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
+import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import { useOrg } from '../hooks/useOrg'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import {
+  financeActorLabel,
+  financeEventSummary,
+  financeEventTitle,
+  financeEventTone,
+  financeEventTransition,
+  getAdjustmentReasonLabel,
+  getAdjustmentReasonOptions,
+  listFinanceActorDirectory,
+  listFinanceSettlementAuditEvents,
+  type FinanceActorDirectory,
+  type FinanceSettlementAuditEvent,
+  type FinanceTimelineEntry,
+} from '../lib/financeAudit'
 import {
   financeDocumentApprovalLabelKey,
   salesInvoiceAdjustmentLabelKey,
@@ -151,6 +168,8 @@ export default function SalesInvoiceDetailPage() {
   const [invoiceState, setInvoiceState] = useState<SalesInvoiceStateRow | null>(null)
   const [lines, setLines] = useState<SalesInvoiceDocumentLineRow[]>([])
   const [events, setEvents] = useState<FinanceDocumentEventRow[]>([])
+  const [actorDirectory, setActorDirectory] = useState<FinanceActorDirectory>({})
+  const [settlementEvents, setSettlementEvents] = useState<FinanceSettlementAuditEvent[]>([])
   const [artifacts, setArtifacts] = useState<FiscalDocumentArtifactRow[]>([])
   const [creditNotes, setCreditNotes] = useState<SalesCreditNoteRow[]>([])
   const [creditNoteLines, setCreditNoteLines] = useState<SalesCreditNoteLineRow[]>([])
@@ -164,12 +183,14 @@ export default function SalesInvoiceDetailPage() {
   const [issuing, setIssuing] = useState(false)
   const [creditDialogOpen, setCreditDialogOpen] = useState(false)
   const [creditMode, setCreditMode] = useState<CreditMode>('full')
+  const [creditReasonCode, setCreditReasonCode] = useState('')
   const [creditReason, setCreditReason] = useState('')
   const [creditVatExemptionReason, setCreditVatExemptionReason] = useState('')
   const [creditLineDrafts, setCreditLineDrafts] = useState<Record<string, CreditLineDraft>>({})
   const [creatingCredit, setCreatingCredit] = useState(false)
   const [debitDialogOpen, setDebitDialogOpen] = useState(false)
   const [debitMode, setDebitMode] = useState<DebitMode>('full')
+  const [debitReasonCode, setDebitReasonCode] = useState('')
   const [debitReason, setDebitReason] = useState('')
   const [debitLineDrafts, setDebitLineDrafts] = useState<Record<string, DebitLineDraft>>({})
   const [creatingDebit, setCreatingDebit] = useState(false)
@@ -199,6 +220,8 @@ export default function SalesInvoiceDetailPage() {
       setInvoiceState(null)
       setLines([])
       setEvents([])
+      setActorDirectory({})
+      setSettlementEvents([])
       setArtifacts([])
       setCreditNotes([])
       setCreditNoteLines([])
@@ -227,6 +250,8 @@ export default function SalesInvoiceDetailPage() {
       let nextDraftPreview: SalesInvoiceDraftPreview | null = null
       let nextCreditNoteLines: SalesCreditNoteLineRow[] = []
       let nextDebitNoteLines: SalesDebitNoteLineRow[] = []
+      let nextActorDirectory: FinanceActorDirectory = {}
+      let nextSettlementEvents: FinanceSettlementAuditEvent[] = []
 
       if (nextInvoice?.document_workflow_status === 'draft') {
         try {
@@ -261,6 +286,35 @@ export default function SalesInvoiceDetailPage() {
         })
       }
 
+      try {
+        const actorIds = Array.from(new Set([
+          nextInvoice?.created_by,
+          nextInvoice?.approval_requested_by,
+          nextInvoice?.approved_by,
+          nextInvoice?.issued_by,
+          nextInvoice?.voided_by,
+          ...nextEvents.map((event) => event.actor_user_id),
+          ...nextCreditNotes.flatMap((note) => [note.created_by, note.issued_by, note.voided_by]),
+          ...nextDebitNotes.flatMap((note) => [note.created_by, note.issued_by, note.voided_by]),
+        ].filter(Boolean) as string[]))
+
+        const [actorRes, settlementRes] = await Promise.all([
+          listFinanceActorDirectory(companyId, actorIds),
+          nextInvoice?.document_workflow_status === 'issued'
+            ? listFinanceSettlementAuditEvents(companyId, 'sales_invoice', invoiceId)
+            : Promise.resolve([] as FinanceSettlementAuditEvent[]),
+        ])
+
+        nextActorDirectory = actorRes
+        nextSettlementEvents = settlementRes
+      } catch (error) {
+        reportRuntimeError('loadAuditContext', error, {
+          eventCount: nextEvents.length,
+          creditNoteCount: nextCreditNotes.length,
+          debitNoteCount: nextDebitNotes.length,
+        })
+      }
+
       setInvoice(nextInvoice)
       if (nextInvoiceStateRes.error) {
         reportRuntimeError('loadInvoiceState', nextInvoiceStateRes.error)
@@ -270,6 +324,8 @@ export default function SalesInvoiceDetailPage() {
       }
       setLines(nextLines)
       setEvents(nextEvents)
+      setActorDirectory(nextActorDirectory)
+      setSettlementEvents(nextSettlementEvents)
       setArtifacts(nextArtifacts)
       setCreditNotes(nextCreditNotes)
       setCreditNoteLines(nextCreditNoteLines)
@@ -283,6 +339,8 @@ export default function SalesInvoiceDetailPage() {
       reportRuntimeError('loadWorkspace', error)
       toast.error(error?.message || tt('financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoice'))
       setInvoice(null)
+      setActorDirectory({})
+      setSettlementEvents([])
       setCreditNotes([])
       setCreditNoteLines([])
       setDebitNotes([])
@@ -388,6 +446,8 @@ export default function SalesInvoiceDetailPage() {
   const canReturnDraftToEdit = Boolean(invoice && isDraft && approvalStatus !== 'draft' && financeCan.approve(myRole))
   const canIssueApprovedDraft = Boolean(invoice && isDraft && approvalStatus === 'approved' && financeCan.issueSalesInvoice(myRole))
   const canIssueSalesAdjustments = Boolean(invoice && isIssued && financeCan.issueSalesAdjustment(myRole))
+  const creditReasonOptions = useMemo(() => getAdjustmentReasonOptions('sales_credit', lang), [lang])
+  const debitReasonOptions = useMemo(() => getAdjustmentReasonOptions('sales_debit', lang), [lang])
   const issuedCreditNoteIds = useMemo(
     () => new Set(creditNotes.filter((note) => note.document_workflow_status === 'issued').map((note) => note.id)),
     [creditNotes],
@@ -445,6 +505,7 @@ export default function SalesInvoiceDetailPage() {
     if (!creditDialogOpen) return
 
     setCreditMode('full')
+    setCreditReasonCode('')
     setCreditReason('')
     setCreditVatExemptionReason(invoice?.vat_exemption_reason_text || '')
     setCreditLineDrafts(
@@ -460,6 +521,7 @@ export default function SalesInvoiceDetailPage() {
     if (!debitDialogOpen) return
 
     setDebitMode('full')
+    setDebitReasonCode('')
     setDebitReason('')
     setDebitLineDrafts(
       Object.fromEntries(
@@ -717,6 +779,218 @@ export default function SalesInvoiceDetailPage() {
     tt,
   ])
   const canCreateDebitNote = canIssueSalesAdjustments
+  const formatAuditTimestamp = (value?: string | null) => {
+    const text = String(value || '').trim()
+    if (!text) return tt('common.dash', '—')
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(text))
+  }
+  const settlementEventIdsInJournal = useMemo(
+    () => new Set(
+      events
+        .map((event) => String(event.payload?.transaction_id || '').trim())
+        .filter(Boolean),
+    ),
+    [events],
+  )
+  const auditTimelineEntries = useMemo<FinanceTimelineEntry[]>(() => {
+    if (!invoice) return []
+
+    const entries: FinanceTimelineEntry[] = events.map((event) => ({
+      id: `event:${event.id}`,
+      sortAt: event.occurred_at,
+      occurredAt: formatAuditTimestamp(event.occurred_at),
+      title: financeEventTitle(event.event_type, lang),
+      summary: financeEventSummary(event, lang),
+      transition: financeEventTransition(event, lang),
+      actorLabel: financeActorLabel(event.actor_user_id, actorDirectory, lang),
+      tone: financeEventTone(event.event_type),
+    }))
+
+    const hasApprovalRequested = events.some((event) => event.event_type === 'approval_requested')
+    const hasApproved = events.some((event) => event.event_type === 'approved')
+    const hasCreated = events.some((event) => event.event_type === 'draft_created')
+
+    if (!hasCreated && invoice.created_at) {
+      entries.push({
+        id: `synthetic:created:${invoice.id}`,
+        sortAt: invoice.created_at,
+        occurredAt: formatAuditTimestamp(invoice.created_at),
+        title: financeEventTitle('draft_created', lang),
+        summary: invoice.internal_reference,
+        transition: lang === 'pt' ? '— → draft' : '— → draft',
+        actorLabel: financeActorLabel(invoice.created_by, actorDirectory, lang),
+        tone: financeEventTone('draft_created'),
+      })
+    }
+
+    if (!hasApprovalRequested && invoice.approval_requested_at) {
+      entries.push({
+        id: `synthetic:approvalRequested:${invoice.id}`,
+        sortAt: invoice.approval_requested_at,
+        occurredAt: formatAuditTimestamp(invoice.approval_requested_at),
+        title: financeEventTitle('approval_requested', lang),
+        summary: invoice.internal_reference,
+        transition: lang === 'pt' ? 'draft → pending_approval' : 'draft → pending_approval',
+        actorLabel: financeActorLabel(invoice.approval_requested_by, actorDirectory, lang),
+        tone: financeEventTone('approval_requested'),
+      })
+    }
+
+    if (!hasApproved && invoice.approved_at) {
+      entries.push({
+        id: `synthetic:approved:${invoice.id}`,
+        sortAt: invoice.approved_at,
+        occurredAt: formatAuditTimestamp(invoice.approved_at),
+        title: financeEventTitle('approved', lang),
+        summary: invoice.internal_reference,
+        transition: lang === 'pt' ? 'pending_approval → approved' : 'pending_approval → approved',
+        actorLabel: financeActorLabel(invoice.approved_by, actorDirectory, lang),
+        tone: financeEventTone('approved'),
+      })
+    }
+
+    creditNotes.forEach((note) => {
+      const noteLabel = getAdjustmentReasonLabel('sales_credit', note.correction_reason_code, lang)
+      const noteSummary = [note.internal_reference, noteLabel, note.correction_reason_text].filter(Boolean).join(' · ')
+      if (!events.some((event) => event.payload?.related_document_id === note.id)) {
+        entries.push({
+          id: `synthetic:creditCreated:${note.id}`,
+          sortAt: note.created_at,
+          occurredAt: formatAuditTimestamp(note.created_at),
+          title: financeEventTitle('related_sales_credit_note_created', lang),
+          summary: noteSummary,
+          actorLabel: financeActorLabel(note.created_by, actorDirectory, lang),
+          tone: financeEventTone('related_sales_credit_note_created'),
+        })
+        if (note.issued_at && note.document_workflow_status === 'issued') {
+          entries.push({
+            id: `synthetic:creditIssued:${note.id}`,
+            sortAt: note.issued_at,
+            occurredAt: formatAuditTimestamp(note.issued_at),
+            title: financeEventTitle('related_sales_credit_note_issued', lang),
+            summary: noteSummary,
+            actorLabel: financeActorLabel(note.issued_by, actorDirectory, lang),
+            tone: financeEventTone('related_sales_credit_note_issued'),
+          })
+        }
+      }
+    })
+
+    debitNotes.forEach((note) => {
+      const noteLabel = getAdjustmentReasonLabel('sales_debit', note.correction_reason_code, lang)
+      const noteSummary = [note.internal_reference, noteLabel, note.correction_reason_text].filter(Boolean).join(' · ')
+      if (!events.some((event) => event.payload?.related_document_id === note.id)) {
+        entries.push({
+          id: `synthetic:debitCreated:${note.id}`,
+          sortAt: note.created_at,
+          occurredAt: formatAuditTimestamp(note.created_at),
+          title: financeEventTitle('related_sales_debit_note_created', lang),
+          summary: noteSummary,
+          actorLabel: financeActorLabel(note.created_by, actorDirectory, lang),
+          tone: financeEventTone('related_sales_debit_note_created'),
+        })
+        if (note.issued_at && note.document_workflow_status === 'issued') {
+          entries.push({
+            id: `synthetic:debitIssued:${note.id}`,
+            sortAt: note.issued_at,
+            occurredAt: formatAuditTimestamp(note.issued_at),
+            title: financeEventTitle('related_sales_debit_note_issued', lang),
+            summary: noteSummary,
+            actorLabel: financeActorLabel(note.issued_by, actorDirectory, lang),
+            tone: financeEventTone('related_sales_debit_note_issued'),
+          })
+        }
+      }
+    })
+
+    settlementEvents
+      .filter((event) => !settlementEventIdsInJournal.has(event.id))
+      .forEach((event) => {
+        entries.push({
+          id: `settlement:${event.channel}:${event.id}`,
+          sortAt: event.createdAt,
+          occurredAt: formatAuditTimestamp(event.createdAt),
+          title: financeEventTitle(event.channel === 'cash' ? 'cash_receipt_recorded' : 'bank_receipt_recorded', lang),
+          summary: event.memo || invoice.internal_reference,
+          actorLabel: financeActorLabel(null, actorDirectory, lang, event.actorLabel),
+          amount: money(event.amountBase, 'MZN'),
+          tone: financeEventTone(event.channel === 'cash' ? 'cash_receipt_recorded' : 'bank_receipt_recorded'),
+        })
+      })
+
+    return entries.sort((left, right) => right.sortAt.localeCompare(left.sortAt))
+  }, [actorDirectory, creditNotes, events, formatAuditTimestamp, invoice, lang, money, settlementEventIdsInJournal, settlementEvents, debitNotes])
+  const chainItems = useMemo<FinanceChainItem[]>(() => {
+    if (!invoice) return []
+
+    const items: FinanceChainItem[] = []
+
+    if (orderLink) {
+      items.push({
+        id: `order:${invoice.sales_order_id}`,
+        eyebrow: tt('orders.so', 'SO'),
+        title: invoiceState?.order_no || tt('financeDocs.viewLinkedOrder', 'Linked sales order'),
+        description: tt('financeDocs.audit.orderChainHelp', 'Operational source before the legal receivable moved into the issued invoice.'),
+        status: tt('orders.salesWorkflowApproved', 'Operational source'),
+        href: orderLink,
+        hrefLabel: tt('financeDocs.viewLinkedOrder', 'View linked order'),
+        metrics: [
+          { label: tt('orders.anchorStatus', 'Anchor'), value: tt('orders.so', 'SO') },
+        ],
+      })
+    }
+
+    items.push({
+      id: `invoice:${invoice.id}`,
+      eyebrow: tt('financeDocs.salesInvoices.title', 'Sales Invoices'),
+      title: invoice.internal_reference,
+      description: tt('financeDocs.audit.invoiceChainHelp', 'This issued invoice is the active AR anchor for settlements, reminders, credits, debits, and residual exposure.'),
+      status: resolutionStatusLabel,
+      metrics: [
+        { label: tt('financeDocs.mz.originalAmount', 'Original total'), value: money(invoiceState?.total_amount_base || invoice.total_amount_mzn, 'MZN') },
+        { label: tt('financeDocs.mz.currentLegalTotal', 'Current legal'), value: money(invoiceState?.current_legal_total_base || 0, 'MZN') },
+        { label: tt('settlements.settledAmount', 'Settled'), value: money(invoiceState?.settled_base || 0, 'MZN') },
+        { label: tt('settlements.outstandingAmount', 'Outstanding'), value: money(invoiceState?.outstanding_base || 0, 'MZN') },
+      ],
+    })
+
+    creditNotes.forEach((note) => {
+      items.push({
+        id: `credit:${note.id}`,
+        eyebrow: tt('financeDocs.mz.creditNotesTitle', 'Credit notes'),
+        title: note.internal_reference,
+        description: [getAdjustmentReasonLabel('sales_credit', note.correction_reason_code, lang), note.correction_reason_text].filter(Boolean).join(' · '),
+        status: note.document_workflow_status === 'issued'
+          ? tt('financeDocs.workflow.issued', 'Issued')
+          : note.document_workflow_status,
+        metrics: [
+          { label: tt('financeDocs.audit.noteDate', 'Document date'), value: shortDate(note.credit_note_date) },
+          { label: tt('financeDocs.mz.currentCredit', 'Credited'), value: money(note.total_amount_mzn, 'MZN') },
+        ],
+      })
+    })
+
+    debitNotes.forEach((note) => {
+      items.push({
+        id: `debit:${note.id}`,
+        eyebrow: tt('financeDocs.mz.debitNotesTitle', 'Debit notes'),
+        title: note.internal_reference,
+        description: [getAdjustmentReasonLabel('sales_debit', note.correction_reason_code, lang), note.correction_reason_text].filter(Boolean).join(' · '),
+        status: note.document_workflow_status === 'issued'
+          ? tt('financeDocs.workflow.issued', 'Issued')
+          : note.document_workflow_status,
+        metrics: [
+          { label: tt('financeDocs.audit.noteDate', 'Document date'), value: shortDate(note.debit_note_date) },
+          { label: tt('financeDocs.mz.currentDebit', 'Debited'), value: money(note.total_amount_mzn, 'MZN') },
+        ],
+      })
+    })
+
+    return items
+  }, [creditNotes, debitNotes, invoice, invoiceState, lang, money, orderLink, resolutionStatusLabel, tt])
 
   function resolutionTone(status?: SalesInvoiceStateRow['resolution_status'] | null) {
     switch (status) {
@@ -892,6 +1166,10 @@ export default function SalesInvoiceDetailPage() {
 
   async function handleCreateCreditNote() {
     if (!companyId || !invoice || !canIssueSalesAdjustments) return
+    if (!creditReasonCode) {
+      toast.error(tt('financeDocs.audit.reasonCodeRequired', 'Select a structured reason code before issuing the adjustment document.'))
+      return
+    }
     if (!creditReason.trim()) {
       toast.error(tt('financeDocs.mz.creditReasonRequired', 'A correction reason is required before issuing the credit note.'))
       return
@@ -912,18 +1190,21 @@ export default function SalesInvoiceDetailPage() {
     try {
       setCreatingCredit(true)
       const note = await createAndIssueSalesCreditNoteForInvoice(companyId, invoice.id, {
+        correctionReasonCode: creditReasonCode,
         correctionReasonText: creditReason,
         vatExemptionReasonText: creditVatExemptionReason,
         lines: creditPreview.lines,
       })
       toast.success(tt('financeDocs.mz.creditNoteIssued', 'Credit note {reference} issued', { reference: note.internal_reference }))
       setCreditDialogOpen(false)
+      setCreditReasonCode('')
       setCreditReason('')
       setCreditVatExemptionReason('')
       setCreditLineDrafts({})
       await loadWorkspace()
     } catch (error: any) {
       reportRuntimeError('createCreditNote', error, {
+        correctionReasonCode: creditReasonCode,
         correctionReasonLength: creditReason.trim().length,
         creditMode,
         requestedLineCount: creditPreview.lines.length,
@@ -936,6 +1217,10 @@ export default function SalesInvoiceDetailPage() {
 
   async function handleCreateDebitNote() {
     if (!companyId || !invoice || !canIssueSalesAdjustments) return
+    if (!debitReasonCode) {
+      toast.error(tt('financeDocs.audit.reasonCodeRequired', 'Select a structured reason code before issuing the adjustment document.'))
+      return
+    }
     if (!debitReason.trim()) {
       toast.error(tt('financeDocs.mz.debitReasonRequired', 'A correction reason is required before issuing the debit note.'))
       return
@@ -952,16 +1237,19 @@ export default function SalesInvoiceDetailPage() {
     try {
       setCreatingDebit(true)
       const note = await createAndIssueSalesDebitNoteForInvoice(companyId, invoice.id, {
+        correctionReasonCode: debitReasonCode,
         correctionReasonText: debitReason,
         lines: debitPreview.lines,
       })
       toast.success(tt('financeDocs.mz.debitNoteIssued', 'Debit note {reference} issued', { reference: note.internal_reference }))
       setDebitDialogOpen(false)
+      setDebitReasonCode('')
       setDebitReason('')
       setDebitLineDrafts({})
       await loadWorkspace()
     } catch (error: any) {
       reportRuntimeError('createDebitNote', error, {
+        correctionReasonCode: debitReasonCode,
         correctionReasonLength: debitReason.trim().length,
         debitMode,
         requestedLineCount: debitPreview.lines.length,
@@ -1448,6 +1736,12 @@ export default function SalesInvoiceDetailPage() {
             </Card>
           </div>
 
+          <FinanceChainCard
+            title={tt('financeDocs.audit.chainTitle', 'Document chain')}
+            description={tt('financeDocs.audit.chainHelp', 'See the operational source, the active legal invoice, and every linked credit, debit, and settlement-sensitive adjustment in the same AR chain.')}
+            items={chainItems}
+          />
+
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.fields.lines', 'Lines')}</CardTitle>
@@ -1542,7 +1836,18 @@ export default function SalesInvoiceDetailPage() {
                             {note.document_workflow_status.toUpperCase()}
                           </Badge>
                         </TableCell>
-                        <TableCell>{note.correction_reason_text}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {note.correction_reason_code ? (
+                              <Badge variant="outline">
+                                {getAdjustmentReasonLabel('sales_credit', note.correction_reason_code, lang)}
+                              </Badge>
+                            ) : null}
+                            {note.correction_reason_text ? (
+                              <div className="text-sm text-muted-foreground">{note.correction_reason_text}</div>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{money(note.total_amount, note.currency_code)}</TableCell>
                         <TableCell className="text-right">
                           {note.document_workflow_status === 'issued' ? (
@@ -1646,7 +1951,18 @@ export default function SalesInvoiceDetailPage() {
                             {note.document_workflow_status.toUpperCase()}
                           </Badge>
                         </TableCell>
-                        <TableCell>{note.correction_reason_text}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {note.correction_reason_code ? (
+                              <Badge variant="outline">
+                                {getAdjustmentReasonLabel('sales_debit', note.correction_reason_code, lang)}
+                              </Badge>
+                            ) : null}
+                            {note.correction_reason_text ? (
+                              <div className="text-sm text-muted-foreground">{note.correction_reason_text}</div>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{money(note.total_amount, note.currency_code)}</TableCell>
                         <TableCell className="text-right">
                           {note.document_workflow_status === 'issued' ? (
@@ -1702,10 +2018,19 @@ export default function SalesInvoiceDetailPage() {
             </CardContent>
           </Card>
 
+          <FinanceTimelineCard
+            title={tt('financeDocs.audit.timelineTitle', 'Activity journal')}
+            emptyLabel={tt('financeDocs.mz.auditEmpty', 'No audit events have been captured for this document yet.')}
+            entries={auditTimelineEntries}
+          />
+
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
-                <CardTitle>{tt('financeDocs.mz.auditTrail', 'Audit trail')}</CardTitle>
+                <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>
+                <CardDescription>
+                  {tt('financeDocs.audit.rawHelp', 'Underlying finance-document event rows kept for low-level inspection and troubleshooting.')}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {events.length === 0 ? (
@@ -1807,6 +2132,27 @@ export default function SalesInvoiceDetailPage() {
                       </div>
                     </label>
                   </RadioGroup>
+
+                  <div>
+                    <Label htmlFor="credit-note-reason-code">{tt('financeDocs.audit.reasonCode', 'Reason code')}</Label>
+                    <Select value={creditReasonCode} onValueChange={setCreditReasonCode}>
+                      <SelectTrigger id="credit-note-reason-code" className="mt-2">
+                        <SelectValue placeholder={tt('financeDocs.audit.reasonCodePlaceholder', 'Select a structured reason code')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {creditReasonOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {creditReasonCode ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {creditReasonOptions.find((option) => option.code === creditReasonCode)?.help || ''}
+                      </div>
+                    ) : null}
+                  </div>
 
                   <div>
                     <Label htmlFor="credit-note-reason">{tt('financeDocs.mz.creditReason', 'Correction reason')}</Label>
@@ -1960,6 +2306,7 @@ export default function SalesInvoiceDetailPage() {
                   onClick={() => void handleCreateCreditNote()}
                   disabled={
                     creatingCredit
+                    || !creditReasonCode
                     || !creditPreview.lines.length
                     || creditPreview.validationErrors.length > 0
                     || (creditPreview.requiresVatExemptionReason && !creditVatExemptionReason.trim())
@@ -2015,6 +2362,27 @@ export default function SalesInvoiceDetailPage() {
                       </div>
                     </label>
                   </RadioGroup>
+
+                  <div>
+                    <Label htmlFor="debit-note-reason-code">{tt('financeDocs.audit.reasonCode', 'Reason code')}</Label>
+                    <Select value={debitReasonCode} onValueChange={setDebitReasonCode}>
+                      <SelectTrigger id="debit-note-reason-code" className="mt-2">
+                        <SelectValue placeholder={tt('financeDocs.audit.reasonCodePlaceholder', 'Select a structured reason code')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {debitReasonOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {debitReasonCode ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {debitReasonOptions.find((option) => option.code === debitReasonCode)?.help || ''}
+                      </div>
+                    ) : null}
+                  </div>
 
                   <div>
                     <Label htmlFor="debit-note-reason">{tt('financeDocs.mz.debitReason', 'Correction reason')}</Label>
@@ -2152,6 +2520,7 @@ export default function SalesInvoiceDetailPage() {
                   onClick={() => void handleCreateDebitNote()}
                   disabled={
                     creatingDebit
+                    || !debitReasonCode
                     || !debitPreview.lines.length
                     || debitPreview.validationErrors.length > 0
                   }

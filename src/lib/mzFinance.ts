@@ -159,6 +159,10 @@ export type SalesCreditNoteRow = {
   vat_exemption_reason_text: string | null
   document_workflow_status: 'draft' | 'issued' | 'voided'
   issued_at: string | null
+  issued_by: string | null
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
   seller_legal_name_snapshot: string | null
   seller_trade_name_snapshot: string | null
   seller_nuit_snapshot: string | null
@@ -179,6 +183,7 @@ export type SalesCreditNoteRow = {
   document_language_code_snapshot: string | null
   computer_processed_phrase_snapshot: string | null
   compliance_rule_version_snapshot: string | null
+  created_by: string | null
   created_at: string
   updated_at: string
 }
@@ -262,6 +267,11 @@ export type SalesDebitNoteRow = {
   compliance_rule_version_snapshot: string | null
   document_workflow_status: 'draft' | 'issued' | 'voided'
   issued_at: string | null
+  issued_by: string | null
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
+  created_by: string | null
   created_at: string
   updated_at: string
 }
@@ -301,6 +311,7 @@ export type SalesDebitNoteDraftLineInput = {
 }
 
 export type CreateSalesDebitNoteInput = {
+  correctionReasonCode?: string | null
   correctionReasonText: string
   debitNoteDate?: string | null
   dueDate?: string | null
@@ -308,6 +319,7 @@ export type CreateSalesDebitNoteInput = {
 }
 
 export type CreateSalesCreditNoteInput = {
+  correctionReasonCode?: string | null
   correctionReasonText: string
   vatExemptionReasonText?: string | null
   creditNoteDate?: string | null
@@ -332,9 +344,15 @@ export type VendorCreditNoteRow = {
   subtotal_base: number
   tax_total_base: number
   total_amount_base: number
+  adjustment_reason_code: string | null
   adjustment_reason_text: string
   document_workflow_status: 'draft' | 'posted' | 'voided'
   posted_at: string | null
+  posted_by: string | null
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
+  created_by: string | null
   created_at: string
   updated_at: string
 }
@@ -374,9 +392,15 @@ export type VendorDebitNoteRow = {
   subtotal_base: number
   tax_total_base: number
   total_amount_base: number
+  adjustment_reason_code: string | null
   adjustment_reason_text: string
   document_workflow_status: 'draft' | 'posted' | 'voided'
   posted_at: string | null
+  posted_by: string | null
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
+  created_by: string | null
   created_at: string
   updated_at: string
 }
@@ -411,6 +435,7 @@ export type VendorNoteDraftLineInput = {
 }
 
 export type CreateVendorCreditNoteInput = {
+  adjustmentReasonCode?: string | null
   adjustmentReasonText: string
   supplierDocumentReference?: string | null
   noteDate?: string | null
@@ -418,6 +443,7 @@ export type CreateVendorCreditNoteInput = {
 }
 
 export type CreateVendorDebitNoteInput = {
+  adjustmentReasonCode?: string | null
   adjustmentReasonText: string
   supplierDocumentReference?: string | null
   noteDate?: string | null
@@ -1231,7 +1257,7 @@ export async function listSalesCreditNotesForInvoice(companyId: string, invoiceI
   mzRuntimeDebug('creditNotes.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_credit_notes')
-    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,vat_exemption_reason_text,document_workflow_status,issued_at,seller_legal_name_snapshot,seller_trade_name_snapshot,seller_nuit_snapshot,seller_address_line1_snapshot,seller_address_line2_snapshot,seller_city_snapshot,seller_state_snapshot,seller_postal_code_snapshot,seller_country_code_snapshot,buyer_legal_name_snapshot,buyer_nuit_snapshot,buyer_address_line1_snapshot,buyer_address_line2_snapshot,buyer_city_snapshot,buyer_state_snapshot,buyer_postal_code_snapshot,buyer_country_code_snapshot,document_language_code_snapshot,computer_processed_phrase_snapshot,compliance_rule_version_snapshot,created_at,updated_at')
+    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,credit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,vat_exemption_reason_text,document_workflow_status,issued_at,issued_by,voided_at,voided_by,void_reason,seller_legal_name_snapshot,seller_trade_name_snapshot,seller_nuit_snapshot,seller_address_line1_snapshot,seller_address_line2_snapshot,seller_city_snapshot,seller_state_snapshot,seller_postal_code_snapshot,seller_country_code_snapshot,buyer_legal_name_snapshot,buyer_nuit_snapshot,buyer_address_line1_snapshot,buyer_address_line2_snapshot,buyer_city_snapshot,buyer_state_snapshot,buyer_postal_code_snapshot,buyer_country_code_snapshot,document_language_code_snapshot,computer_processed_phrase_snapshot,compliance_rule_version_snapshot,created_by,created_at,updated_at')
     .eq('company_id', companyId)
     .eq('original_sales_invoice_id', invoiceId)
     .order('created_at', { ascending: false })
@@ -1270,7 +1296,7 @@ export async function listSalesDebitNotesForInvoice(companyId: string, invoiceId
   mzRuntimeDebug('debitNotes.load.start', { companyId, invoiceId })
   const { data, error } = await supabase
     .from('sales_debit_notes')
-    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,debit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,seller_legal_name_snapshot,seller_trade_name_snapshot,seller_nuit_snapshot,seller_address_line1_snapshot,seller_address_line2_snapshot,seller_city_snapshot,seller_state_snapshot,seller_postal_code_snapshot,seller_country_code_snapshot,buyer_legal_name_snapshot,buyer_nuit_snapshot,buyer_address_line1_snapshot,buyer_address_line2_snapshot,buyer_city_snapshot,buyer_state_snapshot,buyer_postal_code_snapshot,buyer_country_code_snapshot,document_language_code_snapshot,computer_processed_phrase_snapshot,compliance_rule_version_snapshot,document_workflow_status,issued_at,created_at,updated_at')
+    .select('id,company_id,original_sales_invoice_id,customer_id,internal_reference,source_origin,moz_document_code,fiscal_series_code,fiscal_year,fiscal_sequence_number,debit_note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_mzn,tax_total_mzn,total_amount_mzn,correction_reason_code,correction_reason_text,seller_legal_name_snapshot,seller_trade_name_snapshot,seller_nuit_snapshot,seller_address_line1_snapshot,seller_address_line2_snapshot,seller_city_snapshot,seller_state_snapshot,seller_postal_code_snapshot,seller_country_code_snapshot,buyer_legal_name_snapshot,buyer_nuit_snapshot,buyer_address_line1_snapshot,buyer_address_line2_snapshot,buyer_city_snapshot,buyer_state_snapshot,buyer_postal_code_snapshot,buyer_country_code_snapshot,document_language_code_snapshot,computer_processed_phrase_snapshot,compliance_rule_version_snapshot,document_workflow_status,issued_at,issued_by,voided_at,voided_by,void_reason,created_by,created_at,updated_at')
     .eq('company_id', companyId)
     .eq('original_sales_invoice_id', invoiceId)
     .order('created_at', { ascending: false })
@@ -2019,6 +2045,7 @@ export async function createAndIssueSalesCreditNoteForInvoice(
       subtotal: 0,
       tax_total: 0,
       total_amount: 0,
+      correction_reason_code: normalizeText(input.correctionReasonCode) || null,
       correction_reason_text: trimmedReason,
       vat_exemption_reason_text: trimmedVatExemptionReason,
       source_origin: 'native',
@@ -2147,6 +2174,7 @@ export async function createAndIssueSalesDebitNoteForInvoice(
       subtotal,
       tax_total: taxTotal,
       total_amount: totalAmount,
+      correction_reason_code: normalizeText(input.correctionReasonCode) || null,
       correction_reason_text: trimmedReason,
       source_origin: 'native',
       document_workflow_status: 'draft',
@@ -2485,7 +2513,7 @@ async function listVendorBillLinesForAdjustments(companyId: string, billId: stri
 export async function listVendorCreditNotesForBill(companyId: string, billId: string) {
   const { data, error } = await supabase
     .from('vendor_credit_notes')
-    .select('id,company_id,original_vendor_bill_id,supplier_id,internal_reference,supplier_document_reference,supplier_document_reference_normalized,note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_base,tax_total_base,total_amount_base,adjustment_reason_text,document_workflow_status,posted_at,created_at,updated_at')
+    .select('id,company_id,original_vendor_bill_id,supplier_id,internal_reference,supplier_document_reference,supplier_document_reference_normalized,note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_base,tax_total_base,total_amount_base,adjustment_reason_code,adjustment_reason_text,document_workflow_status,posted_at,posted_by,voided_at,voided_by,void_reason,created_by,created_at,updated_at')
     .eq('company_id', companyId)
     .eq('original_vendor_bill_id', billId)
     .order('created_at', { ascending: false })
@@ -2519,7 +2547,7 @@ export async function listVendorCreditNoteLines(companyId: string, noteIds: stri
 export async function listVendorDebitNotesForBill(companyId: string, billId: string) {
   const { data, error } = await supabase
     .from('vendor_debit_notes')
-    .select('id,company_id,original_vendor_bill_id,supplier_id,internal_reference,supplier_document_reference,supplier_document_reference_normalized,note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_base,tax_total_base,total_amount_base,adjustment_reason_text,document_workflow_status,posted_at,created_at,updated_at')
+    .select('id,company_id,original_vendor_bill_id,supplier_id,internal_reference,supplier_document_reference,supplier_document_reference_normalized,note_date,due_date,currency_code,fx_to_base,subtotal,tax_total,total_amount,subtotal_base,tax_total_base,total_amount_base,adjustment_reason_code,adjustment_reason_text,document_workflow_status,posted_at,posted_by,voided_at,voided_by,void_reason,created_by,created_at,updated_at')
     .eq('company_id', companyId)
     .eq('original_vendor_bill_id', billId)
     .order('created_at', { ascending: false })
@@ -2611,10 +2639,11 @@ export async function createAndPostVendorCreditNoteForBill(
       tax_total: 0,
       total_amount: 0,
       subtotal_base: 0,
-      tax_total_base: 0,
-      total_amount_base: 0,
-      adjustment_reason_text: trimmedReason,
-      document_workflow_status: 'draft',
+        tax_total_base: 0,
+        total_amount_base: 0,
+        adjustment_reason_code: normalizeText(input.adjustmentReasonCode) || null,
+        adjustment_reason_text: trimmedReason,
+        document_workflow_status: 'draft',
     })
     .select('id,internal_reference')
     .single<{ id: string; internal_reference: string }>()
@@ -2726,10 +2755,11 @@ export async function createAndPostVendorDebitNoteForBill(
       tax_total: taxTotal,
       total_amount: totalAmount,
       subtotal_base: roundMoney(subtotal * bill.fx_to_base),
-      tax_total_base: roundMoney(taxTotal * bill.fx_to_base),
-      total_amount_base: roundMoney(totalAmount * bill.fx_to_base),
-      adjustment_reason_text: trimmedReason,
-      document_workflow_status: 'draft',
+        tax_total_base: roundMoney(taxTotal * bill.fx_to_base),
+        total_amount_base: roundMoney(totalAmount * bill.fx_to_base),
+        adjustment_reason_code: normalizeText(input.adjustmentReasonCode) || null,
+        adjustment_reason_text: trimmedReason,
+        document_workflow_status: 'draft',
     })
     .select('id,internal_reference')
     .single<{ id: string; internal_reference: string }>()

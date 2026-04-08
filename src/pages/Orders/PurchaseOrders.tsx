@@ -141,9 +141,18 @@ type PurchaseOrderVendorBillSummary = {
   id: string
   purchase_order_id: string | null
   internal_reference: string
+  primary_reference: string
   supplier_invoice_reference: string | null
   document_workflow_status: 'draft' | 'posted' | 'voided'
-  created_at?: string | null
+  bill_date: string
+  current_legal_total_base: number
+  settled_base: number
+  outstanding_base: number
+  credited_total_base: number
+  debited_total_base: number
+  credit_note_count: number
+  debit_note_count: number
+  resolution_status: string
 }
 
 const nowISO = () => new Date().toISOString()
@@ -597,8 +606,8 @@ export default function PurchaseOrders() {
           supabase.from('purchase_order_lines')
             .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
             .eq('company_id', companyId),
-          supabase.from('vendor_bills')
-            .select('id,purchase_order_id,internal_reference,supplier_invoice_reference,document_workflow_status,created_at')
+          supabase.from('v_vendor_bill_state')
+            .select('id,purchase_order_id,internal_reference,primary_reference,supplier_invoice_reference,document_workflow_status,bill_date,current_legal_total_base,settled_base,outstanding_base,credited_total_base,debited_total_base,credit_note_count,debit_note_count,resolution_status')
             .eq('company_id', companyId)
             .neq('document_workflow_status', 'voided'),
         ])
@@ -890,8 +899,8 @@ export default function PurchaseOrders() {
         .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
         .eq('company_id', companyId),
       supabase
-        .from('vendor_bills')
-        .select('id,purchase_order_id,internal_reference,supplier_invoice_reference,document_workflow_status,created_at')
+        .from('v_vendor_bill_state')
+        .select('id,purchase_order_id,internal_reference,primary_reference,supplier_invoice_reference,document_workflow_status,bill_date,current_legal_total_base,settled_base,outstanding_base,credited_total_base,debited_total_base,credit_note_count,debit_note_count,resolution_status')
         .eq('company_id', companyId)
         .neq('document_workflow_status', 'voided'),
     ])
@@ -1137,7 +1146,7 @@ export default function PurchaseOrders() {
     const map = new Map<string, PurchaseOrderVendorBillSummary>()
     vendorBillSummaries
       .filter((bill) => bill.purchase_order_id)
-      .sort((left, right) => new Date(ts(right)).getTime() - new Date(ts(left)).getTime())
+      .sort((left, right) => new Date(right.bill_date || 0).getTime() - new Date(left.bill_date || 0).getTime())
       .forEach((bill) => {
         const purchaseOrderId = String(bill.purchase_order_id || '')
         if (!purchaseOrderId || map.has(purchaseOrderId)) return
@@ -2268,14 +2277,43 @@ export default function PurchaseOrders() {
                   </div>
                 </div>
                 {selectedPOVendorBill ? (
-                  <div className="mt-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+                  <div className="mt-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
                     <div className="text-sm font-medium">
                       {selectedPOVendorBill.document_workflow_status === 'draft'
                         ? tt('orders.purchaseVendorBillDraftReady', 'A vendor bill draft already exists for this purchase order.')
                         : tt('orders.purchaseVendorBillPosted', 'A vendor bill is already linked to this purchase order.')}
                     </div>
                     <div className="mt-1 text-sm text-muted-foreground">
-                      {selectedPOVendorBill.supplier_invoice_reference || selectedPOVendorBill.internal_reference}
+                      {selectedPOVendorBill.primary_reference || selectedPOVendorBill.internal_reference}
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                      <div>
+                        <Label>{tt('financeDocs.fields.workflow', 'Workflow')}</Label>
+                        <div className="mt-1">{selectedPOVendorBill.document_workflow_status}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{selectedPOVendorBill.resolution_status}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total')}</Label>
+                        <div>{formatMoneyBase(n(selectedPOVendorBill.current_legal_total_base), baseCode)}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('settlements.settledAmount', 'Settled')}</Label>
+                        <div>{formatMoneyBase(n(selectedPOVendorBill.settled_base), baseCode)}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
+                        <div>{formatMoneyBase(n(selectedPOVendorBill.outstanding_base), baseCode)}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('financeDocs.audit.adjustments', 'Adjustments')}</Label>
+                        <div>{selectedPOVendorBill.credit_note_count + selectedPOVendorBill.debit_note_count}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {tt('financeDocs.audit.adjustmentsBreakdown', 'Credits {credits} · Debits {debits}', {
+                            credits: selectedPOVendorBill.credit_note_count,
+                            debits: selectedPOVendorBill.debit_note_count,
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : null}

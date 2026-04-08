@@ -133,7 +133,16 @@ type LinkedSalesInvoiceSummary = {
   sales_order_id: string
   internal_reference: string
   document_workflow_status: 'draft' | 'issued'
-  created_at: string
+  invoice_date: string
+  due_date: string
+  current_legal_total_base: number
+  settled_base: number
+  outstanding_base: number
+  credited_total_base: number
+  debited_total_base: number
+  credit_note_count: number
+  debit_note_count: number
+  resolution_status: string
 }
 
 // NEW: UI mapping for Company Profile
@@ -654,12 +663,12 @@ export default function SalesOrders() {
         .select('id,so_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total,is_shipped,shipped_at,shipped_qty')
         .eq('company_id', activeCompanyId),
       supabase
-        .from('sales_invoices')
-        .select('id,sales_order_id,internal_reference,document_workflow_status,created_at')
+        .from('v_sales_invoice_state')
+        .select('id,sales_order_id,internal_reference,document_workflow_status,invoice_date,due_date,current_legal_total_base,settled_base,outstanding_base,credited_total_base,debited_total_base,credit_note_count,debit_note_count,resolution_status')
         .eq('company_id', activeCompanyId)
         .not('sales_order_id', 'is', null)
         .in('document_workflow_status', ['draft', 'issued'])
-        .order('created_at', { ascending: false }),
+        .order('invoice_date', { ascending: false }),
     ])
 
     if (soRes.error) {
@@ -2553,6 +2562,71 @@ export default function SalesOrders() {
                   },
                 ]}
               />
+
+              <OrderDetailSection
+                title={tt('orders.billingAnchorTitle', 'Billing and settlement anchor')}
+                description={tt('orders.salesBillingAnchorHelp', 'Sales orders stay operational until a sales invoice is issued. After issue, the sales invoice becomes the AR anchor and carries the live collectible amount, adjustments, and settlement truth.')}
+              >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div>
+                    <Label>{tt('orders.salesBillingStatus', 'Billing status')}</Label>
+                    <div>{salesState(selectedSO)?.billing_status || tt('common.dash', '-')}</div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.salesFinancialAnchor', 'Active anchor')}</Label>
+                    <div>{salesState(selectedSO)?.financial_anchor === 'sales_invoice' ? tt('financeDocs.salesInvoices.title', 'Sales Invoices') : tt('orders.so', 'SO')}</div>
+                  </div>
+                  <div>
+                    <Label>{tt('orders.salesFinancialAnchorReference', 'Anchor reference')}</Label>
+                    <div>{salesState(selectedSO)?.financial_anchor_reference || tt('common.dash', '-')}</div>
+                  </div>
+                  <div>
+                    <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
+                    <div>{formatMoneyBase(n(salesState(selectedSO)?.outstanding_base), baseCode)}</div>
+                  </div>
+                </div>
+                {linkedFiscalInvoice ? (
+                  <div className="mt-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                      <div>
+                        <Label>{tt('financeDocs.salesInvoices.title', 'Sales Invoices')}</Label>
+                        <div className="mt-1 font-medium">{linkedFiscalInvoice.internal_reference}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{linkedFiscalInvoice.resolution_status}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('financeDocs.mz.currentLegalAmount', 'Current legal amount')}</Label>
+                        <div>{formatMoneyBase(n(linkedFiscalInvoice.current_legal_total_base), baseCode)}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('settlements.settledAmount', 'Settled')}</Label>
+                        <div>{formatMoneyBase(n(linkedFiscalInvoice.settled_base), baseCode)}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
+                        <div>{formatMoneyBase(n(linkedFiscalInvoice.outstanding_base), baseCode)}</div>
+                      </div>
+                      <div>
+                        <Label>{tt('financeDocs.audit.adjustments', 'Adjustments')}</Label>
+                        <div>{linkedFiscalInvoice.credit_note_count + linkedFiscalInvoice.debit_note_count}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {tt('financeDocs.audit.adjustmentsBreakdown', 'Credits {credits} · Debits {debits}', {
+                            credits: linkedFiscalInvoice.credit_note_count,
+                            debits: linkedFiscalInvoice.debit_note_count,
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate(`/sales-invoices/${linkedFiscalInvoice.id}`)}
+                      >
+                        {tt('financeDocs.mz.openLinkedInvoice', 'Open linked invoice')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </OrderDetailSection>
 
               <OrderDetailSection
                 title={tt('orders.documentDetails', 'Document details')}

@@ -26,6 +26,8 @@ Finance-document foundation already in place:
 - AP supports vendor bills plus supplier credit notes and supplier debit notes, including partial and cumulative adjustments
 - invoice and finance-document output already uses snapshot-backed legal fields rather than mutable masters
 - finance-document output now resolves language from the stored document snapshot first, then from the active app/document language fallback, with bilingual `pt` / `en` rendering
+- finance documents now surface actor-aware activity journals, linked document-chain views, settlement events, and structured adjustment reasons on the core AR/AP detail pages
+- order detail screens now expose the active finance anchor and linked finance-document bridge from `SO -> SI` and `PO -> VB`
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -138,6 +140,7 @@ Current open decisions that need explicit closure in future work:
 - whether approval escalation thresholds should be universal or company-configurable
 - whether month-close review should live in a dedicated finance workspace or be embedded into existing Settlements / document registers
 - whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
+- whether Phase 2 should later add filtered audit/report exports beyond the current document detail, order detail, and low-level event-registry surfaces
 
 ## H. Risks / Blockers
 
