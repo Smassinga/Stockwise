@@ -923,6 +923,10 @@ export default function SalesInvoiceDetailPage() {
 
     return entries.sort((left, right) => right.sortAt.localeCompare(left.sortAt))
   }, [actorDirectory, creditNotes, events, formatAuditTimestamp, invoice, lang, money, settlementEventIdsInJournal, settlementEvents, debitNotes])
+  const orderLink = invoice?.sales_order_id
+    ? `/orders?tab=sales&orderId=${encodeURIComponent(invoice.sales_order_id)}`
+    : null
+
   const chainItems = useMemo<FinanceChainItem[]>(() => {
     if (!invoice) return []
 
@@ -1374,10 +1378,6 @@ export default function SalesInvoiceDetailPage() {
       toast.error(error?.message || tt('financeDocs.mz.archiveOpenFailed', 'Unable to open the archived file'))
     }
   }
-
-  const orderLink = invoice?.sales_order_id
-    ? `/orders?tab=sales&orderId=${encodeURIComponent(invoice.sales_order_id)}`
-    : null
 
   return (
     <div className="space-y-6">
