@@ -30,6 +30,7 @@ Finance-document foundation already in place:
 - order detail screens now expose the active finance anchor and linked finance-document bridge from `SO -> SI` and `PO -> VB`
 - native sales-invoice draft creation now bootstraps the minimum Mozambique fiscal settings and current-year fiscal series when they are missing, while issue-time legal tax identity validation remains strict
 - purchase-order list and detail surfaces now share a single vendor-bill action model: open the existing bill when one already exists, raise a new draft when the PO is approved and billable, or explain exactly why billing is blocked
+- purchase-order billability is now independent from receipt completion: receiving stock may update the operational receipt status, but it must not remove the AP billing path unless a Vendor Bill already exists or the PO has no positive purchased value
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -41,6 +42,7 @@ These rules must not be broken by future work:
    - `SO` and `PO` are operational documents.
    - `SI` and `VB` become the finance/legal truth once issued or posted.
    - Reminders, settlements, balances, and exposure must follow the active finance anchor once it exists.
+   - physical receipt of PO stock is not the same as AP billing; receipt completion must not suppress Vendor Bill creation.
 
 2. Adjustment-document model
    - issued/post documents are not edited in place for legal value changes

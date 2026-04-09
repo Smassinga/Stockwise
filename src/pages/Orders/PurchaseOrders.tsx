@@ -1173,6 +1173,12 @@ export default function PurchaseOrders() {
     })
     return map
   }, [polines])
+  const purchaseOrderHasPositiveBillingValue = (po: PO) =>
+    Math.max(
+      n(po.total),
+      n(po.subtotal) + n(po.tax_total),
+      n(po.subtotal),
+    ) > 0
   const vendorBillHref = (billId?: string | null) =>
     billId ? `/vendor-bills/${encodeURIComponent(billId)}` : null
   const vendorBillOpenLabel = (bill?: Pick<PurchaseOrderVendorBillSummary, 'document_workflow_status'> | null) =>
@@ -1197,7 +1203,9 @@ export default function PurchaseOrders() {
       : (state?.financial_anchor === 'vendor_bill' ? vendorBillHref(state.financial_anchor_document_id) : null)
     const workflowStatus = state?.workflow_status ?? legacyPurchaseWorkflowStatus(po.status)
     const legacyStatus = String(po.status || '').toLowerCase()
-    const billableLineCount = billableLineCountByPurchaseOrderId.get(po.id) ?? 0
+    const activeBillableLineCount = billableLineCountByPurchaseOrderId.get(po.id) ?? 0
+    const hasBillableValue = activeBillableLineCount > 0 || purchaseOrderHasPositiveBillingValue(po)
+    const billableLineCount = activeBillableLineCount > 0 ? activeBillableLineCount : (hasBillableValue ? 1 : 0)
 
     if (href) {
       return {
@@ -1241,7 +1249,7 @@ export default function PurchaseOrders() {
       }
     }
 
-    if (billableLineCount <= 0) {
+    if (!hasBillableValue) {
       return {
         kind: 'blocked',
         href: null,
@@ -1256,9 +1264,11 @@ export default function PurchaseOrders() {
       href: null,
       existingBill: null,
       billableLineCount,
-      reason: tt('orders.vendorBillReady', 'Ready to raise a vendor bill from {count} billable line(s).', {
-        count: billableLineCount,
-      }),
+      reason: activeBillableLineCount > 0
+        ? tt('orders.vendorBillReady', 'Ready to raise a vendor bill from {count} purchasable line(s). Receipt status does not block AP billing.', {
+            count: activeBillableLineCount,
+          })
+        : tt('orders.vendorBillReadyFromOrderValue', 'Ready to raise a vendor bill from the purchase order value. The original lines were already received, but receipt status does not block AP billing.'),
     }
   }
   const selectedPOVendorBill = useMemo(
@@ -2894,7 +2904,7 @@ export default function PurchaseOrders() {
           <DialogBody>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                {tt('orders.createVendorBillSummary', 'The draft bill copies the current purchase-order lines and amounts. Confirm the supplier document reference and dates before sending it for approval.')}
+                {tt('orders.createVendorBillSummary', 'The draft bill follows the purchase-order value, including lines that may already have been received. Confirm the supplier document reference and dates before sending it for approval.')}
               </div>
               <div className="md:col-span-2">
                 <Label htmlFor="po-vendor-bill-supplier-reference">{tt('financeDocs.fields.supplierInvoiceReference', 'Supplier invoice reference')}</Label>
