@@ -1,0 +1,6 @@
+{
+  "$schema": "./gen/schemas/windows-schema.json",
+  "bundle": {
+    "targets": ["nsis", "msi"]
+  }
+}

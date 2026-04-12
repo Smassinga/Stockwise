@@ -34,9 +34,11 @@ If you're new to Stockwise, start here:
 
 ### Mobile & Desktop
 
+- [Tauri Release Workflow](TAURI_RELEASE_WORKFLOW.md) - Current desktop and Android packaging, signing, artifact, and release flow
 - [Mobile Optimization Guide](MOBILE_OPTIMIZATION.md) - Comprehensive mobile optimization approach
 - [Mobile Improvements Summary](MOBILE_IMPROVEMENTS_SUMMARY.md) - Summary of implemented mobile improvements
-- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md) - Tauri desktop application guide
+- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md) - Current desktop-specific Tauri notes
+- [Tauri Release Notes](TAURI_RELEASE_NOTES.md) - Packaging hardening summary and maintained release baseline
 
 ## System Documentation
 

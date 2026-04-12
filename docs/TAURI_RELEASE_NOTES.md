@@ -1,65 +1,24 @@
-# Tauri Release Notes - Version 1.2.0
+# Tauri Release Notes
 
-This document outlines the changes made to ensure compatibility with the Tauri desktop application for Stockwise version 1.2.0.
+## Packaging hardening summary
 
-## Summary of Changes
+This release hardening pass brought Stockwise's Tauri packaging into a reproducible state for:
 
-### 1. Internationalization Updates
-- Added comprehensive translation keys for the Summary report tab in both English and Portuguese locale files
-- Verified all UI components use the i18n system properly
-- Ensured all new text elements are properly internationalized
+- Windows desktop installers
+- Android APK distribution outside Play Store
 
-### 2. UI Component Enhancements
-- **Suppliers Page**:
-  - Added payment terms column to suppliers table
-  - Fixed payment terms display to show human-readable names
-  - Fixed action buttons layout from vertical to horizontal
-  - Fixed label accessibility issues with proper htmlFor/id matching
-  
-- **Customers Page**:
-  - Fixed label accessibility issues for currency and payment terms selectors
-  - Enhanced payment terms display with human-readable names
+## Main changes
 
-- **Summary Report Tab**:
-  - Fully internationalized all UI elements
-  - Added comprehensive export functionality for CSV, XLSX, and PDF formats
+- aligned Tauri app version metadata with `package.json`
+- updated Tauri npm and Rust packages to the current 2.x line used in this repo
+- moved the app to a shared mobile/desktop Rust entrypoint
+- replaced stale Tauri 1-style permission config with Tauri 2 capabilities
+- generated and versioned the Android Gradle project
+- added maintained Android override templates so regenerated projects keep the Stockwise release behavior
+- formalized Android release signing inputs through local-only keystore config or environment variables
+- replaced the Windows-hostile Android release path with a direct Gradle release flow
+- fixed Android release version fallback so APKs no longer default to `1.0` / `1`
 
-### 3. Tauri Compatibility Verification
-- Verified all file system operations use Tauri APIs through the wrapper library
-- Confirmed export functionality works correctly in Tauri environment
-- Ensured all dialog interactions use Tauri dialog APIs
-- Validated that internationalization works correctly in desktop environment
+## Authoritative guide
 
-## Tauri-Specific Considerations
-
-### File System Access
-All file operations in the application use standard browser download mechanisms which are fully supported in Tauri:
-- CSV exports use the `file-saver` library
-- XLSX exports use the `xlsx` library with `file-saver`
-- PDF exports use `jspdf` with `file-saver`
-
-### Dialog Interactions
-The application uses the Tauri wrapper library (`src/lib/tauri.ts`) for all dialog interactions:
-- Message dialogs
-- File open dialogs
-- File save dialogs
-
-### Internationalization
-The i18n system uses localStorage which is available in Tauri applications:
-- Language preference is stored in localStorage
-- All translations are loaded from JSON files bundled with the application
-
-## Version Updates
-- Updated package.json version from 0.0.0 to 1.2.0
-- Updated src-tauri/tauri.conf.json version from 0.1.0 to 1.2.0
-
-## Testing Recommendations
-1. Verify that all export functionality works correctly (CSV, XLSX, PDF)
-2. Test internationalization in both English and Portuguese
-3. Confirm that dialog interactions work properly
-4. Validate that all UI components render correctly in the Tauri window
-5. Ensure that payment terms display correctly in both Suppliers and Customers pages
-
-## Known Limitations
-- Some fallback mechanisms in the Tauri wrapper may show browser alerts instead of native dialogs in web environments
-- File system operations are limited to download functionality; direct file system access is restricted by Tauri security policies
+Use [TAURI_RELEASE_WORKFLOW.md](TAURI_RELEASE_WORKFLOW.md) for the maintained desktop and Android release instructions.

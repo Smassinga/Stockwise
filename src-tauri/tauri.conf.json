@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Stockwise",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "identifier": "com.stockwise.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "fullscreen": false,
         "resizable": true,
         "title": "Stockwise",
@@ -23,25 +24,6 @@
     ],
     "security": {
       "csp": null
-    }
-  },
-  "plugins": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": false,
-        "open": true
-      },
-      "dialog": {
-        "all": true
-      },
-      "fs": {
-        "all": true,
-        "scope": ["$APPDATA/**", "$LOCALDATA/**"]
-      },
-      "path": {
-        "all": true
-      }
     }
   },
   "bundle": {

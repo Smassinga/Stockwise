@@ -8,6 +8,12 @@ dist/
 .vite/
 coverage/
 src-tauri/target/
+src-tauri/gen/android/keystore.properties
+src-tauri/keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pem
 
 # Local env files (never commit secrets)
 .env*
