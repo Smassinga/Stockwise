@@ -7,8 +7,8 @@ Use this file as the working status board for finance-document implementation. U
 | Phase | Status | Owner / Execution Area | Primary Outcome | Notes |
 |---|---|---|---|---|
 | Phase 1. Permissions and approval controls | Completed | Frontend + DB policy / workflow | Sensitive finance actions follow explicit authority and state locks | Draft preparation, approval gating, finance-authority actions, and DB-side enforcement are now in place for the current role model |
-| Phase 2. Audit trail and document-chain visibility | In progress | Frontend + DB event/read model | Every finance document can be traced through its adjustment and settlement chain | Core AR/AP detail and order-chain surfaces are now live; broader export/filter follow-up can remain separate |
-| Phase 3. Reconciliation and month-close readiness | In progress | Finance read models + review UI + reminders | Finance can reconcile current legal balances and work month-close exceptions | Core state views exist; close-oriented workflows still need dedicated surfaces |
+| Phase 2. Audit trail and document-chain visibility | Completed | Frontend + DB event/read model | Every finance document can be traced through its adjustment and settlement chain | Core AR/AP detail, order-chain surfaces, structured reasons, and actor-aware journals are live |
+| Phase 3. Reconciliation and month-close readiness | Active | Finance read models + review UI + reminders | Finance can reconcile current legal balances and work month-close exceptions | Phase 3A is now implemented; Phase 3B and 3C are planned next for operational clarity and assembly planning |
 | Phase 4. Automated finance regression suite | Not started | Test automation + seeded validation data | Finance behavior is guarded by repeatable regression tests | Current validation is still dominated by manual smoke passes |
 
 ## Phase 1. Permissions and Approval Controls
@@ -71,17 +71,38 @@ Provide finance users with the bridge logic and review surfaces needed to reconc
 - Phase 2 document-chain visibility
 - settled/outstanding consistency against active finance anchors
 
-### Tracker
+### Programme Structure
+
+- Phase 3A. Reconciliation and month-close readiness
+- Phase 3B. Operational UX clarity on confusing workflow/master-data pages
+- Phase 3C. Assembly planning enhancement with time-oriented production logic
+
+### Phase 3A Tracker
 
 | Work Item | Status | Owner / Area | Dependencies | Affected Modules | DB Impact | Frontend Impact | Validation Required | Notes |
 |---|---|---|---|---|---|---|---|---|
-| AR bridge: original total, credits, debits, current legal total, receipts, outstanding | In progress | DB views + frontend | `v_sales_invoice_state`, settlement anchor model | `v_sales_invoice_state`, invoice detail, settlements | Already partly live | Yes | Compare invoice detail, settlements, cash, bank | Core calculations exist; finance review/report presentation still needs completion |
-| AP bridge: original total, supplier credits, supplier debits, current legal total, payments, outstanding | In progress | DB views + frontend | `v_vendor_bill_state`, AP adjustment model | `v_vendor_bill_state`, vendor bill detail, settlements | Already partly live | Yes | Compare vendor-bill detail, settlements, cash, bank | Core calculations exist; finance review/report presentation still needs completion |
-| Aging based on current legal outstanding | Not started | Finance reporting | Stable bridge logic | Finance reporting / dashboard surfaces TBD | Likely yes | Likely yes | Aging buckets after adjustments and settlements | Aging must use current legal outstanding, not stale original totals |
-| Exception queues | Not started | Finance workspace | Aging and bridge logic | New finance review surfaces | Likely yes | Yes | Exceptions surface correctly and are actionable | Examples: over-settlement attempts, orphan adjustments, missing supplier refs |
-| Finance review screens | Not started | Frontend | Bridge logic, exception rules | Settlements or new finance review route | Maybe | Yes | Review workflow smoke test | Decide whether to extend Settlements or create a dedicated close workspace |
-| Month-close reporting needs | Not started | Finance + reporting | Bridge logic and review screens | Reporting stack TBD | Likely yes | Likely yes | Close pack and period reporting checks | Must cover AR/AP movement and ending outstanding by current legal value |
+| AR bridge: original total, credits, debits, current legal total, receipts, outstanding | Completed | DB views + frontend | `v_sales_invoice_state`, settlement anchor model | `v_sales_invoice_state`, invoice detail, settlements, reconciliation views | Yes | Yes | Compare invoice detail, settlements, and review register | AR bridge now resolves from DB-backed finance anchors and is visible in both operational and controller surfaces |
+| AP bridge: original total, supplier credits, supplier debits, current legal total, payments, outstanding | Completed | DB views + frontend | `v_vendor_bill_state`, AP adjustment model | `v_vendor_bill_state`, vendor bill detail, settlements, reconciliation views | Yes | Yes | Compare vendor-bill detail, settlements, and review register | AP bridge now resolves from DB-backed finance anchors and is visible in both operational and controller surfaces |
+| Aging based on current legal outstanding | Completed | Finance read model + frontend | Stable bridge logic | `v_finance_reconciliation_review`, Settlements, detail pages | Yes | Yes | Aging buckets after adjustments and settlements | Aging now uses legal outstanding after credits/debits/settlements, and resolved rows no longer present as overdue |
+| Exception queues | Completed | Finance workspace | Aging and bridge logic | `v_finance_reconciliation_exceptions`, Settlements, detail pages | Yes | Yes | Exceptions surface correctly and are actionable | Current coverage includes negative bridge values, over-settlement, missing due/counterparty data, broken anchor chains, duplicate supplier refs, and approved-draft invoice issue blockers |
+| Finance review screens | Completed | Frontend | Bridge logic, exception rules | Settlements, SalesInvoiceDetail, VendorBillDetail | Yes | Yes | Review workflow smoke test | Settlements now carries a dedicated reconciliation workspace. Detail pages surface due/aging/review/exception context from the same view model |
+| Month-close reporting needs | In progress | Finance + reporting | Bridge logic and review screens | Current read model, future reporting/export stack | Base read model now yes | Limited current UI | Controller review against live anchors and exceptions | The close-ready read model is now in place. Formal close-pack exports and reporting packs remain follow-up work, not blockers for 3A |
 | Due reminders logic review and redesign | Completed | Workflow + reminders | Settlement-anchor rule, AR bridge | `docs/due-reminders.md`, `supabase/functions/due-reminder-worker/index.ts`, due-reminder RPCs/migrations, `src/pages/Settings.tsx` | Yes | Yes | SO-only reminder, SI reminder, settled/credited suppression, mixed adjustment reminder checks | Implemented rule: reminder anchor becomes `SI` once a sales invoice is issued; only remain on `SO` if no issued invoice exists |
+
+### Phase 3B Tracker
+
+| Work Item | Status | Owner / Area | Dependencies | Affected Modules | DB Impact | Frontend Impact | Validation Required | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Assembly page operational clarity redesign | Planned | Frontend + ops workflow | Stable BOM/build RPCs, current stock sufficiency signals | `src/pages/BOM.tsx`, related assembly helpers | Maybe later | Yes | Guided assembly workflow smoke test | Current page is BOM/RPC-centred and risks user confusion. Target direction: clearer “what am I building”, component sufficiency, quantity planning, limiting factors, warnings, and estimated build effort |
+| Items page master-data clarity redesign | Planned | Frontend + inventory model | Stable item master rules | `src/pages/Items.tsx` | Maybe later | Yes | Item create/edit guidance validation | Current page is too flat/basic for foundational master data. Target direction: clearer item role/type, stocked vs non-stocked, raw vs finished vs resale, and buy/sell guidance |
+
+### Phase 3C Tracker
+
+| Work Item | Status | Owner / Area | Dependencies | Affected Modules | DB Impact | Frontend Impact | Validation Required | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Assembly time-per-unit model | Planned | Product + inventory/assembly model | Phase 3B assembly clarity | BOM/item models, planning helpers | Likely yes | Yes | Time-based planning calculations | Add practical `time_per_unit`, optional setup time, and normalized time units without full ERP scheduling |
+| Available-hours planning on Assembly page | Planned | Frontend + planning helpers | Time-per-unit model | `src/pages/BOM.tsx` | Maybe | Yes | Estimate output from time and stock | Users should estimate how many units fit in available hours and how long a planned build will take |
+| Time-based limiting-factor visibility | Planned | Frontend + planning helpers | Above two items | Assembly UI, planning summaries | Maybe | Yes | Stock-vs-time limiting-factor smoke test | Planning should show whether stock or available work time is the binding constraint for the target build |
 
 ## Phase 4. Automated Finance Regression Suite
 

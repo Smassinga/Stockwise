@@ -40,6 +40,18 @@ import {
   salesInvoiceResolutionLabelKey,
   type SalesInvoiceStateRow,
 } from '../lib/financeDocuments'
+import {
+  financeAgingBucketLabelKey,
+  financeDuePositionLabelKey,
+  financeExceptionGroupLabelKey,
+  financeExceptionLabelKey,
+  financeReviewStateLabelKey,
+  FINANCE_RECONCILIATION_EXCEPTIONS_VIEW,
+  FINANCE_RECONCILIATION_VIEW,
+  type FinanceReconciliationExceptionRow,
+  type FinanceReconciliationRow,
+  type FinanceReviewState,
+} from '../lib/financeReconciliation'
 import { settlementLabelKey } from '../lib/orderState'
 import {
   createAndIssueSalesCreditNoteForInvoice,
@@ -105,6 +117,21 @@ function approvalTone(status: SalesInvoiceDocumentRow['approval_status']) {
       return 'secondary'
     default:
       return 'outline'
+  }
+}
+
+function reviewTone(status?: FinanceReviewState | null) {
+  switch (status) {
+    case 'exception':
+      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    case 'overdue':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    case 'attention':
+      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+    case 'resolved':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    default:
+      return 'border-border/70 bg-muted/30 text-muted-foreground'
   }
 }
 
@@ -180,6 +207,8 @@ export default function SalesInvoiceDetailPage() {
   const [debitNoteLines, setDebitNoteLines] = useState<SalesDebitNoteLineRow[]>([])
   const [draftPreview, setDraftPreview] = useState<SalesInvoiceDraftPreview | null>(null)
   const [issueReadiness, setIssueReadiness] = useState<SalesInvoiceIssueReadiness | null>(null)
+  const [reconciliationRow, setReconciliationRow] = useState<FinanceReconciliationRow | null>(null)
+  const [reconciliationExceptions, setReconciliationExceptions] = useState<FinanceReconciliationExceptionRow[]>([])
   const [invoiceDateDraft, setInvoiceDateDraft] = useState('')
   const [dueDateDraft, setDueDateDraft] = useState('')
   const [vatExemptionReasonDraft, setVatExemptionReasonDraft] = useState('')
@@ -258,6 +287,8 @@ export default function SalesInvoiceDetailPage() {
       let nextActorDirectory: FinanceActorDirectory = {}
       let nextSettlementEvents: FinanceSettlementAuditEvent[] = []
       let nextIssueReadiness: SalesInvoiceIssueReadiness | null = null
+      let nextReconciliationRow: FinanceReconciliationRow | null = null
+      let nextReconciliationExceptions: FinanceReconciliationExceptionRow[] = []
 
       if (nextInvoice?.document_workflow_status === 'draft') {
         try {
@@ -330,6 +361,40 @@ export default function SalesInvoiceDetailPage() {
         })
       }
 
+      try {
+        const [reviewRes, exceptionRes] = await Promise.all([
+          supabase
+            .from(FINANCE_RECONCILIATION_VIEW)
+            .select('*')
+            .eq('company_id', companyId)
+            .eq('anchor_id', invoiceId)
+            .maybeSingle(),
+          supabase
+            .from(FINANCE_RECONCILIATION_EXCEPTIONS_VIEW)
+            .select('*')
+            .eq('company_id', companyId)
+            .eq('anchor_id', invoiceId)
+            .order('severity', { ascending: false })
+            .order('document_date', { ascending: true }),
+        ])
+
+        if (!reviewRes.error) {
+          nextReconciliationRow = (reviewRes.data || null) as FinanceReconciliationRow | null
+        } else {
+          reportRuntimeError('loadReconciliationRow', reviewRes.error)
+        }
+
+        if (!exceptionRes.error) {
+          nextReconciliationExceptions = (exceptionRes.data || []) as FinanceReconciliationExceptionRow[]
+        } else {
+          reportRuntimeError('loadReconciliationExceptions', exceptionRes.error)
+        }
+      } catch (error) {
+        reportRuntimeError('loadReconciliationContext', error, {
+          documentWorkflowStatus: nextInvoice?.document_workflow_status,
+        })
+      }
+
       setInvoice(nextInvoice)
       if (nextInvoiceStateRes.error) {
         reportRuntimeError('loadInvoiceState', nextInvoiceStateRes.error)
@@ -348,6 +413,8 @@ export default function SalesInvoiceDetailPage() {
       setDebitNoteLines(nextDebitNoteLines)
       setDraftPreview(nextDraftPreview)
       setIssueReadiness(nextIssueReadiness)
+      setReconciliationRow(nextReconciliationRow)
+      setReconciliationExceptions(nextReconciliationExceptions)
       setInvoiceDateDraft(nextInvoice?.invoice_date || '')
       setDueDateDraft(nextInvoice?.due_date || '')
       setVatExemptionReasonDraft(nextInvoice?.vat_exemption_reason_text || '')
@@ -363,6 +430,8 @@ export default function SalesInvoiceDetailPage() {
       setDebitNoteLines([])
       setDraftPreview(null)
       setIssueReadiness(null)
+      setReconciliationRow(null)
+      setReconciliationExceptions([])
     } finally {
       setLoading(false)
     }
@@ -458,6 +527,74 @@ export default function SalesInvoiceDetailPage() {
     financeDocumentApprovalLabelKey(approvalStatus),
     approvalStatus,
   )
+  const reconciliationDuePositionLabel = (position?: FinanceReconciliationRow['due_position'] | null) => {
+    switch (position) {
+      case 'resolved':
+        return tt(financeDuePositionLabelKey(position), 'Resolved')
+      case 'undated':
+        return tt(financeDuePositionLabelKey(position), 'No due date')
+      case 'current':
+        return tt(financeDuePositionLabelKey(position), 'Current')
+      case 'due_soon':
+        return tt(financeDuePositionLabelKey(position), 'Due soon')
+      case 'due_today':
+        return tt(financeDuePositionLabelKey(position), 'Due today')
+      case 'overdue':
+        return tt(financeDuePositionLabelKey(position), 'Overdue')
+      default:
+        return tt('common.dash', '-')
+    }
+  }
+  const reconciliationAgingLabel = (bucket?: FinanceReconciliationRow['aging_bucket'] | null) => {
+    switch (bucket) {
+      case 'resolved':
+        return tt(financeAgingBucketLabelKey(bucket), 'Resolved')
+      case 'undated':
+        return tt(financeAgingBucketLabelKey(bucket), 'No due date')
+      case 'current':
+        return tt(financeAgingBucketLabelKey(bucket), 'Current')
+      case '1_30':
+        return tt(financeAgingBucketLabelKey(bucket), '1-30 days overdue')
+      case '31_60':
+        return tt(financeAgingBucketLabelKey(bucket), '31-60 days overdue')
+      case '61_90':
+        return tt(financeAgingBucketLabelKey(bucket), '61-90 days overdue')
+      case '91_plus':
+        return tt(financeAgingBucketLabelKey(bucket), '91+ days overdue')
+      default:
+        return tt('common.dash', '-')
+    }
+  }
+  const reconciliationReviewLabel = (state?: FinanceReviewState | null) => {
+    switch (state) {
+      case 'exception':
+        return tt(financeReviewStateLabelKey(state), 'Exception')
+      case 'overdue':
+        return tt(financeReviewStateLabelKey(state), 'Overdue')
+      case 'attention':
+        return tt(financeReviewStateLabelKey(state), 'Attention')
+      case 'open':
+        return tt(financeReviewStateLabelKey(state), 'Open')
+      case 'resolved':
+        return tt(financeReviewStateLabelKey(state), 'Resolved')
+      default:
+        return tt('common.dash', '-')
+    }
+  }
+  const reconciliationExceptionLabel = (code?: string | null) =>
+    tt(financeExceptionLabelKey(code), 'Finance review exception')
+  const reconciliationExceptionGroupLabel = (group?: FinanceReconciliationExceptionRow['exception_group'] | null) => {
+    switch (group) {
+      case 'bridge':
+        return tt(financeExceptionGroupLabelKey(group), 'Bridge')
+      case 'chain':
+        return tt(financeExceptionGroupLabelKey(group), 'Chain')
+      case 'issue_readiness':
+        return tt(financeExceptionGroupLabelKey(group), 'Issue readiness')
+      default:
+        return tt('common.dash', '-')
+    }
+  }
   const canEditDraft = Boolean(invoice && isDraft && isFinanceDraftEditable(myRole, approvalStatus))
   const canSubmitDraftForApproval = Boolean(invoice && isDraft && approvalStatus === 'draft' && financeCan.submitForApproval(myRole))
   const canApproveDraft = Boolean(invoice && isDraft && approvalStatus === 'pending_approval' && financeCan.approve(myRole))
@@ -1872,6 +2009,115 @@ export default function SalesInvoiceDetailPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {reconciliationRow || reconciliationExceptions.length > 0 ? (
+              <Card className="border-border/80 shadow-sm lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>{tt('financeDocs.reconciliation.detailTitle', 'Reconciliation review')}</CardTitle>
+                  <CardDescription>
+                    {tt('financeDocs.reconciliation.detailHelp', 'Month-close review follows the active finance anchor. Due position, aging, controller state, and any bridge exceptions all use the legal outstanding balance after adjustments and settlement.')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {reconciliationRow ? (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">{reconciliationDuePositionLabel(reconciliationRow.due_position)}</Badge>
+                        <Badge variant="outline">{reconciliationAgingLabel(reconciliationRow.aging_bucket)}</Badge>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone(reconciliationRow.review_state)}`}>
+                          {reconciliationReviewLabel(reconciliationRow.review_state)}
+                        </span>
+                        {reconciliationRow.exception_count > 0 ? (
+                          <Badge variant="outline">
+                            {tt('financeDocs.reconciliation.exceptionCount', '{count} exceptions', { count: reconciliationRow.exception_count })}
+                          </Badge>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                        <Card className="border-border/70 shadow-none">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.dueState', 'Due state')}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-1">
+                            <div className="font-medium">{reconciliationDuePositionLabel(reconciliationRow.due_position)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {reconciliationRow.days_past_due > 0
+                                ? tt('financeDocs.reconciliation.daysPastDue', '{count} days past due', { count: reconciliationRow.days_past_due })
+                                : reconciliationRow.days_until_due != null
+                                  ? tt('financeDocs.reconciliation.daysUntilDue', '{count} days until due', { count: reconciliationRow.days_until_due })
+                                  : tt('common.dash', '-')}
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-border/70 shadow-none">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.aging', 'Aging')}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-1">
+                            <div className="font-medium">{reconciliationAgingLabel(reconciliationRow.aging_bucket)}</div>
+                            <div className="text-xs text-muted-foreground">{tt('financeDocs.reconciliation.currentAgingHelp', 'Aging is calculated from the current legal outstanding amount, not the gross original invoice.')}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-border/70 shadow-none">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.reconciliation.reviewState', 'Review state')}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-1">
+                            <div className="font-medium">{reconciliationReviewLabel(reconciliationRow.review_state)}</div>
+                            <div className="text-xs text-muted-foreground">{reconciliationRow.needs_review ? tt('financeDocs.reconciliation.needsReviewHelp', 'This invoice remains in the controller review queue.') : tt('financeDocs.reconciliation.resolvedReviewHelp', 'This invoice does not currently require controller intervention.')}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-border/70 shadow-none">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-1">
+                            <div className="font-mono tabular-nums">{money(reconciliationRow.current_legal_total_base || 0, 'MZN')}</div>
+                            <div className="text-xs text-muted-foreground">{tt('financeDocs.reconciliation.currentLegalHelp', 'Original minus credits plus debits')}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-border/70 shadow-none">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-1">
+                            <div className="font-mono tabular-nums font-semibold">{money(reconciliationRow.outstanding_base || 0, 'MZN')}</div>
+                            <div className="text-xs text-muted-foreground">{tt('settlements.outstandingHelp', 'Current legal minus settled')}</div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                      {tt('financeDocs.reconciliation.draftOnlyHelp', 'This draft is not part of the live reconciliation register yet. Issue-time blockers still appear below if the legal anchor is not ready to be issued.')}
+                    </div>
+                  )}
+
+                  {reconciliationExceptions.length > 0 ? (
+                    <div className="space-y-3">
+                      {reconciliationExceptions.map((exception) => (
+                        <div key={`${exception.anchor_id}:${exception.exception_code}`} className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exception.severity === 'critical' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'}`}>
+                              {exception.severity === 'critical' ? tt('financeDocs.reconciliation.severityCritical', 'Critical') : tt('financeDocs.reconciliation.severityWarning', 'Warning')}
+                            </span>
+                            <Badge variant="outline">{reconciliationExceptionGroupLabel(exception.exception_group)}</Badge>
+                          </div>
+                          <div className="mt-2 font-medium">{reconciliationExceptionLabel(exception.exception_code)}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {tt('financeDocs.reconciliation.exceptionAmounts', 'Current legal {currentLegal} / Outstanding {outstanding}', {
+                              currentLegal: money(Number(exception.current_legal_total_base || 0), 'MZN'),
+                              outstanding: money(Number(exception.outstanding_base || 0), 'MZN'),
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : null}
 
             <Card className="border-border/80 shadow-sm">
               <CardHeader>

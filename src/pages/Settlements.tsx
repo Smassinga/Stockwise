@@ -34,6 +34,18 @@ import {
   type VendorBillStateRow,
 } from '../lib/financeDocuments'
 import {
+  financeAgingBucketLabelKey,
+  financeDuePositionLabelKey,
+  financeExceptionGroupLabelKey,
+  financeExceptionLabelKey,
+  financeReviewStateLabelKey,
+  FINANCE_RECONCILIATION_EXCEPTIONS_VIEW,
+  FINANCE_RECONCILIATION_VIEW,
+  type FinanceReconciliationExceptionRow,
+  type FinanceReconciliationRow,
+  type FinanceReviewState,
+} from '../lib/financeReconciliation'
+import {
   purchaseWorkflowLabelKey,
   salesWorkflowLabelKey,
   settlementLabelKey,
@@ -147,6 +159,26 @@ const dueTone = (row: SettlementRow) => {
 
 const isFinanceDocumentRow = (row: SettlementRow) => row.kind === 'SI' || row.kind === 'VB'
 
+const reviewTone = (state: FinanceReviewState) => {
+  switch (state) {
+    case 'exception':
+      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    case 'overdue':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    case 'attention':
+      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+    case 'resolved':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    default:
+      return 'border-border/70 bg-muted/30 text-muted-foreground'
+  }
+}
+
+const exceptionSeverityTone = (severity: FinanceReconciliationExceptionRow['severity']) =>
+  severity === 'critical'
+    ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+
 export default function SettlementsPage() {
   const { companyId, companyName, myRole } = useOrg()
   const { t, lang } = useI18n()
@@ -245,9 +277,13 @@ export default function SettlementsPage() {
   const [baseCode, setBaseCode] = useState('MZN')
   const [rows, setRows] = useState(emptyRows)
   const [stateViewsUnavailable, setStateViewsUnavailable] = useState(false)
+  const [reconciliationViewsUnavailable, setReconciliationViewsUnavailable] = useState(false)
+  const [reviewRows, setReviewRows] = useState<FinanceReconciliationRow[]>([])
+  const [reviewExceptions, setReviewExceptions] = useState<FinanceReconciliationExceptionRow[]>([])
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [bankRefsSupported, setBankRefsSupported] = useState<boolean | null>(() => getBankTransactionRefSupport())
 
+  const [workspace, setWorkspace] = useState<'settlement' | 'reconciliation'>('settlement')
   const [tab, setTab] = useState<'receive' | 'pay'>('receive')
   const [search, setSearch] = useState('')
   const [partyFilter, setPartyFilter] = useState('ALL')
@@ -256,6 +292,14 @@ export default function SettlementsPage() {
   const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'due_soon' | 'current'>('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
+  const [reviewSide, setReviewSide] = useState<FinanceReconciliationRow['ledger_side']>('AR')
+  const [reviewSearch, setReviewSearch] = useState('')
+  const [reviewPartyFilter, setReviewPartyFilter] = useState('ALL')
+  const [reviewCurrencyFilter, setReviewCurrencyFilter] = useState('ALL')
+  const [reviewDueFilter, setReviewDueFilter] = useState<'all' | 'overdue' | 'due_soon' | 'current' | 'resolved' | 'undated'>('all')
+  const [reviewStateFilter, setReviewStateFilter] = useState<'all' | FinanceReviewState>('all')
+  const [reviewFromDate, setReviewFromDate] = useState('')
+  const [reviewToDate, setReviewToDate] = useState('')
 
   const [activeRow, setActiveRow] = useState<SettlementRow | null>(null)
   const [dialogTab, setDialogTab] = useState<'settle' | 'history'>('settle')
@@ -277,8 +321,11 @@ export default function SettlementsPage() {
   useEffect(() => {
     if (!companyId) {
       setRows(emptyRows)
+      setReviewRows([])
+      setReviewExceptions([])
       setBanks([])
       setStateViewsUnavailable(false)
+      setReconciliationViewsUnavailable(false)
       setActiveRow(null)
       setLoading(false)
       return
@@ -323,7 +370,7 @@ export default function SettlementsPage() {
         setLoading(true)
         const baseCurrency = await getBaseCurrencyCode(companyId)
 
-        const [banksRes, soRes, poRes, siRes, vbRes, cashRes] = await Promise.all([
+        const [banksRes, soRes, poRes, siRes, vbRes, cashRes, reviewRes, exceptionRes] = await Promise.all([
           supabase.from('bank_accounts').select('id,name,currency_code').eq('company_id', companyId).order('name', { ascending: true }),
           supabase
             .from('v_sales_order_state')
@@ -346,6 +393,14 @@ export default function SettlementsPage() {
             .select('id,happened_at,type,ref_type,ref_id,memo,amount_base')
             .eq('company_id', companyId)
             .in('ref_type', ['SO', 'PO', 'SI', 'VB']),
+          supabase
+            .from(FINANCE_RECONCILIATION_VIEW)
+            .select('*')
+            .eq('company_id', companyId),
+          supabase
+            .from(FINANCE_RECONCILIATION_EXCEPTIONS_VIEW)
+            .select('*')
+            .eq('company_id', companyId),
         ])
 
         if (banksRes.error) throw banksRes.error
@@ -357,12 +412,19 @@ export default function SettlementsPage() {
           ['v_sales_invoice_state', siRes.error],
           ['v_vendor_bill_state', vbRes.error],
         ].some(([viewName, error]) => isMissingStateViewError(error, String(viewName)))
+        const missingReconciliationViews = [
+          [FINANCE_RECONCILIATION_VIEW, reviewRes.error],
+          [FINANCE_RECONCILIATION_EXCEPTIONS_VIEW, exceptionRes.error],
+        ].some(([viewName, error]) => isMissingStateViewError(error, String(viewName)))
         if (missingViews) {
           if (!cancelled) {
             setBaseCode(baseCurrency || 'MZN')
             setBanks((banksRes.data || []) as BankAccount[])
             setRows(emptyRows)
+            setReviewRows([])
+            setReviewExceptions([])
             setStateViewsUnavailable(true)
+            setReconciliationViewsUnavailable(missingReconciliationViews)
           }
           return
         }
@@ -371,6 +433,8 @@ export default function SettlementsPage() {
         if (poRes.error) throw poRes.error
         if (siRes.error) throw siRes.error
         if (vbRes.error) throw vbRes.error
+        if (!missingReconciliationViews && reviewRes.error) throw reviewRes.error
+        if (!missingReconciliationViews && exceptionRes.error) throw exceptionRes.error
 
         const bankList = (banksRes.data || []) as BankAccount[]
         const bankTxRows = await fetchBankTransactions(bankList.map(bank => bank.id))
@@ -572,13 +636,19 @@ export default function SettlementsPage() {
           setBanks(bankList)
           setRows({ receive: receiveRows, pay: payRows })
           setStateViewsUnavailable(false)
+          setReviewRows(missingReconciliationViews ? [] : ((reviewRes.data || []) as FinanceReconciliationRow[]))
+          setReviewExceptions(missingReconciliationViews ? [] : ((exceptionRes.data || []) as FinanceReconciliationExceptionRow[]))
+          setReconciliationViewsUnavailable(missingReconciliationViews)
         }
       } catch (error: any) {
         console.error(error)
         if (!cancelled) {
           setRows(emptyRows)
+          setReviewRows([])
+          setReviewExceptions([])
           setBanks([])
           setStateViewsUnavailable(false)
+          setReconciliationViewsUnavailable(false)
           toast.error(error?.message || tt('settlements.loadFailed', 'Failed to load settlements'))
         }
       } finally {
@@ -628,6 +698,169 @@ export default function SettlementsPage() {
     settledBase: filteredRows.reduce((sum, row) => sum + row.settledBase, 0),
     outstandingBase: filteredRows.reduce((sum, row) => sum + row.outstandingBase, 0),
   }), [filteredRows])
+
+  const currentReviewRows = useMemo(
+    () => reviewRows.filter((row) => row.ledger_side === reviewSide),
+    [reviewRows, reviewSide],
+  )
+  const reviewPartyOptions = useMemo(
+    () => Array.from(new Set(currentReviewRows.map((row) => row.counterparty_name || tt('common.none', 'None')))).sort((a, b) => a.localeCompare(b)),
+    [currentReviewRows, tt],
+  )
+  const reviewCurrencyOptions = useMemo(
+    () => Array.from(new Set(currentReviewRows.map((row) => row.currency_code || baseCode || 'MZN'))).sort((a, b) => a.localeCompare(b)),
+    [baseCode, currentReviewRows],
+  )
+  const filteredReviewRows = useMemo(() => {
+    const query = reviewSearch.trim().toLowerCase()
+    return currentReviewRows.filter((row) => {
+      if (query) {
+        const haystack = [
+          row.anchor_reference,
+          row.operational_reference,
+          row.counterparty_name,
+          row.resolution_status,
+          row.settlement_status,
+          row.review_state,
+          row.due_position,
+        ].join(' ').toLowerCase()
+        if (!haystack.includes(query)) return false
+      }
+      if (reviewPartyFilter !== 'ALL' && (row.counterparty_name || tt('common.none', 'None')) !== reviewPartyFilter) return false
+      if (reviewCurrencyFilter !== 'ALL' && (row.currency_code || baseCode || 'MZN') !== reviewCurrencyFilter) return false
+      if (reviewStateFilter !== 'all' && row.review_state !== reviewStateFilter) return false
+      if (reviewFromDate && row.document_date && row.document_date < reviewFromDate) return false
+      if (reviewToDate && row.document_date && row.document_date > reviewToDate) return false
+      if (reviewDueFilter === 'overdue' && row.due_position !== 'overdue') return false
+      if (reviewDueFilter === 'due_soon' && row.due_position !== 'due_soon' && row.due_position !== 'due_today') return false
+      if (reviewDueFilter === 'current' && row.due_position !== 'current') return false
+      if (reviewDueFilter === 'resolved' && row.due_position !== 'resolved') return false
+      if (reviewDueFilter === 'undated' && row.due_position !== 'undated') return false
+      return true
+    })
+  }, [
+    baseCode,
+    currentReviewRows,
+    reviewCurrencyFilter,
+    reviewDueFilter,
+    reviewFromDate,
+    reviewPartyFilter,
+    reviewSearch,
+    reviewStateFilter,
+    reviewToDate,
+    tt,
+  ])
+  const filteredReviewExceptions = useMemo(() => {
+    const query = reviewSearch.trim().toLowerCase()
+    return reviewExceptions
+      .filter((row) => row.ledger_side === reviewSide)
+      .filter((row) => {
+        if (query) {
+          const haystack = [
+            row.anchor_reference,
+            row.operational_reference,
+            row.counterparty_name,
+            row.exception_code,
+            row.exception_group,
+            row.severity,
+          ].join(' ').toLowerCase()
+          if (!haystack.includes(query)) return false
+        }
+        if (reviewPartyFilter !== 'ALL' && (row.counterparty_name || tt('common.none', 'None')) !== reviewPartyFilter) return false
+        if (reviewFromDate && row.document_date && row.document_date < reviewFromDate) return false
+        if (reviewToDate && row.document_date && row.document_date > reviewToDate) return false
+        return true
+      })
+  }, [reviewExceptions, reviewFromDate, reviewPartyFilter, reviewSearch, reviewSide, reviewToDate, tt])
+  const reviewTotals = useMemo(() => ({
+    original: filteredReviewRows.reduce((sum, row) => sum + n(row.original_total_base), 0),
+    netAdjustments: filteredReviewRows.reduce((sum, row) => sum + n(row.net_adjustment_base), 0),
+    currentLegal: filteredReviewRows.reduce((sum, row) => sum + n(row.current_legal_total_base), 0),
+    settled: filteredReviewRows.reduce((sum, row) => sum + n(row.settled_base), 0),
+    outstanding: filteredReviewRows.reduce((sum, row) => sum + n(row.outstanding_base), 0),
+    overSettled: filteredReviewRows.reduce((sum, row) => sum + n(row.over_settled_base), 0),
+    exceptionCount: filteredReviewRows.reduce((sum, row) => sum + n(row.exception_count), 0),
+    overdueCount: filteredReviewRows.filter((row) => row.due_position === 'overdue').length,
+    reviewCount: filteredReviewRows.filter((row) => row.needs_review).length,
+  }), [filteredReviewRows])
+  const reviewStateCounts = useMemo(() => ({
+    exception: filteredReviewRows.filter((row) => row.review_state === 'exception').length,
+    overdue: filteredReviewRows.filter((row) => row.review_state === 'overdue').length,
+    attention: filteredReviewRows.filter((row) => row.review_state === 'attention').length,
+    open: filteredReviewRows.filter((row) => row.review_state === 'open').length,
+    resolved: filteredReviewRows.filter((row) => row.review_state === 'resolved').length,
+  }), [filteredReviewRows])
+
+  const duePositionLabel = (position?: FinanceReconciliationRow['due_position'] | null) => {
+    switch (position) {
+      case 'resolved':
+        return tt(financeDuePositionLabelKey(position), 'Resolved')
+      case 'undated':
+        return tt(financeDuePositionLabelKey(position), 'No due date')
+      case 'current':
+        return tt(financeDuePositionLabelKey(position), 'Current')
+      case 'due_soon':
+        return tt(financeDuePositionLabelKey(position), 'Due soon')
+      case 'due_today':
+        return tt(financeDuePositionLabelKey(position), 'Due today')
+      case 'overdue':
+        return tt(financeDuePositionLabelKey(position), 'Overdue')
+      default:
+        return tt('orders.status.unknown', 'Unknown')
+    }
+  }
+
+  const agingBucketLabel = (bucket?: FinanceReconciliationRow['aging_bucket'] | null) => {
+    switch (bucket) {
+      case 'resolved':
+        return tt(financeAgingBucketLabelKey(bucket), 'Resolved')
+      case 'undated':
+        return tt(financeAgingBucketLabelKey(bucket), 'No due date')
+      case 'current':
+        return tt(financeAgingBucketLabelKey(bucket), 'Current')
+      case '1_30':
+        return tt(financeAgingBucketLabelKey(bucket), '1–30 days overdue')
+      case '31_60':
+        return tt(financeAgingBucketLabelKey(bucket), '31–60 days overdue')
+      case '61_90':
+        return tt(financeAgingBucketLabelKey(bucket), '61–90 days overdue')
+      case '91_plus':
+        return tt(financeAgingBucketLabelKey(bucket), '91+ days overdue')
+      default:
+        return tt('orders.status.unknown', 'Unknown')
+    }
+  }
+
+  const reviewStateLabel = (state?: FinanceReviewState | null) => {
+    switch (state) {
+      case 'exception':
+        return tt(financeReviewStateLabelKey(state), 'Exception')
+      case 'overdue':
+        return tt(financeReviewStateLabelKey(state), 'Overdue')
+      case 'attention':
+        return tt(financeReviewStateLabelKey(state), 'Attention')
+      case 'open':
+        return tt(financeReviewStateLabelKey(state), 'Open')
+      case 'resolved':
+        return tt(financeReviewStateLabelKey(state), 'Resolved')
+      default:
+        return tt('orders.status.unknown', 'Unknown')
+    }
+  }
+
+  const exceptionLabel = (code?: string | null) => tt(financeExceptionLabelKey(code), 'Finance review exception')
+  const exceptionGroupLabel = (group?: FinanceReconciliationExceptionRow['exception_group'] | null) => {
+    switch (group) {
+      case 'bridge':
+        return tt(financeExceptionGroupLabelKey(group), 'Bridge')
+      case 'chain':
+        return tt(financeExceptionGroupLabelKey(group), 'Chain')
+      case 'issue_readiness':
+        return tt(financeExceptionGroupLabelKey(group), 'Issue readiness')
+      default:
+        return tt('orders.status.unknown', 'Unknown')
+    }
+  }
 
   function openSettlement(row: SettlementRow, nextDialogTab: 'settle' | 'history' = 'settle') {
     setActiveRow(row)
@@ -732,6 +965,24 @@ export default function SettlementsPage() {
     navigate(`/orders?tab=${row.kind === 'SO' ? 'sales' : 'purchase'}&orderId=${row.id}`)
   }
 
+  function viewReconciliationAnchor(anchorKind: FinanceReconciliationRow['anchor_kind'], anchorId: string) {
+    if (anchorKind === 'sales_invoice' || anchorKind === 'sales_invoice_draft') {
+      navigate(`/sales-invoices/${anchorId}`)
+      return
+    }
+    if (anchorKind === 'vendor_bill') {
+      navigate(`/vendor-bills/${anchorId}`)
+      return
+    }
+    if (anchorKind === 'sales_order') {
+      navigate(`/orders?tab=sales&orderId=${anchorId}`)
+      return
+    }
+    if (anchorKind === 'purchase_order') {
+      navigate(`/orders?tab=purchase&orderId=${anchorId}`)
+    }
+  }
+
   const activeHistory = activeRow?.history || []
 
   return (
@@ -770,6 +1021,37 @@ export default function SettlementsPage() {
         </div>
       ) : null}
 
+      <Tabs value={workspace} onValueChange={(value) => setWorkspace(value as 'settlement' | 'reconciliation')} className="space-y-6">
+        <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] p-4 shadow-[0_28px_80px_-54px_rgba(15,23,42,0.52)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
+                {tt('settlements.workspaceEyebrow', 'Phase 3 reconciliation')}
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight">
+                  {tt('settlements.workspaceTitle', 'Settlement operations and controller review')}
+                </h2>
+                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  {tt(
+                    'settlements.workspaceHelp',
+                    'Use the operational workspace to post receipts and payments. Use reconciliation review to bridge original value, adjustments, settlement, current legal exposure, due position, and exceptions from the active finance anchor.',
+                  )}
+                </p>
+              </div>
+            </div>
+            <TabsList className="h-auto w-full justify-start gap-1 rounded-2xl bg-muted/70 p-1 lg:w-auto">
+              <TabsTrigger value="settlement" className="min-w-[190px] rounded-xl">
+                {tt('settlements.workspaceSettlement', 'Settlement workflow')}
+              </TabsTrigger>
+              <TabsTrigger value="reconciliation" className="min-w-[190px] rounded-xl">
+                {tt('settlements.workspaceReconciliation', 'Reconciliation review')}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </div>
+
+        <TabsContent value="settlement" className="mt-0 space-y-6">
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
@@ -1076,6 +1358,360 @@ export default function SettlementsPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="reconciliation" className="mt-0 space-y-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <Card className="border-border/80 shadow-sm xl:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{tt('financeDocs.reconciliation.reviewTitle', 'Review register')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">{filteredReviewRows.length}</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {tt('financeDocs.reconciliation.reviewHelp', 'Review the active AR/AP anchors using current legal value, settlement, due position, and exception signals from the DB-backed reconciliation model.')}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">{money(reviewTotals.currentLegal)}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{tt('financeDocs.reconciliation.currentLegalHelp', 'Original minus credits plus debits across the filtered review set.')}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">{money(reviewTotals.outstanding)}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{tt('financeDocs.reconciliation.outstandingHelp', 'Outstanding is based on current legal value after adjustments and actual settlement only.')}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{tt('financeDocs.reconciliation.overdueCount', 'Overdue')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">{reviewTotals.overdueCount}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{tt('financeDocs.reconciliation.overdueHelp', 'Overdue state is bucketed from the legal outstanding balance, not the gross original document value.')}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{tt('financeDocs.reconciliation.exceptionQueue', 'Exception queue')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">{filteredReviewExceptions.length}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{tt('financeDocs.reconciliation.exceptionHelp', 'Critical and warning exceptions surface broken bridges, anchor-chain defects, and issue/post blockers that need controller review.')}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)]">
+            <CardHeader className="pb-3">
+              <CardTitle>{tt('financeDocs.reconciliation.filters', 'Review filters')}</CardTitle>
+              <CardDescription>{tt('financeDocs.reconciliation.filtersHelp', 'Switch between AR and AP, then filter by counterparty, due position, review state, currency, or document date without leaving the active company.')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Tabs value={reviewSide} onValueChange={(value) => setReviewSide(value as FinanceReconciliationRow['ledger_side'])}>
+                <TabsList className="h-auto w-full justify-start gap-1 rounded-xl bg-muted/70 p-1 md:w-auto">
+                  <TabsTrigger value="AR" className="min-w-[180px] rounded-lg">{tt('financeDocs.reconciliation.arTitle', 'Accounts receivable')}</TabsTrigger>
+                  <TabsTrigger value="AP" className="min-w-[180px] rounded-lg">{tt('financeDocs.reconciliation.apTitle', 'Accounts payable')}</TabsTrigger>
+                </TabsList>
+                <TabsContent value={reviewSide} className="mt-4 space-y-4">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <div className="xl:col-span-2">
+                      <Label>{tt('common.search', 'Search')}</Label>
+                      <Input value={reviewSearch} onChange={(event) => setReviewSearch(event.target.value)} placeholder={tt('financeDocs.reconciliation.searchPlaceholder', 'Reference, counterparty, due state, review state, or exception')} />
+                    </div>
+                    <div>
+                      <Label>{tt('settlements.counterparty', 'Counterparty')}</Label>
+                      <Select value={reviewPartyFilter} onValueChange={setReviewPartyFilter}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                          {reviewPartyOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('orders.currency', 'Currency')}</Label>
+                      <Select value={reviewCurrencyFilter} onValueChange={setReviewCurrencyFilter}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                          {reviewCurrencyOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('settlements.dueState', 'Due state')}</Label>
+                      <Select value={reviewDueFilter} onValueChange={(value) => setReviewDueFilter(value as typeof reviewDueFilter)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">{tt('common.all', 'All')}</SelectItem>
+                          <SelectItem value="overdue">{tt('financeDocs.reconciliation.due.overdue', 'Overdue')}</SelectItem>
+                          <SelectItem value="due_soon">{tt('financeDocs.reconciliation.due.dueSoon', 'Due soon')}</SelectItem>
+                          <SelectItem value="current">{tt('financeDocs.reconciliation.due.current', 'Current')}</SelectItem>
+                          <SelectItem value="resolved">{tt('financeDocs.reconciliation.due.resolved', 'Resolved')}</SelectItem>
+                          <SelectItem value="undated">{tt('financeDocs.reconciliation.due.undated', 'No due date')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{tt('financeDocs.reconciliation.reviewState', 'Review state')}</Label>
+                      <Select value={reviewStateFilter} onValueChange={(value) => setReviewStateFilter(value as typeof reviewStateFilter)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">{tt('common.all', 'All')}</SelectItem>
+                          <SelectItem value="exception">{reviewStateLabel('exception')}</SelectItem>
+                          <SelectItem value="overdue">{reviewStateLabel('overdue')}</SelectItem>
+                          <SelectItem value="attention">{reviewStateLabel('attention')}</SelectItem>
+                          <SelectItem value="open">{reviewStateLabel('open')}</SelectItem>
+                          <SelectItem value="resolved">{reviewStateLabel('resolved')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <Label>{tt('filters.from', 'From')}</Label>
+                      <Input type="date" value={reviewFromDate} onChange={(event) => setReviewFromDate(event.target.value)} />
+                    </div>
+                    <div>
+                      <Label>{tt('filters.to', 'To')}</Label>
+                      <Input type="date" value={reviewToDate} onChange={(event) => setReviewToDate(event.target.value)} />
+                    </div>
+                    <div className="xl:col-span-2 flex flex-wrap items-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setReviewSearch('')
+                          setReviewPartyFilter('ALL')
+                          setReviewCurrencyFilter('ALL')
+                          setReviewDueFilter('all')
+                          setReviewStateFilter('all')
+                          setReviewFromDate('')
+                          setReviewToDate('')
+                        }}
+                      >
+                        {tt('common.clear', 'Clear')}
+                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone('exception')}`}>{reviewStateLabel('exception')}: {reviewStateCounts.exception}</span>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone('overdue')}`}>{reviewStateLabel('overdue')}: {reviewStateCounts.overdue}</span>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone('attention')}`}>{reviewStateLabel('attention')}: {reviewStateCounts.attention}</span>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone('resolved')}`}>{reviewStateLabel('resolved')}: {reviewStateCounts.resolved}</span>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+
+          {reconciliationViewsUnavailable ? (
+            <Card className="border-amber-200 bg-amber-50/80 text-amber-900 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              <CardContent className="pt-6 text-sm">
+                {tt('financeDocs.reconciliation.viewsUnavailable', 'The reconciliation review views are not available yet. Apply the Phase 3A reconciliation migration and refresh this page.')}
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader>
+                  <CardTitle>{tt('financeDocs.reconciliation.exceptionQueue', 'Exception queue')}</CardTitle>
+                  <CardDescription>{tt('financeDocs.reconciliation.exceptionQueueHelp', 'Flag records that need controller attention because the bridge, anchor chain, or issue/post readiness is inconsistent with finance expectations.')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? (
+                    <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+                  ) : filteredReviewExceptions.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{tt('financeDocs.reconciliation.exceptionQueueEmpty', 'No reconciliation exceptions match the current review filters.')}</p>
+                  ) : (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {filteredReviewExceptions.map((row) => (
+                        <button
+                          key={`${row.anchor_id}:${row.exception_code}`}
+                          type="button"
+                          onClick={() => viewReconciliationAnchor(row.anchor_kind, row.anchor_id)}
+                          className="rounded-2xl border border-border/70 bg-background/95 p-4 text-left shadow-[0_18px_48px_-34px_rgba(15,23,42,0.45)] transition-transform duration-200 hover:-translate-y-0.5 hover:border-primary/30"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="font-semibold tracking-tight">{row.anchor_reference}</div>
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exceptionSeverityTone(row.severity)}`}>
+                              {row.severity === 'critical' ? tt('financeDocs.reconciliation.severityCritical', 'Critical') : tt('financeDocs.reconciliation.severityWarning', 'Warning')}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            {row.counterparty_name || tt('common.none', 'None')}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                            <span className="inline-flex rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-muted-foreground">
+                              {exceptionGroupLabel(row.exception_group)}
+                            </span>
+                            <span className="inline-flex rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-muted-foreground">
+                              {row.ledger_side}
+                            </span>
+                          </div>
+                          <div className="mt-3 text-sm font-medium">{exceptionLabel(row.exception_code)}</div>
+                          <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                            <div>{tt('table.date', 'Date')}: {row.document_date || tt('common.dash', '-')}</div>
+                            <div>{tt('orders.dueDate', 'Due Date')}: {row.due_date || tt('common.dash', '-')}</div>
+                            <div>{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}: <span className="font-mono tabular-nums">{money(n(row.current_legal_total_base))}</span></div>
+                            <div>{tt('settlements.outstandingAmount', 'Outstanding')}: <span className="font-mono tabular-nums">{money(n(row.outstanding_base))}</span></div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader>
+                  <CardTitle>{tt('financeDocs.reconciliation.registerTitle', 'Reconciliation register')}</CardTitle>
+                  <CardDescription>{tt('financeDocs.reconciliation.registerHelp', 'Scan every active finance anchor with original value, net adjustments, current legal amount, settlement, outstanding balance, due logic, and controller review state in one register.')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-2xl border border-border/70 bg-muted/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+                    <div className="grid gap-3 xl:grid-cols-6">
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</div>
+                        <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.original)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
+                        <div className={`mt-2 font-mono text-lg font-semibold tabular-nums ${reviewTotals.netAdjustments < 0 ? 'text-rose-700 dark:text-rose-300' : reviewTotals.netAdjustments > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}>{money(reviewTotals.netAdjustments)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</div>
+                        <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.currentLegal)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</div>
+                        <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.settled)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</div>
+                        <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.outstanding)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('financeDocs.reconciliation.needsReview', 'Needs review')}</div>
+                        <div className="mt-2 text-lg font-semibold tracking-tight">{reviewTotals.reviewCount}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{tt('financeDocs.reconciliation.overSettled', 'Over-settled total')}: <span className="font-mono tabular-nums">{money(reviewTotals.overSettled)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {loading ? (
+                    <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+                  ) : filteredReviewRows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{tt('financeDocs.reconciliation.registerEmpty', 'No reconciliation rows match the current review filters.')}</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/95 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.48)]">
+                      <table className="w-full min-w-[1640px] text-sm">
+                        <thead className="bg-muted/30">
+                          <tr className="border-b border-border/60 text-left">
+                            <th className="px-4 py-3">{tt('table.ref', 'Reference')}</th>
+                            <th className="px-4 py-3">{tt('settlements.counterparty', 'Counterparty')}</th>
+                            <th className="px-4 py-3">{tt('table.date', 'Date')}</th>
+                            <th className="px-4 py-3">{tt('orders.dueDate', 'Due Date')}</th>
+                            <th className="px-4 py-3 text-right">{tt('settlements.originalAmount', 'Original')}</th>
+                            <th className="px-4 py-3 text-right">{tt('financeDocs.reconciliation.netAdjustment', 'Net adjustments')}</th>
+                            <th className="px-4 py-3 text-right">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</th>
+                            <th className="px-4 py-3 text-right">{tt('settlements.settledAmount', 'Settled')}</th>
+                            <th className="px-4 py-3 text-right">{tt('settlements.outstandingAmount', 'Outstanding')}</th>
+                            <th className="px-4 py-3">{tt('settlements.dueState', 'Due state')}</th>
+                            <th className="px-4 py-3">{tt('settlements.aging', 'Aging')}</th>
+                            <th className="px-4 py-3">{tt('financeDocs.reconciliation.resolutionContext', 'Resolution context')}</th>
+                            <th className="px-4 py-3">{tt('financeDocs.reconciliation.reviewState', 'Review state')}</th>
+                            <th className="px-4 py-3 text-right">{tt('orders.actions', 'Actions')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredReviewRows.map((row) => (
+                            <tr key={`${row.ledger_side}:${row.anchor_id}`} className="border-b border-border/50 align-top transition-colors duration-200 hover:bg-muted/20">
+                              <td className="px-4 py-4">
+                                <div className="font-medium">{row.anchor_reference}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {row.operational_reference
+                                    ? tt('financeDocs.reconciliation.anchorBridge', 'Operational {operational} -> Finance {anchor}', {
+                                      operational: row.operational_reference,
+                                      anchor: row.anchor_reference,
+                                    })
+                                    : tt('financeDocs.reconciliation.anchorOnly', 'Finance anchor only')}
+                                </div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="font-medium">{row.counterparty_name || tt('common.none', 'None')}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{row.ledger_side}</div>
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap">{row.document_date || tt('common.dash', '-')}</td>
+                              <td className="px-4 py-4 whitespace-nowrap">{row.due_date || tt('common.dash', '-')}</td>
+                              <td className="px-4 py-4 text-right font-mono tabular-nums">{money(n(row.original_total_base))}</td>
+                              <td className={`px-4 py-4 text-right font-mono tabular-nums ${n(row.net_adjustment_base) < 0 ? 'text-rose-700 dark:text-rose-300' : n(row.net_adjustment_base) > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}>{money(n(row.net_adjustment_base))}</td>
+                              <td className="px-4 py-4 text-right font-mono tabular-nums font-semibold">{money(n(row.current_legal_total_base))}</td>
+                              <td className="px-4 py-4 text-right font-mono tabular-nums">{money(n(row.settled_base))}</td>
+                              <td className="px-4 py-4 text-right">
+                                <div className="font-mono tabular-nums font-semibold">{money(n(row.outstanding_base))}</div>
+                                {n(row.over_settled_base) > 0.005 ? (
+                                  <div className="mt-1 text-xs text-rose-700 dark:text-rose-300">
+                                    {tt('financeDocs.reconciliation.overSettledShort', 'Over-settled')}: <span className="font-mono tabular-nums">{money(n(row.over_settled_base))}</span>
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="font-medium">{duePositionLabel(row.due_position)}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {row.days_past_due > 0
+                                    ? tt('financeDocs.reconciliation.daysPastDue', '{count} days past due', { count: row.days_past_due })
+                                    : row.days_until_due != null
+                                      ? tt('financeDocs.reconciliation.daysUntilDue', '{count} days until due', { count: row.days_until_due })
+                                      : tt('common.dash', '-')}
+                                </div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="font-medium">{agingBucketLabel(row.aging_bucket)}</div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="font-medium">{String(row.resolution_status || row.settlement_status || tt('common.dash', '-')).replaceAll('_', ' ')}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{String(row.adjustment_status || row.credit_status || tt('common.dash', '-')).replaceAll('_', ' ')}</div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone(row.review_state)}`}>
+                                    {reviewStateLabel(row.review_state)}
+                                  </span>
+                                  {row.exception_count > 0 ? (
+                                    <span className="inline-flex rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                                      {tt('financeDocs.reconciliation.exceptionCount', '{count} exceptions', { count: row.exception_count })}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 text-right">
+                                <Button size="sm" variant="outline" onClick={() => viewReconciliationAnchor(row.anchor_kind, row.anchor_id)}>
+                                  {tt('financeDocs.viewDocument', 'View')}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!activeRow} onOpenChange={(open) => { if (!open) setActiveRow(null) }}>
         <DialogContent className="max-w-5xl">

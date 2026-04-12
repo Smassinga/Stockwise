@@ -34,6 +34,9 @@ Finance-document foundation already in place:
 - approved draft invoices with exempt lines may now persist `vat_exemption_reason_text` through the narrow issue-preparation path so finance users can resolve that issue-time blocker without reopening the document to editable draft
 - purchase-order list and detail surfaces now share a single vendor-bill action model: open the existing bill when one already exists, raise a new draft when the PO is approved and billable, or explain exactly why billing is blocked
 - purchase-order billability is now independent from receipt completion: receiving stock may update the operational receipt status, but it must not remove the AP billing path unless a Vendor Bill already exists or the PO has no positive purchased value
+- a Phase 3A reconciliation read model is now live through `v_finance_reconciliation_review` and `v_finance_reconciliation_exceptions`
+- Settlements now has a controller-grade reconciliation workspace with AR/AP review registers, legal-value bridge totals, aging, due position, and visible exception queues
+- Sales Invoice and Vendor Bill detail pages now surface reconciliation review context directly from the same DB-backed model used by the controller register
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -79,9 +82,33 @@ These rules must not be broken by future work:
 | Phase | Purpose | Why It Matters | Current Status | Depends On |
 |---|---|---|---|---|
 | Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | Completed | Current finance-document lifecycle baseline |
-| Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | In progress | Phase 1 controls for sensitive actions |
-| Phase 3 | Reconciliation and month-close readiness | Finance needs current-legal-value bridges, exception handling, and close-ready review surfaces | In progress | Phase 2 traceability and stable state views |
+| Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | Completed | Phase 1 controls for sensitive actions |
+| Phase 3 | Reconciliation and month-close readiness | Finance needs current-legal-value bridges, exception handling, and close-ready review surfaces | Active: Phase 3A implemented, 3B/3C planned | Phase 2 traceability and stable state views |
 | Phase 4 | Automated finance regression suite | The platform is now too finance-critical to rely on manual smoke tests alone | Not started | Stable Phase 1-3 workflows and validations |
+
+### Phase 3 programme structure
+
+- Phase 3A. Reconciliation and month-close readiness
+  - implemented in this step
+  - scope now includes AR/AP bridge registers, aging based on legal outstanding, exception queues, and detail-page reconciliation context
+- Phase 3B. Operational UX clarity on confusing workflow/master-data pages
+  - planned next
+  - target surfaces: Items and Assembly
+  - purpose: reduce master-data and production-workflow confusion before deeper planning logic is added
+- Phase 3C. Assembly planning enhancement with time-oriented production logic
+  - planned after or alongside Phase 3B once the Assembly workflow is clearer
+  - purpose: add practical time-based planning without turning Stockwise into a full ERP scheduler
+
+### Production hardening block
+
+Completed before Phase 3 activation:
+
+- bank-linked settlement posting repaired
+- landed-cost workflow repaired
+- PO to Vendor Bill progression repaired, including receipt-independent AP billability
+- SO to Sales Invoice draft creation repaired
+- Sales Invoice issue readiness and controlled issue preparation implemented
+- Tauri desktop and Android packaging hardened and documented
 
 ## E. Cross-Phase Tracked Items
 
