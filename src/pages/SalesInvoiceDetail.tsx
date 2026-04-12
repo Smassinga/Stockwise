@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Download, Printer, ReceiptText, Share2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download, Printer, ReceiptText, Share2 } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
@@ -44,6 +44,7 @@ import { settlementLabelKey } from '../lib/orderState'
 import {
   createAndIssueSalesCreditNoteForInvoice,
   createAndIssueSalesDebitNoteForInvoice,
+  getSalesInvoiceIssueReadiness,
   getSalesInvoiceDraftPreview,
   getSalesInvoiceDocument,
   approveSalesInvoice,
@@ -64,9 +65,11 @@ import {
   type SalesDebitNoteLineRow,
   type SalesDebitNoteRow,
   type SalesInvoiceDraftPreview,
+  type SalesInvoiceIssueReadiness,
   type SalesInvoiceDocumentLineRow,
   type SalesInvoiceDocumentRow,
   prepareSalesInvoiceDraftForIssue,
+  prepareSalesInvoiceForIssue,
   requestSalesInvoiceApproval,
   returnSalesInvoiceToDraft,
   updateSalesInvoiceDraftDates,
@@ -176,6 +179,7 @@ export default function SalesInvoiceDetailPage() {
   const [debitNotes, setDebitNotes] = useState<SalesDebitNoteRow[]>([])
   const [debitNoteLines, setDebitNoteLines] = useState<SalesDebitNoteLineRow[]>([])
   const [draftPreview, setDraftPreview] = useState<SalesInvoiceDraftPreview | null>(null)
+  const [issueReadiness, setIssueReadiness] = useState<SalesInvoiceIssueReadiness | null>(null)
   const [invoiceDateDraft, setInvoiceDateDraft] = useState('')
   const [dueDateDraft, setDueDateDraft] = useState('')
   const [vatExemptionReasonDraft, setVatExemptionReasonDraft] = useState('')
@@ -228,6 +232,7 @@ export default function SalesInvoiceDetailPage() {
       setDebitNotes([])
       setDebitNoteLines([])
       setDraftPreview(null)
+      setIssueReadiness(null)
       return
     }
 
@@ -252,6 +257,7 @@ export default function SalesInvoiceDetailPage() {
       let nextDebitNoteLines: SalesDebitNoteLineRow[] = []
       let nextActorDirectory: FinanceActorDirectory = {}
       let nextSettlementEvents: FinanceSettlementAuditEvent[] = []
+      let nextIssueReadiness: SalesInvoiceIssueReadiness | null = null
 
       if (nextInvoice?.document_workflow_status === 'draft') {
         try {
@@ -260,6 +266,15 @@ export default function SalesInvoiceDetailPage() {
           reportRuntimeError('loadDraftPreview', error, {
             salesOrderId: nextInvoice.sales_order_id,
             customerId: nextInvoice.customer_id,
+          })
+        }
+
+        try {
+          nextIssueReadiness = await getSalesInvoiceIssueReadiness(nextInvoice.id)
+        } catch (error) {
+          reportRuntimeError('loadIssueReadiness', error, {
+            approvalStatus: nextInvoice.approval_status,
+            documentWorkflowStatus: nextInvoice.document_workflow_status,
           })
         }
       }
@@ -332,6 +347,7 @@ export default function SalesInvoiceDetailPage() {
       setDebitNotes(nextDebitNotes)
       setDebitNoteLines(nextDebitNoteLines)
       setDraftPreview(nextDraftPreview)
+      setIssueReadiness(nextIssueReadiness)
       setInvoiceDateDraft(nextInvoice?.invoice_date || '')
       setDueDateDraft(nextInvoice?.due_date || '')
       setVatExemptionReasonDraft(nextInvoice?.vat_exemption_reason_text || '')
@@ -346,6 +362,7 @@ export default function SalesInvoiceDetailPage() {
       setDebitNotes([])
       setDebitNoteLines([])
       setDraftPreview(null)
+      setIssueReadiness(null)
     } finally {
       setLoading(false)
     }
@@ -358,6 +375,7 @@ export default function SalesInvoiceDetailPage() {
   const isDraft = invoice?.document_workflow_status === 'draft'
   const isIssued = invoice?.document_workflow_status === 'issued'
   const approvalStatus = invoice?.approval_status || 'draft'
+  const canSeeIssueApprovedDraft = Boolean(invoice && isDraft && approvalStatus === 'approved' && financeCan.issueSalesInvoice(myRole))
   const mznPreview = useMemo(() => {
     if (!invoice) return null
     const fxToBase = Number(invoice.fx_to_base || 0) > 0 ? Number(invoice.fx_to_base) : 1
@@ -444,8 +462,70 @@ export default function SalesInvoiceDetailPage() {
   const canSubmitDraftForApproval = Boolean(invoice && isDraft && approvalStatus === 'draft' && financeCan.submitForApproval(myRole))
   const canApproveDraft = Boolean(invoice && isDraft && approvalStatus === 'pending_approval' && financeCan.approve(myRole))
   const canReturnDraftToEdit = Boolean(invoice && isDraft && approvalStatus !== 'draft' && financeCan.approve(myRole))
-  const canIssueApprovedDraft = Boolean(invoice && isDraft && approvalStatus === 'approved' && financeCan.issueSalesInvoice(myRole))
   const canIssueSalesAdjustments = Boolean(invoice && isIssued && financeCan.issueSalesAdjustment(myRole))
+  const normalizedVatExemptionReasonDraft = vatExemptionReasonDraft.trim()
+  function describeIssueBlocker(code: string) {
+    switch (code) {
+      case 'sales_invoice_issue_requires_approved_status':
+        return tt('financeDocs.mz.issueBlockers.requiresApproved', 'Approve the draft before issuing the invoice.')
+      case 'sales_invoice_issue_requires_invoice_date':
+        return tt('financeDocs.mz.issueBlockers.invoiceDate', 'Set the invoice date before issue.')
+      case 'sales_invoice_issue_requires_due_date':
+        return tt('financeDocs.mz.issueBlockers.dueDate', 'Set the due date before issue.')
+      case 'sales_invoice_issue_invalid_due_date':
+        return tt('financeDocs.mz.issueBlockers.invalidDueDate', 'The due date cannot be earlier than the invoice date.')
+      case 'sales_invoice_issue_invalid_fx':
+        return tt('financeDocs.mz.issueBlockers.invalidFx', 'Save a positive exchange rate before issue.')
+      case 'sales_invoice_issue_missing_fiscal_identity':
+        return tt('financeDocs.mz.issueBlockers.fiscalIdentity', 'The fiscal reference is incomplete for this invoice year. Review the active Mozambique invoice series.')
+      case 'sales_invoice_issue_series_mismatch':
+      case 'finance_document_fiscal_series_settings_mismatch':
+        return tt('financeDocs.mz.issueBlockers.seriesMismatch', 'The active Mozambique invoice series does not match this draft. Review the fiscal series settings.')
+      case 'finance_document_fiscal_series_missing':
+        return tt('financeDocs.mz.issueBlockers.seriesMissing', 'No active Mozambique invoice series exists for this fiscal year.')
+      case 'finance_document_fiscal_series_ambiguous':
+        return tt('financeDocs.mz.issueBlockers.seriesAmbiguous', 'More than one active Mozambique invoice series matches this fiscal year.')
+      case 'company_fiscal_settings_missing':
+        return tt('financeDocs.mz.issueBlockers.companyFiscalSettings', 'Mozambique fiscal settings are missing for this company.')
+      case 'sales_invoice_issue_requires_seller_snapshot':
+        return tt('financeDocs.mz.issueBlockers.sellerSnapshot', 'Complete the company legal name, NUIT, and billing address before issuing this invoice.')
+      case 'sales_invoice_issue_requires_buyer_snapshot':
+        return tt('financeDocs.mz.issueBlockers.buyerSnapshot', 'Complete the customer legal name, NUIT, and billing address before issuing this invoice.')
+      case 'sales_invoice_issue_requires_document_language':
+        return tt('financeDocs.mz.issueBlockers.documentLanguage', 'Set the document language in the Mozambique fiscal settings before issue.')
+      case 'sales_invoice_issue_requires_computer_phrase':
+        return tt('financeDocs.mz.issueBlockers.computerPhrase', 'Set the “PROCESSADO POR COMPUTADOR” wording in the Mozambique fiscal settings before issue.')
+      case 'sales_invoice_issue_requires_lines':
+        return tt('financeDocs.mz.issueBlockers.lines', 'Add at least one invoice line before issue.')
+      case 'sales_invoice_issue_requires_vat_exemption_reason':
+        return tt('financeDocs.mz.issueBlockers.vatExemptionReason', 'Add the VAT exemption reason before issuing an invoice with exempt lines.')
+      case 'sales_invoice_issue_invalid_totals':
+        return tt('financeDocs.mz.issueBlockers.invalidTotals', 'The invoice totals are invalid. Save the draft again before issue.')
+      case 'sales_invoice_issue_not_draft':
+        return tt('financeDocs.mz.issueBlockers.notDraft', 'Only draft sales invoices can be issued.')
+      default:
+        return tt('financeDocs.mz.issueBlockers.generic', 'This invoice still has unresolved issue-time requirements.')
+    }
+  }
+  const effectiveIssueBlockers = useMemo(() => {
+    if (!issueReadiness?.blockers?.length) return [] as string[]
+
+    return issueReadiness.blockers.filter((code) => {
+      if (code !== 'sales_invoice_issue_requires_vat_exemption_reason') return true
+      return normalizedVatExemptionReasonDraft.length < 1
+    })
+  }, [issueReadiness, normalizedVatExemptionReasonDraft])
+  const issueReadinessReady = Boolean(
+    issueReadiness &&
+      issueReadiness.document_workflow_status === 'draft' &&
+      issueReadiness.approval_status === 'approved' &&
+      effectiveIssueBlockers.length === 0,
+  )
+  const canIssueApprovedDraft = Boolean(canSeeIssueApprovedDraft && issueReadinessReady)
+  const issueReadinessMessages = useMemo(
+    () => effectiveIssueBlockers.map((code) => describeIssueBlocker(code)),
+    [effectiveIssueBlockers, tt],
+  )
   const creditReasonOptions = useMemo(() => getAdjustmentReasonOptions('sales_credit', lang), [lang])
   const debitReasonOptions = useMemo(() => getAdjustmentReasonOptions('sales_debit', lang), [lang])
   const issuedCreditNoteIds = useMemo(
@@ -1105,20 +1185,72 @@ export default function SalesInvoiceDetailPage() {
   }
 
   async function handleIssueInvoice() {
-    if (!companyId || !invoice || !isDraft || !canIssueApprovedDraft) return
+    if (!companyId || !invoice || !isDraft || !canSeeIssueApprovedDraft) return
     if (invoiceHasExemptLines && !vatExemptionReasonDraft.trim()) {
       toast.error(tt('financeDocs.mz.vatExemptionReasonRequired', 'A VAT exemption reason is required for exempt lines.'))
       return
     }
     try {
       setIssuing(true)
-      await updateSalesInvoiceDraftDates(
-        companyId,
-        invoice.id,
-        invoiceDateDraft,
-        dueDateDraft,
-        vatExemptionReasonDraft,
-      )
+      if (canEditDraft) {
+        await updateSalesInvoiceDraftDates(
+          companyId,
+          invoice.id,
+          invoiceDateDraft,
+          dueDateDraft,
+          vatExemptionReasonDraft,
+        )
+      }
+      await prepareSalesInvoiceForIssue(invoice.id, vatExemptionReasonDraft)
+      const nextIssueReadiness = await getSalesInvoiceIssueReadiness(invoice.id)
+      setIssueReadiness(nextIssueReadiness)
+      if (!nextIssueReadiness.can_issue) {
+        const readinessMessages = nextIssueReadiness.blockers.map((code) => describeIssueBlocker(code))
+        /*
+          switch (code) {
+            case 'sales_invoice_issue_requires_approved_status':
+              return tt('financeDocs.mz.issueBlockers.requiresApproved', 'Approve the draft before issuing the invoice.')
+            case 'sales_invoice_issue_requires_invoice_date':
+              return tt('financeDocs.mz.issueBlockers.invoiceDate', 'Set the invoice date before issue.')
+            case 'sales_invoice_issue_requires_due_date':
+              return tt('financeDocs.mz.issueBlockers.dueDate', 'Set the due date before issue.')
+            case 'sales_invoice_issue_invalid_due_date':
+              return tt('financeDocs.mz.issueBlockers.invalidDueDate', 'The due date cannot be earlier than the invoice date.')
+            case 'sales_invoice_issue_invalid_fx':
+              return tt('financeDocs.mz.issueBlockers.invalidFx', 'Save a positive exchange rate before issue.')
+            case 'sales_invoice_issue_missing_fiscal_identity':
+              return tt('financeDocs.mz.issueBlockers.fiscalIdentity', 'The fiscal reference is incomplete for this invoice year. Review the active Mozambique invoice series.')
+            case 'sales_invoice_issue_series_mismatch':
+            case 'finance_document_fiscal_series_settings_mismatch':
+              return tt('financeDocs.mz.issueBlockers.seriesMismatch', 'The active Mozambique invoice series does not match this draft. Review the fiscal series settings.')
+            case 'finance_document_fiscal_series_missing':
+              return tt('financeDocs.mz.issueBlockers.seriesMissing', 'No active Mozambique invoice series exists for this fiscal year.')
+            case 'finance_document_fiscal_series_ambiguous':
+              return tt('financeDocs.mz.issueBlockers.seriesAmbiguous', 'More than one active Mozambique invoice series matches this fiscal year.')
+            case 'company_fiscal_settings_missing':
+              return tt('financeDocs.mz.issueBlockers.companyFiscalSettings', 'Mozambique fiscal settings are missing for this company.')
+            case 'sales_invoice_issue_requires_seller_snapshot':
+              return tt('financeDocs.mz.issueBlockers.sellerSnapshot', 'Complete the company legal name, NUIT, and billing address before issuing this invoice.')
+            case 'sales_invoice_issue_requires_buyer_snapshot':
+              return tt('financeDocs.mz.issueBlockers.buyerSnapshot', 'Complete the customer legal name, NUIT, and billing address before issuing this invoice.')
+            case 'sales_invoice_issue_requires_document_language':
+              return tt('financeDocs.mz.issueBlockers.documentLanguage', 'Set the document language in the Mozambique fiscal settings before issue.')
+            case 'sales_invoice_issue_requires_computer_phrase':
+              return tt('financeDocs.mz.issueBlockers.computerPhrase', 'Set the “PROCESSADO POR COMPUTADOR” wording in the Mozambique fiscal settings before issue.')
+            case 'sales_invoice_issue_requires_lines':
+              return tt('financeDocs.mz.issueBlockers.lines', 'Add at least one invoice line before issue.')
+            case 'sales_invoice_issue_requires_vat_exemption_reason':
+              return tt('financeDocs.mz.issueBlockers.vatExemptionReason', 'Add the VAT exemption reason before issuing an invoice with exempt lines.')
+            case 'sales_invoice_issue_invalid_totals':
+              return tt('financeDocs.mz.issueBlockers.invalidTotals', 'The invoice totals are invalid. Save the draft again before issue.')
+            case 'sales_invoice_issue_not_draft':
+              return tt('financeDocs.mz.issueBlockers.notDraft', 'Only draft sales invoices can be issued.')
+            default:
+              return tt('financeDocs.mz.issueBlockers.generic', 'This invoice still has unresolved issue-time requirements.')
+          }
+        */
+        throw new Error(readinessMessages.join(' ') || tt('financeDocs.mz.issueBlocked', 'This invoice is not ready to be issued yet.'))
+      }
       await issueSalesInvoice(invoice.id)
       toast.success(tt('financeDocs.mz.issueSuccess', 'Sales invoice issued'))
       await loadWorkspace()
@@ -1518,7 +1650,7 @@ export default function SalesInvoiceDetailPage() {
                         onChange={(event) => setVatExemptionReasonDraft(event.target.value)}
                         placeholder={tt('financeDocs.mz.vatExemptionReasonPlaceholder', 'State the Mozambique VAT exemption reason when exempt lines are present')}
                         rows={3}
-                        disabled={!canEditDraft}
+                        disabled={!(canEditDraft || canSeeIssueApprovedDraft)}
                       />
                       <div className="text-xs text-muted-foreground">
                         {tt('financeDocs.mz.vatExemptionReasonHelp', 'Required only when the invoice contains exempt VAT lines. The stored wording is frozen on issue and used on the final document output.')}
@@ -1550,17 +1682,52 @@ export default function SalesInvoiceDetailPage() {
                         {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.approval.returnToDraft', 'Return to draft')}
                       </Button>
                     ) : null}
-                    {canIssueApprovedDraft ? (
-                      <Button onClick={() => void handleIssueInvoice()} disabled={savingDraft || issuing}>
+                    {canSeeIssueApprovedDraft ? (
+                      <Button onClick={() => void handleIssueInvoice()} disabled={savingDraft || issuing || !canIssueApprovedDraft}>
                         <ReceiptText className="mr-2 h-4 w-4" />
                         {issuing ? tt('financeDocs.mz.issuing', 'Issuing...') : tt('financeDocs.mz.issueInvoice', 'Issue invoice')}
                       </Button>
                     ) : null}
-                    {!canEditDraft && !canSubmitDraftForApproval && !canApproveDraft && !canReturnDraftToEdit && !canIssueApprovedDraft ? (
+                    {!canEditDraft && !canSubmitDraftForApproval && !canApproveDraft && !canReturnDraftToEdit && !canSeeIssueApprovedDraft ? (
                       <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                         {tt('financeDocs.permissions.noDraftActions', 'Your role can review this draft but cannot change its approval or issue state.')}
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {isDraft && issueReadiness ? (
+                  <div className="md:col-span-2">
+                    <div className={`rounded-2xl border px-4 py-4 shadow-sm transition-shadow ${issueReadinessReady ? 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20' : 'border-amber-200/80 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/20'}`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 rounded-full p-2 ${issueReadinessReady ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}`}>
+                          <AlertTriangle className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold">{tt('financeDocs.mz.issueReadiness', 'Issue readiness')}</div>
+                            <Badge variant={issueReadinessReady ? 'default' : 'secondary'}>
+                              {issueReadinessReady
+                                ? tt('financeDocs.mz.issueReady', 'Ready to issue')
+                                : tt('financeDocs.mz.issueBlockedShort', 'Issue blocked')}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {issueReadinessReady
+                              ? tt('financeDocs.mz.issueReadyHelp', 'The draft satisfies the current Mozambique issue requirements for workflow state, legal snapshots, and fiscal settings.')
+                              : tt('financeDocs.mz.issueBlockedHelp', 'Resolve the remaining issue-time requirements below before issuing the legal invoice.')}
+                          </div>
+                          {!issueReadinessReady ? (
+                            <div className="space-y-2">
+                              {issueReadinessMessages.map((message, index) => (
+                                <div key={`${message}:${index}`} className="rounded-xl border border-amber-200/70 bg-background/70 px-3 py-2 text-sm text-foreground/90">
+                                  {message}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </CardContent>

@@ -29,6 +29,9 @@ Finance-document foundation already in place:
 - finance documents now surface actor-aware activity journals, linked document-chain views, settlement events, and structured adjustment reasons on the core AR/AP detail pages
 - order detail screens now expose the active finance anchor and linked finance-document bridge from `SO -> SI` and `PO -> VB`
 - native sales-invoice draft creation now bootstraps the minimum Mozambique fiscal settings and current-year fiscal series when they are missing, while issue-time legal tax identity validation remains strict
+- Mozambique sales-invoice issue now runs through an explicit readiness and preparation path before the issue RPC is called; this keeps issue-time validation strict while surfacing the real blocker to the operator
+- missing seller legal snapshots remain a hard issue-time blocker when company master tax identity is incomplete; draft preparation may backfill from existing company/order/customer data, but it must not invent a missing company NUIT
+- approved draft invoices with exempt lines may now persist `vat_exemption_reason_text` through the narrow issue-preparation path so finance users can resolve that issue-time blocker without reopening the document to editable draft
 - purchase-order list and detail surfaces now share a single vendor-bill action model: open the existing bill when one already exists, raise a new draft when the PO is approved and billable, or explain exactly why billing is blocked
 - purchase-order billability is now independent from receipt completion: receiving stock may update the operational receipt status, but it must not remove the AP billing path unless a Vendor Bill already exists or the PO has no positive purchased value
 

@@ -111,6 +111,13 @@ export type SalesInvoiceDraftPreview = {
   document_language_code: string | null
 }
 
+export type SalesInvoiceIssueReadiness = {
+  can_issue: boolean
+  blockers: string[]
+  document_workflow_status: SalesInvoiceDocumentRow['document_workflow_status']
+  approval_status: SalesInvoiceDocumentRow['approval_status']
+}
+
 export type SalesInvoiceDocumentLineRow = {
   id: string
   company_id: string
@@ -726,6 +733,32 @@ function humanizeRuntimeError(error: any, fallback: string, stage: string) {
     friendlyMessage = 'The company legal tax identity is incomplete. Add the company NUIT and seller legal details before issuing the invoice.'
   } else if (matches('sales_invoice_issue_missing_buyer_identity')) {
     friendlyMessage = 'The customer legal identity is incomplete. Capture the buyer name and fiscal details before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_seller_snapshot')) {
+    friendlyMessage = 'The seller legal snapshot is incomplete. Add the company legal name, NUIT, and billing address before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_buyer_snapshot')) {
+    friendlyMessage = 'The customer legal snapshot is incomplete. Capture the buyer legal name, NUIT, and billing address before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_document_language')) {
+    friendlyMessage = 'The document language is missing. Review the company fiscal document language before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_computer_phrase')) {
+    friendlyMessage = 'The Mozambique computer-processed wording is missing. Complete the company fiscal document defaults before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_invoice_date')) {
+    friendlyMessage = 'Set the invoice date before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_due_date')) {
+    friendlyMessage = 'Set the due date before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_invalid_due_date')) {
+    friendlyMessage = 'The due date cannot be earlier than the invoice date.'
+  } else if (matches('sales_invoice_issue_invalid_fx')) {
+    friendlyMessage = 'The invoice exchange rate is invalid. Save a positive FX rate before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_lines')) {
+    friendlyMessage = 'Add at least one invoice line before issuing the invoice.'
+  } else if (matches('sales_invoice_issue_requires_vat_exemption_reason')) {
+    friendlyMessage = 'Add the VAT exemption reason before issuing an invoice with exempt lines.'
+  } else if (matches('sales_invoice_issue_requires_approved_status')) {
+    friendlyMessage = 'The invoice must be approved before it can be issued.'
+  } else if (matches('sales_invoice_issue_not_draft')) {
+    friendlyMessage = 'Only draft sales invoices can be issued.'
+  } else if (matches('sales_invoice_issue_series_mismatch')) {
+    friendlyMessage = 'The active Mozambique invoice series does not match this draft. Review the company invoice-series setup before issuing.'
   }
 
   if (details && details !== message) parts.push(details)
@@ -1501,6 +1534,60 @@ export async function prepareSalesInvoiceDraftForIssue(companyId: string, invoic
     linePatchCount: linePatches.length,
   })
   return patchedInvoice
+}
+
+export async function getSalesInvoiceIssueReadiness(invoiceId: string) {
+  mzRuntimeDebug('salesInvoice.issueReadiness.start', { invoiceId })
+  const { data, error } = await supabase.rpc('sales_invoice_issue_readiness_mz', {
+    p_invoice_id: invoiceId,
+  })
+
+  if (error) {
+    mzRuntimeError('salesInvoice.issueReadiness.failed', error, {
+      invoiceId,
+      rpc: 'sales_invoice_issue_readiness_mz',
+    })
+    throw new Error(humanizeRuntimeError(error, 'Failed to inspect sales invoice issue readiness', 'rpc.sales_invoice_issue_readiness_mz'))
+  }
+
+  const blockers = Array.isArray((data as any)?.blockers)
+    ? (data as any).blockers.map((entry: unknown) => String(entry))
+    : []
+  const readiness = {
+    can_issue: Boolean((data as any)?.can_issue),
+    blockers,
+    document_workflow_status: String((data as any)?.document_workflow_status || 'draft') as SalesInvoiceDocumentRow['document_workflow_status'],
+    approval_status: String((data as any)?.approval_status || 'draft') as SalesInvoiceDocumentRow['approval_status'],
+  } satisfies SalesInvoiceIssueReadiness
+
+  mzRuntimeDebug('salesInvoice.issueReadiness.success', {
+    invoiceId,
+    canIssue: readiness.can_issue,
+    blockerCount: readiness.blockers.length,
+  })
+  return readiness
+}
+
+export async function prepareSalesInvoiceForIssue(invoiceId: string, vatExemptionReasonText?: string | null) {
+  mzRuntimeDebug('salesInvoice.issuePrepare.start', { invoiceId })
+  const { data, error } = await supabase.rpc('prepare_sales_invoice_for_issue_mz', {
+    p_invoice_id: invoiceId,
+    p_vat_exemption_reason_text: (() => {
+      const trimmed = String(vatExemptionReasonText || '').trim()
+      return trimmed.length ? trimmed : null
+    })(),
+  })
+
+  if (error) {
+    mzRuntimeError('salesInvoice.issuePrepare.failed', error, {
+      invoiceId,
+      rpc: 'prepare_sales_invoice_for_issue_mz',
+    })
+    throw new Error(humanizeRuntimeError(error, 'Failed to prepare the sales invoice for issue', 'rpc.prepare_sales_invoice_for_issue_mz'))
+  }
+
+  mzRuntimeDebug('salesInvoice.issuePrepare.success', { invoiceId })
+  return data as SalesInvoiceDocumentRow
 }
 
 export async function issueSalesInvoice(invoiceId: string) {
