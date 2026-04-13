@@ -2,22 +2,46 @@ import { useEffect, useMemo, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/db'
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
+import { can, type CompanyRole } from '../lib/permissions'
+import { deriveItemProfileWarnings, profileFromRole, type ItemPrimaryRole } from '../lib/itemProfiles'
 
-type Item = { id: string; name: string; sku?: string | null; base_uom_id?: string | null }
+type Item = {
+  id: string
+  name: string
+  sku?: string | null
+  base_uom_id?: string | null
+  primary_role?: ItemPrimaryRole | null
+  track_inventory?: boolean | null
+  can_buy?: boolean | null
+  can_sell?: boolean | null
+  is_assembled?: boolean | null
+  has_active_bom?: boolean | null
+  used_as_component?: boolean | null
+  on_hand_qty?: number | null
+  available_qty?: number | null
+}
 type Uom  = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouse_id: string }
 
 type Bom = { id: string; product_id: string; name: string; version: string; is_active: boolean }
 type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; created_at: string | null }
+type StockLevel = {
+  item_id: string
+  warehouse_id: string | null
+  bin_id: string | null
+  qty: number | null
+  allocated_qty: number | null
+}
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || ''))
@@ -33,7 +57,10 @@ type OutputSplitsPayload = Array<{ warehouse_id: string; bin_id: string; qty: nu
 
 export default function BOMPage() {
   const { t } = useI18n()
-  const { companyId } = useOrg()
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
+  const { companyId, myRole } = useOrg()
+  const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const [loading, setLoading] = useState(true)
 
   // Masters
@@ -57,6 +84,7 @@ export default function BOMPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [binsFrom, setBinsFrom] = useState<Bin[]>([])
   const [binsTo, setBinsTo] = useState<Bin[]>([])
+  const [stockLevels, setStockLevels] = useState<StockLevel[]>([])
   const [warehouseFromId, setWarehouseFromId] = useState<string>('')  // UUID
   const [warehouseToId, setWarehouseToId] = useState<string>('')      // UUID
   const [binFromId, setBinFromId] = useState<string>('')              // TEXT
@@ -85,9 +113,12 @@ export default function BOMPage() {
   const [savingBOM, setSavingBOM] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [building, setBuilding] = useState(false)
+  const [profileFieldsSupported, setProfileFieldsSupported] = useState(false)
 
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
   const uomById  = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
+  const canManageBom = can.createMaster(role)
+  const canBuildAssembly = can.createMovement(role)
 
   // Initial load
   useEffect(() => {
@@ -104,14 +135,44 @@ export default function BOMPage() {
       try {
         setLoading(true)
 
-        // Items for this company (ensures names, no UUIDs shown)
-        const it = await supabase
-          .from('items')
-          .select('id,name,sku,base_uom_id')
-          .eq('company_id', companyId)
+        const itemViewRes = await supabase
+          .from('items_view')
+          .select('id,name,sku,baseUomId,primaryRole,trackInventory,canBuy,canSell,isAssembled,onHandQty,availableQty,hasActiveBom,usedAsComponent')
           .order('name', { ascending: true })
-        if (it.error) throw it.error
-        setItems((it.data || []) as Item[])
+
+        if (!itemViewRes.error) {
+          setProfileFieldsSupported(true)
+          setItems(((itemViewRes.data || []) as any[]).map((row) => ({
+            id: String(row.id),
+            name: String(row.name || ''),
+            sku: row.sku || null,
+            base_uom_id: row.baseUomId || null,
+            primary_role: row.primaryRole || 'general',
+            track_inventory: Boolean(row.trackInventory),
+            can_buy: Boolean(row.canBuy),
+            can_sell: Boolean(row.canSell),
+            is_assembled: Boolean(row.isAssembled),
+            has_active_bom: Boolean(row.hasActiveBom),
+            used_as_component: Boolean(row.usedAsComponent),
+            on_hand_qty: Number(row.onHandQty || 0),
+            available_qty: Number(row.availableQty || 0),
+          })))
+        } else {
+          const it = await supabase
+            .from('items')
+            .select('id,name,sku,base_uom_id')
+            .eq('company_id', companyId)
+            .order('name', { ascending: true })
+          if (it.error) throw it.error
+          setProfileFieldsSupported(false)
+          setItems(((it.data || []) as any[]).map((row) => ({
+            id: String(row.id),
+            name: String(row.name || ''),
+            sku: row.sku || null,
+            base_uom_id: row.base_uom_id || null,
+            ...profileFromRole('general'),
+          })))
+        }
 
         const [uRes, cRes] = await Promise.all([
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
@@ -148,7 +209,7 @@ export default function BOMPage() {
         }
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || 'Failed to load BOM')
+        toast.error(e?.message || tt('bom.toast.loadFailed', 'Failed to load the Assembly workspace'))
       } finally {
         setLoading(false)
       }
@@ -181,6 +242,26 @@ export default function BOMPage() {
       setBinsTo((data || []) as Bin[])
     })()
   }, [warehouseToId])
+
+  useEffect(() => {
+    (async () => {
+      if (!companyId || !warehouseFromId) {
+        setStockLevels([])
+        return
+      }
+      const { data, error } = await supabase
+        .from('stock_levels')
+        .select('item_id,warehouse_id,bin_id,qty,allocated_qty')
+        .eq('company_id', companyId)
+        .eq('warehouse_id', warehouseFromId)
+      if (error) {
+        console.error(error)
+        toast.error(error.message)
+        return
+      }
+      setStockLevels((data || []) as StockLevel[])
+    })()
+  }, [companyId, warehouseFromId])
 
   // Components for selected BOM
   useEffect(() => {
@@ -218,10 +299,16 @@ export default function BOMPage() {
   const familyLabel = (fam?: string) => {
     const key = String(fam || 'unspecified').toLowerCase()
     const map: Record<string, string> = {
-      mass: 'Mass', volume: 'Volume', length: 'Length', area: 'Area',
-      count: 'Count', time: 'Time', other: 'Other', unspecified: 'Unspecified',
+      mass: tt('items.family.mass', 'Mass'),
+      volume: tt('items.family.volume', 'Volume'),
+      length: tt('items.family.length', 'Length'),
+      area: tt('items.family.area', 'Area'),
+      count: tt('items.family.count', 'Count'),
+      time: tt('items.family.time', 'Time'),
+      other: tt('items.family.other', 'Other'),
+      unspecified: tt('items.family.unspecified', 'Unspecified'),
     }
-    return map[key] || (fam ? fam : 'Unspecified')
+    return map[key] || (fam ? fam : tt('items.family.unspecified', 'Unspecified'))
   }
   const groupedUoms = useMemo(() => {
     const groups = new Map<string, Uom[]>()
@@ -233,7 +320,7 @@ export default function BOMPage() {
     for (const arr of groups.values()) arr.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     const families = Array.from(groups.keys()).sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
     return { groups, families }
-  }, [uoms])
+  }, [uoms, t])
 
   async function ensureBinsFor(warehouseId: string) {
     if (!warehouseId) return
@@ -249,9 +336,9 @@ export default function BOMPage() {
   // Create BOM
   async function createBomForProduct() {
     if (!companyId) return
-    if (!newBomProductId) return toast.error('Select a finished product')
+    if (!newBomProductId) return toast.error(tt('bom.toast.selectProduct', 'Select a finished product'))
     const nameTrim = (newBomName || '').trim()
-    if (!nameTrim) return toast.error('Name is required (e.g., Cake v1)')
+    if (!nameTrim) return toast.error(tt('bom.toast.nameRequired', 'Recipe name is required (for example, Cake v1)'))
 
     try {
       const ins = await supabase
@@ -264,10 +351,10 @@ export default function BOMPage() {
       setBoms(prev => [...prev, inserted])
       setSelectedBomId(inserted.id)
       setNewBomProductId(''); setNewBomName('')
-      toast.success('BOM created')
+      toast.success(tt('bom.toast.bomCreated', 'Recipe created'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to create BOM')
+      toast.error(e?.message || tt('bom.toast.bomCreateFailed', 'Failed to create recipe'))
     }
   }
 
@@ -284,10 +371,10 @@ export default function BOMPage() {
         .single()
       if (error) throw error
       setBoms(prev => prev.map(b => b.id === selectedBom.id ? { ...b, name: data!.name, version: String(data!.version) } : b))
-      toast.success('BOM updated')
+      toast.success(tt('bom.toast.bomUpdated', 'Recipe updated'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to update BOM')
+      toast.error(e?.message || tt('bom.toast.bomUpdateFailed', 'Failed to update recipe'))
     } finally {
       setSavingBOM(false)
     }
@@ -332,10 +419,10 @@ export default function BOMPage() {
       const normalized = { ...newBom!, version: String((newBom as any).version) } as Bom
       setBoms(prev => [...prev, normalized])
       setSelectedBomId(normalized.id)
-      toast.success(`Duplicated as ${normalized.version}`)
+      toast.success(tt('bom.toast.bomDuplicated', 'Duplicated as {version}', { version: normalized.version }))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Failed to duplicate BOM')
+      toast.error(e?.message || tt('bom.toast.bomDuplicateFailed', 'Failed to duplicate recipe'))
     } finally {
       setDuplicating(false)
     }
@@ -373,23 +460,25 @@ export default function BOMPage() {
 
   // Add component (convert to base UoM before saving)
   async function addComponentLine() {
-    if (!selectedBomId) return toast.error('Pick a BOM first')
-    if (!compItemId) return toast.error('Select a component item')
+    if (!selectedBomId) return toast.error(tt('bom.toast.pickBom', 'Select a recipe first'))
+    if (!compItemId) return toast.error(tt('bom.toast.componentRequired', 'Select a component item'))
 
     const qtyEntered = num(compQtyPer, 0)
-    if (!(qtyEntered > 0)) return toast.error('Qty must be > 0')
+    if (!(qtyEntered > 0)) return toast.error(tt('bom.toast.quantityPositive', 'Quantity must be greater than zero'))
 
     const scrap = Number(compScrap)
-    if (!Number.isFinite(scrap) || scrap < 0 || scrap > 1) return toast.error('Scrap must be between 0 and 1')
+    if (!Number.isFinite(scrap) || scrap < 0 || scrap > 1) {
+      return toast.error(tt('bom.toast.scrapRange', 'Scrap must stay between 0 and 1'))
+    }
 
     const baseUom = itemById.get(compItemId)?.base_uom_id || ''
     const uomEntered = compUomId || baseUom
 
     let qtyBase = qtyEntered
     if (!idsOrCodesEqual(uomEntered, baseUom)) {
-      if (!canConvert(uomEntered, baseUom)) return toast.error('Selected UoM cannot convert to the item’s base UoM')
+      if (!canConvert(uomEntered, baseUom)) return toast.error(tt('bom.recipe.invalidUom', 'The selected unit cannot convert to the item base unit.'))
       const conv = safeConvert(qtyEntered, uomEntered, baseUom)
-      if (conv == null) return toast.error('No conversion path')
+      if (conv == null) return toast.error(tt('bom.toast.conversionMissing', 'No conversion path was found for this component unit.'))
       qtyBase = conv
     }
 
@@ -402,7 +491,7 @@ export default function BOMPage() {
 
     setComponents(prev => [...prev, ins.data as ComponentRow])
     setCompItemId(''); setCompQtyPer('1'); setCompScrap('0'); setCompUomId('')
-    toast.success('Component added')
+    toast.success(tt('bom.toast.componentAdded', 'Component added'))
   }
 
   async function deleteComponent(id: string) {
@@ -416,7 +505,7 @@ export default function BOMPage() {
       delete next[comp.component_item_id]
       return next
     })
-    toast.success('Component removed')
+    toast.success(tt('bom.toast.componentRemoved', 'Component removed'))
   }
 
   // Per-component sources editor helpers
@@ -474,39 +563,54 @@ export default function BOMPage() {
     return null
   }
 
+  const componentSourcePayload = useComponentSources ? buildComponentSourcesPayload() : []
+  const hasIncompleteComponentSourceRouting = useComponentSources
+    && components.length > 0
+    && componentSourcePayload.length !== components.length
+  const hasInvalidAdvancedSplit = advanced
+    && splits.length > 0
+    && splits.some((split) => !(num(split.qty, 0) > 0 && isUuid(split.warehouseId) && !!split.binId))
+
   // Build
   async function runBuild() {
-    if (!selectedBomId) return toast.error('Pick a BOM first')
+    if (!selectedBomId) return toast.error(tt('bom.toast.pickBom', 'Select a recipe first'))
     const qty = num(buildQty, 0)
-    if (!(qty > 0)) return toast.error('Quantity must be > 0')
+    if (!(qty > 0)) return toast.error(tt('bom.toast.quantityPositive', 'Quantity must be greater than zero'))
+    if (!components.length) return toast.error(tt('bom.toast.componentsRequired', 'Add recipe components before posting a build'))
+    if (totalShortages > 0) return toast.error(tt('bom.plan.blockedShortage', 'The current plan is short on at least one component.'))
 
     try {
       setBuilding(true)
 
       if (useComponentSources) {
-        const componentPayload = buildComponentSourcesPayload()
-        if (!componentPayload.length) { setBuilding(false); return toast.error('Add at least one valid source row (warehouse UUID + bin).') }
+        if (hasIncompleteComponentSourceRouting || !componentSourcePayload.length) {
+          setBuilding(false)
+          return toast.error(tt('bom.toast.buildMissingSources', 'Add valid source routing for every component before posting this build.'))
+        }
 
         const outSplits = buildOutputSplitsPayload(qty)
-        if (!outSplits) { setBuilding(false); return toast.error('Select a valid destination bin (TEXT id) or add output splits.') }
+        if (!outSplits || hasInvalidAdvancedSplit) {
+          setBuilding(false)
+          return toast.error(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
+        }
 
         const { error } = await supabase.rpc('build_from_bom_sources', {
           p_bom_id: selectedBomId,
           p_qty: qty,
-          p_component_sources: componentPayload,
+          p_component_sources: componentSourcePayload,
           p_output_splits: outSplits,
         })
         if (error) {
-          console.error('[build_from_bom_sources] error', error, { componentPayload, outSplits })
+          console.error('[build_from_bom_sources] error', error, { componentSourcePayload, outSplits })
           if (error.code === '42883' || /does not exist/i.test(error.message || '')) {
-            toast.error('Backend RPC build_from_bom_sources is not defined on the DB.')
+            toast.error(tt('bom.toast.buildRpcMissing', 'The Assembly source-routing RPC is not available in the current database.'))
           } else {
-            toast.error(error.message || 'Build failed')
+            toast.error(error.message || tt('bom.toast.buildFailed', 'Build failed'))
           }
         } else {
           setBuildQty('')
           setSplits([])
-          toast.success('Build created with per-component sources')
+          toast.success(tt('bom.toast.buildCreated', 'Build posted'))
         }
         setBuilding(false)
         return
@@ -514,7 +618,8 @@ export default function BOMPage() {
 
       // Legacy single-source path
       if (!isUuid(warehouseFromId) || !binFromId) {
-        setBuilding(false); return toast.error('Select a valid source warehouse (UUID) and bin (TEXT).')
+        setBuilding(false)
+        return toast.error(tt('bom.toast.invalidSource', 'Select a valid source warehouse and bin before posting the build.'))
       }
 
       const runs: Array<{ qty: number; wTo: string; bTo: string }> =
@@ -525,7 +630,10 @@ export default function BOMPage() {
               ? [{ qty, wTo: warehouseToId, bTo: binToId }]
               : []
 
-      if (!runs.length) { setBuilding(false); return toast.error('Add at least one valid destination split') }
+      if (!runs.length || hasInvalidAdvancedSplit) {
+        setBuilding(false)
+        return toast.error(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
+      }
 
       for (const r of runs) {
         const { error } = await supabase.rpc('build_from_bom', {
@@ -542,10 +650,10 @@ export default function BOMPage() {
       setBuildQty('')
       if (!advanced) setBinToId('')
       setSplits([])
-      toast.success(advanced ? 'Build(s) created' : 'Build created')
+      toast.success(advanced ? tt('bom.toast.buildCreatedAdvanced', 'Builds posted') : tt('bom.toast.buildCreated', 'Build posted'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || 'Build failed')
+      toast.error(e?.message || tt('bom.toast.buildFailed', 'Build failed'))
     } finally {
       setBuilding(false)
     }
@@ -562,6 +670,156 @@ export default function BOMPage() {
     return { entered, base: conv ?? entered, invalid: conv == null, baseId, enteredId }
   }, [compItemId, compQtyPer, compUomId, items, convGraph]) // eslint-disable-line
 
+  const selectedProduct = useMemo(
+    () => (selectedBom ? itemById.get(selectedBom.product_id) || null : null),
+    [selectedBom, itemById],
+  )
+
+  const selectedProductWarnings = useMemo(() => {
+    if (!selectedProduct) return []
+    return deriveItemProfileWarnings({
+      primaryRole: selectedProduct.primary_role || 'general',
+      trackInventory: Boolean(selectedProduct.track_inventory ?? true),
+      canBuy: Boolean(selectedProduct.can_buy ?? true),
+      canSell: Boolean(selectedProduct.can_sell ?? true),
+      isAssembled: Boolean(selectedProduct.is_assembled ?? false),
+      hasActiveBom: Boolean(selectedProduct.has_active_bom ?? selectedBom),
+      usedAsComponent: Boolean(selectedProduct.used_as_component),
+      minStock: 0,
+    })
+  }, [selectedProduct, selectedBom])
+
+  const plannedQty = num(buildQty, 0)
+
+  const stockByItem = useMemo(() => {
+    const map = new Map<string, { warehouseQty: number; warehouseAvailable: number; binQty: Record<string, number>; binAvailable: Record<string, number> }>()
+    for (const row of stockLevels) {
+      const itemId = String(row.item_id || '')
+      if (!itemId) continue
+      if (!map.has(itemId)) {
+        map.set(itemId, { warehouseQty: 0, warehouseAvailable: 0, binQty: {}, binAvailable: {} })
+      }
+      const bucket = map.get(itemId)!
+      const qty = num(row.qty, 0)
+      const available = Math.max(qty - num(row.allocated_qty, 0), 0)
+      bucket.warehouseQty += qty
+      bucket.warehouseAvailable += available
+      const binId = String(row.bin_id || '')
+      if (binId) {
+        bucket.binQty[binId] = (bucket.binQty[binId] || 0) + qty
+        bucket.binAvailable[binId] = (bucket.binAvailable[binId] || 0) + available
+      }
+    }
+    return map
+  }, [stockLevels])
+
+  const componentPlanning = useMemo(() => {
+    return components.map((component) => {
+      const item = itemById.get(component.component_item_id) || null
+      const usagePerUnit = num(component.qty_per, 0) * (1 + num(component.scrap_pct, 0))
+      const stockBucket = stockByItem.get(component.component_item_id)
+      const available = binFromId
+        ? num(stockBucket?.binAvailable?.[binFromId], 0)
+        : num(stockBucket?.warehouseAvailable, 0)
+      const availableOnHand = binFromId
+        ? num(stockBucket?.binQty?.[binFromId], 0)
+        : num(stockBucket?.warehouseQty, 0)
+      const required = plannedQty > 0 ? usagePerUnit * plannedQty : 0
+      const shortage = Math.max(required - available, 0)
+      const maxBuildable = usagePerUnit > 0 ? available / usagePerUnit : null
+      const warnings = item
+        ? deriveItemProfileWarnings({
+            primaryRole: item.primary_role || 'general',
+            trackInventory: Boolean(item.track_inventory ?? true),
+            canBuy: Boolean(item.can_buy ?? true),
+            canSell: Boolean(item.can_sell ?? true),
+            isAssembled: Boolean(item.is_assembled ?? false),
+            hasActiveBom: Boolean(item.has_active_bom),
+            usedAsComponent: true,
+            minStock: 0,
+          })
+        : []
+
+      return {
+        ...component,
+        item,
+        usagePerUnit,
+        available,
+        availableOnHand,
+        required,
+        shortage,
+        maxBuildable,
+        warnings,
+      }
+    })
+  }, [components, itemById, stockByItem, binFromId, plannedQty])
+
+  const limitingComponent = useMemo(() => {
+    return componentPlanning
+      .filter((row) => row.maxBuildable != null)
+      .sort((left, right) => num(left.maxBuildable, Infinity) - num(right.maxBuildable, Infinity))[0] || null
+  }, [componentPlanning])
+
+  const totalShortages = useMemo(
+    () => componentPlanning.filter((row) => row.shortage > 0).length,
+    [componentPlanning],
+  )
+
+  const maxBuildableNow = limitingComponent?.maxBuildable != null
+    ? Math.max(Math.floor(num(limitingComponent.maxBuildable, 0) * 100) / 100, 0)
+    : 0
+
+  const buildBlockers = useMemo(() => {
+    const blockers: string[] = []
+    if (!selectedBomId) blockers.push(tt('bom.toast.pickBom', 'Select a recipe first'))
+    if (!components.length) blockers.push(tt('bom.toast.componentsRequired', 'Add recipe components before posting a build'))
+    if (plannedQty <= 0) blockers.push(tt('bom.plan.needQuantity', 'Enter a build quantity to run the stock check.'))
+    if (totalShortages > 0) blockers.push(tt('bom.plan.blockedShortage', 'The current plan is short on at least one component.'))
+    if (useComponentSources) {
+      if (hasIncompleteComponentSourceRouting || !componentSourcePayload.length) {
+        blockers.push(tt('bom.toast.buildMissingSources', 'Add valid source routing for every component before posting this build.'))
+      }
+    } else if (!isUuid(warehouseFromId) || !binFromId) {
+      blockers.push(tt('bom.toast.invalidSource', 'Select a valid source warehouse and bin before posting the build.'))
+    }
+
+    if (advanced) {
+      if (!splits.length || hasInvalidAdvancedSplit) {
+        blockers.push(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
+      }
+    } else if (!isUuid(warehouseToId) || !binToId) {
+      blockers.push(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
+    }
+    return blockers
+  }, [
+    advanced,
+    binFromId,
+    binToId,
+    componentSourcePayload.length,
+    components.length,
+    hasIncompleteComponentSourceRouting,
+    hasInvalidAdvancedSplit,
+    plannedQty,
+    selectedBomId,
+    splits.length,
+    t,
+    totalShortages,
+    useComponentSources,
+    warehouseFromId,
+    warehouseToId,
+  ])
+
+  const buildIsReady = canBuildAssembly && buildBlockers.length === 0
+
+  const buildDestinationLabel = useMemo(() => {
+    if (advanced && splits.length) return tt('bom.destination.multiple', 'Multiple destination bins')
+    const warehouse = warehouses.find((row) => row.id === warehouseToId)
+    const bin = binsTo.find((row) => row.id === binToId)
+    if (!warehouse) return tt('bom.destination.missing', 'Choose a destination')
+    if (!bin) return warehouse.name
+    return `${warehouse.name} - ${bin.code}`
+  }, [advanced, splits, warehouses, warehouseToId, binsTo, binToId, t])
+
   if (loading) return <div className="p-6">{t('loading')}</div>
 
   const uomLabel = (id?: string | null) => {
@@ -576,9 +834,46 @@ export default function BOMPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">{t('bom.title')}</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">{t('bom.subtitle')}</p>
+      <div className="overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-card via-card to-muted/25 shadow-sm">
+        <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr,0.8fr] lg:p-8">
+          <div className="space-y-3">
+            <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em]">
+              {tt('bom.eyebrow', 'Production clarity')}
+            </Badge>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight">{t('bom.title')}</h1>
+              <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                {tt(
+                  'bom.subtitlePhase3b',
+                  'Use Assembly to plan what you are building, check component sufficiency, and then post the build with clear source and destination decisions.',
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.recipes', 'Active recipes')}</div>
+                <div className="mt-2 text-3xl font-semibold">{boms.length}</div>
+                <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.recipesHelp', 'BOM versions available for finished products.')}</div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.components', 'Components')}</div>
+                <div className="mt-2 text-3xl font-semibold">{components.length}</div>
+                <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.componentsHelp', 'Lines currently defined for the selected assembly recipe.')}</div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.maxBuildable', 'Buildable now')}</div>
+                <div className="mt-2 text-3xl font-semibold">{selectedBom ? maxBuildableNow.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</div>
+                <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.maxBuildableHelp', 'Estimated from the current source stock before you post the build.')}</div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
 
       <Card className="border-border/80 shadow-sm">
@@ -593,32 +888,112 @@ export default function BOMPage() {
         </CardContent>
       </Card>
 
-      {/* Create a BOM */}
+      <Card className="border-border/70 bg-card shadow-sm">
+        <CardHeader className="space-y-2">
+          <CardTitle>{tt('bom.targetTitle', 'What are you building?')}</CardTitle>
+          <CardDescription>
+            {tt(
+              'bom.targetHelp',
+              'Choose the assembly recipe first. The planning, stock sufficiency, and build action all follow the selected finished product.',
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-[1fr,1fr]">
+          <div className="space-y-2">
+            <Label>{tt('bom.targetSelect', 'Assembly recipe')}</Label>
+            <Select value={selectedBomId} onValueChange={setSelectedBomId}>
+              <SelectTrigger aria-label={tt('bom.targetSelect', 'Assembly recipe')}><SelectValue placeholder={tt('bom.targetPlaceholder', 'Select a recipe to plan or build')} /></SelectTrigger>
+              <SelectContent className="max-h-64 overflow-auto">
+                {boms.map((bom) => {
+                  const productName = itemById.get(bom.product_id)?.name ?? bom.product_id
+                  return (
+                    <SelectItem key={bom.id} value={bom.id}>
+                      {productName} — {bom.name}{bom.is_active ? '' : ` (${tt('common.inactive', 'inactive')})`}
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {selectedBom ? (
+            <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-lg font-semibold">{selectedProduct?.name ?? selectedBom.name}</div>
+                <Badge>{selectedBom.version}</Badge>
+                {selectedProduct?.is_assembled || selectedProduct?.has_active_bom ? (
+                  <Badge variant="outline">{tt('bom.targetAssembled', 'Assembly-ready item')}</Badge>
+                ) : (
+                  <Badge variant="secondary">{tt('bom.targetNeedsProfile', 'Review item profile')}</Badge>
+                )}
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.targetStockedAs', 'Stocked as')}</div>
+                  <div className="mt-1 text-sm">{selectedProduct?.sku || tt('bom.targetNoSku', 'No SKU')}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.targetCurrentAvailability', 'Current availability')}</div>
+                  <div className="mt-1 text-sm">
+                    {profileFieldsSupported
+                      ? `${num(selectedProduct?.available_qty, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${uomById.get(selectedProduct?.base_uom_id || '')?.code || ''}`.trim()
+                      : tt('bom.targetAvailabilityPending', 'Available after item-profile migration')}
+                  </div>
+                </div>
+              </div>
+              {selectedProductWarnings.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedProductWarnings.map((warning) => (
+                    <Badge key={warning} variant="secondary" className="max-w-full whitespace-normal">
+                      {warning === 'bom_without_assembled_flag'
+                        ? tt('bom.warning.profileMismatch', 'This product has a BOM but is not classified as assembled on the item master.')
+                        : warning === 'assembled_without_bom'
+                          ? tt('bom.warning.missingRecipe', 'This product is marked as assembled but still needs an active recipe.')
+                          : tt('bom.warning.reviewProfile', 'Review the item profile before relying on this build path.')}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-6 text-sm text-muted-foreground">
+              {tt('bom.targetEmpty', 'Select an assembly recipe to see component sufficiency, destination planning, and the build action.')}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recipe creation */}
       <Card>
-        <CardHeader><CardTitle>{t('bom.create')}</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>{tt('bom.recipeCreateTitle', 'Create an assembly recipe')}</CardTitle>
+          <CardDescription>
+            {tt('bom.recipeCreateHelp', 'Use this when a finished product does not yet have a BOM. Recipe setup is separate from posting the build itself.')}
+          </CardDescription>
+        </CardHeader>
         <CardContent className="grid md:grid-cols-4 gap-3">
           <div className="md:col-span-2">
             <Label>{t('orders.item')}</Label>
             <Select value={newBomProductId} onValueChange={setNewBomProductId}>
-              <SelectTrigger><SelectValue placeholder="Select finished product" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={tt('bom.recipeCreatePlaceholder', 'Select the finished product')} /></SelectTrigger>
               <SelectContent className="max-h-64 overflow-auto">
                 {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <div className="text-[11px] text-muted-foreground mt-1">
-              Tip: pick the SKU you actually stock as the finished good.
+              {tt('bom.recipeCreateHint', 'Pick the exact item you will stock as the finished output.')}
             </div>
           </div>
           <div>
             <Label>{t('items.fields.name')}</Label>
-            <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder="e.g., Cake v1" />
+            <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder={tt('bom.recipeCreateNamePlaceholder', 'e.g. Sweet Bread v1')} />
             <div className="text-[11px] text-muted-foreground mt-1">
-              Include a version in the name (e.g. “v1”) so it’s easy to find.
+              {tt('bom.recipeCreateVersionHint', 'Include a version in the recipe name so later revisions stay traceable.')}
             </div>
           </div>
           <div className="md:col-span-1 flex items-end">
-            <Button onClick={createBomForProduct} disabled={!newBomProductId || !newBomName.trim()}>
-              {t('bom.create')}
+            <Button onClick={createBomForProduct} disabled={!canManageBom || !newBomProductId || !newBomName.trim()}>
+              {tt('bom.recipeCreateAction', 'Create recipe')}
             </Button>
           </div>
         </CardContent>
@@ -626,12 +1001,17 @@ export default function BOMPage() {
 
       {/* Pick + Edit existing BOM */}
       <Card>
-        <CardHeader><CardTitle>{t('bom.existing')}</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>{tt('bom.recipeManageTitle', 'Maintain recipe versions')}</CardTitle>
+          <CardDescription>
+            {tt('bom.recipeManageHelp', 'Choose the recipe version that should drive the current build. Update names or duplicate to create a controlled next revision.')}
+          </CardDescription>
+        </CardHeader>
         <CardContent className="grid md:grid-cols-2 gap-3">
           <div>
-            <Label>BOM</Label>
+            <Label>{tt('bom.recipeSelect', 'Recipe')}</Label>
             <Select value={selectedBomId} onValueChange={setSelectedBomId}>
-              <SelectTrigger><SelectValue placeholder="Select a BOM" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={tt('bom.recipeSelectPlaceholder', 'Select a recipe')} /></SelectTrigger>
               <SelectContent className="max-h-64 overflow-auto">
                 {boms.map(b => {
                   const pname = itemById.get(b.product_id)?.name ?? b.product_id
@@ -652,19 +1032,19 @@ export default function BOMPage() {
                 <Input value={editName} onChange={e => setEditName(e.target.value)} />
               </div>
               <div>
-                <Label>Version</Label>
+                <Label>{tt('bom.recipeVersion', 'Version')}</Label>
                 <Input value={editVersion} onChange={e => setEditVersion(e.target.value)} />
               </div>
               <div className="col-span-2 flex gap-2">
-                <Button onClick={saveBomMeta} disabled={savingBOM}>
+                <Button onClick={saveBomMeta} disabled={!canManageBom || savingBOM}>
                   {savingBOM ? t('actions.saving') : t('actions.save')}
                 </Button>
-                <Button variant="secondary" onClick={duplicateAsNewVersion} disabled={duplicating}>
+                <Button variant="secondary" onClick={duplicateAsNewVersion} disabled={!canManageBom || duplicating}>
                   {duplicating ? 'Duplicating…' : 'Duplicate as new version'}
                 </Button>
               </div>
               <div className="col-span-2 text-[11px] text-muted-foreground">
-                Save to update this version, or duplicate to create the next version (components are copied for you).
+                {tt('bom.recipeManageHint', 'Save to refine this version, or duplicate it to create the next controlled revision with the same components.')}
               </div>
             </div>
           )}
@@ -674,15 +1054,20 @@ export default function BOMPage() {
       {/* Components */}
       {!!selectedBom && (
         <Card>
-          <CardHeader><CardTitle>{t('bom.components')}</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>{tt('bom.recipeComponentsTitle', 'Recipe components')}</CardTitle>
+            <CardDescription>
+              {tt('bom.recipeComponentsHelp', 'Define what the build consumes for one finished unit. These lines power the sufficiency check and the stock movements posted during build execution.')}
+            </CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-2">{t('table.item')}</th>
-                  <th className="py-2 pr-2">Qty per (base UoM)</th>
+                  <th className="py-2 pr-2">{tt('bom.recipe.qtyPer', 'Qty per unit')}</th>
                   <th className="py-2 pr-2">{t('items.table.baseUom')}</th>
-                  <th className="py-2 pr-2">Scrap (0..1)</th>
+                  <th className="py-2 pr-2">{tt('bom.recipe.scrap', 'Scrap (0..1)')}</th>
                   <th className="py-2 pr-2"></th>
                 </tr>
               </thead>
@@ -701,9 +1086,9 @@ export default function BOMPage() {
                         <td className="py-2 pr-2">{uomLabel(it?.base_uom_id)}</td>
                         <td className="py-2 pr-2">{c.scrap_pct ?? 0}</td>
                         <td className="py-2 pr-2 space-x-2">
-                          <Button variant="destructive" onClick={() => deleteComponent(c.id)}>{t('common.remove')}</Button>
-                          <Button variant="secondary" onClick={() => addSourceRow(c.component_item_id)} disabled={!useComponentSources}>
-                            Add source
+                          <Button variant="destructive" onClick={() => deleteComponent(c.id)} disabled={!canManageBom}>{t('common.remove')}</Button>
+                          <Button variant="secondary" onClick={() => addSourceRow(c.component_item_id)} disabled={!useComponentSources || !canManageBom}>
+                            {tt('bom.recipe.addSource', 'Add source')}
                           </Button>
                         </td>
                       </tr>
@@ -713,7 +1098,7 @@ export default function BOMPage() {
                           <td colSpan={5} className="py-3">
                             <div className="space-y-2">
                               {sources.length === 0 && (
-                                <div className="text-[11px] text-muted-foreground">No sources yet for this component.</div>
+                                <div className="text-[11px] text-muted-foreground">{tt('bom.recipe.sourcesEmpty', 'No source routing has been configured for this component yet.')}</div>
                               )}
                               {sources.map(row => {
                                 const bins = row.warehouseId ? (binCache[row.warehouseId] || []) : []
@@ -747,17 +1132,17 @@ export default function BOMPage() {
                                       </Select>
                                     </div>
                                     <div>
-                                      <Label>Share %</Label>
+                                      <Label>{tt('bom.recipe.sharePct', 'Share %')}</Label>
                                       <Input
                                         type="number"
                                         min="0" max="100" step="0.01"
                                         value={row.sharePct}
                                         onChange={e => updateSourceRow(c.component_item_id, row.id, { sharePct: e.target.value })}
-                                        placeholder="e.g., 60"
+                                        placeholder={tt('bom.recipe.sharePlaceholder', 'e.g. 60')}
                                       />
                                     </div>
                                     <div className="flex items-end">
-                                      <Button variant="destructive" onClick={() => removeSourceRow(c.component_item_id, row.id)}>{t('common.remove')}</Button>
+                                      <Button variant="destructive" onClick={() => removeSourceRow(c.component_item_id, row.id)} disabled={!canManageBom}>{t('common.remove')}</Button>
                                     </div>
                                   </div>
                                 )
@@ -798,7 +1183,7 @@ export default function BOMPage() {
                     if (!base) { setCompUomId(uomId); return }
                     if (idsOrCodesEqual(uomId, base)) { setCompUomId(uomId); return }
                     if (!canConvert(uomId, base)) {
-                      toast.error('Selected UoM cannot convert to the item’s base UoM')
+                      toast.error(tt('bom.recipe.invalidUom', 'The selected unit cannot convert to the item base unit.'))
                       setCompUomId(base)
                       return
                     }
@@ -824,12 +1209,12 @@ export default function BOMPage() {
               </div>
 
               <div>
-                <Label>Scrap (0..1)</Label>
+                <Label>{tt('bom.recipe.scrap', 'Scrap (0..1)')}</Label>
                 <Input type="number" min="0" max="1" step="0.01" value={compScrap} onChange={e => setCompScrap(e.target.value)} placeholder="0" />
               </div>
 
               <div className="md:col-span-2 flex items-end">
-                <Button onClick={addComponentLine} disabled={!compItemId}>{t('bom.addComponent')}</Button>
+                <Button onClick={addComponentLine} disabled={!canManageBom || !compItemId}>{t('bom.addComponent')}</Button>
               </div>
 
               {/* Preview conversion */}
@@ -841,158 +1226,286 @@ export default function BOMPage() {
               )}
             </div>
             <div className="text-[11px] text-muted-foreground">
-              Hint: quantities above are per **one** finished good (base UoM).
+              {tt('bom.recipe.qtyHint', 'Quantities above are defined for one finished unit in the finished item base unit.')}
             </div>
 
             {/* Toggle per-component sources */}
             <div className="mt-3 flex items-center gap-2">
               <input id="pcs" type="checkbox" className="h-4 w-4" checked={useComponentSources} onChange={(e) => setUseComponentSources(e.target.checked)} />
-              <Label htmlFor="pcs">Use per-component source bins during build</Label>
+              <Label htmlFor="pcs">{tt('bom.recipe.useSources', 'Use per-component source bins during build')}</Label>
             </div>
             {useComponentSources && (
               <div className="text-[11px] text-muted-foreground mt-1">
-                Add source rows under each component. Shares are normalized automatically.
+                {tt('bom.recipe.useSourcesHelp', 'Add source rows under each component. Shares are normalized automatically before the build RPC runs.')}
               </div>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* Build */}
       {!!selectedBom && (
-        <Card>
-          <CardHeader><CardTitle>{t('bom.build')}</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid md:grid-cols-2 gap-3">
+        <div className="grid gap-6 xl:grid-cols-[1.05fr,0.95fr]">
+          <Card className="border-border/70 bg-card shadow-sm">
+            <CardHeader className="space-y-2">
+              <CardTitle>{tt('bom.planTitle', 'Plan this build')}</CardTitle>
+              <CardDescription>
+                {tt('bom.planHelp', 'Set the quantity, pick the source stock, and decide where the finished output will land before you post the build.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="assembly-build-qty">{t('orders.qty')}</Label>
+                  <Input id="assembly-build-qty" type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.timeTitle', 'Time estimate')}</div>
+                  <div className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {tt('bom.plan.timeHelp', 'Phase 3C will add per-unit time, setup time, and work-hour planning. For now, Assembly focuses on stock sufficiency and execution readiness.')}
+                  </div>
+                </div>
+              </div>
+
               {!useComponentSources && (
-                <>
-                  <div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
                     <Label>{t('orders.fromWarehouse')}</Label>
-                    <Select value={warehouseFromId} onValueChange={(v) => { setWarehouseFromId(v); setBinFromId('') }}>
-                      <SelectTrigger><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
+                    <Select value={warehouseFromId} onValueChange={(value) => { setWarehouseFromId(value); setBinFromId('') }}>
+                      <SelectTrigger aria-label={t('orders.fromWarehouse')}><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
                       <SelectContent>
-                        {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                        {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>{t('orders.fromBin')}</Label>
                     <Select value={binFromId} onValueChange={setBinFromId}>
-                      <SelectTrigger><SelectValue placeholder={t('orders.selectSourceBin')} /></SelectTrigger>
+                      <SelectTrigger aria-label={t('orders.fromBin')}><SelectValue placeholder={t('orders.selectSourceBin')} /></SelectTrigger>
                       <SelectContent className="max-h-64 overflow-auto">
-                        {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                        {binsFrom.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} — {bin.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-                </>
+                </div>
               )}
 
               {!advanced && (
-                <>
-                  <div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
                     <Label>{t('orders.toWarehouse')}</Label>
-                    <Select value={warehouseToId} onValueChange={(v) => { setWarehouseToId(v); setBinToId(''); }}>
-                      <SelectTrigger><SelectValue placeholder={t('orders.selectDestWh')} /></SelectTrigger>
+                    <Select value={warehouseToId} onValueChange={(value) => { setWarehouseToId(value); setBinToId('') }}>
+                      <SelectTrigger aria-label={t('orders.toWarehouse')}><SelectValue placeholder={t('orders.selectDestWh')} /></SelectTrigger>
                       <SelectContent>
-                        {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                        {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>{t('orders.toBin')}</Label>
                     <Select value={binToId} onValueChange={setBinToId}>
-                      <SelectTrigger><SelectValue placeholder={t('orders.selectDestBin')} /></SelectTrigger>
+                      <SelectTrigger aria-label={t('orders.toBin')}><SelectValue placeholder={t('orders.selectDestBin')} /></SelectTrigger>
                       <SelectContent className="max-h-64 overflow-auto">
-                        {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                        {binsTo.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} — {bin.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-                </>
-              )}
-            </div>
-
-            {/* Advanced split outputs */}
-            <div className="flex items-center gap-2">
-              <input id="adv" type="checkbox" className="h-4 w-4" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />
-              <Label htmlFor="adv">Split output to multiple destination bins</Label>
-            </div>
-            {advanced && (
-              <div className="space-y-2">
-                <div className="text-[11px] text-muted-foreground">
-                  We’ll run multiple builds (or the advanced RPC) depending on the mode. Each row applies independently.
                 </div>
-                <div className="space-y-2">
-                  {splits.map((s) => {
-                    const destBins = s.warehouseId ? (binCache[s.warehouseId] || []) : []
-                    return (
-                      <div key={s.id} className="grid md:grid-cols-4 gap-2">
-                        <div>
-                          <Label>{t('orders.toWarehouse')}</Label>
-                          <Select
-                            value={s.warehouseId}
-                            onValueChange={async (v) => {
-                              updateSplit(s.id, { warehouseId: v, binId: '' })
-                              await ensureBinsFor(v)
-                            }}
-                          >
-                            <SelectTrigger><SelectValue placeholder={t('orders.toWarehouse')} /></SelectTrigger>
-                            <SelectContent>
-                              {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+              )}
+
+              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{tt('bom.plan.advancedTitle', 'Advanced output routing')}</div>
+                    <div className="text-sm text-muted-foreground">{tt('bom.plan.advancedHelp', 'Use this only when the finished output must be split across multiple destination bins or components need explicit source routing.')}</div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input id="adv-clarity" type="checkbox" className="h-4 w-4" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />
+                    <span>{tt('bom.plan.advancedToggle', 'Split output across bins')}</span>
+                  </label>
+                </div>
+                {advanced && (
+                  <div className="mt-4 space-y-2">
+                    {splits.map((split) => {
+                      const destBins = split.warehouseId ? (binCache[split.warehouseId] || []) : []
+                      return (
+                        <div key={split.id} className="grid gap-3 md:grid-cols-4">
+                          <div className="space-y-2">
+                            <Label>{t('orders.toWarehouse')}</Label>
+                            <Select
+                              value={split.warehouseId}
+                              onValueChange={async (value) => {
+                                updateSplit(split.id, { warehouseId: value, binId: '' })
+                                await ensureBinsFor(value)
+                              }}
+                            >
+                              <SelectTrigger><SelectValue placeholder={t('orders.toWarehouse')} /></SelectTrigger>
+                              <SelectContent>
+                                {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{t('orders.toBin')}</Label>
+                            <Select value={split.binId} onValueChange={(value) => updateSplit(split.id, { binId: value })} disabled={!split.warehouseId}>
+                              <SelectTrigger><SelectValue placeholder={split.warehouseId ? t('orders.toBin') : t('movements.pickToBinFirst')} /></SelectTrigger>
+                              <SelectContent className="max-h-64 overflow-auto">
+                                {destBins.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} — {bin.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{t('orders.qty')}</Label>
+                            <Input type="number" min="0.0001" step="0.0001" value={split.qty} onChange={e => updateSplit(split.id, { qty: e.target.value })} placeholder="0" />
+                          </div>
+                          <div className="flex items-end">
+                            <Button variant="destructive" onClick={() => removeSplit(split.id)}>{t('common.remove')}</Button>
+                          </div>
                         </div>
+                      )
+                    })}
+                    <Button
+                      variant="secondary"
+                      onClick={async () => {
+                        const nextWh = warehouseToId || (warehouses[0]?.id || '')
+                        if (nextWh) await ensureBinsFor(nextWh)
+                        setSplits(prev => [...prev, { id: crypto.randomUUID(), warehouseId: nextWh, binId: '', qty: '' }])
+                      }}
+                    >
+                      {tt('bom.plan.addSplit', 'Add destination split')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+                <div className="text-sm font-medium">{tt('bom.plan.summaryTitle', 'Build summary')}</div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryTarget', 'Target output')}</div>
+                    <div className="mt-1 text-sm">{selectedProduct?.name ?? selectedBom.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryDestination', 'Destination')}</div>
+                    <div className="mt-1 text-sm">{buildDestinationLabel}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryLimit', 'Limiting factor')}</div>
+                    <div className="mt-1 text-sm">
+                      {limitingComponent?.item?.name
+                        ? `${limitingComponent.item.name} (${maxBuildableNow.toLocaleString(undefined, { maximumFractionDigits: 2 })})`
+                        : tt('bom.plan.summaryLimitNone', 'Add components and select a source to estimate this.')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryShortages', 'Shortages')}</div>
+                    <div className="mt-1 text-sm">
+                      {totalShortages > 0
+                        ? tt('bom.plan.summaryShortagesCount', '{count} component(s) short', { count: totalShortages })
+                        : tt('bom.plan.summaryShortagesNone', 'No shortages detected for the current plan')}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {!canBuildAssembly ? <Badge variant="secondary">{tt('bom.permission.build', 'View only. Operator or above is required to post builds.')}</Badge> : null}
+                  {plannedQty <= 0 ? <Badge variant="secondary">{tt('bom.plan.needQuantity', 'Enter a build quantity to run the stock check.')}</Badge> : null}
+                  {totalShortages > 0 ? <Badge variant="destructive">{tt('bom.plan.blockedShortage', 'The current plan is short on at least one component.')}</Badge> : null}
+                  {buildIsReady ? <Badge>{tt('bom.plan.ready', 'The current stock plan is ready to build.')}</Badge> : null}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                <div className="text-sm font-medium">{tt('bom.plan.readinessTitle', 'Build readiness')}</div>
+                {buildBlockers.length ? (
+                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    {buildBlockers.map((reason) => (
+                      <li key={reason} className="flex gap-2">
+                        <span className="mt-1 inline-block h-2 w-2 rounded-full bg-destructive/80" />
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    {tt(
+                      'bom.plan.readinessHelp',
+                      'Source stock, destination routing, and component sufficiency are all aligned for the current build plan.',
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={runBuild} disabled={building || !buildIsReady}>
+                  {building ? tt('bom.building', 'Building...') : t('bom.build')}
+                </Button>
+                <div className="flex items-center text-sm text-muted-foreground">
+                  {tt('bom.plan.postHelp', 'After a successful build, the quantity input clears so the operator can see the action posted.')}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card shadow-sm">
+            <CardHeader className="space-y-2">
+              <CardTitle>{tt('bom.sufficiencyTitle', 'Components and stock sufficiency')}</CardTitle>
+              <CardDescription>
+                {tt('bom.sufficiencyHelp', 'Review what will be consumed, what is available in the chosen source, and which component limits the planned output.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {componentPlanning.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-6 text-sm text-muted-foreground">
+                  {tt('bom.sufficiencyEmpty', 'Add recipe components below before you try to plan or post a build.')}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {componentPlanning.map((row) => (
+                    <div key={row.id} className="rounded-2xl border border-border/70 bg-background/80 p-4 transition-colors hover:bg-muted/15">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <Label>{t('orders.toBin')}</Label>
-                          <Select
-                            value={s.binId}
-                            onValueChange={(v) => updateSplit(s.id, { binId: v })}
-                            disabled={!s.warehouseId}
-                          >
-                            <SelectTrigger><SelectValue placeholder={s.warehouseId ? t('orders.toBin') : t('movements.pickToBinFirst')} /></SelectTrigger>
-                            <SelectContent className="max-h-64 overflow-auto">
-                              {destBins.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+                          <div className="font-medium">{row.item?.name ?? row.component_item_id}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {tt('bom.sufficiency.perUnit', 'Per unit')}: {row.usagePerUnit.toLocaleString(undefined, { maximumFractionDigits: 4 })} {uomLabel(row.item?.base_uom_id)}
+                          </div>
                         </div>
-                        <div>
-                          <Label>{t('orders.qty')}</Label>
-                          <Input type="number" min="0.0001" step="0.0001" value={s.qty} onChange={e => updateSplit(s.id, { qty: e.target.value })} placeholder="0" />
-                        </div>
-                        <div className="flex items-end">
-                          <Button variant="destructive" onClick={() => removeSplit(s.id)}>{t('common.remove')}</Button>
+                        <div className="flex flex-wrap gap-2">
+                          {row.shortage > 0 ? (
+                            <Badge variant="destructive">
+                              {tt('bom.sufficiency.shortage', 'Short by {qty}', { qty: row.shortage.toLocaleString(undefined, { maximumFractionDigits: 2 }) })}
+                            </Badge>
+                          ) : (
+                            <Badge>{tt('bom.sufficiency.enough', 'Sufficient for current plan')}</Badge>
+                          )}
+                          {row.warnings.length > 0 ? <Badge variant="secondary">{tt('bom.sufficiency.profileWarning', 'Review item profile')}</Badge> : null}
                         </div>
                       </div>
-                    )
-                  })}
+                      <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.required', 'Required')}</div>
+                          <div className="mt-1 text-sm">{row.required.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.available', 'Available')}</div>
+                          <div className="mt-1 text-sm">{row.available.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.onHand', 'On hand')}</div>
+                          <div className="mt-1 text-sm">{row.availableOnHand.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.maxBuildable', 'Buildable')}</div>
+                          <div className="mt-1 text-sm">
+                            {row.maxBuildable != null ? row.maxBuildable.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <Button
-                  variant="secondary"
-                  onClick={async () => {
-                    const nextWh = warehouseToId || (warehouses[0]?.id || '')
-                    if (nextWh) await ensureBinsFor(nextWh)
-                    setSplits(prev => [...prev, { id: crypto.randomUUID(), warehouseId: nextWh, binId: '', qty: '' }])
-                  }}
-                >
-                  Add split
-                </Button>
-              </div>
-            )}
-
-            <div className="md:flex md:items-end md:gap-3">
-              <div className="md:w-48">
-                <Label>{t('orders.qty')}</Label>
-                <Input type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
-              </div>
-              <Button onClick={runBuild} disabled={building}>
-                {building ? 'Building…' : t('bom.build')}
-              </Button>
-            </div>
-
-            <div className="text-[11px] text-muted-foreground">
-              After building, the quantity field clears so you know it executed.
-            </div>
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )

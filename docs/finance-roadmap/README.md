@@ -37,6 +37,8 @@ Finance-document foundation already in place:
 - a Phase 3A reconciliation read model is now live through `v_finance_reconciliation_review` and `v_finance_reconciliation_exceptions`
 - Settlements now has a controller-grade reconciliation workspace with AR/AP review registers, legal-value bridge totals, aging, due position, and visible exception queues
 - Sales Invoice and Vendor Bill detail pages now surface reconciliation review context directly from the same DB-backed model used by the controller register
+- Items now carries an operational item-profile layer (`primary_role`, stock tracking, buy/sell flags, assembly flag) that reduces master-data ambiguity without reopening post-create mutation risk
+- Assembly now uses a guided operational workflow: choose the finished product, review BOM sufficiency, inspect limiting factors and readiness, then post the build from a clearer source/destination planning surface
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -83,20 +85,25 @@ These rules must not be broken by future work:
 |---|---|---|---|---|
 | Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | Completed | Current finance-document lifecycle baseline |
 | Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | Completed | Phase 1 controls for sensitive actions |
-| Phase 3 | Reconciliation and month-close readiness | Finance needs current-legal-value bridges, exception handling, and close-ready review surfaces | Active: Phase 3A implemented, 3B/3C planned | Phase 2 traceability and stable state views |
+| Phase 3 | Reconciliation and month-close readiness plus operational clarity | Finance and ops need current-legal-value bridges, exception handling, cleaner master data, and planning-ready workflows | Active: Phase 3A and 3B implemented in core scope, 3C planned next | Phase 2 traceability and stable state views |
 | Phase 4 | Automated finance regression suite | The platform is now too finance-critical to rely on manual smoke tests alone | Not started | Stable Phase 1-3 workflows and validations |
 
 ### Phase 3 programme structure
 
 - Phase 3A. Reconciliation and month-close readiness
-  - implemented in this step
+  - implemented in core scope
   - scope now includes AR/AP bridge registers, aging based on legal outstanding, exception queues, and detail-page reconciliation context
 - Phase 3B. Operational UX clarity on confusing workflow/master-data pages
-  - planned next
+  - implemented in core scope
   - target surfaces: Items and Assembly
   - purpose: reduce master-data and production-workflow confusion before deeper planning logic is added
+  - completed scope:
+    - explicit item-role classification and safer item-creation guidance
+    - Assembly restructured around build target, stock sufficiency, limiting factor, and readiness before execution
+  - follow-up still open:
+    - optional broader workflow polish on adjacent inventory screens if future testing shows confusion around the new item-profile layer
 - Phase 3C. Assembly planning enhancement with time-oriented production logic
-  - planned after or alongside Phase 3B once the Assembly workflow is clearer
+  - planned next, building directly on the new Phase 3B Assembly structure
   - purpose: add practical time-based planning without turning Stockwise into a full ERP scheduler
 
 ### Production hardening block
@@ -175,6 +182,7 @@ Current open decisions that need explicit closure in future work:
 - whether month-close review should live in a dedicated finance workspace or be embedded into existing Settlements / document registers
 - whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
 - whether Phase 2 should later add filtered audit/report exports beyond the current document detail, order detail, and low-level event-registry surfaces
+- whether Phase 3C should store time-per-unit and setup-time directly on BOMs, items, or a dedicated assembly-planning layer once the new 3B workflow has been exercised in production
 
 ## H. Risks / Blockers
 
@@ -183,8 +191,10 @@ Known risks:
 - finance-document behavior is already broad enough that undocumented assumptions can cause drift between sessions
 - reminder logic now follows the active AR anchor, but still needs regression coverage to prevent drift
 - regression coverage is still largely manual
+- the new item-profile layer is intentionally lightweight and UI-driven first; any future hard DB enforcement must be designed carefully so legacy items do not break production workflows
 
 Current blocker summary:
 
 - no hard blocker prevents roadmap execution
 - the main risk is drift, not immediate technical blockage
+- the next recommended implementation block is Phase 3C, using the new Assembly planning surface as the base for time-per-unit, setup-time, and available-hours guidance
