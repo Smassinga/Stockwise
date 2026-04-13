@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
 import {
+  getBankTransactionWriteMessage,
   getBankTransactionRefSupport,
   isMissingBankTransactionRefColumns,
   setBankTransactionRefSupport,
@@ -924,10 +925,13 @@ export default function SettlementsPage() {
         })
 
         if (error) {
+          const mappedMessage = getBankTransactionWriteMessage(error, tt)
           if (isMissingBankTransactionRefColumns(error)) {
             setBankTransactionRefSupport(false)
             setBankRefsSupported(false)
-            throw new Error(tt('settlements.bankMigrationNeeded', 'Bank-linked settlements need the latest migration before they can be posted'))
+          }
+          if (mappedMessage) {
+            throw new Error(mappedMessage)
           }
           throw error
         }

@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import {
+  getBankTransactionWriteMessage,
   getBankTransactionRefSupport,
   isMissingBankTransactionRefColumns,
   setBankTransactionRefSupport,
@@ -472,7 +473,9 @@ export default function BankDetail() {
       if (!payload.length) { toast.error(tf('bank.toast.csvNoRows', 'No valid rows to import')); return }
 
       const { error } = await supabase.from('bank_transactions').insert(payload)
-      if (error) throw error
+      if (error) {
+        throw new Error(getBankTransactionWriteMessage(error, tf) || error.message)
+      }
 
       toast.success(tf('bank.toast.csvImported', 'Imported {count} rows', { count: payload.length }))
       setCsvFile(null)
@@ -500,7 +503,9 @@ export default function BankDetail() {
         amount_base: amt,
         reconciled: false,
       })
-      if (error) throw error
+      if (error) {
+        throw new Error(getBankTransactionWriteMessage(error, tf) || error.message)
+      }
       setTxMemo(''); setTxAmt('0'); setTxDate(todayISO())
       await loadTx()
       await loadBookBalance()

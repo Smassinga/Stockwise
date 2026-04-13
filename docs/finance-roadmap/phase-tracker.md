@@ -9,7 +9,7 @@ Use this file as the working status board for finance-document implementation. U
 | Phase 1. Permissions and approval controls | Completed | Frontend + DB policy / workflow | Sensitive finance actions follow explicit authority and state locks | Draft preparation, approval gating, finance-authority actions, and DB-side enforcement are now in place for the current role model |
 | Phase 2. Audit trail and document-chain visibility | Completed | Frontend + DB event/read model | Every finance document can be traced through its adjustment and settlement chain | Core AR/AP detail, order-chain surfaces, structured reasons, and actor-aware journals are live |
 | Phase 3. Reconciliation and month-close readiness plus operational clarity | Active | Finance read models + review UI + inventory/assembly UX | Finance can reconcile current legal balances, work month-close exceptions, and operate from clearer stock/master-data and assembly-planning flows | Phases 3A, 3B, and 3C are now implemented in core scope; close-pack/reporting follow-up remains open inside 3A and broader automation remains Phase 4 |
-| Phase 4. Automated finance regression suite | Not started | Test automation + seeded validation data | Finance behavior is guarded by repeatable regression tests | Current validation is still dominated by manual smoke passes |
+| Phase 4. Operational reliability and regression maturity | Active | Treasury workflows + operational UI + test automation | Bank/cash/master-data reliability is hardened while the regression-suite baseline is prepared | Phase 4A is now implemented in core scope for bank posting plus Banks/Cash/UOM UX; Phase 4B automated regression coverage remains next |
 
 ## Phase 1. Permissions and Approval Controls
 
@@ -107,7 +107,29 @@ Provide finance users with the bridge logic and review surfaces needed to reconc
 | Missing-time-data fallback and advisory execution discipline | Completed | Frontend + product behavior | Time model and build controls | `src/pages/BOM.tsx`, `src/lib/assemblyPlanning.ts` | No | Yes | Missing-time smoke test and build-action continuity | Missing planning time no longer produces fake precision. The page states that time capacity is unavailable until the recipe is configured, but build execution remains governed only by real stock, routing, and permission controls. |
 | Phase 3C continuity check against inventory/build correctness | Completed | Frontend + inventory workflow | Stable BOM/build RPCs, Phase 3B structure | `src/pages/BOM.tsx`, `src/lib/assemblyPlanning.ts`, BOM time migration | Yes | Yes | Validate stock-ready and stock-limited builds still behave correctly | Time planning remains advisory. No finance anchor, costing policy, or inventory posting rule was reopened. The only model addition was BOM-level planning time to support the new UI summaries. |
 
-## Phase 4. Automated Finance Regression Suite
+## Phase 4. Operational Reliability and Regression Maturity
+
+### Purpose
+
+Harden treasury and master-data workflows that still cause real production friction, then turn the now-stable finance platform into repeatable regression coverage.
+
+### Dependencies
+
+- stable Phase 1-3 controls, state views, and operational flows
+- reliable bank, cash, and unit-of-measure models in live production
+- seeded validation data and a repeatable non-production mutation plan for later automation
+
+### Phase 4A Tracker
+
+| Work Item | Status | Owner / Area | Dependencies | Affected Modules | DB Impact | Frontend Impact | Validation Required | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Bank receive/pay failure root-cause repair | Completed | DB + settlements + treasury surfaces | Stable `bank_transactions`, settlement anchors, audit journaling | `bank_transactions`, settlement event trigger, `src/pages/Settlements.tsx`, `src/pages/BankDetail.tsx`, `src/lib/bankTransactionRefs.ts` | Yes | Yes | Receive into bank, pay from bank, no stale `public.banks` dependency in active path | Root cause was a stale `public.banks` lookup inside `finance_document_settlement_event_journal()`. The canonical model is `bank_accounts`, and the trigger now resolves company ownership through that table. |
+| Banks page operational clarity refinement | Completed | Frontend + treasury UX | Canonical `bank_accounts` model | `src/pages/Banks.tsx` | No new schema beyond existing bank-account model | Yes | Render, create flow, register readability, open account path | Banks now behaves as a bank-account register with clearer identity, balance, currency, and reference-field guidance rather than an ambiguous bank-name list. |
+| Cash page operational clarity refinement | Completed | Frontend + treasury UX | Stable `cash_books` / `cash_transactions` model | `src/pages/Cash.tsx` | No | Yes | Render, opening-balance edit, add transaction, settlement-policy clarity | Cash now presents itself as the company cash book, with clearer ledger filters, opening-balance handling, and guidance on when users should post through Settlements instead. |
+| UOM page operational clarity refinement | Completed | Frontend + master-data UX | Stable `uoms` / `uom_conversions` model | `src/pages/UomSettings.tsx` | No | Yes | Render, unit create, conversion create/delete, quick test | UOM now makes the difference between global unit masters and company-owned conversion rules explicit, reducing master-data ambiguity for items, stock, and orders. |
+| Phase 4A continuity check against settlement, inventory, and permissions | Completed | Frontend + DB read models | All above | Settlements, bank/cash pages, UOM, item/inventory flows | No new core model change beyond the bank trigger fix | Yes | Validate no permission regressions, no obvious UOM/inventory regressions, and no settlement refresh contradiction | Phase 3 was not reopened. The only DB continuity fix was the stale bank trigger dependency. |
+
+### Phase 4B. Automated Finance Regression Suite
 
 ### Purpose
 

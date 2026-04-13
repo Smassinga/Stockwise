@@ -35,3 +35,31 @@ export function setBankTransactionRefSupport(value: boolean) {
 export function isMissingBankTransactionRefColumns(error: { code?: string | null } | null | undefined) {
   return ['42703', 'PGRST204'].includes(String(error?.code || ''))
 }
+
+function bankErrorText(error: { message?: string | null; details?: string | null; hint?: string | null } | null | undefined) {
+  return [error?.message, error?.details, error?.hint]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ')
+}
+
+export function isLegacyBanksRelationError(
+  error: { code?: string | null; message?: string | null; details?: string | null; hint?: string | null } | null | undefined,
+) {
+  return String(error?.code || '') === '42P01' && bankErrorText(error).includes('public.banks')
+}
+
+export function getBankTransactionWriteMessage(
+  error: { code?: string | null; message?: string | null; details?: string | null; hint?: string | null } | null | undefined,
+  t: (key: string, fallback: string) => string,
+) {
+  if (isMissingBankTransactionRefColumns(error)) {
+    return t('settlements.bankMigrationNeeded', 'Bank-linked settlements need the latest migration before they can be posted')
+  }
+  if (isLegacyBanksRelationError(error)) {
+    return t(
+      'banks.toast.schemaDependencyOutdated',
+      'Bank posting is blocked by an outdated bank-account dependency. Apply the latest bank settlement migration and try again.',
+    )
+  }
+  return null
+}

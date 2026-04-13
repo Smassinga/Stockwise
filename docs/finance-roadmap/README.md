@@ -41,6 +41,8 @@ Finance-document foundation already in place:
 - Assembly now uses a guided operational workflow: choose the finished product, review BOM sufficiency, inspect limiting factors and readiness, then post the build from a clearer source/destination planning surface
 - Assembly planning time now lives on the BOM version itself in normalized minutes (`assembly_time_per_unit_minutes`, `setup_time_per_batch_minutes`), so each recipe revision can keep its own planning pace without turning item masters into a scheduling subsystem
 - Assembly now exposes lightweight time-oriented planning: total time required for the requested quantity, optional available work time, stock-versus-time capacity, effective buildable quantity, and a clear missing-time-data fallback when no estimate is configured
+- bank-linked receive/pay now uses the canonical `bank_accounts` model end to end; the stale Phase 2 trigger dependency on `public.banks` has been removed from the active posting path
+- Banks, Cash, and UOM now use clearer operational language and page structure: bank accounts are treated as real treasury ledgers, Cash is framed as the company cash book, and UOM makes the difference between global units and company conversion rules explicit
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -88,7 +90,7 @@ These rules must not be broken by future work:
 | Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | Completed | Current finance-document lifecycle baseline |
 | Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | Completed | Phase 1 controls for sensitive actions |
 | Phase 3 | Reconciliation and month-close readiness plus operational clarity | Finance and ops need current-legal-value bridges, exception handling, cleaner master data, and planning-ready workflows | Active: Phase 3A, 3B, and 3C implemented in core scope; close-pack/reporting follow-up remains | Phase 2 traceability and stable state views |
-| Phase 4 | Automated finance regression suite | The platform is now too finance-critical to rely on manual smoke tests alone | Not started | Stable Phase 1-3 workflows and validations |
+| Phase 4 | Operational reliability and regression maturity | Treasury and master-data reliability still need targeted operational hardening before the full regression suite can take over | Active: Phase 4A implemented in core scope; Phase 4B regression suite still not started | Stable Phase 1-3 workflows and validations |
 
 ### Phase 3 programme structure
 
@@ -128,6 +130,28 @@ Completed before Phase 3 activation:
 - SO to Sales Invoice draft creation repaired
 - Sales Invoice issue readiness and controlled issue preparation implemented
 - Tauri desktop and Android packaging hardened and documented
+
+### Phase 4 programme structure
+
+- Phase 4A. Treasury and master-data operational reliability / UX
+  - implemented in core scope
+  - scope now includes:
+    - bank receive/pay repair against the canonical `bank_accounts` schema
+    - finance-readable bank posting error handling on the touched bank settlement paths
+    - clearer operational UX for Banks, Cash, and UOM
+  - completed outcomes:
+    - `bank_transactions` no longer route through the obsolete `public.banks` dependency during settlement audit journaling
+    - Banks now behaves like a bank-account register, not a vague bank-name list
+    - Cash now behaves like the company cash book with clearer settlement-policy guidance
+    - UOM now separates global unit masters from company conversion rules more clearly
+  - follow-up still open:
+    - broader treasury workflow polish if future testing shows confusion around statement import, reconciliation, or bank-ledger maintenance
+- Phase 4B. Automated finance regression suite
+  - not started
+  - purpose: turn the now-stable Phase 1-4A workflows into repeatable regression coverage
+  - depends on:
+    - stable treasury and settlement posting after Phase 4A
+    - seeded validation data and repeatable non-production mutation environments
 
 ## E. Cross-Phase Tracked Items
 
@@ -195,6 +219,7 @@ Current open decisions that need explicit closure in future work:
 - whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
 - whether Phase 2 should later add filtered audit/report exports beyond the current document detail, order detail, and low-level event-registry surfaces
 - whether future assembly planning should add calendar-aware capacity inputs beyond the current manual available-hours field, or keep the planning layer intentionally lightweight
+- whether Phase 4A should later extend into deeper bank-statement reconciliation tooling or stay limited to bank-posting reliability and clearer treasury-master surfaces
 
 ## H. Risks / Blockers
 
@@ -209,4 +234,4 @@ Current blocker summary:
 
 - no hard blocker prevents roadmap execution
 - the main risk is drift, not immediate technical blockage
-- the next recommended implementation block is Phase 4 automated finance regression coverage, using the now-stable Phase 1-3 workflows as the baseline
+- the next recommended implementation block is Phase 4B automated finance regression coverage, using the now-stable Phase 1-4A workflows as the baseline
