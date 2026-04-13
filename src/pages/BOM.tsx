@@ -13,6 +13,13 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { deriveItemProfileWarnings, profileFromRole, type ItemPrimaryRole } from '../lib/itemProfiles'
+import {
+  calculateAssemblyPlanningEstimate,
+  durationInputFromMinutes,
+  formatDurationFromMinutes,
+  normalizeTimeValueToMinutes,
+  type AssemblyTimeUnit,
+} from '../lib/assemblyPlanning'
 
 type Item = {
   id: string
@@ -33,7 +40,15 @@ type Uom  = { id: string; code: string; name: string; family?: string }
 type Warehouse = { id: string; name: string }
 type Bin = { id: string; code: string; name: string; warehouse_id: string }
 
-type Bom = { id: string; product_id: string; name: string; version: string; is_active: boolean }
+type Bom = {
+  id: string
+  product_id: string
+  name: string
+  version: string
+  is_active: boolean
+  assembly_time_per_unit_minutes: number | null
+  setup_time_per_batch_minutes: number | null
+}
 type ComponentRow = { id: string; component_item_id: string; qty_per: number; scrap_pct: number | null; created_at: string | null }
 type StockLevel = {
   item_id: string
@@ -55,8 +70,29 @@ type ComponentSourcesPayload = Array<{
 }>
 type OutputSplitsPayload = Array<{ warehouse_id: string; bin_id: string; qty: number }>
 
+function parsePlanningMinutesOrThrow(args: {
+  value: string
+  unit: AssemblyTimeUnit
+  required: boolean
+  allowZero: boolean
+  invalidMessage: string
+  missingMessage: string
+}) {
+  const trimmed = (args.value || '').trim()
+  if (!trimmed) {
+    if (args.required) throw new Error(args.missingMessage)
+    return null
+  }
+  const normalized = normalizeTimeValueToMinutes(trimmed, args.unit)
+  if (normalized == null) throw new Error(args.invalidMessage)
+  if ((!args.allowZero && normalized <= 0) || (args.allowZero && normalized < 0)) {
+    throw new Error(args.invalidMessage)
+  }
+  return Number(normalized.toFixed(2))
+}
+
 export default function BOMPage() {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const { companyId, myRole } = useOrg()
@@ -76,6 +112,10 @@ export default function BOMPage() {
   // Editable
   const [editName, setEditName] = useState<string>('')  
   const [editVersion, setEditVersion] = useState<string>('')
+  const [editAssemblyTimeValue, setEditAssemblyTimeValue] = useState<string>('')
+  const [editAssemblyTimeUnit, setEditAssemblyTimeUnit] = useState<AssemblyTimeUnit>('minutes')
+  const [editSetupTimeValue, setEditSetupTimeValue] = useState<string>('')
+  const [editSetupTimeUnit, setEditSetupTimeUnit] = useState<AssemblyTimeUnit>('minutes')
 
   // Components
   const [components, setComponents] = useState<ComponentRow[]>([])
@@ -101,6 +141,10 @@ export default function BOMPage() {
   // Create BOM
   const [newBomProductId, setNewBomProductId] = useState<string>('')  // UUID
   const [newBomName, setNewBomName] = useState<string>('')
+  const [newAssemblyTimeValue, setNewAssemblyTimeValue] = useState<string>('')
+  const [newAssemblyTimeUnit, setNewAssemblyTimeUnit] = useState<AssemblyTimeUnit>('minutes')
+  const [newSetupTimeValue, setNewSetupTimeValue] = useState<string>('')
+  const [newSetupTimeUnit, setNewSetupTimeUnit] = useState<AssemblyTimeUnit>('minutes')
 
   // Add component
   const [compItemId, setCompItemId] = useState<string>('')            // UUID
@@ -110,6 +154,8 @@ export default function BOMPage() {
 
   // Build
   const [buildQty, setBuildQty] = useState<string>('1')
+  const [availableTimeValue, setAvailableTimeValue] = useState<string>('')
+  const [availableTimeUnit, setAvailableTimeUnit] = useState<AssemblyTimeUnit>('hours')
   const [savingBOM, setSavingBOM] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [building, setBuilding] = useState(false)
@@ -189,7 +235,7 @@ export default function BOMPage() {
 
         const bm = await supabase
           .from('boms')
-          .select('id,product_id,name,version,is_active')
+          .select('id,product_id,name,version,is_active,assembly_time_per_unit_minutes,setup_time_per_batch_minutes')
           .eq('company_id', companyId)
           .order('created_at', { ascending: true })
         if (bm.error) throw bm.error
@@ -283,9 +329,19 @@ export default function BOMPage() {
     if (selectedBom) {
       setEditName(selectedBom.name || '')
       setEditVersion(String(selectedBom.version || 'v1'))
+      const perUnitInput = durationInputFromMinutes(selectedBom.assembly_time_per_unit_minutes)
+      setEditAssemblyTimeValue(perUnitInput.value)
+      setEditAssemblyTimeUnit(perUnitInput.unit)
+      const setupInput = durationInputFromMinutes(selectedBom.setup_time_per_batch_minutes)
+      setEditSetupTimeValue(setupInput.value)
+      setEditSetupTimeUnit(setupInput.unit)
     } else {
       setEditName('')
       setEditVersion('')
+      setEditAssemblyTimeValue('')
+      setEditAssemblyTimeUnit('minutes')
+      setEditSetupTimeValue('')
+      setEditSetupTimeUnit('minutes')
     }
   }, [selectedBomId]) // eslint-disable-line
 
@@ -341,16 +397,42 @@ export default function BOMPage() {
     if (!nameTrim) return toast.error(tt('bom.toast.nameRequired', 'Recipe name is required (for example, Cake v1)'))
 
     try {
+      const assemblyTimeMinutes = parsePlanningMinutesOrThrow({
+        value: newAssemblyTimeValue,
+        unit: newAssemblyTimeUnit,
+        required: false,
+        allowZero: false,
+        invalidMessage: tt('bom.toast.timePerUnitInvalid', 'Time per unit must be greater than zero when provided.'),
+        missingMessage: tt('bom.toast.timePerUnitRequired', 'Enter time per unit to use time-based planning.'),
+      })
+      const setupTimeMinutes = parsePlanningMinutesOrThrow({
+        value: newSetupTimeValue,
+        unit: newSetupTimeUnit,
+        required: false,
+        allowZero: true,
+        invalidMessage: tt('bom.toast.setupTimeInvalid', 'Setup time cannot be negative.'),
+        missingMessage: tt('bom.toast.setupTimeInvalid', 'Setup time cannot be negative.'),
+      })
       const ins = await supabase
         .from('boms')
-        .insert([{ company_id: companyId, product_id: newBomProductId, name: nameTrim }])
-        .select('id,product_id,name,version,is_active')
+        .insert([{
+          company_id: companyId,
+          product_id: newBomProductId,
+          name: nameTrim,
+          assembly_time_per_unit_minutes: assemblyTimeMinutes,
+          setup_time_per_batch_minutes: setupTimeMinutes,
+        }])
+        .select('id,product_id,name,version,is_active,assembly_time_per_unit_minutes,setup_time_per_batch_minutes')
         .single()
       if (ins.error) throw ins.error
       const inserted = { ...ins.data, version: String((ins.data as any).version ?? 'v1') } as Bom
       setBoms(prev => [...prev, inserted])
       setSelectedBomId(inserted.id)
       setNewBomProductId(''); setNewBomName('')
+      setNewAssemblyTimeValue('')
+      setNewAssemblyTimeUnit('minutes')
+      setNewSetupTimeValue('')
+      setNewSetupTimeUnit('minutes')
       toast.success(tt('bom.toast.bomCreated', 'Recipe created'))
     } catch (e: any) {
       console.error(e)
@@ -363,14 +445,35 @@ export default function BOMPage() {
     if (!selectedBom) return
     try {
       setSavingBOM(true)
+      const assemblyTimeMinutes = parsePlanningMinutesOrThrow({
+        value: editAssemblyTimeValue,
+        unit: editAssemblyTimeUnit,
+        required: false,
+        allowZero: false,
+        invalidMessage: tt('bom.toast.timePerUnitInvalid', 'Time per unit must be greater than zero when provided.'),
+        missingMessage: tt('bom.toast.timePerUnitRequired', 'Enter time per unit to use time-based planning.'),
+      })
+      const setupTimeMinutes = parsePlanningMinutesOrThrow({
+        value: editSetupTimeValue,
+        unit: editSetupTimeUnit,
+        required: false,
+        allowZero: true,
+        invalidMessage: tt('bom.toast.setupTimeInvalid', 'Setup time cannot be negative.'),
+        missingMessage: tt('bom.toast.setupTimeInvalid', 'Setup time cannot be negative.'),
+      })
       const { error, data } = await supabase
         .from('boms')
-        .update({ name: editName.trim(), version: editVersion.trim() })
+        .update({
+          name: editName.trim(),
+          version: editVersion.trim(),
+          assembly_time_per_unit_minutes: assemblyTimeMinutes,
+          setup_time_per_batch_minutes: setupTimeMinutes,
+        })
         .eq('id', selectedBom.id)
-        .select('id,product_id,name,version,is_active')
+        .select('id,product_id,name,version,is_active,assembly_time_per_unit_minutes,setup_time_per_batch_minutes')
         .single()
       if (error) throw error
-      setBoms(prev => prev.map(b => b.id === selectedBom.id ? { ...b, name: data!.name, version: String(data!.version) } : b))
+      setBoms(prev => prev.map(b => b.id === selectedBom.id ? { ...(b as Bom), ...(data as Bom), version: String(data!.version ?? 'v1') } : b))
       toast.success(tt('bom.toast.bomUpdated', 'Recipe updated'))
     } catch (e: any) {
       console.error(e)
@@ -394,8 +497,15 @@ export default function BOMPage() {
         const next = `v${nextNum}`
         const ins = await supabase
           .from('boms')
-          .insert([{ company_id: companyId, product_id: selectedBom.product_id, name: editName || selectedBom.name, version: next }])
-          .select('id,product_id,name,version,is_active')
+          .insert([{
+            company_id: companyId,
+            product_id: selectedBom.product_id,
+            name: editName || selectedBom.name,
+            version: next,
+            assembly_time_per_unit_minutes: selectedBom.assembly_time_per_unit_minutes,
+            setup_time_per_batch_minutes: selectedBom.setup_time_per_batch_minutes,
+          }])
+          .select('id,product_id,name,version,is_active,assembly_time_per_unit_minutes,setup_time_per_batch_minutes')
           .single()
         if (!ins.error && ins.data) { newBom = ins.data as Bom; break }
         if (ins.error?.message?.toLowerCase().includes('duplicate') || ins.error?.code === '23505') {
@@ -769,6 +879,123 @@ export default function BOMPage() {
     ? Math.max(Math.floor(num(limitingComponent.maxBuildable, 0) * 100) / 100, 0)
     : 0
 
+  const assemblyTimePerUnitMinutes = num(selectedBom?.assembly_time_per_unit_minutes, 0) > 0
+    ? num(selectedBom?.assembly_time_per_unit_minutes, 0)
+    : null
+  const setupTimePerBatchMinutes = num(selectedBom?.setup_time_per_batch_minutes, 0) >= 0
+    && selectedBom?.setup_time_per_batch_minutes != null
+    ? num(selectedBom?.setup_time_per_batch_minutes, 0)
+    : null
+  const availablePlanningMinutes = normalizeTimeValueToMinutes(availableTimeValue, availableTimeUnit)
+
+  const planningEstimate = useMemo(
+    () =>
+      calculateAssemblyPlanningEstimate({
+        requestedQty: plannedQty,
+        stockCapacityQty: maxBuildableNow,
+        stockShortageCount: totalShortages,
+        minutesPerUnit: assemblyTimePerUnitMinutes,
+        setupMinutes: setupTimePerBatchMinutes,
+        availableMinutes: availablePlanningMinutes,
+      }),
+    [
+      assemblyTimePerUnitMinutes,
+      availablePlanningMinutes,
+      maxBuildableNow,
+      plannedQty,
+      setupTimePerBatchMinutes,
+      totalShortages,
+    ],
+  )
+
+  const planningNumberFormatter = useMemo(
+    () => new Intl.NumberFormat(lang === 'pt' ? 'pt-PT' : 'en-US', { maximumFractionDigits: 2 }),
+    [lang],
+  )
+
+  function formatPlanningQty(value: number | null | undefined) {
+    if (value == null || !Number.isFinite(value)) return '—'
+    return planningNumberFormatter.format(value)
+  }
+
+  function formatPlanningDuration(value: number | null | undefined) {
+    return formatDurationFromMinutes(value, {
+      hourShort: tt('bom.time.hourShort', 'h'),
+      minuteShort: tt('bom.time.minuteShort', 'min'),
+      zero: tt('bom.time.zeroDuration', '0 min'),
+    })
+  }
+
+  const planningStatusTone = useMemo(() => {
+    switch (planningEstimate.planningStatus) {
+      case 'ready':
+        return 'default' as const
+      case 'time_not_configured':
+        return 'secondary' as const
+      default:
+        return 'destructive' as const
+    }
+  }, [planningEstimate.planningStatus])
+
+  const planningStatusLabel = useMemo(() => {
+    switch (planningEstimate.planningStatus) {
+      case 'ready':
+        return tt('bom.time.planStatus.ready', 'Ready within stock and time plan')
+      case 'stock_limited':
+        return tt('bom.time.planStatus.stockLimited', 'Planned quantity exceeds available stock')
+      case 'time_limited':
+        return tt('bom.time.planStatus.timeLimited', 'Planned quantity exceeds available work time')
+      case 'stock_and_time_limited':
+        return tt('bom.time.planStatus.stockAndTimeLimited', 'Planned quantity exceeds both stock and work time')
+      case 'time_not_configured_and_stock_limited':
+        return tt('bom.time.planStatus.timeMissingAndStockLimited', 'Stock is short and time planning is still missing')
+      case 'time_not_configured':
+      default:
+        return tt('bom.time.planStatus.timeMissing', 'Time planning is not configured for this recipe')
+    }
+  }, [planningEstimate.planningStatus, tt])
+
+  const planningLimitLabel = useMemo(() => {
+    switch (planningEstimate.limitingFactor) {
+      case 'stock':
+        return tt('bom.time.limiting.stock', 'Stock')
+      case 'time':
+        return tt('bom.time.limiting.time', 'Available work time')
+      case 'stock_and_time':
+        return tt('bom.time.limiting.both', 'Stock and available work time')
+      case 'time_not_configured':
+        return tt('bom.time.limiting.timeMissing', 'Time not configured')
+      case 'none':
+      default:
+        return tt('bom.time.limiting.none', 'No limiting factor for the current plan')
+    }
+  }, [planningEstimate.limitingFactor, tt])
+
+  const planningSummaryHelp = useMemo(() => {
+    if (!planningEstimate.timeConfigured) {
+      return tt(
+        'bom.time.missingHelp',
+        'Assembly can still proceed when stock and routing are ready, but time-based capacity stays unavailable until this recipe has time planning.',
+      )
+    }
+    if (!planningEstimate.availableTimeConfigured) {
+      return tt(
+        'bom.time.availableMissing',
+        'Enter available work time to estimate whether time or stock limits output first.',
+      )
+    }
+    if (planningEstimate.planningStatus === 'time_limited' || planningEstimate.planningStatus === 'stock_and_time_limited') {
+      return tt(
+        'bom.time.executionNote',
+        'Time planning is advisory. Build execution still follows stock, routing, and permission controls.',
+      )
+    }
+    return tt(
+      'bom.time.readyHelp',
+      'The current requested quantity fits inside both stock and available time assumptions.',
+    )
+  }, [planningEstimate, tt])
+
   const buildBlockers = useMemo(() => {
     const blockers: string[] = []
     if (!selectedBomId) blockers.push(tt('bom.toast.pickBom', 'Select a recipe first'))
@@ -845,12 +1072,12 @@ export default function BOMPage() {
               <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
                 {tt(
                   'bom.subtitlePhase3b',
-                  'Use Assembly to plan what you are building, check component sufficiency, and then post the build with clear source and destination decisions.',
+                  'Use Assembly to plan what you are building, check stock sufficiency, estimate effort, and then post the build with clear source and destination decisions.',
                 )}
               </p>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border/60 bg-background/80 shadow-sm">
               <CardContent className="p-5">
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.recipes', 'Active recipes')}</div>
@@ -870,6 +1097,29 @@ export default function BOMPage() {
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.maxBuildable', 'Buildable now')}</div>
                 <div className="mt-2 text-3xl font-semibold">{selectedBom ? maxBuildableNow.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</div>
                 <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.maxBuildableHelp', 'Estimated from the current source stock before you post the build.')}</div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.timeEstimate', 'Estimated time')}</div>
+                <div className="mt-2 text-3xl font-semibold">
+                  {selectedBom
+                    ? planningEstimate.timeConfigured
+                      ? plannedQty > 0
+                        ? formatPlanningDuration(planningEstimate.totalRequiredMinutes)
+                        : formatPlanningDuration(assemblyTimePerUnitMinutes)
+                      : tt('bom.time.missingShort', 'Not configured')
+                    : '—'}
+                </div>
+                <div className="mt-2 text-sm text-muted-foreground">
+                  {selectedBom
+                    ? planningEstimate.timeConfigured
+                      ? plannedQty > 0
+                        ? tt('bom.summary.timeEstimateHelp', 'Estimated effort for the current requested quantity, including setup time when configured.')
+                        : tt('bom.summary.timeEstimateIdleHelp', 'Add a build quantity to convert this recipe pace into a total time estimate.')
+                      : tt('bom.summary.timeEstimateMissing', 'Add planning time on the recipe to estimate duration and capacity.')
+                    : tt('bom.summary.timeEstimateSelect', 'Select a recipe to see time planning.')}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -940,6 +1190,22 @@ export default function BOMPage() {
                       : tt('bom.targetAvailabilityPending', 'Available after item-profile migration')}
                   </div>
                 </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.targetTimePerUnit', 'Time per unit')}</div>
+                  <div className="mt-1 text-sm">
+                    {planningEstimate.timeConfigured
+                      ? formatPlanningDuration(assemblyTimePerUnitMinutes)
+                      : tt('bom.time.missingShort', 'Not configured')}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.targetSetupTime', 'Setup time')}</div>
+                  <div className="mt-1 text-sm">{formatPlanningDuration(setupTimePerBatchMinutes)}</div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge variant={planningStatusTone}>{planningStatusLabel}</Badge>
+                <Badge variant="outline">{planningLimitLabel}</Badge>
               </div>
               {selectedProductWarnings.length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -971,7 +1237,7 @@ export default function BOMPage() {
             {tt('bom.recipeCreateHelp', 'Use this when a finished product does not yet have a BOM. Recipe setup is separate from posting the build itself.')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid md:grid-cols-4 gap-3">
+        <CardContent className="grid gap-4 md:grid-cols-6">
           <div className="md:col-span-2">
             <Label>{t('orders.item')}</Label>
             <Select value={newBomProductId} onValueChange={setNewBomProductId}>
@@ -984,14 +1250,66 @@ export default function BOMPage() {
               {tt('bom.recipeCreateHint', 'Pick the exact item you will stock as the finished output.')}
             </div>
           </div>
-          <div>
+          <div className="md:col-span-2">
             <Label>{t('items.fields.name')}</Label>
             <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder={tt('bom.recipeCreateNamePlaceholder', 'e.g. Sweet Bread v1')} />
             <div className="text-[11px] text-muted-foreground mt-1">
               {tt('bom.recipeCreateVersionHint', 'Include a version in the recipe name so later revisions stay traceable.')}
             </div>
           </div>
-          <div className="md:col-span-1 flex items-end">
+          <div className="md:col-span-2 grid gap-3 rounded-2xl border border-border/70 bg-muted/15 p-4">
+            <div className="text-sm font-medium">{tt('bom.time.configTitle', 'Time planning')}</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="new-bom-time-per-unit">{tt('bom.time.perUnitLabel', 'Time per unit')}</Label>
+                <Input
+                  id="new-bom-time-per-unit"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={newAssemblyTimeValue}
+                  onChange={e => setNewAssemblyTimeValue(e.target.value)}
+                  placeholder={tt('bom.time.perUnitPlaceholder', 'Optional')}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{tt('bom.time.unitLabel', 'Time unit')}</Label>
+                <Select value={newAssemblyTimeUnit} onValueChange={(value) => setNewAssemblyTimeUnit(value as AssemblyTimeUnit)}>
+                  <SelectTrigger><SelectValue placeholder={tt('bom.time.unitLabel', 'Time unit')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">{tt('bom.time.unit.minutes', 'Minutes')}</SelectItem>
+                    <SelectItem value="hours">{tt('bom.time.unit.hours', 'Hours')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-bom-setup-time">{tt('bom.time.setupLabel', 'Setup time per batch')}</Label>
+                <Input
+                  id="new-bom-setup-time"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newSetupTimeValue}
+                  onChange={e => setNewSetupTimeValue(e.target.value)}
+                  placeholder={tt('bom.time.setupPlaceholder', 'Optional')}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{tt('bom.time.setupUnitLabel', 'Setup unit')}</Label>
+                <Select value={newSetupTimeUnit} onValueChange={(value) => setNewSetupTimeUnit(value as AssemblyTimeUnit)}>
+                  <SelectTrigger><SelectValue placeholder={tt('bom.time.setupUnitLabel', 'Setup unit')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">{tt('bom.time.unit.minutes', 'Minutes')}</SelectItem>
+                    <SelectItem value="hours">{tt('bom.time.unit.hours', 'Hours')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {tt('bom.time.configHelp', 'Leave time blank when the recipe can be built but no reliable planning estimate exists yet.')}
+            </div>
+          </div>
+          <div className="md:col-span-6 flex justify-end">
             <Button onClick={createBomForProduct} disabled={!canManageBom || !newBomProductId || !newBomName.trim()}>
               {tt('bom.recipeCreateAction', 'Create recipe')}
             </Button>
@@ -1007,7 +1325,7 @@ export default function BOMPage() {
             {tt('bom.recipeManageHelp', 'Choose the recipe version that should drive the current build. Update names or duplicate to create a controlled next revision.')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid md:grid-cols-2 gap-3">
+        <CardContent className="grid gap-4 md:grid-cols-2">
           <div>
             <Label>{tt('bom.recipeSelect', 'Recipe')}</Label>
             <Select value={selectedBomId} onValueChange={setSelectedBomId}>
@@ -1026,7 +1344,8 @@ export default function BOMPage() {
           </div>
 
           {selectedBom && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-4">
+              <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t('items.fields.name')}</Label>
                 <Input value={editName} onChange={e => setEditName(e.target.value)} />
@@ -1035,16 +1354,69 @@ export default function BOMPage() {
                 <Label>{tt('bom.recipeVersion', 'Version')}</Label>
                 <Input value={editVersion} onChange={e => setEditVersion(e.target.value)} />
               </div>
-              <div className="col-span-2 flex gap-2">
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+                <div className="mb-3 text-sm font-medium">{tt('bom.time.manageTitle', 'Recipe planning time')}</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bom-time-per-unit">{tt('bom.time.perUnitLabel', 'Time per unit')}</Label>
+                    <Input
+                      id="edit-bom-time-per-unit"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={editAssemblyTimeValue}
+                      onChange={e => setEditAssemblyTimeValue(e.target.value)}
+                      placeholder={tt('bom.time.perUnitPlaceholder', 'Optional')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{tt('bom.time.unitLabel', 'Time unit')}</Label>
+                    <Select value={editAssemblyTimeUnit} onValueChange={(value) => setEditAssemblyTimeUnit(value as AssemblyTimeUnit)}>
+                      <SelectTrigger><SelectValue placeholder={tt('bom.time.unitLabel', 'Time unit')} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minutes">{tt('bom.time.unit.minutes', 'Minutes')}</SelectItem>
+                        <SelectItem value="hours">{tt('bom.time.unit.hours', 'Hours')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bom-setup-time">{tt('bom.time.setupLabel', 'Setup time per batch')}</Label>
+                    <Input
+                      id="edit-bom-setup-time"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editSetupTimeValue}
+                      onChange={e => setEditSetupTimeValue(e.target.value)}
+                      placeholder={tt('bom.time.setupPlaceholder', 'Optional')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{tt('bom.time.setupUnitLabel', 'Setup unit')}</Label>
+                    <Select value={editSetupTimeUnit} onValueChange={(value) => setEditSetupTimeUnit(value as AssemblyTimeUnit)}>
+                      <SelectTrigger><SelectValue placeholder={tt('bom.time.setupUnitLabel', 'Setup unit')} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minutes">{tt('bom.time.unit.minutes', 'Minutes')}</SelectItem>
+                        <SelectItem value="hours">{tt('bom.time.unit.hours', 'Hours')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-muted-foreground">
+                  {tt('bom.time.manageHelp', 'Time values live on the recipe version itself so each BOM revision can keep its own planning pace.')}
+                </div>
+              </div>
+              <div className="flex gap-2">
                 <Button onClick={saveBomMeta} disabled={!canManageBom || savingBOM}>
                   {savingBOM ? t('actions.saving') : t('actions.save')}
                 </Button>
                 <Button variant="secondary" onClick={duplicateAsNewVersion} disabled={!canManageBom || duplicating}>
-                  {duplicating ? 'Duplicating…' : 'Duplicate as new version'}
+                  {duplicating ? tt('bom.recipeDuplicating', 'Duplicating...') : tt('bom.recipeDuplicate', 'Duplicate as new version')}
                 </Button>
               </div>
-              <div className="col-span-2 text-[11px] text-muted-foreground">
-                {tt('bom.recipeManageHint', 'Save to refine this version, or duplicate it to create the next controlled revision with the same components.')}
+              <div className="text-[11px] text-muted-foreground">
+                {tt('bom.recipeManageHint', 'Save to refine this version, or duplicate it to create the next controlled revision with the same components and planning time.')}
               </div>
             </div>
           )}
@@ -1259,10 +1631,51 @@ export default function BOMPage() {
                   <Input id="assembly-build-qty" type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
                 </div>
                 <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.timeTitle', 'Time estimate')}</div>
-                  <div className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {tt('bom.plan.timeHelp', 'Phase 3C will add per-unit time, setup time, and work-hour planning. For now, Assembly focuses on stock sufficiency and execution readiness.')}
-                  </div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.timeTitle', 'Time plan')}</div>
+                  {planningEstimate.timeConfigured ? (
+                    <div className="mt-2 space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.perUnitLabel', 'Time per unit')}</div>
+                          <div className="mt-1 text-sm">{formatPlanningDuration(assemblyTimePerUnitMinutes)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.setupLabel', 'Setup time per batch')}</div>
+                          <div className="mt-1 text-sm">{formatPlanningDuration(setupTimePerBatchMinutes)}</div>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-[1fr,0.8fr]">
+                        <div className="space-y-2">
+                          <Label htmlFor="assembly-available-time">{tt('bom.time.availableLabel', 'Available work time')}</Label>
+                          <Input
+                            id="assembly-available-time"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={availableTimeValue}
+                            onChange={e => setAvailableTimeValue(e.target.value)}
+                            placeholder={tt('bom.time.availablePlaceholder', 'Optional')}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{tt('bom.time.availableUnitLabel', 'Available time unit')}</Label>
+                          <Select value={availableTimeUnit} onValueChange={(value) => setAvailableTimeUnit(value as AssemblyTimeUnit)}>
+                            <SelectTrigger><SelectValue placeholder={tt('bom.time.availableUnitLabel', 'Available time unit')} /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="minutes">{tt('bom.time.unit.minutes', 'Minutes')}</SelectItem>
+                              <SelectItem value="hours">{tt('bom.time.unit.hours', 'Hours')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="text-sm leading-6 text-muted-foreground">{planningSummaryHelp}</div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
+                      <p>{tt('bom.time.missingHelp', 'Assembly can still proceed when stock and routing are ready, but time-based capacity stays unavailable until this recipe has time planning.')}</p>
+                      <p>{tt('bom.time.configureHint', 'Add time per unit and optional setup time in the recipe section above when the team is ready to estimate production effort.')}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1379,7 +1792,11 @@ export default function BOMPage() {
 
               <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
                 <div className="text-sm font-medium">{tt('bom.plan.summaryTitle', 'Build summary')}</div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryRequested', 'Requested quantity')}</div>
+                    <div className="mt-1 text-sm">{formatPlanningQty(planningEstimate.requestedQty)}</div>
+                  </div>
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryTarget', 'Target output')}</div>
                     <div className="mt-1 text-sm">{selectedProduct?.name ?? selectedBom.name}</div>
@@ -1390,11 +1807,7 @@ export default function BOMPage() {
                   </div>
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryLimit', 'Limiting factor')}</div>
-                    <div className="mt-1 text-sm">
-                      {limitingComponent?.item?.name
-                        ? `${limitingComponent.item.name} (${maxBuildableNow.toLocaleString(undefined, { maximumFractionDigits: 2 })})`
-                        : tt('bom.plan.summaryLimitNone', 'Add components and select a source to estimate this.')}
-                    </div>
+                    <div className="mt-1 text-sm">{planningLimitLabel}</div>
                   </div>
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.summaryShortages', 'Shortages')}</div>
@@ -1404,12 +1817,47 @@ export default function BOMPage() {
                         : tt('bom.plan.summaryShortagesNone', 'No shortages detected for the current plan')}
                     </div>
                   </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.totalRequiredLabel', 'Total time required')}</div>
+                    <div className="mt-1 text-sm">
+                      {planningEstimate.timeConfigured
+                        ? formatPlanningDuration(planningEstimate.totalRequiredMinutes)
+                        : tt('bom.time.missingShort', 'Not configured')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.availableLabel', 'Available work time')}</div>
+                    <div className="mt-1 text-sm">
+                      {planningEstimate.availableTimeConfigured
+                        ? formatPlanningDuration(planningEstimate.availableMinutes)
+                        : tt('bom.time.availableMissingShort', 'Not entered')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.stockCapacityLabel', 'Capacity from stock')}</div>
+                    <div className="mt-1 text-sm">{formatPlanningQty(planningEstimate.stockCapacityQty)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.timeCapacityLabel', 'Capacity from time')}</div>
+                    <div className="mt-1 text-sm">
+                      {planningEstimate.timeConfigured
+                        ? planningEstimate.availableTimeConfigured
+                          ? formatPlanningQty(planningEstimate.timeCapacityQty)
+                          : tt('bom.time.availableMissingShort', 'Not entered')
+                        : tt('bom.time.missingShort', 'Not configured')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.time.effectiveCapacityLabel', 'Effective build capacity')}</div>
+                    <div className="mt-1 text-sm">{formatPlanningQty(planningEstimate.effectiveCapacityQty)}</div>
+                  </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {!canBuildAssembly ? <Badge variant="secondary">{tt('bom.permission.build', 'View only. Operator or above is required to post builds.')}</Badge> : null}
                   {plannedQty <= 0 ? <Badge variant="secondary">{tt('bom.plan.needQuantity', 'Enter a build quantity to run the stock check.')}</Badge> : null}
                   {totalShortages > 0 ? <Badge variant="destructive">{tt('bom.plan.blockedShortage', 'The current plan is short on at least one component.')}</Badge> : null}
                   {buildIsReady ? <Badge>{tt('bom.plan.ready', 'The current stock plan is ready to build.')}</Badge> : null}
+                  <Badge variant={planningStatusTone}>{planningStatusLabel}</Badge>
                 </div>
               </div>
 
@@ -1425,12 +1873,18 @@ export default function BOMPage() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                    {tt(
-                      'bom.plan.readinessHelp',
-                      'Source stock, destination routing, and component sufficiency are all aligned for the current build plan.',
-                    )}
-                  </p>
+                  <div className="mt-3 space-y-3">
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      {tt(
+                        'bom.plan.readinessHelp',
+                        'Source stock, destination routing, and component sufficiency are all aligned for the current build plan.',
+                      )}
+                    </p>
+                    <div className="rounded-2xl border border-border/70 bg-muted/15 p-3 text-sm text-muted-foreground">
+                      <div className="font-medium text-foreground">{tt('bom.time.planStatusTitle', 'Time planning status')}</div>
+                      <p className="mt-2 leading-6">{planningSummaryHelp}</p>
+                    </div>
+                  </div>
                 )}
               </div>
 

@@ -39,6 +39,8 @@ Finance-document foundation already in place:
 - Sales Invoice and Vendor Bill detail pages now surface reconciliation review context directly from the same DB-backed model used by the controller register
 - Items now carries an operational item-profile layer (`primary_role`, stock tracking, buy/sell flags, assembly flag) that reduces master-data ambiguity without reopening post-create mutation risk
 - Assembly now uses a guided operational workflow: choose the finished product, review BOM sufficiency, inspect limiting factors and readiness, then post the build from a clearer source/destination planning surface
+- Assembly planning time now lives on the BOM version itself in normalized minutes (`assembly_time_per_unit_minutes`, `setup_time_per_batch_minutes`), so each recipe revision can keep its own planning pace without turning item masters into a scheduling subsystem
+- Assembly now exposes lightweight time-oriented planning: total time required for the requested quantity, optional available work time, stock-versus-time capacity, effective buildable quantity, and a clear missing-time-data fallback when no estimate is configured
 
 This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
 
@@ -85,7 +87,7 @@ These rules must not be broken by future work:
 |---|---|---|---|---|
 | Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | Completed | Current finance-document lifecycle baseline |
 | Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | Completed | Phase 1 controls for sensitive actions |
-| Phase 3 | Reconciliation and month-close readiness plus operational clarity | Finance and ops need current-legal-value bridges, exception handling, cleaner master data, and planning-ready workflows | Active: Phase 3A and 3B implemented in core scope, 3C planned next | Phase 2 traceability and stable state views |
+| Phase 3 | Reconciliation and month-close readiness plus operational clarity | Finance and ops need current-legal-value bridges, exception handling, cleaner master data, and planning-ready workflows | Active: Phase 3A, 3B, and 3C implemented in core scope; close-pack/reporting follow-up remains | Phase 2 traceability and stable state views |
 | Phase 4 | Automated finance regression suite | The platform is now too finance-critical to rely on manual smoke tests alone | Not started | Stable Phase 1-3 workflows and validations |
 
 ### Phase 3 programme structure
@@ -103,8 +105,18 @@ These rules must not be broken by future work:
   - follow-up still open:
     - optional broader workflow polish on adjacent inventory screens if future testing shows confusion around the new item-profile layer
 - Phase 3C. Assembly planning enhancement with time-oriented production logic
-  - planned next, building directly on the new Phase 3B Assembly structure
+  - implemented in core scope
   - purpose: add practical time-based planning without turning Stockwise into a full ERP scheduler
+  - completed scope:
+    - planning time lives on the BOM version, not on the generic item master, with normalized-minute storage and readable hour/minute inputs in the UI
+    - Assembly now estimates total time for the requested quantity, optional available work time, quantity possible from time, quantity possible from stock, and the effective build capacity from both constraints
+    - the page now makes the limiting factor explicit: stock, time, both, or missing time configuration
+    - missing time configuration stays explicit and safe: builds can still proceed when stock/routing are valid, but the UI does not invent time estimates
+  - intentionally not done:
+    - work-center scheduling
+    - labor calendars or shifts
+    - routing/operation sequencing
+    - full MRP or production-order orchestration
 
 ### Production hardening block
 
@@ -182,7 +194,7 @@ Current open decisions that need explicit closure in future work:
 - whether month-close review should live in a dedicated finance workspace or be embedded into existing Settlements / document registers
 - whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
 - whether Phase 2 should later add filtered audit/report exports beyond the current document detail, order detail, and low-level event-registry surfaces
-- whether Phase 3C should store time-per-unit and setup-time directly on BOMs, items, or a dedicated assembly-planning layer once the new 3B workflow has been exercised in production
+- whether future assembly planning should add calendar-aware capacity inputs beyond the current manual available-hours field, or keep the planning layer intentionally lightweight
 
 ## H. Risks / Blockers
 
@@ -197,4 +209,4 @@ Current blocker summary:
 
 - no hard blocker prevents roadmap execution
 - the main risk is drift, not immediate technical blockage
-- the next recommended implementation block is Phase 3C, using the new Assembly planning surface as the base for time-per-unit, setup-time, and available-hours guidance
+- the next recommended implementation block is Phase 4 automated finance regression coverage, using the now-stable Phase 1-3 workflows as the baseline
