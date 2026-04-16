@@ -1,5 +1,5 @@
 // src/components/layout/AppLayout.tsx
-import { FormEvent, ReactNode, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -34,6 +34,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { cn } from '../../lib/utils'
 import { useOrg } from '../../hooks/useOrg'
+import { getPlatformAdminStatus } from '../../lib/companyAccess'
 import { hasRole, CanManageUsers } from '../../lib/roles'
 import ThemeToggle from '../ThemeToggle'
 import { NotificationCenter } from '../notifications/NotificationCenter'
@@ -125,6 +126,7 @@ export function AppLayout({ user, children }: Props) {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const [searchQuery, setSearchQuery] = useState('')
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const searchPlaceholder = tt('common.searchPlaceholder', 'Search items, orders, invoices, bills, customers...')
   const displayName = useMemo(() => {
     const rawName = user.name?.trim()
@@ -148,6 +150,24 @@ export function AppLayout({ user, children }: Props) {
     const base = buildNavLabels((key, fallback) => tt(key, fallback))
     return base.filter(item => !(item.to === '/users' && !canManage))
   }, [myRole, tt])
+
+  useEffect(() => {
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const status = await getPlatformAdminStatus()
+        if (!cancelled) setIsPlatformAdmin(Boolean(status?.is_admin))
+      } catch (error) {
+        console.error('[PlatformControl] status load failed', error)
+        if (!cancelled) setIsPlatformAdmin(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const navSections = useMemo<NavSection[]>(
     () => {
@@ -398,6 +418,12 @@ export function AppLayout({ user, children }: Props) {
                   <SettingsIcon className="h-4 w-4" />
                   {t('common.settings')}
                 </DropdownMenuItem>
+                {isPlatformAdmin ? (
+                  <DropdownMenuItem onClick={() => navigate('/platform-control')}>
+                    <ShieldCheck className="h-4 w-4" />
+                    {tt('platform.eyebrow', 'Platform control')}
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => logout?.()}>
                   <LogOut className="h-4 w-4" />

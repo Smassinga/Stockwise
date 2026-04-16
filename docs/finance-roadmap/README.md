@@ -2,7 +2,7 @@
 
 ## A. Overview
 
-This roadmap is the durable execution guide for the finance-document platform after the settlement-anchor transition, AR/AP adjustment rollout, and Mozambique issuance work.
+This roadmap is the durable execution guide for the finance-document platform and the surrounding control-plane work that now governs tenant access, trials, and regression safety.
 
 Use this folder to preserve:
 
@@ -17,34 +17,30 @@ The detailed phase tracker lives in [phase-tracker.md](phase-tracker.md). The ru
 
 ## B. Current State Summary
 
-Finance-document foundation already in place:
+Operational and finance foundations already in place:
 
 - `sales_orders` and `purchase_orders` remain operational/commercial documents
-- `sales_invoices` and `vendor_bills` are the legal/financial settlement anchors once issued/posted
+- `sales_invoices` and `vendor_bills` are the legal/financial settlement anchors once issued or posted
 - pre-finance settlements re-anchor from `SO` to `SI` and from `PO` to `VB`
-- AR supports issuance plus credit notes and debit notes, including partial and cumulative adjustments
-- AP supports vendor bills plus supplier credit notes and supplier debit notes, including partial and cumulative adjustments
-- invoice and finance-document output already uses snapshot-backed legal fields rather than mutable masters
-- finance-document output now resolves language from the stored document snapshot first, then from the active app/document language fallback, with bilingual `pt` / `en` rendering
-- finance documents now surface actor-aware activity journals, linked document-chain views, settlement events, and structured adjustment reasons on the core AR/AP detail pages
-- order detail screens now expose the active finance anchor and linked finance-document bridge from `SO -> SI` and `PO -> VB`
-- native sales-invoice draft creation now bootstraps the minimum Mozambique fiscal settings and current-year fiscal series when they are missing, while issue-time legal tax identity validation remains strict
-- Mozambique sales-invoice issue now runs through an explicit readiness and preparation path before the issue RPC is called; this keeps issue-time validation strict while surfacing the real blocker to the operator
-- missing seller legal snapshots remain a hard issue-time blocker when company master tax identity is incomplete; draft preparation may backfill from existing company/order/customer data, but it must not invent a missing company NUIT
-- approved draft invoices with exempt lines may now persist `vat_exemption_reason_text` through the narrow issue-preparation path so finance users can resolve that issue-time blocker without reopening the document to editable draft
-- purchase-order list and detail surfaces now share a single vendor-bill action model: open the existing bill when one already exists, raise a new draft when the PO is approved and billable, or explain exactly why billing is blocked
-- purchase-order billability is now independent from receipt completion: receiving stock may update the operational receipt status, but it must not remove the AP billing path unless a Vendor Bill already exists or the PO has no positive purchased value
-- a Phase 3A reconciliation read model is now live through `v_finance_reconciliation_review` and `v_finance_reconciliation_exceptions`
-- Settlements now has a controller-grade reconciliation workspace with AR/AP review registers, legal-value bridge totals, aging, due position, and visible exception queues
-- Sales Invoice and Vendor Bill detail pages now surface reconciliation review context directly from the same DB-backed model used by the controller register
-- Items now carries an operational item-profile layer (`primary_role`, stock tracking, buy/sell flags, assembly flag) that reduces master-data ambiguity without reopening post-create mutation risk
-- Assembly now uses a guided operational workflow: choose the finished product, review BOM sufficiency, inspect limiting factors and readiness, then post the build from a clearer source/destination planning surface
-- Assembly planning time now lives on the BOM version itself in normalized minutes (`assembly_time_per_unit_minutes`, `setup_time_per_batch_minutes`), so each recipe revision can keep its own planning pace without turning item masters into a scheduling subsystem
-- Assembly now exposes lightweight time-oriented planning: total time required for the requested quantity, optional available work time, stock-versus-time capacity, effective buildable quantity, and a clear missing-time-data fallback when no estimate is configured
-- bank-linked receive/pay now uses the canonical `bank_accounts` model end to end; the stale Phase 2 trigger dependency on `public.banks` has been removed from the active posting path
-- Banks, Cash, and UOM now use clearer operational language and page structure: bank accounts are treated as real treasury ledgers, Cash is framed as the company cash book, and UOM makes the difference between global units and company conversion rules explicit
+- AR supports issuance plus credit notes and debit notes, including partial and cumulative adjustment chains
+- AP supports vendor bills plus supplier credit notes and supplier debit notes, including partial and cumulative adjustment chains
+- finance-document output is snapshot-backed and language-driven with `pt` / `en` support
+- finance documents surface actor-aware activity journals, linked document chains, structured adjustment reasons, and settlement events
+- invoice issue readiness is explicit before Mozambique issue RPC execution
+- PO billing is independent from stock receipt state
+- AR/AP reconciliation uses DB-backed bridge views and controller-grade review surfaces
+- Items and Assembly now use clearer operational UX, and Assembly has lightweight BOM-level time planning
+- bank, cash, and UOM surfaces were hardened and clarified after Phase 3
 
-This roadmap covers what is still needed for execution maturity, finance control maturity, and sustainable regression safety.
+Hardening and control-plane foundations now also exist:
+
+- a real automated finance regression suite is in repo and passing
+- tenant access now uses subscription and entitlement state, not membership alone
+- new-company trial bootstrap starts a 7-day trial
+- expired, suspended, and disabled tenants are blocked by backend access helpers and app routing
+- manual paid activation is handled through a platform-admin control plane, not raw DB edits as the intended operating model
+- operational purge can be scheduled for expired trial tenants while retaining auth credentials
+- public pricing is now presented in MZN on the landing page
 
 ## C. Architecture Guardrails
 
@@ -54,154 +50,133 @@ These rules must not be broken by future work:
    - `SO` and `PO` are operational documents.
    - `SI` and `VB` become the finance/legal truth once issued or posted.
    - Reminders, settlements, balances, and exposure must follow the active finance anchor once it exists.
-   - physical receipt of PO stock is not the same as AP billing; receipt completion must not suppress Vendor Bill creation.
 
 2. Adjustment-document model
    - issued/post documents are not edited in place for legal value changes
-   - corrections must flow through credit/debit note chains
-   - cumulative credits/debits must never exceed coherent legal bounds
+   - corrections flow through credit/debit note chains
+   - `current legal amount = original - credits + debits`
 
-3. Snapshot-backed legal output
-   - issued/downloaded output must render from frozen document snapshots
-   - mutable company/customer/supplier/order masters are not the legal render source after issue/post
-   - branding may overlay output, but it must not replace fiscal snapshot truth
+3. Snapshot-backed output
+   - issued/downloaded output renders from frozen document snapshots
+   - snapshot language wins over mutable runtime language once the legal document exists
 
-4. Dual-reference AP model
-   - supplier invoice reference is supplier-origin and manually writable
-   - Stockwise internal reference is system-generated and used for audit/system lookup
-   - legacy prefixes may remain for audit continuity, but new UX must explain or replace ambiguity
-
-5. No duplicate exposure
+4. No duplicate exposure
    - balances due, settled amount, credited amount, debited amount, current legal amount, and outstanding amount must resolve from one active chain only
-   - no double charging, double counting, or duplicate receivable/payable exposure
 
-6. AR/AP parity by principle, not by blind symmetry
-   - close unjustified product gaps between AR and AP
-   - do not force identical behavior where accounting or document law differs
+5. Receipt is not billing
+   - physical receipt of PO stock is not AP billing completion
+   - receipt completion must not suppress Vendor Bill creation when the PO is still billable
 
-7. Repo-first execution tracking
+6. Access control is not UI-only
+   - authentication, membership, and entitlement state are separate concerns
+   - frontend route guards mirror backend access helpers; they do not replace them
+
+7. Manual activation now, automation later
+   - pricing is public
+   - paid activation is manual for now
+   - future payment automation must reuse the same control-plane model instead of redesigning entitlement state
+
+8. Repo-first execution tracking
    - roadmap tracking belongs in repo documentation first
-   - do not add tenant-facing product clutter for engineering roadmap status unless there is a clearly restricted internal/admin route
+   - internal control-plane continuity belongs in repo docs even when restricted UI/admin routes also exist
 
 ## D. Phase Roadmap
 
 | Phase | Purpose | Why It Matters | Current Status | Depends On |
 |---|---|---|---|---|
 | Phase 1 | Permissions and approval controls | Finance actions need explicit authority, separation of duties, and post-issue discipline | Completed | Current finance-document lifecycle baseline |
-| Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | Completed | Phase 1 controls for sensitive actions |
-| Phase 3 | Reconciliation and month-close readiness plus operational clarity | Finance and ops need current-legal-value bridges, exception handling, cleaner master data, and planning-ready workflows | Active: Phase 3A, 3B, and 3C implemented in core scope; close-pack/reporting follow-up remains | Phase 2 traceability and stable state views |
-| Phase 4 | Operational reliability and regression maturity | Treasury and master-data reliability still need targeted operational hardening before the full regression suite can take over | Active: Phase 4A implemented in core scope; Phase 4B regression suite still not started | Stable Phase 1-3 workflows and validations |
+| Phase 2 | Audit trail and document-chain visibility | Finance users need coherent traceability across original documents, adjustments, and settlements | Completed | Phase 1 controls |
+| Phase 3 | Reconciliation, operational clarity, and lightweight planning | Finance and ops need current-legal-value bridges, safer master data, and planning-ready workflows | Completed in core scope | Phase 2 traceability and stable state views |
+| Operational hardening block | Repair high-friction live workflows before broader automation | Protect production reliability before wider regression enforcement | Completed | Stable Phase 1-3 architecture |
+| Phase 4 | Automated finance regression suite | Stable finance and operational workflows now need repeatable regression protection | Implemented in core scope | Stable Phase 1-3 flows and post-Phase-3 hardening |
+| Phase 5 | Security, abuse protection, access control, trial enforcement, and subscription-control foundation | The app now needs real tenant control, restriction, auditability, and safer public/commercial access handling | Implemented in foundation scope | Stable workflow controls and regression coverage |
 
-### Phase 3 programme structure
+### Phase 3 close summary
 
-- Phase 3A. Reconciliation and month-close readiness
-  - implemented in core scope
-  - scope now includes AR/AP bridge registers, aging based on legal outstanding, exception queues, and detail-page reconciliation context
-- Phase 3B. Operational UX clarity on confusing workflow/master-data pages
-  - implemented in core scope
-  - target surfaces: Items and Assembly
-  - purpose: reduce master-data and production-workflow confusion before deeper planning logic is added
-  - completed scope:
-    - explicit item-role classification and safer item-creation guidance
-    - Assembly restructured around build target, stock sufficiency, limiting factor, and readiness before execution
-  - follow-up still open:
-    - optional broader workflow polish on adjacent inventory screens if future testing shows confusion around the new item-profile layer
-- Phase 3C. Assembly planning enhancement with time-oriented production logic
-  - implemented in core scope
-  - purpose: add practical time-based planning without turning Stockwise into a full ERP scheduler
-  - completed scope:
-    - planning time lives on the BOM version, not on the generic item master, with normalized-minute storage and readable hour/minute inputs in the UI
-    - Assembly now estimates total time for the requested quantity, optional available work time, quantity possible from time, quantity possible from stock, and the effective build capacity from both constraints
-    - the page now makes the limiting factor explicit: stock, time, both, or missing time configuration
-    - missing time configuration stays explicit and safe: builds can still proceed when stock/routing are valid, but the UI does not invent time estimates
-  - intentionally not done:
-    - work-center scheduling
-    - labor calendars or shifts
-    - routing/operation sequencing
-    - full MRP or production-order orchestration
+Phase 3 is complete in core scope:
 
-### Production hardening block
+- Phase 3A: DB-backed AR/AP reconciliation bridges, aging by legal outstanding, exception queues, controller review surfaces
+- Phase 3B: Items and Assembly operational UX clarity
+- Phase 3C: BOM-level time planning with lightweight available-hours guidance
 
-Completed before Phase 3 activation:
+Still intentionally deferred from Phase 3:
+
+- formal month-close close-pack exports
+- full manufacturing ERP scheduling
+
+### Operational hardening block
+
+Completed between Phase 3 and the current access-control work:
 
 - bank-linked settlement posting repaired
 - landed-cost workflow repaired
-- PO to Vendor Bill progression repaired, including receipt-independent AP billability
+- PO to Vendor Bill progression repaired
+- receipt no longer blocks Vendor Bill billability
 - SO to Sales Invoice draft creation repaired
 - Sales Invoice issue readiness and controlled issue preparation implemented
+- Banks, Cash, and UOM clarified operationally
 - Tauri desktop and Android packaging hardened and documented
 
-### Phase 4 programme structure
+### Phase 4 implemented scope
 
-- Phase 4A. Treasury and master-data operational reliability / UX
-  - implemented in core scope
-  - scope now includes:
-    - bank receive/pay repair against the canonical `bank_accounts` schema
-    - finance-readable bank posting error handling on the touched bank settlement paths
-    - clearer operational UX for Banks, Cash, and UOM
-  - completed outcomes:
-    - `bank_transactions` no longer route through the obsolete `public.banks` dependency during settlement audit journaling
-    - Banks now behaves like a bank-account register, not a vague bank-name list
-    - Cash now behaves like the company cash book with clearer settlement-policy guidance
-    - UOM now separates global unit masters from company conversion rules more clearly
-  - follow-up still open:
-    - broader treasury workflow polish if future testing shows confusion around statement import, reconciliation, or bank-ledger maintenance
-- Phase 4B. Automated finance regression suite
-  - not started
-  - purpose: turn the now-stable Phase 1-4A workflows into repeatable regression coverage
-  - depends on:
-    - stable treasury and settlement posting after Phase 4A
-    - seeded validation data and repeatable non-production mutation environments
+The automated regression suite now protects:
+
+- Sales Order -> Sales Invoice draft -> approval -> issue readiness -> issue
+- Purchase Order -> Vendor Bill draft -> approval -> post
+- settlements
+- bank receive / pay
+- cash posting
+- AR/AP bridge and reconciliation calculations
+- item/UOM dependency paths that affect finance and inventory correctness
+- BOM / assembly gating and successful build posting
+- trial/access lifecycle regression at the control-plane level
+- public bootstrap abuse protection
+
+Current implementation lives in the repo and runs through `npm run test:finance-regression`.
+
+### Phase 5 implemented foundation scope
+
+Implemented now:
+
+- `plan_catalog`, `company_subscription_state`, `platform_admins`, `company_access_audit_log`, and `company_purge_queue`
+- 7-day trial bootstrap through `create_company_and_bootstrap`
+- backend entitlement helpers and route-level blocked-access handling
+- manual grant/revoke/suspend/expire path through platform control
+- auditability of admin access changes
+- public bootstrap rate limiting
+- public pricing in MZN
+
+Intentionally deferred:
+
+- automatic payment gateway integration
+- webhook-driven automatic paid-plan activation
+- self-serve paid checkout
+- automatic purge execution
 
 ## E. Cross-Phase Tracked Items
 
-### Due reminders anchor redesign
+### Due reminders anchor rule
 
-This item is tracked under Phase 3 because it depends on the settlement-anchor model and current-legal receivable logic.
+Implemented rule:
 
-Target rule:
-
-- if a sales invoice exists, reminders must anchor to the sales invoice
-- only if no sales invoice exists should reminder logic remain on the sales order
-
-Implemented behavior:
-
-- reminders stay on the sales order only while no issued sales invoice exists
-- once an issued sales invoice exists, reminder anchor moves to the sales invoice
-- reminder eligibility now follows invoice outstanding and current legal value, including settlement and credit/debit adjustments
-- reminder language uses the invoice language snapshot when the active anchor is an invoice, otherwise company/app reminder language fallback applies
+- if a sales invoice exists, reminders anchor to the invoice
+- only if no issued invoice exists do reminders remain on the sales order
 
 ### Document language behavior
 
-This item is tracked under Phase 2 because it affects issued output correctness and audit/compliance visibility.
+Implemented rule:
 
-Target rule:
-
-- documents must render in the selected document/app language
-- Portuguese selection should produce Portuguese output
-- English selection should produce English output
-
-Current state:
-
-- app locale selection exists in settings and UI
-- Mozambique fiscal settings store `document_language_code`
-- finance-document output now uses this precedence rule:
-  - if the issued/post document has a stored language snapshot, use it
-  - otherwise fall back to the active app/document language
-- shared output helpers now render labels, headings, section names, footer wording, and date/number formatting in `pt` or `en` consistently across AR and AP documents
-
-Result:
-
-- this is now implemented behavior and should stay snapshot-first for issued/post documents
+- issued/post output uses stored document language snapshot first
+- otherwise output falls back to the active app/document language
 
 ## F. Update Protocol
 
-When any finance-document work lands:
+When finance or control-plane work lands:
 
 1. Update the relevant phase and work-item status in [phase-tracker.md](phase-tracker.md).
 2. Record any architecture or behavior decision in [decision-log.md](decision-log.md).
 3. If a dependency or scope changed, update this master roadmap summary.
-4. If a work item changed the forward-state model, update [mozambique-runtime-issuance.md](../mozambique-runtime-issuance.md) only where it affects live runtime truth.
+4. If a work item changed live runtime truth, update the nearest continuity doc in `docs/`.
 
 Status vocabulary:
 
@@ -214,24 +189,21 @@ Status vocabulary:
 
 Current open decisions that need explicit closure in future work:
 
-- whether approval escalation thresholds should be universal or company-configurable
-- whether month-close review should live in a dedicated finance workspace or be embedded into existing Settlements / document registers
-- whether internal engineering roadmap visibility ever needs a restricted in-app route, or should stay repo-only
-- whether Phase 2 should later add filtered audit/report exports beyond the current document detail, order detail, and low-level event-registry surfaces
-- whether future assembly planning should add calendar-aware capacity inputs beyond the current manual available-hours field, or keep the planning layer intentionally lightweight
-- whether Phase 4A should later extend into deeper bank-statement reconciliation tooling or stay limited to bank-posting reliability and clearer treasury-master surfaces
+- when to wire the finance regression suite into CI with a guarded mutation environment
+- whether automatic purge execution should be implemented before payment automation
+- when payment integration should start driving `company_subscription_state` instead of platform-admin manual grants
+- whether month-close review later needs export packs beyond the current reconciliation workspace
+- whether future treasury work needs deeper bank-statement reconciliation tooling
 
 ## H. Risks / Blockers
 
 Known risks:
 
-- finance-document behavior is already broad enough that undocumented assumptions can cause drift between sessions
-- reminder logic now follows the active AR anchor, but still needs regression coverage to prevent drift
-- regression coverage is still largely manual
-- the new item-profile layer is intentionally lightweight and UI-driven first; any future hard DB enforcement must be designed carefully so legacy items do not break production workflows
+- the finance regression suite currently mutates temporary live data and depends on disciplined cleanup
+- payment automation is intentionally deferred, so internal operational discipline around manual activation remains important
+- operational purge execution is scheduled but not yet automated
 
 Current blocker summary:
 
-- no hard blocker prevents roadmap execution
-- the main risk is drift, not immediate technical blockage
-- the next recommended implementation block is Phase 4B automated finance regression coverage, using the now-stable Phase 1-4A workflows as the baseline
+- no hard blocker prevents the current roadmap from moving forward
+- the next recommended implementation block is CI wiring for the finance regression suite plus the next security/control-plane follow-up that the commercial rollout actually requires

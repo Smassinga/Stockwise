@@ -11,10 +11,12 @@ import { Label } from '../components/ui/label'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { clearInviteToken, readInviteToken } from '../lib/inviteToken'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
+import { getPlatformAdminStatus } from '../lib/companyAccess'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import { setActiveCompanyRpc } from '../lib/setActiveCompanyRpc'
 import { withTimeout } from '../lib/withTimeout'
+
 const SESSION_LOOKUP_TIMEOUT_MS = 5000
 const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
 const BEST_EFFORT_SYNC_TIMEOUT_MS = 5000
@@ -31,18 +33,19 @@ type BootstrapCompanyResult = {
 
 const shellCopyByLang = {
   en: {
-    subtitle: 'Finish company setup and start working from a clean, secure workspace.',
+    subtitle: 'Start the first company on a controlled 7-day trial and keep manual plan activation for later.',
     heroTitle: 'Finish your workspace setup.',
     heroBody:
-      'Create your first company, or let StockWise route you into an invited workspace once your membership is ready.',
+      'Create your first company, start the 7-day trial, or let StockWise route you into an invited workspace once your membership is ready.',
     highlights: [
       'Create the first company in under a minute',
+      'The first company starts on a 7-day operational trial',
       'Invite-based memberships still route into the right company automatically',
-      'You can return here safely if setup is interrupted',
+      'Manual paid activation remains controlled by the StockWise team',
     ],
     companyPlaceholder: 'Acme Trading',
     createCompanyHint:
-      'This creates the first company for your account. You can add more companies later if your role allows it.',
+      'This creates the first company for your account and starts the 7-day trial. Paid access is still manually granted by the StockWise team after trial.',
     inviteHint:
       "If you were invited by another company, StockWise will route you there automatically as soon as the membership becomes active.",
     companyLabelHint: 'You can rename company details later from settings.',
@@ -59,43 +62,48 @@ const shellCopyByLang = {
       'We could not finish the company setup right now. Please review the company name and try again.',
     createCompanyTimeout:
       'Company setup is taking longer than expected. Please try again in a moment.',
+    createCompanyRateLimited:
+      'Too many workspace bootstrap attempts were made too quickly. Wait a bit before trying again.',
     createCompanySessionExpired: 'Your session expired. Sign in again to continue.',
     createCompanyResponseError: 'Company setup finished without a usable company record. Please try again.',
     createCompanyCta: 'Create company',
     creatingCompany: 'Creating company...',
   },
   pt: {
-    subtitle: 'Conclua a configuracao da empresa e comece a trabalhar num workspace seguro.',
-    heroTitle: 'Conclua a configuracao do seu workspace.',
+    subtitle: 'Crie a primeira empresa num teste controlado de 7 dias e mantenha a ativação paga manual para mais tarde.',
+    heroTitle: 'Conclua a configuração do seu workspace.',
     heroBody:
-      'Crie a sua primeira empresa ou deixe o StockWise encaminha-lo para um workspace convidado assim que a associacao estiver pronta.',
+      'Crie a sua primeira empresa, inicie o teste de 7 dias ou deixe o StockWise encaminhá-lo para um workspace convidado assim que a associação estiver pronta.',
     highlights: [
       'Crie a primeira empresa em menos de um minuto',
-      'Associacoes por convite continuam a encaminhar para a empresa correta automaticamente',
-      'Pode voltar a esta etapa com seguranca se a configuracao for interrompida',
+      'A primeira empresa começa com um teste operacional de 7 dias',
+      'Associações por convite continuam a encaminhar para a empresa correta automaticamente',
+      'A ativação paga continua manual pela equipa StockWise',
     ],
     companyPlaceholder: 'Acme Comercial',
     createCompanyHint:
-      'Isto cria a primeira empresa da sua conta. Pode adicionar outras empresas mais tarde se a sua funcao permitir.',
+      'Isto cria a primeira empresa da sua conta e inicia o teste de 7 dias. O acesso pago continua a ser ativado manualmente pela equipa StockWise depois do teste.',
     inviteHint:
-      'Se foi convidado por outra empresa, o StockWise vai encaminha-lo automaticamente assim que a associacao ficar ativa.',
-    companyLabelHint: 'Mais tarde pode atualizar os detalhes da empresa nas definicoes.',
-    startupTitle: 'Nao foi possivel concluir a configuracao',
+      'Se foi convidado por outra empresa, o StockWise vai encaminhá-lo automaticamente assim que a associação ficar ativa.',
+    companyLabelHint: 'Mais tarde pode atualizar os detalhes da empresa nas definições.',
+    startupTitle: 'Não foi possível concluir a configuração',
     startupBody:
-      'A autenticacao foi concluida, mas os dados de associacao da empresa estao temporariamente indisponiveis.',
-    startupRetryHint: 'Atualize a pagina uma vez ou volte a entrar se a sessao tiver expirado.',
-    resendDone: 'Email de verificacao reenviado.',
+      'A autenticação foi concluída, mas os dados de associação da empresa estão temporariamente indisponíveis.',
+    startupRetryHint: 'Atualize a página uma vez ou volte a entrar se a sessão tiver expirado.',
+    resendDone: 'Email de verificação reenviado.',
     retry: 'Tentar novamente',
     backToSignIn: 'Voltar ao login',
     createCompanyError: 'Introduza o nome da empresa.',
-    createCompanyFailed: 'Nao foi possivel criar a empresa.',
+    createCompanyFailed: 'Não foi possível criar a empresa.',
     createCompanyFailedBody:
-      'Nao foi possivel concluir a configuracao da empresa agora. Reveja o nome e tente novamente.',
+      'Não foi possível concluir a configuração da empresa agora. Reveja o nome e tente novamente.',
     createCompanyTimeout:
-      'A configuracao da empresa esta a demorar mais do que o esperado. Tente novamente dentro de instantes.',
-    createCompanySessionExpired: 'A sua sessao expirou. Volte a iniciar sessao para continuar.',
+      'A configuração da empresa está a demorar mais do que o esperado. Tente novamente dentro de instantes.',
+    createCompanyRateLimited:
+      'Foram feitas demasiadas tentativas de criação de workspace num curto espaço de tempo. Aguarde um pouco antes de tentar novamente.',
+    createCompanySessionExpired: 'A sua sessão expirou. Volte a iniciar sessão para continuar.',
     createCompanyResponseError:
-      'A configuracao terminou sem devolver uma empresa valida. Tente novamente.',
+      'A configuração terminou sem devolver uma empresa válida. Tente novamente.',
     createCompanyCta: 'Criar empresa',
     creatingCompany: 'A criar empresa...',
   },
@@ -118,7 +126,7 @@ function unwrapBootstrapCompany(payload: unknown): BootstrapCompanyResult | null
 
 function getFriendlyStartupError(
   copy: (typeof shellCopyByLang)['en'],
-  error: { message?: string } | null | undefined
+  error: { message?: string } | null | undefined,
 ) {
   const message = (error?.message || '').toLowerCase()
   if (message.includes('timed out')) return copy.startupBody
@@ -128,11 +136,12 @@ function getFriendlyStartupError(
 
 function getFriendlyCreateCompanyError(
   copy: (typeof shellCopyByLang)['en'],
-  error: { message?: string; code?: string } | null | undefined
+  error: { message?: string; code?: string } | null | undefined,
 ) {
   const message = (error?.message || '').toLowerCase()
   if (message.includes('timed out')) return copy.createCompanyTimeout
   if (message.includes('not_authenticated')) return copy.createCompanySessionExpired
+  if (message.includes('company_bootstrap_rate_limited')) return copy.createCompanyRateLimited
   if (message.includes('bootstrap_error') || error?.code === 'P0001') return copy.createCompanyFailed
   return copy.createCompanyFailed
 }
@@ -145,7 +154,7 @@ async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
     } = await withTimeout(
       supabase.auth.getSession(),
       SESSION_LOOKUP_TIMEOUT_MS,
-      'membership poll session lookup'
+      'membership poll session lookup',
     )
     const userId = session?.user?.id
     if (!userId) return null
@@ -160,7 +169,7 @@ async function waitForMembership(timeoutMs = 8000, stepMs = 400) {
         .limit(1)
         .maybeSingle(),
       MEMBERSHIP_LOOKUP_TIMEOUT_MS,
-      'membership poll'
+      'membership poll',
     )
 
     if (data?.company_id) return data.company_id
@@ -193,7 +202,7 @@ export default function Onboarding() {
         } = await withTimeout(
           supabase.auth.getSession(),
           SESSION_LOOKUP_TIMEOUT_MS,
-          'onboarding session lookup'
+          'onboarding session lookup',
         )
         const user = session?.user
         if (!user) {
@@ -215,7 +224,7 @@ export default function Onboarding() {
           await withTimeout(
             runAdminUserSyncIfNeeded(user.id),
             BEST_EFFORT_SYNC_TIMEOUT_MS,
-            'admin user sync'
+            'admin user sync',
           )
         } catch (e) {
           console.warn('admin user sync failed during onboarding:', e)
@@ -227,7 +236,7 @@ export default function Onboarding() {
             await withTimeout(
               supabase.rpc('accept_invite_with_token', { p_token: token }),
               INVITE_REDEEM_TIMEOUT_MS,
-              'invite redeem'
+              'invite redeem',
             )
             clearInviteToken()
           }
@@ -245,12 +254,18 @@ export default function Onboarding() {
             .limit(1)
             .maybeSingle(),
           MEMBERSHIP_LOOKUP_TIMEOUT_MS,
-          'active membership lookup'
+          'active membership lookup',
         )
 
         if (active.data?.company_id) {
           rememberCompanyLocally(active.data.company_id)
           nav('/dashboard', { replace: true })
+          return
+        }
+
+        const adminStatus = await getPlatformAdminStatus().catch(() => ({ is_admin: false }))
+        if (adminStatus?.is_admin) {
+          nav('/platform-control', { replace: true })
           return
         }
 
@@ -296,7 +311,7 @@ export default function Onboarding() {
       const { data, error } = await withTimeout(
         supabase.rpc('create_company_and_bootstrap', { p_name: name }),
         CREATE_COMPANY_TIMEOUT_MS,
-        'create company'
+        'create company',
       )
       if (error) {
         const friendly = getFriendlyCreateCompanyError(shellCopy, error)
@@ -327,7 +342,7 @@ export default function Onboarding() {
       const { error: activeErr } = await withTimeout(
         setActiveCompanyRpc(companyId),
         SET_ACTIVE_COMPANY_TIMEOUT_MS,
-        'set active company'
+        'set active company',
       )
       if (activeErr && isDev) {
         console.warn('[Onboarding] set_active_company after bootstrap failed', {
@@ -343,7 +358,7 @@ export default function Onboarding() {
         await withTimeout(
           supabase.auth.refreshSession(),
           SESSION_LOOKUP_TIMEOUT_MS,
-          'refresh session'
+          'refresh session',
         )
       } catch (refreshError) {
         if (isDev) console.warn('[Onboarding] refreshSession after bootstrap failed', refreshError)
@@ -488,7 +503,11 @@ export default function Onboarding() {
                 />
                 <p className="text-xs text-muted-foreground">{shellCopy.companyLabelHint}</p>
               </div>
-              <Button onClick={createCompany} disabled={creating || !companyName.trim()} className="sm:min-w-[160px]">
+              <Button
+                onClick={createCompany}
+                disabled={creating || !companyName.trim()}
+                className="sm:min-w-[160px]"
+              >
                 {creating ? shellCopy.creatingCompany : shellCopy.createCompanyCta}
               </Button>
             </div>

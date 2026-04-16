@@ -28,6 +28,7 @@ If you're new to Stockwise, start here:
 - [Finance Roadmap](finance-roadmap/README.md) - Finance-document roadmap, architecture guardrails, and execution phases
 - [Finance Phase Tracker](finance-roadmap/phase-tracker.md) - Updateable implementation tracker for the next finance phases
 - [Finance Decision Log](finance-roadmap/decision-log.md) - Durable finance architecture and implementation decisions
+- [Subscription and Access Control](subscription-access-control.md) - Trial rules, manual activation, purge scope, and entitlement control-plane design
 
 ### Testing
 

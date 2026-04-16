@@ -164,6 +164,16 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
       description: t.appDescription,
       noindex: true,
     },
+    '/company-access': {
+      title: 'Company Access | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
+    '/platform-control': {
+      title: 'Platform Control | StockWise',
+      description: t.appDescription,
+      noindex: true,
+    },
     '/accept-invite': {
       title: 'Accept Invite | StockWise',
       description: t.appDescription,
