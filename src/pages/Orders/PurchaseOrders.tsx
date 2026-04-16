@@ -2898,7 +2898,7 @@ export default function PurchaseOrders() {
           <DialogHeader>
             <DialogTitle>{tt('orders.createVendorBill', 'Raise vendor bill')}</DialogTitle>
             <DialogDescription>
-              {tt('orders.createVendorBillHelp', 'Create a draft vendor bill from this approved purchase order. Stockwise keeps the purchase order as the operational source until the vendor bill is posted as the AP anchor.')}
+            {tt('orders.createVendorBillHelp', 'Create a draft vendor bill from this approved purchase order. StockWise keeps the purchase order as the operational source until the vendor bill is posted as the AP anchor.')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>

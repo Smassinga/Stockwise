@@ -41,6 +41,10 @@ Hardening and control-plane foundations now also exist:
 - manual paid activation is handled through a platform-admin control plane, not raw DB edits as the intended operating model
 - operational purge can be scheduled for expired trial tenants while retaining auth credentials
 - public pricing is now presented in MZN on the landing page
+- platform-admin access is now explicitly documented and visible only to active platform admins
+- the approved StockWise logo now drives the public brand, app shell, PWA icons, and Tauri packaging icons
+- the landing page pricing structure now follows the 2026 MZN workbook with clearer package breakdown and real CTAs
+- public and authenticated pages have had a professional placeholder/copy audit to remove unfinished-looking text and stale demo assets
 
 ## C. Architecture Guardrails
 
@@ -89,7 +93,7 @@ These rules must not be broken by future work:
 | Phase 3 | Reconciliation, operational clarity, and lightweight planning | Finance and ops need current-legal-value bridges, safer master data, and planning-ready workflows | Completed in core scope | Phase 2 traceability and stable state views |
 | Operational hardening block | Repair high-friction live workflows before broader automation | Protect production reliability before wider regression enforcement | Completed | Stable Phase 1-3 architecture |
 | Phase 4 | Automated finance regression suite | Stable finance and operational workflows now need repeatable regression protection | Implemented in core scope | Stable Phase 1-3 flows and post-Phase-3 hardening |
-| Phase 5 | Security, abuse protection, access control, trial enforcement, and subscription-control foundation | The app now needs real tenant control, restriction, auditability, and safer public/commercial access handling | Implemented in foundation scope | Stable workflow controls and regression coverage |
+| Phase 5 | Security, abuse protection, access control, trial enforcement, and subscription-control foundation | The app now needs real tenant control, restriction, auditability, and safer public/commercial access handling | Implemented in foundation scope and Phase 5B core scope | Stable workflow controls and regression coverage |
 
 ### Phase 3 close summary
 
@@ -153,6 +157,20 @@ Intentionally deferred:
 - self-serve paid checkout
 - automatic purge execution
 
+### Phase 5B completed scope
+
+Completed in this pass:
+
+- platform-admin discoverability now has a documented first-admin bootstrap path plus a visible Platform navigation section only for active platform admins
+- `/platform-control` remains permission-based and is documented as the canonical manual access-control route
+- the approved StockWise logo replaced the old runtime brand across public pages, app shell, blocked-access/auth surfaces, PWA icons, and Tauri icon generation
+- landing-page pricing now follows the 2026 MZN package workbook with clearer billing options, grouped perks, and manual-activation posture
+- broad placeholder and professional-copy cleanup removed stale demo/default assets and unfinished-looking public/app text
+
+Current limitation:
+
+- no true vector SVG was generated in this pass; high-quality PNG-derived assets are now canonical runtime brand assets, and SVG extraction from the approved source artwork remains a later refinement
+
 ## E. Cross-Phase Tracked Items
 
 ### Due reminders anchor rule
@@ -194,6 +212,7 @@ Current open decisions that need explicit closure in future work:
 - when payment integration should start driving `company_subscription_state` instead of platform-admin manual grants
 - whether month-close review later needs export packs beyond the current reconciliation workspace
 - whether future treasury work needs deeper bank-statement reconciliation tooling
+- whether a vector-extracted SVG should be added from the approved logo source package once suitable tooling or source artwork is available
 
 ## H. Risks / Blockers
 
@@ -202,6 +221,7 @@ Known risks:
 - the finance regression suite currently mutates temporary live data and depends on disciplined cleanup
 - payment automation is intentionally deferred, so internal operational discipline around manual activation remains important
 - operational purge execution is scheduled but not yet automated
+- runtime brand assets are now consistent, but SVG vector extraction is still deferred to avoid shipping a poor trace of the approved logo
 
 Current blocker summary:
 

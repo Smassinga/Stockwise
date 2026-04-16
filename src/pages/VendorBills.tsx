@@ -93,7 +93,7 @@ export default function VendorBillsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.vendorBills.title', 'Vendor Bills')}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('financeDocs.vendorBills.subtitle', 'Supplier invoice references stay primary in AP-facing work while the Stockwise internal reference remains the audit trail and system lookup key.')}
+          {tt('financeDocs.vendorBills.subtitle', 'Supplier invoice references stay primary in AP-facing work while the StockWise internal reference remains the audit trail and system lookup key.')}
             </p>
           </div>
         </div>

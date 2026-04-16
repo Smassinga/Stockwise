@@ -1,10 +1,10 @@
-# Stockwise Documentation
+# StockWise Documentation
 
-Welcome to the Stockwise documentation. This comprehensive guide covers all aspects of the Stockwise inventory management system.
+Welcome to the StockWise documentation. This guide covers the operational, finance, packaging, and control-plane areas of the StockWise platform.
 
 ## Getting Started
 
-If you're new to Stockwise, start here:
+If you're new to StockWise, start here:
 
 1. [README](README.md) - Project overview and quick start guide
 2. [Development Guide](DEVELOPMENT.md) - Setting up your development environment
@@ -29,6 +29,7 @@ If you're new to Stockwise, start here:
 - [Finance Phase Tracker](finance-roadmap/phase-tracker.md) - Updateable implementation tracker for the next finance phases
 - [Finance Decision Log](finance-roadmap/decision-log.md) - Durable finance architecture and implementation decisions
 - [Subscription and Access Control](subscription-access-control.md) - Trial rules, manual activation, purge scope, and entitlement control-plane design
+- [Platform Admin Runbook](platform-admin-runbook.md) - First-admin bootstrap command, route, and navigation visibility rules
 
 ### Testing
 

@@ -1845,7 +1845,7 @@ export default function SettlementsPage() {
                       </Select>
                       {bankRefsSupported === false && (
                         <p className="mt-2 text-xs text-muted-foreground">
-                          {tt('settlements.bankMigrationHint', 'Bank settlement references were unavailable on the last probe. Stockwise will retry schema detection automatically before posting again.')}
+              {tt('settlements.bankMigrationHint', 'Bank settlement references were unavailable on the last probe. StockWise will retry schema detection automatically before posting again.')}
                         </p>
                       )}
                     </div>

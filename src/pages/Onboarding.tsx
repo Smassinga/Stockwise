@@ -1,4 +1,4 @@
-import { AlertCircle, Mail } from 'lucide-react'
+﻿import { AlertCircle, Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
@@ -43,7 +43,7 @@ const shellCopyByLang = {
       'Invite-based memberships still route into the right company automatically',
       'Manual paid activation remains controlled by the StockWise team',
     ],
-    companyPlaceholder: 'Acme Trading',
+    companyPlaceholder: 'Company legal name',
     createCompanyHint:
       'This creates the first company for your account and starts the 7-day trial. Paid access is still manually granted by the StockWise team after trial.',
     inviteHint:
@@ -80,7 +80,7 @@ const shellCopyByLang = {
       'Associações por convite continuam a encaminhar para a empresa correta automaticamente',
       'A ativação paga continua manual pela equipa StockWise',
     ],
-    companyPlaceholder: 'Acme Comercial',
+    companyPlaceholder: 'Nome legal da empresa',
     createCompanyHint:
       'Isto cria a primeira empresa da sua conta e inicia o teste de 7 dias. O acesso pago continua a ser ativado manualmente pela equipa StockWise depois do teste.',
     inviteHint:
@@ -90,7 +90,7 @@ const shellCopyByLang = {
     startupBody:
       'A autenticação foi concluída, mas os dados de associação da empresa estão temporariamente indisponíveis.',
     startupRetryHint: 'Atualize a página uma vez ou volte a entrar se a sessão tiver expirado.',
-    resendDone: 'Email de verificação reenviado.',
+    resendDone: 'E-mail de verificação reenviado.',
     retry: 'Tentar novamente',
     backToSignIn: 'Voltar ao login',
     createCompanyError: 'Introduza o nome da empresa.',
@@ -518,3 +518,5 @@ export default function Onboarding() {
     </PublicAuthShell>
   )
 }
+
+

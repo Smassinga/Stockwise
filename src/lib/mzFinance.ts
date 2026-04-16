@@ -724,7 +724,7 @@ function humanizeRuntimeError(error: any, fallback: string, stage: string) {
   if (matches('company_fiscal_settings_missing')) {
     friendlyMessage = 'Mozambique fiscal document defaults are not ready for this company yet. Try opening the draft again, then complete the company tax profile before issuing legal documents.'
   } else if (matches('finance_document_fiscal_series_missing')) {
-    friendlyMessage = 'The active Mozambique fiscal series for this document year is missing. Stockwise needs one series per document type before it can allocate the legal reference.'
+      friendlyMessage = 'The active Mozambique fiscal series for this document year is missing. StockWise needs one series per document type before it can allocate the legal reference.'
   } else if (matches('finance_document_fiscal_series_ambiguous')) {
     friendlyMessage = 'More than one active Mozambique fiscal series matches this document year. Keep exactly one active series per document type and fiscal year.'
   } else if (matches('finance_document_fiscal_series_settings_mismatch')) {

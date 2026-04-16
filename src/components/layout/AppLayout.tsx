@@ -148,8 +148,16 @@ export function AppLayout({ user, children }: Props) {
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, [...CanManageUsers])
     const base = buildNavLabels((key, fallback) => tt(key, fallback))
-    return base.filter(item => !(item.to === '/users' && !canManage))
-  }, [myRole, tt])
+    const filtered = base.filter(item => !(item.to === '/users' && !canManage))
+    if (isPlatformAdmin) {
+      filtered.push({
+        label: tt('platform.eyebrow', 'Platform control'),
+        to: '/platform-control',
+        icon: ShieldCheck,
+      })
+    }
+    return filtered
+  }, [isPlatformAdmin, myRole, tt])
 
   useEffect(() => {
     let cancelled = false
@@ -186,6 +194,10 @@ export function AppLayout({ user, children }: Props) {
         ],
       ])
 
+      if (isPlatformAdmin) {
+        sectionMap.set(tt('shell.nav.platform', 'Platform'), ['/platform-control'])
+      }
+
       return Array.from(sectionMap.entries()).map(([label, routes]) => ({
         label,
         items: routes
@@ -193,7 +205,7 @@ export function AppLayout({ user, children }: Props) {
           .filter((item): item is NavItem => Boolean(item)),
       }))
     },
-    [nav, tt]
+    [isPlatformAdmin, nav, tt]
   )
 
   const isActive = (to: string) =>
@@ -246,11 +258,16 @@ export function AppLayout({ user, children }: Props) {
 
         <div className="border-t border-border/70 space-y-3 p-3">
           <CompanySwitcher className="mb-3" />
-          <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
-            <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
-            <div className="text-xs text-muted-foreground">{displayRole}</div>
-          </div>
+            <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
+              <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
+              <div className="text-xs text-muted-foreground">{displayRole}</div>
+              {isPlatformAdmin ? (
+                <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
+                  {tt('platform.adminBadge', 'Platform admin')}
+                </div>
+              ) : null}
+            </div>
           <Button
             variant="ghost"
             size="sm"
@@ -333,6 +350,11 @@ export function AppLayout({ user, children }: Props) {
               <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
               <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
               <div className="text-xs text-muted-foreground">{displayRole}</div>
+              {isPlatformAdmin ? (
+                <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
+                  {tt('platform.adminBadge', 'Platform admin')}
+                </div>
+              ) : null}
             </div>
           <Button
             variant="ghost"
@@ -408,6 +430,11 @@ export function AppLayout({ user, children }: Props) {
                   <div className="mt-1 text-sm font-semibold truncate">{displayName}</div>
                   <div className="text-xs text-muted-foreground truncate">{displayEmail}</div>
                   <div className="mt-2 text-xs text-muted-foreground truncate">{displayCompany}</div>
+                  {isPlatformAdmin ? (
+                    <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
+                      {tt('platform.adminBadge', 'Platform admin')}
+                    </div>
+                  ) : null}
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/profile')}>

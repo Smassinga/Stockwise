@@ -1695,7 +1695,7 @@ export default function VendorBillDetailPage() {
               <CardHeader>
                 <CardTitle>{tt('financeDocs.vendorBills.apIdentity', 'AP identity')}</CardTitle>
                 <CardDescription>
-                  {tt('financeDocs.vendorBills.apIdentityHelp', 'The supplier invoice reference is entered from the supplier document. Stockwise keeps a separate internal key for audit trail, search, and linked AP adjustments.')}
+                {tt('financeDocs.vendorBills.apIdentityHelp', 'The supplier invoice reference is entered from the supplier document. StockWise keeps a separate internal key for audit trail, search, and linked AP adjustments.')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -1719,7 +1719,7 @@ export default function VendorBillDetailPage() {
                 </div>
                 <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    {tt('financeDocs.vendorBills.stockwiseKey', 'Stockwise internal key')}
+                  {tt('financeDocs.vendorBills.stockwiseKey', 'StockWise internal key')}
                   </div>
                   <div className="mt-1 font-medium">{row.internal_reference}</div>
                   <div className="mt-1 text-xs text-muted-foreground">
@@ -2103,7 +2103,7 @@ export default function VendorBillDetailPage() {
                           <TableCell>
                             <div className="font-medium">{note.supplier_document_reference || note.internal_reference}</div>
                             <div className="text-xs text-muted-foreground">
-                              {tt('financeDocs.vendorBills.internalKeyValue', 'Stockwise key {reference}', { reference: note.internal_reference })}
+                  {tt('financeDocs.vendorBills.internalKeyValue', 'StockWise key {reference}', { reference: note.internal_reference })}
                             </div>
                             {note.adjustment_reason_code ? (
                               <div className="mt-2">
@@ -2196,7 +2196,7 @@ export default function VendorBillDetailPage() {
                           <TableCell>
                             <div className="font-medium">{note.supplier_document_reference || note.internal_reference}</div>
                             <div className="text-xs text-muted-foreground">
-                              {tt('financeDocs.vendorBills.internalKeyValue', 'Stockwise key {reference}', { reference: note.internal_reference })}
+                  {tt('financeDocs.vendorBills.internalKeyValue', 'StockWise key {reference}', { reference: note.internal_reference })}
                             </div>
                             {note.adjustment_reason_code ? (
                               <div className="mt-2">

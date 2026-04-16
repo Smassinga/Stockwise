@@ -1,14 +1,16 @@
-import { useMemo, useState } from 'react'
+﻿import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   BadgeDollarSign,
+  Building2,
   CheckCircle2,
   Clock3,
-  CreditCard,
-  Languages,
+  Handshake,
+  LifeBuoy,
   Menu,
   ShieldCheck,
+  Sparkles,
   Wallet,
   Warehouse,
   X,
@@ -21,6 +23,7 @@ import ThemeToggle from '../components/ThemeToggle'
 import { useAuth } from '../hooks/useAuth'
 import { useI18n } from '../lib/i18n'
 import { formatMzn, publicPricingPlans } from '../lib/pricingPlans'
+import { buildPublicMailto } from '../lib/publicContact'
 import { cn } from '../lib/utils'
 
 type Copy = {
@@ -31,30 +34,49 @@ type Copy = {
   heroSupport: string
   primaryCta: string
   secondaryCta: string
+  tertiaryCta: string
   trustPoints: string[]
+  pricingEyebrow: string
   pricingTitle: string
   pricingBody: string
   pricingFootnote: string
-  pricingEyebrow: string
-  planLabels: {
+  operationsTitle: string
+  operationsBody: string
+  operationsPoints: Array<{ title: string; body: string; icon: 'stock' | 'finance' | 'support' }>
+  rolloutTitle: string
+  rolloutBody: string
+  rolloutSteps: Array<{ title: string; body: string }>
+  finalTitle: string
+  finalBody: string
+  finalPrimary: string
+  finalSecondary: string
+  signIn: string
+  footerTagline: string
+  labels: {
     monthly: string
     sixMonth: string
     annual: string
     onboarding: string
+    annualSaving: string
+    recommended: string
     from: string
-    highlight: string
+    includes: string
+    support: string
+    bestFor: string
+    company: string
+    users: string
+    requestActivation: string
+    bookDemo: string
+    talkToUs: string
+    trial: string
   }
-  operationsTitle: string
-  operationsBody: string
-  operationsPoints: Array<{ title: string; body: string }>
-  rolloutTitle: string
-  rolloutBody: string
-  rolloutPoints: string[]
-  finalTitle: string
-  finalBody: string
-  finalCta: string
-  signIn: string
-  footerTagline: string
+}
+
+type PlanContent = {
+  headline: string
+  bestFor: string
+  included: string[]
+  support: string[]
 }
 
 const copyByLang: Record<'en' | 'pt', Copy> = {
@@ -62,217 +84,460 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     nav: [
       { label: 'Product', href: '#product' },
       { label: 'Pricing', href: '#pricing' },
-      { label: 'Operations', href: '#operations' },
       { label: 'Rollout', href: '#rollout' },
     ],
-    heroEyebrow: 'Operational control for stock, orders, settlements, and finance',
-    heroTitle: 'Run stock and finance from one controlled workspace',
+    heroEyebrow: 'Stock, orders, settlements, and finance in one disciplined workspace',
+    heroTitle: 'Operational control for businesses that cannot afford drift',
     heroBody:
-      'StockWise brings inventory, sales, purchasing, settlement flow, cash, banks, and finance-document discipline into one operating system that teams can trust every day.',
+      'StockWise connects inventory, purchasing, sales, cash, banks, settlements, and finance-document discipline so teams can run daily operations from one trusted system.',
     heroSupport:
-      'Pricing is public in MZN. Trial starts for 7 days. Paid activation remains manually controlled by the StockWise team for now.',
-    primaryCta: 'Start the 7-day trial',
-    secondaryCta: 'Sign in',
+      'Public pricing is shown in MZN. Every new company starts with a 7-day trial. Paid access is still activated manually by the StockWise team.',
+    primaryCta: 'Start 7-day trial',
+    secondaryCta: 'Book a demo',
+    tertiaryCta: 'Request activation',
     trustPoints: [
       '7-day trial starts when the first company is created',
-      'Paid plans are manually activated after internal review',
-      'Finance workflows stay locked behind approval and authority gates',
-      'Portuguese and English runtime support remain aligned',
+      'Manual activation keeps rollout, onboarding, and support under control',
+      'Finance workflows stay protected by approval, authority, and issue/post discipline',
+      'Portuguese and English remain aligned across public and operational screens',
     ],
-    pricingTitle: 'Clear MZN pricing without fake checkout flow',
+    pricingEyebrow: 'Commercial plans',
+    pricingTitle: 'Pricing',
     pricingBody:
-      'Commercial positioning is public, but paid access stays manually granted in this phase so implementation, support, and rollout discipline remain controlled.',
+      'Choose the operational depth and support level that fits the business. Prices are public in MZN, while paid access continues to be granted manually in this phase.',
     pricingFootnote:
-      'No automatic payment collection is active yet. The control plane is being built so automation can be added later without redesigning tenant access.',
-    pricingEyebrow: 'Pricing in MZN',
-    planLabels: {
-      monthly: 'Monthly',
-      sixMonth: '6 months',
-      annual: 'Yearly',
-      onboarding: 'Onboarding',
-      from: 'From',
-      highlight: 'Most adopted',
-    },
-    operationsTitle: 'Built for the work teams actually do',
+      'Automatic checkout is not active. Trial access, activation, and rollout are still handled directly by the StockWise team.',
+    operationsTitle: 'What StockWise covers',
     operationsBody:
-      'StockWise is not a decorative dashboard. It is the operating surface for goods, liabilities, receivables, and daily control.',
+      'The platform is built for real operating control: the stock you hold, the orders you confirm, the liabilities you owe, and the balances you still need to collect.',
     operationsPoints: [
       {
-        title: 'Warehouse and stock discipline',
-        body: 'Keep items, bins, assemblies, and stock movements tied to the same operational picture.',
+        title: 'Inventory and warehouse discipline',
+        body: 'Items, warehouses, bins, movements, landed cost, and assembly stay inside the same operational picture.',
+        icon: 'stock',
       },
       {
-        title: 'Sales and purchasing in one chain',
-        body: 'Move cleanly from Sales Orders to Sales Invoices and from Purchase Orders to Vendor Bills without losing context.',
+        title: 'Sales, purchasing, and finance continuity',
+        body: 'Move cleanly from Sales Orders to Sales Invoices and from Purchase Orders to Vendor Bills without losing the legal finance anchor.',
+        icon: 'finance',
       },
       {
-        title: 'Cash, bank, and reconciliation visibility',
-        body: 'See receipts, payments, settlements, and legal outstanding positions in the same system.',
+        title: 'Supportable rollout',
+        body: 'Trial access is real, pricing is public, and activation remains deliberate so implementation quality does not drift.',
+        icon: 'support',
       },
     ],
-    rolloutTitle: 'Controlled rollout instead of accidental drift',
+    rolloutTitle: 'How rollout works right now',
     rolloutBody:
-      'The current commercial model is deliberate: trial access is enforced, paid access is granted manually, and operational data can be scheduled for purge without deleting user credentials.',
-    rolloutPoints: [
-      'User credentials remain intact after trial expiry',
-      'Tenant access can be trial, active paid, expired, suspended, or disabled',
-      'Manual grant and revoke actions are audited',
-      'Future payment automation can plug into the same control plane later',
+      'The current commercial model is intentional. It gives teams a clear trial path, keeps entitlements auditable, and avoids fake checkout flows before payment automation is ready.',
+    rolloutSteps: [
+      {
+        title: 'Start the 7-day trial',
+        body: 'Create the first company, start the operational trial, and set up the workspace with your own users, stock, customers, and suppliers.',
+      },
+      {
+        title: 'Review the right plan',
+        body: 'Use the pricing table to compare user limits, onboarding depth, reporting visibility, and support posture in MZN.',
+      },
+      {
+        title: 'Request manual activation',
+        body: 'When the team is ready, StockWise manually grants paid access through the control plane so rollout stays commercially and operationally controlled.',
+      },
     ],
-    finalTitle: 'Move from scattered tracking to disciplined execution',
+    finalTitle: 'Ready to move beyond spreadsheets and fragmented follow-up?',
     finalBody:
-      'If the team needs stock, orders, banks, cash, and finance documents to reconcile in one place, start with the 7-day trial and keep the commercial activation controlled.',
-    finalCta: 'Open StockWise',
+      'Start with the 7-day trial, book a demo, or request activation for a live workspace. The product is ready for serious operations even though payment automation is intentionally deferred.',
+    finalPrimary: 'Open StockWise',
+    finalSecondary: 'Talk to us',
     signIn: 'Sign in',
     footerTagline: 'Inventory, operations, settlements, and finance control in one system.',
+    labels: {
+      monthly: 'Monthly',
+      sixMonth: '6 months',
+      annual: 'Annual',
+      onboarding: 'Onboarding',
+      annualSaving: 'Annual saving',
+      recommended: 'Recommended',
+      from: 'From',
+      includes: 'What is included',
+      support: 'Implementation and support',
+      bestFor: 'Best for',
+      company: 'Company account',
+      users: 'Users',
+      requestActivation: 'Request activation',
+      bookDemo: 'Book a demo',
+      talkToUs: 'Talk to us',
+      trial: '7-day trial',
+    },
   },
   pt: {
     nav: [
       { label: 'Produto', href: '#product' },
       { label: 'Preços', href: '#pricing' },
-      { label: 'Operação', href: '#operations' },
       { label: 'Implementação', href: '#rollout' },
     ],
-    heroEyebrow: 'Controlo operacional para stock, encomendas, liquidações e finanças',
-    heroTitle: 'Controle stock e finanças a partir de um único workspace',
+    heroEyebrow: 'Stock, encomendas, liquidações e finanças no mesmo workspace disciplinado',
+    heroTitle: 'Controlo operacional para empresas que não podem trabalhar à deriva',
     heroBody:
-      'O StockWise junta inventário, vendas, compras, liquidações, caixa, bancos e disciplina documental financeira num sistema operacional em que a equipa pode confiar todos os dias.',
+      'O StockWise liga inventário, compras, vendas, caixa, bancos, liquidações e disciplina documental financeira para que a equipa opere a partir de um único sistema de confiança.',
     heroSupport:
-      'Os preços são públicos em MZN. O teste dura 7 dias. A ativação paga continua manual pela equipa StockWise nesta fase.',
-    primaryCta: 'Iniciar o teste de 7 dias',
-    secondaryCta: 'Iniciar sessão',
+      'Os preços públicos estão em MZN. Cada nova empresa começa com um teste de 7 dias. O acesso pago continua a ser ativado manualmente pela equipa StockWise.',
+    primaryCta: 'Iniciar teste de 7 dias',
+    secondaryCta: 'Marcar demonstração',
+    tertiaryCta: 'Pedir ativação',
     trustPoints: [
       'O teste de 7 dias começa quando a primeira empresa é criada',
-      'Os planos pagos continuam a ser ativados manualmente após revisão interna',
-      'Os fluxos financeiros continuam protegidos por aprovação e autoridade',
-      'O suporte em português e inglês mantém-se alinhado no runtime',
+      'A ativação manual mantém rollout, onboarding e suporte sob controlo',
+      'Os fluxos financeiros continuam protegidos por aprovação, autoridade e disciplina de emissão e lançamento',
+      'Português e inglês mantêm-se alinhados entre ecrãs públicos e operacionais',
     ],
-    pricingTitle: 'Preços claros em MZN, sem checkout falso',
+    pricingEyebrow: 'Planos comerciais',
+    pricingTitle: 'Preços',
     pricingBody:
-      'O posicionamento comercial é público, mas o acesso pago continua a ser concedido manualmente nesta fase para manter controlo de implementação, suporte e rollout.',
+      'Escolha o nível de controlo operacional e suporte que faz sentido para o negócio. Os valores são públicos em MZN, enquanto o acesso pago continua a ser concedido manualmente nesta fase.',
     pricingFootnote:
-      'Ainda não existe cobrança automática. O controlo de acesso está a ser estruturado para que a automação entre mais tarde sem redesenhar o modelo do tenant.',
-    pricingEyebrow: 'Preços em MZN',
-    planLabels: {
+      'O checkout automático ainda não está ativo. O teste, a ativação e o rollout continuam a ser tratados diretamente pela equipa StockWise.',
+    operationsTitle: 'O que o StockWise cobre',
+    operationsBody:
+      'A plataforma foi feita para controlo operacional real: o stock que mantém, as encomendas que confirma, os passivos que precisa pagar e os saldos que ainda precisa cobrar.',
+    operationsPoints: [
+      {
+        title: 'Disciplina de inventário e armazém',
+        body: 'Artigos, armazéns, bins, movimentos, landed cost e montagem ficam dentro da mesma leitura operacional.',
+        icon: 'stock',
+      },
+      {
+        title: 'Continuidade entre vendas, compras e finanças',
+        body: 'Passe de Encomendas de Venda para Faturas e de Ordens de Compra para Vendor Bills sem perder a âncora financeira legal.',
+        icon: 'finance',
+      },
+      {
+        title: 'Implementação com controlo',
+        body: 'O teste é real, os preços são públicos e a ativação continua deliberada para que a qualidade da implementação não se perca.',
+        icon: 'support',
+      },
+    ],
+    rolloutTitle: 'Como funciona a implementação nesta fase',
+    rolloutBody:
+      'O modelo comercial atual é intencional. Dá à equipa um caminho claro de teste, mantém os acessos auditáveis e evita fluxos falsos de checkout antes da automação de pagamentos estar pronta.',
+    rolloutSteps: [
+      {
+        title: 'Inicie o teste de 7 dias',
+        body: 'Crie a primeira empresa, arranque o teste operacional e configure o workspace com os seus utilizadores, stock, clientes e fornecedores.',
+      },
+      {
+        title: 'Reveja o plano certo',
+        body: 'Use a tabela de preços para comparar limites de utilizadores, profundidade de onboarding, visibilidade de reporting e postura de suporte em MZN.',
+      },
+      {
+        title: 'Peça a ativação manual',
+        body: 'Quando a equipa estiver pronta, a StockWise concede o acesso pago manualmente através do controlo de plataforma para manter o rollout comercial e operacional sob controlo.',
+      },
+    ],
+    finalTitle: 'Pronto para sair de folhas soltas e controlo fragmentado?',
+    finalBody:
+      'Comece com o teste de 7 dias, marque uma demonstração ou peça a ativação para um workspace real. O produto está pronto para operações sérias, mesmo com a automação de pagamentos ainda adiada.',
+    finalPrimary: 'Abrir StockWise',
+    finalSecondary: 'Falar connosco',
+    signIn: 'Iniciar sessão',
+    footerTagline: 'Inventário, operação, liquidações e controlo financeiro no mesmo sistema.',
+    labels: {
       monthly: 'Mensal',
       sixMonth: '6 meses',
       annual: 'Anual',
       onboarding: 'Onboarding',
+      annualSaving: 'Poupança anual',
+      recommended: 'Recomendado',
       from: 'Desde',
-      highlight: 'Plano mais adotado',
+      includes: 'O que inclui',
+      support: 'Implementação e suporte',
+      bestFor: 'Mais indicado para',
+      company: 'Conta da empresa',
+      users: 'Utilizadores',
+      requestActivation: 'Pedir ativação',
+      bookDemo: 'Marcar demonstração',
+      talkToUs: 'Falar connosco',
+      trial: 'Teste de 7 dias',
     },
-    operationsTitle: 'Feito para o trabalho que a equipa realmente faz',
-    operationsBody:
-      'O StockWise não é um dashboard decorativo. É a superfície operacional para mercadoria, passivos, recebíveis e controlo diário.',
-    operationsPoints: [
-      {
-        title: 'Disciplina de armazém e stock',
-        body: 'Mantenha artigos, bins, montagens e movimentos de stock na mesma leitura operacional.',
-      },
-      {
-        title: 'Vendas e compras na mesma cadeia',
-        body: 'Passe de Encomendas de Venda para Faturas e de Ordens de Compra para Vendor Bills sem perder contexto.',
-      },
-      {
-        title: 'Visibilidade de caixa, banco e reconciliação',
-        body: 'Veja recebimentos, pagamentos, liquidações e posições legais em aberto no mesmo sistema.',
-      },
-    ],
-    rolloutTitle: 'Implementação controlada em vez de deriva acidental',
-    rolloutBody:
-      'O modelo comercial atual é deliberado: o teste é aplicado com disciplina, o acesso pago é concedido manualmente e os dados operacionais podem ser agendados para purga sem apagar as credenciais do utilizador.',
-    rolloutPoints: [
-      'As credenciais do utilizador mantêm-se após a expiração do teste',
-      'O acesso do tenant pode estar em trial, active paid, expired, suspended ou disabled',
-      'As ações manuais de concessão e revogação ficam auditadas',
-      'A futura automação de pagamentos pode encaixar no mesmo controlo de acesso',
-    ],
-    finalTitle: 'Passe de controlo disperso para execução disciplinada',
-    finalBody:
-      'Se a equipa precisa que stock, encomendas, bancos, caixa e documentos financeiros reconciliem no mesmo lugar, comece pelo teste de 7 dias e mantenha a ativação comercial sob controlo.',
-    finalCta: 'Abrir StockWise',
-    signIn: 'Iniciar sessão',
-    footerTagline: 'Inventário, operação, liquidações e controlo financeiro no mesmo sistema.',
+  },
+}
+const planContentByLang: Record<'en' | 'pt', Record<string, PlanContent>> = {
+  en: {
+    starter: {
+      headline: 'Clean operational control for smaller teams.',
+      bestFor: 'A business that needs one company account, up to two users, and a disciplined stock-and-order baseline.',
+      included: [
+        '1 company account',
+        'Up to 2 users',
+        'Product and stock management',
+        'Sales order management',
+        'Purchase order management',
+        'Customer and supplier records',
+        'Basic dashboards and reporting',
+      ],
+      support: [
+        'Initial setup support',
+        'Up to 1 week of remote user training',
+        'Standard remote support during business hours',
+      ],
+    },
+    growth: {
+      headline: 'The most balanced plan for growing teams.',
+      bestFor: 'A company that needs stronger visibility, more users, and better operational follow-up without moving into a managed engagement.',
+      included: [
+        'Includes everything in Starter',
+        'Up to 5 users',
+        'Enhanced reporting and dashboard visibility',
+        'Improved follow-up on customer balances and operational activity',
+      ],
+      support: [
+        'Priority remote support',
+        'Up to 2 weeks of remote user training',
+        'Additional setup guidance during implementation',
+      ],
+    },
+    business: {
+      headline: 'For heavier daily operations that need tighter handling.',
+      bestFor: 'An established team with more users, more follow-up needs, and more complex day-to-day execution.',
+      included: [
+        'Includes everything in Growth',
+        'Up to 10 users',
+        'Better fit for more complex daily operations',
+      ],
+      support: [
+        'Faster support handling',
+        'More hands-on onboarding support',
+        'Periodic review and guidance during adoption',
+      ],
+    },
+    managed_business_plus: {
+      headline: 'A higher-touch operating relationship.',
+      bestFor: 'A business that wants the Business plan plus more direct rollout support, refresher training, and periodic operational guidance.',
+      included: [
+        'Business plan access',
+        'Premium onboarding approach',
+        'Refresher training sessions',
+      ],
+      support: [
+        'Periodic review meetings',
+        'Higher support priority',
+        'More hands-on assistance during adoption and stabilisation',
+      ],
+    },
+  },
+  pt: {
+    starter: {
+      headline: 'Controlo operacional limpo para equipas menores.',
+      bestFor: 'Um negócio que precisa de uma conta de empresa, até dois utilizadores e uma base disciplinada de stock e encomendas.',
+      included: [
+        '1 conta de empresa',
+        'Até 2 utilizadores',
+        'Gestão de produtos e stock',
+        'Gestão de encomendas de venda',
+        'Gestão de ordens de compra',
+        'Registos de clientes e fornecedores',
+        'Dashboards e reporting base',
+      ],
+      support: [
+        'Suporte inicial de configuração',
+        'Até 1 semana de formação remota de utilizadores',
+        'Suporte remoto padrão durante o horário de trabalho',
+      ],
+    },
+    growth: {
+      headline: 'O plano mais equilibrado para equipas em crescimento.',
+      bestFor: 'Uma empresa que precisa de mais visibilidade, mais utilizadores e melhor acompanhamento operacional sem entrar ainda num modelo gerido.',
+      included: [
+        'Inclui tudo do Starter',
+        'Até 5 utilizadores',
+        'Reporting e dashboards mais completos',
+        'Melhor acompanhamento de saldos de clientes e atividade operacional',
+      ],
+      support: [
+        'Suporte remoto prioritário',
+        'Até 2 semanas de formação remota de utilizadores',
+        'Orientação adicional durante a implementação',
+      ],
+    },
+    business: {
+      headline: 'Para operações mais exigentes no dia a dia.',
+      bestFor: 'Uma equipa estabelecida com mais utilizadores, mais necessidade de acompanhamento e operação diária mais complexa.',
+      included: [
+        'Inclui tudo do Growth',
+        'Até 10 utilizadores',
+        'Melhor ajuste para operações diárias mais complexas',
+      ],
+      support: [
+        'Tratamento de suporte mais rápido',
+        'Onboarding mais acompanhado',
+        'Revisões periódicas e orientação durante a adoção',
+      ],
+    },
+    managed_business_plus: {
+      headline: 'Uma relação mais acompanhada e mais próxima.',
+      bestFor: 'Um negócio que quer o plano Business com mais apoio de rollout, formação de reforço e orientação operacional periódica.',
+      included: [
+        'Acesso ao plano Business',
+        'Abordagem premium de onboarding',
+        'Sessões de formação de reforço',
+      ],
+      support: [
+        'Reuniões periódicas de revisão',
+        'Prioridade de suporte mais alta',
+        'Apoio mais próximo durante adoção e estabilização',
+      ],
+    },
   },
 }
 
-const planTaglinesByLang: Record<'en' | 'pt', Record<string, string>> = {
-  en: {
-    starter: 'Core stock, orders, and daily finance visibility for a focused operating team.',
-    growth: 'For teams expanding workflow control across more locations, users, and finance volume.',
-    business: 'For finance-heavy operations that need tighter execution discipline and broader control.',
-    managed_business_plus: 'High-touch rollout, operational oversight, and managed enablement for larger deployments.',
-  },
-  pt: {
-    starter: 'Stock, encomendas e visibilidade financeira diária para uma equipa operacional focada.',
-    growth: 'Para equipas a expandir controlo de workflow por mais locais, utilizadores e volume financeiro.',
-    business: 'Para operações com maior peso financeiro que exigem disciplina mais forte e controlo mais amplo.',
-    managed_business_plus: 'Implementação assistida, supervisão operacional e acompanhamento gerido para operações maiores.',
-  },
+function operationIcon(name: 'stock' | 'finance' | 'support') {
+  if (name === 'stock') return Warehouse
+  if (name === 'finance') return Wallet
+  return LifeBuoy
 }
 
 function PricingCard({
   plan,
-  lang,
-  labels,
+  content,
+  copy,
+  locale,
+  trialHref,
+  demoHref,
+  activationHref,
 }: {
   plan: (typeof publicPricingPlans)[number]
-  lang: 'en' | 'pt'
-  labels: Copy['planLabels']
+  content: PlanContent
+  copy: Copy
+  locale: string
+  trialHref: string
+  demoHref: string
+  activationHref: string
 }) {
-  const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
-  const tagline = planTaglinesByLang[lang][plan.code] || plan.tagline
+  const managed = plan.code === 'managed_business_plus'
 
   return (
     <Card
       className={cn(
-        'relative overflow-hidden border-border/70 bg-card shadow-[0_26px_80px_-56px_rgba(15,23,42,0.45)]',
-        plan.highlight ? 'border-primary/35 ring-1 ring-primary/10' : '',
+        'relative flex h-full flex-col overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-60px_rgba(15,23,42,0.48)]',
+        plan.highlight ? 'border-primary/35 ring-1 ring-primary/15' : '',
       )}
     >
       {plan.highlight ? (
         <div className="absolute right-4 top-4 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-          {labels.highlight}
+          {copy.labels.recommended}
         </div>
       ) : null}
-      <CardHeader className="space-y-3 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04]">
-        <div className="text-sm font-semibold text-foreground">{plan.name}</div>
-        <CardDescription className="min-h-[72px] text-sm leading-6 text-muted-foreground">{tagline}</CardDescription>
-        <div className="space-y-1">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {plan.startingAnnualMzn ? labels.from : labels.annual}
+
+      <CardHeader className="space-y-4 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04]">
+        <div className="space-y-2">
+          <CardTitle className="text-2xl tracking-tight">{plan.name}</CardTitle>
+          <CardDescription className="text-sm leading-6 text-muted-foreground">{content.headline}</CardDescription>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {copy.labels.company}
+            </div>
+            <div className="mt-2 text-sm font-medium text-foreground">{plan.companyAccountLabel || '-'}</div>
           </div>
-          <div className="text-3xl font-semibold tracking-tight">
+          <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {copy.labels.users}
+            </div>
+            <div className="mt-2 text-sm font-medium text-foreground">{plan.userLimitLabel || '-'}</div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border/70 bg-background px-4 py-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {managed ? copy.labels.from : copy.labels.annual}
+          </div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight">
             {formatMzn(plan.startingAnnualMzn ?? plan.annualMzn, locale)}
           </div>
-          <div className="text-sm text-muted-foreground">{labels.annual}</div>
+          <div className="mt-1 text-sm text-muted-foreground">{copy.labels.annual}</div>
+          {plan.annualSavingMzn ? (
+            <div className="mt-3 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+              {copy.labels.annualSaving}: {formatMzn(plan.annualSavingMzn, locale)}
+            </div>
+          ) : null}
         </div>
+
+        {!managed ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {copy.labels.monthly}
+              </div>
+              <div className="mt-2 text-base font-semibold">{formatMzn(plan.monthlyMzn, locale)}</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {copy.labels.sixMonth}
+              </div>
+              <div className="mt-2 text-base font-semibold">{formatMzn(plan.sixMonthMzn, locale)}</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {copy.labels.onboarding}
+              </div>
+              <div className="mt-2 text-base font-semibold">{formatMzn(plan.onboardingMzn, locale)}</div>
+            </div>
+          </div>
+        ) : null}
       </CardHeader>
-      <CardContent className="space-y-4 p-6">
-        {plan.monthlyMzn ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-border/70 bg-background p-4">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                {labels.monthly}
-              </div>
-              <div className="mt-2 text-lg font-semibold">{formatMzn(plan.monthlyMzn, locale)}</div>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background p-4">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                {labels.sixMonth}
-              </div>
-              <div className="mt-2 text-lg font-semibold">{formatMzn(plan.sixMonthMzn, locale)}</div>
-            </div>
+
+      <CardContent className="flex flex-1 flex-col gap-6 p-6">
+        <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {copy.labels.bestFor}
           </div>
-        ) : null}
-        {plan.onboardingMzn ? (
-          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              {labels.onboarding}
+          <div className="mt-2 text-sm leading-6 text-muted-foreground">{content.bestFor}</div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {copy.labels.includes}
             </div>
-            <div className="mt-2 text-lg font-semibold">{formatMzn(plan.onboardingMzn, locale)}</div>
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+              {content.included.map((item) => (
+                <li key={item} className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-        ) : null}
+
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {copy.labels.support}
+            </div>
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+              {content.support.map((item) => (
+                <li key={item} className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-auto grid gap-3 pt-2">
+          <Button asChild>
+            {managed ? (
+              <a href={demoHref}>{copy.labels.talkToUs}</a>
+            ) : (
+              <Link to={trialHref}>{copy.labels.trial}</Link>
+            )}
+          </Button>
+          <Button variant="outline" asChild>
+            <a href={activationHref}>{managed ? copy.labels.bookDemo : copy.labels.requestActivation}</a>
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
@@ -284,41 +549,22 @@ export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const copy = copyByLang[lang]
+  const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
   const ctaHref = user ? '/dashboard' : '/login'
   const signInHref = user ? '/dashboard' : '/login'
   const signInLabel = user ? 'Dashboard' : copy.signIn
   const primaryCtaLabel = user ? (lang === 'pt' ? 'Abrir dashboard' : 'Open dashboard') : copy.primaryCta
-  const secondaryCtaLabel = user ? (lang === 'pt' ? 'Ir para a aplicação' : 'Go to app') : copy.secondaryCta
-  const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const demoHref = buildPublicMailto(lang === 'pt' ? 'Pedido de demonstração StockWise' : 'StockWise demo request')
+  const activationHref = buildPublicMailto(lang === 'pt' ? 'Pedido de ativação StockWise' : 'StockWise activation request')
+  const talkHref = buildPublicMailto(lang === 'pt' ? 'Contacto comercial StockWise' : 'StockWise commercial contact')
 
-  const heroSignals = useMemo(
-    () => [
-      {
-        icon: Warehouse,
-        title: lang === 'pt' ? 'Stock operacional' : 'Operational stock',
-        body:
-          lang === 'pt'
-            ? 'Armazéns, bins, níveis de stock e montagem no mesmo fluxo de execução.'
-            : 'Warehouses, bins, stock levels, and assembly kept inside the same execution flow.',
-      },
-      {
-        icon: CreditCard,
-        title: lang === 'pt' ? 'Documentos financeiros' : 'Finance documents',
-        body:
-          lang === 'pt'
-            ? 'Faturas, Vendor Bills, liquidações e reconciliação com disciplina documental.'
-            : 'Invoices, Vendor Bills, settlements, and reconciliation with document discipline.',
-      },
-      {
-        icon: Wallet,
-        title: lang === 'pt' ? 'Caixa e banco' : 'Cash and bank',
-        body:
-          lang === 'pt'
-            ? 'Recebimentos, pagamentos e controlo operacional de caixa e banco sem folhas paralelas.'
-            : 'Receipts, payments, and operating control over cash and bank without parallel spreadsheets.',
-      },
-    ],
-    [lang],
+  const operationSignals = useMemo(
+    () =>
+      copy.operationsPoints.map((item) => ({
+        ...item,
+        icon: operationIcon(item.icon),
+      })),
+    [copy.operationsPoints],
   )
 
   return (
@@ -326,7 +572,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/92 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <Link to="/" className="min-w-0">
-            <BrandLockup subtitle={copy.heroEyebrow} />
+            <BrandLockup compact />
           </Link>
 
           <nav className="hidden items-center gap-6 lg:flex">
@@ -407,7 +653,7 @@ export default function LandingPage() {
               </h1>
               <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">{copy.heroBody}</p>
               <div className="mt-4 inline-flex max-w-xl items-center rounded-2xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm leading-6 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-                <Languages className="mr-2 h-4 w-4 shrink-0" />
+                <Clock3 className="mr-2 h-4 w-4 shrink-0" />
                 {copy.heroSupport}
               </div>
 
@@ -419,7 +665,10 @@ export default function LandingPage() {
                   </Link>
                 </Button>
                 <Button size="lg" variant="outline" asChild>
-                  <Link to={signInHref}>{secondaryCtaLabel}</Link>
+                  <a href={demoHref}>{copy.secondaryCta}</a>
+                </Button>
+                <Button size="lg" variant="ghost" asChild>
+                  <a href={activationHref}>{copy.tertiaryCta}</a>
                 </Button>
               </div>
 
@@ -436,20 +685,45 @@ export default function LandingPage() {
             <Card className="overflow-hidden border-border/70 bg-card shadow-[0_32px_90px_-60px_rgba(15,23,42,0.5)]">
               <CardHeader className="border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05]">
                 <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/85 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  <Clock3 className="h-3.5 w-3.5" />
+                  <Sparkles className="h-3.5 w-3.5" />
                   {lang === 'pt' ? 'Modelo comercial atual' : 'Current commercial model'}
                 </div>
                 <CardTitle className="mt-4 text-2xl tracking-tight">
-                  {lang === 'pt' ? 'Teste primeiro. Ative pago depois.' : 'Trial first. Paid activation after.'}
+                  {lang === 'pt' ? 'Teste primeiro. Ative depois.' : 'Trial first. Activation after.'}
                 </CardTitle>
                 <CardDescription className="text-base leading-7">
                   {lang === 'pt'
-                    ? 'O produto já mostra o posicionamento de preço publicamente, mas o acesso pago continua sob controlo manual interno nesta fase.'
-                    : 'The product now shows pricing publicly, but paid access remains under internal manual control in this phase.'}
+                    ? 'Os preços estão públicos, mas a ativação paga continua manual. Isso mantém implementação, suporte e rollout sob controlo enquanto o produto cresce.'
+                    : 'Pricing is public, but paid activation remains manual. That keeps implementation, support, and rollout under control while the product grows.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 p-6">
-                {heroSignals.map((signal) => {
+                {[
+                  {
+                    icon: Building2,
+                    title: lang === 'pt' ? 'Configuração operacional' : 'Operational setup',
+                    body:
+                      lang === 'pt'
+                        ? 'Monte a empresa, os utilizadores, os artigos, os armazéns e os fluxos principais durante o teste.'
+                        : 'Set up the company, users, items, warehouses, and core flows during the trial.',
+                  },
+                  {
+                    icon: BadgeDollarSign,
+                    title: lang === 'pt' ? 'Planos claros em MZN' : 'Clear MZN plans',
+                    body:
+                      lang === 'pt'
+                        ? 'Mensal, 6 meses, anual e onboarding estão explícitos para cada pacote, sem checkout falso.'
+                        : 'Monthly, 6-month, annual, and onboarding figures are explicit for each package, without fake checkout.',
+                  },
+                  {
+                    icon: Handshake,
+                    title: lang === 'pt' ? 'Ativação controlada' : 'Controlled activation',
+                    body:
+                      lang === 'pt'
+                        ? 'Quando a equipa estiver pronta, a ativação é feita manualmente pela StockWise com registo no controlo de plataforma.'
+                        : 'When the team is ready, activation is handled manually by StockWise and recorded in platform control.',
+                  },
+                ].map((signal) => {
                   const Icon = signal.icon
                   return (
                     <div key={signal.title} className="rounded-2xl border border-border/70 bg-background p-4">
@@ -481,7 +755,16 @@ export default function LandingPage() {
 
             <div className="mt-10 grid gap-5 xl:grid-cols-4">
               {publicPricingPlans.map((plan) => (
-                <PricingCard key={plan.code} plan={plan} lang={lang} labels={copy.planLabels} />
+                <PricingCard
+                  key={plan.code}
+                  plan={plan}
+                  content={planContentByLang[lang][plan.code]}
+                  copy={copy}
+                  locale={locale}
+                  trialHref={ctaHref}
+                  demoHref={demoHref}
+                  activationHref={activationHref}
+                />
               ))}
             </div>
 
@@ -491,20 +774,26 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="operations" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
           <div className="max-w-3xl">
             <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{copy.operationsTitle}</h2>
             <p className="mt-4 text-lg text-muted-foreground">{copy.operationsBody}</p>
           </div>
           <div className="mt-10 grid gap-4 lg:grid-cols-3">
-            {copy.operationsPoints.map((point) => (
-              <Card key={point.title} className="border-border/70 bg-card shadow-[0_20px_70px_-54px_rgba(15,23,42,0.45)]">
-                <CardContent className="p-6">
-                  <div className="text-xl font-semibold tracking-tight">{point.title}</div>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">{point.body}</p>
-                </CardContent>
-              </Card>
-            ))}
+            {operationSignals.map((point) => {
+              const Icon = point.icon
+              return (
+                <Card key={point.title} className="border-border/70 bg-card shadow-[0_20px_70px_-54px_rgba(15,23,42,0.45)]">
+                  <CardContent className="p-6">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-primary/5 text-primary">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="mt-4 text-xl font-semibold tracking-tight">{point.title}</div>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{point.body}</p>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         </section>
 
@@ -515,10 +804,15 @@ export default function LandingPage() {
               <p className="mt-4 text-lg text-muted-foreground">{copy.rolloutBody}</p>
             </div>
             <div className="grid gap-3">
-              {copy.rolloutPoints.map((point) => (
-                <div key={point} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background px-4 py-4">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                  <span className="text-sm leading-6 text-muted-foreground">{point}</span>
+              {copy.rolloutSteps.map((step, index) => (
+                <div key={step.title} className="rounded-2xl border border-border/70 bg-background px-4 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-semibold text-primary">
+                      {index + 1}
+                    </div>
+                    <div className="text-base font-semibold">{step.title}</div>
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-muted-foreground">{step.body}</div>
                 </div>
               ))}
             </div>
@@ -534,10 +828,10 @@ export default function LandingPage() {
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button size="lg" asChild>
-                  <Link to={ctaHref}>{copy.finalCta}</Link>
+                  <Link to={ctaHref}>{user ? copy.finalPrimary : copy.primaryCta}</Link>
                 </Button>
                 <Button size="lg" variant="outline" asChild>
-                  <Link to={signInHref}>{signInLabel}</Link>
+                  <a href={talkHref}>{copy.finalSecondary}</a>
                 </Button>
               </div>
             </CardContent>
@@ -550,13 +844,16 @@ export default function LandingPage() {
           <div className="max-w-sm">
             <BrandLockup subtitle={copy.footerTagline} />
           </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
             {copy.nav.map((item) => (
               <a key={item.href} href={item.href} className="transition-colors hover:text-foreground">
                 {item.label}
               </a>
             ))}
             <span>{formatMzn(publicPricingPlans[0]?.monthlyMzn, locale)}+</span>
+            <a href={talkHref} className="transition-colors hover:text-foreground">
+              {copy.labels.talkToUs}
+            </a>
             <Link to={signInHref} className="transition-colors hover:text-foreground">
               {signInLabel}
             </Link>

@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Stockwise",
+  "productName": "StockWise",
   "version": "1.2.0",
   "identifier": "com.stockwise.app",
   "build": {
@@ -15,7 +15,7 @@
         "label": "main",
         "fullscreen": false,
         "resizable": true,
-        "title": "Stockwise",
+        "title": "StockWise",
         "width": 1200,
         "height": 800,
         "minWidth": 1024,

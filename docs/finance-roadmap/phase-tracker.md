@@ -11,7 +11,7 @@ Use this file as the working status board for finance-document implementation an
 | Phase 3. Reconciliation, operational clarity, and lightweight planning | Completed in core scope | Finance read models + review UI + inventory/assembly UX | Finance can reconcile current legal balances, work exceptions, and operate from clearer stock/master-data and assembly-planning flows | Phase 3A, 3B, and 3C are complete in core scope; close-pack/reporting remains later follow-up |
 | Operational hardening block | Completed | Workflow repair + treasury/master-data UX | High-friction production defects were repaired before broader automation | Bank, landed cost, PO/VB, SO/SI, issue readiness, treasury, and UOM flows were stabilized |
 | Phase 4. Automated finance regression suite | Completed in core scope | Test automation + Supabase workflow validation | High-value finance and ops workflows now have repeatable regression protection | Current suite runs through `npm run test:finance-regression` |
-| Phase 5. Security, abuse protection, access control, trial enforcement, and subscription-control foundation | Implemented in foundation scope | DB control plane + app routing + public commercial surfaces | Tenant access, manual activation, trial lifecycle, and public commercial posture now have a real foundation | Payment automation remains intentionally deferred |
+| Phase 5. Security, abuse protection, access control, trial enforcement, and subscription-control foundation | Implemented in foundation scope and Phase 5B core scope | DB control plane + app routing + public commercial surfaces | Tenant access, manual activation, trial lifecycle, brand clarity, and public commercial posture now have a real foundation | Payment automation remains intentionally deferred |
 
 ## Phase 1. Permissions and Approval Controls
 
@@ -104,6 +104,11 @@ Use this file as the working status board for finance-document implementation an
 | Security/RLS tightening for entitlement-aware access | Completed | Access helpers and policy cleanup now respect tenant access state |
 | Public bootstrap abuse protection | Completed | Rate limiting added to trial bootstrap path |
 | Pricing localization to MZN | Completed | Landing page now presents public pricing in MZN |
+| Platform-admin discoverability and runbook | Completed | `/platform-control`, bootstrap command, and navigation visibility are now explicitly documented and easier to find for active platform admins |
+| Approved StockWise brand replacement | Completed | Public shell, app shell, auth/access surfaces, PWA icons, and Tauri icons now use the approved logo assets |
+| Landing-page pricing polish from 2026 workbook | Completed | Package structure, perks, grouped billing options, and real CTAs are now aligned to the MZN workbook |
+| Placeholder and professional-copy audit | Completed | Stale demo/default assets and unfinished-looking user-facing copy were removed or rewritten |
+| Vector SVG extraction from approved artwork | Not started | PNG-derived assets are canonical for now; SVG refinement is intentionally deferred until suitable vector tooling/source handling is available |
 | Automatic payment integration | Not started | Explicitly deferred |
 | Automatic paid-plan activation | Not started | Explicitly deferred |
 | Automatic purge execution | Not started | Explicitly deferred |

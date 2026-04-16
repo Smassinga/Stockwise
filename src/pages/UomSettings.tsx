@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
@@ -409,7 +409,7 @@ export default function UomSettings() {
           <CardHeader className="pb-3">
             <CardTitle>{tt('uom.addConversion', 'Add conversion')}</CardTitle>
             <CardDescription>
-              {tt('uom.conversionHelp', 'Define how one unit converts into another for this company. Stockwise reads the rule as: 1 × FROM × factor = TO.')}
+              {tt('uom.conversionHelp', 'Define how one unit converts into another for this company. StockWise reads the rule as: 1 × FROM × factor = TO.')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -425,7 +425,7 @@ export default function UomSettings() {
                           {familyLabel(currentFamily)}
                         </div>
                         {list.map((uom) => (
-                          <SelectItem key={uom.id} value={uom.id}>{uom.code} — {uom.name}</SelectItem>
+                          <SelectItem key={uom.id} value={uom.id}>{uom.code} - {uom.name}</SelectItem>
                         ))}
                         <div className="h-1" />
                       </div>
@@ -444,7 +444,7 @@ export default function UomSettings() {
                           {familyLabel(currentFamily)}
                         </div>
                         {list.map((uom) => (
-                          <SelectItem key={uom.id} value={uom.id}>{uom.code} — {uom.name}</SelectItem>
+                          <SelectItem key={uom.id} value={uom.id}>{uom.code} - {uom.name}</SelectItem>
                         ))}
                         <div className="h-1" />
                       </div>
@@ -562,8 +562,8 @@ export default function UomSettings() {
                     const isCompanyRow = !!conv.company_id
                     return (
                       <tr key={`${conv.from_uom_id}->${conv.to_uom_id}::${conv.company_id ?? 'global'}`} className="border-t border-border/70">
-                        <td className="px-3 py-3">{fromUnit ? `${fromUnit.code} — ${fromUnit.name}` : conv.from_uom_id}</td>
-                        <td className="px-3 py-3">{toUnit ? `${toUnit.code} — ${toUnit.name}` : conv.to_uom_id}</td>
+                        <td className="px-3 py-3">{fromUnit ? `${fromUnit.code} - ${fromUnit.name}` : conv.from_uom_id}</td>
+                        <td className="px-3 py-3">{toUnit ? `${toUnit.code} - ${toUnit.name}` : conv.to_uom_id}</td>
                         <td className="px-3 py-3">{conv.factor}</td>
                         <td className="px-3 py-3">
                           <Badge variant={isCompanyRow ? 'default' : 'secondary'}>
@@ -576,7 +576,7 @@ export default function UomSettings() {
                               {tt('common.remove', 'Remove')}
                             </Button>
                           ) : (
-                            <span className="text-muted-foreground">{tt('common.dash', '—')}</span>
+                            <span className="text-muted-foreground">{tt('common.dash', '-')}</span>
                           )}
                         </td>
                       </tr>
@@ -591,3 +591,4 @@ export default function UomSettings() {
     </div>
   )
 }
+

@@ -117,6 +117,30 @@ Paid activation is intentionally manual in the current commercial model.
 
 This keeps commercial rollout controlled while leaving the data model ready for later payment automation.
 
+## Platform Admin Access
+
+Platform control is permission-based. There is no fake admin toggle in the app.
+
+- route: `/platform-control`
+- visibility: only active platform admins see the Platform section in navigation
+- non-admin behavior: the route stays blocked and normal company users do not see admin UI
+
+The intended first-admin path is:
+
+1. sign in with the target user account
+2. from the repo root, run:
+
+```bash
+npm run bootstrap:platform-admin -- admin@company.com --note "Initial platform admin"
+```
+
+Requirements for the bootstrap command:
+
+- `VITE_SUPABASE_URL` or `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` or `SERVICE_ROLE_KEY`
+
+The command upserts the row into `public.platform_admins`. After sign-in refresh, the user can open `/platform-control` directly or use the Platform navigation entry.
+
 ## Abuse Protection
 
 Implemented first layer:

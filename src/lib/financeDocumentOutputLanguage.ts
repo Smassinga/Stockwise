@@ -135,7 +135,7 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
     },
     references: {
       supplierInvoiceReference: 'Refer\u00eancia da fatura do fornecedor',
-      stockwiseKey: 'Chave interna Stockwise',
+      stockwiseKey: 'Chave interna StockWise',
       linkedPurchaseOrder: 'Pedido de compra associado',
       originalInvoice: 'Fatura original',
       originalBill: 'Documento original',
@@ -214,7 +214,7 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
     },
     references: {
       supplierInvoiceReference: 'Supplier invoice reference',
-      stockwiseKey: 'Stockwise internal key',
+      stockwiseKey: 'StockWise internal key',
       linkedPurchaseOrder: 'Linked purchase order',
       originalInvoice: 'Original invoice',
       originalBill: 'Original bill',

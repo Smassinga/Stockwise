@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { RefreshCw, Search, ShieldCheck } from 'lucide-react'
@@ -180,6 +180,44 @@ export default function PlatformControlPage() {
           </CardContent>
         </Card>
 
+        <Card className="border-border/70 bg-card">
+          <CardHeader>
+            <CardTitle>{tt('platform.adminAccessTitle', 'Admin access and first setup')}</CardTitle>
+            <CardDescription>
+              {tt(
+                'platform.adminAccessBody',
+                'Platform control is permission-based. The route is /platform-control and it only appears in navigation for active platform admins.',
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">
+              <div className="font-medium text-foreground">
+                {tt('platform.bootstrapTitle', 'Bootstrap the first platform admin')}
+              </div>
+              <p className="mt-2">
+                {tt(
+                  'platform.bootstrapBody',
+                  'Sign in with the target user first, then run the documented bootstrap command from the repo root with service-role credentials available in .env.',
+                )}
+              </p>
+              <pre className="mt-3 overflow-x-auto rounded-xl border border-border/70 bg-background px-4 py-3 text-xs text-foreground">
+                npm run bootstrap:platform-admin -- admin@company.com --note "Initial platform admin"
+              </pre>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background p-4 text-sm leading-6 text-muted-foreground">
+              <div className="font-medium text-foreground">
+                {tt('platform.manualActivationTitle', 'Current operating model')}
+              </div>
+              <ul className="mt-3 space-y-2">
+                <li>{tt('platform.manualActivationOnly', 'Paid access remains manual in this phase.')}</li>
+                <li>{tt('platform.paymentDeferred', 'Payment checkout and automatic activation remain intentionally deferred.')}</li>
+                <li>{tt('platform.routeDirect', 'Active platform admins can open this route directly or use the Platform section in navigation.')}</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <Card className="border-border/70 bg-card">
             <CardHeader>
@@ -236,9 +274,7 @@ export default function PlatformControlPage() {
                           <div className="mt-1 text-xs text-muted-foreground">{row.plan_code}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <span
-                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(row.effective_status)}`}
-                          >
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(row.effective_status)}`}>
                             {row.effective_status.replaceAll('_', ' ')}
                           </span>
                         </td>
@@ -247,9 +283,7 @@ export default function PlatformControlPage() {
                             {row.active_member_count} / {row.member_count}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {row.paid_until
-                              ? row.paid_until.slice(0, 10)
-                              : tt('platform.manualWindow', 'Manual window')}
+                            {row.paid_until ? row.paid_until.slice(0, 10) : tt('platform.manualWindow', 'Manual window')}
                           </div>
                         </td>
                       </tr>
@@ -272,8 +306,7 @@ export default function PlatformControlPage() {
               <CardHeader>
                 <CardTitle>{tt('platform.detailTitle', 'Selected company')}</CardTitle>
                 <CardDescription>
-                  {selectedRow?.company_name ||
-                    tt('platform.selectCompany', 'Choose a company from the register first.')}
+                  {selectedRow?.company_name || tt('platform.selectCompany', 'Choose a company from the register first.')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -312,27 +345,15 @@ export default function PlatformControlPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>{tt('platform.paidUntil', 'Paid until')}</Label>
-                        <Input
-                          type="date"
-                          value={paidUntil}
-                          onChange={(event) => setPaidUntil(event.target.value)}
-                        />
+                        <Input type="date" value={paidUntil} onChange={(event) => setPaidUntil(event.target.value)} />
                       </div>
                       <div className="space-y-2">
                         <Label>{tt('platform.trialEnds', 'Trial ends')}</Label>
-                        <Input
-                          type="date"
-                          value={trialExpiresAt}
-                          onChange={(event) => setTrialExpiresAt(event.target.value)}
-                        />
+                        <Input type="date" value={trialExpiresAt} onChange={(event) => setTrialExpiresAt(event.target.value)} />
                       </div>
                       <div className="space-y-2 md:col-span-2">
                         <Label>{tt('platform.purgeSchedule', 'Purge schedule')}</Label>
-                        <Input
-                          type="date"
-                          value={purgeScheduledAt}
-                          onChange={(event) => setPurgeScheduledAt(event.target.value)}
-                        />
+                        <Input type="date" value={purgeScheduledAt} onChange={(event) => setPurgeScheduledAt(event.target.value)} />
                       </div>
                     </div>
 
@@ -373,7 +394,7 @@ export default function PlatformControlPage() {
                         {saving ? tt('actions.saving', 'Saving') : tt('platform.apply', 'Apply change')}
                       </Button>
                       <Button variant="outline" asChild>
-                        <Link to="/">{tt('platform.openLanding', 'Open public pricing')}</Link>
+                        <Link to="/#pricing">{tt('platform.openLanding', 'Open public pricing')}</Link>
                       </Button>
                     </div>
 
@@ -384,9 +405,7 @@ export default function PlatformControlPage() {
                         ['Business', 5451],
                       ] as const).map(([label, monthly]) => (
                         <div key={label} className="rounded-2xl border border-border/70 bg-background p-4">
-                          <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                            {label}
-                          </div>
+                          <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
                           <div className="mt-2 text-lg font-semibold">{formatMzn(monthly, locale)}</div>
                           <div className="mt-1 text-xs text-muted-foreground">
                             {tt('platform.monthlyReference', 'Public monthly reference')}
@@ -397,10 +416,7 @@ export default function PlatformControlPage() {
                   </>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-6 text-sm text-muted-foreground">
-                    {tt(
-                      'platform.selectPrompt',
-                      'Select one company from the register to review or change its access state.',
-                    )}
+                    {tt('platform.selectPrompt', 'Select one company from the register to review or change its access state.')}
                   </div>
                 )}
               </CardContent>
@@ -419,10 +435,7 @@ export default function PlatformControlPage() {
               <CardContent className="space-y-3">
                 {auditRows.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-5 text-sm text-muted-foreground">
-                    {tt(
-                      'platform.auditEmpty',
-                      'No manual access events are recorded for the selected company yet.',
-                    )}
+                    {tt('platform.auditEmpty', 'No manual access events are recorded for the selected company yet.')}
                   </div>
                 ) : (
                   auditRows.map((row) => (
@@ -430,16 +443,13 @@ export default function PlatformControlPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="font-medium">
-                            {String(row.previous_status || '—').replaceAll('_', ' ')} →{' '}
-                            {row.next_status.replaceAll('_', ' ')}
+                            {String(row.previous_status || '-').replaceAll('_', ' ')} to {row.next_status.replaceAll('_', ' ')}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {row.previous_plan_code || '—'} → {row.next_plan_code || '—'}
+                            {row.previous_plan_code || '-'} to {row.next_plan_code || '-'}
                           </div>
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatDateTime(row.created_at, locale)}
-                        </div>
+                        <div className="text-xs text-muted-foreground">{formatDateTime(row.created_at, locale)}</div>
                       </div>
                       {row.reason ? <div className="mt-3 text-sm text-muted-foreground">{row.reason}</div> : null}
                       <div className="mt-3 text-xs text-muted-foreground">
@@ -456,3 +466,4 @@ export default function PlatformControlPage() {
     </div>
   )
 }
+

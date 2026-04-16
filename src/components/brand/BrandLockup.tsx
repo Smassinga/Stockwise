@@ -15,16 +15,16 @@ export default function BrandLockup({
   compact = false,
 }: Props) {
   return (
-    <div className={cn('flex items-center gap-3', className)}>
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-background/80 shadow-sm">
-        <Logo h={compact ? 28 : 32} alt="StockWise" variant={variant} />
+    <div className={cn('inline-flex flex-col gap-2', className)}>
+      <div
+        className={cn(
+          'inline-flex w-fit items-center rounded-[22px] border border-border/70 bg-white/95 shadow-[0_20px_50px_-32px_rgba(15,23,42,0.55)]',
+          compact ? 'px-3 py-2' : 'px-4 py-3',
+        )}
+      >
+        <Logo h={compact ? 28 : 34} alt="StockWise" variant={variant} />
       </div>
-      <div className="min-w-0">
-        <div className="truncate text-lg font-semibold tracking-tight">StockWise</div>
-        {!compact && subtitle ? (
-          <div className="truncate text-sm text-muted-foreground">{subtitle}</div>
-        ) : null}
-      </div>
+      {!compact && subtitle ? <div className="text-sm text-muted-foreground">{subtitle}</div> : null}
     </div>
   )
 }

@@ -353,7 +353,7 @@ export default function Banks() {
             <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
               <div className="text-base font-medium">{tf('banks.emptyTitle', 'No bank accounts configured yet')}</div>
               <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">
-                {tf('banks.emptyBody', 'Add the first bank account before posting bank settlements or importing statements. Stockwise uses these accounts as the live bank ledgers for receipts, payments, and reconciliation.')}
+              {tf('banks.emptyBody', 'Add the first bank account before posting bank settlements or importing statements. StockWise uses these accounts as the live bank ledgers for receipts, payments, and reconciliation.')}
               </p>
               {canManageBanks ? (
                 <Button className="mt-4" onClick={() => setOpenAdd(true)}>

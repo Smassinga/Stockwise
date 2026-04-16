@@ -12,9 +12,8 @@ export default function DocHeader({ companyName, fallbackName, logoUrl, rightSlo
   const name = (companyName ?? '').trim() || (fallbackName ?? '').trim() || '—'
 
   return (
-    <div className={`flex items-center justify-between gap-6 border-b pb-4 mb-4 ${className || ''}`}>
+    <div className={`mb-4 flex items-center justify-between gap-6 border-b pb-4 ${className || ''}`}>
       <div className="flex items-center gap-3">
-        {/* Your Logo component will render the SVG mark automatically if src is empty */}
         <Logo src={logoUrl || undefined} h={40} alt={name} />
         <div className="text-base font-semibold">{name}</div>
       </div>
