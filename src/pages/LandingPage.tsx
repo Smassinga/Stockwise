@@ -70,6 +70,8 @@ type Copy = {
     talkToUs: string
     trial: string
   }
+  managedPricingNoteTitle: string
+  managedPricingNoteBody: string
 }
 
 type PlanContent = {
@@ -169,6 +171,9 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       talkToUs: 'Talk to us',
       trial: '7-day trial',
     },
+    managedPricingNoteTitle: 'Managed engagement',
+    managedPricingNoteBody:
+      'Pricing stays anchored to the annual engagement. Onboarding depth, refresher sessions, and rollout handling are scoped directly with the StockWise team.',
   },
   pt: {
     nav: [
@@ -259,6 +264,9 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       talkToUs: 'Falar connosco',
       trial: 'Teste de 7 dias',
     },
+    managedPricingNoteTitle: 'Engajamento gerido',
+    managedPricingNoteBody:
+      'O preço base continua ancorado ao compromisso anual. A profundidade do onboarding, as formações de reforço e o ritmo do rollout são definidos diretamente com a equipa StockWise.',
   },
 }
 const planContentByLang: Record<'en' | 'pt', Record<string, PlanContent>> = {
@@ -428,13 +436,13 @@ function PricingCard({
         </div>
       ) : null}
 
-      <CardHeader className="space-y-4 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04]">
-        <div className="space-y-2">
+      <CardHeader className="grid gap-4 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04]">
+        <div className="space-y-2 xl:min-h-[7.25rem]">
           <CardTitle className="text-2xl tracking-tight">{plan.name}</CardTitle>
           <CardDescription className="text-sm leading-6 text-muted-foreground">{content.headline}</CardDescription>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid content-start gap-3 sm:grid-cols-2 xl:min-h-[6.5rem]">
           <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {copy.labels.company}
@@ -449,43 +457,64 @@ function PricingCard({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/70 bg-background px-4 py-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        <div className="flex min-h-[11.25rem] flex-col justify-between rounded-2xl border border-border/70 bg-background px-4 py-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {managed ? copy.labels.from : copy.labels.annual}
           </div>
-          <div className="mt-2 text-3xl font-semibold tracking-tight">
-            {formatMzn(plan.startingAnnualMzn ?? plan.annualMzn, locale)}
-          </div>
-          <div className="mt-1 text-sm text-muted-foreground">{copy.labels.annual}</div>
-          {plan.annualSavingMzn ? (
-            <div className="mt-3 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-              {copy.labels.annualSaving}: {formatMzn(plan.annualSavingMzn, locale)}
+          <div>
+            <div className="mt-2 text-[2.2rem] font-semibold tracking-tight">
+              {formatMzn(plan.startingAnnualMzn ?? plan.annualMzn, locale)}
             </div>
-          ) : null}
+            <div className="mt-1 text-sm text-muted-foreground">{copy.labels.annual}</div>
+          </div>
+          <div className="pt-3">
+            {plan.annualSavingMzn ? (
+              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                {copy.labels.annualSaving}: {formatMzn(plan.annualSavingMzn, locale)}
+              </div>
+            ) : (
+              <div className="h-7" aria-hidden="true" />
+            )}
+          </div>
         </div>
 
-        {!managed ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {copy.labels.monthly}
+        <div className="grid content-start gap-3 sm:grid-cols-2 xl:min-h-[13rem]">
+          {!managed ? (
+            <>
+              <div className="min-h-[6.25rem] rounded-2xl border border-border/70 bg-background px-4 py-3.5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {copy.labels.monthly}
+                </div>
+                <div className="mt-2 text-[1.02rem] font-semibold leading-tight sm:text-[1.1rem]">
+                  {formatMzn(plan.monthlyMzn, locale)}
+                </div>
               </div>
-              <div className="mt-2 text-base font-semibold">{formatMzn(plan.monthlyMzn, locale)}</div>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {copy.labels.sixMonth}
+              <div className="min-h-[6.25rem] rounded-2xl border border-border/70 bg-background px-4 py-3.5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {copy.labels.sixMonth}
+                </div>
+                <div className="mt-2 text-[1.02rem] font-semibold leading-tight sm:text-[1.1rem]">
+                  {formatMzn(plan.sixMonthMzn, locale)}
+                </div>
               </div>
-              <div className="mt-2 text-base font-semibold">{formatMzn(plan.sixMonthMzn, locale)}</div>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {copy.labels.onboarding}
+              <div className="min-h-[6.75rem] rounded-2xl border border-border/70 bg-background px-4 py-3.5 sm:col-span-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {copy.labels.onboarding}
+                </div>
+                <div className="mt-2 text-[1.02rem] font-semibold leading-tight sm:text-[1.1rem]">
+                  {formatMzn(plan.onboardingMzn, locale)}
+                </div>
               </div>
-              <div className="mt-2 text-base font-semibold">{formatMzn(plan.onboardingMzn, locale)}</div>
+            </>
+          ) : (
+            <div className="min-h-[13.75rem] rounded-2xl border border-border/70 bg-background px-4 py-3.5 sm:col-span-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {copy.managedPricingNoteTitle}
+              </div>
+              <div className="mt-2 text-sm leading-6 text-muted-foreground">{copy.managedPricingNoteBody}</div>
             </div>
-          </div>
-        ) : null}
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-6 p-6">
@@ -743,7 +772,7 @@ export default function LandingPage() {
         </section>
 
         <section id="pricing" className="border-y border-border/60 bg-muted/35 py-16 lg:py-24">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-[1560px] px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl">
               <div className="inline-flex items-center rounded-full border border-border/70 bg-background px-4 py-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 <BadgeDollarSign className="mr-2 h-4 w-4" />
@@ -753,7 +782,7 @@ export default function LandingPage() {
               <p className="mt-4 text-lg text-muted-foreground">{copy.pricingBody}</p>
             </div>
 
-            <div className="mt-10 grid gap-5 xl:grid-cols-4">
+          <div className="mt-10 grid gap-5 md:grid-cols-2 2xl:grid-cols-4">
               {publicPricingPlans.map((plan) => (
                 <PricingCard
                   key={plan.code}
