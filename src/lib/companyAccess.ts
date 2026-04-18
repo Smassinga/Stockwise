@@ -60,6 +60,8 @@ export type CompanyAccessDetail = {
   company_name: string | null
   legal_name: string | null
   trade_name: string | null
+  company_email: string | null
+  company_preferred_lang: string | null
   company_created_at: string | null
   owner_user_id: string | null
   owner_full_name: string | null
@@ -82,11 +84,15 @@ export type CompanyAccessDetail = {
   effective_status: SubscriptionStatus
   trial_started_at: string | null
   trial_expires_at: string | null
+  access_granted_at: string | null
   paid_until: string | null
   purge_scheduled_at: string | null
   purge_completed_at: string | null
   access_enabled: boolean
   manual_activation_only: boolean
+  notification_recipient_email: string | null
+  notification_recipient_name: string | null
+  notification_recipient_source: string | null
   reset_allowed: boolean
   reset_blocked_reason: string | null
 }
@@ -107,6 +113,26 @@ export type CompanyResetResult = {
   performed_at: string
   deleted_summary: Record<string, number>
   preserved_scope: Record<string, unknown>
+}
+
+export type CompanyAccessEmailTemplateType = 'expiry_warning' | 'purge_warning' | 'activation_confirmation'
+
+export type CompanyAccessEmailPreview = {
+  template_key: CompanyAccessEmailTemplateType
+  recipient_email: string
+  recipient_name: string | null
+  recipient_source: string
+  subject: string
+  html: string
+  text: string
+  support_email: string
+}
+
+export type CompanyAccessEmailSendResult = {
+  template_key: CompanyAccessEmailTemplateType
+  recipient_email: string
+  recipient_source: string
+  subject: string
 }
 
 type SetCompanyAccessInput = {
@@ -135,6 +161,20 @@ function unwrapMany<T>(data: unknown): T[] {
   return Array.isArray(data) ? (data as T[]) : []
 }
 
+function extractFnErr(error: any): string {
+  const ctx = error?.context
+  if (!ctx) return error?.message || 'Unknown error'
+  if (ctx.body) {
+    try {
+      const parsed = typeof ctx.body === 'string' ? JSON.parse(ctx.body) : ctx.body
+      return parsed?.error || parsed?.message || (typeof ctx.body === 'string' ? ctx.body : error?.message)
+    } catch {
+      return typeof ctx.body === 'string' ? ctx.body : error?.message || 'Unknown error'
+    }
+  }
+  return error?.message || 'Unknown error'
+}
+
 function toFriendlyAccessError(error: any, fallback: string) {
   const message = String(error?.message || '').toLowerCase()
 
@@ -161,6 +201,27 @@ function toFriendlyAccessError(error: any, fallback: string) {
   }
   if (message.includes('platform_admin_company_reset_rate_limited')) {
     return 'This reset control was used too quickly. Wait a few minutes and try again.'
+  }
+  if (message.includes('company_notification_recipient_missing')) {
+    return 'No canonical company recipient is configured. Add a company email or ensure the owner/admin email is present first.'
+  }
+  if (message.includes('company_access_expiry_date_missing')) {
+    return 'This company has no stored expiry date yet. Save the access dates first.'
+  }
+  if (message.includes('company_access_purge_date_missing')) {
+    return 'This company has no stored purge schedule yet. Save the purge date first.'
+  }
+  if (message.includes('company_access_activation_confirmation_not_ready')) {
+    return 'Activation confirmation is only available for companies that are already in active paid access.'
+  }
+  if (message.includes('company_access_activation_window_missing')) {
+    return 'Activation confirmation requires both the activation start date and the paid-until date.'
+  }
+  if (message.includes('company_access_email_audit_failed')) {
+    return 'The email was sent, but the control-plane audit could not be written. Review the action log before retrying.'
+  }
+  if (message.includes('company_access_email_template_invalid')) {
+    return 'The selected company email template is no longer valid.'
   }
   if (message.includes('rate_limited')) {
     return 'This control was used too quickly. Wait a moment and try again.'
@@ -236,4 +297,46 @@ export async function resetCompanyOperationalData(input: ResetCompanyOperational
   })
   if (error) throw new Error(toFriendlyAccessError(error, 'Failed to reset company operational data.'))
   return unwrapSingle<CompanyResetResult>(data)
+}
+
+export async function previewCompanyAccessEmail(input: {
+  companyId: string
+  templateKey: CompanyAccessEmailTemplateType
+  note?: string | null
+}) {
+  try {
+    const { data, error } = await supabase.functions.invoke('mailer-company-access', {
+      body: {
+        company_id: input.companyId,
+        template_key: input.templateKey,
+        mode: 'preview',
+        note: input.note || null,
+      },
+    })
+    if (error) throw new Error(toFriendlyAccessError({ message: extractFnErr(error) }, 'Failed to preview company email.'))
+    return (data?.preview || null) as CompanyAccessEmailPreview | null
+  } catch (error: any) {
+    throw new Error(toFriendlyAccessError(error, 'Failed to preview company email.'))
+  }
+}
+
+export async function sendCompanyAccessEmail(input: {
+  companyId: string
+  templateKey: CompanyAccessEmailTemplateType
+  note?: string | null
+}) {
+  try {
+    const { data, error } = await supabase.functions.invoke('mailer-company-access', {
+      body: {
+        company_id: input.companyId,
+        template_key: input.templateKey,
+        mode: 'send',
+        note: input.note || null,
+      },
+    })
+    if (error) throw new Error(toFriendlyAccessError({ message: extractFnErr(error) }, 'Failed to send company email.'))
+    return (data?.sent || null) as CompanyAccessEmailSendResult | null
+  } catch (error: any) {
+    throw new Error(toFriendlyAccessError(error, 'Failed to send company email.'))
+  }
 }

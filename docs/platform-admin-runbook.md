@@ -40,12 +40,16 @@ What the command does:
 ## What Platform Admins Can Do Today
 
 - open `/platform-control`
+- use the top-level summary counters to review trial, active paid, expired, suspended, and disabled companies separately
 - review company subscription/access state
-- review company shell metadata, created date, owner, member counts, and latest recorded sign-in activity
+- review company shell metadata, created date, registered company email, owner, member counts, and latest recorded sign-in activity
 - manually grant, extend, suspend, expire, or disable tenant access
 - set purge scheduling metadata for expired trial tenants
+- preview and send expiry warning, purge warning, and paid activation confirmation emails
 - review the access audit log
+- review the separate control-action log for resets and outbound company-access emails
 - trigger a guarded operational data reset for non-active-paid tenants
+- return to the rest of the app using the in-page `Back to dashboard` path
 
 ## Owner And Sign-In Metadata
 
@@ -61,6 +65,45 @@ Displayed sign-in activity uses the best available value from `public.profiles.l
 - latest recorded sign-in = most recent active member sign-in, when present
 
 If no profile activity exists, the UI shows that it was not captured instead of inventing a value.
+
+## Company Recipient Rule For Outbound Access Emails
+
+Platform Control now resolves the canonical outbound company recipient in this order:
+
+1. `companies.email`
+2. resolved owner email
+3. active `ADMIN` email fallback
+
+If none of these are present, preview/send is blocked with an explicit operator message.
+
+This recipient rule is for outbound company notices only.
+
+## Support Inbox Routing
+
+Inbound support and activation requests now route to:
+
+- `support@stockwiseapp.com`
+
+This applies to public pricing/contact CTAs and the blocked-access `Request activation` path.
+
+Outbound company emails do not send to that inbox. They send to the canonical company recipient and include `support@stockwiseapp.com` as the StockWise contact/reply-to target.
+
+## Company Access Emails
+
+Platform Control now supports manual preview/send for:
+
+- expiry warning
+- purge warning
+- paid activation confirmation
+
+Operating rules:
+
+- these emails are manual admin-triggered actions
+- they are not sent automatically when status changes
+- Platform Control uses stored access dates and plan state, not unsaved form edits
+- successful sends are audited in `company_control_action_log`
+
+See [Company Access Email Operations](company-access-email-operations.md) for the detailed recipient, template, and audit rules.
 
 ## Guarded Operational Reset
 

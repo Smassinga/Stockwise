@@ -59,3 +59,8 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/digest-worker/index.ts"
 
+[functions.mailer-company-access]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/mailer-company-access/index.ts"
+

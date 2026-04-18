@@ -1,4 +1,4 @@
-export const PUBLIC_CONTACT_EMAIL = 'hello@stockwiseapp.com'
+export const PUBLIC_CONTACT_EMAIL = 'support@stockwiseapp.com'
 
 export function buildPublicMailto(subject: string) {
   const encodedSubject = encodeURIComponent(subject)

@@ -3,17 +3,30 @@ import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
+  ArrowLeft,
+  BellRing,
   Building2,
   CalendarClock,
-  CalendarDays,
+  ExternalLink,
+  Eye,
+  Mail,
   RefreshCw,
   Search,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -26,32 +39,37 @@ import {
   listCompanyAccess,
   listCompanyAccessEvents,
   listCompanyControlActions,
+  previewCompanyAccessEmail,
   resetCompanyOperationalData,
+  sendCompanyAccessEmail,
   setCompanyAccess,
   type CompanyAccessAuditRow,
   type CompanyAccessDetail,
+  type CompanyAccessEmailPreview,
+  type CompanyAccessEmailTemplateType,
   type CompanyAccessRow,
   type CompanyControlActionRow,
   type SubscriptionStatus,
 } from '../lib/companyAccess'
-import { internalPlanOptions } from '../lib/pricingPlans'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { internalPlanOptions } from '../lib/pricingPlans'
+import { PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
 
 function asDateInput(value: string | null | undefined) {
   return value ? value.slice(0, 10) : ''
 }
 
-function formatDate(value: string | null | undefined, locale: string, fallback = '—') {
+function formatDate(value: string | null | undefined, locale: string, fallback = '-') {
   if (!value) return fallback
   return new Date(value).toLocaleDateString(locale)
 }
 
-function formatDateTime(value: string | null | undefined, locale: string, fallback = '—') {
+function formatDateTime(value: string | null | undefined, locale: string, fallback = '-') {
   if (!value) return fallback
   return new Date(value).toLocaleString(locale)
 }
 
-function formatStatus(status: string | null | undefined, fallback = '—') {
+function formatStatus(status: string | null | undefined, fallback = '-') {
   return status ? status.replaceAll('_', ' ') : fallback
 }
 
@@ -84,10 +102,29 @@ function ownerSourceLabel(source: string | null | undefined) {
   }
 }
 
+function recipientSourceLabel(source: string | null | undefined) {
+  switch (source) {
+    case 'company_email':
+      return 'Registered company email'
+    case 'owner_email':
+      return 'Resolved owner email'
+    case 'active_admin_email':
+      return 'Active admin email fallback'
+    default:
+      return 'Not captured'
+  }
+}
+
 function controlActionLabel(actionType: string | null | undefined) {
   switch (actionType) {
     case 'operational_reset':
       return 'Operational data reset'
+    case 'access_email_expiry_warning_sent':
+      return 'Expiry warning email sent'
+    case 'access_email_purge_warning_sent':
+      return 'Purge warning email sent'
+    case 'access_email_activation_confirmation_sent':
+      return 'Activation confirmation email sent'
     default:
       return actionType ? actionType.replaceAll('_', ' ') : 'Control action'
   }
@@ -96,6 +133,40 @@ function controlActionLabel(actionType: string | null | undefined) {
 function countDeletedRows(summary: Record<string, unknown> | null | undefined) {
   if (!summary || typeof summary !== 'object') return 0
   return Object.values(summary).reduce((total, value) => total + (typeof value === 'number' ? value : 0), 0)
+}
+
+function resolveStoredExpiryDate(detail: CompanyAccessDetail | null) {
+  if (!detail) return null
+  if (detail.effective_status === 'active_paid' && detail.paid_until) return detail.paid_until
+  return detail.trial_expires_at || detail.paid_until || null
+}
+
+function hasStatusCard(status: SubscriptionStatus, summary: Record<string, number>) {
+  return summary[status] || 0
+}
+
+function MetadataCard({
+  label,
+  value,
+  hint,
+  mono = false,
+}: {
+  label: string
+  value: string
+  hint?: string | null
+  mono?: boolean
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border/70 bg-background p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+      <div
+        className={`mt-2 min-w-0 text-sm font-medium leading-6 text-foreground ${mono ? 'break-all font-mono text-xs' : 'break-words'}`}
+      >
+        {value}
+      </div>
+      {hint ? <div className="mt-2 min-w-0 break-words text-xs leading-5 text-muted-foreground">{hint}</div> : null}
+    </div>
+  )
 }
 
 export default function PlatformControlPage() {
@@ -111,6 +182,8 @@ export default function PlatformControlPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [previewingTemplate, setPreviewingTemplate] = useState<CompanyAccessEmailTemplateType | null>(null)
+  const [sendingTemplate, setSendingTemplate] = useState<CompanyAccessEmailTemplateType | null>(null)
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<CompanyAccessRow[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('')
@@ -123,6 +196,8 @@ export default function PlatformControlPage() {
   const [trialExpiresAt, setTrialExpiresAt] = useState('')
   const [purgeScheduledAt, setPurgeScheduledAt] = useState('')
   const [reason, setReason] = useState('')
+  const [emailNote, setEmailNote] = useState('')
+  const [emailPreview, setEmailPreview] = useState<CompanyAccessEmailPreview | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [resetReason, setResetReason] = useState('')
   const [resetConfirmation, setResetConfirmation] = useState('')
@@ -163,6 +238,90 @@ export default function PlatformControlPage() {
       return totals
     }, {})
   }, [rows])
+
+  const summaryCards = useMemo(
+    () =>
+      ([
+        ['trial', tt('platform.trial', 'Trial')],
+        ['active_paid', tt('platform.activePaid', 'Active paid')],
+        ['expired', tt('platform.expired', 'Expired')],
+        ['suspended', tt('platform.suspended', 'Suspended')],
+        ['disabled', tt('platform.disabled', 'Disabled')],
+      ] as const).map(([key, label]) => ({
+        key,
+        label,
+        count: hasStatusCard(key, summary),
+      })),
+    [summary, tt],
+  )
+
+  const accessFormDirty = useMemo(() => {
+    if (!detail) return false
+    return (
+      planCode !== detail.plan_code ||
+      status !== detail.subscription_status ||
+      paidUntil !== asDateInput(detail.paid_until) ||
+      trialExpiresAt !== asDateInput(detail.trial_expires_at) ||
+      purgeScheduledAt !== asDateInput(detail.purge_scheduled_at)
+    )
+  }, [detail, paidUntil, planCode, purgeScheduledAt, status, trialExpiresAt])
+
+  const emailActions = useMemo(() => {
+    const recipientReady = Boolean(detail?.notification_recipient_email)
+    const expiryDate = resolveStoredExpiryDate(detail)
+    const activationReady = Boolean(detail?.access_granted_at && detail?.paid_until && detail?.effective_status === 'active_paid')
+
+    return [
+      {
+        key: 'expiry_warning' as const,
+        title: tt('platform.emailExpiryTitle', 'Expiry warning'),
+        body: tt(
+          'platform.emailExpiryBody',
+          'Warn the company that access is expiring and tell them how to request manual renewal or activation.',
+        ),
+        blockedReason: accessFormDirty
+          ? tt('platform.emailSaveFirst', 'Save current status and date changes first so the email uses the stored access state.')
+          : !recipientReady
+            ? tt('platform.emailNoRecipient', 'No canonical company recipient is available yet.')
+            : !expiryDate
+              ? tt('platform.emailNoExpiryDate', 'Save an expiry date before sending this warning.')
+              : null,
+      },
+      {
+        key: 'purge_warning' as const,
+        title: tt('platform.emailPurgeTitle', 'Purge warning'),
+        body: tt(
+          'platform.emailPurgeBody',
+          'Warn the company that operational data is scheduled for purge if access is not renewed before the scheduled date.',
+        ),
+        blockedReason: accessFormDirty
+          ? tt('platform.emailSaveFirst', 'Save current status and date changes first so the email uses the stored access state.')
+          : !recipientReady
+            ? tt('platform.emailNoRecipient', 'No canonical company recipient is available yet.')
+            : !detail?.purge_scheduled_at
+              ? tt('platform.emailNoPurgeDate', 'Save a purge schedule before sending this warning.')
+              : null,
+      },
+      {
+        key: 'activation_confirmation' as const,
+        title: tt('platform.emailActivationTitle', 'Paid activation confirmation'),
+        body: tt(
+          'platform.emailActivationBody',
+          'Confirm that the company was manually activated on the selected plan and show the paid access window.',
+        ),
+        blockedReason: accessFormDirty
+          ? tt('platform.emailSaveFirst', 'Save current status and date changes first so the email uses the stored access state.')
+          : !recipientReady
+            ? tt('platform.emailNoRecipient', 'No canonical company recipient is available yet.')
+            : !activationReady
+              ? tt(
+                  'platform.emailNoActivationWindow',
+                  'Activation confirmation needs active paid access plus both the activation start date and the paid-until date.',
+                )
+              : null,
+      },
+    ]
+  }, [accessFormDirty, detail, tt])
 
   const loadCompanies = useCallback(
     async (nextSearch?: string, preferredCompanyId?: string) => {
@@ -242,6 +401,8 @@ export default function PlatformControlPage() {
       setTrialExpiresAt('')
       setPurgeScheduledAt('')
       setReason('')
+      setEmailNote('')
+      setEmailPreview(null)
       setResetReason('')
       setResetConfirmation('')
       return
@@ -253,6 +414,8 @@ export default function PlatformControlPage() {
     setTrialExpiresAt(asDateInput(detail.trial_expires_at))
     setPurgeScheduledAt(asDateInput(detail.purge_scheduled_at))
     setReason('')
+    setEmailNote('')
+    setEmailPreview(null)
     setResetReason('')
     setResetConfirmation('')
   }, [detail])
@@ -313,6 +476,48 @@ export default function PlatformControlPage() {
     }
   }
 
+  async function handlePreviewEmail(templateKey: CompanyAccessEmailTemplateType) {
+    if (!detail) return
+    try {
+      setPreviewingTemplate(templateKey)
+      const preview = await previewCompanyAccessEmail({
+        companyId: detail.company_id,
+        templateKey,
+        note: emailNote || null,
+      })
+      setEmailPreview(preview)
+      toast.success(tt('platform.emailPreviewReady', 'Email preview is ready.'))
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('platform.emailPreviewFailed', 'Failed to build the company email preview.'))
+    } finally {
+      setPreviewingTemplate(null)
+    }
+  }
+
+  async function handleSendEmail(templateKey: CompanyAccessEmailTemplateType) {
+    if (!detail) return
+    try {
+      setSendingTemplate(templateKey)
+      const sent = await sendCompanyAccessEmail({
+        companyId: detail.company_id,
+        templateKey,
+        note: emailNote || null,
+      })
+      await refreshSelectedCompany(detail.company_id)
+      toast.success(
+        tt('platform.emailSent', 'Company email sent to {email}.', {
+          email: sent?.recipient_email || detail.notification_recipient_email || PUBLIC_CONTACT_EMAIL,
+        }),
+      )
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('platform.emailSendFailed', 'Failed to send the company email.'))
+    } finally {
+      setSendingTemplate(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background px-4 py-10 sm:px-6 lg:px-8">
       <AlertDialog
@@ -334,20 +539,29 @@ export default function PlatformControlPage() {
               <CardDescription className="max-w-3xl text-base leading-7">
                 {tt(
                   'platform.description',
-                  'This control plane governs 7-day trials, manual paid activation, suspensions, expiry, and guarded operational resets. Payment automation remains intentionally deferred.',
+                  'This control plane governs 7-day trials, manual paid activation, suspensions, expiry, commercial notices, and guarded operational resets. Payment automation remains intentionally deferred.',
                 )}
               </CardDescription>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button variant="outline" asChild>
+                  <Link to="/dashboard">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    {tt('platform.backToDashboard', 'Back to dashboard')}
+                  </Link>
+                </Button>
+                <Button variant="ghost" asChild>
+                  <Link to="/#pricing">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {tt('platform.openLanding', 'Open public pricing')}
+                  </Link>
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="grid gap-4 p-6 md:grid-cols-4">
-              {([
-                ['trial', tt('platform.trial', 'Trial')],
-                ['active_paid', tt('platform.activePaid', 'Active paid')],
-                ['expired', tt('platform.expired', 'Expired')],
-                ['suspended', tt('platform.restricted', 'Suspended / disabled')],
-              ] as const).map(([key, label]) => (
-                <div key={key} className="rounded-2xl border border-border/70 bg-background p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
-                  <div className="mt-2 text-3xl font-semibold">{summary[key] || 0}</div>
+            <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-5">
+              {summaryCards.map((card) => (
+                <div key={card.key} className="rounded-2xl border border-border/70 bg-background p-4">
+                  <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</div>
+                  <div className="mt-2 text-3xl font-semibold">{card.count}</div>
                 </div>
               ))}
             </CardContent>
@@ -385,7 +599,12 @@ export default function PlatformControlPage() {
                 <ul className="mt-3 space-y-2">
                   <li>{tt('platform.manualActivationOnly', 'Paid access remains manual in this phase.')}</li>
                   <li>{tt('platform.paymentDeferred', 'Payment checkout and automatic activation remain intentionally deferred.')}</li>
-                  <li>{tt('platform.routeDirect', 'Active platform admins can open this route directly or use the Platform section in navigation.')}</li>
+                  <li>
+                    {tt(
+                      'platform.supportRouting',
+                      'Inbound activation and support requests are routed to support@stockwiseapp.com.',
+                    )}
+                  </li>
                 </ul>
               </div>
             </CardContent>
@@ -480,9 +699,9 @@ export default function PlatformControlPage() {
               <Card className="border-border/70 bg-card">
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <CardTitle>{tt('platform.detailTitle', 'Selected company')}</CardTitle>
-                      <CardDescription>{selectedCompanyName}</CardDescription>
+                      <CardDescription className="break-words">{selectedCompanyName}</CardDescription>
                     </div>
                     {selectedCompanyId ? (
                       <Badge className={`rounded-full border px-3 py-1 font-medium capitalize ${statusTone(selectedStatus as SubscriptionStatus)}`}>
@@ -498,7 +717,7 @@ export default function PlatformControlPage() {
                     </div>
                   ) : detailLoading ? (
                     <div className="rounded-2xl border border-border/70 bg-muted/10 p-6 text-sm text-muted-foreground">
-                      {tt('platform.loadingDetail', 'Loading company detail and control history…')}
+                      {tt('platform.loadingDetail', 'Loading company detail and control history...')}
                     </div>
                   ) : detail ? (
                     <>
@@ -508,27 +727,18 @@ export default function PlatformControlPage() {
                             <Building2 className="h-3.5 w-3.5" />
                             {tt('platform.companySummary', 'Company summary')}
                           </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.companyName', 'Company name')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{detail.company_name || '—'}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.companyCreated', 'Created')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDate(detail.company_created_at, locale)}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4 sm:col-span-2">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.companyUuid', 'Company UUID')}</div>
-                              <div className="mt-2 break-all font-mono text-xs text-foreground">{detail.company_id}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.legalName', 'Legal name')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{detail.legal_name || '—'}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.tradeName', 'Trade name')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{detail.trade_name || '—'}</div>
-                            </div>
+                          <div className="mt-4 grid auto-rows-fr gap-3 sm:grid-cols-2">
+                            <MetadataCard label={tt('platform.companyName', 'Company name')} value={detail.company_name || '-'} />
+                            <MetadataCard label={tt('platform.companyCreated', 'Created')} value={formatDate(detail.company_created_at, locale)} />
+                            <MetadataCard label={tt('platform.companyEmail', 'Registered company email')} value={detail.company_email || '-'} />
+                            <MetadataCard label={tt('platform.language', 'Preferred language')} value={detail.company_preferred_lang || '-'} />
+                            <MetadataCard
+                              label={tt('platform.companyUuid', 'Company UUID')}
+                              value={detail.company_id}
+                              mono
+                            />
+                            <MetadataCard label={tt('platform.legalName', 'Legal name')} value={detail.legal_name || '-'} />
+                            <MetadataCard label={tt('platform.tradeName', 'Trade name')} value={detail.trade_name || '-'} />
                           </div>
                         </div>
 
@@ -537,46 +747,45 @@ export default function PlatformControlPage() {
                             <UserRound className="h-3.5 w-3.5" />
                             {tt('platform.ownerAndActivity', 'Owner and access activity')}
                           </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.owner', 'Owner')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{detail.owner_full_name || detail.owner_email || tt('platform.notCaptured', 'Not captured')}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.ownerEmail', 'Owner email')}</div>
-                              <div className="mt-2 break-all text-sm font-medium text-foreground">{detail.owner_email || '—'}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.ownerSource', 'Owner source')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{ownerSourceLabel(detail.owner_source)}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.ownerRole', 'Owner membership')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">
-                                {[formatStatus(detail.owner_member_role), formatStatus(detail.owner_member_status)].filter((value) => value !== '—').join(' · ') || '—'}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.ownerSince', 'Owner since')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDate(detail.owner_member_since, locale)}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.memberCounts', 'Members')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">
-                                {detail.active_member_count} / {detail.member_count}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.ownerLastSignIn', 'Owner last sign-in')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDateTime(detail.owner_last_sign_in_at, locale, tt('platform.notCaptured', 'Not captured'))}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.latestSignIn', 'Latest recorded sign-in')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDateTime(detail.latest_member_last_sign_in_at, locale, tt('platform.notCaptured', 'Not captured'))}</div>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                {detail.latest_member_email || detail.latest_member_full_name || tt('platform.notCaptured', 'Not captured')}
-                              </div>
-                            </div>
+                          <div className="mt-4 grid auto-rows-fr gap-3 sm:grid-cols-2">
+                            <MetadataCard
+                              label={tt('platform.owner', 'Owner')}
+                              value={detail.owner_full_name || detail.owner_email || tt('platform.notCaptured', 'Not captured')}
+                            />
+                            <MetadataCard
+                              label={tt('platform.ownerEmail', 'Owner email')}
+                              value={detail.owner_email || '-'}
+                            />
+                            <MetadataCard
+                              label={tt('platform.ownerSource', 'Owner source')}
+                              value={ownerSourceLabel(detail.owner_source)}
+                            />
+                            <MetadataCard
+                              label={tt('platform.ownerRole', 'Owner membership')}
+                              value={
+                                [formatStatus(detail.owner_member_role), formatStatus(detail.owner_member_status)]
+                                  .filter((value) => value !== '-')
+                                  .join(' / ') || '-'
+                              }
+                            />
+                            <MetadataCard
+                              label={tt('platform.ownerSince', 'Owner since')}
+                              value={formatDate(detail.owner_member_since, locale)}
+                            />
+                            <MetadataCard
+                              label={tt('platform.memberCounts', 'Members')}
+                              value={`${detail.active_member_count} / ${detail.member_count}`}
+                              hint={tt('platform.memberCountsHint', 'Active members / total company members')}
+                            />
+                            <MetadataCard
+                              label={tt('platform.ownerLastSignIn', 'Owner last sign-in')}
+                              value={formatDateTime(detail.owner_last_sign_in_at, locale, tt('platform.notCaptured', 'Not captured'))}
+                            />
+                            <MetadataCard
+                              label={tt('platform.latestSignIn', 'Latest recorded sign-in')}
+                              value={formatDateTime(detail.latest_member_last_sign_in_at, locale, tt('platform.notCaptured', 'Not captured'))}
+                              hint={detail.latest_member_email || detail.latest_member_full_name || tt('platform.notCaptured', 'Not captured')}
+                            />
                           </div>
                         </div>
                       </div>
@@ -659,48 +868,160 @@ export default function PlatformControlPage() {
                             <CalendarClock className="h-3.5 w-3.5" />
                             {tt('platform.commercialDates', 'Commercial dates and posture')}
                           </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.planCode', 'Plan code')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{detail.plan_code}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.subscriptionStatus', 'Stored status')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatStatus(detail.subscription_status)}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.trialStarted', 'Trial started')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDate(detail.trial_started_at, locale)}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.trialEnds', 'Trial ends')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDate(detail.trial_expires_at, locale)}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.paidUntil', 'Paid until')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDate(detail.paid_until, locale, tt('platform.manualWindow', 'Manual window'))}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.purgeSchedule', 'Purge schedule')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDate(detail.purge_scheduled_at, locale, '—')}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.purgeCompleted', 'Reset / purge completed')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">{formatDateTime(detail.purge_completed_at, locale, '—')}</div>
-                            </div>
-                            <div className="rounded-xl border border-border/70 bg-background p-4">
-                              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('platform.accessEnabled', 'Access enabled')}</div>
-                              <div className="mt-2 text-sm font-medium text-foreground">
-                                {detail.access_enabled ? tt('platform.enabled', 'Enabled') : tt('platform.blocked', 'Blocked')}
-                              </div>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                {detail.manual_activation_only
+                          <div className="mt-4 grid auto-rows-fr gap-3 sm:grid-cols-2">
+                            <MetadataCard label={tt('platform.planCode', 'Plan code')} value={detail.plan_code} />
+                            <MetadataCard label={tt('platform.subscriptionStatus', 'Stored status')} value={formatStatus(detail.subscription_status)} />
+                            <MetadataCard label={tt('platform.trialStarted', 'Trial started')} value={formatDate(detail.trial_started_at, locale)} />
+                            <MetadataCard label={tt('platform.trialEnds', 'Trial ends')} value={formatDate(detail.trial_expires_at, locale)} />
+                            <MetadataCard label={tt('platform.activationGrantedAt', 'Activated on')} value={formatDate(detail.access_granted_at, locale)} />
+                            <MetadataCard
+                              label={tt('platform.paidUntil', 'Paid until')}
+                              value={formatDate(detail.paid_until, locale, tt('platform.manualWindow', 'Manual window'))}
+                            />
+                            <MetadataCard label={tt('platform.purgeSchedule', 'Purge schedule')} value={formatDate(detail.purge_scheduled_at, locale)} />
+                            <MetadataCard label={tt('platform.purgeCompleted', 'Reset / purge completed')} value={formatDateTime(detail.purge_completed_at, locale)} />
+                            <MetadataCard
+                              label={tt('platform.accessEnabled', 'Access enabled')}
+                              value={detail.access_enabled ? tt('platform.enabled', 'Enabled') : tt('platform.blocked', 'Blocked')}
+                              hint={
+                                detail.manual_activation_only
                                   ? tt('platform.manualActivationOnly', 'Paid access remains manual in this phase.')
-                                  : tt('platform.paymentAutomationReady', 'The current control plane can accept automated activation later.')}
-                              </div>
-                            </div>
+                                  : tt('platform.paymentAutomationReady', 'The current control plane can accept automated activation later.')
+                              }
+                            />
                           </div>
                         </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-border/70 bg-muted/10 p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                              <BellRing className="h-3.5 w-3.5" />
+                              {tt('platform.notificationWorkspace', 'Commercial and access emails')}
+                            </div>
+                            <div className="mt-3 text-lg font-semibold text-foreground">
+                              {tt('platform.notificationTitle', 'Send company access notices')}
+                            </div>
+                            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                              {tt(
+                                'platform.notificationBody',
+                                'Outbound access emails always go to the selected company recipient. Inbound activation and support requests still route to support@stockwiseapp.com.',
+                              )}
+                            </p>
+                          </div>
+                          <div className="min-w-[220px] rounded-2xl border border-border/70 bg-background p-4 text-sm leading-6 text-muted-foreground">
+                            <div className="font-medium text-foreground">{tt('platform.notificationRecipient', 'Company recipient')}</div>
+                            <div className="mt-2 break-all font-medium text-foreground">
+                              {detail.notification_recipient_email || tt('platform.notCaptured', 'Not captured')}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {detail.notification_recipient_name || tt('platform.notCaptured', 'Not captured')}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {recipientSourceLabel(detail.notification_recipient_source)}
+                            </div>
+                            <div className="mt-3 font-medium text-foreground">{tt('platform.inboundSupport', 'Inbound support inbox')}</div>
+                            <div className="mt-1 break-all text-xs text-muted-foreground">{PUBLIC_CONTACT_EMAIL}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                          <Label>{tt('platform.emailInternalNote', 'Internal note for audit')}</Label>
+                          <Textarea
+                            value={emailNote}
+                            onChange={(event) => setEmailNote(event.target.value)}
+                            placeholder={tt(
+                              'platform.emailInternalNotePlaceholder',
+                              'Optional note for the control log. This note is not inserted into the outbound email body.',
+                            )}
+                          />
+                        </div>
+
+                        {accessFormDirty ? (
+                          <div className="mt-4 rounded-2xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                            {tt(
+                              'platform.emailSaveFirst',
+                              'Save current status and date changes first so the email uses the stored access state.',
+                            )}
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                          {emailActions.map((action) => {
+                            const busy = previewingTemplate === action.key || sendingTemplate === action.key
+                            return (
+                              <div key={action.key} className="rounded-2xl border border-border/70 bg-background p-4">
+                                <div className="text-sm font-semibold text-foreground">{action.title}</div>
+                                <p className="mt-2 text-sm leading-6 text-muted-foreground">{action.body}</p>
+                                {action.blockedReason ? (
+                                  <div className="mt-3 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                                    {action.blockedReason}
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 text-xs leading-5 text-muted-foreground">
+                                    {tt('platform.emailActionReady', 'This notice uses the stored plan, status, recipient, and access dates.')}
+                                  </div>
+                                )}
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  <Button
+                                    variant="outline"
+                                    disabled={Boolean(action.blockedReason) || busy}
+                                    onClick={() => void handlePreviewEmail(action.key)}
+                                  >
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    {previewingTemplate === action.key
+                                      ? tt('platform.previewing', 'Previewing')
+                                      : tt('platform.previewEmail', 'Preview')}
+                                  </Button>
+                                  <Button
+                                    disabled={Boolean(action.blockedReason) || busy}
+                                    onClick={() => void handleSendEmail(action.key)}
+                                  >
+                                    <Send className="mr-2 h-4 w-4" />
+                                    {sendingTemplate === action.key
+                                      ? tt('platform.sendingEmail', 'Sending')
+                                      : tt('platform.sendEmail', 'Send')}
+                                  </Button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {emailPreview ? (
+                          <div className="mt-4 rounded-2xl border border-border/70 bg-background p-5">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/15 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                                  <Mail className="h-3.5 w-3.5" />
+                                  {tt('platform.previewTitle', 'Email preview')}
+                                </div>
+                                <div className="mt-3 text-lg font-semibold text-foreground">{emailPreview.subject}</div>
+                              </div>
+                              <Button variant="ghost" onClick={() => setEmailPreview(null)}>
+                                {tt('platform.clearPreview', 'Clear preview')}
+                              </Button>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <MetadataCard
+                                label={tt('platform.previewRecipient', 'Send to')}
+                                value={emailPreview.recipient_email}
+                                hint={`${emailPreview.recipient_name || tt('platform.notCaptured', 'Not captured')} / ${recipientSourceLabel(emailPreview.recipient_source)}`}
+                              />
+                              <MetadataCard
+                                label={tt('platform.previewReplyTo', 'Reply-to / support')}
+                                value={emailPreview.support_email}
+                              />
+                            </div>
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-white">
+                              <div
+                                className="max-h-[720px] overflow-auto"
+                                dangerouslySetInnerHTML={{ __html: emailPreview.html }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="rounded-2xl border border-rose-200/70 bg-rose-50/60 p-5 dark:border-rose-500/20 dark:bg-rose-500/10">
@@ -720,11 +1041,7 @@ export default function PlatformControlPage() {
                               )}
                             </p>
                           </div>
-                          <Button
-                            variant="destructive"
-                            disabled={!detail.reset_allowed}
-                            onClick={() => setResetOpen(true)}
-                          >
+                          <Button variant="destructive" disabled={!detail.reset_allowed} onClick={() => setResetOpen(true)}>
                             <Trash2 className="mr-2 h-4 w-4" />
                             {tt('platform.resetAction', 'Reset company data')}
                           </Button>
@@ -735,9 +1052,9 @@ export default function PlatformControlPage() {
                             <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                               {tt('platform.resetRemoves', 'Reset removes')}
                             </div>
-                            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                            <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                               {resetDeletes.map((entry) => (
-                                <li key={entry}>• {entry}</li>
+                                <li key={entry}>{entry}</li>
                               ))}
                             </ul>
                           </div>
@@ -745,9 +1062,9 @@ export default function PlatformControlPage() {
                             <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                               {tt('platform.resetKeeps', 'Reset preserves')}
                             </div>
-                            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                            <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                               {resetKeeps.map((entry) => (
-                                <li key={entry}>• {entry}</li>
+                                <li key={entry}>{entry}</li>
                               ))}
                             </ul>
                           </div>
@@ -793,7 +1110,7 @@ export default function PlatformControlPage() {
                               {formatStatus(row.previous_status)} to {formatStatus(row.next_status)}
                             </div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {(row.previous_plan_code || '—')} to {(row.next_plan_code || '—')}
+                              {(row.previous_plan_code || '-')} to {(row.next_plan_code || '-')}
                             </div>
                           </div>
                           <div className="text-xs text-muted-foreground">{formatDateTime(row.created_at, locale)}</div>
@@ -814,7 +1131,7 @@ export default function PlatformControlPage() {
                   <CardDescription>
                     {tt(
                       'platform.controlActionsHelp',
-                      'Operational resets and other critical control-plane actions are logged separately from status changes.',
+                      'Operational resets and commercial notification sends are logged separately from status changes.',
                     )}
                   </CardDescription>
                 </CardHeader>
@@ -826,6 +1143,12 @@ export default function PlatformControlPage() {
                   ) : (
                     controlRows.map((row) => {
                       const deletedSummary = row.context?.deleted_summary as Record<string, unknown> | undefined
+                      const emailRecipient =
+                        typeof row.context?.recipient_email === 'string' ? row.context.recipient_email : null
+                      const emailSubject = typeof row.context?.subject === 'string' ? row.context.subject : null
+                      const emailSource =
+                        typeof row.context?.recipient_source === 'string' ? row.context.recipient_source : null
+
                       return (
                         <div key={row.id} className="rounded-2xl border border-border/70 bg-background p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -838,6 +1161,23 @@ export default function PlatformControlPage() {
                             <div className="text-xs text-muted-foreground">{formatDateTime(row.created_at, locale)}</div>
                           </div>
                           {row.reason ? <div className="mt-3 text-sm text-muted-foreground">{row.reason}</div> : null}
+                          {emailRecipient ? (
+                            <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                              <div className="break-all">
+                                {tt('platform.emailAuditRecipient', 'Recipient')}: {emailRecipient}
+                              </div>
+                              {emailSource ? (
+                                <div>
+                                  {tt('platform.emailAuditSource', 'Recipient source')}: {recipientSourceLabel(emailSource)}
+                                </div>
+                              ) : null}
+                              {emailSubject ? (
+                                <div className="break-words">
+                                  {tt('platform.emailAuditSubject', 'Subject')}: {emailSubject}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {deletedSummary ? (
                             <div className="mt-3 text-xs text-muted-foreground">
                               {tt('platform.controlActionDeletedSummary', 'Deleted operational rows: {count}', {
@@ -868,8 +1208,8 @@ export default function PlatformControlPage() {
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
-              <div className="font-medium text-foreground">{detail?.company_name || selectedRow?.company_name || '—'}</div>
-              <div className="mt-1 break-all font-mono text-xs">{detail?.company_id || selectedCompanyId || '—'}</div>
+              <div className="font-medium text-foreground">{detail?.company_name || selectedRow?.company_name || '-'}</div>
+              <div className="mt-1 break-all font-mono text-xs">{detail?.company_id || selectedCompanyId || '-'}</div>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">

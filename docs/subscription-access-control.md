@@ -16,6 +16,7 @@ Implemented in foundation scope:
 - guarded operational reset for non-active-paid tenants
 - purge scheduling for trial operational data
 - public bootstrap rate limiting
+- manual company-access email preview/send for expiry, purge, and paid activation confirmation
 
 Explicitly deferred:
 
@@ -148,12 +149,14 @@ The command upserts the row into `public.platform_admins`. After sign-in refresh
 Selected-company detail in `/platform-control` now shows:
 
 - company UUID and created date
+- registered company email
 - plan and effective subscription state
-- trial, paid, and purge dates
+- trial, activation, paid, and purge dates
 - member counts
 - company owner
 - owner email
 - latest recorded sign-in activity
+- canonical outbound company recipient and recipient source
 
 Owner is defined in this order:
 
@@ -162,6 +165,51 @@ Owner is defined in this order:
 3. earliest active `ADMIN` membership
 
 Latest sign-in is the best available value from `public.profiles.last_sign_in_at`. If it is unavailable, the UI shows that it was not captured.
+
+## Inbound Support vs Outbound Company Notices
+
+These flows are intentionally separate.
+
+Inbound activation/support requests:
+
+- public landing-page contact CTAs
+- blocked-access request-activation CTA
+
+These now route to:
+
+- `support@stockwiseapp.com`
+
+Outbound commercial/access notices from Platform Control:
+
+- expiry warning
+- purge warning
+- paid activation confirmation
+
+These go to the selected company's canonical recipient.
+
+Current canonical recipient rule:
+
+1. `companies.email`
+2. resolved owner email
+3. active `ADMIN` email fallback
+
+If no canonical recipient exists, send is blocked.
+
+## Company Access Emails
+
+Current model:
+
+- manual preview/send from `/platform-control`
+- no automatic send on status mutation
+- successful send writes to `company_control_action_log`
+- reply-to and support contact in the email use `support@stockwiseapp.com`
+
+Template data rules:
+
+- expiry warning uses the stored access expiry date
+- purge warning requires stored `purge_scheduled_at`
+- activation confirmation requires stored `access_granted_at` and `paid_until`
+- Platform Control disables preview/send until current access edits are saved
 
 ## Guarded Operational Reset
 

@@ -42,6 +42,9 @@ Hardening and control-plane foundations now also exist:
 - operational purge can be scheduled for expired trial tenants while retaining auth credentials
 - platform control now shows created date, canonical owner, member counts, and the latest recorded sign-in signal for each company
 - platform admins can now run a guarded operational reset that preserves identity and control-plane records while clearing company business data
+- Platform Control now counts disabled companies correctly in the status summary instead of hiding them behind a suspended-only aggregation
+- inbound activation/support contact is now centralized on `support@stockwiseapp.com`
+- Platform Control now previews and sends professional company access emails using the canonical company recipient and a separate support inbox
 - public pricing is now presented in MZN on the landing page
 - platform-admin access is now explicitly documented and visible only to active platform admins
 - the approved StockWise logo now drives the public brand, app shell, PWA icons, and Tauri packaging icons
@@ -169,6 +172,9 @@ Completed in this pass:
 - landing-page pricing now follows the 2026 MZN package workbook with clearer billing options, grouped perks, and manual-activation posture
 - broad placeholder and professional-copy cleanup removed stale demo/default assets and unfinished-looking public/app text
 - platform control now has a trustworthy selected-company workspace with owner/sign-in metadata and guarded operational reset
+- Platform Control now has operationally correct status counters, a clear path back to the main app, and a contained selected-company dashboard layout
+- company access email previews and sends are now available for expiry warning, purge warning, and paid activation confirmation
+- inbound support routing and outbound company-recipient routing are now explicitly separated and documented
 
 Current limitation:
 

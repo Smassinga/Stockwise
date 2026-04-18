@@ -20,6 +20,15 @@ function isoDateAtNoon(dateIso) {
   return `${dateIso}T12:00:00.000Z`
 }
 
+function formatLongDate(value) {
+  return new Intl.DateTimeFormat('en-MZ', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Africa/Maputo',
+  }).format(new Date(value))
+}
+
 async function safeDelete(operation) {
   try {
     await operation()
@@ -1008,6 +1017,78 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.ok(statuses.includes('expired'))
     assert.ok(statuses.includes('suspended'))
     assert.ok(statuses.includes('active_paid'))
+  })
+
+  await t.test('Platform control email previews resolve the company recipient and real access dates', async () => {
+    const purgeAt = isoDateAtNoon(plusDaysIso(45))
+    const refreshAccess = await platformAdminClient.rpc('platform_admin_set_company_access', {
+      p_company_id: companyId,
+      p_plan_code: 'starter',
+      p_status: 'active_paid',
+      p_paid_until: isoDateAtNoon(plusDaysIso(30)),
+      p_purge_scheduled_at: purgeAt,
+      p_reason: 'Regression company email preview baseline',
+    })
+    if (refreshAccess.error) throw refreshAccess.error
+
+    const detail = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await platformAdminClient.rpc('platform_admin_get_company_detail', { p_company_id: companyId }),
+        'Expected platform admin company detail lookup for email preview to succeed',
+      ),
+    )
+    assert.equal(detail.notification_recipient_email, ownerUser.email.toLowerCase())
+    assert.equal(detail.notification_recipient_source, 'company_email')
+    assert.equal(detail.company_email, ownerUser.email.toLowerCase())
+    assert.ok(detail.access_granted_at, 'Expected access_granted_at to be available for activation confirmation')
+
+    const expiryPreview = await platformAdminClient.functions.invoke('mailer-company-access', {
+      body: {
+        company_id: companyId,
+        template_key: 'expiry_warning',
+        mode: 'preview',
+      },
+    })
+    assert.equal(expiryPreview.error, null, expiryPreview.error?.message || 'Expected expiry preview to succeed')
+    assert.equal(expiryPreview.data.preview.recipient_email, ownerUser.email.toLowerCase())
+    assert.match(expiryPreview.data.preview.subject, /access expires/i)
+    assert.ok(expiryPreview.data.preview.text.includes('support@stockwiseapp.com'))
+    assert.ok(expiryPreview.data.preview.text.includes(formatLongDate(detail.paid_until)))
+
+    const activationPreview = await platformAdminClient.functions.invoke('mailer-company-access', {
+      body: {
+        company_id: companyId,
+        template_key: 'activation_confirmation',
+        mode: 'preview',
+      },
+    })
+    assert.equal(activationPreview.error, null, activationPreview.error?.message || 'Expected activation preview to succeed')
+    assert.equal(activationPreview.data.preview.recipient_email, ownerUser.email.toLowerCase())
+    assert.ok(activationPreview.data.preview.text.includes('Starter'))
+    assert.ok(activationPreview.data.preview.text.includes(formatLongDate(detail.access_granted_at)))
+    assert.ok(activationPreview.data.preview.text.includes(formatLongDate(detail.paid_until)))
+
+    const expireForPurgePreview = await platformAdminClient.rpc('platform_admin_set_company_access', {
+      p_company_id: companyId,
+      p_plan_code: 'trial_7d',
+      p_status: 'expired',
+      p_trial_expires_at: isoDateAtNoon(todayIso()),
+      p_purge_scheduled_at: purgeAt,
+      p_reason: 'Regression purge warning preview baseline',
+    })
+    if (expireForPurgePreview.error) throw expireForPurgePreview.error
+
+    const purgePreview = await platformAdminClient.functions.invoke('mailer-company-access', {
+      body: {
+        company_id: companyId,
+        template_key: 'purge_warning',
+        mode: 'preview',
+      },
+    })
+    assert.equal(purgePreview.error, null, purgePreview.error?.message || 'Expected purge preview to succeed')
+    assert.equal(purgePreview.data.preview.recipient_email, ownerUser.email.toLowerCase())
+    assert.ok(purgePreview.data.preview.text.includes(formatLongDate(purgeAt)))
+    assert.ok(purgePreview.data.preview.text.includes('support@stockwiseapp.com'))
   })
 
   await t.test('Public-facing abuse protection blocks repeated company bootstrap', async () => {

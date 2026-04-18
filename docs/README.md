@@ -33,6 +33,7 @@ If you're new to StockWise, start here:
 - [Finance Decision Log](finance-roadmap/decision-log.md) - Durable implementation and architecture decisions
 - [Subscription and Access Control](subscription-access-control.md) - Trial model, manual activation control plane, purge scope, and entitlement enforcement
 - [Platform Admin Runbook](platform-admin-runbook.md) - First-admin bootstrap, `/platform-control`, and manual activation operating model
+- [Company Access Email Operations](company-access-email-operations.md) - Canonical recipient resolution, support routing split, and manual control-plane email scenarios
 
 ### Mobile & Desktop
 
