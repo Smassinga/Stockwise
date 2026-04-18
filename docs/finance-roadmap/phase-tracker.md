@@ -108,6 +108,9 @@ Use this file as the working status board for finance-document implementation an
 | Approved StockWise brand replacement | Completed | Public shell, app shell, auth/access surfaces, PWA icons, and Tauri icons now use the approved logo assets |
 | Landing-page pricing polish from 2026 workbook | Completed | Package structure, perks, grouped billing options, and real CTAs are now aligned to the MZN workbook |
 | Placeholder and professional-copy audit | Completed | Stale demo/default assets and unfinished-looking user-facing copy were removed or rewritten |
+| Platform Control status mutation reliability | Completed | Status changes now persist correctly instead of being reset by unstable selected-row form state |
+| Platform Control company metadata intelligence | Completed | Selected-company panel now shows created date, owner, member counts, plan state, purge dates, and latest recorded sign-in data |
+| Guarded operational reset in Platform Control | Completed | Platform admins can reset non-active-paid tenant data with UUID confirmation, reason capture, audit logging, and preserved identity/control-plane records |
 | Vector SVG extraction from approved artwork | Not started | PNG-derived assets are canonical for now; SVG refinement is intentionally deferred until suitable vector tooling/source handling is available |
 | Automatic payment integration | Not started | Explicitly deferred |
 | Automatic paid-plan activation | Not started | Explicitly deferred |

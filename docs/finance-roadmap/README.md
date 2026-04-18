@@ -40,6 +40,8 @@ Hardening and control-plane foundations now also exist:
 - expired, suspended, and disabled tenants are blocked by backend access helpers and app routing
 - manual paid activation is handled through a platform-admin control plane, not raw DB edits as the intended operating model
 - operational purge can be scheduled for expired trial tenants while retaining auth credentials
+- platform control now shows created date, canonical owner, member counts, and the latest recorded sign-in signal for each company
+- platform admins can now run a guarded operational reset that preserves identity and control-plane records while clearing company business data
 - public pricing is now presented in MZN on the landing page
 - platform-admin access is now explicitly documented and visible only to active platform admins
 - the approved StockWise logo now drives the public brand, app shell, PWA icons, and Tauri packaging icons
@@ -166,6 +168,7 @@ Completed in this pass:
 - the approved StockWise logo replaced the old runtime brand across public pages, app shell, blocked-access/auth surfaces, PWA icons, and Tauri icon generation
 - landing-page pricing now follows the 2026 MZN package workbook with clearer billing options, grouped perks, and manual-activation posture
 - broad placeholder and professional-copy cleanup removed stale demo/default assets and unfinished-looking public/app text
+- platform control now has a trustworthy selected-company workspace with owner/sign-in metadata and guarded operational reset
 
 Current limitation:
 

@@ -11,7 +11,9 @@ Implemented in foundation scope:
 - backend entitlement checks for active company access
 - blocked-access route for expired, suspended, or disabled tenants
 - platform-admin control plane for manual grant, revoke, suspension, expiry, and purge scheduling
+- richer company-admin intelligence in platform control, including owner, created date, member counts, and latest recorded sign-in activity
 - auditability of access changes
+- guarded operational reset for non-active-paid tenants
 - purge scheduling for trial operational data
 - public bootstrap rate limiting
 
@@ -140,6 +142,48 @@ Requirements for the bootstrap command:
 - `SUPABASE_SERVICE_ROLE_KEY` or `SERVICE_ROLE_KEY`
 
 The command upserts the row into `public.platform_admins`. After sign-in refresh, the user can open `/platform-control` directly or use the Platform navigation entry.
+
+## Platform Control Metadata
+
+Selected-company detail in `/platform-control` now shows:
+
+- company UUID and created date
+- plan and effective subscription state
+- trial, paid, and purge dates
+- member counts
+- company owner
+- owner email
+- latest recorded sign-in activity
+
+Owner is defined in this order:
+
+1. `companies.owner_user_id`
+2. earliest active `OWNER` membership
+3. earliest active `ADMIN` membership
+
+Latest sign-in is the best available value from `public.profiles.last_sign_in_at`. If it is unavailable, the UI shows that it was not captured.
+
+## Guarded Operational Reset
+
+Platform control now includes a guarded `Reset company data` action.
+
+Current rules:
+
+- platform-admin only
+- exact company UUID confirmation required
+- reason required
+- rate-limited
+- blocked while the company is `active_paid`
+
+Current reset scope:
+
+- deletes operational company data
+- retains auth credentials and company shell
+- retains memberships and access/control-plane history
+- retains subscription state and company settings
+- retains payment terms, currencies, fiscal settings, fiscal series, and numbering counters
+
+The action is auditable through `public.company_control_action_log`.
 
 ## Abuse Protection
 

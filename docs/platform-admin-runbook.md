@@ -41,9 +41,58 @@ What the command does:
 
 - open `/platform-control`
 - review company subscription/access state
+- review company shell metadata, created date, owner, member counts, and latest recorded sign-in activity
 - manually grant, extend, suspend, expire, or disable tenant access
 - set purge scheduling metadata for expired trial tenants
 - review the access audit log
+- trigger a guarded operational data reset for non-active-paid tenants
+
+## Owner And Sign-In Metadata
+
+Platform Control now resolves company ownership in this order:
+
+1. `companies.owner_user_id`
+2. earliest active `OWNER` membership
+3. earliest active `ADMIN` membership
+
+Displayed sign-in activity uses the best available value from `public.profiles.last_sign_in_at`:
+
+- owner last sign-in = selected owner profile, when present
+- latest recorded sign-in = most recent active member sign-in, when present
+
+If no profile activity exists, the UI shows that it was not captured instead of inventing a value.
+
+## Guarded Operational Reset
+
+Platform Control now includes `Reset company data`, but it is intentionally guarded.
+
+Safeguards:
+
+- platform-admin only
+- confirmation must match the exact company UUID
+- a written reason is required
+- the action is rate-limited
+- reset is blocked while the company is `active_paid`
+- every reset writes to the control-plane action log
+
+Current reset removes operational company data such as:
+
+- sales and purchase documents
+- finance adjustments, settlements, bank transactions, and cash transactions
+- items, BOM data, builds, stock levels, and stock movements
+- customers, suppliers, warehouses, bins, and company-scoped operational reminders/notifications
+
+Current reset preserves:
+
+- company shell
+- company memberships
+- auth credentials
+- subscription/access state
+- access audit history
+- company settings
+- payment terms, currencies, fiscal settings, fiscal series, and numbering counters
+
+This is an operational reset, not an identity delete.
 
 ## Commercial Posture
 

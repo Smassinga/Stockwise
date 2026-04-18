@@ -839,7 +839,36 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
   })
 
-  await t.test('Manual access control, expiry restriction, reactivation, and purge scheduling', async () => {
+  await t.test('Manual access control persists across statuses and exposes company detail metadata', async () => {
+    const activateResult = await platformAdminClient.rpc('platform_admin_set_company_access', {
+      p_company_id: companyId,
+      p_plan_code: 'starter',
+      p_status: 'active_paid',
+      p_paid_until: isoDateAtNoon(plusDaysIso(30)),
+      p_reason: 'Regression activation baseline',
+    })
+    if (activateResult.error) throw activateResult.error
+
+    await expectPostgrestError(
+      ownerClient.rpc('platform_admin_get_company_detail', { p_company_id: companyId }),
+      'platform_admin_required',
+    )
+
+    const activeDetail = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await platformAdminClient.rpc('platform_admin_get_company_detail', { p_company_id: companyId }),
+        'Expected platform admin company detail lookup to succeed',
+      ),
+    )
+    assert.equal(activeDetail.company_id, companyId)
+    assert.equal(activeDetail.owner_user_id, ownerUser.userId)
+    assert.equal(activeDetail.owner_email, ownerUser.email.toLowerCase())
+    assert.equal(activeDetail.member_count, 2)
+    assert.equal(activeDetail.active_member_count, 2)
+    assert.ok(activeDetail.company_created_at, 'Expected company created timestamp')
+    assert.equal(activeDetail.reset_allowed, false)
+    assert.ok(activeDetail.latest_member_last_sign_in_at, 'Expected a latest recorded sign-in timestamp')
+
     const expiredAt = isoDateAtNoon(todayIso())
     const expireResult = await platformAdminClient.rpc('platform_admin_set_company_access', {
       p_company_id: companyId,
@@ -860,6 +889,16 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(expiredState.access_enabled, false)
     assert.ok(expiredState.purge_scheduled_at, 'Expected expiry to schedule an operational-data purge')
 
+    const expiredDetail = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await platformAdminClient.rpc('platform_admin_get_company_detail', { p_company_id: companyId }),
+        'Expected company detail to reflect expiry',
+      ),
+    )
+    assert.equal(expiredDetail.subscription_status, 'expired')
+    assert.equal(expiredDetail.effective_status, 'expired')
+    assert.equal(expiredDetail.reset_allowed, true)
+
     await expectPostgrestError(
       ownerClient.from('uoms').insert({
         code: `${PREFIX.toUpperCase()}-BLK`,
@@ -878,6 +917,43 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(purgeQueueRow.status, 'scheduled')
     assert.equal(purgeQueueRow.target_scope.identity_credentials, false)
     assert.equal(purgeQueueRow.target_scope.operational_data, true)
+
+    const suspendResult = await platformAdminClient.rpc('platform_admin_set_company_access', {
+      p_company_id: companyId,
+      p_plan_code: 'starter',
+      p_status: 'suspended',
+      p_reason: 'Regression suspension check',
+    })
+    if (suspendResult.error) throw suspendResult.error
+
+    const suspendedState = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('get_my_company_access_state', { p_company_id: companyId }),
+        'Expected access state lookup after suspension to succeed',
+      ),
+    )
+    assert.equal(suspendedState.effective_status, 'suspended')
+    assert.equal(suspendedState.access_enabled, false)
+
+    const trialUntil = isoDateAtNoon(plusDaysIso(7))
+    const trialResult = await platformAdminClient.rpc('platform_admin_set_company_access', {
+      p_company_id: companyId,
+      p_plan_code: 'trial_7d',
+      p_status: 'trial',
+      p_trial_expires_at: trialUntil,
+      p_reason: 'Regression trial restore',
+    })
+    if (trialResult.error) throw trialResult.error
+
+    const trialState = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('get_my_company_access_state', { p_company_id: companyId }),
+        'Expected access state lookup after trial restore to succeed',
+      ),
+    )
+    assert.equal(trialState.effective_status, 'trial')
+    assert.equal(trialState.access_enabled, true)
+    assert.equal(trialState.trial_expires_at.slice(0, 10), plusDaysIso(7))
 
     const reactivateResult = await platformAdminClient.rpc('platform_admin_set_company_access', {
       p_company_id: companyId,
@@ -899,6 +975,17 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
     assert.equal(reactivatedState.effective_status, 'active_paid')
     assert.equal(reactivatedState.access_enabled, true)
+    assert.equal(reactivatedState.purge_scheduled_at, null)
+
+    const reactivatedDetail = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await platformAdminClient.rpc('platform_admin_get_company_detail', { p_company_id: companyId }),
+        'Expected company detail to reflect reactivation',
+      ),
+    )
+    assert.equal(reactivatedDetail.subscription_status, 'active_paid')
+    assert.equal(reactivatedDetail.effective_status, 'active_paid')
+    assert.equal(reactivatedDetail.reset_allowed, false)
 
     const { data: reactivatedUom, error: reactivatedUomError } = await ownerClient
       .from('uoms')
@@ -919,6 +1006,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     const statuses = auditRows.map((row) => row.next_status)
     assert.ok(statuses.includes('trial'))
     assert.ok(statuses.includes('expired'))
+    assert.ok(statuses.includes('suspended'))
     assert.ok(statuses.includes('active_paid'))
   })
 
