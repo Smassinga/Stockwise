@@ -18,16 +18,16 @@ export type OperatorSaleResult = {
 function operatorMessageFromError(message: string) {
   const normalized = message.toLowerCase()
 
-  if (normalized.includes('not_authenticated')) return 'Sign in again before posting the operator issue.'
-  if (normalized.includes('switch into the target company')) return 'Switch into the selected company before posting the operator issue.'
-  if (normalized.includes('operators and above')) return 'Only operators and above can post from the Operator workspace.'
-  if (normalized.includes('choose a valid source bin')) return 'Choose a valid source bin before posting the operator issue.'
+  if (normalized.includes('not_authenticated')) return 'Sign in again before posting the sale.'
+  if (normalized.includes('switch into the target company')) return 'Switch into the selected company before posting the sale.'
+  if (normalized.includes('operators and above')) return 'Only operators and above can post from Point of Sale.'
+  if (normalized.includes('choose a valid source bin')) return 'Choose a valid source bin before posting the sale.'
   if (normalized.includes('does not have enough stock')) return message
   if (normalized.includes('needs a quantity above zero')) return message
   if (normalized.includes('references an unknown item')) return message
-  if (normalized.includes('add at least one item')) return 'Add at least one item before posting the operator issue.'
+  if (normalized.includes('add at least one item')) return 'Add at least one item before posting the sale.'
 
-  return message || 'Could not post the operator issue.'
+  return message || 'Could not post the sale.'
 }
 
 export async function createOperatorSaleIssue(input: {

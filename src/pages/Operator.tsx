@@ -86,10 +86,10 @@ type CartLine = {
 
 const copyByLang = {
   en: {
-    title: 'Operator',
-    subtitle: 'Fast daily stock issue and walk-in sale workspace for small-store operations.',
+    title: 'Point of Sale',
+    subtitle: 'Fast daily sales from available stock.',
     headerHelp:
-      'Use this page when the store needs a quick issue flow, not a full named-customer sales-order workflow.',
+      'Use this workspace for walk-in counter sales and simple stock issues. The default customer stays walk-in / cash, and named customer selection only appears when the sale actually needs it.',
     sourceTitle: 'Source stock',
     sourceBody: 'Choose the selling location first. The item list stays focused on what is available in that bin right now.',
     warehouse: 'Warehouse',
@@ -97,11 +97,11 @@ const copyByLang = {
     search: 'Search items by name or SKU',
     searchPlaceholder: 'Search available stock',
     itemsTitle: 'Available stock',
-    itemsBody: 'Tap an item to add it into the current issue. Quantities are reviewed in the current sale before posting.',
+    itemsBody: 'Tap an item to add it to the current sale. Review quantity, sale price, and total before posting.',
     itemsEmpty: 'No sellable stock is available in the selected bin.',
-    itemsEmptyHelp: 'Change the source bin or receive stock before using the Operator workspace.',
-    currentTitle: 'Current sale / issue',
-    currentBody: 'Default to the walk-in cash customer and only pick a named customer when the sale needs it.',
+    itemsEmptyHelp: 'Change the source bin or receive stock before using Point of Sale.',
+    currentTitle: 'Current sale',
+    currentBody: 'Default to the walk-in cash customer and only choose a named customer when the sale actually needs it.',
     walkIn: 'Walk-in / cash customer',
     namedCustomer: 'Named customer',
     chooseCustomer: 'Choose customer',
@@ -118,28 +118,31 @@ const copyByLang = {
     summaryItems: 'Lines',
     summaryQty: 'Units',
     summaryTotal: 'Total',
-    unitPrice: 'Unit price',
+    unitPrice: 'Sale price',
     remove: 'Remove',
     addOne: 'Add 1',
     addAnother: 'Add one more',
     available: 'Available',
     onHand: 'On hand',
-    reviewIssue: 'Review current issue',
-    confirm: 'Confirm issue',
-    posting: 'Posting issue...',
+    reviewIssue: 'Review sale',
+    confirm: 'Confirm sale',
+    posting: 'Posting sale...',
     readOnly: 'Read-only: only operators and above can post from this workspace.',
-    success: 'Operator issue posted',
-    successWithOrder: 'Operator issue posted on {orderNo}',
-    drawerTitle: 'Review current issue',
-    drawerBody: 'Confirm the walk-in or named-customer issue before stock is reduced.',
-    pricingHelp: 'Sell price defaults from the item record and can be adjusted per line.',
-    couldNotPost: 'Could not post the operator issue.',
+    success: 'Sale posted',
+    successWithOrder: 'Sale posted on {orderNo}',
+    drawerTitle: 'Review sale',
+    drawerBody: 'Confirm the walk-in or named-customer sale before stock is reduced.',
+    pricingHelp: 'Each line starts from the item default sell price and can still be adjusted before posting.',
+    defaultPrice: 'Default sell price',
+    lineTotal: 'Line total',
+    couldNotPost: 'Could not post the sale.',
+    loadFailed: 'Could not load the Point of Sale workspace.',
   },
   pt: {
-    title: 'Operador',
-    subtitle: 'Workspace rápido para saída diária de stock e venda de balcão em operações de loja pequena.',
+    title: 'Ponto de Venda',
+    subtitle: 'Venda diária rápida a partir do stock disponível.',
     headerHelp:
-      'Use esta página quando a loja precisa de uma saída rápida, sem forçar o fluxo completo de encomenda com cliente identificado.',
+      'Use este workspace para vendas de balcão e saídas simples de stock. O cliente padrão continua balcão / caixa, e o cliente registado só entra quando a venda realmente precisa disso.',
     sourceTitle: 'Stock de origem',
     sourceBody: 'Escolha primeiro o local de venda. A lista de artigos fica focada no que está disponível nesse bin neste momento.',
     warehouse: 'Armazém',
@@ -147,10 +150,10 @@ const copyByLang = {
     search: 'Pesquisar artigos por nome ou SKU',
     searchPlaceholder: 'Pesquisar stock disponível',
     itemsTitle: 'Stock disponível',
-    itemsBody: 'Toque num artigo para o adicionar à saída atual. As quantidades são revistas na venda atual antes do lançamento.',
+    itemsBody: 'Toque num artigo para o adicionar à venda atual. Reveja quantidade, preço de venda e total antes do lançamento.',
     itemsEmpty: 'Não há stock vendável disponível no bin selecionado.',
-    itemsEmptyHelp: 'Mude o bin de origem ou receba stock antes de usar o workspace do Operador.',
-    currentTitle: 'Venda / saída atual',
+    itemsEmptyHelp: 'Mude o bin de origem ou receba stock antes de usar o Ponto de Venda.',
+    currentTitle: 'Venda atual',
     currentBody: 'O padrão é o cliente balcão / caixa. Escolha um cliente registado apenas quando a venda realmente precisar disso.',
     walkIn: 'Cliente balcão / caixa',
     namedCustomer: 'Cliente registado',
@@ -168,23 +171,25 @@ const copyByLang = {
     summaryItems: 'Linhas',
     summaryQty: 'Unidades',
     summaryTotal: 'Total',
-    unitPrice: 'Preço unitário',
+    unitPrice: 'Preço de venda',
     remove: 'Remover',
     addOne: 'Adicionar 1',
     addAnother: 'Adicionar mais uma',
     available: 'Disponível',
     onHand: 'Existência',
-    reviewIssue: 'Rever saída atual',
-    confirm: 'Confirmar saída',
-    posting: 'A lançar saída...',
+    reviewIssue: 'Rever venda',
+    confirm: 'Confirmar venda',
+    posting: 'A lançar venda...',
     readOnly: 'Somente operadores e acima podem lançar neste workspace.',
-    success: 'Saída do operador lançada',
-    successWithOrder: 'Saída do operador lançada em {orderNo}',
-    drawerTitle: 'Rever saída atual',
-    drawerBody: 'Confirme a saída de balcão ou com cliente identificado antes de reduzir o stock.',
-    pricingHelp: 'O preço de venda vem do artigo por padrão e pode ser ajustado por linha.',
-    couldNotPost: 'Não foi possível lançar a saída do operador.',
-    loadFailed: 'Não foi possível carregar o workspace do Operador.',
+    success: 'Venda lançada',
+    successWithOrder: 'Venda lançada em {orderNo}',
+    drawerTitle: 'Rever venda',
+    drawerBody: 'Confirme a venda de balcão ou com cliente identificado antes de reduzir o stock.',
+    pricingHelp: 'Cada linha começa com o preço de venda padrão do artigo e continua ajustável antes do lançamento.',
+    defaultPrice: 'Preço de venda padrão',
+    lineTotal: 'Total da linha',
+    couldNotPost: 'Não foi possível lançar a venda.',
+    loadFailed: 'Não foi possível carregar o workspace de Ponto de Venda.',
   },
 } as const
 
@@ -559,7 +564,7 @@ export default function Operator() {
           {copy.pricingHelp}
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
           {cart.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center">
               <div className="text-sm font-medium">{copy.noLines}</div>
@@ -567,11 +572,11 @@ export default function Operator() {
             </div>
           ) : (
             cart.map((line) => (
-              <div key={line.itemId} className="rounded-2xl border border-border/70 bg-background/80 p-3">
+              <div key={line.itemId} className="min-w-0 overflow-hidden rounded-3xl border border-border/70 bg-background/90 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium">{line.name}</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="break-words font-medium">{line.name}</div>
+                    <div className="break-words text-xs text-muted-foreground">
                       {[line.sku, `${copy.available} ${formatQty(line.availableQty)} ${line.baseUomCode}`]
                         .filter(Boolean)
                         .join(' • ')}
@@ -587,62 +592,64 @@ export default function Operator() {
                   </Button>
                 </div>
 
-                <div className="mt-3 grid gap-3 sm:grid-cols-[auto_1fr_1fr_auto] sm:items-end">
-                  <div className="flex items-center gap-2 rounded-2xl border border-border/70 bg-muted/15 p-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 rounded-xl"
-                      onClick={() => updateLineQty(line.itemId, round2(line.qty - 1))}
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      type="number"
-                      min="0"
-                      max={line.availableQty}
-                      step="0.01"
-                      value={String(line.qty)}
-                      className="h-10 w-24 border-0 bg-transparent text-center shadow-none"
-                      onChange={(event) => updateLineQty(line.itemId, toNumber(event.target.value))}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 rounded-xl"
-                      onClick={() => updateLineQty(line.itemId, round2(line.qty + 1))}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-
+                <div className="mt-4 grid gap-3">
                   <div className="space-y-2">
                     <Label>{copy.summaryQty}</Label>
-                    <div className="text-sm font-medium">
-                      {formatQty(line.qty)} {line.baseUomCode}
+                    <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border/70 bg-muted/15 p-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-xl"
+                        onClick={() => updateLineQty(line.itemId, round2(line.qty - 1))}
+                      >
+                        <Minus className="h-4 w-4" />
+                      </Button>
+                      <Input
+                        type="number"
+                        min="0"
+                        max={line.availableQty}
+                        step="0.01"
+                        value={String(line.qty)}
+                        className="h-10 min-w-0 flex-1 border-0 bg-transparent text-center shadow-none"
+                        onChange={(event) => updateLineQty(line.itemId, toNumber(event.target.value))}
+                      />
+                      <div className="shrink-0 text-sm font-medium text-muted-foreground">{line.baseUomCode}</div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-xl"
+                        onClick={() => updateLineQty(line.itemId, round2(line.qty + 1))}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>{copy.unitPrice}</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={String(line.unitPrice)}
-                      onChange={(event) => updateLinePrice(line.itemId, toNumber(event.target.value))}
-                    />
-                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2 min-w-0">
+                      <Label>{copy.unitPrice}</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={String(line.unitPrice)}
+                        onChange={(event) => updateLinePrice(line.itemId, toNumber(event.target.value))}
+                      />
+                    </div>
 
-                  <div className="text-right">
-                    <div className="text-xs text-muted-foreground">{baseCurrencyCode}</div>
-                    <div className="text-base font-semibold">
-                      {round2(line.qty * line.unitPrice).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                    <div className="space-y-2 min-w-0">
+                      <Label>{copy.lineTotal}</Label>
+                      <div className="rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
+                        <div className="text-xs text-muted-foreground">{baseCurrencyCode}</div>
+                        <div className="text-base font-semibold">
+                          {round2(line.qty * line.unitPrice).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -770,7 +777,7 @@ export default function Operator() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_380px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(460px,0.95fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(520px,0.9fr)]">
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="space-y-2">
             <div className="flex items-center justify-between gap-3">
@@ -826,12 +833,13 @@ export default function Operator() {
                           </div>
                         </div>
                         <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
-                          <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{baseCurrencyCode}</div>
+                          <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{copy.defaultPrice}</div>
                           <div className="mt-1 text-lg font-semibold">
                             {round2(row.item.unitPrice ?? 0).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
-                            })}
+                            })}{' '}
+                            {baseCurrencyCode}
                           </div>
                         </div>
                       </div>

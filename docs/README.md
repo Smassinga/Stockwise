@@ -1,75 +1,48 @@
 # StockWise Documentation
 
-Welcome to the StockWise documentation. This guide covers the operational, finance, packaging, and control-plane areas of the StockWise platform.
+This index is the current documentation truth. Obsolete summaries and generated brochure-style docs were removed so future work starts from the documents that actually reflect the product.
 
-## Getting Started
+## Start Here
 
-If you're new to StockWise, start here:
+1. [Root README](../README.md)
+2. [Development Guide](DEVELOPMENT.md)
+3. [Architecture](ARCHITECTURE.md)
+4. [Data Model](DATA_MODEL.md)
+5. [Canonical Migration Baseline Reset (2026-04-19)](CANONICAL_MIGRATION_BASELINE_2026-04-19.md)
 
-1. [README](README.md) - Project overview and quick start guide
-2. [Development Guide](DEVELOPMENT.md) - Setting up your development environment
-3. [Architecture](ARCHITECTURE.md) - System architecture and design patterns
+## Product and Finance Direction
 
-## Technical Documentation
+- [Finance Roadmap](finance-roadmap/README.md)
+- [Finance Phase Tracker](finance-roadmap/phase-tracker.md)
+- [Finance Decision Log](finance-roadmap/decision-log.md)
+- [Subscription and Access Control](subscription-access-control.md)
+- [Platform Admin Runbook](platform-admin-runbook.md)
+- [Company Access Email Operations](company-access-email-operations.md)
 
-### Frontend
+## Build, Testing, and Operations
 
-- [Components](COMPONENTS.md) - Detailed component documentation
-- [UI Library](../src/components/ui/README.md) - shadcn/ui components (if exists)
+- [Deployment](DEPLOYMENT.md)
+- [Testing](TESTING.md)
+- [Monitoring](MONITORING.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
+- [Tauri Release Workflow](TAURI_RELEASE_WORKFLOW.md)
+- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md)
+- [Tauri Release Notes](TAURI_RELEASE_NOTES.md)
 
-### Backend
+## Reference Docs Still In Use
 
-- [Data Model](DATA_MODEL.md) - Database schema and relationships
-- [API Documentation](API.md) - API endpoints and usage
+- [API](API.md)
+- [Components](COMPONENTS.md)
+- [Due Reminders](due-reminders.md)
+- [Mozambique Runtime Issuance](mozambique-runtime-issuance.md)
+- [Mobile Optimization](MOBILE_OPTIMIZATION.md)
 
-### Testing
+## Documentation Cleanup Notes
 
-- [Testing Strategy](TESTING.md) - Comprehensive testing approach
+Removed in this cleanup pass:
 
-### Finance Platform
+- one-off implementation summaries that no longer define current behavior
+- stale generated `STOCKWISE_*` overview/specification documents
+- outdated transition notes that described pre-baseline or pre-finance-document intermediate states
 
-- [Finance Roadmap](finance-roadmap/README.md) - Master roadmap for finance-document evolution
-- [Finance Phase Tracker](finance-roadmap/phase-tracker.md) - Phase-by-phase status board with dependencies and validation needs
-- [Finance Decision Log](finance-roadmap/decision-log.md) - Durable implementation and architecture decisions
-- [Subscription and Access Control](subscription-access-control.md) - Trial model, manual activation control plane, purge scope, and entitlement enforcement
-- [Platform Admin Runbook](platform-admin-runbook.md) - First-admin bootstrap, `/platform-control`, and manual activation operating model
-- [Company Access Email Operations](company-access-email-operations.md) - Canonical recipient resolution, support routing split, and manual control-plane email scenarios
-
-### Mobile & Desktop
-
-- [Tauri Release Workflow](TAURI_RELEASE_WORKFLOW.md) - Current desktop and Android packaging, signing, artifact, and release flow
-- [Mobile Optimization Guide](MOBILE_OPTIMIZATION.md) - Comprehensive mobile optimization approach
-- [Mobile Improvements Summary](MOBILE_IMPROVEMENTS_SUMMARY.md) - Summary of implemented mobile improvements
-- [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md) - Current desktop-specific Tauri notes
-- [Tauri Release Notes](TAURI_RELEASE_NOTES.md) - Packaging hardening summary and maintained release baseline
-
-## System Documentation
-
-- [Executive Summary](STOCKWISE_EXECUTIVE_SUMMARY.md) - High-level overview of the system
-- [Features Overview](STOCKWISE_FEATURES_OVERVIEW.md) - Comprehensive feature documentation
-- [Technical Specification](STOCKWISE_TECHNICAL_SPECIFICATION.md) - Detailed technical architecture
-- [User Guide](STOCKWISE_USER_GUIDE.md) - End-user documentation
-- [Deployment Guide](STOCKWISE_DEPLOYMENT_GUIDE.md) - Deployment and maintenance instructions
-- [Database Schema](STOCKWISE_DATABASE_SCHEMA.md) - Detailed database structure
-
-## Deployment & Operations
-
-- [Deployment Guide](DEPLOYMENT.md) - Deployment procedures
-- [Monitoring](MONITORING.md) - System monitoring and alerting (to be created)
-- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
-
-## Contributing
-
-- [Contributing Guide](CONTRIBUTING.md) - How to contribute to the project
-- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
-
-## Additional Resources
-
-- [Supabase Documentation](https://supabase.com/docs)
-- [React Documentation](https://reactjs.org/docs/getting-started.html)
-- [TypeScript Documentation](https://www.typescriptlang.org/docs/)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-
-## Support
-
-For support, please contact the development team or check the project's issue tracker.
+If a document cannot describe the current system accurately, it should be updated, archived deliberately, or removed.

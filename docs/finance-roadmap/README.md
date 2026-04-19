@@ -34,6 +34,8 @@ Operational and finance foundations already in place:
 
 Hardening and control-plane foundations now also exist:
 
+- the Supabase repo now runs from a canonical baseline plus forward migrations, with `npm run check:migrations` guarding against accidental synthetic pull artifacts
+- the first post-baseline cleanup removed legacy duplicate schema structures so membership/access and stock truth now point to one canonical model each
 - a real automated finance regression suite is in repo and passing
 - tenant access now uses subscription and entitlement state, not membership alone
 - new-company trial bootstrap starts a 7-day trial
@@ -52,6 +54,7 @@ Hardening and control-plane foundations now also exist:
 - public and authenticated pages have had a professional placeholder/copy audit to remove unfinished-looking text and stale demo assets
 - the authenticated shell now has a clearer Android/mobile bottom-navigation path for the most-used routes
 - a dedicated Operator workspace now supports fast daily stock issue and simple sale with a default walk-in/cash customer
+- Point of Sale now uses professional naming in the shell and route metadata, and sellable items expose a default sell price on item setup for operator prefilling
 - opening-data import now supports practical go-live setup for items, counterparties, locations, and current stock without pretending to migrate historical documents
 
 ## C. Architecture Guardrails
@@ -197,6 +200,8 @@ Phase 6 is deliberately split into three separate workstreams. They share some c
   - `/operator` now exists as a dedicated high-frequency workspace for small stores
   - it defaults to the walk-in/cash customer model and only asks for a named customer when needed
   - multi-line simple sale / stock issue now posts through a dedicated backend RPC instead of forcing the full sales-order workflow
+  - sellable items now expose a default sell price in item setup, Point of Sale prefills from that commercial amount, and the operator can still adjust the line price before posting
+  - the current-sale review rail now uses a wider, more readable layout instead of cramped issue-book style cards
 
 - Workstream C. Onboarding ease with import support
   - `/setup/import` now supports practical go-live imports for items, customers, suppliers, warehouses/bins, and opening stock

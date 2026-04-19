@@ -1,109 +1,89 @@
-# Enhanced Vite React TypeScript Template
+# StockWise
 
-This template includes built-in detection for missing CSS variables between your Tailwind config and CSS files.
+StockWise is an operational inventory and finance system for small and mid-sized businesses. The current product direction is:
 
-## Brand Kit
+- stock, warehouse, bin, and assembly control
+- sales, purchasing, settlements, bank, and cash workflows
+- Mozambique finance-document issuance and reconciliation readiness
+- mobile-friendly store-counter workflows, including Point of Sale
+- manual subscription activation through the platform control plane
 
-This project includes a StockWise Concept C Brand Kit implementation. For instructions on how to generate icons and use the brand assets, see [BRAND_KIT_INSTRUCTIONS.md](BRAND_KIT_INSTRUCTIONS.md).
+## Quick Start
 
-## Features
-
-- **CSS Variable Detection**: Automatically detects if CSS variables referenced in `tailwind.config.cjs` are defined in `src/index.css`
-- **Enhanced Linting**: Includes ESLint, Stylelint, and custom CSS variable validation
-- **Shadcn/ui**: Pre-configured with all Shadcn components
-- **Modern Stack**: Vite + React + TypeScript + Tailwind CSS
-- **Mobile-First Design**: Fully responsive design optimized for all device sizes
-- **Desktop Support**: Tauri integration for native desktop applications
-
-## Available Scripts
+1. Install dependencies:
 
 ```bash
-# Run all linting (includes CSS variable check)
-npm run lint
-
-# Check only CSS variables
-npm run check:css-vars
-
-# Individual linting
-npm run lint:js    # ESLint
-npm run lint:css   # Stylelint
-
-# Tauri desktop application
-npm run tauri      # Tauri CLI
-npm run tauri:dev  # Run Tauri development version
-npm run tauri:build # Build Tauri application for distribution
+npm install
 ```
 
-For detailed Tauri setup and usage instructions, see [Tauri Desktop Guide](docs/TAURI_DESKTOP_GUIDE.md).
+2. Configure environment variables in `.env`.
 
-> **Note for Windows users**: If you encounter PATH issues with Rust after installation, try running `scripts\add-rust-to-path.bat` or restart your terminal/command prompt.
+Required frontend/runtime values:
 
-The template includes a custom script that:
-
-1. **Parses `tailwind.config.cjs`** to find all `var(--variable)` references
-2. **Parses `src/index.css`** to find all defined CSS variables (`--variable:`)
-3. **Cross-references** them to find missing definitions
-4. **Reports undefined variables** with clear error messages
-
-### Example Output
-
-When CSS variables are missing:
-```
-❌ Undefined CSS variables found in tailwind.config.cjs:
-   --sidebar-background
-   --sidebar-foreground
-   --sidebar-primary
-
-Add these variables to src/index.css
+```bash
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
 ```
 
-When all variables are defined:
+3. Start the app:
+
+```bash
+npm run dev
 ```
-✅ All CSS variables in tailwind.config.cjs are defined
+
+4. Validate code changes before closing work:
+
+```bash
+npm run lint:js
+npm run build
+npm run test:finance-regression
 ```
 
-## How It Works
+## Canonical Supabase Workflow
 
-The detection happens during the `npm run lint` command, which will:
-- Exit with error code 1 if undefined variables are found
-- Show exactly which variables need to be added to your CSS file
-- Integrate seamlessly with your development workflow
+The repo now uses a canonical baseline plus forward migrations.
 
-This prevents runtime CSS issues where Tailwind classes reference undefined CSS variables.
+Current active canonical chain:
 
-## Mobile Optimization
+- `20260419142000_canonical_extensions_prelude.sql`
+- `20260419143000_canonical_schema_baseline.sql`
+- `20260419144000_storage_bucket_and_policy_baseline.sql`
 
-Stockwise is designed with a mobile-first approach and includes:
+Workflow rules:
 
-- **Responsive Layout**: Adapts to all screen sizes from mobile to desktop
-- **Touch-Friendly Controls**: All interactive elements meet WCAG touch target requirements
-- **Performance Optimized**: Lightweight implementation for mobile networks
-- **Accessibility Compliant**: Works with screen readers and assistive technologies
+1. If the linked remote schema may have changed, run:
 
-For detailed information about mobile optimization, see [Mobile Optimization Guide](docs/MOBILE_OPTIMIZATION.md).
+```bash
+npx supabase db pull
+```
+
+2. Treat any generated `*_remote_schema.sql` file as a pull artifact, not as an accepted migration by default.
+
+3. Before committing migration work, run:
+
+```bash
+npm run check:migrations
+```
+
+4. Add only forward migrations on top of the canonical chain.
+
+5. Keep custom global roles in `supabase/roles.sql`.
+
+6. Do not re-baseline Supabase-managed `storage` internals casually. Keep only app-owned storage buckets and policies in tracked migrations.
 
 ## Documentation
 
-Comprehensive documentation is available in the [docs](docs/) directory:
+Start with:
 
-- [Project Overview](docs/README.md)
+- [Documentation Index](docs/README.md)
 - [Development Guide](docs/DEVELOPMENT.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Components](docs/COMPONENTS.md)
-- [API Documentation](docs/API.md)
 - [Data Model](docs/DATA_MODEL.md)
-- [Testing Strategy](docs/TESTING.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-- [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Contributing Guide](docs/CONTRIBUTING.md)
-- [Code of Conduct](docs/CODE_OF_CONDUCT.md)
-- [Mobile Optimization Guide](docs/MOBILE_OPTIMIZATION.md)
-- [Tauri Desktop Guide](docs/TAURI_DESKTOP_GUIDE.md)
-- [Executive Summary](docs/STOCKWISE_EXECUTIVE_SUMMARY.md)
-- [Features Overview](docs/STOCKWISE_FEATURES_OVERVIEW.md)
-- [Technical Specification](docs/STOCKWISE_TECHNICAL_SPECIFICATION.md)
-- [User Guide](docs/STOCKWISE_USER_GUIDE.md)
-- [Deployment Guide](docs/STOCKWISE_DEPLOYMENT_GUIDE.md)
-- [Database Schema](docs/STOCKWISE_DATABASE_SCHEMA.md)
+- [Canonical Migration Baseline Reset](docs/CANONICAL_MIGRATION_BASELINE_2026-04-19.md)
+- [Finance Roadmap](docs/finance-roadmap/README.md)
 
-For detailed information about the Stockwise inventory management system, please refer to the documentation files.
+## Current Product Notes
+
+- paid plan activation remains manual
+- payment gateway automation is intentionally deferred
+- Point of Sale defaults to the walk-in / cash customer unless a named customer is chosen
+- opening-data import focuses on master data and current stock, not historical document migration

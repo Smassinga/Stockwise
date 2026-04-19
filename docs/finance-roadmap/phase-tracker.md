@@ -1,4 +1,4 @@
-# Finance Phase Tracker
+﻿# Finance Phase Tracker
 
 Use this file as the working status board for finance-document implementation and the adjacent access-control platform work. Update it after each material change.
 
@@ -13,6 +13,7 @@ Use this file as the working status board for finance-document implementation an
 | Phase 4. Automated finance regression suite | Completed in core scope | Test automation + Supabase workflow validation | High-value finance and ops workflows now have repeatable regression protection | Current suite runs through `npm run test:finance-regression` |
 | Phase 5. Security, abuse protection, access control, trial enforcement, and subscription-control foundation | Implemented in foundation scope and Phase 5B core scope | DB control plane + app routing + public commercial surfaces | Tenant access, manual activation, trial lifecycle, brand clarity, and public commercial posture now have a real foundation | Payment automation remains intentionally deferred |
 | Phase 6. Separated adoption workstreams | Implemented in core scope | Mobile UX + operator workflow + onboarding import | StockWise now has a general Android/mobile pass, a fast small-store operator workspace, and a practical opening-data import path | Keep these workstreams separate in future planning and docs |
+| Canonical baseline cleanup and repo discipline | Completed | Schema cleanup + docs + migration workflow | The repo now has one active migration chain, explicit pull-artifact rules, and cleaner current-truth docs/schema | Legacy duplicate schema objects were removed after the canonical baseline reset |
 
 ## Phase 1. Permissions and Approval Controls
 
@@ -139,6 +140,9 @@ Use this file as the working status board for finance-document implementation an
 | Default walk-in/cash customer flow | Completed | Named customer capture is optional and not forced for common walk-in sales |
 | Multi-line quick issue / simple sale posting | Completed | Dedicated RPC posts a shipped sales order plus stock-out movements in one path |
 | Fast stock visibility and current-sale review | Completed | Available stock, quick add, current sale drawer, and simple reference/notes flow are live |
+| Professional Point of Sale naming and contained sale-line layout | Completed | Shell labels, route metadata, page copy, and current-sale card containment now match the intended counter-sale workflow |
+| Default sell price on sellable item setup | Completed | Sellable item roles now require a default sell price at creation time; non-sellable roles do not |
+| Point of Sale price prefill discipline | Completed | Operator line price prefills from `items.unit_price`, never from stock cost, and remains editable before posting |
 
 ### Workstream C. Onboarding ease with import support
 
@@ -155,3 +159,4 @@ Use this file as the working status board for finance-document implementation an
 - Keep `Completed` reserved for work that is operationally usable, not partially coded.
 - When a phase item changes the architecture guardrails, update [README.md](README.md) and [decision-log.md](decision-log.md) in the same commit.
 - The current next recommended work is CI wiring for the regression suite and then the next targeted adoption follow-up justified by usage data, not a blended “mobile/operator/onboarding” rewrite and not payment automation by default.
+

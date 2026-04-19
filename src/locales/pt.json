@@ -2245,10 +2245,10 @@
   "items.preview.sold": "Vendido",
   "items.preview.assembled": "Montado",
   "items.preview.lockingTitle": "Bloqueio após criação",
-  "items.preview.lockingHelp": "O papel do artigo, o comportamento de inventário e os flags de compra/venda ficam fixos na criação. Depois de guardar, apenas o stock mínimo continua editável na operação normal.",
+  "items.preview.lockingHelp": "O papel do artigo, o comportamento de invent?rio, os flags de compra/venda e o pre?o de venda padr?o ficam fixos na cria??o. Depois de guardar, apenas o stock m?nimo continua edit?vel na opera??o normal.",
   "items.preview.warningTitle": "Verificação de prontidão",
   "items.preview.warningNone": "Não foram detetadas contradições no papel para esta configuração.",
-  "items.createFooter": "Crie os artigos com o papel correto desde o início para que Montagem, revisão de stock, compras e vendas partam sempre de dados mestre limpos.",
+  "items.createFooter": "Crie os artigos com o papel correto e o pre?o de venda padr?o desde o in?cio para que Montagem, revis?o de stock, compras e Ponto de Venda partam sempre de dados mestre limpos.",
   "items.createAction": "Criar artigo",
   "items.reviewTitle": "Guia de classificação",
   "items.reviewHelp": "Use estas orientações antes de guardar. O papel deve explicar como o artigo se comporta no stock, nas compras, nas vendas e na montagem.",
@@ -2296,5 +2296,12 @@
   "items.warnings.componentWithoutTracking": "Artigos componente devem normalmente controlar inventário.",
   "items.warnings.serviceWithInventory": "Serviços devem normalmente ser artigos sem stock.",
   "items.warnings.serviceMarkedAssembled": "Um serviço não pode ser um produto montado.",
-  "items.warnings.nonStockWithMinimum": "O stock mínimo só faz sentido quando o inventário é controlado."
+  "items.warnings.nonStockWithMinimum": "O stock mínimo só faz sentido quando o inventário é controlado.",
+  "items.fields.unitPrice": "Pre?o de venda padr?o",
+  "items.fields.unitPrice.help": "O Ponto de Venda e as vendas r?pidas come?am com este valor. O operador ainda pode ajustar o pre?o da linha antes do lan?amento.",
+  "items.fields.unitPrice.disabledHelp": "Este papel n?o est? marcado para venda, por isso n?o precisa de pre?o de venda padr?o.",
+  "items.table.unitPrice": "Pre?o de venda padr?o",
+  "nav.operator": "Ponto de Venda",
+  "items.toast.unitPriceRequired": "Introduza um pre?o de venda padr?o para artigos vend?veis",
+  "items.toast.unitPriceInvalid": "O pre?o de venda padr?o deve ser zero ou superior"
 }

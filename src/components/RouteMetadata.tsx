@@ -27,7 +27,7 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
     '/login': { title: 'Login | StockWise', description: t.appDescription, noindex: true },
     '/auth': { title: 'Login | StockWise', description: t.appDescription, noindex: true },
     '/dashboard': { title: 'Dashboard | StockWise', description: t.appDescription, noindex: true },
-    '/operator': { title: 'Operator | StockWise', description: t.appDescription, noindex: true },
+    '/operator': { title: 'Point of Sale | StockWise', description: t.appDescription, noindex: true },
     '/items': { title: 'Items | StockWise', description: t.appDescription, noindex: true },
     '/movements': { title: 'Movements | StockWise', description: t.appDescription, noindex: true },
     '/warehouses': { title: 'Warehouses | StockWise', description: t.appDescription, noindex: true },

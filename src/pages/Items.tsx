@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { getBaseCurrencyCode } from '../lib/currency'
 import {
   deriveItemProfileWarnings,
   profileFromRole,
@@ -42,6 +43,7 @@ type ItemRow = ItemProfileRecord & {
   sku: string
   name: string
   baseUomId: string
+  unitPrice?: number | null
   createdAt: string | null
   updatedAt: string | null
   onHandQty?: number | null
@@ -70,6 +72,14 @@ function formatStockThreshold(value: number | null | undefined) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value)
 }
 
+function formatMoney(value: number | null | undefined, currencyCode: string) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '-'
+  return `${new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)} ${currencyCode}`
+}
+
 function warningVariant(code: ItemProfileWarningCode): 'destructive' | 'secondary' | 'outline' {
   switch (code) {
     case 'assembled_without_tracking':
@@ -93,11 +103,13 @@ export default function ItemsPage() {
   const [uoms, setUoms] = useState<Uom[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
   const [profileFieldsSupported, setProfileFieldsSupported] = useState(false)
+  const [baseCurrencyCode, setBaseCurrencyCode] = useState('MZN')
 
   const [name, setName] = useState('')
   const [sku, setSku] = useState('')
   const [baseUomId, setBaseUomId] = useState('')
   const [minStock, setMinStock] = useState('')
+  const [unitPrice, setUnitPrice] = useState('')
   const [draftProfile, setDraftProfile] = useState<ItemProfileState>(EMPTY_PROFILE)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | ItemPrimaryRole>('all')
@@ -215,6 +227,8 @@ export default function ItemsPage() {
   async function loadPage() {
     try {
       setLoading(true)
+      const currencyCode = await getBaseCurrencyCode().catch(() => 'MZN')
+      setBaseCurrencyCode(currencyCode || 'MZN')
       await Promise.all([loadUoms(), loadItems()])
     } catch (error: any) {
       console.error(error)
@@ -272,6 +286,7 @@ export default function ItemsPage() {
       sku: String(row.sku ?? ''),
       name: String(row.name ?? ''),
       baseUomId: String(row.baseUomId ?? row.base_uom_id ?? ''),
+      unitPrice: row.unitPrice ?? row.unit_price ?? null,
       minStock: row.minStock ?? row.min_stock ?? null,
       createdAt: row.createdAt ?? row.created_at ?? null,
       updatedAt: row.updatedAt ?? row.updated_at ?? null,
@@ -289,6 +304,7 @@ export default function ItemsPage() {
       'sku',
       'name',
       'baseUomId',
+      'unitPrice',
       'minStock',
       'createdAt',
       'updatedAt',
@@ -312,7 +328,7 @@ export default function ItemsPage() {
 
     const basicRes = await supabase
       .from('items_view')
-      .select('id,sku,name,baseUomId,minStock,createdAt,updatedAt')
+      .select('id,sku,name,baseUomId,unitPrice,minStock,createdAt,updatedAt')
       .order('name', { ascending: true })
     if (basicRes.error) throw basicRes.error
 
@@ -346,6 +362,16 @@ export default function ItemsPage() {
       return toast.error(tt('items.toast.minStockInvalid', 'Minimum stock must be zero or greater'))
     }
 
+    const normalizedUnitPrice = unitPrice.trim()
+    if (draftProfile.canSell && !normalizedUnitPrice) {
+      return toast.error(tt('items.toast.unitPriceRequired', 'Enter a default sell price for sellable items'))
+    }
+
+    const nextUnitPrice = normalizedUnitPrice ? Number(normalizedUnitPrice) : null
+    if (draftProfile.canSell && (!Number.isFinite(nextUnitPrice) || (nextUnitPrice ?? 0) < 0)) {
+      return toast.error(tt('items.toast.unitPriceInvalid', 'Default sell price must be zero or greater'))
+    }
+
     const warnings = deriveItemProfileWarnings({ ...draftProfile, minStock: nextMinStock })
     if (warnings.includes('assembled_without_tracking') || warnings.includes('service_marked_assembled')) {
       return toast.error(tt('items.toast.profileInvalid', 'Review the item profile before creating this item'))
@@ -369,6 +395,7 @@ export default function ItemsPage() {
         sku: sku.trim(),
         base_uom_id: baseUomId,
         min_stock: nextMinStock,
+        unit_price: draftProfile.canSell ? nextUnitPrice : null,
       }
 
       if (profileFieldsSupported) {
@@ -394,6 +421,7 @@ export default function ItemsPage() {
       setSku('')
       setBaseUomId('')
       setMinStock('')
+      setUnitPrice('')
       setDraftProfile(EMPTY_PROFILE)
       await reloadItems()
     } catch (error: any) {
@@ -587,7 +615,7 @@ export default function ItemsPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-[1.1fr,0.9fr]">
+              <div className="grid gap-4 md:grid-cols-[1.1fr,0.9fr,1fr]">
                 <div className="space-y-2">
                   <Label>{tt('items.fields.baseUom', 'Base unit')}</Label>
                   <Select value={baseUomId} onValueChange={setBaseUomId}>
@@ -611,6 +639,26 @@ export default function ItemsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="item-min-stock">{tt('items.fields.minStock', 'Minimum stock')}</Label>
                   <Input id="item-min-stock" type="number" min="0" step="0.0001" value={minStock} onChange={(event) => setMinStock(event.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="item-unit-price">
+                    {tt('items.fields.unitPrice', 'Default sell price')} ({baseCurrencyCode})
+                  </Label>
+                  <Input
+                    id="item-unit-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={unitPrice}
+                    onChange={(event) => setUnitPrice(event.target.value)}
+                    placeholder="0.00"
+                    disabled={!draftProfile.canSell}
+                  />
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {draftProfile.canSell
+                      ? tt('items.fields.unitPrice.help', 'Point of Sale and quick-sale flows start from this amount. Operators can still adjust the line price before posting.')
+                      : tt('items.fields.unitPrice.disabledHelp', 'This role is not marked for selling, so no default sell price is required.')}
+                  </p>
                 </div>
               </div>
 
@@ -680,7 +728,7 @@ export default function ItemsPage() {
                       <p className="text-sm leading-6 text-muted-foreground">
                         {tt(
                           'items.preview.lockingHelp',
-                          'Item role, inventory behavior, and buy/sell flags are fixed at creation time. After save, only minimum stock remains editable in normal operations.',
+                          'Item role, inventory behavior, buy/sell flags, and default sell price are fixed at creation time. After save, only minimum stock remains editable in normal operations.',
                         )}
                       </p>
                     </div>
@@ -704,7 +752,7 @@ export default function ItemsPage() {
 
               <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-background/80 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="text-sm text-muted-foreground">
-                  {tt('items.createFooter', 'Create items with the right role up front so Assembly, stock review, purchasing, and sales all start from clean master data.')}
+                  {tt('items.createFooter', 'Create items with the right role and default sell price up front so Assembly, stock review, purchasing, and Point of Sale all start from clean master data.')}
                 </div>
                 <Button type="submit" disabled={saving}>
                   {saving ? tt('actions.saving', 'Saving...') : tt('items.createAction', 'Create item')}
@@ -796,6 +844,7 @@ export default function ItemsPage() {
                   <TableHead>{tt('table.item', 'Item')}</TableHead>
                   <TableHead>{tt('items.table.role', 'Role')}</TableHead>
                   <TableHead>{tt('items.table.baseUom', 'Base UoM')}</TableHead>
+                  <TableHead className="text-right">{tt('items.table.unitPrice', 'Default sell price')}</TableHead>
                   <TableHead className="text-right">{tt('items.table.onHand', 'On hand')}</TableHead>
                   <TableHead className="text-right">{tt('items.table.available', 'Available')}</TableHead>
                   <TableHead className="text-right">{tt('items.fields.minStock', 'Minimum stock')}</TableHead>
@@ -829,6 +878,9 @@ export default function ItemsPage() {
                       <TableCell className="align-top text-sm text-muted-foreground">{roleLabel(item.primaryRole)}</TableCell>
                       <TableCell className="align-top text-sm text-muted-foreground">
                         {baseUom ? `${baseUom.code} — ${baseUom.name}` : item.baseUomId}
+                      </TableCell>
+                      <TableCell className="text-right align-top">
+                        {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : '—'}
                       </TableCell>
                       <TableCell className="text-right align-top">{formatQty(item.onHandQty)}</TableCell>
                       <TableCell className="text-right align-top">{formatQty(item.availableQty)}</TableCell>
@@ -901,3 +953,4 @@ export default function ItemsPage() {
     </div>
   )
 }
+
