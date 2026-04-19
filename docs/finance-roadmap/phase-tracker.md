@@ -12,6 +12,7 @@ Use this file as the working status board for finance-document implementation an
 | Operational hardening block | Completed | Workflow repair + treasury/master-data UX | High-friction production defects were repaired before broader automation | Bank, landed cost, PO/VB, SO/SI, issue readiness, treasury, and UOM flows were stabilized |
 | Phase 4. Automated finance regression suite | Completed in core scope | Test automation + Supabase workflow validation | High-value finance and ops workflows now have repeatable regression protection | Current suite runs through `npm run test:finance-regression` |
 | Phase 5. Security, abuse protection, access control, trial enforcement, and subscription-control foundation | Implemented in foundation scope and Phase 5B core scope | DB control plane + app routing + public commercial surfaces | Tenant access, manual activation, trial lifecycle, brand clarity, and public commercial posture now have a real foundation | Payment automation remains intentionally deferred |
+| Phase 6. Separated adoption workstreams | Implemented in core scope | Mobile UX + operator workflow + onboarding import | StockWise now has a general Android/mobile pass, a fast small-store operator workspace, and a practical opening-data import path | Keep these workstreams separate in future planning and docs |
 
 ## Phase 1. Permissions and Approval Controls
 
@@ -120,8 +121,37 @@ Use this file as the working status board for finance-document implementation an
 | Automatic paid-plan activation | Not started | Explicitly deferred |
 | Automatic purge execution | Not started | Explicitly deferred |
 
+## Phase 6. Separated Adoption Workstreams
+
+### Workstream A. Android-first UX adaptation
+
+| Work Item | Status | Notes |
+|---|---|---|
+| Mobile-first bottom navigation for highest-value routes | Completed | Mobile shell now keeps Dashboard, Operator, Orders, and Items directly reachable |
+| Reduced mobile route density / one-main-job-per-screen direction | Completed in core scope | Operator and import surfaces now follow clearer vertical flow and action placement on small screens |
+| Desktop continuity | Completed | Desktop navigation and page density were preserved instead of collapsing into a mobile-only shell |
+
+### Workstream B. Operator page for fast daily stock issue / simple sale
+
+| Work Item | Status | Notes |
+|---|---|---|
+| Dedicated `/operator` workspace | Completed | Separate from Movements and designed for high-frequency store-counter use |
+| Default walk-in/cash customer flow | Completed | Named customer capture is optional and not forced for common walk-in sales |
+| Multi-line quick issue / simple sale posting | Completed | Dedicated RPC posts a shipped sales order plus stock-out movements in one path |
+| Fast stock visibility and current-sale review | Completed | Available stock, quick add, current sale drawer, and simple reference/notes flow are live |
+
+### Workstream C. Onboarding ease with import support
+
+| Work Item | Status | Notes |
+|---|---|---|
+| Dedicated `/setup/import` workspace | Completed | Separate go-live workspace for opening/master data rather than historical migration |
+| File template download + workbook parsing | Completed | CSV/XLSX/XLS import with preview before commit |
+| Practical opening-data scope | Completed in core scope | Items, customers, suppliers, warehouses/bins, and opening stock are supported |
+| Opening stock bucket continuity | Completed | Opening stock now uses a backend batch importer so receive rows always leave usable `stock_levels` for new go-live items |
+| Historical document migration discipline | Completed | Historical SO/PO/invoice/vendor-bill migration remains intentionally out of scope |
+
 ## Notes
 
 - Keep `Completed` reserved for work that is operationally usable, not partially coded.
 - When a phase item changes the architecture guardrails, update [README.md](README.md) and [decision-log.md](decision-log.md) in the same commit.
-- The current next recommended work is CI wiring for the regression suite and the next commercially necessary Phase 5 follow-up, not payment automation by default.
+- The current next recommended work is CI wiring for the regression suite and then the next targeted adoption follow-up justified by usage data, not a blended “mobile/operator/onboarding” rewrite and not payment automation by default.

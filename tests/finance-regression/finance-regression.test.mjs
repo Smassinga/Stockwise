@@ -278,6 +278,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
   let supplierId = null
   let componentItemId = null
   let productItemId = null
+  let resaleItemId = null
   let bomId = null
   let eachUomId = null
   let boxUomId = null
@@ -481,6 +482,26 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     if (productItem.error) throw productItem.error
     productItemId = productItem.data.id
 
+    const resaleItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-RET`,
+        name: `${PREFIX} Milk`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 32,
+        primary_role: 'resale',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: true,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    if (resaleItem.error) throw resaleItem.error
+    resaleItemId = resaleItem.data.id
+
     const stockLevel = await ownerClient.from('stock_levels').insert({
       company_id: companyId,
       item_id: componentItemId,
@@ -491,6 +512,17 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       allocated_qty: 0,
     })
     if (stockLevel.error) throw stockLevel.error
+
+    const resaleStockLevel = await ownerClient.from('stock_levels').insert({
+      company_id: companyId,
+      item_id: resaleItemId,
+      warehouse_id: warehouseId,
+      bin_id: destinationBinId,
+      qty: 6,
+      avg_cost: 12,
+      allocated_qty: 0,
+    })
+    if (resaleStockLevel.error) throw resaleStockLevel.error
 
     const bom = await ownerClient
       .from('boms')
@@ -845,6 +877,241 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         p_bin_to: destinationBinId,
       }),
       'stock|insufficient|negative|forbidden',
+    )
+  })
+
+  await t.test('Operator sale batches walk-in lines, creates a shipped order, and reduces stock', async () => {
+    const operatorSale = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_operator_sale_issue', {
+          p_company_id: companyId,
+          p_bin_from_id: destinationBinId,
+          p_customer_id: null,
+          p_order_date: todayIso(),
+          p_currency_code: 'MZN',
+          p_fx_to_base: 1,
+          p_reference_no: `${PREFIX.toUpperCase()}-OP`,
+          p_notes: 'Operator sale regression',
+          p_lines: [
+            { item_id: productItemId, qty: 2, unit_price: 116 },
+            { item_id: resaleItemId, qty: 3, unit_price: 32 },
+          ],
+        }),
+        'Expected operator sale issue RPC to succeed',
+      ),
+    )
+
+    assert.ok(operatorSale?.sales_order_id, 'Expected operator sale RPC to return a sales order id')
+    assert.equal(operatorSale.line_count, 2)
+    assert.equal(round2(operatorSale.total_amount), 328)
+
+    const operatorOrder = await querySingle(
+      ownerClient,
+      'sales_orders',
+      'id, status, customer_id, total_amount',
+      [['eq', 'id', operatorSale.sales_order_id]],
+    )
+    assert.equal(operatorOrder.status, 'shipped')
+    assert.equal(round2(operatorOrder.total_amount), 328)
+
+    const cashCustomer = await querySingle(
+      ownerClient,
+      'customers',
+      'id, code, name, is_cash',
+      [['eq', 'id', operatorOrder.customer_id]],
+    )
+    assert.equal(cashCustomer.code, 'CASH')
+    assert.equal(cashCustomer.is_cash, true)
+
+    const { data: operatorLines, error: operatorLinesError } = await ownerClient
+      .from('sales_order_lines')
+      .select('id, item_id, qty, shipped_qty, is_shipped')
+      .eq('company_id', companyId)
+      .eq('so_id', operatorSale.sales_order_id)
+      .order('line_no', { ascending: true })
+    if (operatorLinesError) throw operatorLinesError
+    assert.equal(operatorLines.length, 2)
+    assert.equal(round2(operatorLines[0].shipped_qty), round2(operatorLines[0].qty))
+    assert.equal(operatorLines[0].is_shipped, true)
+    assert.equal(round2(operatorLines[1].shipped_qty), round2(operatorLines[1].qty))
+    assert.equal(operatorLines[1].is_shipped, true)
+
+    const { data: saleMoves, error: saleMovesError } = await ownerClient
+      .from('stock_movements')
+      .select('id, item_id, qty_base, ref_type, ref_id')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'SO')
+      .eq('ref_id', operatorSale.sales_order_id)
+      .order('created_at', { ascending: true })
+    if (saleMovesError) throw saleMovesError
+    assert.equal(saleMoves.length, 2)
+
+    const productStockAfter = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(productStockAfter.qty), 2)
+    assert.equal(round2(productStockAfter.allocated_qty || 0), 0)
+
+    const resaleStockAfter = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', resaleItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(resaleStockAfter.qty), 3)
+    assert.equal(round2(resaleStockAfter.allocated_qty || 0), 0)
+
+    await expectPostgrestError(
+      ownerClient.rpc('create_operator_sale_issue', {
+        p_company_id: companyId,
+        p_bin_from_id: destinationBinId,
+        p_customer_id: null,
+        p_order_date: todayIso(),
+        p_currency_code: 'MZN',
+        p_fx_to_base: 1,
+        p_reference_no: `${PREFIX.toUpperCase()}-OVER`,
+        p_notes: 'Over-issue regression guard',
+        p_lines: [{ item_id: productItemId, qty: 5, unit_price: 116 }],
+      }),
+      'does not have enough stock',
+    )
+  })
+
+  await t.test('Opening stock import creates new buckets and updates existing stock deterministically', async () => {
+    const importedItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-OPEN`,
+        name: `${PREFIX} Opening Sugar`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 27,
+        primary_role: 'resale',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: true,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    if (importedItem.error) throw importedItem.error
+    const importedItemId = importedItem.data.id
+
+    const openingImport = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('import_opening_stock_batch', {
+          p_company_id: companyId,
+          p_rows: [
+            {
+              item_id: importedItemId,
+              uom_id: eachUomId,
+              qty: 12,
+              qty_base: 12,
+              unit_cost: 14.5,
+              total_value: 174,
+              warehouse_to_id: warehouseId,
+              bin_to_id: destinationBinId,
+              notes: 'Opening stock import regression',
+            },
+            {
+              item_id: resaleItemId,
+              uom_id: eachUomId,
+              qty: 4,
+              qty_base: 4,
+              unit_cost: 20,
+              total_value: 80,
+              warehouse_to_id: warehouseId,
+              bin_to_id: destinationBinId,
+              notes: 'Opening stock top-up regression',
+            },
+          ],
+        }),
+        'Expected opening stock import RPC to succeed',
+      ),
+    )
+
+    assert.equal(openingImport.imported_rows, 2)
+    assert.equal(openingImport.bucket_count, 2)
+    assert.equal(round2(openingImport.total_qty_base), 16)
+
+    const importedLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', importedItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(importedLevel.qty), 12)
+    assert.equal(round2(importedLevel.avg_cost), 14.5)
+    assert.equal(round2(importedLevel.allocated_qty || 0), 0)
+
+    const updatedResaleLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', resaleItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(updatedResaleLevel.qty), 7)
+    assert.equal(round2(updatedResaleLevel.avg_cost), 16.57)
+    assert.equal(round2(updatedResaleLevel.allocated_qty || 0), 0)
+
+    const { data: openingMoves, error: openingMovesError } = await ownerClient
+      .from('stock_movements')
+      .select('id, item_id, type, qty_base, total_value, notes')
+      .eq('company_id', companyId)
+      .eq('type', 'receive')
+      .in('item_id', [importedItemId, resaleItemId])
+      .order('created_at', { ascending: true })
+    if (openingMovesError) throw openingMovesError
+
+    const importedMove = openingMoves.find((move) => move.item_id === importedItemId)
+    const resaleMove = openingMoves.find((move) => move.item_id === resaleItemId && Number(move.qty_base) === 4)
+    assert.ok(importedMove, 'Expected a receive movement for the newly imported opening item')
+    assert.equal(round2(importedMove.qty_base), 12)
+    assert.equal(round2(importedMove.total_value), 174)
+    assert.ok(resaleMove, 'Expected a receive movement for the topped-up existing item')
+
+    await expectPostgrestError(
+      ownerClient.rpc('import_opening_stock_batch', {
+        p_company_id: companyId,
+        p_rows: [
+          {
+            item_id: importedItemId,
+            uom_id: eachUomId,
+            qty: 0,
+            qty_base: 0,
+            unit_cost: 14.5,
+            total_value: 0,
+            warehouse_to_id: warehouseId,
+            bin_to_id: destinationBinId,
+            notes: 'Invalid opening stock regression',
+          },
+        ],
+      }),
+      'quantity|incomplete',
     )
   })
 

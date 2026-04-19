@@ -27,7 +27,9 @@ import {
   ShieldCheck,     // Mozambique compliance
   X,
   Search,
-  ChevronDown
+  ChevronDown,
+  ShoppingBasket,
+  Upload,
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -66,6 +68,7 @@ type NavSection = {
 function buildNavLabels(tt: (key: string, fallback: string) => string): NavItem[] {
   return [
     { label: tt('nav.dashboard', 'Dashboard'), to: '/dashboard', icon: LayoutGrid },
+    { label: tt('nav.operator', 'Operator'), to: '/operator', icon: ShoppingBasket },
     { label: tt('nav.items', 'Items'), to: '/items', icon: Package },
     { label: tt('nav.bom', 'BOM'), to: '/bom', icon: Layers },
     { label: tt('nav.movements', 'Movements'), to: '/movements', icon: ArrowLeftRight },
@@ -86,6 +89,7 @@ function buildNavLabels(tt: (key: string, fallback: string) => string): NavItem[
     { label: tt('nav.suppliers', 'Suppliers'), to: '/suppliers', icon: Truck },
     { label: tt('nav.currency', 'Currency'), to: '/currency', icon: Coins },
     { label: tt('nav.uom', 'UoM'), to: '/uom', icon: Ruler },
+    { label: tt('nav.imports', 'Imports'), to: '/setup/import', icon: Upload },
     { label: tt('nav.settings', 'Settings'), to: '/settings', icon: SettingsIcon },
   ]
 }
@@ -182,7 +186,7 @@ export function AppLayout({ user, children }: Props) {
       const sectionMap = new Map([
         [
           tt('shell.nav.operations', 'Operations'),
-          ['/dashboard', '/items', '/bom', '/movements', '/stock-levels', '/warehouses'],
+          ['/dashboard', '/operator', '/items', '/bom', '/movements', '/stock-levels', '/warehouses'],
         ],
         [
           tt('shell.nav.commercial', 'Commercial & finance'),
@@ -190,7 +194,7 @@ export function AppLayout({ user, children }: Props) {
         ],
         [
           tt('shell.nav.setup', 'Setup'),
-          ['/customers', '/suppliers', '/users', '/currency', '/uom', '/settings'],
+          ['/customers', '/suppliers', '/users', '/currency', '/uom', '/setup/import', '/settings'],
         ],
       ])
 
@@ -291,6 +295,16 @@ export function AppLayout({ user, children }: Props) {
   }
 
   const initial = (displayName || 'A').charAt(0).toUpperCase()
+  const mobilePrimaryNav = useMemo(
+    () => ['/dashboard', '/operator', '/orders', '/items']
+      .map((route) => nav.find((item) => item.to === route))
+      .filter((item): item is NavItem => Boolean(item)),
+    [nav],
+  )
+  const mobileShowsMoreActive = useMemo(
+    () => !mobilePrimaryNav.some((item) => isActive(item.to)),
+    [location.pathname, mobilePrimaryNav],
+  )
 
   return (
     <div className="flex min-h-screen">
@@ -461,7 +475,44 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 md:p-6">{children}</main>
+
+        <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border/80 bg-background/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/92 md:hidden">
+          <div className="grid grid-cols-5 gap-1">
+            {mobilePrimaryNav.map((item) => {
+              const Icon = item.icon
+              const active = isActive(item.to)
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={cn(
+                    'flex min-h-[4.25rem] flex-col items-center justify-center rounded-2xl px-2 text-center transition-colors',
+                    active
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span className="mt-1 text-[11px] font-medium leading-tight">{item.label}</span>
+                </Link>
+              )
+            })}
+            <button
+              type="button"
+              className={cn(
+                'flex min-h-[4.25rem] flex-col items-center justify-center rounded-2xl px-2 text-center transition-colors',
+                mobileShowsMoreActive
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+              )}
+              onClick={() => setOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+              <span className="mt-1 text-[11px] font-medium leading-tight">{tt('shell.more', 'More')}</span>
+            </button>
+          </div>
+        </nav>
       </div>
     </div>
   )

@@ -50,6 +50,9 @@ Hardening and control-plane foundations now also exist:
 - the approved StockWise logo now drives the public brand, app shell, PWA icons, and Tauri packaging icons
 - the landing page pricing structure now follows the 2026 MZN workbook with clearer package breakdown and real CTAs
 - public and authenticated pages have had a professional placeholder/copy audit to remove unfinished-looking text and stale demo assets
+- the authenticated shell now has a clearer Android/mobile bottom-navigation path for the most-used routes
+- a dedicated Operator workspace now supports fast daily stock issue and simple sale with a default walk-in/cash customer
+- opening-data import now supports practical go-live setup for items, counterparties, locations, and current stock without pretending to migrate historical documents
 
 ## C. Architecture Guardrails
 
@@ -99,6 +102,7 @@ These rules must not be broken by future work:
 | Operational hardening block | Repair high-friction live workflows before broader automation | Protect production reliability before wider regression enforcement | Completed | Stable Phase 1-3 architecture |
 | Phase 4 | Automated finance regression suite | Stable finance and operational workflows now need repeatable regression protection | Implemented in core scope | Stable Phase 1-3 flows and post-Phase-3 hardening |
 | Phase 5 | Security, abuse protection, access control, trial enforcement, and subscription-control foundation | The app now needs real tenant control, restriction, auditability, and safer public/commercial access handling | Implemented in foundation scope and Phase 5B core scope | Stable workflow controls and regression coverage |
+| Phase 6 | Separated adoption workstreams: Android UX, Operator workflow, onboarding import | Product adoption now depends on general mobile usability, fast small-store issue flow, and lower-friction go-live setup, each with different constraints | Implemented in core scope as three separate workstreams | Stable Phase 3 operations, Phase 4 regression coverage, and Phase 5 control-plane foundations |
 
 ### Phase 3 close summary
 
@@ -180,6 +184,26 @@ Current limitation:
 
 - no true vector SVG was generated in this pass; high-quality PNG-derived assets are now canonical runtime brand assets, and SVG extraction from the approved source artwork remains a later refinement
 
+### Phase 6 completed scope
+
+Phase 6 is deliberately split into three separate workstreams. They share some code paths, but they are not one blended feature.
+
+- Workstream A. Android-first UX adaptation
+  - the mobile shell now prioritizes a small set of primary routes with bottom navigation
+  - page spacing and action placement now support one main job per screen more consistently on Android/mobile
+  - desktop usability remains intact; this is a mobile adaptation pass, not a desktop downgrade
+
+- Workstream B. Operator page for fast daily stock issue / simple sale
+  - `/operator` now exists as a dedicated high-frequency workspace for small stores
+  - it defaults to the walk-in/cash customer model and only asks for a named customer when needed
+  - multi-line simple sale / stock issue now posts through a dedicated backend RPC instead of forcing the full sales-order workflow
+
+- Workstream C. Onboarding ease with import support
+  - `/setup/import` now supports practical go-live imports for items, customers, suppliers, warehouses/bins, and opening stock
+  - imports validate and preview before commit
+  - opening stock now commits through a server-authoritative batch import path so the receive audit and resulting stock bucket stay aligned for new go-live items
+  - the scope is opening/master data only; historical SO/PO/SI/VB migration remains intentionally out of scope
+
 ## E. Cross-Phase Tracked Items
 
 ### Due reminders anchor rule
@@ -222,6 +246,8 @@ Current open decisions that need explicit closure in future work:
 - whether month-close review later needs export packs beyond the current reconciliation workspace
 - whether future treasury work needs deeper bank-statement reconciliation tooling
 - whether a vector-extracted SVG should be added from the approved logo source package once suitable tooling or source artwork is available
+- whether the Operator workflow later needs receipt printing, barcode input, or cashier-session controls beyond the current simple-sale scope
+- whether onboarding/import later needs saved import mappings or a richer warehouse/bin bootstrap assistant beyond the current guided file review
 
 ## H. Risks / Blockers
 
@@ -231,8 +257,9 @@ Known risks:
 - payment automation is intentionally deferred, so internal operational discipline around manual activation remains important
 - operational purge execution is scheduled but not yet automated
 - runtime brand assets are now consistent, but SVG vector extraction is still deferred to avoid shipping a poor trace of the approved logo
+- Android/mobile UX is improved in core flows, but broader route-by-route mobile refinement remains iterative follow-up rather than a one-pass rewrite
 
 Current blocker summary:
 
 - no hard blocker prevents the current roadmap from moving forward
-- the next recommended implementation block is CI wiring for the finance regression suite plus the next security/control-plane follow-up that the commercial rollout actually requires
+- the next recommended implementation block is CI wiring for the finance regression suite plus the next adoption follow-up that real usage data justifies, rather than bundling mobile UX, Operator flow, and onboarding import into one vague feature

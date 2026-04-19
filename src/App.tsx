@@ -10,6 +10,7 @@ import { CanManageUsers } from './lib/roles'
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Items = lazy(() => import('./pages/Items'))
+const Operator = lazy(() => import('./pages/Operator'))
 const StockMovements = lazy(() => import('./pages/StockMovements'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Warehouses = lazy(() => import('./pages/Warehouses').then((m) => ({ default: m.Warehouses })))
@@ -41,6 +42,7 @@ const Profile = lazy(() => import('./pages/Profile'))
 const SearchResults = lazy(() => import('./pages/SearchResults'))
 const CompanyAccessStatus = lazy(() => import('./pages/CompanyAccessStatus'))
 const PlatformControl = lazy(() => import('./pages/PlatformControl'))
+const OpeningImport = lazy(() => import('./pages/OpeningImport'))
 
 function LoadingSplash() {
   return (
@@ -239,6 +241,7 @@ export default function App() {
             <Route element={<RequireCompanyAccess />}>
               <Route element={<AppShellRoute />}>
                 <Route path="/dashboard" element={<Suspense fallback={<LoadingSplash />}><Dashboard /></Suspense>} />
+                <Route path="/operator" element={<Suspense fallback={<LoadingSplash />}><Operator /></Suspense>} />
                 <Route path="/items" element={<Suspense fallback={<LoadingSplash />}><Items /></Suspense>} />
                 <Route path="/movements" element={<Suspense fallback={<LoadingSplash />}><StockMovements /></Suspense>} />
                 <Route path="/warehouses" element={<Suspense fallback={<LoadingSplash />}><Warehouses /></Suspense>} />
@@ -268,6 +271,7 @@ export default function App() {
                 <Route path="/settings" element={<Suspense fallback={<LoadingSplash />}><Settings /></Suspense>} />
                 <Route path="/settings/uoms" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
                 <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
+                <Route path="/setup/import" element={<Suspense fallback={<LoadingSplash />}><OpeningImport /></Suspense>} />
                 <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
                 <Route path="/landed-cost" element={<Suspense fallback={<LoadingSplash />}><LandedCostPage /></Suspense>} />
                 <Route path="/profile" element={<Suspense fallback={<LoadingSplash />}><Profile /></Suspense>} />
