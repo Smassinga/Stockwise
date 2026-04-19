@@ -1,282 +1,97 @@
-# Stockwise Deployment Guide
+# StockWise Deployment and Release Position
 
-This document provides instructions for deploying Stockwise to production environments.
+This document describes the current release posture for StockWise as it exists today.
 
-## Deployment Architecture
+## Runtime Shape
 
-Stockwise follows a modern web application deployment architecture:
+StockWise currently ships in three ways:
 
-```
-Users ─── CDN ─── Vercel (Frontend) ─── Supabase (Backend)
-                    │
-                    └── Custom Domain
-```
+- web frontend built by Vite and deployed from `dist/`
+- Supabase database, auth, storage policies, RPCs, and Edge Functions
+- Tauri desktop and Android shells that package the same frontend
 
-## Prerequisites
+## Current Commercial Position
 
-Before deploying, ensure you have:
+- public pricing is visible in MZN
+- paid activation remains manual through Platform Control
+- automatic payment checkout is intentionally not part of the current release model
 
-1. **Supabase Account**: A Supabase project with configured database
-2. **Vercel Account**: For frontend deployment
-3. **Domain Name**: (Optional) Custom domain for your application
-4. **Environment Variables**: All required environment variables ready
+## Web Release Baseline
 
-## Supabase Setup
-
-### 1. Create Supabase Project
-
-1. Go to [Supabase Dashboard](https://app.supabase.com)
-2. Click "New Project"
-3. Enter project details:
-   - Name: Your project name
-   - Database Password: Secure password
-   - Region: Closest to your users
-4. Click "Create Project"
-
-### 2. Configure Database
-
-1. In the Supabase dashboard, go to SQL Editor
-2. Run the database schema setup scripts
-3. Set up Row Level Security (RLS) policies
-4. Configure authentication settings
-
-### 3. Configure Authentication
-
-1. Go to Authentication > Settings
-2. Configure site URL: `https://your-domain.com`
-3. Add additional redirect URLs as needed
-4. Configure email templates as needed
-5. Configure custom SMTP for Auth emails:
-   - Host: `smtp-relay.brevo.com`
-   - Port: `587`
-   - Username: the Brevo SMTP login from Brevo's SMTP relay settings
-   - Password: the Brevo SMTP key/password from Brevo's SMTP relay settings
-   - Sender email: `no-reply@stockwiseapp.com`
-   - Sender name: `StockWise`
-
-Important:
-- Do not use a Brevo HTTP API key as the SMTP username or SMTP password.
-- If the Supabase dashboard currently shows `apikey` as the SMTP username, replace it with the dedicated Brevo SMTP login shown in the Brevo SMTP relay settings.
-
-### 4. Set Up Storage
-
-1. Go to Storage > Buckets
-2. Create a bucket for company logos (e.g., `brand-logos`)
-3. Configure bucket permissions
-
-## Environment Variables
-
-### Required Variables
-
-Set these environment variables in your Vercel project:
+Required frontend/runtime variables:
 
 ```bash
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_SITE_URL=https://your-domain.com
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+VITE_SITE_URL=https://stockwiseapp.com
 ```
 
-### How to Get These Values
-
-1. In Supabase dashboard, go to Settings > API
-2. Copy "Project URL" to `VITE_SUPABASE_URL`
-3. Copy "anon public" key to `VITE_SUPABASE_ANON_KEY`
-4. In Brevo, open SMTP & API > SMTP and copy the SMTP relay login and SMTP key
-5. In Supabase, set the Brevo SMTP secrets for Edge Functions and the same SMTP host/port/login/password in Authentication > Settings > SMTP
-
-### Edge Function Mail Secrets
-
-Set these in Supabase Edge Function secrets, not in Vercel frontend env:
+Before a web release:
 
 ```bash
-PUBLIC_SITE_URL=https://your-domain.com
-BREVO_SMTP_HOST=smtp-relay.brevo.com
-BREVO_SMTP_PORT=587
-BREVO_SMTP_SECURE=false
-BREVO_SMTP_LOGIN=your_brevo_smtp_login
-BREVO_SMTP_KEY=your_brevo_smtp_key
-BREVO_SENDER_EMAIL=no-reply@stockwiseapp.com
-BREVO_SENDER_NAME=StockWise
-BREVO_REPLY_TO_EMAIL=optional_reply_to@example.com
-BREVO_REPLY_TO_NAME=StockWise
-MAILER_ALLOWED_ORIGINS=https://your-domain.com
+npm run lint:js
+npm run build
+npm run test:finance-regression
 ```
 
-## Vercel Deployment
+If database changes are included:
 
-### 1. Connect Repository
+```bash
+npx supabase db pull
+npm run check:migrations
+npx supabase db push
+```
 
-1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
-2. Click "New Project"
-3. Import your Git repository
-4. Configure project settings:
-   - Framework Preset: Vite
-   - Root Directory: `/`
-   - Build Command: `npm run build`
-   - Output Directory: `dist`
+Only report a live schema change if `npx supabase db push` succeeded in the same session.
 
-### 2. Configure Environment Variables
+## Supabase and Email Release Requirements
 
-1. In Vercel project settings, go to "Environment Variables"
-2. Add all required environment variables:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_SITE_URL`
+StockWise depends on Supabase for:
 
-### 3. Configure Build Settings
+- authentication and company membership
+- entitlement and trial enforcement
+- finance posting, settlements, reconciliation, and imports
+- outbound company-access email sending
 
-1. In Vercel project settings, go to "General"
-2. Set build command: `npm run build`
-3. Set output directory: `dist`
-4. Set install command: `npm install`
+Edge-function mail flows require the configured Brevo SMTP secrets. Verify required secrets before deploying or testing an email function.
 
-### 4. Deploy
+Current support inbox:
 
-1. Click "Deploy"
-2. Vercel will automatically build and deploy your application
-3. Monitor the build process in the Vercel dashboard
+- `support@stockwiseapp.com`
 
-## Custom Domain Setup
+This inbox is for inbound user contact. Outbound company-access emails go to the selected company's canonical recipient, not to support.
 
-### 1. Add Domain to Vercel
+## Tauri Release Position
 
-1. In Vercel dashboard, go to your project
-2. Go to Settings > Domains
-3. Add your custom domain
+Desktop and Android packaging are maintained, but they are still direct-distribution builds:
 
-### 2. Configure DNS
+- desktop updater is not configured
+- desktop code signing is not configured in-repo
+- Android release signing uses local keystore input and is intentionally not committed
 
-1. Follow Vercel's DNS configuration instructions
-2. Add the provided DNS records to your DNS provider
-3. Wait for DNS propagation (usually 5-30 minutes)
+Use:
 
-### 3. Configure Supabase
+- [TAURI_RELEASE_WORKFLOW.md](TAURI_RELEASE_WORKFLOW.md) for the maintained packaging path
+- [TAURI_DESKTOP_GUIDE.md](TAURI_DESKTOP_GUIDE.md) for desktop-specific notes
 
-1. In Supabase dashboard, go to Settings > API
-2. Add your custom domain to "Additional Redirect URLs"
-3. Update site URL if needed
+## Release Checklist
 
-## Database Migration
+Use this checklist before calling a build or release "ready":
 
-### Initial Migration
+1. verify current docs still match the product and release path
+2. run `npm run lint:js`
+3. run `npm run build`
+4. run `npm run test:finance-regression`
+5. run `npm run tauri:prepare` if desktop or Android packaging metadata matters for this release
+6. verify branding, Point of Sale naming, and Android-first navigation assumptions on the current UI
+7. if DB code changed, validate the canonical migration workflow before shipping
 
-For new deployments:
+## What This Document Does Not Cover
 
-1. Run the database setup scripts in Supabase SQL Editor
-2. Configure RLS policies
-3. Set up authentication settings
+This document does not try to be:
 
-### Updating Existing Database
+- a generic Supabase tutorial
+- a payment-gateway runbook
+- a historical release log
 
-For existing deployments with schema changes:
-
-1. Create a backup of your database
-2. Review migration scripts
-3. Apply migrations in a staging environment first
-4. Apply migrations to production during maintenance window
-
-## Monitoring and Analytics
-
-### Vercel Analytics
-
-Vercel provides built-in analytics:
-1. Performance metrics
-2. Visitor analytics
-3. Geographical distribution
-
-### Supabase Monitoring
-
-Supabase provides:
-1. Database performance metrics
-2. API usage statistics
-3. Authentication logs
-
-### Error Tracking
-
-Consider integrating error tracking:
-1. Sentry for frontend error tracking
-2. Supabase logs for backend issues
-
-## Security Considerations
-
-### Environment Variables
-
-1. Never commit sensitive environment variables to version control
-2. Use Vercel's environment variable management
-3. Rotate credentials periodically
-
-### HTTPS
-
-1. Vercel automatically provides HTTPS for all deployments
-2. Custom domains get free SSL certificates from Let's Encrypt
-
-### Authentication
-
-1. Use strong passwords for Supabase database
-2. Regularly review authentication settings
-3. Monitor authentication logs for suspicious activity
-
-## Backup and Recovery
-
-### Supabase Backups
-
-1. Supabase automatically creates daily backups
-2. Point-in-time recovery is available
-3. Manual backups can be created through the dashboard
-
-### Recovery Process
-
-In case of data loss:
-
-1. Identify the point of data loss
-2. Use Supabase dashboard to restore from backup
-3. Verify data integrity after restoration
-
-## Scaling Considerations
-
-### Supabase Scaling
-
-1. Monitor database performance metrics
-2. Upgrade to higher tiers as needed
-3. Consider read replicas for high-traffic applications
-
-### Vercel Scaling
-
-1. Vercel automatically scales frontend resources
-2. Monitor bandwidth and build minutes usage
-3. Upgrade plan if needed
-
-## Maintenance
-
-### Regular Tasks
-
-1. Monitor application performance
-2. Review logs for errors
-3. Update dependencies regularly
-4. Rotate credentials periodically
-
-### Updates
-
-When updating the application:
-
-1. Test changes in a staging environment
-2. Create database backups before major updates
-3. Deploy during low-traffic periods
-4. Monitor application after deployment
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Environment Variables Not Set**: Check Vercel environment variables
-2. **Database Connection Failed**: Verify Supabase credentials
-3. **Authentication Issues**: Check Supabase auth settings
-4. **Build Failures**: Check build logs in Vercel dashboard
-
-### Getting Help
-
-1. Check Vercel and Supabase documentation
-2. Review application logs
-3. Contact support if needed
-
-This deployment guide provides a comprehensive overview of deploying Stockwise to production. Following these steps will help ensure a successful deployment with proper security and monitoring in place.
+If a release topic is not current and specific to StockWise, it should live elsewhere or not be tracked.

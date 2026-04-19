@@ -1,4 +1,4 @@
-# Stockwise Testing Strategy
+# StockWise Testing Strategy
 
 This document records the current testing baseline that actually exists in the repo.
 

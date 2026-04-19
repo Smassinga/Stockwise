@@ -1,42 +1,43 @@
 # Tauri Desktop Guide
 
-This file is the current desktop-specific guide for Stockwise's Tauri shell.
+This is the desktop-specific companion to [TAURI_RELEASE_WORKFLOW.md](TAURI_RELEASE_WORKFLOW.md).
 
-For the combined desktop + Android release workflow, see [TAURI_RELEASE_WORKFLOW.md](TAURI_RELEASE_WORKFLOW.md).
+## Current Desktop Position
 
-## Current baseline
+- StockWise desktop packages the same React frontend used on the web
+- the shell should expose the same current naming and navigation as the web product, including Point of Sale and onboarding/import
+- `package.json` remains the version source of truth
+- desktop permissions are declared through `src-tauri/capabilities/main.json`
 
-- Tauri 2.x is the maintained baseline.
-- `package.json` is the version source of truth.
-- `npm run tauri:prepare` syncs the app version into:
-  - `src-tauri/tauri.conf.json`
-  - `src-tauri/Cargo.toml`
-  - `src-tauri/gen/android/app/tauri.properties` when the Android project exists
-- Desktop permissions are declared through Tauri 2 capabilities in `src-tauri/capabilities/main.json`.
-- The desktop shell packages the current Vite output from `dist/` through `beforeBuildCommand: npm run build`.
-
-## Desktop development
+## Desktop Development
 
 ```bash
 npm run tauri:dev
 ```
 
-This syncs the version metadata, starts the frontend dev server, and launches the Tauri desktop shell.
+This runs version sync, starts the frontend dev server, and opens the desktop shell.
 
-## Desktop release build
+## Desktop Release Build
 
 ```bash
 npm run tauri:desktop:build
 ```
 
-Expected outputs:
+Artifacts are emitted under:
 
 - `src-tauri/target/release/stockwise.exe`
-- `src-tauri/target/release/bundle/nsis/Stockwise_<version>_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/Stockwise_<version>_x64_en-US.msi`
+- `src-tauri/target/release/bundle/nsis/`
+- `src-tauri/target/release/bundle/msi/`
 
-## Notes
+## Desktop-Specific Limits
 
-- The current bundle identifier remains `com.stockwise.app` for continuity with the existing Android package id. Tauri warns about the `.app` suffix on desktop builds, but changing it now would break package continuity on Android.
-- Windows code signing is not configured in-repo. Desktop builds are reproducible, but signed desktop release distribution remains a separate operational step.
-- Updater configuration is not enabled. Desktop releases are currently direct-file distribution builds.
+- Windows code signing is still a separate operational step
+- updater support is not enabled in-repo
+- the bundle identifier remains `com.stockwise.app` to preserve Android continuity
+
+## What to Check Before Shipping Desktop
+
+- branding is current StockWise branding
+- desktop shell title matches the current product name
+- primary routes, especially Point of Sale and Platform Control, still work inside the shell
+- the build was prepared from the current frontend, not an older `dist/`

@@ -56,6 +56,7 @@ Hardening and control-plane foundations now also exist:
 - a dedicated Operator workspace now supports fast daily stock issue and simple sale with a default walk-in/cash customer
 - Point of Sale now uses professional naming in the shell and route metadata, and sellable items expose a default sell price on item setup for operator prefilling
 - opening-data import now supports practical go-live setup for items, counterparties, locations, and current stock without pretending to migrate historical documents
+- repo current-truth docs were tightened again after the canonical-baseline cleanup so Tauri release notes, Android/mobile guidance, and current product surfaces match the live app instead of older intermediate states
 
 ## C. Architecture Guardrails
 

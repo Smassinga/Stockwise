@@ -1,6 +1,6 @@
 # StockWise Documentation
 
-This index is the current documentation truth. Obsolete summaries and generated brochure-style docs were removed so future work starts from the documents that actually reflect the product.
+This folder is the maintained current-truth layer for StockWise. Documents that duplicated code structure, described abandoned intermediate states, or read like generic brochures were removed so future work starts from evidence-backed docs only.
 
 ## Start Here
 
@@ -10,7 +10,7 @@ This index is the current documentation truth. Obsolete summaries and generated 
 4. [Data Model](DATA_MODEL.md)
 5. [Canonical Migration Baseline Reset (2026-04-19)](CANONICAL_MIGRATION_BASELINE_2026-04-19.md)
 
-## Product and Finance Direction
+## Product, Control Plane, and Roadmap
 
 - [Finance Roadmap](finance-roadmap/README.md)
 - [Finance Phase Tracker](finance-roadmap/phase-tracker.md)
@@ -19,30 +19,21 @@ This index is the current documentation truth. Obsolete summaries and generated 
 - [Platform Admin Runbook](platform-admin-runbook.md)
 - [Company Access Email Operations](company-access-email-operations.md)
 
-## Build, Testing, and Operations
+## Release and Operating Docs
 
-- [Deployment](DEPLOYMENT.md)
+- [Deployment and Release Position](DEPLOYMENT.md)
 - [Testing](TESTING.md)
-- [Monitoring](MONITORING.md)
+- [Monitoring and Operational Signals](MONITORING.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
+- [Android-First UX Position](MOBILE_OPTIMIZATION.md)
 - [Tauri Release Workflow](TAURI_RELEASE_WORKFLOW.md)
 - [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md)
-- [Tauri Release Notes](TAURI_RELEASE_NOTES.md)
 
-## Reference Docs Still In Use
+## Domain-Specific Reference
 
-- [API](API.md)
-- [Components](COMPONENTS.md)
 - [Due Reminders](due-reminders.md)
 - [Mozambique Runtime Issuance](mozambique-runtime-issuance.md)
-- [Mobile Optimization](MOBILE_OPTIMIZATION.md)
 
-## Documentation Cleanup Notes
+## Cleanup Rule
 
-Removed in this cleanup pass:
-
-- one-off implementation summaries that no longer define current behavior
-- stale generated `STOCKWISE_*` overview/specification documents
-- outdated transition notes that described pre-baseline or pre-finance-document intermediate states
-
-If a document cannot describe the current system accurately, it should be updated, archived deliberately, or removed.
+If a document cannot explain the current system accurately, it should be rewritten, archived deliberately, or removed. StockWise now prefers one maintained source of truth per topic instead of overlapping summaries.

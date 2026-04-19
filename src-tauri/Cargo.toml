@@ -1,8 +1,8 @@
 [package]
 name = "stockwise"
 version = "1.2.0"
-description = "Stockwise - Inventory & Sales Insights"
-authors = ["Stockwise"]
+description = "StockWise desktop and Android shell for inventory, Point of Sale, cash, and finance operations"
+authors = ["StockWise"]
 license = ""
 repository = ""
 edition = "2021"

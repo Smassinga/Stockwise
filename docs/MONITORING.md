@@ -1,279 +1,74 @@
-# Stockwise Monitoring Guide
-
-This document provides guidance on monitoring the Stockwise application in production environments.
+# StockWise Monitoring and Operational Signals
 
-## Overview
-
-Stockwise uses a combination of built-in monitoring capabilities from hosting platforms (Vercel and Supabase) along with optional third-party monitoring solutions.
-
-## Vercel Monitoring
-
-### Performance Monitoring
-
-Vercel provides built-in performance monitoring:
-- Page load times
-- Time to first byte (TTFB)
-- First contentful paint (FCP)
-- Largest contentful paint (LCP)
-- Cumulative layout shift (CLS)
-
-### Analytics
-
-Vercel Analytics provides:
-- Visitor statistics
-- Geographical distribution
-- Device and browser information
-- Page view tracking
-- Custom event tracking
-
-### Error Tracking
-
-Vercel automatically captures:
-- Build errors
-- Runtime errors
-- 404 errors
-- Serverless function errors
-
-## Supabase Monitoring
-
-### Database Performance
-
-Supabase provides database monitoring:
-- Query performance metrics
-- Database load
-- Connection statistics
-- Storage usage
-
-### API Monitoring
-
-Supabase tracks:
-- API request rates
-- Response times
-- Error rates
-- Authentication metrics
-
-### Logs
-
-Supabase provides detailed logs for:
-- Database queries
-- Authentication events
-- Function executions
-- Storage operations
-
-### Edge Function Monitoring
-
-Monitor the due reminder worker and other Edge Functions:
-- Execution success rates
-- Error rates
-- Execution times
-- Resource usage
-
-## Third-Party Monitoring Solutions
-
-### Sentry Integration
-
-For enhanced error tracking, integrate Sentry:
-
-1. Create a Sentry account at [sentry.io](https://sentry.io)
-2. Create a new project for Stockwise
-3. Install the Sentry SDK:
-   ```bash
-   npm install @sentry/react @sentry/browser
-   ```
-4. Initialize Sentry in your application:
-   ```typescript
-   import * as Sentry from "@sentry/react";
-   
-   Sentry.init({
-     dsn: "YOUR_SENTRY_DSN",
-     integrations: [
-       new Sentry.BrowserTracing(),
-       new Sentry.Replay(),
-     ],
-     tracesSampleRate: 1.0,
-     replaysSessionSampleRate: 0.1,
-     replaysOnErrorSampleRate: 1.0,
-   });
-   ```
-
-### LogRocket Integration
-
-For session replay and user behavior tracking:
-
-1. Create a LogRocket account at [logrocket.com](https://logrocket.com)
-2. Install the LogRocket SDK:
-   ```bash
-   npm install logrocket
-   ```
-3. Initialize LogRocket:
-   ```typescript
-   import LogRocket from 'logrocket';
-   
-   LogRocket.init('your-app-id');
-   ```
-
-## Custom Monitoring
-
-### Application Health Checks
-
-Implement health check endpoints:
-```typescript
-// Example health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-```
-
-### Business Metrics Tracking
-
-Track key business metrics:
-- User signups
-- Item creation
-- Order processing
-- Inventory movements
-
-### Performance Metrics
+This document records the monitoring sources that actually matter for StockWise today.
 
-Monitor key performance indicators:
-- API response times
-- Database query performance
-- Authentication success rates
-- Page load times
-
-## Alerting
+## Current Signal Sources
 
-### Vercel Alerts
-
-Configure alerts in Vercel:
-- Deployment failures
-- Performance degradation
-- Error rate spikes
-- Usage limits
-
-### Supabase Alerts
-
-Set up alerts in Supabase:
-- Database performance issues
-- Unusual API usage patterns
-- Authentication failures
-- Storage limits
+### Web and frontend
 
-### Due Reminder Worker Alerts
+- Vercel deployment/build logs
+- browser console and runtime error checks during smoke validation
+- `npm run build` for production bundle integrity
 
-Set up alerts for the due reminder system:
-- Job processing failures
-- Empty reminder batches (indicating no qualifying orders)
-- Brevo SMTP delivery errors
-- Queue backlog buildup
+### Database and backend control
 
-### Custom Alerting
-
-Implement custom alerting for business-critical metrics:
-- Low stock alerts
-- Order processing delays
-- Authentication anomalies
-- Data consistency issues
+- Supabase database logs
+- Supabase auth logs
+- Supabase Edge Function logs for company-access mailers and reminder workers
+- `npx supabase db pull` replay validation when schema work is involved
 
-## Monitoring Dashboard
+### Workflow integrity
 
-### Creating a Monitoring Dashboard
+- `npm run test:finance-regression`
+- targeted browser validation for Point of Sale, Platform Control, onboarding import, and finance-document workflows when those areas change
 
-Use tools like:
-- Grafana for custom dashboards
-- Datadog for comprehensive monitoring
-- New Relic for full-stack observability
+## What Is Not Part of the Current Baseline
 
-### Key Metrics to Display
+These are not committed as current production dependencies:
 
-1. **Application Health**
-   - Uptime percentage
-   - Response time trends
-   - Error rates
+- Sentry
+- LogRocket
+- Datadog
+- New Relic
 
-2. **Business Metrics**
-   - Daily active users
-   - New signups
-   - Order volume
-   - Revenue metrics
+If any of those are added later, this document should be updated only after the integration is real.
 
-3. **System Performance**
-   - Database query performance
-   - API response times
-   - CDN performance
-   - Third-party service status
+## What to Check by Area
 
-4. **Due Reminder Worker Metrics**
-   - Jobs processed per hour
-   - Success vs failure rates
-   - Average processing time
-   - Queue depth
+### Finance and inventory
 
-## Best Practices
+- finance regression suite result
+- Supabase DB/RPC errors
+- settlement, bank, cash, and reconciliation read-model continuity
 
-### Proactive Monitoring
+### Platform Control and access emails
 
-- Set up alerts for critical metrics
-- Monitor trends, not just current values
-- Implement synthetic monitoring for key user flows
-- Regularly review and update monitoring configurations
+- Supabase Edge Function logs
+- company access audit tables
+- company control action log
 
-### Incident Response
+### Web release quality
 
-- Document incident response procedures
-- Set up escalation paths
-- Create runbooks for common issues
-- Conduct post-mortem analysis for major incidents
+- Vercel build result
+- local `npm run build`
+- smoke validation on key routes
 
-### Performance Optimization
+### Tauri packaging
 
-- Monitor performance trends over time
-- Identify and address performance bottlenecks
-- Optimize database queries based on slow query logs
-- Implement caching strategies where appropriate
+- `npm run tauri:prepare`
+- desktop build or Android Gradle output when packaging is the target
+- current branding/version metadata in Tauri config and Android resources
 
-## Troubleshooting
+## Release-Time Minimum Monitoring Discipline
 
-### Common Monitoring Issues
+Before calling a change release-ready:
 
-1. **Missing Metrics**
-   - Verify monitoring integrations are properly configured
-   - Check for network connectivity issues
-   - Ensure proper permissions for monitoring services
+1. run `npm run lint:js`
+2. run `npm run build`
+3. run `npm run test:finance-regression` for finance, control-plane, or workflow changes
+4. validate the relevant user flow in browser or packaged shell as appropriate
+5. check Supabase logs if the change touched RPCs, policies, or Edge Functions
 
-2. **False Alerts**
-   - Adjust alert thresholds based on historical data
-   - Implement alert deduplication
-   - Add context to alerts to reduce noise
+## Current Gap
 
-3. **Performance Impact**
-   - Minimize monitoring overhead
-   - Use sampling for high-volume metrics
-   - Optimize monitoring queries
-
-### Due Reminder Worker Troubleshooting
-
-If the due reminder worker returns "no reminders for window":
-
-1. **Check the Queue**
-   - Verify jobs exist in `due_reminder_queue`
-   - Check job status and payload
-
-2. **Verify Sales Orders**
-   - Ensure sales orders exist for the company
-   - Check due dates match lead days
-   - Confirm orders have positive amounts
-   - Verify order status is not cancelled/void/draft
-
-3. **Validate Email Addresses**
-   - Ensure customers have email addresses
-   - Check for override recipients in job payload
-
-4. **Test the Batch Function**
-   - Run `build_due_reminder_batch` manually
-   - Verify it returns expected results
-
-## Conclusion
-
-Effective monitoring is crucial for maintaining a reliable and performant Stockwise application. By leveraging the built-in monitoring capabilities of Vercel and Supabase, along with optional third-party solutions, you can ensure your application remains healthy and provides a great user experience.
-
-Regularly review your monitoring setup and adjust as your application grows and evolves.
+StockWise has operational logging and regression coverage, but it does not yet have a dedicated third-party observability stack committed in-repo. That is acceptable as long as release validation stays disciplined and the existing Supabase/Vercel signals are actually reviewed.

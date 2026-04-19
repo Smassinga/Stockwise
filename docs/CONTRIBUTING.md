@@ -1,6 +1,6 @@
-# Contributing to Stockwise
+# Contributing to StockWise
 
-Thank you for your interest in contributing to Stockwise! We welcome contributions from the community and are excited to work with you.
+Thank you for your interest in contributing to StockWise. We welcome contributions from the community and are excited to work with you.
 
 ## Code of Conduct
 
@@ -231,7 +231,7 @@ Contributors will be recognized in:
 
 ## License
 
-By contributing to Stockwise, you agree that your contributions will be licensed under the MIT License.
+By contributing to StockWise, you agree that your contributions will be licensed under the MIT License.
 
 ## Questions?
 
@@ -240,4 +240,4 @@ If you have any questions about contributing, please:
 2. Open an issue for discussion
 3. Contact the maintainers
 
-Thank you for contributing to Stockwise!
+Thank you for contributing to StockWise.
