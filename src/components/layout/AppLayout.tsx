@@ -112,7 +112,7 @@ function SearchBar({
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         placeholder={placeholder}
-        className="h-10 rounded-xl border-border/70 bg-muted/20 pl-9 shadow-none"
+        className="h-11 rounded-2xl border-border/70 bg-background/88 pl-10 shadow-[0_14px_32px_-30px_hsl(var(--foreground)/0.4)]"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -223,10 +223,10 @@ export function AppLayout({ user, children }: Props) {
         to={item.to}
         onClick={() => setOpen(false)}
         className={cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+          'flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200',
           active
-            ? 'bg-primary/10 text-primary'
-            : 'text-foreground/78 hover:bg-accent/40 hover:text-foreground'
+            ? 'bg-primary text-primary-foreground shadow-[0_16px_30px_-22px_hsl(var(--primary)/0.85)]'
+            : 'text-foreground/74 hover:bg-accent/35 hover:text-foreground'
         )}
       >
         <Icon className="h-5 w-5 flex-shrink-0" />
@@ -237,15 +237,15 @@ export function AppLayout({ user, children }: Props) {
 
   const sidebar = useMemo(
     () => (
-      <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-border/80 md:bg-muted/10">
-        <div className="flex h-16 items-center gap-2 border-b border-border/70 px-4">
+      <aside className="hidden md:flex md:w-72 md:flex-col md:border-r md:border-border/80 md:bg-background/75 md:backdrop-blur-xl">
+        <div className="flex h-16 items-center gap-2 border-b border-border/70 px-5">
           <BrandLockup compact subtitle="" />
             <div className="ml-2 shrink-0 overflow-visible">
               <ThemeToggle />
             </div>
         </div>
 
-        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
           {navSections.map((section) => (
             <div key={section.label} className="space-y-1.5">
               <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -260,9 +260,9 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
 
-        <div className="border-t border-border/70 space-y-3 p-3">
+        <div className="border-t border-border/70 space-y-3 p-4">
           <CompanySwitcher className="mb-3" />
-            <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+            <div className="rounded-[1.35rem] border border-border/70 bg-card/90 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
               <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
               <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
               <div className="text-xs text-muted-foreground">{displayRole}</div>
@@ -307,13 +307,13 @@ export function AppLayout({ user, children }: Props) {
   )
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-muted/[0.08]">
       {sidebar}
 
       {/* Mobile overlay */}
       {open && (
         <div 
-          className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/36 backdrop-blur-sm md:hidden"
           onClick={() => setOpen(false)}
         />
       )}
@@ -321,11 +321,11 @@ export function AppLayout({ user, children }: Props) {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-background transition-transform duration-300 ease-in-out md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-sm flex-col border-r border-border/80 bg-background/96 shadow-[0_24px_60px_-36px_hsl(var(--foreground)/0.4)] backdrop-blur-xl transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-16 items-center justify-between px-4">
+        <div className="flex h-16 items-center justify-between px-5">
           <div className="flex items-center gap-2">
             <BrandLockup compact subtitle="" />
             <div className="ml-2 shrink-0 overflow-visible">
@@ -342,10 +342,10 @@ export function AppLayout({ user, children }: Props) {
             <X className="h-5 w-5" />
           </Button>
         </div>
-        <div className="px-3 pb-2">
+        <div className="px-4 pb-3">
           <CompanySwitcher />
         </div>
-        <nav className="space-y-5 px-3 py-2">
+        <nav className="space-y-6 overflow-y-auto px-4 py-2">
           {navSections.map((section) => (
             <div key={section.label} className="space-y-1.5">
               <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -359,8 +359,8 @@ export function AppLayout({ user, children }: Props) {
             </div>
           ))}
         </nav>
-          <div className="mt-auto border-t p-3">
-            <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+          <div className="mt-auto border-t border-border/70 p-4">
+            <div className="rounded-[1.35rem] border border-border/70 bg-card/92 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
               <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
               <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
               <div className="text-xs text-muted-foreground">{displayRole}</div>
@@ -383,7 +383,7 @@ export function AppLayout({ user, children }: Props) {
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/88 md:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/80 bg-background/92 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/82 md:px-6 lg:px-8">
           <Button 
             variant="ghost" 
             size="icon" 
@@ -407,7 +407,7 @@ export function AppLayout({ user, children }: Props) {
           {/* Desktop search form */}
           <div className="ml-1 hidden min-w-0 flex-1 md:flex">
             <SearchBar
-              className="w-full max-w-sm lg:max-w-md xl:max-w-lg"
+              className="w-full max-w-md lg:max-w-lg xl:max-w-xl"
               placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={setSearchQuery}
@@ -475,10 +475,13 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 md:p-6">{children}</main>
+        <main className="flex-1 px-4 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-4 md:px-6 md:pb-8 md:pt-6 lg:px-8">
+          {children}
+        </main>
 
-        <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border/80 bg-background/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/92 md:hidden">
-          <div className="grid grid-cols-5 gap-1">
+        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.9rem+env(safe-area-inset-bottom))] pt-3 md:hidden">
+          <div className="mx-auto max-w-xl rounded-[1.75rem] border border-border/80 bg-card/96 p-2 shadow-[0_30px_60px_-34px_hsl(var(--foreground)/0.45)] ring-1 ring-background/80 backdrop-blur-xl">
+          <div className="grid grid-cols-5 gap-1.5">
             {mobilePrimaryNav.map((item) => {
               const Icon = item.icon
               const active = isActive(item.to)
@@ -487,30 +490,31 @@ export function AppLayout({ user, children }: Props) {
                   key={item.to}
                   to={item.to}
                   className={cn(
-                    'flex min-h-[4.25rem] flex-col items-center justify-center rounded-2xl px-2 text-center transition-colors',
+                    'flex min-h-[4.55rem] flex-col items-center justify-center rounded-[1.2rem] px-2 text-center transition-[background-color,color,box-shadow]',
                     active
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                      ? 'bg-primary text-primary-foreground shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)]'
+                      : 'text-foreground/70 hover:bg-accent/45 hover:text-foreground',
                   )}
                 >
                   <Icon className="h-5 w-5" />
-                  <span className="mt-1 text-[11px] font-medium leading-tight">{item.label}</span>
+                  <span className="mt-1 text-[11px] font-semibold leading-tight">{item.label}</span>
                 </Link>
               )
             })}
             <button
               type="button"
               className={cn(
-                'flex min-h-[4.25rem] flex-col items-center justify-center rounded-2xl px-2 text-center transition-colors',
+                'flex min-h-[4.55rem] flex-col items-center justify-center rounded-[1.2rem] px-2 text-center transition-[background-color,color,box-shadow]',
                 mobileShowsMoreActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                  ? 'bg-primary text-primary-foreground shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)]'
+                  : 'text-foreground/70 hover:bg-accent/45 hover:text-foreground',
               )}
               onClick={() => setOpen(true)}
             >
               <Menu className="h-5 w-5" />
-              <span className="mt-1 text-[11px] font-medium leading-tight">{tt('shell.more', 'More')}</span>
+              <span className="mt-1 text-[11px] font-semibold leading-tight">{tt('shell.more', 'More')}</span>
             </button>
+          </div>
           </div>
         </nav>
       </div>

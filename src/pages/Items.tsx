@@ -516,8 +516,8 @@ export default function ItemsPage() {
   if (loading) return <div className="p-6">{tt('loading', 'Loading...')}</div>
 
   return (
-    <div className="space-y-6 p-6">
-      <section className="overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-card via-card to-muted/25 shadow-sm">
+    <div className="app-page">
+      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
         <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr,0.8fr] lg:p-8">
           <div className="space-y-3">
             <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em]">
@@ -797,7 +797,7 @@ export default function ItemsPage() {
         </Card>
       </section>
 
-      <Card className="border-border/70 bg-card shadow-sm">
+      <Card className="border-border/70 bg-card shadow-[0_20px_48px_-36px_hsl(var(--foreground)/0.24)]">
         <CardHeader className="space-y-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>

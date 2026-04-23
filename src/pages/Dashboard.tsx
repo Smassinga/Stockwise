@@ -575,34 +575,33 @@ export default function Dashboard() {
   const monthName = (m: number) => new Date(2000, m, 1).toLocaleString(lang, { month: 'long' })
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
+    <div className="app-page">
+      <section className="overflow-hidden rounded-[1.75rem] border border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
+        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:p-8">
+          <div className="screen-intro">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/5 px-2.5 py-1 text-primary">
+              <Badge variant="outline" className="gap-1.5 rounded-full border-primary/20 bg-primary/8 px-3 py-1 text-primary">
                 <Building2 className="h-3.5 w-3.5" />
                 <span className="truncate">{companyName || tt('company.selectCompany', 'Company')}</span>
               </Badge>
-              <Badge variant="outline" className="px-2.5 py-1">
+              <Badge variant="outline" className="rounded-full px-3 py-1">
                 {tt('filters.warehouse.label', 'Warehouse')}: {warehouseId === 'ALL' ? t('filters.warehouse.all') : warehouses.find(w => w.id === warehouseId)?.name || tt('filters.warehouse.label', 'Warehouse')}
               </Badge>
               {windowLoading && (
-                <Badge variant="outline" className="px-2.5 py-1 text-primary">
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-primary">
                   {tt('common.refresh', 'Refreshing')}...
                 </Badge>
               )}
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('dashboard.title')}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h1 className="screen-title text-2xl sm:text-3xl">{t('dashboard.title')}</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
                 {tt('dashboard.subtitle', 'Operational overview for the active company, time window, and warehouse selection. Revenue and margin remain shipment-linked operational indicators during the transition.')}
               </p>
             </div>
           </div>
-        </div>
 
-        <Card className="border-border/80 shadow-sm">
+          <Card className="border-border/70 bg-background/88 shadow-none lg:min-w-[22rem]">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{tt('reports.filters', 'Filters')}</CardTitle>
             <CardDescription>
@@ -721,7 +720,8 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      </section>
 
       {error && (
         <Card className="border-red-200 bg-red-50/70 shadow-sm dark:border-red-500/30 dark:bg-red-500/10">
@@ -731,9 +731,9 @@ export default function Dashboard() {
       )}
 
       <div className="space-y-4">
-        <div className="space-y-1">
+        <div className="screen-intro">
           <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.executiveSection', 'Executive KPIs')}</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="screen-subtitle">
             {tt('dashboard.executiveHelp', 'Primary metrics remain compact, while the supporting text clarifies what drives each number.')}
           </p>
         </div>
@@ -830,9 +830,9 @@ export default function Dashboard() {
       </div>
 
       <div className="space-y-4">
-        <div className="space-y-1">
+        <div className="screen-intro">
           <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.actionSection', 'Action needed')}</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="screen-subtitle">
             {lowStock.length
               ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
               : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.')}
@@ -964,9 +964,9 @@ export default function Dashboard() {
       </div>
 
       <div className="space-y-4">
-        <div className="space-y-1">
+        <div className="screen-intro">
           <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.insightsSection', 'Performance insights')}</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="screen-subtitle">
             {topGM.length
               ? tt('dashboard.insightsHelp', 'Operational revenue is attributed per item using line totals first, then shipment-linked COGS when line detail is missing. This is not a settlement-cleared margin view.')
               : tt('dashboard.insightsEmpty', 'No shipped orders were found in the active window, so the operational margin table is intentionally empty.')}

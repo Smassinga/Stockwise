@@ -506,7 +506,7 @@ export default function Operator() {
   }
 
   const renderSaleSummary = (mobile = false) => (
-    <Card className={mobile ? 'border-border/70 shadow-lg' : 'border-border/70 shadow-sm'}>
+    <Card className={mobile ? 'border-border/70 bg-card/98 shadow-[0_26px_52px_-34px_hsl(var(--foreground)/0.32)]' : 'border-border/70 bg-card/96 shadow-[0_20px_44px_-34px_hsl(var(--foreground)/0.24)]'}>
       <CardHeader className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -560,23 +560,23 @@ export default function Operator() {
           </div>
         ) : null}
 
-        <div className="rounded-2xl border border-border/70 bg-muted/15 p-3 text-xs text-muted-foreground">
+        <div className="rounded-[1.2rem] border border-border/70 bg-muted/15 p-3 text-xs leading-5 text-muted-foreground">
           {copy.pricingHelp}
         </div>
 
-        <div className="space-y-3 min-w-0">
+        <div className="min-w-0 space-y-4">
           {cart.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center">
+            <div className="rounded-[1.35rem] border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center">
               <div className="text-sm font-medium">{copy.noLines}</div>
               <div className="mt-2 text-xs text-muted-foreground">{copy.noLinesHelp}</div>
             </div>
           ) : (
             cart.map((line) => (
-              <div key={line.itemId} className="min-w-0 overflow-hidden rounded-3xl border border-border/70 bg-background/90 p-4 shadow-sm">
+              <div key={line.itemId} className="min-w-0 rounded-[1.6rem] border border-border/70 bg-background/92 p-4 shadow-[0_16px_36px_-32px_hsl(var(--foreground)/0.28)]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="break-words font-medium">{line.name}</div>
-                    <div className="break-words text-xs text-muted-foreground">
+                    <div className="break-words text-xs leading-5 text-muted-foreground">
                       {[line.sku, `${copy.available} ${formatQty(line.availableQty)} ${line.baseUomCode}`]
                         .filter(Boolean)
                         .join(' • ')}
@@ -595,7 +595,7 @@ export default function Operator() {
                 <div className="mt-4 grid gap-3">
                   <div className="space-y-2">
                     <Label>{copy.summaryQty}</Label>
-                    <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border/70 bg-muted/15 p-1">
+                    <div className="flex min-w-0 items-center gap-2 rounded-[1.15rem] border border-border/70 bg-muted/15 p-1">
                       <Button
                         type="button"
                         variant="ghost"
@@ -641,7 +641,7 @@ export default function Operator() {
 
                     <div className="space-y-2 min-w-0">
                       <Label>{copy.lineTotal}</Label>
-                      <div className="rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
+                      <div className="rounded-[1.15rem] border border-border/70 bg-muted/15 px-4 py-3">
                         <div className="text-xs text-muted-foreground">{baseCurrencyCode}</div>
                         <div className="text-base font-semibold">
                           {round2(line.qty * line.unitPrice).toLocaleString(undefined, {
@@ -658,7 +658,7 @@ export default function Operator() {
           )}
         </div>
 
-        <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/15 p-4 sm:grid-cols-3">
+        <div className="grid gap-3 rounded-[1.25rem] border border-border/70 bg-muted/15 p-4 sm:grid-cols-3">
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.summaryItems}</div>
             <div className="mt-1 text-lg font-semibold">{cart.length}</div>
@@ -707,11 +707,11 @@ export default function Operator() {
   )
 
   return (
-    <div className="space-y-6">
-      <Card className="border-border/70 shadow-sm">
+    <div className="app-page">
+      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-[0_24px_54px_-36px_hsl(var(--foreground)/0.24)]">
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-2">
+            <div className="screen-intro max-w-3xl">
               <div className="inline-flex items-center rounded-full border border-primary/15 bg-primary/8 px-3 py-1 text-xs font-medium text-primary">
                 <ShoppingBag className="mr-2 h-3.5 w-3.5" />
                 {copy.title}
@@ -728,12 +728,12 @@ export default function Operator() {
             ) : null}
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-            <div className="rounded-2xl border border-border/70 bg-background/85 p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,0.92fr)_minmax(0,1.16fr)]">
+            <div className="rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
               <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.sourceTitle}</div>
               <div className="mt-1 text-sm text-muted-foreground">{copy.sourceBody}</div>
             </div>
-            <div className="space-y-2 rounded-2xl border border-border/70 bg-background/85 p-4">
+            <div className="space-y-2 rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
               <Label>{copy.warehouse}</Label>
               <Select value={warehouseId} onValueChange={(value) => { setWarehouseId(value); setCart([]) }}>
                 <SelectTrigger className="rounded-2xl">
@@ -748,7 +748,7 @@ export default function Operator() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 rounded-2xl border border-border/70 bg-background/85 p-4">
+            <div className="space-y-2 rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
               <Label>{copy.bin}</Label>
               <Select value={binId} onValueChange={(value) => { setBinId(value); setCart([]) }}>
                 <SelectTrigger className="rounded-2xl">
@@ -777,7 +777,7 @@ export default function Operator() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(460px,0.95fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(520px,0.9fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(470px,0.95fr)] 2xl:grid-cols-[minmax(0,1.08fr)_minmax(540px,0.92fr)]">
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="space-y-2">
             <div className="flex items-center justify-between gap-3">
@@ -804,11 +804,11 @@ export default function Operator() {
                 <div className="mt-2 text-xs text-muted-foreground">{copy.itemsEmptyHelp}</div>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {filteredStockRows.map((row) => {
                   const currentLine = cart.find((line) => line.itemId === row.item.id)
                   return (
-                    <div key={row.item.id} className="rounded-3xl border border-border/70 bg-background/80 p-4 shadow-sm">
+                    <div key={row.item.id} className="rounded-[1.6rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_36px_-32px_hsl(var(--foreground)/0.28)]">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="font-medium">{row.item.name}</div>
@@ -826,13 +826,13 @@ export default function Operator() {
                       </div>
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
+                        <div className="rounded-[1.15rem] border border-border/60 bg-muted/10 p-3">
                           <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{copy.onHand}</div>
                           <div className="mt-1 text-lg font-semibold">
                             {formatQty(row.onHandQty)} {row.baseUomCode}
                           </div>
                         </div>
-                        <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
+                        <div className="rounded-[1.15rem] border border-border/60 bg-muted/10 p-3">
                           <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{copy.defaultPrice}</div>
                           <div className="mt-1 text-lg font-semibold">
                             {round2(row.item.unitPrice ?? 0).toLocaleString(undefined, {
@@ -867,10 +867,10 @@ export default function Operator() {
       </div>
 
       {cart.length > 0 ? (
-        <div className="fixed inset-x-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 xl:hidden">
+        <div className="fixed inset-x-4 bottom-[calc(6.6rem+env(safe-area-inset-bottom))] z-30 xl:hidden">
           <Button
             type="button"
-            className="h-14 w-full rounded-2xl shadow-lg"
+            className="h-14 w-full rounded-[1.35rem] shadow-[0_26px_48px_-30px_hsl(var(--primary)/0.85)]"
             onClick={() => setDrawerOpen(true)}
           >
             <ShoppingBag className="mr-2 h-4 w-4" />
@@ -887,7 +887,7 @@ export default function Operator() {
       ) : null}
 
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DrawerContent className="max-h-[88vh] rounded-t-[28px]">
+        <DrawerContent className="max-h-[90vh] rounded-t-[28px] border border-border/70 bg-background/98">
           <DrawerHeader className="text-left">
             <DrawerTitle>{copy.drawerTitle}</DrawerTitle>
             <DrawerDescription>{copy.drawerBody}</DrawerDescription>
