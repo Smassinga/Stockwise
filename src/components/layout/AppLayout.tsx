@@ -108,11 +108,17 @@ function SearchBar({
   className?: string
 }) {
   return (
-    <form onSubmit={onSubmit} className={cn('relative', className)}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <form
+      onSubmit={onSubmit}
+      className={cn(
+        'group relative flex h-12 items-center overflow-hidden rounded-[1.25rem] border border-border/60 bg-card/76 shadow-[0_22px_40px_-34px_hsl(var(--foreground)/0.28)] transition-[border-color,box-shadow,background-color] focus-within:border-primary/35 focus-within:bg-background/94 focus-within:shadow-[0_26px_46px_-34px_hsl(var(--primary)/0.35)]',
+        className,
+      )}
+    >
+      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/90" />
       <Input
         placeholder={placeholder}
-        className="h-11 rounded-2xl border-border/70 bg-background/88 pl-10 shadow-[0_14px_32px_-30px_hsl(var(--foreground)/0.4)]"
+        className="h-full rounded-none border-0 bg-transparent pl-11 pr-4 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -237,7 +243,7 @@ export function AppLayout({ user, children }: Props) {
 
   const sidebar = useMemo(
     () => (
-      <aside className="hidden md:flex md:w-72 md:flex-col md:border-r md:border-border/80 md:bg-background/75 md:backdrop-blur-xl">
+      <aside className="hidden md:flex md:w-[17.5rem] md:flex-col md:border-r md:border-border/80 md:bg-background/75 md:backdrop-blur-xl xl:w-[18.5rem] 2xl:w-[19rem]">
         <div className="flex h-16 items-center gap-2 border-b border-border/70 px-5">
           <BrandLockup compact subtitle="" />
             <div className="ml-2 shrink-0 overflow-visible">
@@ -245,7 +251,7 @@ export function AppLayout({ user, children }: Props) {
             </div>
         </div>
 
-        <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
+        <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5 xl:px-5">
           {navSections.map((section) => (
             <div key={section.label} className="space-y-1.5">
               <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -284,7 +290,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [displayCompany, displayName, displayRole, logout, navSections, t]
+    [displayCompany, displayName, displayRole, isPlatformAdmin, logout, navSections, t, tt]
   )
 
   const handleSearch = (e: FormEvent) => {
@@ -312,7 +318,7 @@ export function AppLayout({ user, children }: Props) {
 
       {/* Mobile overlay */}
       {open && (
-        <div 
+        <div
           className="fixed inset-0 z-40 bg-slate-950/36 backdrop-blur-sm md:hidden"
           onClick={() => setOpen(false)}
         />
@@ -321,7 +327,7 @@ export function AppLayout({ user, children }: Props) {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-sm flex-col border-r border-border/80 bg-background/96 shadow-[0_24px_60px_-36px_hsl(var(--foreground)/0.4)] backdrop-blur-xl transition-transform duration-300 ease-in-out md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex w-[86vw] max-w-[23rem] flex-col border-r border-border/80 bg-background/96 shadow-[0_24px_60px_-36px_hsl(var(--foreground)/0.4)] backdrop-blur-xl transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -383,11 +389,11 @@ export function AppLayout({ user, children }: Props) {
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/80 bg-background/92 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/82 md:px-6 lg:px-8">
+        <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center gap-3 border-b border-border/80 bg-background/90 px-4 pt-[env(safe-area-inset-top)] shadow-[0_1px_0_hsl(var(--border)/0.65)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/78 md:h-16 md:px-6 md:pt-0 xl:gap-4 xl:px-8 2xl:px-10">
           <Button 
             variant="ghost" 
             size="icon" 
-            className="md:hidden h-9 w-9" 
+            className="h-9 w-9 md:hidden"
             onClick={() => setOpen(true)} 
             aria-label="Open menu"
           >
@@ -395,7 +401,7 @@ export function AppLayout({ user, children }: Props) {
           </Button>
           
           {/* Mobile search form */}
-          <div className="ml-1 flex-1 md:hidden">
+          <div className="ml-1 min-w-0 flex-1 md:hidden">
             <SearchBar
               placeholder={searchPlaceholder}
               value={searchQuery}
@@ -407,7 +413,7 @@ export function AppLayout({ user, children }: Props) {
           {/* Desktop search form */}
           <div className="ml-1 hidden min-w-0 flex-1 md:flex">
             <SearchBar
-              className="w-full max-w-md lg:max-w-lg xl:max-w-xl"
+              className="w-full max-w-[30rem] xl:max-w-[38rem] 2xl:max-w-[42rem]"
               placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={setSearchQuery}
@@ -415,7 +421,7 @@ export function AppLayout({ user, children }: Props) {
             />
           </div>
           
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-2.5">
             <LocaleToggle className="hidden xl:inline-flex" />
             <NotificationCenter />
 
@@ -475,13 +481,13 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-4 md:px-6 md:pb-8 md:pt-6 lg:px-8">
+        <main className="flex-1 px-4 pb-[calc(9.5rem+env(safe-area-inset-bottom))] pt-5 md:px-6 md:pb-10 md:pt-7 xl:px-8 2xl:px-10">
           {children}
         </main>
 
-        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.9rem+env(safe-area-inset-bottom))] pt-3 md:hidden">
-          <div className="mx-auto max-w-xl rounded-[1.75rem] border border-border/80 bg-card/96 p-2 shadow-[0_30px_60px_-34px_hsl(var(--foreground)/0.45)] ring-1 ring-background/80 backdrop-blur-xl">
-          <div className="grid grid-cols-5 gap-1.5">
+        <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-background via-background/88 to-transparent px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 md:hidden">
+          <div className="pointer-events-auto mx-auto max-w-[30rem] rounded-[1.9rem] border border-border/80 bg-card/98 p-2.5 shadow-[0_34px_70px_-34px_hsl(var(--foreground)/0.5)] ring-1 ring-background/75 backdrop-blur-2xl">
+          <div className="grid grid-cols-5 gap-2">
             {mobilePrimaryNav.map((item) => {
               const Icon = item.icon
               const active = isActive(item.to)
@@ -490,7 +496,7 @@ export function AppLayout({ user, children }: Props) {
                   key={item.to}
                   to={item.to}
                   className={cn(
-                    'flex min-h-[4.55rem] flex-col items-center justify-center rounded-[1.2rem] px-2 text-center transition-[background-color,color,box-shadow]',
+                    'flex min-h-[4.75rem] flex-col items-center justify-center rounded-[1.25rem] px-2 text-center transition-[background-color,color,box-shadow]',
                     active
                       ? 'bg-primary text-primary-foreground shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)]'
                       : 'text-foreground/70 hover:bg-accent/45 hover:text-foreground',
@@ -504,7 +510,7 @@ export function AppLayout({ user, children }: Props) {
             <button
               type="button"
               className={cn(
-                'flex min-h-[4.55rem] flex-col items-center justify-center rounded-[1.2rem] px-2 text-center transition-[background-color,color,box-shadow]',
+                'flex min-h-[4.75rem] flex-col items-center justify-center rounded-[1.25rem] px-2 text-center transition-[background-color,color,box-shadow]',
                 mobileShowsMoreActive
                   ? 'bg-primary text-primary-foreground shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)]'
                   : 'text-foreground/70 hover:bg-accent/45 hover:text-foreground',

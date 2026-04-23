@@ -767,7 +767,7 @@ export default function OpeningImport() {
   const previewColumns = activeDefinition.headers
 
   return (
-    <div className="app-page">
+    <div className="app-page app-page--workspace">
       <Card className="overflow-hidden border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
         <CardHeader className="space-y-4">
           <div className="screen-intro max-w-4xl">
@@ -806,7 +806,7 @@ export default function OpeningImport() {
                 <CardDescription>{dataset.body[lang]}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
                   <Button type="button" variant="outline" onClick={() => downloadImportTemplate(dataset.filename, dataset.headers, dataset.sampleRows)}>
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                     {copy.downloadTemplate}
@@ -858,7 +858,7 @@ export default function OpeningImport() {
 
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <CardTitle>{copy.review}</CardTitle>
                     <CardDescription>{preview ? copy.previewRows : copy.noPreview}</CardDescription>

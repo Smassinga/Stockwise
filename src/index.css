@@ -105,11 +105,19 @@
 @layer components {
   .app-page {
     width: 100%;
-    max-width: 100rem;
+    max-width: 108rem;
     margin-inline: auto;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.25rem;
+  }
+
+  .app-page--workspace {
+    max-width: 114rem;
+  }
+
+  .app-page--analytics {
+    max-width: 118rem;
   }
 
   .screen-intro {
@@ -128,7 +136,35 @@
 
   @media (min-width: 768px) {
     .app-page {
+      gap: 1.75rem;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .app-page {
       gap: 2rem;
+    }
+
+    .app-page--workspace {
+      max-width: 118rem;
+    }
+
+    .app-page--analytics {
+      max-width: 124rem;
+    }
+  }
+
+  @media (min-width: 1600px) {
+    .app-page {
+      max-width: 112rem;
+    }
+
+    .app-page--workspace {
+      max-width: 122rem;
+    }
+
+    .app-page--analytics {
+      max-width: 132rem;
     }
   }
 }

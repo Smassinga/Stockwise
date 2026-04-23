@@ -45,9 +45,16 @@ The maintained product surfaces are:
 ## Android-First and Tauri Position
 
 - mobile UX is a general app concern, not a separate product mode
-- the small-screen shell prioritizes a smaller route set and clearer vertical flow
+- the shell now uses adaptive page-width variants instead of one rigid content canvas, so dashboard-style pages and task workspaces can use wider screens more intelligently without losing readable structure
+- the small-screen shell prioritizes a smaller route set, clearer vertical flow, and a persistent bottom navigation dock that stays visually separated from page content
 - Point of Sale and onboarding import are packaged into Tauri builds exactly as they exist on the web app
 - desktop and Android releases must reflect current StockWise branding, route naming, and operator-facing copy
+
+## Notification Direction
+
+- `public.notifications` remains the company-scoped notification feed consumed by the shell
+- notifications should stay high-signal; approval requests, finance issue/post milestones, critical treasury approvals, and company-access events are in scope, while low-value draft churn is not
+- finance lifecycle notifications now fan out from `finance_document_events` instead of duplicating logic inside every frontend page
 
 ## Guardrails
 

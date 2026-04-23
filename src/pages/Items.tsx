@@ -513,12 +513,12 @@ export default function ItemsPage() {
     return labels[code]
   }
 
-  if (loading) return <div className="p-6">{tt('loading', 'Loading...')}</div>
+  if (loading) return <div className="app-page app-page--workspace p-6">{tt('loading', 'Loading...')}</div>
 
   return (
-    <div className="app-page">
+    <div className="app-page app-page--workspace">
       <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
-        <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr,0.8fr] lg:p-8">
+        <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(23rem,0.92fr)] xl:p-8 2xl:grid-cols-[minmax(0,1.14fr)_minmax(27rem,0.86fr)]">
           <div className="space-y-3">
             <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em]">
               {tt('items.eyebrow', 'Master data clarity')}
@@ -567,7 +567,7 @@ export default function ItemsPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.06fr)_minmax(20rem,0.94fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
         <Card className="border-border/70 bg-card shadow-sm">
           <CardHeader className="space-y-2">
             <CardTitle>{tt('items.createTitle', 'Create a clear item master')}</CardTitle>
@@ -804,7 +804,7 @@ export default function ItemsPage() {
               <CardTitle>{tt('items.registerTitle', 'Item register')}</CardTitle>
               <CardDescription>{tt('items.registerHelp', 'Review stock behavior, commercial role, and assembly participation before the item reaches orders, production, or costing.')}</CardDescription>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)] xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tt('items.searchPlaceholder', 'Search by name or SKU')} />
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as 'all' | ItemPrimaryRole)}>
                 <SelectTrigger><SelectValue placeholder={tt('items.filters.role', 'All roles')} /></SelectTrigger>

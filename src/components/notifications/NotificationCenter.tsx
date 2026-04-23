@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, CheckCheck, Loader2, RefreshCw } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { useNavigate } from 'react-router-dom'
 import { supabase, createAuthedChannel } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
@@ -16,12 +17,13 @@ type Notif = {
   createdAt: string
   readAt: string | null
   url?: string | null
+  level: string
 }
 
 type RealtimeStatus = 'off' | 'connecting' | 'on' | 'reconnecting'
 
-const NOTIFICATION_SELECT = 'id,title,body,created_at,read_at,url,user_id,company_id'
-const NOTIFICATION_SELECT_FALLBACK = 'id,title,body,created_at,read_at,url'
+const NOTIFICATION_SELECT = 'id,title,body,created_at,read_at,url,level,user_id,company_id'
+const NOTIFICATION_SELECT_FALLBACK = 'id,title,body,created_at,read_at,url,level'
 const isDev = import.meta.env.DEV
 
 const pick = (obj: AnyRow | null | undefined, variants: string[], fallback?: any) => {
@@ -51,6 +53,7 @@ function mapRow(r: AnyRow): Notif {
     createdAt: String(ts(r) ?? new Date().toISOString()),
     readAt: pick(r, ['read_at', 'readAt'], null) ? String(pick(r, ['read_at', 'readAt'])) : null,
     url: pick(r, ['url', 'action_url', 'href'], null),
+    level: String(pick(r, ['level', 'severity'], 'info') ?? 'info'),
   }
 }
 
@@ -67,6 +70,7 @@ function mapRows(rows: AnyRow[] | null | undefined): Notif[] {
 }
 
 export function NotificationCenter() {
+  const navigate = useNavigate()
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
@@ -88,6 +92,34 @@ export function NotificationCenter() {
   const retryAttemptsRef = useRef(0)
 
   const unreadCount = useMemo(() => rows.filter(r => !r.readAt).length, [rows])
+
+  function formatStamp(value: string) {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value))
+  }
+
+  function levelClasses(level: string) {
+    const normalized = level.toLowerCase()
+    if (normalized === 'warning') {
+      return 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    }
+    if (normalized === 'error') {
+      return 'border-rose-500/35 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+    }
+    return 'border-border/70 bg-muted/35 text-muted-foreground'
+  }
+
+  function openNotification(notification: Notif) {
+    if (!notification.url) return
+    setOpen(false)
+    if (notification.url.startsWith('/')) {
+      navigate(notification.url)
+      return
+    }
+    window.open(notification.url, '_blank', 'noopener,noreferrer')
+  }
 
   useEffect(() => {
     activeUserRef.current = userId
@@ -377,7 +409,7 @@ export function NotificationCenter() {
     <>
       <Button
         ref={btnRef}
-        variant="ghost"
+        variant="outline"
         size="sm"
         data-role="notif-btn"
         aria-label={t('notifications.title')}
@@ -385,11 +417,11 @@ export function NotificationCenter() {
           setOpen(v => !v)
           if (!rows.length) void fetchLatest()
         }}
-        className="relative"
+        className="relative h-10 w-10 rounded-xl border-border/70 bg-background/82 px-0 shadow-[0_12px_24px_-22px_hsl(var(--foreground)/0.24)]"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 py-1 text-[10px] leading-none text-white">
+          <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 py-1 text-[10px] leading-none text-white shadow-[0_10px_22px_-12px_rgba(220,38,38,0.9)]">
             {unreadCount}
           </span>
         )}
@@ -398,12 +430,19 @@ export function NotificationCenter() {
       {open && (
         <div
           data-role="notif-panel"
-          className="fixed right-4 top-16 z-[99999] w-96 max-w-[95vw] rounded-md border bg-popover text-popover-foreground shadow-lg"
+          className="fixed right-4 top-[calc(4.75rem+env(safe-area-inset-top))] z-[99999] w-[26rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[1.6rem] border border-border/75 bg-card/96 text-card-foreground shadow-[0_34px_80px_-38px_hsl(var(--foreground)/0.5)] backdrop-blur-2xl md:right-6 md:top-20 xl:right-8"
           role="dialog"
           aria-label={t('notifications.title')}
         >
-          <div className="flex items-center justify-between border-b px-3 py-2">
-            <div className="text-sm font-medium">{t('notifications.title')}</div>
+          <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold">{t('notifications.title')}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {unreadCount > 0
+                  ? t('notifications.showingLatest', { count: unreadCount })
+                  : t('notifications.emptyHelp')}
+              </div>
+            </div>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={() => void fetchLatest()} title={t('common.refresh')}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -414,34 +453,47 @@ export function NotificationCenter() {
             </div>
           </div>
 
-          <div className="max-h-[60vh] overflow-auto">
+          <div className="max-h-[min(68vh,36rem)] overflow-auto px-2 py-2">
             {rows.length === 0 && (
-              <div className="p-4 text-sm text-muted-foreground">{t('notifications.noNotifications')}</div>
+              <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-center">
+                <div className="text-sm font-medium">{t('notifications.noNotifications')}</div>
+                <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('notifications.emptyHelp')}</div>
+              </div>
             )}
             {rows.map((n) => (
-              <div key={n.id} className="border-b px-3 py-2 last:border-b-0">
+              <div
+                key={n.id}
+                className="rounded-[1.2rem] border border-border/70 bg-background/70 px-3.5 py-3 shadow-[0_12px_24px_-24px_hsl(var(--foreground)/0.28)] transition-colors hover:bg-muted/18"
+              >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{n.title || '(no title)'}</div>
-                    {n.body && <div className="whitespace-pre-wrap text-xs text-muted-foreground">{n.body}</div>}
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      {new Date(n.createdAt).toLocaleString()}
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] ${levelClasses(n.level)}`}>
+                        {n.level}
+                      </span>
+                      {!n.readAt && <span className="inline-flex h-2 w-2 rounded-full bg-primary" />}
                     </div>
+                    <div className="break-words text-sm font-medium leading-5">{n.title || '(no title)'}</div>
+                    {n.body ? <div className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{n.body}</div> : null}
+                    <div className="text-[11px] text-muted-foreground">{formatStamp(n.createdAt)}</div>
                   </div>
-                  {!n.readAt && <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />}
-                </div>
-                {n.url && (
-                  <div className="mt-2">
-                    <a href={n.url} className="text-xs text-primary underline" target="_blank" rel="noreferrer">
+                  {n.url ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 rounded-xl"
+                      onClick={() => openNotification(n)}
+                    >
                       {t('notifications.open')}
-                    </a>
-                  </div>
-                )}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
 
-          <div className="flex items-center justify-between border-t px-3 py-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center justify-between border-t border-border/70 px-4 py-3 text-[11px] text-muted-foreground">
             <span>{t(`notifications.realtime.${realtimeStatus}`)}</span>
             <span>{t('notifications.showingLatest', { count: rows.length })}</span>
           </div>

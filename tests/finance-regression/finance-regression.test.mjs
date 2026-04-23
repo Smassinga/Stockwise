@@ -190,6 +190,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     }
 
     await safeDelete(() => admin.from('cash_transactions').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('notifications').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('finance_document_events').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('vendor_bill_lines').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('sales_invoice_lines').delete().eq('company_id', companyId))
@@ -701,6 +702,31 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(issuedInvoice.document_workflow_status, 'issued')
     assert.equal(issuedInvoice.approval_status, 'approved')
     assert.match(issuedInvoice.internal_reference, /INV/i)
+
+    const { data: invoiceNotifications, error: invoiceNotificationsError } = await ownerClient
+      .from('notifications')
+      .select('title, body, url, level, meta')
+      .eq('company_id', companyId)
+      .eq('url', `/sales-invoices/${salesInvoiceId}`)
+      .order('created_at', { ascending: false })
+    if (invoiceNotificationsError) throw invoiceNotificationsError
+
+    const invoiceApprovalNotification = invoiceNotifications.find(
+      (row) => row.meta?.event_type === 'approval_requested' && row.meta?.source === 'finance_document_event',
+    )
+    const invoiceIssuedNotification = invoiceNotifications.find(
+      (row) => row.meta?.event_type === 'issued' && row.meta?.source === 'finance_document_event',
+    )
+
+    assert.ok(invoiceApprovalNotification, 'Expected a sales-invoice approval-request notification')
+    assert.equal(invoiceApprovalNotification.level, 'warning')
+    assert.match(invoiceApprovalNotification.title, /approval requested: sales invoice/i)
+    assert.match(invoiceApprovalNotification.body, /waiting for approval/i)
+
+    assert.ok(invoiceIssuedNotification, 'Expected a sales-invoice issued notification')
+    assert.equal(invoiceIssuedNotification.level, 'info')
+    assert.match(invoiceIssuedNotification.title, /sales invoice issued/i)
+    assert.match(invoiceIssuedNotification.body, /was issued/i)
   })
 
   await t.test('Purchase Order -> Vendor Bill draft -> approval -> post', async () => {
@@ -737,6 +763,31 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(postedBill.document_workflow_status, 'posted')
     assert.equal(postedBill.approval_status, 'approved')
     assert.ok(postedBill.internal_reference)
+
+    const { data: vendorBillNotifications, error: vendorBillNotificationsError } = await ownerClient
+      .from('notifications')
+      .select('title, body, url, level, meta')
+      .eq('company_id', companyId)
+      .eq('url', `/vendor-bills/${vendorBillId}`)
+      .order('created_at', { ascending: false })
+    if (vendorBillNotificationsError) throw vendorBillNotificationsError
+
+    const vendorBillApprovalNotification = vendorBillNotifications.find(
+      (row) => row.meta?.event_type === 'approval_requested' && row.meta?.source === 'finance_document_event',
+    )
+    const vendorBillPostedNotification = vendorBillNotifications.find(
+      (row) => row.meta?.event_type === 'posted' && row.meta?.source === 'finance_document_event',
+    )
+
+    assert.ok(vendorBillApprovalNotification, 'Expected a vendor-bill approval-request notification')
+    assert.equal(vendorBillApprovalNotification.level, 'warning')
+    assert.match(vendorBillApprovalNotification.title, /approval requested: vendor bill/i)
+    assert.match(vendorBillApprovalNotification.body, /waiting for approval/i)
+
+    assert.ok(vendorBillPostedNotification, 'Expected a vendor-bill posted notification')
+    assert.equal(vendorBillPostedNotification.level, 'info')
+    assert.match(vendorBillPostedNotification.title, /vendor bill posted/i)
+    assert.match(vendorBillPostedNotification.body, /accounts payable/i)
   })
 
   await t.test('Settlements, bank/cash continuity, and reconciliation bridges', async () => {

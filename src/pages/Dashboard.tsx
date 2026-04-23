@@ -544,7 +544,7 @@ export default function Dashboard() {
 
   if (loading || (windowLoading && !sos.length && !shipmentsWin.length)) {
     return (
-      <div className="space-y-6">
+      <div className="app-page app-page--analytics space-y-6">
         <h1 className="text-3xl font-bold">{t('dashboard.title')}</h1>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
@@ -575,9 +575,9 @@ export default function Dashboard() {
   const monthName = (m: number) => new Date(2000, m, 1).toLocaleString(lang, { month: 'long' })
 
   return (
-    <div className="app-page">
+    <div className="app-page app-page--analytics">
       <section className="overflow-hidden rounded-[1.75rem] border border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
-        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:p-8">
+        <div className="grid gap-6 p-5 sm:p-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(22rem,0.82fr)] xl:items-start xl:p-8 2xl:grid-cols-[minmax(0,1.24fr)_minmax(24rem,0.76fr)]">
           <div className="screen-intro">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="gap-1.5 rounded-full border-primary/20 bg-primary/8 px-3 py-1 text-primary">
@@ -601,7 +601,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <Card className="border-border/70 bg-background/88 shadow-none lg:min-w-[22rem]">
+          <Card className="border-border/70 bg-background/88 shadow-none">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{tt('reports.filters', 'Filters')}</CardTitle>
             <CardDescription>
@@ -839,7 +839,7 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)] 2xl:grid-cols-[minmax(0,1.18fr)_minmax(22rem,0.82fr)]">
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">

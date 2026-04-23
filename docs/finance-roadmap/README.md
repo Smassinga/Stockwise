@@ -210,6 +210,13 @@ Phase 6 is deliberately split into three separate workstreams. They share some c
   - opening stock now commits through a server-authoritative batch import path so the receive audit and resulting stock bucket stay aligned for new go-live items
   - the scope is opening/master data only; historical SO/PO/SI/VB migration remains intentionally out of scope
 
+### Post-Phase 6 adaptive shell and notification follow-up
+
+- the authenticated shell now uses wider adaptive page-width rules so dashboard and workspace surfaces stop looking boxed on larger screens while still staying readable on laptop-sized viewports
+- the global shell search field now uses the same surface language as the rest of StockWise instead of reading like an isolated dark slab
+- compact Android/handheld layouts now preserve stronger bottom-navigation separation and safer bottom spacing above the dock
+- notifications now cover high-signal finance document milestones from `finance_document_events`, specifically approval requests and issue/post confirmations for sales invoices and vendor bills, without promoting low-value draft noise
+
 ## E. Cross-Phase Tracked Items
 
 ### Due reminders anchor rule

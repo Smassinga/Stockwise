@@ -707,7 +707,7 @@ export default function Operator() {
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page app-page--workspace">
       <Card className="overflow-hidden border-border/70 bg-card/96 shadow-[0_24px_54px_-36px_hsl(var(--foreground)/0.24)]">
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -728,7 +728,7 @@ export default function Operator() {
             ) : null}
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,0.92fr)_minmax(0,1.16fr)]">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.15fr)]">
             <div className="rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
               <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.sourceTitle}</div>
               <div className="mt-1 text-sm text-muted-foreground">{copy.sourceBody}</div>
@@ -777,7 +777,7 @@ export default function Operator() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(470px,0.95fr)] 2xl:grid-cols-[minmax(0,1.08fr)_minmax(540px,0.92fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(25rem,0.95fr)] 2xl:grid-cols-[minmax(0,1.08fr)_minmax(29rem,0.92fr)]">
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="space-y-2">
             <div className="flex items-center justify-between gap-3">
@@ -804,7 +804,7 @@ export default function Operator() {
                 <div className="mt-2 text-xs text-muted-foreground">{copy.itemsEmptyHelp}</div>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 {filteredStockRows.map((row) => {
                   const currentLine = cart.find((line) => line.itemId === row.item.id)
                   return (
@@ -867,7 +867,7 @@ export default function Operator() {
       </div>
 
       {cart.length > 0 ? (
-        <div className="fixed inset-x-4 bottom-[calc(6.6rem+env(safe-area-inset-bottom))] z-30 xl:hidden">
+        <div className="fixed inset-x-4 bottom-[calc(7.2rem+env(safe-area-inset-bottom))] z-30 sm:inset-x-6 xl:hidden">
           <Button
             type="button"
             className="h-14 w-full rounded-[1.35rem] shadow-[0_26px_48px_-30px_hsl(var(--primary)/0.85)]"
