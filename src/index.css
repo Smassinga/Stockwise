@@ -42,6 +42,12 @@
     --sidebar-ring: 221 83% 53%;
     --sidebar-background: 0 0% 100%;
     --radius: 0.85rem;
+    --app-safe-top: env(safe-area-inset-top);
+    --app-safe-right: env(safe-area-inset-right);
+    --app-safe-bottom: env(safe-area-inset-bottom);
+    --app-safe-left: env(safe-area-inset-left);
+    --app-shell-mobile-header: 4rem;
+    --app-shell-mobile-dock: 7.5rem;
   }
 
   .dark {
@@ -86,6 +92,7 @@
   body,
   #root {
     min-height: 100%;
+    min-height: 100dvh;
   }
 
   * {
@@ -99,6 +106,7 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 }
 
@@ -134,9 +142,21 @@
     @apply text-sm leading-6 text-muted-foreground;
   }
 
+  .mobile-filter-stack {
+    @apply grid gap-3;
+  }
+
+  .mobile-register-list {
+    @apply flex flex-col gap-3;
+  }
+
   @media (min-width: 768px) {
     .app-page {
       gap: 1.75rem;
+    }
+
+    .mobile-filter-stack {
+      @apply grid-cols-2;
     }
   }
 

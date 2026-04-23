@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { useIsMobile } from '../hooks/use-mobile'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
 
@@ -71,6 +72,7 @@ function formatQuantity(value: number) {
 export function StockLevels() {
   const { companyId } = useOrg()
   const { t } = useI18n()
+  const isMobile = useIsMobile()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
 
@@ -284,7 +286,7 @@ export function StockLevels() {
 
   if (!companyId) {
     return (
-      <div className="flex h-64 items-center justify-center">
+      <div className="app-page app-page--workspace flex h-64 items-center justify-center">
         <p className="text-muted-foreground">{t('org.noCompany') ?? ''}</p>
       </div>
     )
@@ -292,7 +294,7 @@ export function StockLevels() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="app-page app-page--workspace space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
         </div>
@@ -311,7 +313,7 @@ export function StockLevels() {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="app-page app-page--workspace p-6">
         <h2 className="mb-2 text-xl font-bold">{t('errors.title') ?? 'Error'}</h2>
         <p className="mb-4 text-muted-foreground">{error}</p>
         <Button onClick={() => void loadData()}>{t('common.retry') ?? 'Retry'}</Button>
@@ -320,7 +322,7 @@ export function StockLevels() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="app-page app-page--workspace space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t('nav.stockLevels')}</h1>
@@ -391,7 +393,7 @@ export function StockLevels() {
             {tt('stock.filtersHelp', 'Narrow the valuation view by item, warehouse, and risk priority without losing the current company context.')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-[1.3fr_repeat(3,minmax(0,1fr))_auto]">
+        <CardContent className="mobile-filter-stack grid gap-3 lg:grid-cols-[1.3fr_repeat(3,minmax(0,1fr))_auto]">
           <div>
             <Label htmlFor="search">{t('common.search')}</Label>
             <div className="relative">
@@ -485,7 +487,65 @@ export function StockLevels() {
           ) : null}
         </CardHeader>
         <CardContent>
-          {rows.length ? (
+          {rows.length ? isMobile ? (
+            <div className="mobile-register-list space-y-3">
+              {rows.map((row) => {
+                const badgeClass =
+                  row.status === 'out'
+                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                    : row.status === 'low'
+                      ? 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-200'
+                      : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+
+                return (
+                  <div key={row.id} className="rounded-2xl border border-border/70 bg-background/92 p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{row.itemName}</div>
+                        <div className="truncate text-xs text-muted-foreground">{row.sku || t('common.dash')}</div>
+                      </div>
+                      <Badge variant="outline" className={badgeClass}>
+                        {statusLabel(row.status)}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-3 rounded-2xl border border-border/60 bg-muted/20 p-3">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('warehouses.warehouse', 'Warehouse')}</div>
+                      <div className="mt-1 text-sm font-medium">{row.warehouseName}</div>
+                      <div className="text-xs text-muted-foreground">{row.warehouseCode || t('common.dash')}</div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('table.onHand', 'On hand')}</div>
+                        <div className="mt-1 text-sm font-semibold">{formatQuantity(row.onHandQty)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('table.minStock', 'Min stock')}</div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {row.minStock > 0 ? formatQuantity(row.minStock) : t('common.dash')}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('stock.avgCost')}</div>
+                        <div className="mt-1 text-sm font-semibold">{formatCurrency(row.avgCost)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('stock.totalValue')}</div>
+                        <div className="mt-1 text-sm font-semibold">{formatCurrency(row.totalValue)}</div>
+                      </div>
+                    </div>
+
+                    {row.shortageQty > 0 ? (
+                      <div className="mt-3 text-sm text-muted-foreground">
+                        {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] text-sm">
                 <thead>

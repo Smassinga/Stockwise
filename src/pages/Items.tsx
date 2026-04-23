@@ -5,6 +5,7 @@ import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
+import { useIsMobile } from '../hooks/use-mobile'
 import {
   deriveItemProfileWarnings,
   profileFromRole,
@@ -96,6 +97,7 @@ export default function ItemsPage() {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const { myRole, companyId } = useOrg()
+  const isMobile = useIsMobile()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
 
   const [loading, setLoading] = useState(true)
@@ -804,7 +806,7 @@ export default function ItemsPage() {
               <CardTitle>{tt('items.registerTitle', 'Item register')}</CardTitle>
               <CardDescription>{tt('items.registerHelp', 'Review stock behavior, commercial role, and assembly participation before the item reaches orders, production, or costing.')}</CardDescription>
             </div>
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)] xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
+            <div className="mobile-filter-stack grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)] xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tt('items.searchPlaceholder', 'Search by name or SKU')} />
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as 'all' | ItemPrimaryRole)}>
                 <SelectTrigger><SelectValue placeholder={tt('items.filters.role', 'All roles')} /></SelectTrigger>
@@ -836,6 +838,84 @@ export default function ItemsPage() {
                   ? tt('items.emptyBody', 'Start with a resale item, raw material, or assembled product so the rest of the workflow has a clean master-data base.')
                   : tt('items.emptyFiltered', 'Clear the filters or search term to see more items.')}
               </p>
+            </div>
+          ) : isMobile ? (
+            <div className="mobile-register-list space-y-3">
+              {filteredItems.map((item) => {
+                const warnings = deriveItemProfileWarnings(item)
+                const baseUom = uomById.get(item.baseUomId)
+                return (
+                  <div key={item.id} className="rounded-2xl border border-border/70 bg-background/92 p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-2">
+                        <div>
+                          <div className="truncate font-medium">{item.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">{item.sku}</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge>{roleLabel(item.primaryRole)}</Badge>
+                          <Badge variant={item.trackInventory ? 'outline' : 'secondary'}>
+                            {item.trackInventory ? tt('items.preview.stocked', 'Stocked') : tt('items.preview.nonStock', 'Non-stock')}
+                          </Badge>
+                          {item.canSell ? <Badge variant="outline">{tt('items.preview.sold', 'Sold')}</Badge> : null}
+                          {item.isAssembled ? <Badge variant="secondary">{tt('items.preview.assembled', 'Assembled')}</Badge> : null}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.unitPrice', 'Default sell price')}</div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.baseUom', 'Base UoM')}</div>
+                        <div className="mt-1 text-sm">{baseUom ? `${baseUom.code} — ${baseUom.name}` : item.baseUomId}</div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.onHand', 'On hand')}</div>
+                          <div className="mt-1 text-sm font-semibold">{formatQty(item.onHandQty)}</div>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.available', 'Available')}</div>
+                          <div className="mt-1 text-sm font-semibold">{formatQty(item.availableQty)}</div>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.fields.minStock', 'Minimum stock')}</div>
+                          <div className="mt-1 text-sm font-semibold">{formatStockThreshold(item.minStock)}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.readiness', 'Readiness')}</div>
+                      {warnings.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {warnings.map((warning) => (
+                            <Badge key={warning} variant={warningVariant(warning)} className="max-w-full whitespace-normal">
+                              {warningLabel(warning)}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">{tt('items.ready', 'Ready')}</span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-2">
+                      <Button variant="outline" size="sm" onClick={() => openEditItem(item)} disabled={!can.updateItem(role)}>
+                        {tt('items.actions.minStock', 'Edit minimum')}
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} disabled={!can.deleteItem(role)}>
+                        {tt('common.delete', 'Delete')}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ) : (
             <Table>

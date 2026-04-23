@@ -47,6 +47,9 @@ The maintained product surfaces are:
 - mobile UX is a general app concern, not a separate product mode
 - the shell now uses adaptive page-width variants instead of one rigid content canvas, so dashboard-style pages and task workspaces can use wider screens more intelligently without losing readable structure
 - the small-screen shell prioritizes a smaller route set, clearer vertical flow, and a persistent bottom navigation dock that stays visually separated from page content
+- the Android runtime now fits the system window area and uses safe-area-aware top/bottom spacing instead of allowing app chrome to collide with the status bar
+- the mobile drawer has its own scroll body so lower navigation entries remain reachable on shorter Android screens
+- compact review-heavy pages such as Items, Movements, and Stock Levels should expose card/register views before falling back to horizontal tables
 - Point of Sale and onboarding import are packaged into Tauri builds exactly as they exist on the web app
 - desktop and Android releases must reflect current StockWise branding, route naming, and operator-facing copy
 

@@ -430,7 +430,7 @@ export function NotificationCenter() {
       {open && (
         <div
           data-role="notif-panel"
-          className="fixed right-4 top-[calc(4.75rem+env(safe-area-inset-top))] z-[99999] w-[26rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[1.6rem] border border-border/75 bg-card/96 text-card-foreground shadow-[0_34px_80px_-38px_hsl(var(--foreground)/0.5)] backdrop-blur-2xl md:right-6 md:top-20 xl:right-8"
+          className="fixed right-[max(1rem,var(--app-safe-right))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.55rem)] z-[99999] w-[26rem] max-w-[calc(100vw-1.5rem-var(--app-safe-left)-var(--app-safe-right))] overflow-hidden rounded-[1.6rem] border border-border/75 bg-card/96 text-card-foreground shadow-[0_34px_80px_-38px_hsl(var(--foreground)/0.5)] backdrop-blur-2xl md:right-6 md:top-20 xl:right-8"
           role="dialog"
           aria-label={t('notifications.title')}
         >

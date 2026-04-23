@@ -187,6 +187,19 @@ export function AppLayout({ user, children }: Props) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [open])
+
+  useEffect(() => {
+    setOpen(false)
+  }, [location.pathname])
+
   const navSections = useMemo<NavSection[]>(
     () => {
       const sectionMap = new Map([
@@ -246,9 +259,9 @@ export function AppLayout({ user, children }: Props) {
       <aside className="hidden md:flex md:w-[17.5rem] md:flex-col md:border-r md:border-border/80 md:bg-background/75 md:backdrop-blur-xl xl:w-[18.5rem] 2xl:w-[19rem]">
         <div className="flex h-16 items-center gap-2 border-b border-border/70 px-5">
           <BrandLockup compact subtitle="" />
-            <div className="ml-2 shrink-0 overflow-visible">
-              <ThemeToggle />
-            </div>
+          <div className="ml-2 shrink-0 overflow-visible">
+            <ThemeToggle />
+          </div>
         </div>
 
         <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5 xl:px-5">
@@ -266,18 +279,18 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
 
-        <div className="border-t border-border/70 space-y-3 p-4">
+        <div className="space-y-3 border-t border-border/70 p-4">
           <CompanySwitcher className="mb-3" />
-            <div className="rounded-[1.35rem] border border-border/70 bg-card/90 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
-              <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
-              <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
-              <div className="text-xs text-muted-foreground">{displayRole}</div>
-              {isPlatformAdmin ? (
-                <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
-                  {tt('platform.adminBadge', 'Platform admin')}
-                </div>
-              ) : null}
-            </div>
+          <div className="rounded-[1.35rem] border border-border/70 bg-card/90 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
+            <div className="truncate text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{displayCompany}</div>
+            <div className="mt-1 truncate text-sm font-medium">{displayName}</div>
+            <div className="text-xs text-muted-foreground">{displayRole}</div>
+            {isPlatformAdmin ? (
+              <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
+                {tt('platform.adminBadge', 'Platform admin')}
+              </div>
+            ) : null}
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -313,7 +326,7 @@ export function AppLayout({ user, children }: Props) {
   )
 
   return (
-    <div className="flex min-h-screen bg-muted/[0.08]">
+    <div className="flex min-h-[100dvh] overflow-x-clip bg-muted/[0.08]">
       {sidebar}
 
       {/* Mobile overlay */}
@@ -327,11 +340,11 @@ export function AppLayout({ user, children }: Props) {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[86vw] max-w-[23rem] flex-col border-r border-border/80 bg-background/96 shadow-[0_24px_60px_-36px_hsl(var(--foreground)/0.4)] backdrop-blur-xl transition-transform duration-300 ease-in-out md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex h-[100dvh] max-h-[100dvh] w-[88vw] max-w-[24rem] flex-col overflow-hidden border-r border-border/80 bg-background/97 pb-[var(--app-safe-bottom)] pt-[var(--app-safe-top)] shadow-[0_24px_60px_-36px_hsl(var(--foreground)/0.4)] backdrop-blur-xl transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-16 items-center justify-between px-5">
+        <div className="flex h-16 shrink-0 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <BrandLockup compact subtitle="" />
             <div className="ml-2 shrink-0 overflow-visible">
@@ -348,27 +361,28 @@ export function AppLayout({ user, children }: Props) {
             <X className="h-5 w-5" />
           </Button>
         </div>
-        <div className="px-4 pb-3">
-          <CompanySwitcher />
-        </div>
-        <nav className="space-y-6 overflow-y-auto px-4 py-2">
-          {navSections.map((section) => (
-            <div key={section.label} className="space-y-1.5">
-              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                {section.label}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+          <div className="pb-3">
+            <CompanySwitcher />
+          </div>
+          <nav className="space-y-6 py-2">
+            {navSections.map((section) => (
+              <div key={section.label} className="space-y-1.5">
+                <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  {section.label}
+                </div>
+                <div className="space-y-1">
+                  {section.items.map((item) => (
+                    <NavLink key={item.to} item={item} />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1">
-                {section.items.map((item) => (
-                  <NavLink key={item.to} item={item} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </nav>
-          <div className="mt-auto border-t border-border/70 p-4">
+            ))}
+          </nav>
+          <div className="mt-4 border-t border-border/70 pt-4">
             <div className="rounded-[1.35rem] border border-border/70 bg-card/92 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
-              <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground truncate">{displayCompany}</div>
-              <div className="mt-1 text-sm font-medium truncate">{displayName}</div>
+              <div className="truncate text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{displayCompany}</div>
+              <div className="mt-1 truncate text-sm font-medium">{displayName}</div>
               <div className="text-xs text-muted-foreground">{displayRole}</div>
               {isPlatformAdmin ? (
                 <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
@@ -376,24 +390,25 @@ export function AppLayout({ user, children }: Props) {
                 </div>
               ) : null}
             </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 w-full justify-start"
-            onClick={() => { setOpen(false); logout?.() }}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            {t('common.signOut')}
-          </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2 w-full justify-start"
+              onClick={() => { setOpen(false); logout?.() }}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {t('common.signOut')}
+            </Button>
+          </div>
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center gap-3 border-b border-border/80 bg-background/90 px-4 pt-[env(safe-area-inset-top)] shadow-[0_1px_0_hsl(var(--border)/0.65)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/78 md:h-16 md:px-6 md:pt-0 xl:gap-4 xl:px-8 2xl:px-10">
+      <div className="flex min-h-[100dvh] min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-[calc(var(--app-shell-mobile-header)+var(--app-safe-top))] items-center gap-2.5 border-b border-border/80 bg-background/92 pl-[max(1rem,var(--app-safe-left))] pr-[max(1rem,var(--app-safe-right))] pt-[var(--app-safe-top)] shadow-[0_1px_0_hsl(var(--border)/0.65)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/78 md:h-16 md:gap-3 md:px-6 md:pt-0 xl:gap-4 xl:px-8 2xl:px-10">
           <Button 
             variant="ghost" 
             size="icon" 
-            className="h-9 w-9 md:hidden"
+            className="h-10 w-10 shrink-0 md:hidden"
             onClick={() => setOpen(true)} 
             aria-label="Open menu"
           >
@@ -401,12 +416,13 @@ export function AppLayout({ user, children }: Props) {
           </Button>
           
           {/* Mobile search form */}
-          <div className="ml-1 min-w-0 flex-1 md:hidden">
+          <div className="min-w-0 flex-1 md:hidden">
             <SearchBar
               placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={setSearchQuery}
               onSubmit={handleSearch}
+              className="h-11"
             />
           </div>
           
@@ -481,11 +497,11 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 pb-[calc(9.5rem+env(safe-area-inset-bottom))] pt-5 md:px-6 md:pb-10 md:pt-7 xl:px-8 2xl:px-10">
+        <main className="min-w-0 flex-1 overflow-x-hidden pl-[max(1rem,var(--app-safe-left))] pr-[max(1rem,var(--app-safe-right))] pb-[calc(var(--app-shell-mobile-dock)+var(--app-safe-bottom)+1.25rem)] pt-4 md:px-6 md:pb-10 md:pt-7 xl:px-8 2xl:px-10">
           {children}
         </main>
 
-        <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-background via-background/88 to-transparent px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 md:hidden">
+        <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-background via-background/90 to-transparent pl-[max(0.75rem,var(--app-safe-left))] pr-[max(0.75rem,var(--app-safe-right))] pb-[calc(0.9rem+var(--app-safe-bottom))] pt-3 md:hidden">
           <div className="pointer-events-auto mx-auto max-w-[30rem] rounded-[1.9rem] border border-border/80 bg-card/98 p-2.5 shadow-[0_34px_70px_-34px_hsl(var(--foreground)/0.5)] ring-1 ring-background/75 backdrop-blur-2xl">
           <div className="grid grid-cols-5 gap-2">
             {mobilePrimaryNav.map((item) => {

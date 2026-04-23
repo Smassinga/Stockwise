@@ -20,6 +20,8 @@ import { useI18n } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
 import { useOrg } from '../hooks/useOrg'
+import { useIsMobile } from '../hooks/use-mobile'
+import { StockMovementMobileBinContents, StockMovementMobileLog } from '../components/stock/StockMovementsMobile'
 
 // ---- Local type shim so we can pass notes even if lib/sales isn’t updated yet.
 type CashSaleWithCogsArgsWithNotes =
@@ -98,6 +100,7 @@ export default function StockMovements() {
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
   const { companyId, companyName } = useOrg()
+  const isMobile = useIsMobile()
 
   // Master data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -1029,7 +1032,7 @@ export default function StockMovements() {
 
   // ------------------------------- UI ----------------------------------------
   return (
-    <div className="space-y-6">
+    <div className="app-page app-page--workspace space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
@@ -1050,7 +1053,7 @@ export default function StockMovements() {
         )}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {movementTypeCards.map(card => (
           <button
             key={card.type}
@@ -1077,7 +1080,7 @@ export default function StockMovements() {
       </div>
 
       <Card className="border-border/80 shadow-sm">
-        <CardContent className="grid gap-3 p-4 md:grid-cols-4">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.currentAction', 'Current action')}</div>
             <div className="mt-2 font-medium">{movementTypeCards.find(card => card.type === movementType)?.title}</div>
@@ -1106,8 +1109,8 @@ export default function StockMovements() {
       </Card>
 
       {/* Movement type + warehouses */}
-      <div className="grid grid-cols-12 gap-3 items-end">
-        <div className={`col-span-12 ${showFromWH && showToWH ? 'md:col-span-3' : 'md:col-span-4'}`}>
+      <div className="mobile-filter-stack grid gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:items-end">
+        <div>
           <Label>{tt('movements.movementType', 'Movement Type')}</Label>
           <Select value={movementType} onValueChange={(v: MovementType) => {
             setMovementType(v)
@@ -1126,7 +1129,7 @@ export default function StockMovements() {
         </div>
 
         {showFromWH && (
-          <div className="col-span-12 md:col-span-4">
+          <div>
             <Label>{tt('orders.fromWarehouse', 'From Warehouse')}</Label>
             <Select value={warehouseFromId} onValueChange={setWarehouseFromId}>
               <SelectTrigger><SelectValue placeholder={tt('orders.selectSourceWh', 'Select source warehouse')} /></SelectTrigger>
@@ -1138,7 +1141,7 @@ export default function StockMovements() {
         )}
 
         {showToWH && (
-          <div className="col-span-12 md:col-span-4">
+          <div>
             <Label>{tt('orders.toWarehouse', 'To Warehouse')}</Label>
             <Select value={warehouseToId} onValueChange={setWarehouseToId}>
               <SelectTrigger><SelectValue placeholder={tt('orders.selectDestWh', 'Select destination warehouse')} /></SelectTrigger>
@@ -1150,11 +1153,11 @@ export default function StockMovements() {
         )}
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(18rem,0.82fr)_minmax(0,1.18fr)]">
         {/* Bins */}
-        <Card className="col-span-12 md:col-span-4">
+        <Card>
           <CardHeader><CardTitle>{tt('movements.title.bins', 'Bins')}</CardTitle></CardHeader>
-          <CardContent className="space-y-2 max-h-[60vh] overflow-auto">
+          <CardContent className="space-y-3 max-h-[45vh] overflow-y-auto overscroll-contain md:max-h-[56vh]">
             {showFromWH && (
               <>
                 <div className="text-xs text-muted-foreground mb-1">
@@ -1166,7 +1169,7 @@ export default function StockMovements() {
                     <Button
                       key={b.id}
                       variant={fromBin === b.id ? 'default' : 'outline'}
-                      className="w-full justify-start"
+                      className="min-h-11 w-full justify-start whitespace-normal text-left"
                       onClick={() => {
                         setFromBin(b.id)
                         if (movementType !== 'transfer') setToBin('')
@@ -1190,7 +1193,7 @@ export default function StockMovements() {
                     <Button
                       key={b.id}
                       variant={toBin === b.id ? 'default' : 'outline'}
-                      className="w-full justify-start"
+                      className="min-h-11 w-full justify-start whitespace-normal text-left"
                       onClick={() => {
                         setToBin(b.id)
                         if (movementType !== 'transfer') setFromBin('')
@@ -1206,64 +1209,70 @@ export default function StockMovements() {
         </Card>
 
         {/* Bin contents (grouped by item base UoM family) */}
-        <Card className="col-span-12 md:col-span-8">
+        <Card>
           <CardHeader><CardTitle>{tt('movements.title.binContents', 'Bin Contents')}</CardTitle></CardHeader>
 
-          <CardContent className="overflow-x-auto">
-            {!(fromBin || toBin) ? (
-              <div className="text-sm text-muted-foreground">
-                {tt('movements.pickBinToSee', 'Pick a bin to see contents')}
-              </div>
+          <CardContent>
+            {isMobile ? (
+              <StockMovementMobileBinContents
+                hasSelection={Boolean(fromBin || toBin)}
+                groups={binContentGroups}
+                tt={tt}
+                formatValue={fmtAcct}
+              />
             ) : (
-              <table className="w-full table-fixed text-sm">
-                <colgroup>
-                  <col className="w-[48%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[17%]" />
-                  <col className="w-[17%]" />
-                </colgroup>
+              <div className="overflow-x-auto rounded-xl">
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[48%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[17%]" />
+                  </colgroup>
 
-                <thead>
-                  <tr className="text-left border-b">
-                    <th className="py-2 pr-2">{tt('table.item', 'Item')}</th>
-                    <th className="py-2 pr-2">{tt('table.sku', 'SKU')}</th>
-                    <th className="py-2 pr-2 text-right">{tt('movements.onHandBase', 'On Hand (base)')}</th>
-                    <th className="py-2 pr-2 text-right">{tt('movements.avgCost', 'Avg Cost')}</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {binContentGroups.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-4 text-muted-foreground">
-                        {tt('movements.emptyBin', 'Empty bin')}
-                      </td>
+                  <thead>
+                    <tr className="text-left border-b">
+                      <th className="py-2 pr-2">{tt('table.item', 'Item')}</th>
+                      <th className="py-2 pr-2">{tt('table.sku', 'SKU')}</th>
+                      <th className="py-2 pr-2 text-right">{tt('movements.onHandBase', 'On Hand (base)')}</th>
+                      <th className="py-2 pr-2 text-right">{tt('movements.avgCost', 'Avg Cost')}</th>
                     </tr>
-                  ) : (
-                    binContentGroups.map(group => (
-                      <Fragment key={group.key}>
-                        <tr className="bg-muted/40">
-                          <td colSpan={4} className="py-1 px-2 text-[11px] font-semibold uppercase">
-                            {group.label} — {tt('movements.total', 'Total')}: {fmtAcct(group.totalQty)}
-                          </td>
-                        </tr>
+                  </thead>
 
-                        {group.rows.map(row => (
-                          <tr key={row.item.id} className="border-b">
-                            <td className="py-2 pr-2 truncate">{row.item.name}</td>
-                            <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
-                            <td className="py-2 pr-2 text-right">{fmtAcct(row.onHandQty)}</td>
-                            <td className="py-2 pr-2 text-right">{fmtAcct(num(row.avgCost, 0))}</td>
+                  <tbody>
+                    {binContentGroups.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-muted-foreground">
+                          {tt('movements.emptyBin', 'Empty bin')}
+                        </td>
+                      </tr>
+                    ) : (
+                      binContentGroups.map(group => (
+                        <Fragment key={group.key}>
+                          <tr className="bg-muted/40">
+                            <td colSpan={4} className="py-1 px-2 text-[11px] font-semibold uppercase">
+                              {group.label} - {tt('movements.total', 'Total')}: {fmtAcct(group.totalQty)}
+                            </td>
                           </tr>
-                        ))}
-                      </Fragment>
-                    ))
-                  )}
-                </tbody>
-              </table>
+
+                          {group.rows.map(row => (
+                            <tr key={row.item.id} className="border-b">
+                              <td className="py-2 pr-2 truncate">{row.item.name}</td>
+                              <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
+                              <td className="py-2 pr-2 text-right">{fmtAcct(row.onHandQty)}</td>
+                              <td className="py-2 pr-2 text-right">{fmtAcct(num(row.avgCost, 0))}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>
+
       </div>
 
       {/* Movement form */}
@@ -1275,7 +1284,7 @@ export default function StockMovements() {
           {movementType === 'adjust' && tt('movements.card.adjust', 'Adjust On-hand')}
         </CardTitle></CardHeader>
         <CardContent className="grid gap-3">
-          <div className="grid md:grid-cols-6 gap-3">
+          <div className="mobile-filter-stack grid gap-3 md:grid-cols-6">
             {movementType !== 'receive' && movementType !== 'adjust' && (
               <div>
                 <Label>{tt('orders.fromBin', 'From Bin')}</Label>
@@ -1397,7 +1406,7 @@ export default function StockMovements() {
           </div>
 
           {/* Reference (SO/PO/Adjust/etc.) */}
-          <div className="grid md:grid-cols-6 gap-3">
+          <div className="mobile-filter-stack grid gap-3 md:grid-cols-6">
             <div>
               <Label>{tt('movements.refType', 'Ref Type')}</Label>
               <Select value={refType} onValueChange={(v: RefType) => setRefType(v)}>
@@ -1464,7 +1473,7 @@ export default function StockMovements() {
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={submit}>
+            <Button onClick={submit} className="w-full sm:w-auto">
               {movementType === 'receive'  && tt('movements.btn.receive',  'Receive')}
               {movementType === 'issue'    && tt('movements.btn.issue',    'Issue')}
               {movementType === 'transfer' && tt('movements.btn.transfer', 'Transfer')}
@@ -1479,7 +1488,7 @@ export default function StockMovements() {
           <CardTitle>{tt('movements.logTitle', 'Recent movement log')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="mobile-filter-stack grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <div>
               <Label>{tt('filters.from', 'From')}</Label>
               <Input type="date" value={movementDateFrom} onChange={e => setMovementDateFrom(e.target.value)} />
@@ -1523,7 +1532,7 @@ export default function StockMovements() {
                 <SelectContent>
                   <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
                   {items.map(item => (
-                    <SelectItem key={item.id} value={item.id}>{item.name}{item.sku ? ` (${item.sku})` : ''}</SelectItem>
+                    <SelectItem key={item.id} value={item.id}>{item.name}{item.sku ? ' (' + item.sku + ')' : ''}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1547,98 +1556,115 @@ export default function StockMovements() {
             <Input value={movementSearch} onChange={e => setMovementSearch(e.target.value)} placeholder={tt('movements.searchPlaceholder', 'Search by item, note, warehouse, or reference')} />
           </div>
 
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[960px] text-sm">
-              <thead className="bg-muted/40">
-                <tr className="border-b text-left">
-                  <th className="py-2 px-3">{tt('table.date', 'Date')}</th>
-                  <th className="py-2 px-3">{tt('table.type', 'Type')}</th>
-                  <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
-                  <th className="py-2 px-3">{tt('movements.route', 'Route')}</th>
-                  <th className="py-2 px-3 text-right">{tt('table.qtyBase', 'Qty (base)')}</th>
-                  <th className="py-2 px-3 text-right">{tt('movements.avgCost', 'Unit Cost')}</th>
-                  <th className="py-2 px-3">{tt('table.ref', 'Ref')}</th>
-                  <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!movementsLoading && movementRowsFiltered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">
-                      {tt('movements.logEmpty', 'No movements match the current filters.')}
-                    </td>
+          {isMobile ? (
+            <StockMovementMobileLog
+              rows={movementRowsFiltered}
+              items={items}
+              lang={lang}
+              tt={tt}
+              expandedMovementId={expandedMovementId}
+              onToggleDetails={(id) => setExpandedMovementId(expandedMovementId === id ? '' : id)}
+              movementTypeBadge={movementTypeBadge}
+              warehouseLabel={warehouseLabel}
+              refLabel={refLabel}
+              formatValue={fmtAcct}
+              loading={movementsLoading}
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border">
+              <table className="w-full min-w-[960px] text-sm">
+                <thead className="bg-muted/40">
+                  <tr className="border-b text-left">
+                    <th className="py-2 px-3">{tt('table.date', 'Date')}</th>
+                    <th className="py-2 px-3">{tt('table.type', 'Type')}</th>
+                    <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
+                    <th className="py-2 px-3">{tt('movements.route', 'Route')}</th>
+                    <th className="py-2 px-3 text-right">{tt('table.qtyBase', 'Qty (base)')}</th>
+                    <th className="py-2 px-3 text-right">{tt('movements.avgCost', 'Unit Cost')}</th>
+                    <th className="py-2 px-3">{tt('table.ref', 'Ref')}</th>
+                    <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
                   </tr>
-                )}
-                {movementsLoading && (
-                  <tr>
-                    <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">{tt('loading', 'Loading')}</td>
-                  </tr>
-                )}
-                {movementRowsFiltered.map(row => {
-                  const item = items.find(entry => entry.id === row.item_id)
-                  const detailsOpen = expandedMovementId === row.id
-                  const orderHref = row.ref_type === 'SO' && row.ref_id
-                    ? `/orders?tab=sales&orderId=${row.ref_id}`
-                    : row.ref_type === 'PO' && row.ref_id
-                      ? `/orders?tab=purchase&orderId=${row.ref_id}`
-                      : ''
-                  return (
-                    <Fragment key={row.id}>
-                      <tr className="border-b align-top">
-                        <td className="py-2 px-3 whitespace-nowrap">{new Date(row.created_at).toLocaleString(lang)}</td>
-                        <td className="py-2 px-3">{movementTypeBadge(row.type)}</td>
-                        <td className="py-2 px-3">
-                          <div className="font-medium">{item?.name || row.item_id}</div>
-                          <div className="text-xs text-muted-foreground">{item?.sku || ''}</div>
-                        </td>
-                        <td className="py-2 px-3 text-muted-foreground">
-                          <div>{warehouseLabel(row.warehouse_from_id, row.bin_from_id)}</div>
-                          <div className="text-xs">→ {warehouseLabel(row.warehouse_to_id, row.bin_to_id)}</div>
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.qty_base, 0))}</td>
-                        <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.unit_cost, 0))}</td>
-                        <td className="py-2 px-3 font-medium">{refLabel(row)}</td>
-                        <td className="py-2 px-3 text-right">
-                          <div className="flex justify-end gap-2">
-                            {orderHref ? (
-                              <Button asChild size="sm" variant="ghost">
-                                <Link to={orderHref}>{tt('movements.viewSource', 'View source')}</Link>
+                </thead>
+                <tbody>
+                  {!movementsLoading && movementRowsFiltered.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">
+                        {tt('movements.logEmpty', 'No movements match the current filters.')}
+                      </td>
+                    </tr>
+                  )}
+                  {movementsLoading && (
+                    <tr>
+                      <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">{tt('loading', 'Loading')}</td>
+                    </tr>
+                  )}
+                  {movementRowsFiltered.map(row => {
+                    const item = items.find(entry => entry.id === row.item_id)
+                    const detailsOpen = expandedMovementId === row.id
+                    const orderHref = row.ref_type === 'SO' && row.ref_id
+                      ? '/orders?tab=sales&orderId=' + row.ref_id
+                      : row.ref_type === 'PO' && row.ref_id
+                        ? '/orders?tab=purchase&orderId=' + row.ref_id
+                        : ''
+                    return (
+                      <Fragment key={row.id}>
+                        <tr className="border-b align-top">
+                          <td className="py-2 px-3 whitespace-nowrap">{new Date(row.created_at).toLocaleString(lang)}</td>
+                          <td className="py-2 px-3">{movementTypeBadge(row.type)}</td>
+                          <td className="py-2 px-3">
+                            <div className="font-medium">{item?.name || row.item_id}</div>
+                            <div className="text-xs text-muted-foreground">{item?.sku || ''}</div>
+                          </td>
+                          <td className="py-2 px-3 text-muted-foreground">
+                            <div>{warehouseLabel(row.warehouse_from_id, row.bin_from_id)}</div>
+                            <div className="text-xs">-&gt; {warehouseLabel(row.warehouse_to_id, row.bin_to_id)}</div>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.qty_base, 0))}</td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.unit_cost, 0))}</td>
+                          <td className="py-2 px-3 font-medium">{refLabel(row)}</td>
+                          <td className="py-2 px-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              {orderHref ? (
+                                <Button asChild size="sm" variant="ghost">
+                                  <Link to={orderHref}>{tt('movements.viewSource', 'View source')}</Link>
+                                </Button>
+                              ) : <span className="text-xs text-muted-foreground">-</span>}
+                              <Button size="sm" variant="outline" onClick={() => setExpandedMovementId(detailsOpen ? '' : row.id)}>
+                                {detailsOpen ? tt('common.hide', 'Hide') : tt('common.details', 'Details')}
                               </Button>
-                            ) : <span className="text-xs text-muted-foreground">—</span>}
-                            <Button size="sm" variant="outline" onClick={() => setExpandedMovementId(detailsOpen ? '' : row.id)}>
-                              {detailsOpen ? tt('common.hide', 'Hide') : tt('common.details', 'Details')}
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                      {detailsOpen && (
-                        <tr className="border-b bg-muted/20">
-                          <td colSpan={8} className="px-3 py-3 text-sm">
-                            <div className="grid gap-3 md:grid-cols-3">
-                              <div>
-                                <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.notes', 'Notes')}</div>
-                                <div className="mt-1 text-muted-foreground">{row.notes || '—'}</div>
-                              </div>
-                              <div>
-                                <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.value', 'Value')}</div>
-                                <div className="mt-1 font-mono tabular-nums">{fmtAcct(num(row.total_value, 0))}</div>
-                              </div>
-                              <div>
-                                <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.referenceTrace', 'Reference trace')}</div>
-                                <div className="mt-1 text-muted-foreground">{refLabel(row)}</div>
-                              </div>
                             </div>
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        {detailsOpen && (
+                          <tr className="border-b bg-muted/20">
+                            <td colSpan={8} className="px-3 py-3 text-sm">
+                              <div className="grid gap-3 md:grid-cols-3">
+                                <div>
+                                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.notes', 'Notes')}</div>
+                                  <div className="mt-1 text-muted-foreground">{row.notes || '-'}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.value', 'Value')}</div>
+                                  <div className="mt-1 font-mono tabular-nums">{fmtAcct(num(row.total_value, 0))}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.referenceTrace', 'Reference trace')}</div>
+                                  <div className="mt-1 text-muted-foreground">{refLabel(row)}</div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
     </div>
   )
 }

@@ -341,7 +341,7 @@ export function Warehouses() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="app-page app-page--workspace space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>
         </div>
@@ -359,7 +359,7 @@ export function Warehouses() {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="app-page app-page--workspace p-6">
         <h2 className="text-xl font-bold mb-2">{t('errors.title')}</h2>
         <p className="text-muted-foreground mb-4">{error}</p>
         <Button onClick={() => location.reload()}>{t('common.retry')}</Button>
@@ -368,7 +368,7 @@ export function Warehouses() {
   }
 
   return (
-    <div className="space-y-6 mobile-container w-full max-w-full overflow-x-hidden">
+    <div className="app-page app-page--workspace space-y-6 w-full max-w-full overflow-x-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>

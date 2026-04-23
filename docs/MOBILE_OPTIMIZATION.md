@@ -20,6 +20,9 @@ Current design rules:
 - mobile navigation no longer depends on a desktop-only sidebar mental model
 - Point of Sale and opening-data import were built as touch-friendly vertical workflows
 - the recent treasury, UOM, items, and assembly refinements were kept responsive instead of being desktop-only rewrites
+- the Android runtime now fits inside the system window area instead of drawing app chrome into the status bar space
+- the mobile drawer uses a dedicated scroll body so lower navigation entries remain reachable on smaller Android screens
+- compact inventory workspaces such as Items, Movements, and Stock Levels now switch to card-style review surfaces instead of relying only on wide desktop tables
 
 ## Current Mobile-Sensitive Surfaces
 
@@ -56,5 +59,11 @@ The packaged Android build should reflect the same current app shell and navigat
 - current Point of Sale naming
 - current mobile route structure
 - current onboarding/import workspace
+
+Current Android shell/runtime rules:
+
+- the shell must respect safe-area insets at the top and bottom
+- the drawer must scroll independently from the page body
+- compact pages should prefer stacked cards, filters, and action groups before falling back to horizontal data tables
 
 If Android packaging is prepared from stale metadata or stale copy, the packaged app will immediately feel older than the web product even if the core frontend is current.
