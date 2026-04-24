@@ -10,8 +10,6 @@ import {
   ExternalLink,
   Eye,
   Mail,
-  RefreshCw,
-  Search,
   Send,
   ShieldAlert,
   ShieldCheck,
@@ -181,7 +179,6 @@ export default function PlatformControlPage() {
   const [resetting, setResetting] = useState(false)
   const [previewingTemplate, setPreviewingTemplate] = useState<CompanyAccessEmailTemplateType | null>(null)
   const [sendingTemplate, setSendingTemplate] = useState<CompanyAccessEmailTemplateType | null>(null)
-  const [registerSearch, setRegisterSearch] = useState('')
   const [rows, setRows] = useState<CompanyAccessRow[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('')
   const [detail, setDetail] = useState<CompanyAccessDetail | null>(null)
@@ -205,26 +202,9 @@ export default function PlatformControlPage() {
   )
 
   const selectedCompanyName =
-    detail?.company_name || selectedRow?.company_name || tt('platform.selectCompany', 'Choose a company from the register first.')
+    detail?.company_name || selectedRow?.company_name || tt('platform.selectCompany', 'Choose a company from the portfolio below first.')
 
   const selectedStatus = detail?.effective_status || selectedRow?.effective_status || 'trial'
-
-  const registerRows = useMemo(() => {
-    const normalized = registerSearch.trim().toLowerCase()
-    if (!normalized) return rows
-    return rows.filter((row) =>
-      [
-        row.company_name,
-        row.company_id,
-        row.plan_code,
-        row.plan_name,
-        row.company_email,
-        row.notification_recipient_email,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalized)),
-    )
-  }, [registerSearch, rows])
 
   const resetDeletes = useMemo(
     () => [
@@ -597,7 +577,7 @@ export default function PlatformControlPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">
+              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">
                 <div className="font-medium text-foreground">
                   {tt('platform.bootstrapTitle', 'Bootstrap the first platform admin')}
                 </div>
@@ -607,11 +587,11 @@ export default function PlatformControlPage() {
                     'Sign in with the target user first, then run the documented bootstrap command from the repo root with service-role credentials available in .env.',
                   )}
                 </p>
-                <pre className="mt-3 overflow-x-auto rounded-xl border border-border/70 bg-background px-4 py-3 text-xs text-foreground">
+                <pre className="mt-3 max-w-full whitespace-pre-wrap break-words rounded-xl border border-border/70 bg-background px-4 py-3 text-xs text-foreground">
                   npm run bootstrap:platform-admin -- admin@company.com --note "Initial platform admin"
                 </pre>
               </div>
-              <div className="rounded-2xl border border-border/70 bg-background p-4 text-sm leading-6 text-muted-foreground">
+              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background p-4 text-sm leading-6 text-muted-foreground">
                 <div className="font-medium text-foreground">
                   {tt('platform.manualActivationTitle', 'Current operating model')}
                 </div>
@@ -629,92 +609,7 @@ export default function PlatformControlPage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-            <Card className="border-border/70 bg-card">
-              <CardHeader>
-                <CardTitle>{tt('platform.companyRegister', 'Company access register')}</CardTitle>
-                <CardDescription>
-                  {tt(
-                    'platform.companyRegisterHelp',
-                    'Search the tenant list, then open one company at a time for manual access control.',
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={registerSearch}
-                      onChange={(event) => setRegisterSearch(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') void loadCompanies()
-                      }}
-                      placeholder={tt('platform.searchPlaceholder', 'Search company, UUID, or plan code')}
-                      className="pl-9"
-                    />
-                  </div>
-                  <Button variant="outline" onClick={() => void loadCompanies()}>
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                  </Button>
-                </div>
-
-                <div className="overflow-hidden rounded-2xl border border-border/70">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/35 text-left">
-                      <tr>
-                        <th className="px-4 py-3">{tt('platform.company', 'Company')}</th>
-                        <th className="px-4 py-3">{tt('platform.plan', 'Plan')}</th>
-                        <th className="px-4 py-3">{tt('platform.status', 'Status')}</th>
-                        <th className="px-4 py-3">{tt('platform.members', 'Members')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {registerRows.map((row) => (
-                        <tr
-                          key={row.company_id}
-                          className={`cursor-pointer border-t transition-colors hover:bg-muted/20 ${selectedCompanyId === row.company_id ? 'bg-muted/25' : ''}`}
-                          onClick={() => handleSelectCompany(row.company_id)}
-                        >
-                          <td className="px-4 py-4 align-top">
-                            <div className="font-medium">{row.company_name || row.company_id}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">{row.company_id}</div>
-                          </td>
-                          <td className="px-4 py-4 align-top">
-                            <div>{row.plan_name}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">{row.plan_code}</div>
-                          </td>
-                          <td className="px-4 py-4 align-top">
-                            <span
-                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(row.effective_status)}`}
-                            >
-                              {formatStatus(row.effective_status)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4 align-top">
-                            <div>
-                              {row.active_member_count} / {row.member_count}
-                            </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {row.paid_until ? row.paid_until.slice(0, 10) : tt('platform.manualWindow', 'Manual window')}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {!loading && registerRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                            {tt('platform.empty', 'No company access rows matched the current search.')}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-6">
+          <div className="space-y-6">
               <Card id="platform-company-workspace" className="border-border/70 bg-card">
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1210,7 +1105,6 @@ export default function PlatformControlPage() {
                   )}
                 </CardContent>
               </Card>
-            </div>
           </div>
         </div>
 

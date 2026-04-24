@@ -1,0 +1,51 @@
+{
+  "adminDesktop": {
+    "path": "/platform-control",
+    "metricCardCount": 5,
+    "metricOverflowDetected": false,
+    "planRows": 1,
+    "statusRows": 5,
+    "tableRows": 9,
+    "mobileCards": 9,
+    "registerVisible": true,
+    "noHorizontalOverflow": true,
+    "hasCatalogOnlyLabel": true,
+    "hasCollectedRevenueClaim": false,
+    "hasGatewayRevenueClaim": false,
+    "filteredCount": 1,
+    "openControlWorked": true
+  },
+  "adminLaptop": {
+    "path": "/platform-control",
+    "metricCardCount": 5,
+    "metricOverflowDetected": false,
+    "planRows": 1,
+    "statusRows": 5,
+    "tableRows": 9,
+    "mobileCards": 9,
+    "registerVisible": true,
+    "noHorizontalOverflow": true,
+    "hasCatalogOnlyLabel": true,
+    "hasCollectedRevenueClaim": false,
+    "hasGatewayRevenueClaim": false
+  },
+  "adminMobile": {
+    "path": "/platform-control",
+    "metricCardCount": 5,
+    "metricOverflowDetected": false,
+    "planRows": 1,
+    "statusRows": 5,
+    "tableRows": 9,
+    "mobileCards": 9,
+    "registerVisible": true,
+    "noHorizontalOverflow": true,
+    "hasCatalogOnlyLabel": true,
+    "hasCollectedRevenueClaim": false,
+    "hasGatewayRevenueClaim": false
+  },
+  "nonAdmin": {
+    "path": "/dashboard",
+    "blocked": true,
+    "platformControlHidden": true
+  }
+}
