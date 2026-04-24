@@ -36,8 +36,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from '../components/ui/textarea'
 import {
   getCompanyAccessDetail,
-  listCompanyAccess,
   listCompanyAccessEvents,
+  listCompanySubscriptionDashboard,
   listCompanyControlActions,
   previewCompanyAccessEmail,
   resetCompanyOperationalData,
@@ -54,6 +54,7 @@ import {
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { internalPlanOptions } from '../lib/pricingPlans'
 import { PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
+import SubscriptionAnalyticsDashboard from '../components/platform/SubscriptionAnalyticsDashboard'
 
 function asDateInput(value: string | null | undefined) {
   return value ? value.slice(0, 10) : ''
@@ -141,10 +142,6 @@ function resolveStoredExpiryDate(detail: CompanyAccessDetail | null) {
   return detail.trial_expires_at || detail.paid_until || null
 }
 
-function hasStatusCard(status: SubscriptionStatus, summary: Record<string, number>) {
-  return summary[status] || 0
-}
-
 function MetadataCard({
   label,
   value,
@@ -184,7 +181,7 @@ export default function PlatformControlPage() {
   const [resetting, setResetting] = useState(false)
   const [previewingTemplate, setPreviewingTemplate] = useState<CompanyAccessEmailTemplateType | null>(null)
   const [sendingTemplate, setSendingTemplate] = useState<CompanyAccessEmailTemplateType | null>(null)
-  const [search, setSearch] = useState('')
+  const [registerSearch, setRegisterSearch] = useState('')
   const [rows, setRows] = useState<CompanyAccessRow[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('')
   const [detail, setDetail] = useState<CompanyAccessDetail | null>(null)
@@ -212,6 +209,23 @@ export default function PlatformControlPage() {
 
   const selectedStatus = detail?.effective_status || selectedRow?.effective_status || 'trial'
 
+  const registerRows = useMemo(() => {
+    const normalized = registerSearch.trim().toLowerCase()
+    if (!normalized) return rows
+    return rows.filter((row) =>
+      [
+        row.company_name,
+        row.company_id,
+        row.plan_code,
+        row.plan_name,
+        row.company_email,
+        row.notification_recipient_email,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalized)),
+    )
+  }, [registerSearch, rows])
+
   const resetDeletes = useMemo(
     () => [
       tt('platform.resetDeletesOrders', 'Sales orders, purchase orders, invoices, vendor bills, and related adjustments'),
@@ -230,29 +244,6 @@ export default function PlatformControlPage() {
       tt('platform.resetKeepsFiscal', 'Payment terms, currencies, fiscal settings, fiscal series, and numbering counters'),
     ],
     [tt],
-  )
-
-  const summary = useMemo(() => {
-    return rows.reduce<Record<string, number>>((totals, row) => {
-      totals[row.effective_status] = (totals[row.effective_status] || 0) + 1
-      return totals
-    }, {})
-  }, [rows])
-
-  const summaryCards = useMemo(
-    () =>
-      ([
-        ['trial', tt('platform.trial', 'Trial')],
-        ['active_paid', tt('platform.activePaid', 'Active paid')],
-        ['expired', tt('platform.expired', 'Expired')],
-        ['suspended', tt('platform.suspended', 'Suspended')],
-        ['disabled', tt('platform.disabled', 'Disabled')],
-      ] as const).map(([key, label]) => ({
-        key,
-        label,
-        count: hasStatusCard(key, summary),
-      })),
-    [summary, tt],
   )
 
   const accessFormDirty = useMemo(() => {
@@ -324,13 +315,13 @@ export default function PlatformControlPage() {
   }, [accessFormDirty, detail, tt])
 
   const loadCompanies = useCallback(
-    async (nextSearch?: string, preferredCompanyId?: string) => {
+    async (preferredCompanyId?: string) => {
       setLoading(true)
       try {
-        const companyRows = await listCompanyAccess(nextSearch ?? search)
+        const companyRows = await listCompanySubscriptionDashboard()
         setRows(companyRows)
         setSelectedCompanyId((currentId) => {
-          const targetId = preferredCompanyId ?? currentId
+          const targetId = preferredCompanyId || currentId
           if (targetId && companyRows.some((row) => row.company_id === targetId)) return targetId
           return companyRows[0]?.company_id || ''
         })
@@ -338,7 +329,7 @@ export default function PlatformControlPage() {
         setLoading(false)
       }
     },
-    [search],
+    [],
   )
 
   const fetchSelectedCompanyData = useCallback(async (companyId: string) => {
@@ -440,7 +431,7 @@ export default function PlatformControlPage() {
         purgeScheduledAt: purgeScheduledAt || null,
         reason: reason || null,
       })
-      await Promise.all([loadCompanies(undefined, detail.company_id), refreshSelectedCompany(detail.company_id)])
+      await Promise.all([loadCompanies(detail.company_id), refreshSelectedCompany(detail.company_id)])
       toast.success(tt('platform.saved', 'Company access updated.'))
     } catch (error: any) {
       console.error(error)
@@ -459,7 +450,7 @@ export default function PlatformControlPage() {
         confirmation: resetConfirmation,
         reason: resetReason,
       })
-      await Promise.all([loadCompanies(undefined, detail.company_id), refreshSelectedCompany(detail.company_id)])
+      await Promise.all([loadCompanies(detail.company_id), refreshSelectedCompany(detail.company_id)])
       setResetOpen(false)
       setResetConfirmation('')
       setResetReason('')
@@ -518,6 +509,18 @@ export default function PlatformControlPage() {
     }
   }
 
+  function handleSelectCompany(companyId: string) {
+    setSelectedCompanyId(companyId)
+    if (typeof document !== 'undefined') {
+      requestAnimationFrame(() => {
+        document.getElementById('platform-company-workspace')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background px-4 py-10 sm:px-6 lg:px-8">
       <AlertDialog
@@ -557,15 +560,31 @@ export default function PlatformControlPage() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-5">
-              {summaryCards.map((card) => (
-                <div key={card.key} className="rounded-2xl border border-border/70 bg-background p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</div>
-                  <div className="mt-2 text-3xl font-semibold">{card.count}</div>
-                </div>
-              ))}
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6 text-sm text-muted-foreground">
+              <div className="max-w-3xl leading-6">
+                {tt(
+                  'platform.heroNote',
+                  'Use the analytics workspace below to monitor plan mix, expiring companies, restricted access, and catalogue-based recurring value before opening the selected company controls.',
+                )}
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3 text-xs leading-5 text-muted-foreground">
+                {tt(
+                  'platform.heroGuardrail',
+                  'All portfolio data in this view remains platform-admin only and is not exposed to ordinary company users.',
+                )}
+              </div>
             </CardContent>
           </Card>
+
+          <SubscriptionAnalyticsDashboard
+            rows={rows}
+            loading={loading}
+            locale={locale}
+            selectedCompanyId={selectedCompanyId}
+            onRefresh={() => loadCompanies(selectedCompanyId)}
+            onSelectCompany={handleSelectCompany}
+            tt={tt}
+          />
 
           <Card className="border-border/70 bg-card">
             <CardHeader>
@@ -626,10 +645,10 @@ export default function PlatformControlPage() {
                   <div className="relative flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
+                      value={registerSearch}
+                      onChange={(event) => setRegisterSearch(event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter') void loadCompanies(event.currentTarget.value)
+                        if (event.key === 'Enter') void loadCompanies()
                       }}
                       placeholder={tt('platform.searchPlaceholder', 'Search company, UUID, or plan code')}
                       className="pl-9"
@@ -651,11 +670,11 @@ export default function PlatformControlPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((row) => (
+                      {registerRows.map((row) => (
                         <tr
                           key={row.company_id}
                           className={`cursor-pointer border-t transition-colors hover:bg-muted/20 ${selectedCompanyId === row.company_id ? 'bg-muted/25' : ''}`}
-                          onClick={() => setSelectedCompanyId(row.company_id)}
+                          onClick={() => handleSelectCompany(row.company_id)}
                         >
                           <td className="px-4 py-4 align-top">
                             <div className="font-medium">{row.company_name || row.company_id}</div>
@@ -682,7 +701,7 @@ export default function PlatformControlPage() {
                           </td>
                         </tr>
                       ))}
-                      {!loading && rows.length === 0 ? (
+                      {!loading && registerRows.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="px-4 py-10 text-center text-sm text-muted-foreground">
                             {tt('platform.empty', 'No company access rows matched the current search.')}
@@ -696,7 +715,7 @@ export default function PlatformControlPage() {
             </Card>
 
             <div className="space-y-6">
-              <Card className="border-border/70 bg-card">
+              <Card id="platform-company-workspace" className="border-border/70 bg-card">
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">

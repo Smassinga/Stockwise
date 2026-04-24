@@ -25,6 +25,7 @@ export type PlatformAdminStatus = {
 export type CompanyAccessRow = {
   company_id: string
   company_name: string | null
+  company_email: string | null
   owner_user_id: string | null
   plan_code: string
   plan_name: string
@@ -33,12 +34,20 @@ export type CompanyAccessRow = {
   trial_started_at: string | null
   trial_expires_at: string | null
   paid_until: string | null
+  access_expires_at: string | null
   purge_scheduled_at: string | null
   purge_completed_at: string | null
   member_count: number
   active_member_count: number
   access_enabled: boolean
   updated_at: string
+  company_created_at: string | null
+  latest_member_last_sign_in_at: string | null
+  notification_recipient_email: string | null
+  monthly_price_mzn: number | null
+  annual_price_mzn: number | null
+  starting_price_mzn: number | null
+  manual_activation_only: boolean
 }
 
 export type CompanyAccessAuditRow = {
@@ -248,6 +257,14 @@ export async function listCompanyAccess(search?: string) {
     p_search: search?.trim() || null,
   })
   if (error) throw new Error(toFriendlyAccessError(error, 'Failed to load company access records.'))
+  return unwrapMany<CompanyAccessRow>(data)
+}
+
+export async function listCompanySubscriptionDashboard(search?: string) {
+  const { data, error } = await supabase.rpc('platform_admin_list_company_subscription_dashboard', {
+    p_search: search?.trim() || null,
+  })
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to load company subscription analytics.'))
   return unwrapMany<CompanyAccessRow>(data)
 }
 

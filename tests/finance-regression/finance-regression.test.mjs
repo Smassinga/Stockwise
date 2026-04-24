@@ -1337,6 +1337,30 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.ok(statuses.includes('active_paid'))
   })
 
+  await t.test('Platform subscription dashboard list is admin-only and returns real plan analytics fields', async () => {
+    await expectPostgrestError(
+      ownerClient.rpc('platform_admin_list_company_subscription_dashboard', { p_search: null }),
+      'platform_admin_required',
+    )
+
+    const dashboardRows = expectNoSupabaseError(
+      await platformAdminClient.rpc('platform_admin_list_company_subscription_dashboard', { p_search: null }),
+      'Expected platform admin subscription dashboard lookup to succeed',
+    )
+
+    const dashboardRow = dashboardRows.find((row) => row.company_id === companyId)
+    assert.ok(dashboardRow, 'Expected the selected company to appear in the platform subscription dashboard list')
+    assert.equal(dashboardRow.plan_code, 'starter')
+    assert.equal(dashboardRow.plan_name, 'Starter')
+    assert.equal(dashboardRow.effective_status, 'active_paid')
+    assert.equal(Number(dashboardRow.monthly_price_mzn), 2001)
+    assert.equal(Number(dashboardRow.annual_price_mzn), 20010)
+    assert.equal(dashboardRow.notification_recipient_email, ownerUser.email.toLowerCase())
+    assert.ok(dashboardRow.company_created_at, 'Expected company_created_at in the subscription dashboard row')
+    assert.ok(dashboardRow.latest_member_last_sign_in_at, 'Expected latest member sign-in in the subscription dashboard row')
+    assert.ok(dashboardRow.access_expires_at, 'Expected access_expires_at in the subscription dashboard row')
+  })
+
   await t.test('Platform control email previews resolve the company recipient and real access dates', async () => {
     const purgeAt = isoDateAtNoon(plusDaysIso(45))
     const refreshAccess = await platformAdminClient.rpc('platform_admin_set_company_access', {

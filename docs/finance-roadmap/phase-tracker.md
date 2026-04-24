@@ -119,6 +119,7 @@ Use this file as the working status board for finance-document implementation an
 | Support-contact routing split | Completed | Inbound activation/support flows now route to `support@stockwiseapp.com`; outbound company notices stay on the canonical company recipient rule |
 | Platform Control company-access emails | Completed | Manual preview/send for expiry warning, purge warning, and activation confirmation now runs through the shared mailer path with audit logging |
 | Platform Control in-app navigation and card containment | Completed | Admins can return to the app from `/platform-control`, and long company values now stay contained inside aligned metadata cards |
+| Platform Control subscription analytics dashboard | Completed | Admin-only plan/status monitoring now lives inside `/platform-control`, including expiring-company views, distribution summaries, and catalogue-based MRR/ARR indicators |
 | Vector SVG extraction from approved artwork | Not started | PNG-derived assets are canonical for now; SVG refinement is intentionally deferred until suitable vector tooling/source handling is available |
 | Automatic payment integration | Not started | Explicitly deferred |
 | Automatic paid-plan activation | Not started | Explicitly deferred |

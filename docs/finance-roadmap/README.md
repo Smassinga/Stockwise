@@ -47,6 +47,7 @@ Hardening and control-plane foundations now also exist:
 - Platform Control now counts disabled companies correctly in the status summary instead of hiding them behind a suspended-only aggregation
 - inbound activation/support contact is now centralized on `support@stockwiseapp.com`
 - Platform Control now previews and sends professional company access emails using the canonical company recipient and a separate support inbox
+- Platform Control now includes an admin-only subscription analytics dashboard for plan distribution, expiry monitoring, and catalogue-based MRR/ARR indicators without implying real payment-gateway revenue
 - public pricing is now presented in MZN on the landing page
 - platform-admin access is now explicitly documented and visible only to active platform admins
 - the approved StockWise logo now drives the public brand, app shell, PWA icons, and Tauri packaging icons
@@ -183,6 +184,8 @@ Completed in this pass:
 - Platform Control now has operationally correct status counters, a clear path back to the main app, and a contained selected-company dashboard layout
 - company access email previews and sends are now available for expiry warning, purge warning, and paid activation confirmation
 - inbound support routing and outbound company-recipient routing are now explicitly separated and documented
+- Platform Control now includes an admin-only subscription analytics dashboard with plan/status distribution, expiring-company monitoring, and a filterable company subscription table
+- revenue-style cards in Platform Control are intentionally catalogue-based observability indicators, not payment-gateway cash or collected billing revenue
 
 Current limitation:
 

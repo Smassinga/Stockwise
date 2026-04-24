@@ -40,7 +40,9 @@ What the command does:
 ## What Platform Admins Can Do Today
 
 - open `/platform-control`
+- review the subscription analytics dashboard inside `/platform-control`
 - use the top-level summary counters to review trial, active paid, expired, suspended, and disabled companies separately
+- review plan distribution, status distribution, expiring-soon queues, recently expired queues, and metadata-attention queues
 - review company subscription/access state
 - review company shell metadata, created date, registered company email, owner, member counts, and latest recorded sign-in activity
 - manually grant, extend, suspend, expire, or disable tenant access
@@ -50,6 +52,35 @@ What the command does:
 - review the separate control-action log for resets and outbound company-access emails
 - trigger a guarded operational data reset for non-active-paid tenants
 - return to the rest of the app using the in-page `Back to dashboard` path
+
+## Subscription Analytics Dashboard
+
+The subscription analytics dashboard lives at the top of `/platform-control`.
+
+It is a platform-admin-only monitoring surface over existing access-control data, not a general app module.
+
+Current dashboard coverage:
+
+- total companies
+- access-enabled companies
+- trial companies
+- active paid companies
+- expired companies
+- suspended and disabled companies
+- expiring-soon monitoring
+- recently expired monitoring
+- metadata-attention monitoring
+- plan distribution and status distribution
+- company subscription table with filters and direct jump into the selected-company workspace
+
+Revenue cards are intentionally limited to catalogue-based indicators:
+
+- Catalog MRR
+- Catalog ARR
+
+These values use the current `plan_catalog` prices plus the companies currently marked `active_paid`.
+
+They do not represent payment gateway revenue, collected cash, or settled billing events.
 
 ## Owner And Sign-In Metadata
 

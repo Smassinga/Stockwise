@@ -11,6 +11,7 @@ Implemented in foundation scope:
 - backend entitlement checks for active company access
 - blocked-access route for expired, suspended, or disabled tenants
 - platform-admin control plane for manual grant, revoke, suspension, expiry, and purge scheduling
+- platform-admin subscription analytics dashboard for plan/status monitoring inside `/platform-control`
 - richer company-admin intelligence in platform control, including owner, created date, member counts, and latest recorded sign-in activity
 - auditability of access changes
 - guarded operational reset for non-active-paid tenants
@@ -165,6 +166,40 @@ Owner is defined in this order:
 3. earliest active `ADMIN` membership
 
 Latest sign-in is the best available value from `public.profiles.last_sign_in_at`. If it is unavailable, the UI shows that it was not captured.
+
+## Platform Control Subscription Analytics
+
+`/platform-control` now also includes an admin-only subscription analytics dashboard built on top of:
+
+- `company_subscription_state`
+- `plan_catalog`
+- `companies`
+- `company_members`
+- `profiles`
+- `auth.users` sign-in fallback data
+
+The dashboard is served through the protected RPC:
+
+- `platform_admin_list_company_subscription_dashboard(text)`
+
+Current dashboard outputs include:
+
+- top-level company/status KPIs
+- plan distribution
+- status distribution
+- expiring-soon monitoring
+- recently expired monitoring
+- metadata-attention monitoring
+- filtered company subscription table
+
+Revenue-style cards are intentionally limited to catalogue-based indicators:
+
+- Catalog MRR
+- Catalog ARR
+
+These are derived from current `plan_catalog` values and `active_paid` company count only.
+
+They do not represent payment-gateway revenue, collected cash, or invoices paid.
 
 ## Inbound Support vs Outbound Company Notices
 

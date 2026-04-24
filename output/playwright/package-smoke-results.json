@@ -1,0 +1,44 @@
+{
+  "adminDesktop": {
+    "dashboardVisible": true,
+    "filtersWorked": true,
+    "openControlWorked": true,
+    "desktopShellCoherent": true
+  },
+  "nonAdminDesktop": {
+    "redirectedToDashboard": true,
+    "platformControlHidden": true
+  },
+  "mobile": {
+    "safeAreaLooksCorrect": true,
+    "bottomNavVisible": true,
+    "drawerScrollable": true,
+    "lowerRoutesReachable": true,
+    "routeChecks": [
+      {
+        "route": "/dashboard",
+        "visibleTableCount": 0
+      },
+      {
+        "route": "/operator",
+        "visibleTableCount": 0
+      },
+      {
+        "route": "/items",
+        "visibleTableCount": 0
+      },
+      {
+        "route": "/movements",
+        "visibleTableCount": 0
+      },
+      {
+        "route": "/stock-levels",
+        "visibleTableCount": 0
+      },
+      {
+        "route": "/warehouses",
+        "visibleTableCount": 0
+      }
+    ]
+  }
+}
