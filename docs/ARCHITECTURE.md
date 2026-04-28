@@ -27,6 +27,16 @@ The maintained product surfaces are:
 - onboarding import for opening/master data
 - platform control for company access, trials, manual paid activation, and guarded reset operations
 
+## Onboarding Entry
+
+- authenticated users who already have an active company membership continue into the dashboard under the existing active-company rules
+- authenticated users without an active membership land on `/onboarding`
+- onboarding now supports two first-class paths: join an invited company or create a new company
+- onboarding company creation is intentionally minimal and only requires the company name; legal identity, address, contacts, logo, bank details, tax details, and other deeper setup remain editable later in `Settings`
+- pending invitation discovery is email-bound and uses a dedicated authenticated RPC that only returns invites for the signed-in account email
+- invitation acceptance stays secure through the authenticated email match plus invite validity checks; expired invite rows are excluded from the onboarding list and rejected on acceptance
+- choosing `Create new company` no longer auto-consumes pending invitations; the invitation record remains pending unless the user explicitly accepts it
+
 ## Authority Split
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.

@@ -359,7 +359,10 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       }
     }
     
-    const chosenId = cached && ids.includes(cached) ? cached : ids[0];
+    const activeIds = ids.filter((id) => meta.get(id)?.status === 'active');
+    const chosenId = cached && activeIds.includes(cached)
+      ? cached
+      : activeIds[0] ?? (cached && ids.includes(cached) ? cached : ids[0]);
     const chosen = list.find((c) => c.id === chosenId) ?? list[0];
     const chosenMeta = chosen ? meta.get(chosen.id)! : null;
 
@@ -368,7 +371,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     setMyRole(chosenMeta?.role ?? null);
     setMemberStatus(chosenMeta?.status ?? null);
 
-    if (chosen?.id) {
+    if (chosen?.id && chosenMeta?.status === 'active') {
       localStorage.setItem(userSpecificKey, chosen.id);
       void maybeSyncCompanyContext(user.id, chosen.id);
     }

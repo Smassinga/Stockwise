@@ -2,14 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
-import { clearInviteToken, readInviteToken } from '../lib/inviteToken'
+import { readInviteToken } from '../lib/inviteToken'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
 const SESSION_LOOKUP_TIMEOUT_MS = 5000
 const AUTH_FINISH_TIMEOUT_MS = 15000
 const MEMBERSHIP_LOOKUP_TIMEOUT_MS = 6000
 const BEST_EFFORT_SYNC_TIMEOUT_MS = 5000
-const INVITE_REDEEM_TIMEOUT_MS = 6000
 
 function parseHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -38,7 +37,10 @@ export default function AuthCallback() {
         )
 
         if (session?.user) {
-          await maybeRedeemInviteToken()
+          if (readInviteToken()) {
+            nav('/accept-invite', { replace: true })
+            return
+          }
           await routeByMembership(nav)
           return
         }
@@ -99,7 +101,11 @@ export default function AuthCallback() {
           }
         }
 
-        await maybeRedeemInviteToken()
+        if (readInviteToken()) {
+          setMsg('Signed in. Redirecting to your invitation...')
+          nav('/accept-invite', { replace: true })
+          return
+        }
 
         setMsg('Signed in. Redirecting...')
         await routeByMembership(nav)
@@ -119,22 +125,6 @@ export default function AuthCallback() {
       {showHomeBtn && <Button onClick={() => location.assign('/login')}>Back to sign-in</Button>}
     </div>
   )
-}
-
-async function maybeRedeemInviteToken() {
-  const token = readInviteToken()
-  if (!token) return
-  try {
-    await withTimeout(
-      supabase.rpc('accept_invite_with_token', { p_token: token }),
-      INVITE_REDEEM_TIMEOUT_MS,
-      'invite redeem'
-    )
-  } catch (e) {
-    console.warn('invite token redeem failed (callback):', (e as any)?.message || e)
-  } finally {
-    clearInviteToken()
-  }
 }
 
 async function routeByMembership(nav: ReturnType<typeof useNavigate>) {

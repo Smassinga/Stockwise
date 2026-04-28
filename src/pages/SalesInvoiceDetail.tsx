@@ -96,7 +96,9 @@ import {
   printSalesInvoiceDocument,
   shareFinanceDocument,
   shareSalesInvoiceDocument,
+  type OutputBankAccountInput,
 } from '../lib/financeDocumentOutput'
+import { formatOutputDate, getOutputCopy } from '../lib/financeDocumentOutputLanguage'
 
 function workflowTone(status: SalesInvoiceDocumentRow['document_workflow_status']) {
   switch (status) {
@@ -183,6 +185,32 @@ function formatDraftNumber(value: number, digits = 2) {
   return fixed.replace(/\.00$/, '').replace(/(\.\d*?)0+$/, '$1')
 }
 
+function parseIsoDateOnly(value?: string | null) {
+  const text = String(value || '').trim()
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2]) - 1
+  const day = Number(match[3])
+  const date = new Date(Date.UTC(year, month, day))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function buildBilingualPaymentTerms(invoiceDate?: string | null, dueDate?: string | null) {
+  const formattedDueDate = formatOutputDate('bi', dueDate)
+  if (formattedDueDate === '-') return null
+  const startDate = parseIsoDateOnly(invoiceDate)
+  const endDate = parseIsoDateOnly(dueDate)
+  if (!startDate || !endDate) {
+    return `Pagamento vence em ${formattedDueDate}.\nPayment is due on ${formattedDueDate}.`
+  }
+  const days = Math.round((endDate.getTime() - startDate.getTime()) / 86400000)
+  if (days <= 0) {
+    return `Pagamento vence em ${formattedDueDate}.\nPayment is due on ${formattedDueDate}.`
+  }
+  return `Pagamento deve ser efectuado até ${formattedDueDate} (${days} dias após a data da factura).\nPayment should be effected by ${formattedDueDate} (${days} days from the invoice date).`
+}
+
 export default function SalesInvoiceDetailPage() {
   const { invoiceId } = useParams()
   const navigate = useNavigate()
@@ -192,6 +220,7 @@ export default function SalesInvoiceDetailPage() {
     withI18nFallback(t, key, fallback, vars)
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
   const brand = useBrandForDocs(companyId)
+  const documentCopy = getOutputCopy('bi')
 
   const [loading, setLoading] = useState(true)
   const [invoice, setInvoice] = useState<SalesInvoiceDocumentRow | null>(null)
@@ -205,6 +234,7 @@ export default function SalesInvoiceDetailPage() {
   const [creditNoteLines, setCreditNoteLines] = useState<SalesCreditNoteLineRow[]>([])
   const [debitNotes, setDebitNotes] = useState<SalesDebitNoteRow[]>([])
   const [debitNoteLines, setDebitNoteLines] = useState<SalesDebitNoteLineRow[]>([])
+  const [bankAccounts, setBankAccounts] = useState<OutputBankAccountInput[]>([])
   const [draftPreview, setDraftPreview] = useState<SalesInvoiceDraftPreview | null>(null)
   const [issueReadiness, setIssueReadiness] = useState<SalesInvoiceIssueReadiness | null>(null)
   const [reconciliationRow, setReconciliationRow] = useState<FinanceReconciliationRow | null>(null)
@@ -260,6 +290,7 @@ export default function SalesInvoiceDetailPage() {
       setCreditNoteLines([])
       setDebitNotes([])
       setDebitNoteLines([])
+      setBankAccounts([])
       setDraftPreview(null)
       setIssueReadiness(null)
       return
@@ -268,7 +299,7 @@ export default function SalesInvoiceDetailPage() {
     try {
       setLoading(true)
       const nextInvoice = await getSalesInvoiceDocument(companyId, invoiceId)
-      const [nextLines, nextEvents, nextArtifacts, nextCreditNotes, nextDebitNotes, nextInvoiceStateRes] = await Promise.all([
+      const [nextLines, nextEvents, nextArtifacts, nextCreditNotes, nextDebitNotes, nextInvoiceStateRes, nextBankAccountsRes] = await Promise.all([
         listSalesInvoiceDocumentLines(companyId, invoiceId),
         listFinanceEvents(companyId, 'sales_invoice', invoiceId),
         listFiscalArtifacts(companyId, 'sales_invoice', invoiceId),
@@ -280,6 +311,11 @@ export default function SalesInvoiceDetailPage() {
           .eq('company_id', companyId)
           .eq('id', invoiceId)
           .maybeSingle(),
+        supabase
+          .from('bank_accounts')
+          .select('name, bank_name, account_number, currency_code, tax_number, swift, nib')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: true }),
       ])
       let nextDraftPreview: SalesInvoiceDraftPreview | null = null
       let nextCreditNoteLines: SalesCreditNoteLineRow[] = []
@@ -402,6 +438,20 @@ export default function SalesInvoiceDetailPage() {
       } else {
         setInvoiceState((nextInvoiceStateRes.data || null) as SalesInvoiceStateRow | null)
       }
+      if (nextBankAccountsRes.error) {
+        reportRuntimeError('loadBankAccounts', nextBankAccountsRes.error)
+        setBankAccounts([])
+      } else {
+        setBankAccounts((nextBankAccountsRes.data || []).map((row) => ({
+          name: row.name ?? null,
+          bankName: row.bank_name ?? null,
+          accountNumber: row.account_number ?? null,
+          currencyCode: row.currency_code ?? null,
+          taxNumber: row.tax_number ?? null,
+          swift: row.swift ?? null,
+          nib: row.nib ?? null,
+        })))
+      }
       setLines(nextLines)
       setEvents(nextEvents)
       setActorDirectory(nextActorDirectory)
@@ -428,6 +478,7 @@ export default function SalesInvoiceDetailPage() {
       setCreditNoteLines([])
       setDebitNotes([])
       setDebitNoteLines([])
+      setBankAccounts([])
       setDraftPreview(null)
       setIssueReadiness(null)
       setReconciliationRow(null)
@@ -457,7 +508,6 @@ export default function SalesInvoiceDetailPage() {
     }
   }, [invoice])
   const visibleBuyerName = invoice?.buyer_legal_name_snapshot || draftPreview?.buyer_legal_name || tt('common.none', 'None')
-  const visibleComputerPhrase = invoice?.computer_processed_phrase_snapshot || draftPreview?.computer_processed_phrase || tt('financeDocs.mz.notFrozenYet', 'Will be frozen on issue')
   const visibleVatExemptionReason = invoice?.vat_exemption_reason_text || tt('financeDocs.mz.vatExemptionReasonNotApplicable', 'Not applicable')
   const visibleSellerName = invoice?.seller_trade_name_snapshot || invoice?.seller_legal_name_snapshot || draftPreview?.seller_trade_name || draftPreview?.seller_legal_name || '-'
   const visibleSellerLegalName = invoice?.seller_legal_name_snapshot || draftPreview?.seller_legal_name || '-'
@@ -477,15 +527,72 @@ export default function SalesInvoiceDetailPage() {
     invoice?.buyer_postal_code_snapshot || draftPreview?.buyer_postal_code,
     invoice?.buyer_country_code_snapshot || draftPreview?.buyer_country_code,
   ) || '-'
+  const documentInvoiceDate = isDraft ? invoiceDateDraft : invoice?.invoice_date
+  const documentDueDate = isDraft ? dueDateDraft : invoice?.due_date
+  const documentExchangeRate = Number(invoice?.fx_to_base || 0) > 0 ? Number(invoice?.fx_to_base || 0) : 1
+  const documentVatExemptionReason = (isDraft ? vatExemptionReasonDraft : invoice?.vat_exemption_reason_text || '').trim()
+  const documentMetaRows = useMemo(
+    () => (invoice ? [
+      { label: documentCopy.documentTypes.salesInvoice, value: invoice.internal_reference },
+      { label: documentCopy.meta.invoiceDate, value: formatOutputDate('bi', documentInvoiceDate) },
+      { label: documentCopy.meta.dueDate, value: formatOutputDate('bi', documentDueDate) },
+      { label: documentCopy.meta.currency, value: invoice.currency_code || 'MZN' },
+      { label: documentCopy.meta.exchangeRate, value: documentExchangeRate.toFixed(4) },
+      ...(invoiceState?.order_no
+        ? [{ label: documentCopy.meta.orderReference, value: invoiceState.order_no }]
+        : []),
+    ] : []),
+    [documentCopy.documentTypes.salesInvoice, documentCopy.meta.currency, documentCopy.meta.dueDate, documentCopy.meta.exchangeRate, documentCopy.meta.invoiceDate, documentCopy.meta.orderReference, documentDueDate, documentExchangeRate, documentInvoiceDate, invoice, invoiceState?.order_no],
+  )
+  const documentNarrativeBlocks = useMemo(() => {
+    const blocks: Array<{ title: string; body: string }> = []
+    if (documentVatExemptionReason) {
+      blocks.push({
+        title: documentCopy.notes.fiscalNote,
+        body: `${documentCopy.notes.vatExemptionReason}: ${documentVatExemptionReason}`,
+      })
+    }
+    const paymentTerms = buildBilingualPaymentTerms(documentInvoiceDate, documentDueDate)
+    if (paymentTerms) {
+      blocks.push({
+        title: documentCopy.notes.paymentTerms,
+        body: paymentTerms,
+      })
+    }
+    return blocks
+  }, [documentCopy.notes.fiscalNote, documentCopy.notes.paymentTerms, documentCopy.notes.vatExemptionReason, documentDueDate, documentInvoiceDate, documentVatExemptionReason])
+  const documentBankDetails = useMemo(
+    () => bankAccounts
+      .map((account) => {
+        const rows = [
+          account.bankName ? { label: documentCopy.sections.bankName, value: account.bankName } : null,
+          account.accountNumber ? { label: documentCopy.sections.accountNumber, value: account.accountNumber } : null,
+          visibleSellerLegalName !== '-' ? { label: documentCopy.sections.accountHolder, value: visibleSellerLegalName } : null,
+          account.nib ? { label: documentCopy.sections.nib, value: account.nib } : null,
+          account.swift ? { label: documentCopy.sections.swift, value: account.swift } : null,
+          account.taxNumber ? { label: documentCopy.sections.taxNumber, value: account.taxNumber } : null,
+        ].filter(Boolean) as Array<{ label: string; value: string }>
+        if (!rows.length) return null
+        const title = [String(account.name || '').trim(), String(account.currencyCode || '').trim()].filter(Boolean).join(' · ')
+        return {
+          title: title || String(account.bankName || '').trim() || documentCopy.sections.bankDetails,
+          rows,
+        }
+      })
+      .filter(Boolean) as Array<{ title: string; rows: Array<{ label: string; value: string }> }>,
+    [bankAccounts, documentCopy.sections.accountHolder, documentCopy.sections.accountNumber, documentCopy.sections.bankDetails, documentCopy.sections.bankName, documentCopy.sections.nib, documentCopy.sections.swift, documentCopy.sections.taxNumber, visibleSellerLegalName],
+  )
   const outputModel = useMemo(
     () => (invoice && isIssued
       ? buildSalesInvoiceOutputModel(invoice, lines, {
         brandName: brand.name,
         logoUrl: brand.logoUrl,
         lang,
+        orderReference: invoiceState?.order_no || null,
+        bankAccounts,
       })
       : null),
-    [brand.logoUrl, brand.name, invoice, isIssued, lang, lines],
+    [bankAccounts, brand.logoUrl, brand.name, invoice, invoiceState?.order_no, isIssued, lang, lines],
   )
   const creditNoteLinesByNoteId = useMemo(() => {
     const map = new Map<string, SalesCreditNoteLineRow[]>()
@@ -1721,62 +1828,129 @@ export default function SalesInvoiceDetailPage() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
-                <CardTitle>{tt('financeDocs.mz.fiscalIdentity', 'Fiscal identity')}</CardTitle>
+                <CardTitle>{tt('financeDocs.mz.documentPresentation', 'Invoice document presentation')}</CardTitle>
                 <CardDescription>
-                  {tt('financeDocs.mz.fiscalIdentityHelp', 'The visible legal reference stays operator-facing, while internal workflow continues to use stable ids.')}
+                  {tt('financeDocs.mz.documentPresentationHelp', 'This preview follows the fixed bilingual invoice template. App navigation and workflow controls still use the current UI language, but the formal document labels stay stable.')}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.internalReference', 'Internal reference')}</div>
-                  <div className="mt-1 font-medium">{invoice.internal_reference}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.customer', 'Customer')}</div>
-                  <div className="mt-1">{visibleBuyerName}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.invoiceDate', 'Invoice date')}</div>
-                  {isDraft ? (
-                    <Input type="date" value={invoiceDateDraft} onChange={(event) => setInvoiceDateDraft(event.target.value)} disabled={!canEditDraft} />
-                  ) : (
-                    <div className="mt-1">{shortDate(invoice.invoice_date)}</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.dueDate', 'Due date')}</div>
-                  {isDraft ? (
-                    <Input type="date" value={dueDateDraft} onChange={(event) => setDueDateDraft(event.target.value)} disabled={!canEditDraft} />
-                  ) : (
-                    <div className="mt-1">{shortDate(invoice.due_date)}</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.approval', 'Approval')}</div>
-                  <div className="mt-1">{approvalStatusLabel}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.approvalTimestamp', 'Approval checkpoint')}</div>
-                  <div className="mt-1">
-                    {approvalStatus === 'approved'
-                      ? shortDate(invoice.approved_at)
-                      : approvalStatus === 'pending_approval'
-                        ? shortDate(invoice.approval_requested_at)
-                        : tt('common.dash', '-')}
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.computerPhrase', 'Computer processed wording')}</div>
-                  <div className="mt-1 font-medium uppercase tracking-[0.08em]">
-                    {visibleComputerPhrase}
-                  </div>
-                  {isDraft ? (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {tt('financeDocs.mz.previewFreezesOnIssue', 'Draft values preview the linked order and company settings. The stored fiscal snapshot is frozen on issue.')}
+              <CardContent className="space-y-5">
+                <div className="overflow-hidden rounded-[1.4rem] border border-border/80 bg-background/70">
+                  <div className="grid gap-0 border-b border-border/70 lg:grid-cols-[minmax(0,1.2fr)_280px]">
+                    <div className="space-y-3 p-4 sm:p-5">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        {documentCopy.parties.issuer}
+                      </div>
+                      <div className="text-lg font-semibold tracking-[-0.02em]">{visibleSellerLegalName}</div>
+                      {visibleSellerName !== visibleSellerLegalName ? (
+                        <div className="text-sm text-muted-foreground">{visibleSellerName}</div>
+                      ) : null}
+                      <div className="space-y-1 text-sm text-muted-foreground">
+                        <div>{visibleSellerAddress}</div>
+                        <div className="font-medium text-foreground">{documentCopy.parties.taxIdLabel}: {visibleSellerTaxId}</div>
+                      </div>
                     </div>
-                  ) : null}
+                    <div className="border-t border-border/70 bg-muted/10 lg:border-l lg:border-t-0">
+                      {documentMetaRows.map((row) => (
+                        <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-border/70 px-4 py-3 last:border-b-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{row.label}</div>
+                          <div className="text-right text-sm font-medium text-foreground">{row.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border-b border-border/70 p-4 sm:p-5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      {documentCopy.parties.client}
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-[168px_minmax(0,1fr)]">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{documentCopy.parties.client}</div>
+                      <div className="text-sm">
+                        <div className="font-medium text-foreground">{visibleBuyerName || '-'}</div>
+                      </div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{documentCopy.sections.address}</div>
+                      <div className="text-sm text-muted-foreground">{visibleBuyerAddress}</div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{documentCopy.parties.taxIdLabel}</div>
+                      <div className="text-sm text-foreground">{visibleBuyerTaxId}</div>
+                      {invoiceState?.order_no ? (
+                        <>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{documentCopy.meta.orderReference}</div>
+                          <div className="text-sm text-foreground">{invoiceState.order_no}</div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
+                    <div className="space-y-3">
+                      {(documentNarrativeBlocks.length ? documentNarrativeBlocks : [{ title: documentCopy.notes.fiscalNote, body: documentCopy.notes.notApplicable }]).map((block) => (
+                        <div key={block.title} className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{block.title}</div>
+                          <div className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground/90">{block.body}</div>
+                        </div>
+                      ))}
+                      <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {tt('financeDocs.mz.computerPhrase', 'Computer processed wording')}
+                        </div>
+                        <div className="mt-2 text-sm font-semibold uppercase tracking-[0.08em] text-foreground">
+                          {outputModel?.computerPhrase || draftPreview?.computer_processed_phrase || documentCopy.footer.computerProcessed}
+                        </div>
+                        {isDraft ? (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {tt('financeDocs.mz.previewFreezesOnIssue', 'Draft values preview the linked order and company settings. The stored fiscal snapshot is frozen on issue.')}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {documentCopy.sections.bankDetails}
+                      </div>
+                      {documentBankDetails.length ? (
+                        <div className="mt-3 space-y-3">
+                          {documentBankDetails.map((account) => (
+                            <div key={account.title} className="rounded-xl border border-border/70 bg-background/80 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">{account.title}</div>
+                              <div className="mt-3 grid gap-2 md:grid-cols-[148px_minmax(0,1fr)]">
+                                {account.rows.map((row) => (
+                                  <div key={`${account.title}:${row.label}`} className="contents">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{row.label}</div>
+                                    <div className="text-sm text-foreground">{row.value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-sm text-muted-foreground">{documentCopy.sections.bankDetailsEmpty}</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="md:col-span-2">
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.invoiceDate', 'Invoice date')}</div>
+                    {isDraft ? (
+                      <Input type="date" value={invoiceDateDraft} onChange={(event) => setInvoiceDateDraft(event.target.value)} disabled={!canEditDraft} className="mt-2" />
+                    ) : (
+                      <div className="mt-2 text-sm text-foreground">{formatOutputDate('bi', invoice.invoice_date)}</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.fields.dueDate', 'Due date')}</div>
+                    {isDraft ? (
+                      <Input type="date" value={dueDateDraft} onChange={(event) => setDueDateDraft(event.target.value)} disabled={!canEditDraft} className="mt-2" />
+                    ) : (
+                      <div className="mt-2 text-sm text-foreground">{formatOutputDate('bi', invoice.due_date)}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
                     {tt('financeDocs.mz.vatExemptionReason', 'VAT exemption reason')}
                   </div>
@@ -1794,11 +1968,12 @@ export default function SalesInvoiceDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-1 text-sm">{visibleVatExemptionReason}</div>
+                    <div className="mt-2 text-sm">{visibleVatExemptionReason}</div>
                   )}
                 </div>
+
                 {isDraft ? (
-                  <div className="md:col-span-2 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {canEditDraft ? (
                       <Button variant="outline" onClick={() => void handleSaveDraftDates()} disabled={savingDraft || issuing}>
                         {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.mz.saveDraftDates', 'Save draft dates')}
@@ -1832,8 +2007,9 @@ export default function SalesInvoiceDetailPage() {
                     ) : null}
                   </div>
                 ) : null}
+
                 {isDraft && issueReadiness ? (
-                  <div className="md:col-span-2">
+                  <div>
                     <div className={`rounded-2xl border px-4 py-4 shadow-sm transition-shadow ${issueReadinessReady ? 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20' : 'border-amber-200/80 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/20'}`}>
                       <div className="flex items-start gap-3">
                         <div className={`mt-0.5 rounded-full p-2 ${issueReadinessReady ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}`}>
@@ -1872,34 +2048,49 @@ export default function SalesInvoiceDetailPage() {
 
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
-                <CardTitle>{tt('financeDocs.fields.total', 'Total')}</CardTitle>
+                <CardTitle>{tt('financeDocs.mz.documentTotals', 'Document totals')}</CardTitle>
+                <CardDescription>
+                  {tt('financeDocs.mz.documentTotalsHelp', 'Taxable amount, VAT, and grand total remain unchanged by the presentation refresh. Where needed, MZN base totals stay visible alongside the transaction currency.')}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={workflowTone(invoice.document_workflow_status)}>
+                    {invoice.document_workflow_status.toUpperCase()}
+                  </Badge>
+                  <Badge variant={approvalTone(approvalStatus)}>
+                    {approvalStatusLabel}
+                  </Badge>
+                </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span>{tt('financeDocs.fields.subtotal', 'Subtotal')}</span>
+                  <span>{documentCopy.totals.subtotal}</span>
                   <span className="font-mono tabular-nums">{money(invoice.subtotal, invoice.currency_code)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span>{tt('financeDocs.fields.taxTotal', 'Tax')}</span>
+                  <span>{documentCopy.totals.vat}</span>
                   <span className="font-mono tabular-nums">{money(invoice.tax_total, invoice.currency_code)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-lg font-semibold">
-                  <span>{tt('financeDocs.fields.total', 'Total')}</span>
+                  <span>{documentCopy.totals.total}</span>
                   <span className="font-mono tabular-nums">{money(invoice.total_amount, invoice.currency_code)}</span>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                  <div>{documentCopy.meta.currency}: <span className="font-medium text-foreground">{invoice.currency_code || 'MZN'}</span></div>
+                  <div className="mt-1">{documentCopy.meta.exchangeRate}: <span className="font-medium text-foreground">{documentExchangeRate.toFixed(4)}</span></div>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
                   <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">MZN</div>
                   <div className="mt-2 space-y-1 text-sm">
                     <div className="flex items-center justify-between gap-3">
-                      <span>{tt('financeDocs.fields.subtotal', 'Subtotal')}</span>
+                      <span>{documentCopy.totals.baseSubtotal}</span>
                       <span className="font-mono tabular-nums">{money(isDraft ? (mznPreview?.subtotal || 0) : invoice.subtotal_mzn, 'MZN')}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
-                      <span>{tt('financeDocs.fields.taxTotal', 'Tax')}</span>
+                      <span>{documentCopy.totals.baseVat}</span>
                       <span className="font-mono tabular-nums">{money(isDraft ? (mznPreview?.tax || 0) : invoice.tax_total_mzn, 'MZN')}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3 font-semibold">
-                      <span>{tt('financeDocs.fields.total', 'Total')}</span>
+                      <span>{documentCopy.totals.baseTotal}</span>
                       <span className="font-mono tabular-nums">{money(isDraft ? (mznPreview?.total || 0) : invoice.total_amount_mzn, 'MZN')}</span>
                     </div>
                   </div>
@@ -2118,35 +2309,6 @@ export default function SalesInvoiceDetailPage() {
                 </CardContent>
               </Card>
             ) : null}
-
-            <Card className="border-border/80 shadow-sm">
-              <CardHeader>
-                <CardTitle>{tt('financeDocs.mz.sellerSnapshot', 'Seller snapshot')}</CardTitle>
-                {isDraft ? (
-                  <CardDescription>{tt('financeDocs.mz.sellerPreviewHelp', 'Draft preview comes from the current company profile until issue freezes the seller snapshot.')}</CardDescription>
-                ) : null}
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="font-medium">{visibleSellerName}</div>
-                {(invoice.seller_trade_name_snapshot || draftPreview?.seller_trade_name) ? <div>{visibleSellerLegalName}</div> : null}
-                <div>{tt('company.taxId', 'Tax ID')}: {visibleSellerTaxId}</div>
-                <div>{visibleSellerAddress}</div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/80 shadow-sm">
-              <CardHeader>
-                <CardTitle>{tt('financeDocs.mz.buyerSnapshot', 'Buyer snapshot')}</CardTitle>
-                {isDraft ? (
-                  <CardDescription>{tt('financeDocs.mz.buyerPreviewHelp', 'Draft preview comes from the linked sales order and customer until issue freezes the buyer snapshot.')}</CardDescription>
-                ) : null}
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="font-medium">{visibleBuyerName || '-'}</div>
-                <div>{tt('company.taxId', 'Tax ID')}: {visibleBuyerTaxId}</div>
-                <div>{visibleBuyerAddress}</div>
-              </CardContent>
-            </Card>
           </div>
 
           <FinanceChainCard
@@ -2157,24 +2319,23 @@ export default function SalesInvoiceDetailPage() {
 
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
-              <CardTitle>{tt('financeDocs.fields.lines', 'Lines')}</CardTitle>
+              <CardTitle>{tt('financeDocs.mz.documentLines', 'Document lines')}</CardTitle>
               <CardDescription>
-                {tt('financeDocs.mz.linesHelp', 'Issued invoices keep these line values immutable and separate from the source sales order.')}
+                {tt('financeDocs.mz.linesHelp', 'The detail table mirrors the formal invoice structure with fixed bilingual headers. Taxable line values stay separate from VAT so the totals block remains explicit and audit-friendly.')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {lines.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{tt('financeDocs.linesEmpty', 'No document lines have been stored for this finance document yet.')}</p>
               ) : (
-                <Table>
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{tt('orders.description', 'Description')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.qty', 'Qty')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.unitPrice', 'Unit price')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.subtotal', 'Subtotal')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.taxTotal', 'Tax')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
+                      <TableHead>{documentCopy.table.description}</TableHead>
+                      <TableHead className="text-right">{documentCopy.table.qty}</TableHead>
+                      <TableHead className="text-right">{documentCopy.table.unit}</TableHead>
+                      <TableHead className="text-right">{documentCopy.table.unitPrice}</TableHead>
+                      <TableHead className="text-right">{documentCopy.table.total}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2182,13 +2343,18 @@ export default function SalesInvoiceDetailPage() {
                       <TableRow key={line.id}>
                         <TableCell>
                           <div className="font-medium">{line.display_description || line.description || tt('common.dash', '-')}</div>
-                          {line.display_unit_of_measure ? <div className="text-xs text-muted-foreground">{line.display_unit_of_measure}</div> : null}
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {[
+                              line.product_code_snapshot ? line.product_code_snapshot : null,
+                              `${documentCopy.totals.subtotal}: ${money(line.line_total, invoice.currency_code)}`,
+                              `${documentCopy.table.vat}: ${money(line.tax_amount, invoice.currency_code)}`,
+                            ].filter(Boolean).join(' · ')}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground">{line.display_unit_of_measure || line.unit_of_measure_snapshot || '-'}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{money(line.unit_price, invoice.currency_code)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{money(line.line_total, invoice.currency_code)}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{money(line.tax_amount, invoice.currency_code)}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{money(line.line_total + line.tax_amount, invoice.currency_code)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -2277,6 +2443,7 @@ export default function SalesInvoiceDetailPage() {
                                       logoUrl: brand.logoUrl,
                                       lang,
                                       originalInvoiceReference: invoice.internal_reference,
+                                      bankAccounts,
                                     },
                                   )
                                   void handlePrintAdjustment(model)
@@ -2297,6 +2464,7 @@ export default function SalesInvoiceDetailPage() {
                                       logoUrl: brand.logoUrl,
                                       lang,
                                       originalInvoiceReference: invoice.internal_reference,
+                                      bankAccounts,
                                     },
                                   )
                                   void handleDownloadAdjustmentPdf(model)
@@ -2392,6 +2560,7 @@ export default function SalesInvoiceDetailPage() {
                                       logoUrl: brand.logoUrl,
                                       lang,
                                       originalInvoiceReference: invoice.internal_reference,
+                                      bankAccounts,
                                     },
                                   )
                                   void handlePrintAdjustment(model)
@@ -2412,6 +2581,7 @@ export default function SalesInvoiceDetailPage() {
                                       logoUrl: brand.logoUrl,
                                       lang,
                                       originalInvoiceReference: invoice.internal_reference,
+                                      bankAccounts,
                                     },
                                   )
                                   void handleDownloadAdjustmentPdf(model)

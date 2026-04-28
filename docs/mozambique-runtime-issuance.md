@@ -62,6 +62,18 @@ Branding overlay:
 - If a company logo is configured, the print/PDF output may show it as a branding element.
 - This does not change the legal data source. Seller, buyer, fiscal totals, reference, and compliance phrase still come only from frozen invoice snapshots.
 
+Formal bilingual template:
+
+- Sales invoice, sales credit note, and sales debit note print/PDF output now use a fixed bilingual Portuguese/English template.
+- App UI language does not change the formal document labels or structure for those legal outputs.
+- The renderer must keep `PROCESSADO POR COMPUTADOR` present and now pairs it with the English phrase on the document footer when using the known Mozambique computer-processed wording.
+
+Supplemental bank-details behavior:
+
+- Bank details are sourced from the current company `bank_accounts` setup as a supplemental payment block only.
+- Missing bank details must not break output generation; the payment block is omitted from print/PDF when no usable account fields exist.
+- This does not relax the snapshot rule for seller/buyer legal identity, fiscal totals, or compliance wording.
+
 Draft-only UI preview is different:
 
 - before issue, the invoice detail page may show non-authoritative preview values loaded from the linked sales order, customer, and company settings

@@ -1,4 +1,4 @@
-export type OutputLanguage = 'en' | 'pt'
+export type OutputLanguage = 'en' | 'pt' | 'bi'
 
 type OutputCopy = {
   documentTypes: {
@@ -20,8 +20,10 @@ type OutputCopy = {
     noteDate: string
     dueDate: string
     currency: string
+    exchangeRate: string
     originalInvoice: string
     originalBill: string
+    orderReference: string
   }
   parties: {
     issuer: string
@@ -43,6 +45,8 @@ type OutputCopy = {
     vatExemptionReason: string
     notApplicable: string
     correctionReason: string
+    fiscalNote: string
+    paymentTerms: string
     fiscalCorrection: string
     fiscalAdjustment: string
     supplierCreditAdjustment: string
@@ -65,8 +69,20 @@ type OutputCopy = {
     baseVat: string
     baseTotal: string
   }
+  sections: {
+    address: string
+    bankDetails: string
+    bankDetailsEmpty: string
+    accountHolder: string
+    bankName: string
+    accountNumber: string
+    nib: string
+    swift: string
+    taxNumber: string
+  }
   footer: {
     computerProcessed: string
+    pageLabel: string
   }
   share: {
     dateLabel: string
@@ -86,16 +102,16 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
   pt: {
     documentTypes: {
       salesInvoice: 'Fatura',
-      salesCreditNote: 'Nota de cr\u00e9dito',
-      salesDebitNote: 'Nota de d\u00e9bito',
+      salesCreditNote: 'Nota de crédito',
+      salesDebitNote: 'Nota de débito',
       vendorBill: 'Fatura de fornecedor',
-      vendorCreditNote: 'Nota de cr\u00e9dito do fornecedor',
-      vendorDebitNote: 'Nota de d\u00e9bito do fornecedor',
+      vendorCreditNote: 'Nota de crédito do fornecedor',
+      vendorDebitNote: 'Nota de débito do fornecedor',
     },
     workflow: {
       draft: 'Rascunho',
       issued: 'Emitida',
-      posted: 'Lan\u00e7ada',
+      posted: 'Lançada',
       voided: 'Anulada',
     },
     meta: {
@@ -103,8 +119,10 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       noteDate: 'Data da nota',
       dueDate: 'Vencimento',
       currency: 'Moeda',
+      exchangeRate: 'Câmbio',
       originalInvoice: 'Fatura original',
       originalBill: 'Documento original',
+      orderReference: 'Pedido',
     },
     parties: {
       issuer: 'Emitente',
@@ -114,27 +132,29 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       taxIdLabel: 'NUIT',
     },
     table: {
-      description: 'Descri\u00e7\u00e3o',
+      description: 'Descrição',
       qty: 'Qtd.',
       unit: 'Un.',
-      unitPrice: 'Pre\u00e7o unit.',
+      unitPrice: 'Preço unit.',
       vat: 'IVA',
       total: 'Total',
       taxRatePrefix: 'IVA',
     },
     notes: {
-      vatExemptionReason: 'Motivo de isen\u00e7\u00e3o do IVA',
-      notApplicable: 'N\u00e3o aplic\u00e1vel a este documento.',
-      correctionReason: 'Motivo da corre\u00e7\u00e3o',
-      fiscalCorrection: 'Corre\u00e7\u00e3o fiscal.',
+      vatExemptionReason: 'Motivo de isenção do IVA',
+      notApplicable: 'Não aplicável a este documento.',
+      correctionReason: 'Motivo da correção',
+      fiscalNote: 'Nota fiscal',
+      paymentTerms: 'Condições de pagamento',
+      fiscalCorrection: 'Correção fiscal.',
       fiscalAdjustment: 'Ajuste fiscal.',
-      supplierCreditAdjustment: 'Redu\u00e7\u00e3o do passivo com fornecedor.',
+      supplierCreditAdjustment: 'Redução do passivo com fornecedor.',
       supplierDebitAdjustment: 'Aumento do passivo com fornecedor.',
-      references: 'Refer\u00eancias',
+      references: 'Referências',
       apDocument: 'Documento de contas a pagar.',
     },
     references: {
-      supplierInvoiceReference: 'Refer\u00eancia da fatura do fornecedor',
+      supplierInvoiceReference: 'Referência da fatura do fornecedor',
       stockwiseKey: 'Chave interna StockWise',
       linkedPurchaseOrder: 'Pedido de compra associado',
       originalInvoice: 'Fatura original',
@@ -148,18 +168,30 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       baseVat: 'IVA fiscal',
       baseTotal: 'Total fiscal',
     },
+    sections: {
+      address: 'Endereço',
+      bankDetails: 'Detalhes bancários',
+      bankDetailsEmpty: 'Nenhuma conta bancária foi configurada para este documento.',
+      accountHolder: 'Titular',
+      bankName: 'Banco',
+      accountNumber: 'Conta',
+      nib: 'NIB',
+      swift: 'SWIFT',
+      taxNumber: 'Nº fiscal',
+    },
     footer: {
       computerProcessed: 'PROCESSADO POR COMPUTADOR',
+      pageLabel: 'Página',
     },
     share: {
       dateLabel: 'Data',
       baseTotalLabel: 'Total fiscal',
     },
     errors: {
-      shareUnavailable: 'A partilha n\u00e3o est\u00e1 dispon\u00edvel neste dispositivo.',
-      shareUnsupported: 'A partilha do PDF gerado n\u00e3o \u00e9 suportada neste dispositivo.',
-      printPrepFailed: 'N\u00e3o foi poss\u00edvel preparar o documento para impress\u00e3o.',
-      printOpenFailed: 'N\u00e3o foi poss\u00edvel abrir a janela de impress\u00e3o.',
+      shareUnavailable: 'A partilha não está disponível neste dispositivo.',
+      shareUnsupported: 'A partilha do PDF gerado não é suportada neste dispositivo.',
+      printPrepFailed: 'Não foi possível preparar o documento para impressão.',
+      printOpenFailed: 'Não foi possível abrir a janela de impressão.',
     },
   },
   en: {
@@ -182,8 +214,10 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       noteDate: 'Note date',
       dueDate: 'Due date',
       currency: 'Currency',
+      exchangeRate: 'ROE',
       originalInvoice: 'Original invoice',
       originalBill: 'Original bill',
+      orderReference: 'Order',
     },
     parties: {
       issuer: 'Issuer',
@@ -205,6 +239,8 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       vatExemptionReason: 'VAT exemption reason',
       notApplicable: 'Not applicable to this document.',
       correctionReason: 'Adjustment reason',
+      fiscalNote: 'Fiscal note',
+      paymentTerms: 'Payment terms',
       fiscalCorrection: 'Fiscal correction.',
       fiscalAdjustment: 'Fiscal adjustment.',
       supplierCreditAdjustment: 'Reduction of supplier liability.',
@@ -227,12 +263,119 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       baseVat: 'Base VAT',
       baseTotal: 'Base total',
     },
+    sections: {
+      address: 'Address',
+      bankDetails: 'Bank details',
+      bankDetailsEmpty: 'No bank account is configured for this document.',
+      accountHolder: 'Holder',
+      bankName: 'Bank',
+      accountNumber: 'Account',
+      nib: 'NIB',
+      swift: 'SWIFT',
+      taxNumber: 'Tax number',
+    },
     footer: {
       computerProcessed: 'PROCESSED BY COMPUTER',
+      pageLabel: 'Page',
     },
     share: {
       dateLabel: 'Date',
       baseTotalLabel: 'Base total',
+    },
+    errors: {
+      shareUnavailable: 'Sharing is not available on the current device.',
+      shareUnsupported: 'Sharing the generated PDF is not supported on the current device.',
+      printPrepFailed: 'Unable to prepare the document for printing.',
+      printOpenFailed: 'Unable to open the print window.',
+    },
+  },
+  bi: {
+    documentTypes: {
+      salesInvoice: 'Factura / Invoice',
+      salesCreditNote: 'Nota de Crédito / Credit Note',
+      salesDebitNote: 'Nota de Débito / Debit Note',
+      vendorBill: 'Vendor Bill',
+      vendorCreditNote: 'Supplier Credit Note',
+      vendorDebitNote: 'Supplier Debit Note',
+    },
+    workflow: {
+      draft: 'Rascunho / Draft',
+      issued: 'Emitida / Issued',
+      posted: 'Lançada / Posted',
+      voided: 'Anulada / Voided',
+    },
+    meta: {
+      invoiceDate: 'Data / Date',
+      noteDate: 'Data / Date',
+      dueDate: 'Vencimento / Due Date',
+      currency: 'Moeda / Currency',
+      exchangeRate: 'Câmbio / ROE',
+      originalInvoice: 'Factura Original / Original Invoice',
+      originalBill: 'Documento Original / Original Bill',
+      orderReference: 'Encomenda / Sales Order',
+    },
+    parties: {
+      issuer: 'Emitente / Issuer',
+      client: 'Cliente / Client',
+      supplier: 'Fornecedor / Supplier',
+      company: 'Empresa / Company',
+      taxIdLabel: 'NUIT / Tax ID',
+    },
+    table: {
+      description: 'Descrição / Description',
+      qty: 'Quantidade / Quantity',
+      unit: 'Unidade / Unit',
+      unitPrice: 'Preço Unitário / Unit Price',
+      vat: 'IVA / VAT',
+      total: 'Valor / Value',
+      taxRatePrefix: 'IVA / VAT',
+    },
+    notes: {
+      vatExemptionReason: 'Motivo de Isenção do IVA / VAT Exemption Reason',
+      notApplicable: 'Não aplicável / Not applicable.',
+      correctionReason: 'Motivo de Correcção / Correction Reason',
+      fiscalNote: 'Nota Fiscal / Fiscal Note',
+      paymentTerms: 'Condições de Pagamento / Payment Terms',
+      fiscalCorrection: 'Correcção fiscal / Fiscal correction.',
+      fiscalAdjustment: 'Ajuste fiscal / Fiscal adjustment.',
+      supplierCreditAdjustment: 'Supplier credit adjustment.',
+      supplierDebitAdjustment: 'Supplier debit adjustment.',
+      references: 'Referências / References',
+      apDocument: 'Accounts payable document.',
+    },
+    references: {
+      supplierInvoiceReference: 'Referência da Factura / Supplier Invoice Reference',
+      stockwiseKey: 'Chave StockWise / StockWise Key',
+      linkedPurchaseOrder: 'Pedido de Compra / Purchase Order',
+      originalInvoice: 'Factura Original / Original Invoice',
+      originalBill: 'Documento Original / Original Bill',
+    },
+    totals: {
+      subtotal: 'Valor Tributável / Taxable Amount',
+      vat: 'IVA / VAT',
+      total: 'Total',
+      baseSubtotal: 'Valor Tributável / Taxable Amount',
+      baseVat: 'IVA / VAT',
+      baseTotal: 'Total',
+    },
+    sections: {
+      address: 'Endereço / Address',
+      bankDetails: 'Detalhes Bancários | Bank Details',
+      bankDetailsEmpty: 'Sem contas bancárias configuradas / No bank details configured.',
+      accountHolder: 'Titular / Holder',
+      bankName: 'Banco / Bank',
+      accountNumber: 'Conta / Account',
+      nib: 'NIB',
+      swift: 'SWIFT',
+      taxNumber: 'NUIT / Tax ID',
+    },
+    footer: {
+      computerProcessed: 'PROCESSADO POR COMPUTADOR / PROCESSED BY COMPUTER',
+      pageLabel: 'Página / Page',
+    },
+    share: {
+      dateLabel: 'Data / Date',
+      baseTotalLabel: 'Total Fiscal / Base Total',
     },
     errors: {
       shareUnavailable: 'Sharing is not available on the current device.',
@@ -247,10 +390,12 @@ const KNOWN_COMPUTER_PHRASES = new Set([
   'PROCESSADO POR COMPUTADOR',
   'PROCESSED BY COMPUTER',
   'COMPUTER PROCESSED',
+  'PROCESSADO POR COMPUTADOR / PROCESSED BY COMPUTER',
 ])
 
 export function normalizeOutputLanguage(value?: string | null): OutputLanguage | null {
   const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'bi' || normalized === 'bilingual') return 'bi'
   if (normalized.startsWith('pt')) return 'pt'
   if (normalized.startsWith('en')) return 'en'
   return null
@@ -275,7 +420,8 @@ export function getOutputCopy(language: OutputLanguage) {
 }
 
 function numberLocale(language: OutputLanguage) {
-  return language === 'pt' ? 'pt-MZ' : 'en-GB'
+  if (language === 'pt') return 'pt-MZ'
+  return 'en-GB'
 }
 
 export function formatOutputCurrency(language: OutputLanguage, amount: number, currencyCode: string) {
@@ -305,17 +451,19 @@ export function formatOutputDate(language: OutputLanguage, value?: string | null
   const date = new Date(year, month, day)
   if (Number.isNaN(date.getTime())) return text
 
-  return language === 'pt'
-    ? new Intl.DateTimeFormat('pt-MZ', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      }).format(date)
-    : new Intl.DateTimeFormat('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      }).format(date)
+  if (language === 'bi' || language === 'pt') {
+    return new Intl.DateTimeFormat('pt-MZ', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(date)
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
 }
 
 export function localizeComputerPhrase(language: OutputLanguage, snapshotPhrase?: string | null) {

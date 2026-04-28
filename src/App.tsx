@@ -71,11 +71,11 @@ function PublicOnly() {
 
 function RequireMembership() {
   const { user, loading: authLoading } = useAuth()
-  const { myRole, loading: orgLoading } = useOrg()
+  const { myRole, memberStatus, loading: orgLoading } = useOrg()
 
   if (authLoading || orgLoading) return <LoadingSplash />
   if (!user) return <Navigate to="/login" replace />
-  if (!myRole) return <Navigate to="/onboarding" replace />
+  if (!myRole || memberStatus !== 'active') return <Navigate to="/onboarding" replace />
   return <Outlet />
 }
 
