@@ -1,0 +1,40 @@
+﻿{
+  "prefix": "uimoj5spvy",
+  "ownerCompanyId": "a70d2664-8f90-4c44-bdeb-fab051f92f3f",
+  "users": {
+    "owner": {
+      "email": "uimoj5spvy.owner.0c0e0717@stockwise.local",
+      "password": "Sw!0c0e0717Aa11"
+    },
+    "clean": {
+      "email": "uimoj5spvy.clean.176ae692@stockwise.local",
+      "password": "Sw!176ae692Aa11"
+    },
+    "invited": {
+      "email": "uimoj5spvy.invited.581d04d1@stockwise.local",
+      "password": "Sw!581d04d1Aa11"
+    },
+    "createchoice": {
+      "email": "uimoj5spvy.createchoice.ce3c366e@stockwise.local",
+      "password": "Sw!ce3c366eAa11"
+    },
+    "stranger": {
+      "email": "uimoj5spvy.stranger.680e9c83@stockwise.local",
+      "password": "Sw!680e9c83Aa11"
+    },
+    "expired": {
+      "email": "uimoj5spvy.expired.50e8910c@stockwise.local",
+      "password": "Sw!50e8910cAa11"
+    },
+    "callback": {
+      "email": "uimoj5spvy.callback.a75942fa@stockwise.local",
+      "password": "Sw!a75942faAa11"
+    }
+  },
+  "inviteTokens": {
+    "invited": "bb842aa4-bf5f-4ad3-a02b-b502021660a8",
+    "createchoice": "84040ed9-fa28-4696-805d-f2922d9000f8",
+    "expired": "61b7b699-b75b-441a-a32e-0a0501a7793a",
+    "callback": "b6166b0c-a8c0-4c1c-89ef-1b224f433455"
+  }
+}

@@ -1,0 +1,21 @@
+[    2311ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[    2505ms] [LOG] [Supabase] Initial token set for realtime {hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[    2506ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   27974ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   28106ms] [LOG] [Supabase] Initial token set for realtime {hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   28106ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   29124ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   31030ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   31369ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   31415ms] [LOG] [Supabase] Initial token set for realtime {hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   31416ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   61365ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   61510ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   61558ms] [LOG] [Supabase] Initial token set for realtime {hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   61559ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[ 3512085ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[ 7022527ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[10532105ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[14041965ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[17522005ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[21002174ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3

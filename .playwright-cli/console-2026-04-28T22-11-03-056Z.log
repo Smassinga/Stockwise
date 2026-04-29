@@ -1,0 +1,25 @@
+[    2087ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[    2283ms] [LOG] [Supabase] Initial token set for realtime {hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[    2284ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   19267ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   19413ms] [LOG] [Supabase] Initial token set for realtime {hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   19413ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   20436ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   22147ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   22382ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   22422ms] [LOG] [Supabase] Initial token set for realtime {hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   22423ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   28602ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   29905ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   30020ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   30069ms] [LOG] [Supabase] Initial token set for realtime {hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   30070ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   31638ms] [LOG] [NotificationCenter] Setting up realtime subscription for company {companyId: b2698ec4-3666-4e90-a412-66d0c2f508e8} @ http://127.0.0.1:4173/src/components/notifications/NotificationCenter.tsx:37
+[   31641ms] [LOG] [NotificationCenter] Channel setup already in flight for company {companyId: b2698ec4-3666-4e90-a412-66d0c2f508e8} @ http://127.0.0.1:4173/src/components/notifications/NotificationCenter.tsx:37
+[   31690ms] [LOG] [Supabase] Creating authed channel {name: notifications:company:b2698ec4-3666-4e90-a412-66d0c2f508e8, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[ 3510773ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[ 6990533ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[10470515ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[13950501ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[17430464ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[20910492ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: d75599e4-6676-45f4-b2d2-7e5081f25e24} @ http://127.0.0.1:4173/src/lib/supabase.ts:3

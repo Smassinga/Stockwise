@@ -1,0 +1,400 @@
+- generic [ref=e2]:
+  - generic [ref=e10]:
+    - complementary [ref=e11]:
+      - generic [ref=e12]:
+        - img "StockWise" [ref=e15]
+        - button "Toggle" [ref=e17] [cursor=pointer]:
+          - img [ref=e18]
+          - text: Dark
+      - navigation [ref=e20]:
+        - generic [ref=e21]:
+          - generic [ref=e22]: Operations
+          - generic [ref=e23]:
+            - link "Dashboard" [ref=e24] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e25]
+              - generic [ref=e30]: Dashboard
+            - link "Point of Sale" [ref=e31] [cursor=pointer]:
+              - /url: /operator
+              - img [ref=e32]
+              - generic [ref=e38]: Point of Sale
+            - link "Items" [ref=e39] [cursor=pointer]:
+              - /url: /items
+              - img [ref=e40]
+              - generic [ref=e44]: Items
+            - link "Assembly" [ref=e45] [cursor=pointer]:
+              - /url: /bom
+              - img [ref=e46]
+              - generic [ref=e50]: Assembly
+            - link "Movements" [ref=e51] [cursor=pointer]:
+              - /url: /movements
+              - img [ref=e52]
+              - generic [ref=e55]: Movements
+            - link "Stock Levels" [ref=e56] [cursor=pointer]:
+              - /url: /stock-levels
+              - img [ref=e57]
+              - generic [ref=e60]: Stock Levels
+            - link "Warehouses" [ref=e61] [cursor=pointer]:
+              - /url: /warehouses
+              - img [ref=e62]
+              - generic [ref=e72]: Warehouses
+        - generic [ref=e73]:
+          - generic [ref=e74]: Commercial & finance
+          - generic [ref=e75]:
+            - link "Orders" [ref=e76] [cursor=pointer]:
+              - /url: /orders
+              - img [ref=e77]
+              - generic [ref=e81]: Orders
+            - link "Sales Invoices" [ref=e82] [cursor=pointer]:
+              - /url: /sales-invoices
+              - img [ref=e83]
+              - generic [ref=e86]: Sales Invoices
+            - link "Mozambique Compliance" [ref=e87] [cursor=pointer]:
+              - /url: /compliance/mz
+              - img [ref=e88]
+              - generic [ref=e91]: Mozambique Compliance
+            - link "Vendor Bills" [ref=e92] [cursor=pointer]:
+              - /url: /vendor-bills
+              - img [ref=e93]
+              - generic [ref=e96]: Vendor Bills
+            - link "Settlements" [ref=e97] [cursor=pointer]:
+              - /url: /settlements
+              - img [ref=e98]
+              - generic [ref=e100]: Settlements
+            - link "Transactions" [ref=e101] [cursor=pointer]:
+              - /url: /transactions
+              - img [ref=e102]
+              - generic [ref=e105]: Transactions
+            - link "Cash" [ref=e106] [cursor=pointer]:
+              - /url: /cash
+              - img [ref=e107]
+              - generic [ref=e110]: Cash
+            - link "Banks" [ref=e111] [cursor=pointer]:
+              - /url: /banks
+              - img [ref=e112]
+              - generic [ref=e115]: Banks
+            - link "Landed Cost" [ref=e116] [cursor=pointer]:
+              - /url: /landed-cost
+              - img [ref=e117]
+              - generic [ref=e119]: Landed Cost
+            - link "Reports" [ref=e120] [cursor=pointer]:
+              - /url: /reports
+              - img [ref=e121]
+              - generic [ref=e123]: Reports
+        - generic [ref=e124]:
+          - generic [ref=e125]: Setup
+          - generic [ref=e126]:
+            - link "Customers" [ref=e127] [cursor=pointer]:
+              - /url: /customers
+              - img [ref=e128]
+              - generic [ref=e133]: Customers
+            - link "Suppliers" [ref=e134] [cursor=pointer]:
+              - /url: /suppliers
+              - img [ref=e135]
+              - generic [ref=e140]: Suppliers
+            - link "Users" [ref=e141] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e142]
+              - generic [ref=e147]: Users
+            - link "Currency" [ref=e148] [cursor=pointer]:
+              - /url: /currency
+              - img [ref=e149]
+              - generic [ref=e154]: Currency
+            - link "Uom" [ref=e155] [cursor=pointer]:
+              - /url: /uom
+              - img [ref=e156]
+              - generic [ref=e162]: Uom
+            - link "Imports" [ref=e163] [cursor=pointer]:
+              - /url: /setup/import
+              - img [ref=e164]
+              - generic [ref=e167]: Imports
+            - link "Settings" [ref=e168] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e169]
+              - generic [ref=e172]: Settings
+      - generic [ref=e173]:
+        - generic [ref=e174]:
+          - img [ref=e175]
+          - generic [ref=e179]: UI Clean Company
+        - generic [ref=e180]:
+          - generic [ref=e181]: UI Clean Company
+          - generic [ref=e182]: uimoj5spvy-clean
+          - generic [ref=e183]: Owner
+        - button "Sign Out" [ref=e184] [cursor=pointer]:
+          - img
+          - text: Sign Out
+    - generic [ref=e185]:
+      - banner [ref=e186]:
+        - generic [ref=e188]:
+          - img
+          - textbox "Search items, orders, invoices, bills, customers..." [ref=e189]
+        - generic [ref=e190]:
+          - group "Language selector" [ref=e191]:
+            - button "EN" [ref=e192] [cursor=pointer]
+            - button "PT" [ref=e193] [cursor=pointer]
+          - button "Notifications" [ref=e194] [cursor=pointer]:
+            - img
+            - generic [ref=e195]: "1"
+          - button "User menu" [ref=e196] [cursor=pointer]:
+            - generic [ref=e197]: U
+            - generic [ref=e198]:
+              - generic [ref=e199]: uimoj5spvy-clean
+              - generic [ref=e200]: Owner
+            - img
+      - main [ref=e201]:
+        - generic [ref=e202]:
+          - generic [ref=e203]:
+            - generic [ref=e204]:
+              - heading "Settings" [level=1] [ref=e205]
+              - paragraph [ref=e206]: Configure your StockWise system
+            - generic [ref=e207]:
+              - button "Save company" [ref=e208] [cursor=pointer]
+              - button "Save changes" [ref=e209] [cursor=pointer]
+          - generic [ref=e210]:
+            - generic [ref=e211]:
+              - generic [ref=e213]: Company profile
+              - generic [ref=e214]:
+                - generic [ref=e215]: UI Clean Legal, Lda
+                - generic [ref=e216]: Maintained from the live company profile used in onboarding, exports, and printed documents.
+            - generic [ref=e217]:
+              - generic [ref=e219]: Default warehouse
+              - generic [ref=e220]:
+                - generic [ref=e221]: All Warehouses
+                - generic [ref=e222]: Used as the default operational context for the dashboard and sales defaults.
+            - generic [ref=e223]:
+              - generic [ref=e225]: Inventory valuation
+              - generic [ref=e226]:
+                - generic [ref=e227]: Weighted Average
+                - generic [ref=e228]: Live inventory, stock levels, and landed cost revaluations currently use weighted average costing.
+          - generic [ref=e229]:
+            - generic [ref=e231]:
+              - img [ref=e232]
+              - text: Company Profile
+            - generic [ref=e235]:
+              - generic [ref=e236]:
+                - generic [ref=e237]:
+                  - text: Trade Name
+                  - textbox [ref=e238]
+                - generic [ref=e239]:
+                  - text: Legal Name
+                  - textbox [ref=e240]: UI Clean Legal, Lda
+                - generic [ref=e241]:
+                  - text: Email subject prefix (optional)
+                  - textbox "e.g. Munchythief, Lda" [ref=e242]
+                  - generic [ref=e243]: Used at the start of reminder subjects. Falls back to Trade/Legal/Company name.
+              - generic [ref=e244]:
+                - generic [ref=e245]:
+                  - text: Tax ID
+                  - textbox [ref=e246]: Avenida de Teste 100400123456
+                - generic [ref=e247]:
+                  - text: Registration No.
+                  - textbox [ref=e248]
+                - generic [ref=e249]:
+                  - text: Phone
+                  - textbox [ref=e250]
+              - generic [ref=e251]:
+                - generic [ref=e252]:
+                  - text: Email
+                  - textbox [ref=e253]
+                - generic [ref=e254]:
+                  - text: Website
+                  - textbox [ref=e255]
+                - generic [ref=e256]:
+                  - text: Print Footer Note
+                  - textbox "Thank you for your business!" [ref=e257]
+              - generic [ref=e258]:
+                - generic [ref=e259]:
+                  - text: Address1
+                  - textbox [ref=e260]
+                - generic [ref=e261]:
+                  - text: Address Line 2
+                  - textbox [ref=e262]
+              - generic [ref=e263]:
+                - generic [ref=e264]:
+                  - text: City
+                  - textbox [ref=e265]: Maputo
+                - generic [ref=e266]:
+                  - text: State/Province
+                  - textbox [ref=e267]
+                - generic [ref=e268]:
+                  - text: Postal Code
+                  - textbox [ref=e269]
+                - generic [ref=e270]:
+                  - text: Country
+                  - combobox [ref=e271] [cursor=pointer]:
+                    - generic: Select country
+                    - img [ref=e272]
+              - generic [ref=e275]:
+                - text: Preferred language for customer emails
+                - combobox [ref=e276] [cursor=pointer]:
+                  - generic: Auto (based on country)
+                  - img [ref=e277]
+                - generic [ref=e279]: Used by reminders/digests. If empty, we guess from the company's country.
+              - generic [ref=e280]:
+                - generic [ref=e281]:
+                  - text: Logo
+                  - generic [ref=e282]:
+                    - text: Logo URL
+                    - generic [ref=e283]:
+                      - textbox "https://…/logo.png" [ref=e284]
+                      - button "Upload" [ref=e285] [cursor=pointer]:
+                        - img
+                        - text: Upload
+                    - generic [ref=e287]: No logo set
+                  - generic [ref=e288]: Upload your company logo for use on documents.
+                - generic [ref=e289]:
+                  - text: Logo Path
+                  - textbox "Path to logo file" [ref=e290]
+                  - generic [ref=e291]: Leave blank to use the uploaded logo above.
+          - generic [ref=e292]:
+            - generic [ref=e294]:
+              - img [ref=e295]
+              - text: Localization & UI
+            - generic [ref=e298]:
+              - generic [ref=e299]:
+                - text: Language
+                - combobox [ref=e300] [cursor=pointer]:
+                  - generic: English
+                  - img [ref=e301]
+              - generic [ref=e303]:
+                - text: Default Dashboard Window
+                - combobox [ref=e304] [cursor=pointer]:
+                  - generic: Last 30 days
+                  - img [ref=e305]
+              - generic [ref=e307]:
+                - text: Default Warehouse (Dashboard/Filters)
+                - combobox [ref=e308] [cursor=pointer]:
+                  - generic: All Warehouses
+                  - img [ref=e309]
+              - generic [ref=e311]:
+                - switch [ref=e312] [cursor=pointer]
+                - generic [ref=e313]: Hide zero totals on dashboard
+          - generic [ref=e314]:
+            - generic [ref=e316]: Sales & Fulfilment
+            - generic [ref=e317]:
+              - generic [ref=e318]: Keep only the operational defaults your team actually controls here. Revenue recognition logic stays in product behavior, not company setup.
+              - generic [ref=e319]:
+                - switch [checked] [ref=e320] [cursor=pointer]
+                - generic [ref=e321]: Allow ship-by-line (partial shipments)
+              - generic [ref=e322]:
+                - switch [checked] [ref=e323] [cursor=pointer]
+                - generic [ref=e324]: Auto-complete SO when all lines shipped
+              - generic [ref=e325]:
+                - text: Default Fulfilment Warehouse
+                - combobox [ref=e326] [cursor=pointer]:
+                  - generic: None
+                  - img [ref=e327]
+          - generic [ref=e329]:
+            - generic [ref=e331]: Inventory valuation
+            - generic [ref=e332]:
+              - generic [ref=e333]:
+                - text: Valuation method
+                - textbox [disabled] [ref=e334]: Weighted Average
+                - generic [ref=e335]: Operational inventory, stock levels, purchase receipts, and landed cost revaluations currently use weighted average costing.
+              - generic [ref=e336]:
+                - text: Other methods
+                - generic [ref=e337]: FIFO and LIFO are not yet available for live company inventory valuation, so they are not exposed as selectable company options.
+          - generic [ref=e338]:
+            - generic [ref=e340]:
+              - img [ref=e341]
+              - text: Daily digest
+            - generic [ref=e344]:
+              - generic [ref=e345]: The daily digest is queued once per local day after the selected time and is currently delivered by email only.
+              - generic [ref=e346]:
+                - switch [ref=e347] [cursor=pointer]
+                - generic [ref=e348]: Daily digest (Revenue & COGS by product)
+              - generic [ref=e349]:
+                - text: Digest time (local)
+                - textbox [ref=e350]: 08:00
+                - generic [ref=e351]: 24-hour format. We'll use your timezone below.
+              - generic [ref=e352]:
+                - text: Timezone
+                - textbox "Africa/Maputo" [ref=e353]
+              - generic [ref=e354]: Email recipients below are the addresses the digest worker will send to when this feature is enabled.
+              - generic [ref=e356]:
+                - text: Recipient emails (comma separated)
+                - textbox "owner@company.com, manager@company.com" [ref=e357]
+                - generic [ref=e358]: Use one or more company email addresses, separated by commas. SMS and WhatsApp delivery are not active for the daily digest yet.
+          - generic [ref=e359]:
+            - generic [ref=e361]:
+              - img [ref=e362]
+              - text: Due reminders
+            - generic [ref=e365]:
+              - generic [ref=e366]: Due reminders run on your company timezone, follow the active AR anchor, use billing emails by default, and can add finance inbox recipients or BCC copies when needed.
+              - generic [ref=e367]:
+                - switch [checked] [ref=e368] [cursor=pointer]
+                - generic [ref=e369]: Enable due reminders
+              - generic [ref=e370]:
+                - text: Timezone
+                - textbox "e.g. Africa/Maputo" [ref=e371]: Africa/Maputo
+                - generic [ref=e372]: Timezone for calculating due dates
+              - generic [ref=e373]:
+                - text: Send due reminders at
+                - textbox [ref=e375]: 09:00
+                - generic [ref=e376]: Company local time. Minute precision is supported.
+              - generic [ref=e377]:
+                - generic [ref=e378]:
+                  - text: Reminder schedule
+                  - generic [ref=e379]: Choose when reminders should go out before, on, or after the due date.
+                - generic [ref=e380]:
+                  - generic [ref=e381]:
+                    - generic [ref=e382]: Before due date
+                    - generic [ref=e383]: Use this for early reminders such as 7, 3, or 1 day before the active receivable document is due.
+                    - generic [ref=e384]:
+                      - button "3 days before" [ref=e385] [cursor=pointer]:
+                        - generic [ref=e386]: 3 days before
+                        - img [ref=e387]
+                      - button "1 day before" [ref=e390] [cursor=pointer]:
+                        - generic [ref=e391]: 1 day before
+                        - img [ref=e392]
+                    - generic [ref=e395]:
+                      - spinbutton [ref=e396]
+                      - button "Add" [ref=e397] [cursor=pointer]:
+                        - img
+                        - text: Add
+                  - generic [ref=e398]:
+                    - generic [ref=e399]: On due date
+                    - generic [ref=e400]: Turn this on if customers should also receive a reminder on the exact due date.
+                    - generic [ref=e401]:
+                      - generic [ref=e402]: On due date
+                      - switch [checked] [ref=e403] [cursor=pointer]
+                  - generic [ref=e404]:
+                    - generic [ref=e405]: After due date
+                    - generic [ref=e406]: Use this for overdue follow-ups such as 1 or 3 days after the due date passes.
+                    - button "3 days after" [ref=e408] [cursor=pointer]:
+                      - generic [ref=e409]: 3 days after
+                      - img [ref=e410]
+                    - generic [ref=e413]:
+                      - spinbutton [ref=e414]
+                      - button "Add" [ref=e415] [cursor=pointer]:
+                        - img
+                        - text: Add
+                - generic [ref=e416]: You can mix early, on-date, and overdue reminders. Click an existing reminder chip to remove it.
+              - generic [ref=e417]:
+                - text: BCC Emails
+                - textbox "bcc1@example.com, bcc2@example.com" [ref=e418]
+                - generic [ref=e419]: Optional internal email addresses that should receive a blind-copy when customer due reminders are sent.
+              - generic [ref=e420]: Reminder links follow the active AR anchor automatically. Sales orders are used only until an issued sales invoice becomes the legal reminder anchor.
+          - generic [ref=e421]:
+            - generic [ref=e423]:
+              - img [ref=e424]
+              - text: Documents & Templates
+            - generic [ref=e427]:
+              - generic [ref=e428]:
+                - text: Company Name
+                - textbox "Leave blank to use your company profile name" [ref=e429]
+                - generic [ref=e430]: Display name on printed documents and exports. If left blank, the company profile name is used.
+              - generic [ref=e431]:
+                - generic [ref=e432]:
+                  - text: Logo URL
+                  - generic [ref=e433]:
+                    - textbox "https://…/logo.png" [ref=e434]
+                    - button "Upload" [ref=e435] [cursor=pointer]:
+                      - img
+                      - text: Upload
+                  - generic [ref=e437]: No logo set
+                - generic [ref=e438]: Paste a URL or upload to Supabase Storage. PNG or SVG works best for printed documents and branded exports.
+              - generic [ref=e439]:
+                - switch [ref=e440] [cursor=pointer]
+                - generic [ref=e441]: Show prices on packing slips
+  - status [ref=e447]: Company profile saved

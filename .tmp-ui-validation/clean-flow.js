@@ -1,0 +1,20 @@
+﻿async (page) => {
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  await page.goto('http://127.0.0.1:4173/login')
+  await page.locator('#email').fill('uimoj5spvy.clean.176ae692@stockwise.local')
+  await page.locator('#password').fill('Sw!176ae692Aa11')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.waitForURL('**/onboarding', { timeout: 20000 })
+  await page.getByText('Create your first company').waitFor({ timeout: 10000 })
+  await page.screenshot({ path: 'C:/Dev/Stockwise/output/playwright/01-clean-onboarding-desktop.png', fullPage: true })
+  await page.locator('#companyName').fill('UI Clean Company')
+  await page.getByRole('button', { name: 'Create company' }).click()
+  await page.getByText('Your workspace is ready').waitFor({ timeout: 20000 })
+  await page.getByText('Company created successfully.').waitFor({ timeout: 10000 })
+  await page.screenshot({ path: 'C:/Dev/Stockwise/output/playwright/02-clean-ready-desktop.png', fullPage: true })
+  await page.getByRole('button', { name: 'Complete company profile' }).click()
+  await page.waitForURL('**/settings', { timeout: 20000 })
+  await page.waitForLoadState('networkidle')
+  await page.screenshot({ path: 'C:/Dev/Stockwise/output/playwright/03-clean-settings-desktop.png', fullPage: true })
+  return { url: page.url(), title: await page.title() }
+}

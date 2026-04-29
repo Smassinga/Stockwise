@@ -36,6 +36,7 @@ The maintained product surfaces are:
 - pending invitation discovery is email-bound and uses a dedicated authenticated RPC that only returns invites for the signed-in account email
 - invitation acceptance stays secure through the authenticated email match plus invite validity checks; expired invite rows are excluded from the onboarding list and rejected on acceptance
 - choosing `Create new company` no longer auto-consumes pending invitations; the invitation record remains pending unless the user explicitly accepts it
+- the `admin-users/sync` edge function may link invite rows to the authenticated user id after sign-in, but it must not auto-activate invited memberships; invite acceptance remains an explicit onboarding or invite-link action
 
 ## Authority Split
 

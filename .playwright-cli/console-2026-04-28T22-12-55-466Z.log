@@ -1,0 +1,19 @@
+[    2209ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[    2409ms] [LOG] [Supabase] Initial token set for realtime {hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[    2410ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   17302ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   17449ms] [LOG] [Supabase] Initial token set for realtime {hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   17449ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: false, userId: undefined} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   18430ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   20115ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4173/node_modules/.vite/deps/react-dom_client.js?v=8c7c41bf:17994
+[   20375ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: SIGNED_IN, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   20427ms] [LOG] [Supabase] Initial token set for realtime {hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   20428ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: INITIAL_SESSION, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[   21013ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ogzhwoqqumkuqhbvuzzp.supabase.co/rest/v1/rpc/accept_invite_with_token:0
+[   21029ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ogzhwoqqumkuqhbvuzzp.supabase.co/rest/v1/rpc/accept_invite_with_token:0
+[ 3500923ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[ 7010814ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[10520854ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[14030795ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[17540874ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
+[21050803ms] [LOG] [Supabase] Auth state changed, updating realtime token {event: TOKEN_REFRESHED, hasToken: true, userId: 96ca4f07-fe13-4a20-b331-d8fbd2b189f6} @ http://127.0.0.1:4173/src/lib/supabase.ts:3
