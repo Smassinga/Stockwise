@@ -428,13 +428,15 @@ export function NotificationCenter() {
       </Button>
 
       {open && (
-        <div
-          data-role="notif-panel"
-          className="fixed right-[max(1rem,var(--app-safe-right))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.55rem)] z-[99999] w-[26rem] max-w-[calc(100vw-1.5rem-var(--app-safe-left)-var(--app-safe-right))] overflow-hidden rounded-[1.6rem] border border-border/75 bg-card/96 text-card-foreground shadow-[0_34px_80px_-38px_hsl(var(--foreground)/0.5)] backdrop-blur-2xl md:right-6 md:top-20 xl:right-8"
-          role="dialog"
-          aria-label={t('notifications.title')}
-        >
-          <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+        <>
+          <div className="fixed inset-0 z-[99998] bg-black/18 backdrop-blur-[1.5px] md:bg-black/10" aria-hidden />
+          <div
+            data-role="notif-panel"
+            className="fixed inset-x-[max(0.75rem,var(--app-safe-left))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.6rem)] z-[99999] flex max-h-[calc(100dvh-var(--app-shell-mobile-header)-var(--app-shell-mobile-dock)-var(--app-safe-top)-var(--app-safe-bottom)-1.45rem)] flex-col overflow-hidden rounded-[1.6rem] border border-border/85 bg-background/98 text-popover-foreground shadow-[0_34px_90px_-38px_hsl(var(--foreground)/0.58)] ring-1 ring-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/94 md:inset-x-auto md:right-6 md:top-20 md:w-[27.5rem] md:max-w-[calc(100vw-3rem)] md:max-h-[min(72vh,38rem)] xl:right-8"
+            role="dialog"
+            aria-label={t('notifications.title')}
+          >
+          <div className="flex items-center justify-between border-b border-border/75 bg-background/92 px-4 py-3.5">
             <div className="min-w-0">
               <div className="text-sm font-semibold">{t('notifications.title')}</div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -444,60 +446,76 @@ export function NotificationCenter() {
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={() => void fetchLatest()} title={t('common.refresh')}>
+              <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => void fetchLatest()} title={t('common.refresh')}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => void markAllRead()} title={t('notifications.markAllRead')}>
+              <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => void markAllRead()} title={t('notifications.markAllRead')}>
                 <CheckCheck className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          <div className="max-h-[min(68vh,36rem)] overflow-auto px-2 py-2">
+          <div className="flex-1 overflow-auto bg-background/88 px-2.5 py-2.5">
             {rows.length === 0 && (
-              <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-center">
+              <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/18 px-4 py-8 text-center">
                 <div className="text-sm font-medium">{t('notifications.noNotifications')}</div>
                 <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('notifications.emptyHelp')}</div>
               </div>
             )}
-            {rows.map((n) => (
-              <div
-                key={n.id}
-                className="rounded-[1.2rem] border border-border/70 bg-background/70 px-3.5 py-3 shadow-[0_12px_24px_-24px_hsl(var(--foreground)/0.28)] transition-colors hover:bg-muted/18"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] ${levelClasses(n.level)}`}>
-                        {n.level}
-                      </span>
-                      {!n.readAt && <span className="inline-flex h-2 w-2 rounded-full bg-primary" />}
+            <div className="space-y-2.5">
+              {rows.map((n) => (
+                <div
+                  key={n.id}
+                  className={`rounded-[1.2rem] border px-3.5 py-3.5 shadow-[0_14px_30px_-26px_hsl(var(--foreground)/0.28)] transition-colors hover:bg-muted/22 ${
+                    n.readAt
+                      ? 'border-border/75 bg-card'
+                      : 'border-primary/18 bg-primary/6'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] ${levelClasses(n.level)}`}>
+                          {n.level}
+                        </span>
+                        {!n.readAt && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-primary/18 bg-primary/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                            {t('notifications.status.new')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="break-words text-sm font-semibold leading-5 text-foreground">{n.title || '(no title)'}</div>
+                      {n.body ? <div className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{n.body}</div> : null}
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>{formatStamp(n.createdAt)}</span>
+                        <span aria-hidden>|</span>
+                        <span>{n.readAt ? t('notifications.status.read') : t('notifications.status.unread')}</span>
+                      </div>
                     </div>
-                    <div className="break-words text-sm font-medium leading-5">{n.title || '(no title)'}</div>
-                    {n.body ? <div className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{n.body}</div> : null}
-                    <div className="text-[11px] text-muted-foreground">{formatStamp(n.createdAt)}</div>
+                    {n.url ? (
+                      <Button
+                        type="button"
+                        variant={n.readAt ? 'outline' : 'secondary'}
+                        size="sm"
+                        className="shrink-0 rounded-xl"
+                        onClick={() => openNotification(n)}
+                      >
+                        {t('notifications.open')}
+                      </Button>
+                    ) : null}
                   </div>
-                  {n.url ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 rounded-xl"
-                      onClick={() => openNotification(n)}
-                    >
-                      {t('notifications.open')}
-                    </Button>
-                  ) : null}
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center justify-between border-t border-border/70 px-4 py-3 text-[11px] text-muted-foreground">
+          <div className="flex items-center justify-between border-t border-border/75 bg-background/94 px-4 py-3 text-[11px] text-muted-foreground">
             <span>{t(`notifications.realtime.${realtimeStatus}`)}</span>
             <span>{t('notifications.showingLatest', { count: rows.length })}</span>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </>
   )

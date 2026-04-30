@@ -1,0 +1,59 @@
+{
+  "owner": {
+    "sections": {
+      "operatingStatus": true,
+      "actionNeeded": true,
+      "performanceSnapshot": true,
+      "operationalActivity": true
+    },
+    "desktopOverflow": {
+      "scrollWidth": 1440,
+      "innerWidth": 1440,
+      "hasOverflow": false
+    },
+    "notificationLight": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgba(229, 231, 235, 0.85)",
+      "boxShadow": "rgb(255, 255, 255) 0px 0px 0px 0px, rgba(249, 250, 251, 0.85) 0px 0px 0px 1px, rgba(17, 24, 39, 0.58) 0px 34px 90px -38px",
+      "height": 608,
+      "text": "NotificationsShowing latest 5infoNewNew member joineduimoj5spvy-callback joined the company.29 Apr 2026, 00:14|UnreadOpeninfoNewNew member joineduimoj5spvy-freshinvite joined the company.29 Apr 2026, 00:09|UnreadOpeninfo"
+    },
+    "notificationDark": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgba(72, 86, 106, 0.85)",
+      "boxShadow": "rgb(255, 255, 255) 0px 0px 0px 0px, rgba(17, 24, 39, 0.85) 0px 0px 0px 1px, rgba(249, 250, 251, 0.58) 0px 34px 90px -38px",
+      "height": 608,
+      "text": "NotificationsShowing latest 5infoNewNew member joineduimoj5spvy-callback joined the company.29 Apr 2026, 00:14|UnreadOpeninfoNewNew member joineduimoj5spvy-freshinvite joined the company.29 Apr 2026, 00:09|UnreadOpeninfo"
+    },
+    "laptopOverflow": {
+      "scrollWidth": 1366,
+      "innerWidth": 1366,
+      "hasOverflow": false
+    },
+    "mobileOverflow": {
+      "scrollWidth": 390,
+      "innerWidth": 390,
+      "hasOverflow": false
+    },
+    "notificationMobileBounds": {
+      "top": 73.59375,
+      "bottom": 710.390625,
+      "left": 12,
+      "right": 378,
+      "width": 366,
+      "height": 636.796875,
+      "backgroundColor": "rgba(0, 0, 0, 0)"
+    }
+  },
+  "clean": {
+    "bodyExcerpt": "Dark\nOPERATIONS\nDashboard\nPoint of Sale\nItems\nAssembly\nMovements\nStock Levels\nWarehouses\nCOMMERCIAL & FINANCE\nOrders\nSales Invoices\nMozambique Compliance\nVendor Bills\nSettlements\nTransactions\nCash\nBanks\nLanded Cost\nReports\nSETUP\nCustomers\nSuppliers\nUsers\nCurrency\nUom\nImports\nSettings\nUI Clean Company\nUI CLEAN COMPANY\nuimoj5spvy-clean\nOwner\nSign Out\nEN\nPT\n1\nU\nuimoj5spvy-clean\nOwner\nUI Clean Company\nWarehouse: All Warehouses\nDashboard\n\nUse this dashboard to spot today’s operating risks, recent changes, and shipment-linked performance without leaving the main workspace.\n\nFilters\nAdjust the date window and warehouse without losing context. The daily breakdown follows the current window.\nLast 30 days\nAll Warehouses\nDaily Revenue & COGS\nOperating status\n\nUse this section to decide quickly whether the business is operating normally or needs attention today.\n\nSetup in progress\nExecutive operating status\nComplete initial stock, sales, or item setup so the dashboard becomes a live operating view",
+    "hasNoLowStockCopy": true,
+    "hasSetupSignals": true,
+    "cleanOverflow": {
+      "scrollWidth": 1366,
+      "innerWidth": 1366,
+      "hasOverflow": false
+    }
+  },
+  "timestamp": "2026-04-30T19:12:10.872Z"
+}

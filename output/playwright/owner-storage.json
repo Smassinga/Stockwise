@@ -1,0 +1,22 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://127.0.0.1:4173",
+      "localStorage": [
+        {
+          "name": "app:lang",
+          "value": "en"
+        },
+        {
+          "name": "sw:lastCompanyId:5a0a85c8-f6e5-4bdf-b225-ed0bf3e0d3a5",
+          "value": "a70d2664-8f90-4c44-bdeb-fab051f92f3f"
+        },
+        {
+          "name": "stockwise.auth",
+          "value": "{\"access_token\":\"eyJhbGciOiJIUzI1NiIsImtpZCI6InB5dUNZaXZoYUNEOEZpdHMiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL29nemh3b3FxdW1rdXFoYnZ1enpwLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI1YTBhODVjOC1mNmU1LTRiZGYtYjIyNS1lZDBiZjNlMGQzYTUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzc3NTc5MjgxLCJpYXQiOjE3Nzc1NzU2ODEsImVtYWlsIjoidWltb2o1c3B2eS5vd25lci4wYzBlMDcxN0BzdG9ja3dpc2UubG9jYWwiLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoidWltb2o1c3B2eS1vd25lciJ9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6InBhc3N3b3JkIiwidGltZXN0YW1wIjoxNzc3NTc1NjgxfV0sInNlc3Npb25faWQiOiI4NTI3ZmMwMy0xYzVmLTQ1ZmItOTc5MC03ZmNkNTk1MjA0YjkiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.tWUtQAp22ofqjSes0xJCebNWQCWaqTVnQpp1eMrjBsc\",\"token_type\":\"bearer\",\"expires_in\":3600,\"expires_at\":1777579281,\"refresh_token\":\"pyzbcmtnkgw4\",\"user\":{\"id\":\"5a0a85c8-f6e5-4bdf-b225-ed0bf3e0d3a5\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"uimoj5spvy.owner.0c0e0717@stockwise.local\",\"email_confirmed_at\":\"2026-04-28T21:49:42.289639Z\",\"phone\":\"\",\"confirmed_at\":\"2026-04-28T21:49:42.289639Z\",\"last_sign_in_at\":\"2026-04-30T19:01:21.516060685Z\",\"app_metadata\":{\"provider\":\"email\",\"providers\":[\"email\"]},\"user_metadata\":{\"email_verified\":true,\"name\":\"uimoj5spvy-owner\"},\"identities\":[{\"identity_id\":\"4419a804-925f-4bcb-aef1-d621b991ef0f\",\"id\":\"5a0a85c8-f6e5-4bdf-b225-ed0bf3e0d3a5\",\"user_id\":\"5a0a85c8-f6e5-4bdf-b225-ed0bf3e0d3a5\",\"identity_data\":{\"email\":\"uimoj5spvy.owner.0c0e0717@stockwise.local\",\"email_verified\":false,\"phone_verified\":false,\"sub\":\"5a0a85c8-f6e5-4bdf-b225-ed0bf3e0d3a5\"},\"provider\":\"email\",\"last_sign_in_at\":\"2026-04-28T21:49:42.286244Z\",\"created_at\":\"2026-04-28T21:49:42.286307Z\",\"updated_at\":\"2026-04-28T21:49:42.286307Z\",\"email\":\"uimoj5spvy.owner.0c0e0717@stockwise.local\"}],\"created_at\":\"2026-04-28T21:49:42.283165Z\",\"updated_at\":\"2026-04-30T19:01:21.521593Z\",\"is_anonymous\":false},\"weak_password\":null}"
+        }
+      ]
+    }
+  ]
+}

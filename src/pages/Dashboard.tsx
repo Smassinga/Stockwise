@@ -1,5 +1,5 @@
 // src/pages/Dashboard.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
@@ -10,9 +10,24 @@ import { Button } from '../components/ui/button'
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet'
 import { Badge } from '../components/ui/badge'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
+import { cn } from '../lib/utils'
 
 // per-icon imports to avoid lucide bundle resolution issues
-import { Package, DollarSign, Coins, AlertTriangle, TrendingUp, TrendingDown, Calendar, Building2, ArrowUpRight } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
+  Coins,
+  DollarSign,
+  Package,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react'
 
 type Item = { id: string; name: string; sku: string; minStock?: number | null }
 type StockRow = { id: string; item_id: string; warehouse_id: string; bin_id: string | null; qty: number | null; avg_cost: number | null; updated_at?: string | null }
@@ -64,6 +79,7 @@ type MovementCostRow = {
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const shippedLike = (s: string) => ['shipped', 'completed', 'delivered', 'closed'].includes(String(s).toLowerCase())
+const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 // build YYYY-MM-DD without UTC shifting
 const toISODateLocal = (d: Date) => {
@@ -181,10 +197,15 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [companyId])
 
-  const windowStartMs = useMemo(() => Date.now() - windowDays * 24 * 60 * 60 * 1000, [windowDays])
-  const windowStartISO = useMemo(() => new Date(windowStartMs).toISOString(), [windowStartMs])
+  const periodAnchorMs = useMemo(() => Date.now(), [companyId, windowDays])
+  const windowDurationMs = useMemo(() => windowDays * MS_PER_DAY, [windowDays])
+  const currentWindowStartMs = useMemo(() => periodAnchorMs - windowDurationMs, [periodAnchorMs, windowDurationMs])
+  const comparisonWindowStartMs = useMemo(() => currentWindowStartMs - windowDurationMs, [currentWindowStartMs, windowDurationMs])
+  const currentWindowStartISO = useMemo(() => new Date(currentWindowStartMs).toISOString(), [currentWindowStartMs])
+  const comparisonWindowStartISO = useMemo(() => new Date(comparisonWindowStartMs).toISOString(), [comparisonWindowStartMs])
+  const periodEndISO = useMemo(() => new Date(periodAnchorMs).toISOString(), [periodAnchorMs])
 
-  // Window-scoped reads for KPIs, top products, and the daily sheet.
+  // Current + prior-window reads for KPIs, comparisons, top products, and the daily sheet.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -198,26 +219,24 @@ export default function Dashboard() {
 
       try {
         setWindowLoading(true)
-        const windowEndISO = new Date().toISOString()
-
         const [updatedOrdersRes, createdOrdersRes, shipRowsRes] = await Promise.all([
           supabase
             .from('sales_orders')
             .select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at')
             .eq('company_id', companyId)
-            .gte('updated_at', windowStartISO),
+            .gte('updated_at', comparisonWindowStartISO),
           supabase
             .from('sales_orders')
             .select('id,status,currency_code,fx_to_base,total_amount,updated_at,created_at')
             .eq('company_id', companyId)
             .is('updated_at', null)
-            .gte('created_at', windowStartISO),
+            .gte('created_at', comparisonWindowStartISO),
           supabase
             .from('sales_shipments')
             .select('id,so_id,item_id,qty_base,created_at,company_id,movement_id')
             .eq('company_id', companyId)
-            .gte('created_at', windowStartISO)
-            .lte('created_at', windowEndISO),
+            .gte('created_at', comparisonWindowStartISO)
+            .lte('created_at', periodEndISO),
         ])
 
         if (updatedOrdersRes.error) throw updatedOrdersRes.error
@@ -277,7 +296,7 @@ export default function Dashboard() {
       }
     })()
     return () => { cancelled = true }
-  }, [companyId, windowStartISO])
+  }, [companyId, comparisonWindowStartISO, periodEndISO])
 
   // stock filtered by warehouse
   const stockFiltered = useMemo(() => (warehouseId === 'ALL' ? stock : stock.filter(r => r.warehouse_id === warehouseId)), [stock, warehouseId])
@@ -286,8 +305,44 @@ export default function Dashboard() {
   const inventoryValue = useMemo(() => stockFiltered.reduce((s, r) => s + num(r.qty) * num(r.avg_cost), 0), [stockFiltered])
   const inventoryUnits = useMemo(() => stockFiltered.reduce((s, r) => s + num(r.qty), 0), [stockFiltered])
 
-  // Shipped SOs in the active window and FX
-  const shippedInWindow = useMemo(() => new Set(sos.map(s => s.id)), [sos])
+  const orderActivityMs = (order: SO) => {
+    const value = order.updated_at || order.created_at
+    const parsed = value ? new Date(value).getTime() : Number.NaN
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  const shippedCurrent = useMemo(
+    () => sos.filter((order) => {
+      const activityMs = orderActivityMs(order)
+      return activityMs !== null && activityMs >= currentWindowStartMs
+    }),
+    [currentWindowStartMs, sos],
+  )
+
+  const shippedPrevious = useMemo(
+    () => sos.filter((order) => {
+      const activityMs = orderActivityMs(order)
+      return activityMs !== null && activityMs >= comparisonWindowStartMs && activityMs < currentWindowStartMs
+    }),
+    [comparisonWindowStartMs, currentWindowStartMs, sos],
+  )
+
+  const shippedCurrentIds = useMemo(() => new Set(shippedCurrent.map((order) => order.id)), [shippedCurrent])
+  const shippedPreviousIds = useMemo(() => new Set(shippedPrevious.map((order) => order.id)), [shippedPrevious])
+
+  const shipmentsCurrent = useMemo(
+    () => shipmentsWin.filter((shipment) => new Date(shipment.created_at).getTime() >= currentWindowStartMs),
+    [currentWindowStartMs, shipmentsWin],
+  )
+
+  const shipmentsPrevious = useMemo(
+    () =>
+      shipmentsWin.filter((shipment) => {
+        const createdMs = new Date(shipment.created_at).getTime()
+        return createdMs >= comparisonWindowStartMs && createdMs < currentWindowStartMs
+      }),
+    [comparisonWindowStartMs, currentWindowStartMs, shipmentsWin],
+  )
   const fxBySO = useMemo(() => {
     const m = new Map<string, number>()
     for (const s of sos) m.set(s.id, num(s.fx_to_base, 1))
@@ -323,25 +378,43 @@ export default function Dashboard() {
   // KPI Revenue (window)
   const revenueWindow = useMemo(() => {
     let sum = 0
-    for (const soId of shippedInWindow) sum += revenueBaseBySO.get(soId) || 0
+    for (const soId of shippedCurrentIds) sum += revenueBaseBySO.get(soId) || 0
     return sum
-  }, [shippedInWindow, revenueBaseBySO])
+  }, [revenueBaseBySO, shippedCurrentIds])
+
+  const revenuePrevious = useMemo(() => {
+    let sum = 0
+    for (const soId of shippedPreviousIds) sum += revenueBaseBySO.get(soId) || 0
+    return sum
+  }, [revenueBaseBySO, shippedPreviousIds])
 
   // --- NEW: COGS in window from shipments → linked SO/issue movements
   const cogsWindow = useMemo(() => {
     let sum = 0
-    for (const s of shipmentsWin) {
+    for (const s of shipmentsCurrent) {
       const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
       sum += movementCost(mv, s.qty_base)
     }
     return sum
-  }, [shipmentsWin, mvByIdWin])
+  }, [mvByIdWin, shipmentsCurrent])
+
+  const cogsPrevious = useMemo(() => {
+    let sum = 0
+    for (const s of shipmentsPrevious) {
+      const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
+      sum += movementCost(mv, s.qty_base)
+    }
+    return sum
+  }, [mvByIdWin, shipmentsPrevious])
 
   // Gross margin
   const grossMargin = revenueWindow - cogsWindow
+  const grossMarginPrevious = revenuePrevious - cogsPrevious
   const grossMarginPct = revenueWindow > 0 ? (grossMargin / revenueWindow) : 0
-  const hasRevenueData = revenueWindow > 0 || shippedInWindow.size > 0
-  const hasShipmentData = cogsWindow > 0 || shipmentsWin.length > 0
+  const hasRevenueData = revenueWindow > 0 || shippedCurrentIds.size > 0
+  const hasShipmentData = cogsWindow > 0 || shipmentsCurrent.length > 0
+  const hasPreviousRevenueData = revenuePrevious > 0 || shippedPreviousIds.size > 0
+  const hasPreviousShipmentData = cogsPrevious > 0 || shipmentsPrevious.length > 0
 
   // Low stock list
   const lowStock = useMemo(() => {
@@ -374,7 +447,7 @@ export default function Dashboard() {
     // revenue distribution (same logic as before)
     const lineRevBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> rev)
     const linesRevSO = new Map<string, number>()                    // soId -> rev sum
-    const shippedSet = new Set(sos.map(s => s.id))
+    const shippedSet = new Set(shippedCurrent.map((order) => order.id))
     for (const l of sol) {
       const soId = l.so_id
       if (!soId) continue
@@ -387,10 +460,10 @@ export default function Dashboard() {
       linesRevSO.set(soId, (linesRevSO.get(soId) || 0) + r)
     }
 
-    // --- NEW: cost by SO->item using shipmentsWin
+    // Shipment-linked cost by order + item for the current window.
     const costBySOItem = new Map<string, Map<string, number>>() // soId -> (itemId -> cost)
     const costSumBySO = new Map<string, number>()
-    for (const s of shipmentsWin) {
+    for (const s of shipmentsCurrent) {
       const soId = s.so_id || ''
       if (!soId) continue
       const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
@@ -434,9 +507,9 @@ export default function Dashboard() {
       }
     }
 
-    // --- NEW: per-item COGS from shipmentsWin
+    // Shipment-linked COGS by item for the current window.
     const cogsByItem = new Map<string, number>()
-    for (const s of shipmentsWin) {
+    for (const s of shipmentsCurrent) {
       const mv = s.movement_id ? mvByIdWin.get(s.movement_id) : undefined
       const val = movementCost(mv, s.qty_base)
       cogsByItem.set(s.item_id, (cogsByItem.get(s.item_id) || 0) + val)
@@ -453,7 +526,7 @@ export default function Dashboard() {
     })
     rows.sort((a, b) => b.gm - a.gm)
     return rows.slice(0, 10)
-  }, [sos, sol, fxBySO, shipmentsWin, mvByIdWin, revenueBaseBySO, itemById])
+  }, [fxBySO, itemById, mvByIdWin, revenueBaseBySO, shippedCurrent, shipmentsCurrent, sol])
 
   // ----- Available years for Daily selector -----
   const availableYears = useMemo(() => {
@@ -540,7 +613,23 @@ export default function Dashboard() {
     }))
   }, [sos, revenueBaseBySO, shipmentsWin, mvByIdWin, dailyYear, dailyMonth, monthDaysISO])
 
-  const recentMoves = moves
+  const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const recentMoves = moves.slice(0, 5)
+  const itemsWithoutMinStock = useMemo(() => items.filter((item) => item.minStock == null).length, [items])
+  const criticalLowStockCount = lowStock.filter((entry) => entry.severity === 'critical').length
+  const marginUnderPressure = hasRevenueData && grossMargin < 0
+  const hasAnyOperationalData = items.length > 0 || stock.length > 0 || sos.length > 0 || moves.length > 0
+  const urgentActionCount = lowStock.length + (itemsWithoutMinStock > 0 ? 1 : 0) + (marginUnderPressure ? 1 : 0)
+  const latestMovement = recentMoves[0] || null
+  const currentWindowLabel = tt(`window.${windowDays}`, `Last ${windowDays} days`)
+
+  const operatingStatus = !hasAnyOperationalData
+    ? 'setup'
+    : criticalLowStockCount > 0 || marginUnderPressure
+      ? 'critical'
+      : lowStock.length > 0 || itemsWithoutMinStock > 0
+        ? 'attention'
+        : 'healthy'
 
   if (loading || (windowLoading && !sos.length && !shipmentsWin.length)) {
     return (
@@ -562,6 +651,32 @@ export default function Dashboard() {
     </div>
   )
 
+  const formatCount = (value: number) => value.toLocaleString(locale)
+  const formatShortDateTime = (value: string) =>
+    new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+
+  const formatSignedCount = (value: number) => `${value > 0 ? '+' : value < 0 ? '-' : ''}${Math.abs(value).toLocaleString(locale)}`
+  const formatSignedMoney = (value: number) => `${value > 0 ? '+' : value < 0 ? '-' : ''}${money(Math.abs(value))}`
+  const formatSignedPercent = (value: number) => `${value > 0 ? '+' : value < 0 ? '-' : ''}${Math.abs(value).toFixed(1)}%`
+
+  const comparisonCopy = (
+    current: number,
+    previous: number,
+    hasPrevious: boolean,
+    formatter: (value: number) => string,
+  ) => {
+    if (!hasPrevious) {
+      return tt('dashboard.previousUnavailable', 'Not enough prior history yet.')
+    }
+
+    const delta = current - previous
+    if (Math.abs(delta) < 0.005) {
+      return tt('dashboard.sameAsPrevious', 'Flat vs previous window')
+    }
+
+    return `${formatter(delta)} ${tt('dashboard.previousWindow', 'vs previous window')}`
+  }
+
   const movementLabel = (type: MovementRow['type']) => {
     switch (type) {
       case 'receive': return t('movement.receive')
@@ -571,6 +686,174 @@ export default function Dashboard() {
       default: return t('common.dash')
     }
   }
+
+  const statusMeta = {
+    healthy: {
+      label: tt('dashboard.statusHealthy', 'Operating normally'),
+      summary: tt(
+        'dashboard.summaryHealthy',
+        'Stock, activity, and operational margin look stable in the selected window.',
+      ),
+      badgeClass:
+        'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/35 dark:bg-emerald-500/12 dark:text-emerald-200',
+      iconClass: 'text-emerald-700 dark:text-emerald-300',
+      icon: <CheckCircle2 size={18} />,
+    },
+    attention: {
+      label: tt('dashboard.statusAttention', 'Needs attention'),
+      summary: tt(
+        'dashboard.summaryAttention',
+        'There are stock or setup exceptions worth reviewing today.',
+      ),
+      badgeClass:
+        'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/12 dark:text-amber-200',
+      iconClass: 'text-amber-700 dark:text-amber-300',
+      icon: <CircleAlert size={18} />,
+    },
+    critical: {
+      label: tt('dashboard.statusCritical', 'Action required'),
+      summary: tt(
+        'dashboard.summaryCritical',
+        'Stock outages or negative gross margin need review in the selected window.',
+      ),
+      badgeClass:
+        'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/35 dark:bg-rose-500/12 dark:text-rose-200',
+      iconClass: 'text-rose-700 dark:text-rose-300',
+      icon: <AlertTriangle size={18} />,
+    },
+    setup: {
+      label: tt('dashboard.statusSetup', 'Setup in progress'),
+      summary: tt(
+        'dashboard.summarySetup',
+        'Complete initial stock, sales, or item setup so the dashboard becomes a live operating view.',
+      ),
+      badgeClass:
+        'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/35 dark:bg-sky-500/12 dark:text-sky-200',
+      iconClass: 'text-sky-700 dark:text-sky-300',
+      icon: <Clock3 size={18} />,
+    },
+  }[operatingStatus]
+
+  const executiveTiles = [
+    {
+      label: tt('dashboard.executiveTileActions', 'Urgent actions'),
+      value: formatCount(urgentActionCount),
+      help: urgentActionCount
+        ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
+        : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.'),
+    },
+    {
+      label: tt('dashboard.executiveTileLowStock', 'Low stock'),
+      value: formatCount(lowStock.length),
+      help: lowStock.length
+        ? tt('dashboard.inventoryAttention', '{count} items are below minimum stock.', { count: lowStock.length })
+        : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.'),
+    },
+    {
+      label: tt('dashboard.executiveTileMargin', 'Gross margin'),
+      value: hasRevenueData ? `${(grossMarginPct * 100).toFixed(1)}%` : t('common.dash'),
+      help: revenueWindow > 0
+        ? (grossMargin >= 0
+            ? tt('dashboard.marginPositive', 'Operational revenue remains ahead of COGS in the active window.')
+            : tt('dashboard.marginNegative', 'COGS is currently higher than operational revenue in the active window.'))
+        : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.'),
+    },
+    {
+      label: tt('dashboard.executiveTileLatest', 'Latest movement'),
+      value: latestMovement ? movementLabel(latestMovement.type) : t('common.dash'),
+      help: latestMovement
+        ? formatShortDateTime(latestMovement.created_at)
+        : tt('dashboard.noRecentMovement', 'No recent movement yet'),
+    },
+  ]
+
+  const actionCards = [
+    lowStock.length > 0
+      ? {
+          title: tt('dashboard.actionCardLowStockTitle', 'Replenish low stock'),
+          body: tt('dashboard.actionCardLowStockBody', '{count} items are already below minimum stock.', { count: lowStock.length }),
+          count: formatCount(lowStock.length),
+          tone: 'critical',
+          actionLabel: tt('dashboard.reviewItems', 'Review items'),
+          action: () => navigate('/items'),
+        }
+      : null,
+    itemsWithoutMinStock > 0
+      ? {
+          title: tt('dashboard.actionCardSetupTitle', 'Complete stock setup'),
+          body: tt('dashboard.actionCardSetupBody', '{count} items still need a minimum-stock threshold.', { count: itemsWithoutMinStock }),
+          count: formatCount(itemsWithoutMinStock),
+          tone: 'attention',
+          actionLabel: tt('dashboard.reviewItems', 'Review items'),
+          action: () => navigate('/items'),
+        }
+      : null,
+    marginUnderPressure
+      ? {
+          title: tt('dashboard.actionCardMarginTitle', 'Review margin pressure'),
+          body: tt('dashboard.actionCardMarginBody', 'Operational gross margin is negative in the active window.'),
+          count: money(grossMargin),
+          tone: 'critical',
+          actionLabel: tt('dashboard.reviewTransactions', 'Review movements'),
+          action: () => navigate('/transactions'),
+        }
+      : null,
+    !lowStock.length && !itemsWithoutMinStock && !marginUnderPressure
+      ? {
+          title: tt('dashboard.actionCardMonitorTitle', 'Monitor current flow'),
+          body: tt('dashboard.actionCardMonitorBody', 'No urgent exceptions are open right now.'),
+          count: formatCount(shippedCurrent.length),
+          tone: 'healthy',
+          actionLabel: tt('dashboard.reviewTransactions', 'Review movements'),
+          action: () => navigate('/transactions'),
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    title: string
+    body: string
+    count: string
+    tone: 'critical' | 'attention' | 'healthy'
+    actionLabel: string
+    action: () => void
+  }>
+
+  const operationalSummary = [
+    {
+      label: tt('dashboard.activityOrders', 'Shipped orders'),
+      value: formatCount(shippedCurrent.length),
+      help: comparisonCopy(
+        shippedCurrent.length,
+        shippedPrevious.length,
+        hasPreviousRevenueData,
+        formatSignedCount,
+      ),
+    },
+    {
+      label: tt('dashboard.activityShipments', 'Shipment issues'),
+      value: formatCount(shipmentsCurrent.length),
+      help: comparisonCopy(
+        shipmentsCurrent.length,
+        shipmentsPrevious.length,
+        hasPreviousShipmentData,
+        formatSignedCount,
+      ),
+    },
+    {
+      label: tt('dashboard.activityLatest', 'Latest movement'),
+      value: latestMovement ? movementLabel(latestMovement.type) : t('common.dash'),
+      help: latestMovement ? formatShortDateTime(latestMovement.created_at) : tt('dashboard.noRecentMovement', 'No recent movement yet'),
+    },
+  ]
+
+  const sectionTitle = ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => (
+    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="screen-intro">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <p className="screen-subtitle">{description}</p>
+      </div>
+      {action}
+    </div>
+  )
 
   const monthName = (m: number) => new Date(2000, m, 1).toLocaleString(lang, { month: 'long' })
 
@@ -596,7 +879,7 @@ export default function Dashboard() {
             <div>
               <h1 className="screen-title text-2xl sm:text-3xl">{t('dashboard.title')}</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {tt('dashboard.subtitle', 'Operational overview for the active company, time window, and warehouse selection. Revenue and margin remain shipment-linked operational indicators during the transition.')}
+                {tt('dashboard.subtitle', 'Use this dashboard to spot today’s operating risks, recent changes, and shipment-linked performance without leaving the main workspace.')}
               </p>
             </div>
           </div>
@@ -731,98 +1014,80 @@ export default function Dashboard() {
       )}
 
       <div className="space-y-4">
-        <div className="screen-intro">
-          <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.executiveSection', 'Executive KPIs')}</h2>
-          <p className="screen-subtitle">
-            {tt('dashboard.executiveHelp', 'Primary metrics remain compact, while the supporting text clarifies what drives each number.')}
-          </p>
-        </div>
+        {sectionTitle({
+          title: tt('dashboard.executiveSection', 'Operating status'),
+          description: tt('dashboard.executiveHelp', 'Use this section to decide quickly whether the business is operating normally or needs attention today.'),
+        })}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)]">
           <Card className="border-border/80 shadow-sm">
-            <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.inventoryValue.title')}</CardDescription>
-                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(inventoryValue)}</CardTitle>
+            <CardHeader className="space-y-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-3">
+                  <Badge variant="outline" className={cn('w-fit rounded-full px-3 py-1 text-xs font-medium', statusMeta.badgeClass)}>
+                    {statusMeta.label}
+                  </Badge>
+                  <div>
+                    <CardTitle className="text-xl">{tt('dashboard.executiveStatus', 'Executive operating status')}</CardTitle>
+                    <CardDescription className="mt-2 max-w-2xl text-sm leading-6">
+                      {statusMeta.summary}
+                    </CardDescription>
+                  </div>
                 </div>
-                <Chip className="text-sky-700 dark:text-sky-300"><Package size={18} /></Chip>
+                <Chip className={statusMeta.iconClass}>{statusMeta.icon}</Chip>
               </div>
             </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="text-sm font-medium">
-                {lowStock.length
-                  ? tt('dashboard.inventoryAttention', '{count} items are below minimum stock.', { count: lowStock.length })
-                  : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.')}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {inventoryUnits.toLocaleString(lang === 'pt' ? 'pt-MZ' : 'en-MZ')} {tt('dashboard.inventoryUnits', 'units on hand')} | {t('kpi.inventoryValue.help')}
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {executiveTiles.map((tile) => (
+                  <div key={tile.label} className="rounded-[1.2rem] border border-border/70 bg-background/70 p-4 shadow-[0_16px_32px_-28px_hsl(var(--foreground)/0.32)]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tile.label}</div>
+                    <div className="mt-2 text-xl font-semibold tracking-tight">{tile.value}</div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{tile.help}</p>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-border/80 shadow-sm">
-            <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.revenue.title', { days: windowDays })}</CardDescription>
-                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(revenueWindow)}</CardTitle>
-                </div>
-                <Chip className="text-emerald-700 dark:text-emerald-300"><DollarSign size={18} /></Chip>
-              </div>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-lg">{tt('dashboard.currentWindowSection', 'Current window')}</CardTitle>
+              <CardDescription>
+                {tt('dashboard.currentWindowHelp', 'Compact signals for the selected {days}-day operating window.', { days: windowDays })}
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="text-sm font-medium">
-                {hasRevenueData
-                  ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedInWindow.size })
-                  : tt('dashboard.revenueEmpty', 'No shipment-linked order revenue is available in the selected window.')}
+            <CardContent className="space-y-3">
+              <div className="rounded-[1.15rem] border border-border/70 bg-background/75 px-4 py-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.revenue.title', { days: windowDays })}</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight">{money(revenueWindow)}</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {hasRevenueData
+                    ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedCurrent.length })
+                    : tt('dashboard.revenueEmpty', 'No shipment-linked order revenue is available in the selected window.')}
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground">{t('kpi.revenue.help')}</div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.cogs.title', { days: windowDays })}</CardDescription>
-                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(cogsWindow)}</CardTitle>
+              <div className="rounded-[1.15rem] border border-border/70 bg-background/75 px-4 py-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.cogs.title', { days: windowDays })}</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight">{money(cogsWindow)}</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {hasShipmentData
+                    ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsCurrent.length })
+                    : tt('dashboard.cogsEmpty', 'No shipped issue movements were found in the selected window.')}
                 </div>
-                <Chip className="text-amber-700 dark:text-amber-300"><Coins size={18} /></Chip>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="text-sm font-medium">
-                {hasShipmentData
-                  ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsWin.length })
-                  : tt('dashboard.cogsEmpty', 'No shipped issue movements were found in the selected window.')}
-              </div>
-              <div className="text-xs text-muted-foreground">{t('kpi.cogs.help')}</div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.grossMargin.title')}</CardDescription>
-                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(grossMargin)}</CardTitle>
+              <div className="rounded-[1.15rem] border border-border/70 bg-background/75 px-4 py-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.grossMargin.title')}</div>
+                <div className={cn('mt-2 text-xl font-semibold tracking-tight', grossMargin < 0 && 'text-rose-600 dark:text-rose-300')}>
+                  {money(grossMargin)}
                 </div>
-                <Chip className={grossMargin >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}>
-                  {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                </Chip>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className={`text-sm font-medium ${grossMargin < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>
-                {revenueWindow > 0
-                  ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`
-                  : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.')}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {grossMargin >= 0
-                  ? tt('dashboard.marginPositive', 'Operational revenue remains ahead of COGS in the active window.')
-                  : tt('dashboard.marginNegative', 'COGS is currently higher than operational revenue in the active window.')}
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {revenueWindow > 0
+                    ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`
+                    : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.')}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -830,13 +1095,47 @@ export default function Dashboard() {
       </div>
 
       <div className="space-y-4">
-        <div className="screen-intro">
-          <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.actionSection', 'Action needed')}</h2>
-          <p className="screen-subtitle">
-            {lowStock.length
-              ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
-              : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.')}
-          </p>
+        {sectionTitle({
+          title: tt('dashboard.actionSection', 'Action needed'),
+          description: lowStock.length || itemsWithoutMinStock || marginUnderPressure
+            ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
+            : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.'),
+        })}
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          {actionCards.map((card) => (
+            <Card key={card.title} className="border-border/80 shadow-sm">
+              <CardContent className="flex h-full flex-col gap-4 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.title}</div>
+                    <div className={cn(
+                      'mt-2 text-2xl font-semibold tracking-tight',
+                      card.tone === 'critical' && 'text-rose-600 dark:text-rose-300',
+                      card.tone === 'attention' && 'text-amber-600 dark:text-amber-300',
+                      card.tone === 'healthy' && 'text-emerald-600 dark:text-emerald-300',
+                    )}>
+                      {card.count}
+                    </div>
+                  </div>
+                  <Chip
+                    className={cn(
+                      card.tone === 'critical' && 'text-rose-700 dark:text-rose-300',
+                      card.tone === 'attention' && 'text-amber-700 dark:text-amber-300',
+                      card.tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
+                    )}
+                  >
+                    {card.tone === 'healthy' ? <CheckCircle2 size={18} /> : <CircleAlert size={18} />}
+                  </Chip>
+                </div>
+                <p className="text-sm leading-6 text-muted-foreground">{card.body}</p>
+                <Button variant="ghost" className="mt-auto h-auto justify-start px-0 text-sm font-medium" onClick={card.action}>
+                  {card.actionLabel}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)] 2xl:grid-cols-[minmax(0,1.18fr)_minmax(22rem,0.82fr)]">
@@ -859,51 +1158,59 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               {lowStock.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {tt('dashboard.lowStockClear', 'Everything in the current view is at or above minimum stock.')}
-                </p>
+                <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center">
+                  <p className="text-sm font-medium">
+                    {tt('dashboard.lowStockClear', 'Everything in the current view is at or above minimum stock.')}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {itemsWithoutMinStock
+                      ? tt('dashboard.actionCardSetupBody', '{count} items still need a minimum-stock threshold.', { count: itemsWithoutMinStock })
+                      : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.')}
+                  </p>
+                </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b">
-                        <th className="py-2 pr-2">{t('table.item')}</th>
-                        <th className="py-2 pr-2">{t('table.sku')}</th>
-                        <th className="py-2 pr-2 text-right">{t('table.onHand')}</th>
-                        <th className="py-2 pr-2 text-right">{t('table.minStock')}</th>
-                        <th className="py-2 pr-2 text-right">{tt('dashboard.shortfall', 'Shortfall')}</th>
-                        <th className="py-2 pr-2">{tt('dashboard.urgency', 'Urgency')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lowStock.map(({ item, onHand, min, shortage, severity }) => (
-                        <tr key={item.id} className="border-b transition-colors hover:bg-muted/20">
-                          <td className="py-2 pr-2 max-w-[180px] truncate font-medium">{item.name}</td>
-                          <td className="py-2 pr-2">{item.sku}</td>
-                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{onHand}</td>
-                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{min}</td>
-                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{shortage}</td>
-                          <td className="py-2 pr-2">
-                            <span
-                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
-                                severity === 'critical'
-                                  ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
-                                  : severity === 'high'
-                                    ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-                                    : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
-                              }`}
-                            >
-                              {severity === 'critical'
-                                ? tt('dashboard.urgencyCritical', 'Out of stock')
-                                : severity === 'high'
-                                  ? tt('dashboard.urgencyHigh', 'Critical')
-                                  : tt('dashboard.urgencyMedium', 'Low')}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-3">
+                  {lowStock.map(({ item, onHand, min, shortage, severity }) => (
+                    <div key={item.id} className="rounded-[1.2rem] border border-border/70 bg-background/65 p-4 shadow-[0_14px_30px_-28px_hsl(var(--foreground)/0.32)]">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{item.name}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{item.sku}</div>
+                        </div>
+                        <span
+                          className={cn(
+                            'inline-flex w-fit rounded-full border px-2.5 py-1 text-xs font-medium',
+                            severity === 'critical'
+                              ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+                              : severity === 'high'
+                                ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+                                : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300',
+                          )}
+                        >
+                          {severity === 'critical'
+                            ? tt('dashboard.urgencyCritical', 'Out of stock')
+                            : severity === 'high'
+                              ? tt('dashboard.urgencyHigh', 'Critical')
+                              : tt('dashboard.urgencyMedium', 'Low')}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-border/60 bg-background/75 px-3 py-2.5">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{t('table.onHand')}</div>
+                          <div className="mt-1 font-mono text-base tabular-nums">{formatCount(onHand)}</div>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-background/75 px-3 py-2.5">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{t('table.minStock')}</div>
+                          <div className="mt-1 font-mono text-base tabular-nums">{formatCount(min)}</div>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-background/75 px-3 py-2.5">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('dashboard.shortfall', 'Shortfall')}</div>
+                          <div className="mt-1 font-mono text-base tabular-nums">{formatCount(shortage)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -913,49 +1220,70 @@ export default function Dashboard() {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
-                  <CardTitle className="text-lg">{t('recentMovements.title')}</CardTitle>
+                  <CardTitle className="text-lg">{tt('dashboard.reviewQueueTitle', 'Review queue')}</CardTitle>
                   <CardDescription>
-                    {tt('dashboard.recentActivityHelp', 'The latest warehouse activity helps confirm that the tenant and warehouse context are aligned.')}
+                    {tt('dashboard.reviewQueueHelp', 'Keep the next operational follow-up visible without opening a separate report.')}
                   </CardDescription>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => navigate('/transactions')} className="w-full sm:w-auto">
                   <ArrowUpRight className="mr-2 h-4 w-4" />
-                  {tt('recentMovements.all', 'All Transactions')}
+                  {tt('dashboard.reviewTransactions', 'Review movements')}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {recentMoves.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t('recentMovements.empty')}</p>
+              {urgentActionCount === 0 ? (
+                <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center">
+                  <p className="text-sm font-medium">{tt('dashboard.reviewQueueClear', 'No review items are open right now.')}</p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {tt('dashboard.actionCardMonitorBody', 'No urgent exceptions are open right now.')}
+                  </p>
+                </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b">
-                        <th className="py-2 pr-2">{t('table.date')}</th>
-                        <th className="py-2 pr-2">{t('table.type')}</th>
-                        <th className="py-2 pr-2">{t('table.item')}</th>
-                        <th className="py-2 pr-2 text-right">{t('table.qtyBase')}</th>
-                        <th className="py-2 pr-2 text-right">{t('table.value')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentMoves.map(m => {
-                        const it = itemById.get(m.item_id)
-                        const label = it ? `${it.name} (${it.sku})` : m.item_id
-                        const val = Number.isFinite(m.total_value) ? num(m.total_value) : num(m.unit_cost) * num(m.qty_base)
-                        return (
-                          <tr key={m.id} className="border-b">
-                          <td className="py-2 pr-2 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleDateString(lang)}</td>
-                          <td className="py-2 pr-2 capitalize">{movementLabel(m.type)}</td>
-                          <td className="py-2 pr-2 max-w-[160px] truncate">{label}</td>
-                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{num(m.qty_base)}</td>
-                          <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(val)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <div className="space-y-3">
+                  {lowStock.length > 0 && (
+                    <div className="rounded-[1.15rem] border border-border/70 bg-background/68 px-4 py-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">{tt('dashboard.actionCardLowStockTitle', 'Replenish low stock')}</div>
+                          <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {tt('dashboard.actionCardLowStockBody', '{count} items are already below minimum stock.', { count: lowStock.length })}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="rounded-full px-2.5 py-1">{formatCount(lowStock.length)}</Badge>
+                      </div>
+                    </div>
+                  )}
+
+                  {itemsWithoutMinStock > 0 && (
+                    <div className="rounded-[1.15rem] border border-border/70 bg-background/68 px-4 py-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">{tt('dashboard.actionCardSetupTitle', 'Complete stock setup')}</div>
+                          <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {tt('dashboard.actionCardSetupBody', '{count} items still need a minimum-stock threshold.', { count: itemsWithoutMinStock })}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="rounded-full px-2.5 py-1">{formatCount(itemsWithoutMinStock)}</Badge>
+                      </div>
+                    </div>
+                  )}
+
+                  {marginUnderPressure && (
+                    <div className="rounded-[1.15rem] border border-rose-200/70 bg-rose-50/70 px-4 py-3.5 dark:border-rose-500/25 dark:bg-rose-500/10">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-rose-700 dark:text-rose-200">{tt('dashboard.actionCardMarginTitle', 'Review margin pressure')}</div>
+                          <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {tt('dashboard.actionCardMarginBody', 'Operational gross margin is negative in the active window.')}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="rounded-full border-rose-200 bg-white/70 px-2.5 py-1 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                          {money(grossMargin)}
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -964,14 +1292,187 @@ export default function Dashboard() {
       </div>
 
       <div className="space-y-4">
-        <div className="screen-intro">
-          <h2 className="text-lg font-semibold tracking-tight">{tt('dashboard.insightsSection', 'Performance insights')}</h2>
-          <p className="screen-subtitle">
-            {topGM.length
-              ? tt('dashboard.insightsHelp', 'Operational revenue is attributed per item using line totals first, then shipment-linked COGS when line detail is missing. This is not a settlement-cleared margin view.')
-              : tt('dashboard.insightsEmpty', 'No shipped orders were found in the active window, so the operational margin table is intentionally empty.')}
-          </p>
+        {sectionTitle({
+          title: tt('dashboard.performanceSection', 'Performance snapshot'),
+          description: tt('dashboard.performanceHelp', 'Current period numbers stay contextual, with previous-window references only when real data exists.'),
+        })}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.inventoryValue.title')}</CardDescription>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(inventoryValue)}</CardTitle>
+                </div>
+                <Chip className="text-sky-700 dark:text-sky-300"><Package size={18} /></Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-sm font-medium">
+                {formatCount(inventoryUnits)} {tt('dashboard.inventoryUnits', 'units on hand')}
+              </div>
+              <div className="text-xs leading-5 text-muted-foreground">
+                {lowStock.length
+                  ? tt('dashboard.inventoryAttention', '{count} items are below minimum stock.', { count: lowStock.length })
+                  : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.')}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.revenue.title', { days: windowDays })}</CardDescription>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(revenueWindow)}</CardTitle>
+                </div>
+                <Chip className="text-emerald-700 dark:text-emerald-300"><DollarSign size={18} /></Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-sm font-medium">
+                {hasRevenueData
+                  ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedCurrent.length })
+                  : tt('dashboard.revenueEmpty', 'No shipment-linked order revenue is available in the selected window.')}
+              </div>
+              <div className="text-xs leading-5 text-muted-foreground">
+                {comparisonCopy(revenueWindow, revenuePrevious, hasPreviousRevenueData, formatSignedMoney)}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.cogs.title', { days: windowDays })}</CardDescription>
+                  <CardTitle className="mt-2 font-mono text-2xl tracking-tight tabular-nums">{money(cogsWindow)}</CardTitle>
+                </div>
+                <Chip className="text-amber-700 dark:text-amber-300"><Coins size={18} /></Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-sm font-medium">
+                {hasShipmentData
+                  ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsCurrent.length })
+                  : tt('dashboard.cogsEmpty', 'No shipped issue movements were found in the selected window.')}
+              </div>
+              <div className="text-xs leading-5 text-muted-foreground">
+                {comparisonCopy(cogsWindow, cogsPrevious, hasPreviousShipmentData, formatSignedMoney)}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardDescription className="text-xs font-medium uppercase tracking-[0.16em]">{t('kpi.grossMargin.title')}</CardDescription>
+                  <CardTitle className={cn('mt-2 font-mono text-2xl tracking-tight tabular-nums', grossMargin < 0 && 'text-rose-600 dark:text-rose-300')}>
+                    {money(grossMargin)}
+                  </CardTitle>
+                </div>
+                <Chip className={grossMargin >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}>
+                  {grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                </Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className={`text-sm font-medium ${grossMargin < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>
+                {revenueWindow > 0
+                  ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`
+                  : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.')}
+              </div>
+              <div className="text-xs leading-5 text-muted-foreground">
+                {comparisonCopy(grossMarginPct * 100, grossMarginPrevious === 0 && revenuePrevious === 0 ? 0 : (revenuePrevious > 0 ? (grossMarginPrevious / revenuePrevious) * 100 : 0), hasPreviousRevenueData, formatSignedPercent)}
+              </div>
+            </CardContent>
+          </Card>
         </div>
+      </div>
+
+      <div className="space-y-4">
+        {sectionTitle({
+          title: tt('dashboard.activitySection', 'Operational activity'),
+          description: tt('dashboard.activityHelp', 'Confirm the system is active and see what changed most recently.'),
+          action: (
+            <Button size="sm" variant="outline" onClick={() => setDailyOpen(true)} className="w-full sm:w-auto">
+              <Calendar className="mr-2 h-4 w-4" />
+              {t('daily.button')}
+            </Button>
+          ),
+        })}
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg">{tt('dashboard.currentWindowSection', 'Current window')}</CardTitle>
+              <CardDescription>{currentWindowLabel}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-3">
+              {operationalSummary.map((summary) => (
+                <div key={summary.label} className="rounded-[1.1rem] border border-border/70 bg-background/72 px-4 py-3">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{summary.label}</div>
+                  <div className="mt-2 text-xl font-semibold tracking-tight">{summary.value}</div>
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{summary.help}</div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg">{t('recentMovements.title')}</CardTitle>
+              <CardDescription>
+                {tt('dashboard.recentActivityHelp', 'The latest warehouse activity helps confirm that the tenant and warehouse context are aligned.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentMoves.length === 0 ? (
+                <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center">
+                  <p className="text-sm font-medium">{t('recentMovements.empty')}</p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{tt('dashboard.activityEmpty', 'No recent warehouse movement is available yet.')}</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentMoves.map((movement) => {
+                    const item = itemById.get(movement.item_id)
+                    const label = item ? `${item.name}${item.sku ? ` (${item.sku})` : ''}` : movement.item_id
+                    const value = Number.isFinite(movement.total_value) ? num(movement.total_value) : num(movement.unit_cost) * num(movement.qty_base)
+
+                    return (
+                      <div key={movement.id} className="flex flex-col gap-2 rounded-[1.1rem] border border-border/70 bg-background/68 px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{label}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">{formatShortDateTime(movement.created_at)}</div>
+                          </div>
+                          <Badge variant="outline" className="rounded-full px-2.5 py-1">
+                            {movementLabel(movement.type)}
+                          </Badge>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                          <span>{t('table.qtyBase')}: <span className="font-mono tabular-nums text-foreground">{formatCount(num(movement.qty_base))}</span></span>
+                          <span>{t('table.value')}: <span className="font-mono tabular-nums text-foreground">{money(value)}</span></span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {sectionTitle({
+          title: tt('dashboard.insightsSection', 'Performance insights'),
+          description: topGM.length
+            ? tt('dashboard.insightsHelp', 'Operational revenue is attributed per item using line totals first, then shipment-linked COGS when line detail is missing. This is not a settlement-cleared margin view.')
+            : tt('dashboard.insightsEmpty', 'No shipped orders were found in the active window, so the operational margin table is intentionally empty.'),
+        })}
 
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
@@ -982,40 +1483,82 @@ export default function Dashboard() {
                 : t('topProducts.empty')}
             </CardDescription>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
+          <CardContent className="space-y-4">
             {topGM.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t('topProducts.empty')}</p>
+              <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center">
+                <p className="text-sm font-medium">{t('topProducts.empty')}</p>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {tt('dashboard.activityHelp', 'Confirm the system is active and see what changed most recently.')}
+                </p>
+              </div>
             ) : (
-              <table className="w-full min-w-[720px] text-sm">
-                <thead>
-                  <tr className="text-left border-b">
-                    <th className="py-2 pr-2">{tt('dashboard.rank', 'Rank')}</th>
-                    <th className="py-2 pr-2">{t('table.item')}</th>
-                    <th className="py-2 pr-2">{t('table.sku')}</th>
-                    <th className="py-2 pr-2 text-right">{t('table.revenue')}</th>
-                    <th className="py-2 pr-2 text-right">{t('table.cogs')}</th>
-                    <th className="py-2 pr-2 text-right">{t('table.grossMargin')}</th>
-                    <th className="py-2 pr-2 text-right">{t('table.gmPct')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topGM.map((row, index) => {
-                    const pctStr = row.revenue > 0 ? (row.pct * 100).toFixed(1) + '%' : t('common.dash')
-                    const pctClass = row.revenue > 0 && row.pct < 0 ? 'text-rose-600 dark:text-rose-300' : ''
-                    return (
-                      <tr key={row.itemId} className="border-b transition-colors hover:bg-muted/20">
-                        <td className="py-2 pr-2 text-muted-foreground">#{index + 1}</td>
-                        <td className="py-2 pr-2 max-w-[160px] truncate font-medium">{row.name}</td>
-                        <td className="py-2 pr-2">{row.sku}</td>
-                        <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(row.revenue)}</td>
-                        <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(row.cogs)}</td>
-                        <td className={`py-2 pr-2 text-right font-mono tabular-nums ${row.gm < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>{money(row.gm)}</td>
-                        <td className={`py-2 pr-2 text-right font-mono tabular-nums ${pctClass}`}>{pctStr}</td>
+              <>
+                <div className="space-y-3 md:hidden">
+                  {topGM.map((row, index) => (
+                    <div key={row.itemId} className="rounded-[1.15rem] border border-border/70 bg-background/68 px-4 py-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs text-muted-foreground">#{index + 1}</div>
+                          <div className="truncate text-sm font-semibold">{row.name}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{row.sku || t('common.dash')}</div>
+                        </div>
+                        <div className={cn('text-sm font-semibold', row.gm < 0 && 'text-rose-600 dark:text-rose-300')}>
+                          {money(row.gm)}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('table.revenue')}</div>
+                          <div className="mt-1 font-mono text-sm tabular-nums">{money(row.revenue)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('table.cogs')}</div>
+                          <div className="mt-1 font-mono text-sm tabular-nums">{money(row.cogs)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('table.gmPct')}</div>
+                          <div className={cn('mt-1 font-mono text-sm tabular-nums', row.pct < 0 && 'text-rose-600 dark:text-rose-300')}>
+                            {row.revenue > 0 ? `${(row.pct * 100).toFixed(1)}%` : t('common.dash')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead>
+                      <tr className="text-left border-b">
+                        <th className="py-2 pr-2">{tt('dashboard.rank', 'Rank')}</th>
+                        <th className="py-2 pr-2">{t('table.item')}</th>
+                        <th className="py-2 pr-2">{t('table.sku')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.revenue')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.cogs')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.grossMargin')}</th>
+                        <th className="py-2 pr-2 text-right">{t('table.gmPct')}</th>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {topGM.map((row, index) => {
+                        const pctStr = row.revenue > 0 ? `${(row.pct * 100).toFixed(1)}%` : t('common.dash')
+                        const pctClass = row.revenue > 0 && row.pct < 0 ? 'text-rose-600 dark:text-rose-300' : ''
+                        return (
+                          <tr key={row.itemId} className="border-b transition-colors hover:bg-muted/20">
+                            <td className="py-2 pr-2 text-muted-foreground">#{index + 1}</td>
+                            <td className="py-2 pr-2 max-w-[160px] truncate font-medium">{row.name}</td>
+                            <td className="py-2 pr-2">{row.sku}</td>
+                            <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(row.revenue)}</td>
+                            <td className="py-2 pr-2 text-right font-mono tabular-nums">{money(row.cogs)}</td>
+                            <td className={`py-2 pr-2 text-right font-mono tabular-nums ${row.gm < 0 ? 'text-rose-600 dark:text-rose-300' : ''}`}>{money(row.gm)}</td>
+                            <td className={`py-2 pr-2 text-right font-mono tabular-nums ${pctClass}`}>{pctStr}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
             <div className="text-xs text-muted-foreground mt-3 hidden sm:block">
               {t('topProducts.footnote')}
