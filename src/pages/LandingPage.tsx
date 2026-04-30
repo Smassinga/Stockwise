@@ -59,6 +59,7 @@ type Copy = {
     onboarding: string
     annualSaving: string
     recommended: string
+    selected: string
     from: string
     includes: string
     support: string
@@ -160,6 +161,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       onboarding: 'Onboarding',
       annualSaving: 'Annual saving',
       recommended: 'Recommended',
+      selected: 'Selected',
       from: 'From',
       includes: 'What is included',
       support: 'Implementation and support',
@@ -253,6 +255,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       onboarding: 'Onboarding',
       annualSaving: 'Poupança anual',
       recommended: 'Recomendado',
+      selected: 'Selecionado',
       from: 'Desde',
       includes: 'O que inclui',
       support: 'Implementação e suporte',
@@ -404,6 +407,8 @@ function operationIcon(name: 'stock' | 'finance' | 'support') {
   return LifeBuoy
 }
 
+const defaultPricingPlanCode = publicPricingPlans.find((plan) => plan.highlight)?.code ?? publicPricingPlans[0]?.code ?? ''
+
 function PricingCard({
   plan,
   content,
@@ -412,6 +417,8 @@ function PricingCard({
   trialHref,
   demoHref,
   activationHref,
+  selected,
+  onSelect,
 }: {
   plan: (typeof publicPricingPlans)[number]
   content: PlanContent
@@ -420,16 +427,35 @@ function PricingCard({
   trialHref: string
   demoHref: string
   activationHref: string
+  selected: boolean
+  onSelect: () => void
 }) {
   const managed = plan.code === 'managed_business_plus'
 
   return (
     <Card
+      data-pricing-plan={plan.code}
+      data-selected={selected ? 'true' : 'false'}
+      onMouseEnter={onSelect}
+      onFocusCapture={onSelect}
       className={cn(
-        'relative flex h-full flex-col overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-60px_rgba(15,23,42,0.48)]',
-        plan.highlight ? 'border-primary/35 ring-1 ring-primary/15' : '',
+        'group relative flex h-full cursor-pointer flex-col overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-60px_rgba(15,23,42,0.48)] transition-[transform,border-color,box-shadow,background-color] duration-200 ease-out hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_36px_110px_-60px_rgba(15,23,42,0.56)] focus-within:-translate-y-1 focus-within:border-primary/45 focus-within:ring-2 focus-within:ring-primary/15',
+        selected ? 'border-primary/40 bg-gradient-to-b from-primary/[0.045] via-card to-card shadow-[0_38px_110px_-58px_rgba(37,99,235,0.24)]' : '',
+        plan.highlight ? 'ring-1 ring-primary/15' : '',
       )}
     >
+      <div
+        aria-hidden="true"
+        className={cn(
+          'pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-primary/65 to-transparent transition-opacity duration-200',
+          selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+        )}
+      />
+      {selected && !plan.highlight ? (
+        <div className="absolute left-4 top-4 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+          {copy.labels.selected}
+        </div>
+      ) : null}
       {plan.highlight ? (
         <div className="absolute right-4 top-4 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
           {copy.labels.recommended}
@@ -576,6 +602,7 @@ export default function LandingPage() {
   const { user } = useAuth()
   const { lang } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [selectedPlanCode, setSelectedPlanCode] = useState(defaultPricingPlanCode)
 
   const copy = copyByLang[lang]
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
@@ -793,6 +820,8 @@ export default function LandingPage() {
                   trialHref={ctaHref}
                   demoHref={demoHref}
                   activationHref={activationHref}
+                  selected={selectedPlanCode === plan.code}
+                  onSelect={() => setSelectedPlanCode(plan.code)}
                 />
               ))}
             </div>

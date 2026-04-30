@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import type { CompanyAccessRow, SubscriptionStatus } from '../../lib/companyAccess'
 import { formatMzn } from '../../lib/pricingPlans'
+import { cn } from '../../lib/utils'
 
 type CopyFn = (key: string, fallback: string, vars?: Record<string, string | number>) => string
 
@@ -168,13 +169,22 @@ function PortfolioMetricCard({
   tone = 'default',
   metrics,
   footer,
+  metricLayout = 'grid',
+  metricSurface = 'plain',
+  metricValueClassName,
 }: {
   title: string
   description?: string
   tone?: 'default' | 'primary' | 'success' | 'warning' | 'danger'
   metrics: Array<{ label: string; value: string | number; caption?: string }>
   footer?: string
+  metricLayout?: 'grid' | 'stacked'
+  metricSurface?: 'plain' | 'panel'
+  metricValueClassName?: string
 }) {
+  const stackedMetrics = metricLayout === 'stacked'
+  const panelMetrics = metricSurface === 'panel'
+
   return (
     <div
       data-subscription-metric-card={title}
@@ -186,13 +196,29 @@ function PortfolioMetricCard({
           {description ? <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div> : null}
         </div>
       </div>
-      <div className={`mt-5 grid gap-4 ${metrics.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+      <div
+        className={cn(
+          'mt-5 grid gap-4',
+          stackedMetrics || metrics.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
+        )}
+      >
         {metrics.map((metric) => (
-          <div key={metric.label} className="min-w-0">
+          <div
+            key={metric.label}
+            className={cn(
+              'min-w-0',
+              panelMetrics && 'rounded-2xl border border-border/70 bg-background/75 px-4 py-4 dark:bg-background/60',
+            )}
+          >
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               {metric.label}
             </div>
-            <div className="mt-2 text-[clamp(1.7rem,2.2vw,2.35rem)] font-semibold leading-none tracking-[-0.03em] text-foreground">
+            <div
+              className={cn(
+                'mt-2 font-semibold leading-none tracking-[-0.03em] text-foreground',
+                metricValueClassName ?? 'text-[clamp(1.7rem,2.2vw,2.35rem)]',
+              )}
+            >
               {metric.value}
             </div>
             {metric.caption ? <div className="mt-2 text-xs leading-5 text-muted-foreground">{metric.caption}</div> : null}
@@ -639,6 +665,9 @@ export default function SubscriptionAnalyticsDashboard({
                 title={tt('platform.portfolioValueTitle', 'Catalogue value')}
                 description={tt('platform.portfolioValueHelp', 'Commercial sizing derived only from active paid companies and the current plan catalogue.')}
                 tone="primary"
+                metricLayout="stacked"
+                metricSurface="panel"
+                metricValueClassName="text-[clamp(1.45rem,1.75vw,1.95rem)]"
                 metrics={[
                   {
                     label: tt('platform.kpiCatalogMrr', 'Catalog MRR'),
