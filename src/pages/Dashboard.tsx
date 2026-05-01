@@ -734,6 +734,55 @@ export default function Dashboard() {
     },
   }[operatingStatus]
 
+  const latestMovementAt = latestMovement ? new Date(latestMovement.created_at).getTime() : Number.NaN
+  const daysSinceLatestMovement = Number.isFinite(latestMovementAt)
+    ? Math.max(0, Math.floor((Date.now() - latestMovementAt) / 86_400_000))
+    : null
+  const activityFreshness = latestMovement
+    ? daysSinceLatestMovement === 0
+      ? tt('dashboard.activityFreshToday', 'Updated today')
+      : daysSinceLatestMovement != null && daysSinceLatestMovement <= 7
+        ? tt('dashboard.activityFreshRecent', 'Updated {count} days ago', { count: daysSinceLatestMovement })
+        : tt('dashboard.activityFreshQuiet', 'No movement in {count} days', { count: daysSinceLatestMovement ?? 0 })
+    : tt('dashboard.activityFreshNone', 'No warehouse movement recorded yet')
+
+  const statusPanelClass = {
+    healthy: 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-500/25 dark:bg-emerald-500/10',
+    attention: 'border-amber-200/80 bg-amber-50/75 dark:border-amber-500/25 dark:bg-amber-500/10',
+    critical: 'border-rose-200/80 bg-rose-50/75 dark:border-rose-500/25 dark:bg-rose-500/10',
+    setup: 'border-sky-200/80 bg-sky-50/75 dark:border-sky-500/25 dark:bg-sky-500/10',
+  }[operatingStatus]
+
+  const primaryAction = lowStock.length > 0
+    ? {
+        label: tt('dashboard.primaryActionLowStock', 'Start with low stock'),
+        help: tt('dashboard.primaryActionLowStockHelp', 'Review replenishment gaps before lower-priority metrics.'),
+        action: () => navigate('/items'),
+      }
+    : itemsWithoutMinStock > 0
+      ? {
+          label: tt('dashboard.primaryActionSetup', 'Complete item thresholds'),
+          help: tt('dashboard.primaryActionSetupHelp', 'Set minimum stock levels so exception signals become reliable.'),
+          action: () => navigate('/items'),
+        }
+      : marginUnderPressure
+        ? {
+            label: tt('dashboard.primaryActionMargin', 'Review margin pressure'),
+            help: tt('dashboard.primaryActionMarginHelp', 'Open movements connected to the selected operating window.'),
+            action: () => navigate('/transactions'),
+          }
+        : hasAnyOperationalData
+          ? {
+              label: tt('dashboard.primaryActionActivity', 'Review latest movements'),
+              help: tt('dashboard.primaryActionActivityHelp', 'Use the activity trail to confirm what changed most recently.'),
+              action: () => navigate('/transactions'),
+            }
+          : {
+              label: tt('dashboard.primaryActionSetupFirst', 'Add first items'),
+              help: tt('dashboard.primaryActionSetupFirstHelp', 'Create items and stock movements to turn this into a live operating dashboard.'),
+              action: () => navigate('/items'),
+            }
+
   const executiveTiles = [
     {
       label: tt('dashboard.executiveTileActions', 'Urgent actions'),
@@ -741,6 +790,7 @@ export default function Dashboard() {
       help: urgentActionCount
         ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
         : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.'),
+      tone: urgentActionCount ? 'critical' : 'healthy',
     },
     {
       label: tt('dashboard.executiveTileLowStock', 'Low stock'),
@@ -748,6 +798,7 @@ export default function Dashboard() {
       help: lowStock.length
         ? tt('dashboard.inventoryAttention', '{count} items are below minimum stock.', { count: lowStock.length })
         : tt('dashboard.inventoryHealthy', 'No low-stock exceptions in the current view.'),
+      tone: lowStock.length ? 'attention' : 'healthy',
     },
     {
       label: tt('dashboard.executiveTileMargin', 'Gross margin'),
@@ -757,13 +808,13 @@ export default function Dashboard() {
             ? tt('dashboard.marginPositive', 'Operational revenue remains ahead of COGS in the active window.')
             : tt('dashboard.marginNegative', 'COGS is currently higher than operational revenue in the active window.'))
         : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.'),
+      tone: !hasRevenueData ? 'neutral' : grossMargin >= 0 ? 'healthy' : 'critical',
     },
     {
       label: tt('dashboard.executiveTileLatest', 'Latest movement'),
       value: latestMovement ? movementLabel(latestMovement.type) : t('common.dash'),
-      help: latestMovement
-        ? formatShortDateTime(latestMovement.created_at)
-        : tt('dashboard.noRecentMovement', 'No recent movement yet'),
+      help: latestMovement ? `${activityFreshness} - ${formatShortDateTime(latestMovement.created_at)}` : activityFreshness,
+      tone: latestMovement ? 'neutral' : 'attention',
     },
   ]
 
@@ -879,7 +930,7 @@ export default function Dashboard() {
             <div>
               <h1 className="screen-title text-2xl sm:text-3xl">{t('dashboard.title')}</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {tt('dashboard.subtitle', 'Use this dashboard to spot today’s operating risks, recent changes, and shipment-linked performance without leaving the main workspace.')}
+                {tt('dashboard.subtitle', "Use this dashboard to spot today's operating risks, recent changes, and shipment-linked performance without leaving the main workspace.")}
               </p>
             </div>
           </div>
@@ -1020,35 +1071,69 @@ export default function Dashboard() {
         })}
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)]">
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-3">
+          <section className={cn('overflow-hidden rounded-[1.5rem] border p-5 shadow-sm sm:p-6', statusPanelClass)}>
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className={cn('w-fit rounded-full px-3 py-1 text-xs font-medium', statusMeta.badgeClass)}>
-                    {statusMeta.label}
+                    {tt('dashboard.operatingAnswer', 'Operating answer')}: {statusMeta.label}
                   </Badge>
-                  <div>
-                    <CardTitle className="text-xl">{tt('dashboard.executiveStatus', 'Executive operating status')}</CardTitle>
-                    <CardDescription className="mt-2 max-w-2xl text-sm leading-6">
-                      {statusMeta.summary}
-                    </CardDescription>
-                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">{currentWindowLabel}</span>
                 </div>
-                <Chip className={statusMeta.iconClass}>{statusMeta.icon}</Chip>
+
+                <div>
+                  <h3 className="text-2xl font-semibold tracking-tight">{statusMeta.label}</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{statusMeta.summary}</p>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button onClick={primaryAction.action} className="w-full sm:w-auto">
+                    {primaryAction.label}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                  <p className="text-xs leading-5 text-muted-foreground sm:max-w-md">{primaryAction.help}</p>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {executiveTiles.map((tile) => (
-                  <div key={tile.label} className="rounded-[1.2rem] border border-border/70 bg-background/70 p-4 shadow-[0_16px_32px_-28px_hsl(var(--foreground)/0.32)]">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tile.label}</div>
-                    <div className="mt-2 text-xl font-semibold tracking-tight">{tile.value}</div>
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{tile.help}</p>
+
+              <div className="rounded-[1.25rem] border border-background/80 bg-background/92 p-4 shadow-[0_20px_42px_-34px_hsl(var(--foreground)/0.48)] dark:border-white/10 dark:bg-background/80">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      {tt('dashboard.executiveTileActions', 'Urgent actions')}
+                    </div>
+                    <div className={cn('mt-2 text-4xl font-semibold tracking-tight tabular-nums', urgentActionCount > 0 && statusMeta.iconClass)}>
+                      {formatCount(urgentActionCount)}
+                    </div>
                   </div>
-                ))}
+                  <Chip className={statusMeta.iconClass}>{statusMeta.icon}</Chip>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {urgentActionCount > 0
+                    ? tt('dashboard.actionHelpLow', 'Low stock is ordered by severity so the most urgent gaps surface first.')
+                    : tt('dashboard.actionHelpClear', 'There are no urgent stock exceptions in the current warehouse view.')}
+                </p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {executiveTiles.map((tile) => (
+                <div key={tile.label} className="rounded-[1rem] border border-background/80 bg-background/72 p-4 shadow-[0_14px_32px_-30px_hsl(var(--foreground)/0.38)] transition-colors hover:bg-background/88 dark:border-white/10">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tile.label}</div>
+                  <div
+                    className={cn(
+                      'mt-2 text-xl font-semibold tracking-tight tabular-nums',
+                      tile.tone === 'critical' && 'text-rose-600 dark:text-rose-300',
+                      tile.tone === 'attention' && 'text-amber-700 dark:text-amber-300',
+                      tile.tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
+                    )}
+                  >
+                    {tile.value}
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{tile.help}</p>
+                </div>
+              ))}
+            </div>
+          </section>
 
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="space-y-1">
@@ -1104,7 +1189,7 @@ export default function Dashboard() {
 
         <div className="grid gap-4 lg:grid-cols-3">
           {actionCards.map((card) => (
-            <Card key={card.title} className="border-border/80 shadow-sm">
+            <Card key={card.title} className="group border-border/80 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_22px_44px_-34px_hsl(var(--foreground)/0.42)]">
               <CardContent className="flex h-full flex-col gap-4 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1129,9 +1214,9 @@ export default function Dashboard() {
                   </Chip>
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">{card.body}</p>
-                <Button variant="ghost" className="mt-auto h-auto justify-start px-0 text-sm font-medium" onClick={card.action}>
+                <Button variant="ghost" className="mt-auto h-auto justify-start px-0 text-sm font-medium text-primary hover:text-primary" onClick={card.action}>
                   {card.actionLabel}
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </Button>
               </CardContent>
             </Card>

@@ -429,14 +429,14 @@ export function NotificationCenter() {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-[99998] bg-black/18 backdrop-blur-[1.5px] md:bg-black/10" aria-hidden />
+          <div className="fixed inset-0 z-[99998] bg-slate-950/24 backdrop-blur-[2px] dark:bg-slate-950/56 md:bg-slate-950/16" aria-hidden />
           <div
             data-role="notif-panel"
-            className="fixed inset-x-[max(0.75rem,var(--app-safe-left))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.6rem)] z-[99999] flex max-h-[calc(100dvh-var(--app-shell-mobile-header)-var(--app-shell-mobile-dock)-var(--app-safe-top)-var(--app-safe-bottom)-1.45rem)] flex-col overflow-hidden rounded-[1.6rem] border border-border/85 bg-background/98 text-popover-foreground shadow-[0_34px_90px_-38px_hsl(var(--foreground)/0.58)] ring-1 ring-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/94 md:inset-x-auto md:right-6 md:top-20 md:w-[27.5rem] md:max-w-[calc(100vw-3rem)] md:max-h-[min(72vh,38rem)] xl:right-8"
+            className="fixed inset-x-[max(0.75rem,var(--app-safe-left))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.6rem)] z-[99999] flex max-h-[calc(100dvh-var(--app-shell-mobile-header)-var(--app-shell-mobile-dock)-var(--app-safe-top)-var(--app-safe-bottom)-1.45rem)] flex-col overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white text-zinc-950 shadow-[0_34px_90px_-32px_rgba(15,23,42,0.55)] ring-1 ring-black/10 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:shadow-[0_34px_90px_-28px_rgba(0,0,0,0.85)] dark:ring-white/10 md:inset-x-auto md:right-6 md:top-20 md:w-[27.5rem] md:max-w-[calc(100vw-3rem)] md:max-h-[min(72vh,38rem)] xl:right-8"
             role="dialog"
             aria-label={t('notifications.title')}
           >
-          <div className="flex items-center justify-between border-b border-border/75 bg-background/92 px-4 py-3.5">
+          <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-4 py-3.5 dark:border-zinc-800 dark:bg-zinc-950">
             <div className="min-w-0">
               <div className="text-sm font-semibold">{t('notifications.title')}</div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -455,9 +455,9 @@ export function NotificationCenter() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto bg-background/88 px-2.5 py-2.5">
+          <div className="flex-1 overflow-auto bg-zinc-100 px-2.5 py-2.5 dark:bg-zinc-900">
             {rows.length === 0 && (
-              <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/18 px-4 py-8 text-center">
+              <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center dark:border-zinc-700 dark:bg-zinc-950">
                 <div className="text-sm font-medium">{t('notifications.noNotifications')}</div>
                 <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('notifications.emptyHelp')}</div>
               </div>
@@ -466,10 +466,10 @@ export function NotificationCenter() {
               {rows.map((n) => (
                 <div
                   key={n.id}
-                  className={`rounded-[1.2rem] border px-3.5 py-3.5 shadow-[0_14px_30px_-26px_hsl(var(--foreground)/0.28)] transition-colors hover:bg-muted/22 ${
+                  className={`rounded-2xl border px-3.5 py-3.5 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.48)] transition-colors dark:shadow-[0_18px_40px_-30px_rgba(0,0,0,0.9)] ${
                     n.readAt
-                      ? 'border-border/75 bg-card'
-                      : 'border-primary/18 bg-primary/6'
+                      ? 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900'
+                      : 'border-primary/35 bg-primary/8 hover:bg-primary/12 dark:border-primary/30 dark:bg-primary/12 dark:hover:bg-primary/16'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -510,7 +510,7 @@ export function NotificationCenter() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between border-t border-border/75 bg-background/94 px-4 py-3 text-[11px] text-muted-foreground">
+          <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-3 text-[11px] text-muted-foreground dark:border-zinc-800 dark:bg-zinc-950">
             <span>{t(`notifications.realtime.${realtimeStatus}`)}</span>
             <span>{t('notifications.showingLatest', { count: rows.length })}</span>
           </div>
