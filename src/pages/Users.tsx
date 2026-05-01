@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search, UserPlus, Users as UsersIcon } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Crown, Search, ShieldCheck, UserPlus, Users as UsersIcon, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { Link, useLocation } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
@@ -28,6 +29,176 @@ type Member = {
 }
 
 const roleRank = (role: Role) => ({ OWNER: 0, ADMIN: 1, MANAGER: 2, OPERATOR: 3, VIEWER: 4 }[role] ?? 99)
+const allRoles: Role[] = ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER']
+
+const roleDefinitionCopy = {
+  en: {
+    navMembers: 'Members',
+    navRoles: 'Role definitions',
+    definitionsTitle: 'Role definitions',
+    definitionsBody:
+      'These descriptions mirror the current company role checks used by StockWise. They explain the practical effect before you invite or reassign a teammate.',
+    canonicalTitle: 'Canonical role model',
+    canonicalBody:
+      'Company access is controlled by company_members and member_role. Invitation status must become active before protected company routes are unlocked.',
+    platformTitle: 'Platform admin is separate',
+    platformBody:
+      'Platform-admin access is for StockWise control-plane operations only. Company owners do not receive platform-admin controls through company roles.',
+    canDo: 'Can do',
+    cannotDo: 'Cannot do',
+    bestFor: 'Best for',
+    powerfulRole: 'Powerful role',
+    definitions: {
+      OWNER: {
+        summary: 'Full company authority and highest role assignment power.',
+        bestFor: 'Business owners or the accountable tenant administrator.',
+        can: [
+          'Manage users and assign any company role',
+          'Approve, issue, post, void, and adjust finance documents',
+          'Create, update, and delete operational records where the app allows it',
+        ],
+        cannot: [
+          'Bypass fiscal/posting rules or audit restrictions',
+          'Access platform-admin controls unless separately granted',
+        ],
+      },
+      ADMIN: {
+        summary: 'Finance authority with broad operational administration.',
+        bestFor: 'Finance leads or senior administrators who issue legal documents.',
+        can: [
+          'Approve and issue sales invoices and adjustments',
+          'Post vendor bills and finance adjustments',
+          'Manage users up to admin level, except owner escalation',
+        ],
+        cannot: [
+          'Assign or remove owner authority',
+          'Bypass protected fiscal and settlement workflows',
+        ],
+      },
+      MANAGER: {
+        summary: 'Operational supervisor with user-management and delete authority.',
+        bestFor: 'Warehouse, operations, or branch managers.',
+        can: [
+          'Invite and manage viewer, operator, and manager roles',
+          'Create/update operational records and delete allowed master data',
+          'Manage warehouses and review operational/finance information',
+        ],
+        cannot: [
+          'Approve, issue, post, or void legal finance documents',
+          'Assign owner/admin roles or modify higher roles',
+        ],
+      },
+      OPERATOR: {
+        summary: 'Day-to-day worker for stock, orders, and draft preparation.',
+        bestFor: 'Staff creating items, movements, orders, and finance drafts.',
+        can: [
+          'Create and update items, movements, and master data',
+          'Create/edit finance drafts and submit them for approval',
+          'Use operational workspaces needed for daily activity',
+        ],
+        cannot: [
+          'Delete controlled records or manage users',
+          'Approve, issue, post, or void finance documents',
+        ],
+      },
+      VIEWER: {
+        summary: 'Read-oriented access for review and reporting.',
+        bestFor: 'Auditors, advisors, or team members who only need visibility.',
+        can: [
+          'View company information available to the member',
+          'Export reports where report export is enabled for viewers',
+        ],
+        cannot: [
+          'Create, update, delete, approve, issue, post, or void records',
+          'Invite users or change roles',
+        ],
+      },
+    },
+  },
+  pt: {
+    navMembers: 'Membros',
+    navRoles: 'Definições de funções',
+    definitionsTitle: 'Definições de funções',
+    definitionsBody:
+      'Estas descrições refletem as verificações actuais de funções da empresa no StockWise. Servem para explicar o impacto prático antes de convidar ou alterar um colega.',
+    canonicalTitle: 'Modelo canónico de funções',
+    canonicalBody:
+      'O acesso à empresa é controlado por company_members e member_role. O convite tem de ficar activo antes de desbloquear rotas protegidas da empresa.',
+    platformTitle: 'Administrador da plataforma é separado',
+    platformBody:
+      'O acesso de administrador da plataforma serve apenas operações de controlo do StockWise. Proprietários de empresa não recebem esses controlos através das funções da empresa.',
+    canDo: 'Pode fazer',
+    cannotDo: 'Não pode fazer',
+    bestFor: 'Indicado para',
+    powerfulRole: 'Função sensível',
+    definitions: {
+      OWNER: {
+        summary: 'Autoridade total da empresa e maior poder de atribuição de funções.',
+        bestFor: 'Proprietários ou o administrador responsável pelo tenant.',
+        can: [
+          'Gerir utilizadores e atribuir qualquer função da empresa',
+          'Aprovar, emitir, lançar, anular e ajustar documentos financeiros',
+          'Criar, actualizar e remover registos operacionais onde a app permite',
+        ],
+        cannot: [
+          'Contornar regras fiscais, de lançamento ou de auditoria',
+          'Aceder a controlos de plataforma sem uma concessão separada',
+        ],
+      },
+      ADMIN: {
+        summary: 'Autoridade financeira com administração operacional ampla.',
+        bestFor: 'Responsáveis financeiros ou administradores sénior que emitem documentos legais.',
+        can: [
+          'Aprovar e emitir facturas de venda e ajustes',
+          'Lançar facturas de fornecedor e ajustes financeiros',
+          'Gerir utilizadores até ao nível de administrador, sem elevar a proprietário',
+        ],
+        cannot: [
+          'Atribuir ou remover autoridade de proprietário',
+          'Contornar workflows fiscais e de liquidação protegidos',
+        ],
+      },
+      MANAGER: {
+        summary: 'Supervisor operacional com gestão de utilizadores e autoridade de remoção.',
+        bestFor: 'Gestores de armazém, operações ou filial.',
+        can: [
+          'Convidar e gerir leitores, operadores e gestores',
+          'Criar/actualizar registos operacionais e remover dados mestre permitidos',
+          'Gerir armazéns e rever informação operacional/financeira',
+        ],
+        cannot: [
+          'Aprovar, emitir, lançar ou anular documentos financeiros legais',
+          'Atribuir funções de proprietário/admin ou alterar funções superiores',
+        ],
+      },
+      OPERATOR: {
+        summary: 'Utilizador diário para stock, pedidos e preparação de rascunhos.',
+        bestFor: 'Equipa que cria artigos, movimentos, pedidos e rascunhos financeiros.',
+        can: [
+          'Criar e actualizar artigos, movimentos e dados mestre',
+          'Criar/editar rascunhos financeiros e submetê-los para aprovação',
+          'Usar áreas operacionais necessárias para o trabalho diário',
+        ],
+        cannot: [
+          'Remover registos controlados ou gerir utilizadores',
+          'Aprovar, emitir, lançar ou anular documentos financeiros',
+        ],
+      },
+      VIEWER: {
+        summary: 'Acesso orientado a consulta para revisão e relatórios.',
+        bestFor: 'Auditores, consultores ou colegas que só precisam de visibilidade.',
+        can: [
+          'Ver informação da empresa disponível ao membro',
+          'Exportar relatórios quando a exportação está activa para leitores',
+        ],
+        cannot: [
+          'Criar, actualizar, remover, aprovar, emitir, lançar ou anular registos',
+          'Convidar utilizadores ou alterar funções',
+        ],
+      },
+    },
+  },
+} as const
 
 function extractFnErr(error: any): string {
   const ctx = error?.context
@@ -45,9 +216,12 @@ function extractFnErr(error: any): string {
 
 export default function Users() {
   const { companyId, companyName, myRole } = useOrg()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
+  const location = useLocation()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
+  const roleCopy = roleDefinitionCopy[lang]
+  const isRolesView = location.pathname.endsWith('/roles')
 
   const canAccessUsersPage = hasMinRole(myRole, 'MANAGER')
   const canManageUsers = canAccessUsersPage
@@ -66,6 +240,7 @@ export default function Users() {
 
   const roleLabel = (role: Role) => tt(`users.roles.${role.toLowerCase()}`, role)
   const statusLabel = (status: Status) => tt(`users.statuses.${status}`, status.charAt(0).toUpperCase() + status.slice(1))
+  const statusVariant = (status: Status) => (status === 'active' ? 'default' : status === 'invited' ? 'secondary' : 'outline')
 
   const higherThanMe = (role: Role) => (myRole ? roleRank(role) < roleRank(myRole) : false)
 
@@ -320,7 +495,7 @@ export default function Users() {
     }
   }
 
-  const roleOptions: Role[] = (['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'] as Role[]).filter((role) =>
+  const roleOptions: Role[] = allRoles.filter((role) =>
     canInviteRole(myRole as import('../lib/roles').CompanyRole, role)
   )
 
@@ -359,19 +534,35 @@ export default function Users() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('sections.users.title')}</h1>
-          <p className="text-muted-foreground">
+          <p className="hidden text-muted-foreground sm:block">
             {tt('users.subtitle', 'Invite teammates, track pending access, and manage company roles from one page.')}
           </p>
         </div>
-        {companyId ? (
-          <div className="text-sm text-muted-foreground">
-            {t('users.company')}: {companyName || companyId}
-            {myRole ? ` - ${t('users.yourRole')}: ${myRole}` : ''}
+        <div className="space-y-3">
+          {companyId ? (
+            <div className="text-sm text-muted-foreground">
+              {t('users.company')}: {companyName || companyId}
+              {myRole ? ` - ${t('users.yourRole')}: ${myRole}` : ''}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant={isRolesView ? 'outline' : 'default'}>
+              <Link to="/users">
+                <UsersIcon className="h-4 w-4" />
+                {roleCopy.navMembers}
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant={isRolesView ? 'default' : 'outline'}>
+              <Link to="/users/roles">
+                <ShieldCheck className="h-4 w-4" />
+                {roleCopy.navRoles}
+              </Link>
+            </Button>
           </div>
-        ) : null}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -382,7 +573,7 @@ export default function Users() {
           <CardContent className="flex items-end justify-between">
             <div>
               <div className="text-3xl font-semibold">{memberStats.total}</div>
-              <div className="text-xs text-muted-foreground">{tt('users.summary.membersHelp', 'Active and invited company records')}</div>
+              <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.membersHelp', 'Active and invited company records')}</div>
             </div>
             <UsersIcon className="h-5 w-5 text-primary" />
           </CardContent>
@@ -393,7 +584,7 @@ export default function Users() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{memberStats.active}</div>
-            <div className="text-xs text-muted-foreground">{tt('users.summary.activeHelp', 'Members currently able to access the company')}</div>
+            <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.activeHelp', 'Members currently able to access the company')}</div>
           </CardContent>
         </Card>
         <Card>
@@ -402,7 +593,7 @@ export default function Users() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{memberStats.invited}</div>
-            <div className="text-xs text-muted-foreground">{tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}</div>
+            <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}</div>
           </CardContent>
         </Card>
         <Card>
@@ -411,11 +602,90 @@ export default function Users() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{memberStats.disabled}</div>
-            <div className="text-xs text-muted-foreground">{tt('users.summary.disabledHelp', 'Historical users kept without active access')}</div>
+            <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.disabledHelp', 'Historical users kept without active access')}</div>
           </CardContent>
         </Card>
       </div>
 
+      {isRolesView ? (
+        <div className="space-y-4">
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                {roleCopy.definitionsTitle}
+              </CardTitle>
+              <CardDescription>{roleCopy.definitionsBody}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 xl:grid-cols-5">
+                {allRoles.map((role) => {
+                  const definition = roleCopy.definitions[role]
+                  const powerful = role === 'OWNER' || role === 'ADMIN'
+                  return (
+                    <Card key={role} className="border-border/70 shadow-none">
+                      <CardHeader className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <CardTitle className="text-lg">{roleLabel(role)}</CardTitle>
+                            <CardDescription className="mt-2 leading-6">{definition.summary}</CardDescription>
+                          </div>
+                          {role === 'OWNER' ? <Crown className="h-5 w-5 text-amber-600" /> : powerful ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : null}
+                        </div>
+                        {powerful ? (
+                          <Badge variant="outline" className="w-fit border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-300/40 dark:bg-amber-300/15 dark:text-amber-100">
+                            {roleCopy.powerfulRole}
+                          </Badge>
+                        ) : null}
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="rounded-2xl border border-border/70 bg-muted/15 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{roleCopy.bestFor}</div>
+                          <div className="mt-2 text-sm leading-6 text-foreground">{definition.bestFor}</div>
+                        </div>
+                        <div>
+                          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            {roleCopy.canDo}
+                          </div>
+                          <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
+                            {definition.can.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                            <XCircle className="h-4 w-4 text-destructive" />
+                            {roleCopy.cannotDo}
+                          </div>
+                          <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
+                            {definition.cannot.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+                  <div className="text-sm font-semibold">{roleCopy.canonicalTitle}</div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{roleCopy.canonicalBody}</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+                  <div className="text-sm font-semibold">{roleCopy.platformTitle}</div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{roleCopy.platformBody}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <>
       <Card className="border-dashed">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -428,7 +698,7 @@ export default function Users() {
             <p className="text-muted-foreground">{t('users.noCompany')}</p>
           ) : (
             <div className="space-y-4">
-              <p className="max-w-3xl text-sm text-muted-foreground">
+              <p className="hidden max-w-3xl text-sm text-muted-foreground sm:block">
                 {tt(
                   'users.inviteHelp',
                   'Invite records stay visible until the teammate accepts, which makes it easier to resend links or adjust access without losing the trail.'
@@ -456,7 +726,7 @@ export default function Users() {
                           value={role}
                           disabled={!canInviteAdmins && (role === 'OWNER' || role === 'ADMIN')}
                         >
-                          {role}
+                          {roleLabel(role)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -523,7 +793,92 @@ export default function Users() {
               </div>
             </div>
           ) : (
-            <table className="w-full min-w-[1040px] text-sm">
+            <>
+            <div className="space-y-3 md:hidden">
+              {filteredMembers.map((member) => {
+                const isSelf = !!myEmail && !!member.email && member.email.toLowerCase() === myEmail.toLowerCase()
+                const isHigher = higherThanMe(member.role)
+                return (
+                  <div key={`mobile-${member.user_id || member.email || `${member.role}-${member.status}-${member.created_at}`}`} className="rounded-2xl border border-border/70 bg-background/92 p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{member.email || t('common.dash')}</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          <Badge variant="outline">{roleLabel(member.role)}</Badge>
+                          <Badge
+                            variant={statusVariant(member.status)}
+                            className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
+                          >
+                            {statusLabel(member.status)}
+                          </Badge>
+                        </div>
+                      </div>
+                      {isSelf ? <Badge variant="secondary">{tt('users.thisIsYou', 'This is you')}</Badge> : null}
+                    </div>
+                    <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
+                      <div>{member.user_id ? tt('users.linkedAccount', 'Linked account') : tt('users.inviteOnly', 'Invite only')}</div>
+                      <div>{t('users.table.confirmed')}: {member.email_confirmed_at ? new Date(member.email_confirmed_at).toLocaleString() : t('common.dash')}</div>
+                      <div>{t('users.table.lastSignin')}: {member.last_sign_in_at ? new Date(member.last_sign_in_at).toLocaleString() : t('common.dash')}</div>
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      <Select
+                        value={member.role}
+                        onValueChange={(value) => member.email && updateMember(member.email, { role: value as Role }, member.role)}
+                        disabled={!canManageUsers || isHigher || !member.email}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roleOptions.map((role) => (
+                            <SelectItem
+                              key={role}
+                              value={role}
+                              disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, role) || isHigher}
+                            >
+                              {roleLabel(role)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={member.status}
+                        onValueChange={(value) => member.email && updateMember(member.email, { status: value as Status }, member.role)}
+                        disabled={!canManageUsers || isHigher || !member.email}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(['invited', 'active', 'disabled'] as Status[]).map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {statusLabel(status)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex flex-wrap gap-2">
+                        {member.status === 'invited' && member.email ? (
+                          <Button variant="outline" size="sm" onClick={() => reinvite(member.email!)} disabled={!canManageUsers || isHigher}>
+                            {t('users.resendEmail')}
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => member.email && removeMember(member.email, member.role)}
+                          disabled={!canManageUsers || isSelf || isHigher || !member.email}
+                        >
+                          {t('common.remove')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <table className="hidden w-full min-w-[1040px] text-sm md:table">
               <thead>
                 <tr className="border-b text-left">
                   <th className="py-2 pr-2">Email</th>
@@ -583,7 +938,7 @@ export default function Users() {
                       <td className="py-2 pr-2">
                         <div className="space-y-2">
                           <Badge
-                            variant={member.status === 'active' ? 'default' : member.status === 'invited' ? 'secondary' : 'outline'}
+                            variant={statusVariant(member.status)}
                             className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
                           >
                             {statusLabel(member.status)}
@@ -674,9 +1029,12 @@ export default function Users() {
                 })}
               </tbody>
             </table>
+            </>
           )}
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   )
 }

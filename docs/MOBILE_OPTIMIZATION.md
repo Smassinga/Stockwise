@@ -13,6 +13,7 @@ Current design rules:
 - touch targets must remain comfortably tappable
 - avoid dense multi-column admin layouts on phones
 - use clearer vertical flow and fewer competing actions per section
+- compact data-entry screens prioritise inputs/actions first; non-critical explanatory cards should collapse, shorten, or move below the main form while critical validation and warnings stay visible
 
 ## What Is Implemented
 

@@ -66,6 +66,7 @@ Formal bilingual template:
 
 - Sales invoice, sales credit note, and sales debit note print/PDF output now use a fixed bilingual Portuguese/English template.
 - App UI language does not change the formal document labels or structure for those legal outputs.
+- The legal document reference belongs in the right-side metadata table. The left issuer/title block shows issuer identity and the bilingual document type without repeating the number as a large title.
 - The renderer must keep `PROCESSADO POR COMPUTADOR` present and now pairs it with the English phrase on the document footer when using the known Mozambique computer-processed wording.
 
 Supplemental bank-details behavior:

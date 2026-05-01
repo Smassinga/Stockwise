@@ -50,6 +50,7 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
     '/bom': { title: 'Assembly | StockWise', description: t.appDescription, noindex: true },
     '/landed-cost': { title: 'Landed Cost | StockWise', description: t.appDescription, noindex: true },
     '/users': { title: 'Users | StockWise', description: t.appDescription, noindex: true },
+    '/users/roles': { title: 'User Roles | StockWise', description: t.appDescription, noindex: true },
     '/profile': { title: 'Profile | StockWise', description: t.appDescription, noindex: true },
     '/search': { title: 'Search | StockWise', description: t.appDescription, noindex: true },
     '/onboarding': { title: 'Onboarding | StockWise', description: t.appDescription, noindex: true },

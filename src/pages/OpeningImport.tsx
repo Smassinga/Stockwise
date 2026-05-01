@@ -776,9 +776,9 @@ export default function OpeningImport() {
               {copy.title}
             </div>
             <CardTitle className="text-2xl md:text-3xl">{copy.subtitle}</CardTitle>
-            <CardDescription className="max-w-4xl text-sm leading-6">{copy.body}</CardDescription>
+            <CardDescription className="hidden max-w-4xl text-sm leading-6 sm:block">{copy.body}</CardDescription>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="hidden flex-wrap gap-2 sm:flex">
             <Badge variant="outline" className="rounded-full">{copy.historicalNote}</Badge>
             {!canImport ? (
               <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-amber-700">
@@ -803,7 +803,7 @@ export default function OpeningImport() {
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="space-y-2">
                 <CardTitle>{dataset.title[lang]}</CardTitle>
-                <CardDescription>{dataset.body[lang]}</CardDescription>
+                <CardDescription className="hidden sm:block">{dataset.body[lang]}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
@@ -822,36 +822,36 @@ export default function OpeningImport() {
                   </div>
                   {fileName ? <Badge variant="secondary">{fileName}</Badge> : null}
                 </div>
-                <div className="text-sm text-muted-foreground">{copy.fileHint}</div>
+                <div className="hidden text-sm text-muted-foreground sm:block">{copy.fileHint}</div>
               </CardContent>
             </Card>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-3 gap-3 md:gap-4">
               <Card className="border-border/70">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{copy.review}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-semibold">{preview?.rows.length || 0}</div>
-                  <div className="text-xs text-muted-foreground">{copy.previewRows}</div>
+                <CardContent className="p-3 sm:p-6 sm:pt-0">
+                  <div className="text-2xl font-semibold sm:text-3xl">{preview?.rows.length || 0}</div>
+                  <div className="hidden text-xs text-muted-foreground sm:block">{copy.previewRows}</div>
                 </CardContent>
               </Card>
               <Card className="border-border/70">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{copy.ready}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-semibold">{readyCount}</div>
-                  <div className="text-xs text-muted-foreground">{copy.readyHelp}</div>
+                <CardContent className="p-3 sm:p-6 sm:pt-0">
+                  <div className="text-2xl font-semibold sm:text-3xl">{readyCount}</div>
+                  <div className="hidden text-xs text-muted-foreground sm:block">{copy.readyHelp}</div>
                 </CardContent>
               </Card>
               <Card className="border-border/70">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{copy.blocked}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-semibold">{blockedCount}</div>
-                  <div className="text-xs text-muted-foreground">{copy.issues}</div>
+                <CardContent className="p-3 sm:p-6 sm:pt-0">
+                  <div className="text-2xl font-semibold sm:text-3xl">{blockedCount}</div>
+                  <div className="hidden text-xs text-muted-foreground sm:block">{copy.issues}</div>
                 </CardContent>
               </Card>
             </div>

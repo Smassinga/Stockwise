@@ -252,6 +252,7 @@ export default function App() {
 
                 <Route element={<RequireOrgRole allowed={CanManageUsers} />}>
                   <Route path="/users" element={<Suspense fallback={<LoadingSplash />}><Users /></Suspense>} />
+                  <Route path="/users/roles" element={<Suspense fallback={<LoadingSplash />}><Users /></Suspense>} />
                 </Route>
 
                 <Route path="/reports" element={<Suspense fallback={<LoadingSplash />}><Reports /></Suspense>} />

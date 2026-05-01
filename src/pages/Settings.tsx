@@ -604,7 +604,7 @@ function Settings() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">{t("settings.title")}</h1>
-            <p className="text-muted-foreground">{t("settings.subtitle")}</p>
+            <p className="hidden text-muted-foreground sm:block">{t("settings.subtitle")}</p>
           </div>
         </div>
         <Card>
@@ -659,7 +659,7 @@ function Settings() {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-semibold">{settingsSummary.companyLabel}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="hidden text-xs text-muted-foreground sm:block">
               {tt(
                 "settings.summary.companyHelp",
                 "Maintained from the live company profile used in onboarding, exports, and printed documents."
@@ -675,7 +675,7 @@ function Settings() {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-semibold">{settingsSummary.defaultWarehouse}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="hidden text-xs text-muted-foreground sm:block">
               {tt(
                 "settings.summary.warehouseHelp",
                 "Used as the default operational context for the dashboard and sales defaults."
@@ -691,7 +691,7 @@ function Settings() {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-semibold">{settingsSummary.valuationMethod}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="hidden text-xs text-muted-foreground sm:block">
               {tt(
                 "settings.summary.valuationHelp",
                 "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
@@ -735,7 +735,7 @@ function Settings() {
                 disabled={!canEditOps}
                 placeholder={t("settings.companyProfile.emailSubjectPrefix.placeholder")}
               />
-              <div className="text-xs text-muted-foreground">
+              <div className="hidden text-xs text-muted-foreground sm:block">
                 {t("settings.companyProfile.emailSubjectPrefix.helper")}
               </div>
             </div>
@@ -1090,7 +1090,7 @@ function Settings() {
                   <SelectItem value="pt">{tt("settings.language.pt", "Portuguese")}</SelectItem>
                 </SelectContent>
               </Select>
-              <div className="text-xs text-muted-foreground">
+              <div className="hidden text-xs text-muted-foreground sm:block">
                 {t("settings.companyProfile.preferredLang.helper")}
               </div>
             </div>
@@ -1110,7 +1110,7 @@ function Settings() {
                 companyId={companyId}
                 disabled={!canEditOps}
               />
-              <div className="text-xs text-muted-foreground">
+              <div className="hidden text-xs text-muted-foreground sm:block">
                 {t("settings.companyProfile.logo.helper")}
               </div>
             </div>
@@ -1124,7 +1124,7 @@ function Settings() {
                 disabled={!canEditOps}
                 placeholder={t("settings.companyProfile.logoPath.placeholder")}
               />
-              <div className="text-[11px] text-muted-foreground">
+              <div className="hidden text-[11px] text-muted-foreground sm:block">
                 {t("settings.companyProfile.logoPath.helper")}
               </div>
             </div>
@@ -1220,7 +1220,7 @@ function Settings() {
           <CardTitle>{t("sections.sales.title")}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2 text-sm text-muted-foreground">
+            <div className="hidden text-sm text-muted-foreground sm:block md:col-span-2">
             {tt(
               "settings.sales.help",
               "Keep only the operational defaults your team actually controls here. Revenue recognition logic stays in product behavior, not company setup."
@@ -1309,7 +1309,7 @@ function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2 text-sm text-muted-foreground">
+            <div className="hidden text-sm text-muted-foreground sm:block md:col-span-2">
             {tt(
               "settings.digest.help",
               "The daily digest is queued once per local day after the selected time and is currently delivered by email only."
@@ -1392,7 +1392,7 @@ function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2 text-sm text-muted-foreground">
+            <div className="hidden text-sm text-muted-foreground sm:block md:col-span-2">
             {tt(
               "settings.dueReminders.help",
               "Due reminders run on your company timezone, follow the active AR anchor, and use the billing email on the active order or invoice chain by default."

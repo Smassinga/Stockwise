@@ -1840,6 +1840,7 @@ export default function SalesInvoiceDetailPage() {
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                         {documentCopy.parties.issuer}
                       </div>
+                      <div className="text-xl font-semibold tracking-[-0.02em] text-foreground">{documentCopy.documentTypes.salesInvoice}</div>
                       <div className="text-lg font-semibold tracking-[-0.02em]">{visibleSellerLegalName}</div>
                       {visibleSellerName !== visibleSellerLegalName ? (
                         <div className="text-sm text-muted-foreground">{visibleSellerName}</div>

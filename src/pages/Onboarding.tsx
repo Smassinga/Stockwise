@@ -374,7 +374,7 @@ function PathCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'group w-full rounded-3xl border bg-background/80 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
+          'group w-full rounded-3xl border bg-background/80 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md sm:p-5',
         active
           ? 'border-primary/50 bg-primary/5 shadow-sm ring-1 ring-primary/20'
           : 'border-border/70 hover:border-primary/20',
@@ -388,8 +388,8 @@ function PathCard({
             </span>
             <span>{title}</span>
           </div>
-          <p className="text-sm leading-6 text-muted-foreground">{body}</p>
-        </div>
+            <p className="hidden text-sm leading-6 text-muted-foreground sm:block">{body}</p>
+          </div>
         <ChevronRight
           className={cn(
             'mt-1 h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200',
@@ -397,9 +397,9 @@ function PathCard({
           )}
         />
       </div>
-      <div className="mt-4 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        {hint}
-      </div>
+        <div className="mt-4 hidden text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground sm:block">
+          {hint}
+        </div>
     </button>
   )
 }
@@ -760,7 +760,7 @@ export default function Onboarding() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <CardTitle>{completion ? copy.readyTitle : hasInvites ? copy.choiceTitle : copy.noInvitesTitle}</CardTitle>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
                     {completion ? copy.readyBody : hasInvites ? copy.choiceBody : copy.noInvitesBody}
                   </p>
                 </div>
@@ -853,7 +853,7 @@ export default function Onboarding() {
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                           <div>
                             <div className="text-base font-semibold text-foreground">{copy.invitationsTitle}</div>
-                            <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.invitationsBody}</p>
+                              <p className="mt-1 hidden text-sm leading-6 text-muted-foreground sm:block">{copy.invitationsBody}</p>
                           </div>
                           {showInviteSearch ? (
                             <div className="relative w-full sm:max-w-xs">
@@ -881,7 +881,7 @@ export default function Onboarding() {
                                   return (
                                     <div
                                       key={`${invite.company_id}:${invite.source}`}
-                                      className="rounded-3xl border border-border/70 bg-card/80 p-4 transition-all duration-200 hover:border-primary/20 hover:shadow-sm"
+                        className="rounded-3xl border border-border/70 bg-card/80 p-3 transition-all duration-200 hover:border-primary/20 hover:shadow-sm sm:p-4"
                                     >
                                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                                         <div className="space-y-3">
@@ -956,11 +956,11 @@ export default function Onboarding() {
                 {path === 'create' ? (
                   <div className="rounded-3xl border border-border/70 bg-background/70 p-4 sm:p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="text-base font-semibold text-foreground">{copy.createTitle}</div>
-                        <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.createBody}</p>
-                      </div>
-                      <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                          <div>
+                            <div className="text-base font-semibold text-foreground">{copy.createTitle}</div>
+                            <p className="mt-1 hidden text-sm leading-6 text-muted-foreground sm:block">{copy.createBody}</p>
+                          </div>
+                          <div className="hidden items-center gap-2 rounded-full border border-border/70 bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground sm:inline-flex">
                         <span>{copy.finishLaterLabel}</span>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -992,7 +992,7 @@ export default function Onboarding() {
                             if (event.key === 'Enter') void createCompany()
                           }}
                         />
-                        <p className="text-xs text-muted-foreground">{copy.companyLabelHint}</p>
+                          <p className="hidden text-xs text-muted-foreground sm:block">{copy.companyLabelHint}</p>
                       </div>
                       <Button
                         onClick={() => void createCompany()}

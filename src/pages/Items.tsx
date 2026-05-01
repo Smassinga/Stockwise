@@ -520,14 +520,14 @@ export default function ItemsPage() {
   return (
     <div className="app-page app-page--workspace">
       <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
-        <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(23rem,0.92fr)] xl:p-8 2xl:grid-cols-[minmax(0,1.14fr)_minmax(27rem,0.86fr)]">
+        <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(23rem,0.92fr)] xl:p-8 2xl:grid-cols-[minmax(0,1.14fr)_minmax(27rem,0.86fr)]">
           <div className="space-y-3">
             <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em]">
               {tt('items.eyebrow', 'Master data clarity')}
             </Badge>
             <div className="space-y-2">
               <h1 className="text-3xl font-semibold tracking-tight">{tt('items.title', 'Items')}</h1>
-              <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+              <p className="hidden max-w-3xl text-sm leading-6 text-muted-foreground sm:block">
                 {tt(
                   'items.subtitle',
                   'Set up each item once with a clear operational role. Stock, purchasing, selling, and assembly should be obvious before anyone uses the item in orders, builds, or finance documents.',
@@ -536,33 +536,33 @@ export default function ItemsPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="hidden grid-cols-2 gap-3 sm:grid sm:grid-cols-2">
             <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-5">
+              <CardContent className="p-3 sm:p-5">
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.total', 'Total items')}</div>
-                <div className="mt-2 text-3xl font-semibold">{summary.total}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('items.summary.totalHelp', 'All item masters in the active company.')}</div>
+                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.total}</div>
+                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.totalHelp', 'All item masters in the active company.')}</div>
               </CardContent>
             </Card>
             <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-5">
+              <CardContent className="p-3 sm:p-5">
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.stocked', 'Stock-tracked')}</div>
-                <div className="mt-2 text-3xl font-semibold">{summary.stocked}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('items.summary.stockedHelp', 'Items that participate in inventory balances and minimum-stock alerts.')}</div>
+                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.stocked}</div>
+                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.stockedHelp', 'Items that participate in inventory balances and minimum-stock alerts.')}</div>
               </CardContent>
             </Card>
             <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-5">
+              <CardContent className="p-3 sm:p-5">
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.assembled', 'Assembly-related')}</div>
-                <div className="mt-2 text-3xl font-semibold">{summary.assembled}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('items.summary.assembledHelp', 'Items that are assembled themselves or consumed inside BOMs.')}</div>
+                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.assembled}</div>
+                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.assembledHelp', 'Items that are assembled themselves or consumed inside BOMs.')}</div>
               </CardContent>
             </Card>
             <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-5">
+              <CardContent className="p-3 sm:p-5">
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.attention', 'Needs attention')}</div>
-                <div className="mt-2 text-3xl font-semibold">{summary.warnings}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('items.summary.attentionHelp', 'Profile mismatches that can confuse stock or assembly workflows.')}</div>
+                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.warnings}</div>
+                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.attentionHelp', 'Profile mismatches that can confuse stock or assembly workflows.')}</div>
               </CardContent>
             </Card>
           </div>
@@ -571,24 +571,24 @@ export default function ItemsPage() {
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.06fr)_minmax(20rem,0.94fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
         <Card className="border-border/70 bg-card shadow-sm">
-          <CardHeader className="space-y-2">
-            <CardTitle>{tt('items.createTitle', 'Create a clear item master')}</CardTitle>
-            <CardDescription>
+          <CardHeader className="space-y-1 p-4 pb-2 sm:space-y-2 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">{tt('items.createTitle', 'Create a clear item master')}</CardTitle>
+            <CardDescription className="hidden sm:block">
               {tt(
                 'items.createHelp',
                 'Choose the operational role first. After creation, the role stays locked and only minimum stock remains editable unless a controlled data fix is needed.',
               )}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <CardContent className="space-y-4 p-4 pt-3 sm:space-y-6 sm:p-6">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-3">
               {roleOptions.map((option) => {
                 const active = draftProfile.primaryRole === option.role
                 return (
                   <button
                     key={option.role}
                     type="button"
-                    className={`rounded-2xl border p-4 text-left transition-all ${
+                    className={`rounded-xl border p-2 text-left transition-all sm:rounded-2xl sm:p-4 ${
                       active
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/40'
@@ -599,7 +599,7 @@ export default function ItemsPage() {
                       <div className="font-medium">{option.title}</div>
                       {active ? <Badge>{tt('items.selected', 'Selected')}</Badge> : null}
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{option.description}</p>
+                    <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">{option.description}</p>
                   </button>
                 )
               })}
@@ -656,7 +656,7 @@ export default function ItemsPage() {
                     placeholder="0.00"
                     disabled={!draftProfile.canSell}
                   />
-                  <p className="text-xs leading-5 text-muted-foreground">
+                  <p className="hidden text-xs leading-5 text-muted-foreground sm:block">
                     {draftProfile.canSell
                       ? tt('items.fields.unitPrice.help', 'Point of Sale and quick-sale flows start from this amount. Operators can still adjust the line price before posting.')
                       : tt('items.fields.unitPrice.disabledHelp', 'This role is not marked for selling, so no default sell price is required.')}
@@ -672,7 +672,7 @@ export default function ItemsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <div className="font-medium">{tt('items.flags.trackInventory', 'Track inventory')}</div>
-                          <div className="text-sm text-muted-foreground">{tt('items.flags.trackInventoryHelp', 'Turn this off only for services and other non-stock items.')}</div>
+                          <div className="hidden text-sm text-muted-foreground sm:block">{tt('items.flags.trackInventoryHelp', 'Turn this off only for services and other non-stock items.')}</div>
                         </div>
                         <Switch
                           checked={draftProfile.trackInventory}
@@ -682,7 +682,7 @@ export default function ItemsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <div className="font-medium">{tt('items.flags.canBuy', 'Can be purchased')}</div>
-                          <div className="text-sm text-muted-foreground">{tt('items.flags.canBuyHelp', 'Use this when the supplier side should be able to source the item directly.')}</div>
+                          <div className="hidden text-sm text-muted-foreground sm:block">{tt('items.flags.canBuyHelp', 'Use this when the supplier side should be able to source the item directly.')}</div>
                         </div>
                         <Switch
                           checked={draftProfile.canBuy}
@@ -692,7 +692,7 @@ export default function ItemsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <div className="font-medium">{tt('items.flags.canSell', 'Can be sold')}</div>
-                          <div className="text-sm text-muted-foreground">{tt('items.flags.canSellHelp', 'Turn this on when the item should appear in sales and billing flows.')}</div>
+                          <div className="hidden text-sm text-muted-foreground sm:block">{tt('items.flags.canSellHelp', 'Turn this on when the item should appear in sales and billing flows.')}</div>
                         </div>
                         <Switch
                           checked={draftProfile.canSell}
@@ -702,7 +702,7 @@ export default function ItemsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <div className="font-medium">{tt('items.flags.isAssembled', 'Built through Assembly')}</div>
-                          <div className="text-sm text-muted-foreground">{tt('items.flags.isAssembledHelp', 'Mark this only when production consumes components to produce the item.')}</div>
+                          <div className="hidden text-sm text-muted-foreground sm:block">{tt('items.flags.isAssembledHelp', 'Mark this only when production consumes components to produce the item.')}</div>
                         </div>
                         <Switch
                           checked={draftProfile.isAssembled}
@@ -726,8 +726,8 @@ export default function ItemsPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <div className="text-sm font-medium">{tt('items.preview.lockingTitle', 'Post-create lock')}</div>
-                      <p className="text-sm leading-6 text-muted-foreground">
+                      <div className="hidden text-sm font-medium sm:block">{tt('items.preview.lockingTitle', 'Post-create lock')}</div>
+                      <p className="hidden text-sm leading-6 text-muted-foreground sm:block">
                         {tt(
                           'items.preview.lockingHelp',
                           'Item role, inventory behavior, buy/sell flags, and default sell price are fixed at creation time. After save, only minimum stock remains editable in normal operations.',
@@ -752,8 +752,16 @@ export default function ItemsPage() {
                 </div>
               </div>
 
+              <details className="rounded-2xl border border-border/70 bg-muted/15 p-3 text-sm sm:hidden">
+                <summary className="cursor-pointer font-medium">{tt('items.reviewTitle', 'Classification guide')}</summary>
+                <div className="mt-3 space-y-2 text-muted-foreground">
+                  <p>{tt('items.guidance.inventoryBody', 'Track inventory for anything that should affect on-hand, costing, minimum stock, or assembly availability. Turn inventory off for pure services only.')}</p>
+                  <p>{tt('items.guidance.commercialBody', 'Use the buy and sell flags to show whether the item belongs in supplier flows, customer flows, or both. This reduces wrong-line selection later in orders and bills.')}</p>
+                </div>
+              </details>
+
               <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-background/80 p-4 md:flex-row md:items-center md:justify-between">
-                <div className="text-sm text-muted-foreground">
+                <div className="hidden text-sm text-muted-foreground sm:block">
                   {tt('items.createFooter', 'Create items with the right role and default sell price up front so Assembly, stock review, purchasing, and Point of Sale all start from clean master data.')}
                 </div>
                 <Button type="submit" disabled={saving}>
@@ -764,7 +772,7 @@ export default function ItemsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card shadow-sm">
+        <Card className="hidden border-border/70 bg-card shadow-sm sm:block">
           <CardHeader className="space-y-2">
             <CardTitle>{tt('items.reviewTitle', 'Classification guide')}</CardTitle>
             <CardDescription>

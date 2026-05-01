@@ -21,9 +21,12 @@ Current rules:
 
 - company membership and authority live in `company_members`
 - company role semantics use `member_role`
+- company role definitions are exposed in the app under Users > Role definitions and must stay aligned with the checks in `src/lib/roles.ts` and `src/lib/permissions.ts`
+- company roles are `OWNER`, `ADMIN`, `MANAGER`, `OPERATOR`, and `VIEWER`; the UI explains practical can/cannot-do boundaries without inventing permissions that are not enforced
 - user profile and sign-in metadata live in `profiles`
 - active company context lives in `user_active_company`
 - entitlement state lives in `company_subscription_state`
+- platform-admin access is separate via `platform_admins` and is not granted by company ownership or membership role
 
 Legacy structures removed in cleanup:
 
