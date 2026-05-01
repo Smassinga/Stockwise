@@ -439,36 +439,40 @@ function PricingCard({
       onMouseEnter={onSelect}
       onFocusCapture={onSelect}
       className={cn(
-        'group relative flex h-full cursor-pointer flex-col overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-60px_rgba(15,23,42,0.48)] transition-[transform,border-color,box-shadow,background-color] duration-200 ease-out hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_36px_110px_-60px_rgba(15,23,42,0.56)] focus-within:-translate-y-1 focus-within:border-primary/45 focus-within:ring-2 focus-within:ring-primary/15',
-        selected ? 'border-primary/40 bg-gradient-to-b from-primary/[0.045] via-card to-card shadow-[0_38px_110px_-58px_rgba(37,99,235,0.24)]' : '',
-        plan.highlight ? 'ring-1 ring-primary/15' : '',
+        'group relative flex h-full cursor-pointer flex-col overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-60px_rgba(15,23,42,0.48)] transition-[transform,border-color,box-shadow,background-color] duration-200 ease-out hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_36px_110px_-60px_rgba(15,23,42,0.56)] focus-within:-translate-y-1 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 dark:hover:border-primary/50',
+        selected ? 'border-primary/50 bg-gradient-to-b from-primary/[0.055] via-card to-card shadow-[0_38px_110px_-58px_rgba(37,99,235,0.28)] dark:from-primary/10' : '',
+        plan.highlight ? 'ring-1 ring-amber-300/50 dark:ring-amber-300/25' : '',
       )}
     >
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-primary/65 to-transparent transition-opacity duration-200',
+          'pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent transition-opacity duration-200',
           selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
         )}
       />
-      {selected && !plan.highlight ? (
-        <div className="absolute left-4 top-4 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-          {copy.labels.selected}
+      <CardHeader className="grid gap-4 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] p-5 sm:p-6">
+        <div className="min-h-[1.8rem]">
+          <div className="flex flex-wrap gap-2">
+            {selected ? (
+              <span className="inline-flex rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary dark:border-sky-300/50 dark:bg-sky-300/20 dark:text-sky-100">
+                {copy.labels.selected}
+              </span>
+            ) : null}
+            {plan.highlight ? (
+              <span className="inline-flex rounded-full border border-amber-300/60 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-800 dark:border-amber-300/50 dark:bg-amber-300/20 dark:text-amber-100">
+                {copy.labels.recommended}
+              </span>
+            ) : null}
+          </div>
         </div>
-      ) : null}
-      {plan.highlight ? (
-        <div className="absolute right-4 top-4 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-          {copy.labels.recommended}
-        </div>
-      ) : null}
 
-      <CardHeader className="grid gap-4 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04]">
-        <div className="space-y-2 xl:min-h-[7.25rem]">
+        <div className="space-y-2 2xl:min-h-[7.25rem]">
           <CardTitle className="text-2xl tracking-tight">{plan.name}</CardTitle>
           <CardDescription className="text-sm leading-6 text-muted-foreground">{content.headline}</CardDescription>
         </div>
 
-        <div className="grid content-start gap-3 sm:grid-cols-2 xl:min-h-[6.5rem]">
+        <div className="grid content-start gap-3 sm:grid-cols-2 2xl:min-h-[6.5rem]">
           <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {copy.labels.company}
@@ -483,19 +487,19 @@ function PricingCard({
           </div>
         </div>
 
-        <div className="flex min-h-[11.25rem] flex-col justify-between rounded-2xl border border-border/70 bg-background px-4 py-4">
+        <div className="flex min-h-[10.5rem] flex-col justify-between rounded-2xl border border-border/70 bg-background px-4 py-4 2xl:min-h-[11.25rem]">
           <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {managed ? copy.labels.from : copy.labels.annual}
           </div>
           <div>
-            <div className="mt-2 text-[2.2rem] font-semibold tracking-tight">
+            <div className="mt-2 text-[1.8rem] font-semibold tracking-tight sm:text-[2rem] 2xl:text-[2.2rem]">
               {formatMzn(plan.startingAnnualMzn ?? plan.annualMzn, locale)}
             </div>
             <div className="mt-1 text-sm text-muted-foreground">{copy.labels.annual}</div>
           </div>
           <div className="pt-3">
             {plan.annualSavingMzn ? (
-              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-300/40 dark:bg-emerald-300/20 dark:text-emerald-100">
                 {copy.labels.annualSaving}: {formatMzn(plan.annualSavingMzn, locale)}
               </div>
             ) : (
@@ -504,7 +508,7 @@ function PricingCard({
           </div>
         </div>
 
-        <div className="grid content-start gap-3 sm:grid-cols-2 xl:min-h-[13rem]">
+        <div className="grid content-start gap-3 sm:grid-cols-2 2xl:min-h-[13rem]">
           {!managed ? (
             <>
               <div className="min-h-[6.25rem] rounded-2xl border border-border/70 bg-background px-4 py-3.5">
@@ -559,7 +563,7 @@ function PricingCard({
             <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
               {content.included.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />
+                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -573,7 +577,7 @@ function PricingCard({
             <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
               {content.support.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary dark:text-sky-300" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -809,7 +813,7 @@ export default function LandingPage() {
               <p className="mt-4 text-lg text-muted-foreground">{copy.pricingBody}</p>
             </div>
 
-          <div className="mt-10 grid gap-5 md:grid-cols-2 2xl:grid-cols-4">
+            <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               {publicPricingPlans.map((plan) => (
                 <PricingCard
                   key={plan.code}

@@ -695,7 +695,7 @@ export default function Dashboard() {
         'Stock, activity, and operational margin look stable in the selected window.',
       ),
       badgeClass:
-        'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/35 dark:bg-emerald-500/12 dark:text-emerald-200',
+        'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/40 dark:bg-emerald-300/20 dark:text-emerald-100',
       iconClass: 'text-emerald-700 dark:text-emerald-300',
       icon: <CheckCircle2 size={18} />,
     },
@@ -706,7 +706,7 @@ export default function Dashboard() {
         'There are stock or setup exceptions worth reviewing today.',
       ),
       badgeClass:
-        'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/12 dark:text-amber-200',
+        'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-300/50 dark:bg-amber-300/20 dark:text-amber-100',
       iconClass: 'text-amber-700 dark:text-amber-300',
       icon: <CircleAlert size={18} />,
     },
@@ -717,7 +717,7 @@ export default function Dashboard() {
         'Stock outages or negative gross margin need review in the selected window.',
       ),
       badgeClass:
-        'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/35 dark:bg-rose-500/12 dark:text-rose-200',
+        'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-300/50 dark:bg-rose-300/20 dark:text-rose-100',
       iconClass: 'text-rose-700 dark:text-rose-300',
       icon: <AlertTriangle size={18} />,
     },
@@ -728,7 +728,7 @@ export default function Dashboard() {
         'Complete initial stock, sales, or item setup so the dashboard becomes a live operating view.',
       ),
       badgeClass:
-        'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/35 dark:bg-sky-500/12 dark:text-sky-200',
+        'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/50 dark:bg-sky-300/20 dark:text-sky-100',
       iconClass: 'text-sky-700 dark:text-sky-300',
       icon: <Clock3 size={18} />,
     },
@@ -747,10 +747,10 @@ export default function Dashboard() {
     : tt('dashboard.activityFreshNone', 'No warehouse movement recorded yet')
 
   const statusPanelClass = {
-    healthy: 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-500/25 dark:bg-emerald-500/10',
-    attention: 'border-amber-200/80 bg-amber-50/75 dark:border-amber-500/25 dark:bg-amber-500/10',
-    critical: 'border-rose-200/80 bg-rose-50/75 dark:border-rose-500/25 dark:bg-rose-500/10',
-    setup: 'border-sky-200/80 bg-sky-50/75 dark:border-sky-500/25 dark:bg-sky-500/10',
+    healthy: 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-300/25 dark:bg-emerald-300/10',
+    attention: 'border-amber-200/80 bg-amber-50/75 dark:border-amber-300/30 dark:bg-amber-300/10',
+    critical: 'border-rose-200/80 bg-rose-50/75 dark:border-rose-300/30 dark:bg-rose-300/10',
+    setup: 'border-sky-200/80 bg-sky-50/75 dark:border-sky-300/30 dark:bg-sky-300/10',
   }[operatingStatus]
 
   const primaryAction = lowStock.length > 0

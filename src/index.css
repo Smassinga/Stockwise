@@ -150,6 +150,94 @@
     @apply flex flex-col gap-3;
   }
 
+  .app-page table,
+  .mobile-container table,
+  .mx-auto.max-w-7xl table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .app-page table thead,
+  .mobile-container table thead,
+  .mx-auto.max-w-7xl table thead {
+    background: hsl(var(--muted) / 0.42);
+  }
+
+  .app-page table th,
+  .mobile-container table th,
+  .mx-auto.max-w-7xl table th {
+    height: 2.75rem;
+    padding: 0.7rem 0.75rem;
+    border-bottom: 1px solid hsl(var(--border) / 0.72);
+    color: hsl(var(--muted-foreground));
+    font-size: 0.69rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    line-height: 1rem;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .app-page table td,
+  .mobile-container table td,
+  .mx-auto.max-w-7xl table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid hsl(var(--border) / 0.48);
+    line-height: 1.5rem;
+    vertical-align: middle;
+  }
+
+  .app-page table tbody tr,
+  .mobile-container table tbody tr,
+  .mx-auto.max-w-7xl table tbody tr {
+    transition: background-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .app-page table tbody tr:hover,
+  .mobile-container table tbody tr:hover,
+  .mx-auto.max-w-7xl table tbody tr:hover {
+    background: hsl(var(--muted) / 0.22);
+  }
+
+  .app-page table tbody tr[data-state='selected'],
+  .mobile-container table tbody tr[data-state='selected'],
+  .mx-auto.max-w-7xl table tbody tr[data-state='selected'] {
+    background: hsl(var(--primary) / 0.075);
+  }
+
+  .app-page table th.text-right,
+  .app-page table td.text-right,
+  .mobile-container table th.text-right,
+  .mobile-container table td.text-right,
+  .mx-auto.max-w-7xl table th.text-right,
+  .mx-auto.max-w-7xl table td.text-right {
+    text-align: right;
+  }
+
+  .app-page table th svg,
+  .app-page table td svg,
+  .mobile-container table th svg,
+  .mobile-container table td svg,
+  .mx-auto.max-w-7xl table th svg,
+  .mx-auto.max-w-7xl table td svg,
+  .app-page button svg,
+  .app-page a svg {
+    opacity: 0.9;
+  }
+
+  .app-page table .font-mono,
+  .mobile-container table .font-mono,
+  .mx-auto.max-w-7xl table .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dark .app-page table thead,
+  .dark .mobile-container table thead,
+  .dark .mx-auto.max-w-7xl table thead {
+    background: hsl(var(--muted) / 0.24);
+  }
+
   @media (min-width: 768px) {
     .app-page {
       gap: 1.75rem;
