@@ -22,6 +22,7 @@ import {
 } from './financeDocumentOutputLanguage'
 
 type PdfSuite = { jsPDF: typeof import('jspdf').default; autoTable: (...args: any[]) => void }
+type PdfFontStyle = 'normal' | 'bold'
 type OutputField = {
   label: string
   value: string
@@ -107,9 +108,15 @@ type BrandOptions = {
 }
 
 let pdfSuitePromise: Promise<PdfSuite> | null = null
+let pdfFontDataPromise: Promise<Record<PdfFontStyle, string> | null> | null = null
+const PDF_FONT_FAMILY = 'NotoSans'
+const PDF_FONT_FILES: Record<PdfFontStyle, string> = {
+  normal: '/fonts/NotoSans-Regular.ttf',
+  bold: '/fonts/NotoSans-Bold.ttf',
+}
 
 const css = `
-@page{size:A4;margin:14mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#0f172a;font:10.8px/1.45 "Aptos","Segoe UI",Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}.doc{width:100%}.sheet{border:1px solid #94a3b8;padding:18px 18px 14px}.header{display:grid;grid-template-columns:minmax(0,1fr) 228px;gap:18px;align-items:start;margin-bottom:14px}.seller{border:1px solid #94a3b8;display:grid;grid-template-columns:88px minmax(0,1fr);gap:14px;padding:14px 16px}.logoWrap{display:flex;align-items:flex-start;justify-content:center}.logoMark{width:68px;height:68px;border:1px solid #94a3b8;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.logo{display:block;width:100%;height:100%;object-fit:contain}.logoFallback{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:21px;font-weight:800;letter-spacing:.06em;color:#b91c1c}.sellerCopy{min-width:0}.brand{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#475569}.docType{margin:2px 0 10px;font-size:17px;font-weight:800;letter-spacing:.03em;color:#111827}.sellerLine{margin:2px 0;color:#334155}.sellerStrong{font-weight:800;color:#0f172a}.meta{border:1px solid #94a3b8}.metaTable,.dataTable,.lineTable,.bankTable,.totalsTable{width:100%;border-collapse:collapse;table-layout:fixed}.metaTable td,.metaTable th,.dataTable td,.lineTable td,.lineTable th,.bankTable td,.bankTable th,.totalsTable td,.totalsTable th{border:1px solid #94a3b8;padding:6px 8px;vertical-align:top}.metaTable th,.dataTable th,.lineTable th,.bankTable th,.totalsTable th{background:#f8fafc;color:#1e293b;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.metaLabel,.dataLabel,.totalsLabel{width:42%;font-size:9px;font-weight:700;color:#475569}.metaValue,.dataValue,.totalsValue{font-weight:700;color:#0f172a}.docBlock{margin-bottom:12px}.docBlock:last-child{margin-bottom:0}.blockTitle{margin:0 0 6px 0;font-size:9.3px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#1e293b}.counterparty{margin-bottom:12px}.lineTable thead th{text-align:left}.lineDesc{font-weight:700;color:#0f172a}.lineMeta{margin-top:3px;font-size:8.7px;color:#64748b}.r{text-align:right}.tv{display:inline-block;white-space:nowrap;font-variant-numeric:tabular-nums}.summary{display:grid;grid-template-columns:minmax(0,1fr) 214px;gap:16px;align-items:start;margin-top:14px}.stack{display:grid;gap:10px;grid-column:1;grid-row:1}.totalsPane{grid-column:2;grid-row:1}.panel{border:1px solid #94a3b8;padding:10px 12px;page-break-inside:avoid;white-space:pre-line}.panelMuted{color:#475569}.bankGroup+.bankGroup{margin-top:8px}.bankHeading{margin:0 0 6px 0;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#334155}.totalsTable td,.totalsTable th{padding:7px 8px}.totalsTable th{background:#f8fafc}.totalsTable .grand td{font-size:12px;font-weight:800}.totalsTable .sectionHead th{font-size:9.1px}.footer{display:flex;justify-content:space-between;gap:12px;margin-top:14px;padding-top:8px;border-top:1px solid #94a3b8;font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#475569}.footerRight{text-align:right}@media print{.sheet{border:none;padding:0}.footer{position:static}}
+@page{size:A4;margin:14mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#0f172a;font:10.8px/1.45 "Aptos","Segoe UI",Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}.doc{width:100%}.sheet{border:1px solid #94a3b8;padding:18px 18px 14px}.header{display:grid;grid-template-columns:minmax(0,1fr) 248px;gap:18px;align-items:start;margin-bottom:14px}.seller{border:1px solid #94a3b8;display:grid;grid-template-columns:88px minmax(0,1fr);gap:14px;padding:14px 16px}.logoWrap{display:flex;align-items:flex-start;justify-content:center}.logoMark{width:68px;height:68px;border:1px solid #94a3b8;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.logo{display:block;width:100%;height:100%;object-fit:contain}.logoFallback{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:21px;font-weight:800;letter-spacing:.06em;color:#b91c1c}.sellerCopy{min-width:0}.brand{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#475569}.docType{margin:2px 0 10px;font-size:17px;font-weight:800;letter-spacing:.03em;color:#111827}.sellerLine{margin:2px 0;color:#334155}.sellerStrong{font-weight:800;color:#0f172a}.meta{border:1px solid #94a3b8}.metaTable,.dataTable,.lineTable,.bankTable,.totalsTable{width:100%;border-collapse:collapse;table-layout:fixed}.metaTable td,.metaTable th,.dataTable td,.lineTable td,.lineTable th,.bankTable td,.bankTable th,.totalsTable td,.totalsTable th{border:1px solid #94a3b8;padding:6px 8px;vertical-align:top}.metaTable th,.dataTable th,.lineTable th,.bankTable th,.totalsTable th{background:#f8fafc;color:#1e293b;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.metaLabel,.dataLabel,.totalsLabel{width:42%;font-size:9px;font-weight:700;color:#475569}.metaValue,.dataValue,.totalsValue{font-weight:700;color:#0f172a}.docBlock{margin-bottom:12px}.docBlock:last-child{margin-bottom:0}.blockTitle{margin:0 0 6px 0;font-size:9.3px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#1e293b}.counterparty{margin-bottom:12px}.lineTable thead th{text-align:left}.lineDesc{font-weight:700;color:#0f172a}.lineMeta{margin-top:3px;font-size:8.7px;color:#64748b}.r{text-align:right}.tv{display:inline-block;white-space:nowrap;font-variant-numeric:tabular-nums}.summary{display:grid;grid-template-columns:minmax(0,1fr) 214px;gap:16px;align-items:start;margin-top:14px}.stack{display:grid;gap:10px;grid-column:1;grid-row:1}.totalsPane{grid-column:2;grid-row:1}.panel{border:1px solid #94a3b8;padding:10px 12px;page-break-inside:avoid;white-space:pre-line}.panelMuted{color:#475569}.bankGroup+.bankGroup{margin-top:8px}.bankHeading{margin:0 0 6px 0;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#334155}.totalsTable td,.totalsTable th{padding:7px 8px}.totalsTable th{background:#f8fafc}.totalsTable .grand td{font-size:12px;font-weight:800}.totalsTable .sectionHead th{font-size:9.1px}.footer{display:flex;justify-content:space-between;gap:12px;margin-top:14px;padding-top:8px;border-top:1px solid #94a3b8;font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#475569}.footerRight{text-align:right}@media print{.sheet{border:none;padding:0}.footer{position:static}}
 `
 
 const textOrDash = (value: string | null | undefined) => String(value || '').trim() || '-'
@@ -731,7 +738,8 @@ export function renderFinanceDocumentHtml(model: FinanceDocumentOutputModel) {
     })
     .join('')
   const metaRows = [
-    { label: model.documentTypeLabel, value: model.legalReference },
+    { label: copy.meta.document, value: model.documentTypeLabel },
+    { label: copy.meta.number, value: model.legalReference },
     ...model.metaRows,
   ]
   const counterpartyRows = [
@@ -766,6 +774,63 @@ async function loadPdfSuite() {
   return pdfSuitePromise
 }
 
+function resolvePublicAssetUrl(path: string) {
+  const base =
+    typeof document !== 'undefined'
+      ? document.baseURI
+      : typeof location !== 'undefined'
+        ? location.href
+        : ''
+  return base ? new URL(path, base).toString() : path
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer)
+  const nodeBuffer = (globalThis as any).Buffer
+  if (nodeBuffer) return nodeBuffer.from(bytes).toString('base64')
+
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+  return btoa(binary)
+}
+
+async function loadPdfFontData() {
+  if (!pdfFontDataPromise) {
+    pdfFontDataPromise = Promise.all(
+      (Object.entries(PDF_FONT_FILES) as Array<[PdfFontStyle, string]>).map(async ([style, path]) => {
+        const response = await fetch(resolvePublicAssetUrl(path))
+        if (!response.ok) throw new Error(`PDF font load failed: ${path}`)
+        return [style, arrayBufferToBase64(await response.arrayBuffer())] as const
+      }),
+    )
+      .then((entries) => Object.fromEntries(entries) as Record<PdfFontStyle, string>)
+      .catch((error) => {
+        console.warn('[finance-document-output] Falling back to jsPDF built-in fonts.', error)
+        return null
+      })
+  }
+  return pdfFontDataPromise
+}
+
+async function registerPdfFonts(doc: any) {
+  const fontData = await loadPdfFontData()
+  if (!fontData) return 'helvetica'
+
+  try {
+    doc.addFileToVFS('NotoSans-Regular.ttf', fontData.normal)
+    doc.addFont('NotoSans-Regular.ttf', PDF_FONT_FAMILY, 'normal')
+    doc.addFileToVFS('NotoSans-Bold.ttf', fontData.bold)
+    doc.addFont('NotoSans-Bold.ttf', PDF_FONT_FAMILY, 'bold')
+    return PDF_FONT_FAMILY
+  } catch (error) {
+    console.warn('[finance-document-output] Could not register Unicode PDF font.', error)
+    return 'helvetica'
+  }
+}
+
 async function fetchDataUrl(src?: string | null): Promise<string | null> {
   if (!src || !src.trim()) return null
   try {
@@ -789,6 +854,9 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
   const displayBaseTotals = showBaseTotals(model)
   const { jsPDF, autoTable } = await loadPdfSuite()
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+  const pdfFontFamily = await registerPdfFonts(doc as any)
+  const setPdfFont = (style: PdfFontStyle = 'normal') => doc.setFont(pdfFontFamily, style)
+  setPdfFont('normal')
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const marginLeft = 38
@@ -797,12 +865,16 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
   const marginBottom = 24
   const footerReserve = 26
   const contentWidth = pageWidth - marginLeft - marginRight
-  const metaWidth = 214
+  const metaWidth = 248
   const metaX = pageWidth - marginRight - metaWidth
   const sellerWidth = contentWidth - metaWidth - 14
   const printableBottom = pageHeight - marginBottom - footerReserve
   const logoDataUrl = await fetchDataUrl(model.brand.logoUrl)
-  const metaRows = [{ label: model.documentTypeLabel, value: model.legalReference }, ...model.metaRows]
+  const metaRows = [
+    { label: copy.meta.document, value: model.documentTypeLabel },
+    { label: copy.meta.number, value: model.legalReference },
+    ...model.metaRows,
+  ]
   const customerRows = [
     {
       label: copy.parties.client,
@@ -830,23 +902,41 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
       .join('') || 'SW'
   const sellerTextWidth = sellerWidth - 106
   const split = (text: string, width: number) => doc.splitTextToSize(String(text || ''), width) as string[]
+  const splitForFont = (text: string, width: number, size: number, style: PdfFontStyle = 'normal') => {
+    setPdfFont(style)
+    doc.setFontSize(size)
+    return split(text, width)
+  }
+  const metaLabelFontSize = 8.3
+  const metaValueFontSize = 8.7
+  const metaLabelWidth = 100
+  const metaValueWidth = metaWidth - metaLabelWidth - 18
+  const metaRowPlans = metaRows.map((row) => {
+    const labelLines = splitForFont(row.label, metaLabelWidth, metaLabelFontSize, 'bold')
+    const valueLines = splitForFont(textOrDash(row.value), metaValueWidth, metaValueFontSize, 'bold')
+    return { row, labelLines, valueLines }
+  })
+  const metaRowHeights = metaRowPlans.map((plan) =>
+    Math.max(24, 10 + Math.max(plan.labelLines.length, plan.valueLines.length) * 10),
+  )
+  const metaHeight = metaRowHeights.reduce((sum, height) => sum + height, 0)
   const sellerAddress = buildAddressLines(model.leftParty.address)
   const sellerBlocks = [
-    { lines: split(model.brand.name, sellerTextWidth), size: 9.3, style: 'bold' as const, color: [71, 85, 105] as [number, number, number], lineHeight: 11 },
-    { lines: split(model.documentTypeLabel, sellerTextWidth), size: 15, style: 'bold' as const, color: [15, 23, 42] as [number, number, number], lineHeight: 17 },
-    { lines: split(model.leftParty.legalName, sellerTextWidth), size: 10.3, style: 'bold' as const, color: [15, 23, 42] as [number, number, number], lineHeight: 11.5 },
+    { lines: splitForFont(model.brand.name, sellerTextWidth, 9.3, 'bold'), size: 9.3, style: 'bold' as const, color: [71, 85, 105] as [number, number, number], lineHeight: 11 },
+    { lines: splitForFont(model.documentTypeLabel, sellerTextWidth, 15, 'bold'), size: 15, style: 'bold' as const, color: [15, 23, 42] as [number, number, number], lineHeight: 17 },
+    { lines: splitForFont(model.leftParty.legalName, sellerTextWidth, 10.3, 'bold'), size: 10.3, style: 'bold' as const, color: [15, 23, 42] as [number, number, number], lineHeight: 11.5 },
     ...(model.leftParty.tradeName
-      ? [{ lines: split(model.leftParty.tradeName, sellerTextWidth), size: 9.2, style: 'normal' as const, color: [71, 85, 105] as [number, number, number], lineHeight: 10.5 }]
+      ? [{ lines: splitForFont(model.leftParty.tradeName, sellerTextWidth, 9.2), size: 9.2, style: 'normal' as const, color: [71, 85, 105] as [number, number, number], lineHeight: 10.5 }]
       : []),
     ...sellerAddress.map((line) => ({
-      lines: split(line, sellerTextWidth),
+      lines: splitForFont(line, sellerTextWidth, 8.9),
       size: 8.9,
       style: 'normal' as const,
       color: [51, 65, 85] as [number, number, number],
       lineHeight: 10,
     })),
     {
-      lines: split(`${model.leftParty.taxIdLabel}: ${textOrDash(model.leftParty.taxId)}`, sellerTextWidth),
+      lines: splitForFont(`${model.leftParty.taxIdLabel}: ${textOrDash(model.leftParty.taxId)}`, sellerTextWidth, 8.9),
       size: 8.9,
       style: 'normal' as const,
       color: [15, 23, 42] as [number, number, number],
@@ -854,7 +944,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
     },
   ]
   const sellerContentHeight = sellerBlocks.reduce((sum, block, index) => sum + (block.lines.length * block.lineHeight) + (index === 1 ? 8 : 2), 0)
-  const headerHeight = Math.max(124, sellerContentHeight + 22, 18 + metaRows.length * 24)
+  const headerHeight = Math.max(124, sellerContentHeight + 22, metaHeight)
   let y = marginTop
 
   const ensureSpace = (requiredHeight: number) => {
@@ -889,13 +979,13 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
         'FAST',
       )
     } catch {
-      doc.setFont('helvetica', 'bold')
+      setPdfFont('bold')
       doc.setTextColor(185, 28, 28)
       doc.setFontSize(21)
       doc.text(initials, logoX + (logoSize / 2), logoY + 40, { align: 'center' })
     }
   } else {
-    doc.setFont('helvetica', 'bold')
+    setPdfFont('bold')
     doc.setTextColor(185, 28, 28)
     doc.setFontSize(21)
     doc.text(initials, logoX + (logoSize / 2), logoY + 40, { align: 'center' })
@@ -904,26 +994,27 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
   let sellerCursorY = y + 16
   const sellerTextX = logoX + logoSize + 12
   sellerBlocks.forEach((block, index) => {
-    doc.setFont('helvetica', block.style)
+    setPdfFont(block.style)
     doc.setTextColor(block.color[0], block.color[1], block.color[2])
     doc.setFontSize(block.size)
     doc.text(block.lines, sellerTextX, sellerCursorY)
     sellerCursorY += (block.lines.length * block.lineHeight) + (index === 1 ? 8 : 2)
   })
 
-  metaRows.forEach((row, index) => {
-    const rowTop = y + index * 24
+  let metaCursorY = y
+  metaRowPlans.forEach((plan, index) => {
+    const rowHeight = metaRowHeights[index]
     if (index > 0) {
-      doc.line(metaX, rowTop, metaX + metaWidth, rowTop)
+      doc.line(metaX, metaCursorY, metaX + metaWidth, metaCursorY)
     }
-    doc.setFont('helvetica', 'bold')
+    setPdfFont('bold')
     doc.setTextColor(30, 41, 59)
-    doc.setFontSize(8.3)
-    doc.text(row.label, metaX + 8, rowTop + 15)
-    doc.setFontSize(9.4)
+    doc.setFontSize(metaLabelFontSize)
+    doc.text(plan.labelLines, metaX + 8, metaCursorY + 15)
+    doc.setFontSize(metaValueFontSize)
     doc.setTextColor(15, 23, 42)
-    const valueLines = split(stablePdfValue(row.value), metaWidth - 110)
-    doc.text(valueLines, metaX + metaWidth - 8, rowTop + 15, { align: 'right' })
+    doc.text(plan.valueLines, metaX + metaWidth - 8, metaCursorY + 15, { align: 'right' })
+    metaCursorY += rowHeight
   })
 
   y += headerHeight + 14
@@ -939,6 +1030,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
     body: customerRows,
     theme: 'grid',
     styles: {
+      font: pdfFontFamily,
       fontSize: 8.8,
       cellPadding: { top: 7, right: 8, bottom: 7, left: 8 },
       lineColor: [148, 163, 184],
@@ -997,6 +1089,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
     body: rows,
     theme: 'grid',
     styles: {
+      font: pdfFontFamily,
       fontSize: 8.3,
       cellPadding: { top: 8, right: 6, bottom: 8, left: 6 },
       minCellHeight: 24,
@@ -1034,13 +1127,13 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
       const textX = hookData.cell.x + 6
       let textY = hookData.cell.y + 12
       const descriptionLines = split(raw.description, hookData.cell.width - 12)
-      doc.setFont('helvetica', 'bold')
+      setPdfFont('bold')
       doc.setTextColor(15, 23, 42)
       doc.setFontSize(8.9)
       doc.text(descriptionLines, textX, textY)
       if (raw.detail) {
         textY += descriptionLines.length * 10 + 2
-        doc.setFont('helvetica', 'normal')
+        setPdfFont('normal')
         doc.setTextColor(100, 116, 139)
         doc.setFontSize(7.8)
         doc.text(split(raw.detail, hookData.cell.width - 12), textX, textY)
@@ -1059,6 +1152,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
       body: rows.map(([label, value]) => [label, value]),
       theme: 'grid',
       styles: {
+        font: pdfFontFamily,
         fontSize: 8.5,
         cellPadding: { top: 7, right: 8, bottom: 7, left: 8 },
         lineColor: [148, 163, 184],
@@ -1100,11 +1194,11 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
     const blockHeight = 28 + (bodyLines.length * 10) + panelPadding
     ensureSpace(blockHeight + 10)
     doc.rect(marginLeft, y, contentWidth, blockHeight)
-    doc.setFont('helvetica', 'bold')
+    setPdfFont('bold')
     doc.setTextColor(30, 41, 59)
     doc.setFontSize(8.6)
     doc.text(block.title, marginLeft + panelPadding, y + 15)
-    doc.setFont('helvetica', 'normal')
+    setPdfFont('normal')
     doc.setTextColor(71, 85, 105)
     doc.setFontSize(8.5)
     doc.text(bodyLines, marginLeft + panelPadding, y + 31)
@@ -1113,7 +1207,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
   if (model.bankAccounts?.length) {
     const sectionTitleHeight = 18
     ensureSpace(sectionTitleHeight)
-    doc.setFont('helvetica', 'bold')
+    setPdfFont('bold')
     doc.setTextColor(30, 41, 59)
     doc.setFontSize(8.6)
     doc.text(model.bankTitle || copy.sections.bankDetails, marginLeft, y + 12)
@@ -1121,7 +1215,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
 
     model.bankAccounts.forEach((account) => {
       ensureSpace(22)
-      doc.setFont('helvetica', 'bold')
+      setPdfFont('bold')
       doc.setTextColor(51, 65, 85)
       doc.setFontSize(8.3)
       doc.text(account.title, marginLeft, y + 10)
@@ -1137,6 +1231,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
         body: account.rows,
         theme: 'grid',
         styles: {
+          font: pdfFontFamily,
           fontSize: 8.2,
           cellPadding: { top: 6, right: 8, bottom: 6, left: 8 },
           lineColor: [148, 163, 184],
@@ -1166,7 +1261,7 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
     const footerY = pageHeight - marginBottom
     doc.setDrawColor(148, 163, 184)
     doc.line(marginLeft, footerY - 12, pageWidth - marginRight, footerY - 12)
-    doc.setFont('helvetica', 'bold')
+    setPdfFont('bold')
     doc.setTextColor(100, 116, 139)
     doc.setFontSize(8)
     doc.text(model.computerPhrase, marginLeft, footerY)

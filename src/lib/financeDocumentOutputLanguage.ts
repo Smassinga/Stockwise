@@ -16,6 +16,8 @@ type OutputCopy = {
     voided: string
   }
   meta: {
+    document: string
+    number: string
     invoiceDate: string
     noteDate: string
     dueDate: string
@@ -115,6 +117,8 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       voided: 'Anulada',
     },
     meta: {
+      document: 'Documento',
+      number: 'Número',
       invoiceDate: 'Data da fatura',
       noteDate: 'Data da nota',
       dueDate: 'Vencimento',
@@ -210,6 +214,8 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       voided: 'Voided',
     },
     meta: {
+      document: 'Document',
+      number: 'Number',
       invoiceDate: 'Invoice date',
       noteDate: 'Note date',
       dueDate: 'Due date',
@@ -305,6 +311,8 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       voided: 'Anulada / Voided',
     },
     meta: {
+      document: 'Documento / Document',
+      number: 'Número / Number',
       invoiceDate: 'Data / Date',
       noteDate: 'Data / Date',
       dueDate: 'Vencimento / Due Date',
@@ -335,7 +343,7 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
       notApplicable: 'Não aplicável / Not applicable.',
       correctionReason: 'Motivo de Correcção / Correction Reason',
       fiscalNote: 'Nota Fiscal / Fiscal Note',
-      paymentTerms: 'Condições de Pagamento / Payment Terms',
+      paymentTerms: 'Termos de Pagamento / Payment Terms',
       fiscalCorrection: 'Correcção fiscal / Fiscal correction.',
       fiscalAdjustment: 'Ajuste fiscal / Fiscal adjustment.',
       supplierCreditAdjustment: 'Supplier credit adjustment.',
@@ -360,7 +368,7 @@ const COPY: Record<OutputLanguage, OutputCopy> = {
     },
     sections: {
       address: 'Endereço / Address',
-      bankDetails: 'Detalhes Bancários | Bank Details',
+      bankDetails: 'Detalhes Bancários / Bank Details',
       bankDetailsEmpty: 'Sem contas bancárias configuradas / No bank details configured.',
       accountHolder: 'Titular / Holder',
       bankName: 'Banco / Bank',
