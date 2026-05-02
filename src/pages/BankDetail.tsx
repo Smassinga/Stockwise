@@ -528,32 +528,34 @@ export default function BankDetail() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-x-hidden">
       {/* Header + filters */}
-      <div className="flex items-end gap-2">
-        <div className="flex-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold">{bank?.name ?? t('banks.title')}</h1>
-          <div className="text-sm text-muted-foreground">
+          <div className="truncate text-sm text-muted-foreground">
             {bank?.bank_name ?? '—'} · {bank?.account_number ?? '—'} · {(bank?.currency_code ?? baseCurrency) || 'MZN'}
           </div>
         </div>
-        <div>
-          <Label>{t('filters.from')}</Label>
-          <Input type="date" value={from} onChange={e => setFrom(e.target.value)} />
-        </div>
-        <div>
-          <Label>{t('filters.to')}</Label>
-          <Input type="date" value={to} onChange={e => setTo(e.target.value)} />
-        </div>
-        <div className="flex items-center gap-2 ml-2">
-          <input
-            id="unrec"
-            type="checkbox"
-            className="h-4 w-4"
-            checked={onlyUnreconciled}
-            onChange={e => setOnlyUnreconciled(e.target.checked)}
-          />
-          <Label htmlFor="unrec">{t('bank.notReconciled')}</Label>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-end">
+          <div className="min-w-0">
+            <Label>{t('filters.from')}</Label>
+            <Input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+          </div>
+          <div className="min-w-0">
+            <Label>{t('filters.to')}</Label>
+            <Input type="date" value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+          <div className="col-span-2 flex items-center gap-2 sm:col-span-1 sm:ml-2">
+            <input
+              id="unrec"
+              type="checkbox"
+              className="h-4 w-4"
+              checked={onlyUnreconciled}
+              onChange={e => setOnlyUnreconciled(e.target.checked)}
+            />
+            <Label htmlFor="unrec">{t('bank.notReconciled')}</Label>
+          </div>
         </div>
       </div>
 
@@ -628,7 +630,7 @@ export default function BankDetail() {
           </div>
 
           <div className="md:col-span-3">
-            <Button onClick={saveBankDetails} disabled={!canEditBank}>
+            <Button className="w-full sm:w-auto" onClick={saveBankDetails} disabled={!canEditBank}>
               {canEditBank ? t('bank.saveDetails') : t('bank.viewOnly')}
             </Button>
           </div>
@@ -658,33 +660,33 @@ export default function BankDetail() {
 
       {/* Transactions */}
       <Card className="overflow-hidden">
-        <CardHeader className="flex items-center justify-between">
+        <CardHeader className="flex flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-between">
           <CardTitle>{t('bank.transactions')}</CardTitle>
-          <div className="flex flex-col md:flex-row gap-3 md:items-end">
+          <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-end">
             {/* Manual entry */}
-            <div className="flex gap-2 items-end">
-              <div>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] sm:items-end">
+              <div className="min-w-0">
                 <Label>{t('table.date')}</Label>
                 <Input type="date" value={txDate} onChange={e => setTxDate(e.target.value)} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label>{t('bank.memo')}</Label>
                 <Input value={txMemo} onChange={e => setTxMemo(e.target.value)} placeholder={tf('bank.placeholder.memo', 'e.g., Bank fee')} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label>{t('bank.amount', { code: currency })}</Label>
                 <Input inputMode="decimal" value={txAmt} onChange={e => setTxAmt(e.target.value)} placeholder={tf('bank.placeholder.amount', '-120.00')} />
               </div>
-              <Button onClick={addTx} disabled={addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
+              <Button className="w-full sm:w-auto" onClick={addTx} disabled={addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
             </div>
 
             {/* CSV import */}
-            <div className="flex items-end gap-2">
-              <div>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <div className="min-w-0">
                 <Label className="block">{t('bank.csv.fileLabel')}</Label>
                 <Input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files?.[0] ?? null)} />
               </div>
-              <Button onClick={importCsv} disabled={importing || !csvFile}>
+              <Button className="w-full sm:w-auto" onClick={importCsv} disabled={importing || !csvFile}>
                 {importing ? t('bank.csv.importing') : t('bank.csv.import')}
               </Button>
             </div>
@@ -693,8 +695,8 @@ export default function BankDetail() {
 
         <CardContent className="overflow-x-auto">
           {/* Guidance */}
-          <div className="text-xs text-muted-foreground mb-2">{t('bank.csv.header')}</div>
-          <table className="w-full text-xs mb-4 border rounded">
+          <div className="mb-2 hidden text-xs text-muted-foreground sm:block">{t('bank.csv.header')}</div>
+          <table className="mb-4 hidden w-full rounded border text-xs sm:table">
             <thead className="bg-muted/30 text-left">
               <tr>
                 <th className="py-2 px-3">{t('table.date')} (DD/MM/YYYY)</th>

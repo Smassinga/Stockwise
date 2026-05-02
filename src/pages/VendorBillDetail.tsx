@@ -1566,8 +1566,8 @@ export default function VendorBillDetailPage() {
   }, [creditNotes, debitNotes, formatBaseMoney, lang, orderLink, resolutionStatusLabel, row, tt])
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-6 overflow-x-hidden">
+      <div className="mobile-primary-actions">
         <Button variant="outline" onClick={() => navigate(-1)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           {tt('financeDocs.back', 'Back')}
@@ -1604,8 +1604,8 @@ export default function VendorBillDetailPage() {
                 <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
                   {tt('financeDocs.eyebrow', 'Finance documents')}
                 </div>
-                <h1 className="mt-2 text-3xl font-bold tracking-tight">{row.primary_reference}</h1>
-                <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+                <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{row.primary_reference}</h1>
+                <p className="mt-2 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                   {row.document_workflow_status === 'posted'
                     ? tt('financeDocs.vendorBills.postedHelper', 'Posted vendor bills are the AP settlement anchor. Supplier credit notes, supplier debit notes, payments, and outstanding exposure all resolve against this document chain instead of the original purchase order.')
                     : approvalStatus === 'pending_approval'
@@ -1616,7 +1616,7 @@ export default function VendorBillDetailPage() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="mobile-primary-actions">
                 <Badge variant={workflowTone(row.document_workflow_status)}>
                   {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
                 </Badge>
@@ -1694,7 +1694,7 @@ export default function VendorBillDetailPage() {
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.vendorBills.apIdentity', 'AP identity')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                 {tt('financeDocs.vendorBills.apIdentityHelp', 'The supplier invoice reference is entered from the supplier document. StockWise keeps a separate internal key for audit trail, search, and linked AP adjustments.')}
                 </CardDescription>
               </CardHeader>
@@ -1822,7 +1822,7 @@ export default function VendorBillDetailPage() {
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.vendorBills.settlementTitle', 'Settlement and resolution')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                   {tt('financeDocs.vendorBills.settlementHelp', 'Posted vendor bills remain the AP settlement anchor. Supplier credits reduce the legal liability, supplier debits increase it, and payments reduce the same live document chain.')}
                 </CardDescription>
               </CardHeader>
@@ -1907,7 +1907,7 @@ export default function VendorBillDetailPage() {
               <Card className="border-border/80 shadow-sm">
                 <CardHeader>
                   <CardTitle>{tt('financeDocs.reconciliation.detailTitle', 'Reconciliation review')}</CardTitle>
-                  <CardDescription>
+                  <CardDescription className="hidden sm:block">
                     {tt('financeDocs.reconciliation.apDetailHelp', 'Month-close review follows the posted vendor bill as the AP anchor. Due position, aging, controller state, and bridge exceptions all use the legal liability after supplier adjustments and payments.')}
                   </CardDescription>
                 </CardHeader>
@@ -2022,7 +2022,7 @@ export default function VendorBillDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.fields.lines', 'Lines')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.vendorBills.linesHelp', 'Posted vendor bills keep their line values immutable. Supplier credit and debit notes adjust this AP chain without editing the posted document itself.')}
               </CardDescription>
             </CardHeader>
@@ -2059,14 +2059,14 @@ export default function VendorBillDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.vendorBills.creditNotesTitle', 'Supplier credit notes')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.vendorBills.creditNotesHelp', 'Use supplier credit notes for reductions, returns, allowances, and other downward AP corrections linked back to the posted vendor bill.')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {row.document_workflow_status === 'posted' ? (
                 canCreateCreditNote ? (
-                  <Button onClick={() => setCreditDialogOpen(true)}>
+                  <Button className="w-full sm:w-auto" onClick={() => setCreditDialogOpen(true)}>
                     {tt('financeDocs.vendorBills.issueCreditNote', 'Issue supplier credit note')}
                   </Button>
                 ) : (
@@ -2154,14 +2154,14 @@ export default function VendorBillDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.vendorBills.debitNotesTitle', 'Supplier debit notes')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.vendorBills.debitNotesHelp', 'Use supplier debit notes for additional charges, omitted supplier value, and other upward AP corrections linked back to the posted vendor bill.')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {row.document_workflow_status === 'posted' ? (
                 canCreateDebitNote ? (
-                  <Button onClick={() => setDebitDialogOpen(true)}>
+                  <Button className="w-full sm:w-auto" onClick={() => setDebitDialogOpen(true)}>
                     {tt('financeDocs.vendorBills.issueDebitNote', 'Issue supplier debit note')}
                   </Button>
                 ) : (
@@ -2253,7 +2253,7 @@ export default function VendorBillDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.audit.rawHelp', 'Underlying finance-document event rows kept for low-level inspection and troubleshooting.')}
               </CardDescription>
             </CardHeader>

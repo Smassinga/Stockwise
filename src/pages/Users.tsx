@@ -533,7 +533,7 @@ export default function Users() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('sections.users.title')}</h1>
@@ -548,7 +548,7 @@ export default function Users() {
               {myRole ? ` - ${t('users.yourRole')}: ${myRole}` : ''}
             </div>
           ) : null}
-          <div className="flex flex-wrap gap-2">
+          <div className="mobile-primary-actions">
             <Button asChild size="sm" variant={isRolesView ? 'outline' : 'default'}>
               <Link to="/users">
                 <UsersIcon className="h-4 w-4" />
@@ -615,7 +615,7 @@ export default function Users() {
                 <ShieldCheck className="h-5 w-5 text-primary" />
                 {roleCopy.definitionsTitle}
               </CardTitle>
-              <CardDescription>{roleCopy.definitionsBody}</CardDescription>
+              <CardDescription className="hidden sm:block">{roleCopy.definitionsBody}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="grid gap-4 xl:grid-cols-5">
@@ -857,7 +857,7 @@ export default function Users() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="mobile-primary-actions">
                         {member.status === 'invited' && member.email ? (
                           <Button variant="outline" size="sm" onClick={() => reinvite(member.email!)} disabled={!canManageUsers || isHigher}>
                             {t('users.resendEmail')}

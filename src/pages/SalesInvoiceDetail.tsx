@@ -1756,8 +1756,8 @@ export default function SalesInvoiceDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-6 overflow-x-hidden">
+      <div className="mobile-primary-actions">
         <Button variant="outline" onClick={() => navigate(-1)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           {tt('financeDocs.back', 'Back')}
@@ -1787,8 +1787,8 @@ export default function SalesInvoiceDetailPage() {
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
                 {tt('financeDocs.eyebrow', 'Finance documents')}
               </div>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight">{invoice.internal_reference}</h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{invoice.internal_reference}</h1>
+              <p className="mt-2 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                 {isIssued
                   ? tt('financeDocs.mz.issuedHelper', 'Issued invoices are immutable. Corrections must be issued as credit notes or debit notes.')
                   : approvalStatus === 'pending_approval'
@@ -1799,7 +1799,7 @@ export default function SalesInvoiceDetailPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="mobile-primary-actions">
               <Badge variant={workflowTone(invoice.document_workflow_status)}>
                 {invoice.document_workflow_status.toUpperCase()}
               </Badge>
@@ -1829,7 +1829,7 @@ export default function SalesInvoiceDetailPage() {
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.mz.documentPresentation', 'Invoice document presentation')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                   {tt('financeDocs.mz.documentPresentationHelp', 'This preview follows the fixed bilingual invoice template. App navigation and workflow controls still use the current UI language, but the formal document labels stay stable.')}
                 </CardDescription>
               </CardHeader>
@@ -1974,7 +1974,7 @@ export default function SalesInvoiceDetailPage() {
                 </div>
 
                 {isDraft ? (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="mobile-primary-actions">
                     {canEditDraft ? (
                       <Button variant="outline" onClick={() => void handleSaveDraftDates()} disabled={savingDraft || issuing}>
                         {savingDraft ? tt('common.saving', 'Saving...') : tt('financeDocs.mz.saveDraftDates', 'Save draft dates')}
@@ -2050,7 +2050,7 @@ export default function SalesInvoiceDetailPage() {
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.mz.documentTotals', 'Document totals')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                   {tt('financeDocs.mz.documentTotalsHelp', 'Taxable amount, VAT, and grand total remain unchanged by the presentation refresh. Where needed, MZN base totals stay visible alongside the transaction currency.')}
                 </CardDescription>
               </CardHeader>
@@ -2104,7 +2104,7 @@ export default function SalesInvoiceDetailPage() {
             <Card className="border-border/80 shadow-sm lg:col-span-2">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.mz.resolutionTitle', 'Settlement and resolution')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                   {tt('financeDocs.mz.resolutionHelp', 'Once issued, the invoice becomes the receivable anchor. Receipts, credit notes, and debit notes all recalculate the same legal balance instead of leaving the original order as a duplicate settlement target.')}
                 </CardDescription>
               </CardHeader>
@@ -2206,7 +2206,7 @@ export default function SalesInvoiceDetailPage() {
               <Card className="border-border/80 shadow-sm lg:col-span-2">
                 <CardHeader>
                   <CardTitle>{tt('financeDocs.reconciliation.detailTitle', 'Reconciliation review')}</CardTitle>
-                  <CardDescription>
+                  <CardDescription className="hidden sm:block">
                     {tt('financeDocs.reconciliation.detailHelp', 'Month-close review follows the active finance anchor. Due position, aging, controller state, and any bridge exceptions all use the legal outstanding balance after adjustments and settlement.')}
                   </CardDescription>
                 </CardHeader>
@@ -2321,7 +2321,7 @@ export default function SalesInvoiceDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.mz.documentLines', 'Document lines')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.mz.linesHelp', 'The detail table mirrors the formal invoice structure with fixed bilingual headers. Taxable line values stay separate from VAT so the totals block remains explicit and audit-friendly.')}
               </CardDescription>
             </CardHeader>
@@ -2367,14 +2367,14 @@ export default function SalesInvoiceDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.mz.creditNotes', 'Credit notes')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.mz.creditNotesHelp', 'Use credit notes for downward adjustments. Choose a full remaining reversal or a partial line-by-line credit without editing the issued invoice itself.')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {isIssued ? (
                 canCreateCreditNote ? (
-                  <Button onClick={() => setCreditDialogOpen(true)}>
+                  <Button className="w-full sm:w-auto" onClick={() => setCreditDialogOpen(true)}>
                     {tt('financeDocs.mz.issueCreditNote', 'Issue credit note')}
                   </Button>
                 ) : (
@@ -2488,14 +2488,14 @@ export default function SalesInvoiceDetailPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('financeDocs.mz.debitNotes', 'Debit notes')}</CardTitle>
-              <CardDescription>
+              <CardDescription className="hidden sm:block">
                 {tt('financeDocs.mz.debitNotesHelp', 'Use debit notes for upward adjustments, underbilling corrections, and additional value that must remain linked to the issued invoice chain.')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {isIssued ? (
                 canCreateDebitNote ? (
-                  <Button onClick={() => setDebitDialogOpen(true)}>
+                  <Button className="w-full sm:w-auto" onClick={() => setDebitDialogOpen(true)}>
                     {tt('financeDocs.mz.issueDebitNote', 'Issue debit note')}
                   </Button>
                 ) : (
@@ -2612,7 +2612,7 @@ export default function SalesInvoiceDetailPage() {
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                   {tt('financeDocs.audit.rawHelp', 'Underlying finance-document event rows kept for low-level inspection and troubleshooting.')}
                 </CardDescription>
               </CardHeader>
@@ -2642,7 +2642,7 @@ export default function SalesInvoiceDetailPage() {
             <Card className="border-border/80 shadow-sm">
               <CardHeader>
                 <CardTitle>{tt('financeDocs.mz.archiveTitle', 'Archive and artifacts')}</CardTitle>
-                <CardDescription>
+                <CardDescription className="hidden sm:block">
                   {tt('financeDocs.mz.archiveHelp', 'Archived artifacts come from the fiscal_document_artifacts registry. Local PDF downloads do not create a retained archive record by themselves.')}
                 </CardDescription>
               </CardHeader>

@@ -246,7 +246,7 @@ export default function CurrencyPage() {
       <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
-          <p className="text-muted-foreground">
+          <p className="hidden text-muted-foreground sm:block">
             {tt(
               'currency.subtitle',
               'Control which currencies this company can transact in, define the base currency, and maintain recent FX rates.'
@@ -307,14 +307,14 @@ export default function CurrencyPage() {
             {tt('currency.allowedHelp', 'Keep enabled codes aligned with the currencies you actually buy, sell, and settle in.')}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2">
             {availableCurrencies.map(c => {
               const on = allowedCodes.has(c.code)
               return (
                 <div
                   key={c.code}
                   className={[
-                    'flex items-center gap-2 border rounded px-2 py-1',
+                    'flex min-w-0 max-w-full flex-wrap items-center gap-2 border rounded px-2 py-1',
                     on
                       ? 'bg-emerald-50 border-emerald-300/70 text-emerald-900 ' +
                         'dark:bg-emerald-500/15 dark:border-emerald-400/30 dark:text-emerald-200'
@@ -323,19 +323,19 @@ export default function CurrencyPage() {
                   ].join(' ')}
                 >
                   <div className="min-w-[4.25rem] font-mono text-sm">{c.code}</div>
-                  <div className="text-sm">{c.name}</div>
+                  <div className="min-w-0 flex-1 truncate text-sm">{c.name}</div>
                   {on ? (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="ml-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/25"
+                      className="w-full hover:bg-emerald-100 dark:hover:bg-emerald-500/25 sm:w-auto"
                       onClick={() => removeAllowed(c.code)}
                       disabled={!canEdit}
                     >
                       {tt('currency.disable', 'Disable')}
                     </Button>
                   ) : (
-                    <Button size="sm" className="ml-1" onClick={() => addAllowed(c.code)} disabled={!canEdit}>
+                    <Button size="sm" className="w-full sm:w-auto" onClick={() => addAllowed(c.code)} disabled={!canEdit}>
                       {t('suppliers.enable')}
                     </Button>
                   )}
@@ -349,8 +349,8 @@ export default function CurrencyPage() {
       {/* Base currency */}
       <Card>
         <CardHeader><CardTitle>{t('currency.base')}</CardTitle></CardHeader>
-        <CardContent className="flex items-end gap-3">
-          <div className="w-72">
+        <CardContent className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
+          <div className="w-full sm:w-72">
             <Label>{t('currency.baseLabel')}</Label>
             <Select value={base} onValueChange={setBase} disabled={!canEdit}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -363,7 +363,7 @@ export default function CurrencyPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={saveBase} disabled={!canEdit}>{t('currency.save')}</Button>
+          <Button className="w-full sm:w-auto" onClick={saveBase} disabled={!canEdit}>{t('currency.save')}</Button>
         </CardContent>
       </Card>
 
@@ -406,7 +406,7 @@ export default function CurrencyPage() {
             />
           </div>
           <div className="flex items-end">
-            <Button onClick={addFx} disabled={!canEdit}>{t('currency.saveRate')}</Button>
+            <Button className="w-full" onClick={addFx} disabled={!canEdit}>{t('currency.saveRate')}</Button>
           </div>
         </CardContent>
       </Card>

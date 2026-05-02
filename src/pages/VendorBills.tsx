@@ -92,13 +92,13 @@ export default function VendorBillsPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.vendorBills.title', 'Vendor Bills')}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
           {tt('financeDocs.vendorBills.subtitle', 'Supplier invoice references stay primary in AP-facing work while the StockWise internal reference remains the audit trail and system lookup key.')}
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="mobile-primary-actions">
           <Button asChild variant="outline">
             <Link to="/orders?tab=purchase">{tt('financeDocs.vendorBills.ordersLink', 'View purchase orders')}</Link>
           </Button>
@@ -112,7 +112,7 @@ export default function VendorBillsPage() {
         <CardHeader className="gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <CardTitle>{tt('financeDocs.vendorBills.listTitle', 'AP register')}</CardTitle>
-            <CardDescription>{tt('financeDocs.vendorBills.listHelp', 'Search by supplier invoice reference or internal reference. Draft duplicates are warned here before posting blocks them.')}</CardDescription>
+            <CardDescription className="hidden sm:block">{tt('financeDocs.vendorBills.listHelp', 'Search by supplier invoice reference or internal reference. Draft duplicates are warned here before posting blocks them.')}</CardDescription>
           </div>
           <div className="relative w-full sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

@@ -180,8 +180,8 @@ export default function Banks() {
   )
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-6 shadow-[0_30px_80px_-56px_rgba(15,23,42,0.48)]">
+    <div className="space-y-6 overflow-x-hidden">
+      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-4 shadow-[0_30px_80px_-56px_rgba(15,23,42,0.48)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <div className="text-xs font-medium uppercase tracking-[0.22em] text-primary/75">
@@ -191,7 +191,7 @@ export default function Banks() {
               <h1 className="text-3xl font-semibold tracking-tight">
                 {tf('banks.title', 'Bank accounts')}
               </h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+              <p className="mt-2 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                 {tf(
                   'banks.subtitle',
                   'Configure the real bank accounts used for settlements, statement imports, and reconciliation. Each row represents a usable company bank account, not just a bank name.',
@@ -200,18 +200,18 @@ export default function Banks() {
             </div>
           </div>
 
-          <div className="flex flex-col items-start gap-3 lg:items-end">
+          <div className="flex w-full flex-col items-start gap-3 sm:w-auto lg:items-end">
             <Badge variant="outline" className="px-3 py-1 text-xs">
               {companyName || tf('company.selectCompany', 'Select company')}
             </Badge>
             <Sheet open={openAdd} onOpenChange={setOpenAdd}>
               <SheetTrigger asChild>
-                <Button disabled={!canManageBanks}>+ {tf('banks.new', 'New bank account')}</Button>
+                <Button className="w-full sm:w-auto" disabled={!canManageBanks}>+ {tf('banks.new', 'New bank account')}</Button>
               </SheetTrigger>
               <SheetContent className="sm:max-w-xl">
                 <SheetHeader>
                   <SheetTitle>{tf('banks.addTitle', 'Add bank account')}</SheetTitle>
-                  <SheetDescription>
+                  <SheetDescription className="hidden sm:block">
                     {tf(
                       'banks.addDescription',
                       'Save the account identity, currency, and optional compliance references that finance will need when posting bank settlements and reconciling statements.',
@@ -223,7 +223,7 @@ export default function Banks() {
                     <Card className="border-border/70 shadow-none">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">{tf('banks.form.identityTitle', 'Account identity')}</CardTitle>
-                        <CardDescription>
+                        <CardDescription className="hidden sm:block">
                           {tf('banks.form.identityHelp', 'Use a clear internal nickname so finance can choose the right account quickly in settlements and statement workspaces.')}
                         </CardDescription>
                       </CardHeader>
@@ -242,7 +242,7 @@ export default function Banks() {
                     <Card className="border-border/70 shadow-none">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">{tf('banks.form.accountTitle', 'Account details')}</CardTitle>
-                        <CardDescription>
+                        <CardDescription className="hidden sm:block">
                           {tf('banks.form.accountHelp', 'Capture the account number and operating currency used for bank receipts, payments, and statement matching.')}
                         </CardDescription>
                       </CardHeader>
@@ -268,7 +268,7 @@ export default function Banks() {
                     <Card className="border-border/70 shadow-none">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">{tf('banks.form.referenceTitle', 'Compliance and reference fields')}</CardTitle>
-                        <CardDescription>
+                        <CardDescription className="hidden sm:block">
                           {tf('banks.form.referenceHelp', 'Optional fields such as NIB, SWIFT, and tax number help keep printed bank details and statement reconciliation consistent without forcing them when not used.')}
                         </CardDescription>
                       </CardHeader>
@@ -289,7 +289,7 @@ export default function Banks() {
                     </Card>
 
                     <div className="flex justify-end">
-                      <Button onClick={addBank} disabled={saving || !canManageBanks}>
+                      <Button className="w-full sm:w-auto" onClick={addBank} disabled={saving || !canManageBanks}>
                         {saving ? tf('actions.saving', 'Saving...') : tf('banks.save', 'Save bank account')}
                       </Button>
                     </div>
@@ -344,7 +344,7 @@ export default function Banks() {
       <Card className="border-border/70">
         <CardHeader className="pb-3">
           <CardTitle>{tf('banks.workspaceTitle', 'Bank account register')}</CardTitle>
-          <CardDescription>
+            <CardDescription className="hidden sm:block">
             {tf('banks.workspaceHelp', 'Use this register to open an account ledger, review book balance, upload statements, and maintain the account details that finance uses when posting bank receipts and payments.')}
           </CardDescription>
         </CardHeader>
@@ -352,11 +352,11 @@ export default function Banks() {
           {rows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
               <div className="text-base font-medium">{tf('banks.emptyTitle', 'No bank accounts configured yet')}</div>
-              <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">
+              <p className="mx-auto mt-2 hidden max-w-2xl text-sm text-muted-foreground sm:block">
               {tf('banks.emptyBody', 'Add the first bank account before posting bank settlements or importing statements. StockWise uses these accounts as the live bank ledgers for receipts, payments, and reconciliation.')}
               </p>
               {canManageBanks ? (
-                <Button className="mt-4" onClick={() => setOpenAdd(true)}>
+                <Button className="mt-4 w-full sm:w-auto" onClick={() => setOpenAdd(true)}>
                   {tf('banks.emptyAction', 'Add first bank account')}
                 </Button>
               ) : null}

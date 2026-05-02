@@ -990,7 +990,7 @@ export default function SettlementsPage() {
   const activeHistory = activeRow?.history || []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
@@ -998,7 +998,7 @@ export default function SettlementsPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('settlements.title', 'Receivables & Payables')}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
               {tt('settlements.subtitle', 'Track receivables and payables from the current settlement truth. Orders remain temporary placeholders only until a sales invoice or vendor bill becomes the anchor.')}
             </p>
           </div>
@@ -1009,9 +1009,9 @@ export default function SettlementsPage() {
         </Badge>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+      <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 sm:p-4">
         <p className="font-medium">{tt('settlements.transitionTitle', 'Settlement anchor policy')}</p>
-        <p className="mt-1 leading-6">
+        <p className="mt-1 hidden leading-6 sm:block">
           {tt(
             'settlements.transitionNote',
             'Approved orders can hold temporary settlement exposure only until the finance document exists. Once a sales invoice is issued or a vendor bill is posted, the finance document becomes the single settlement anchor and prior cash links are reassociated there.',
@@ -1036,7 +1036,7 @@ export default function SettlementsPage() {
                 <h2 className="text-2xl font-semibold tracking-tight">
                   {tt('settlements.workspaceTitle', 'Settlement operations and controller review')}
                 </h2>
-                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                   {tt(
                     'settlements.workspaceHelp',
                     'Use the operational workspace to post receipts and payments. Use reconciliation review to bridge original value, adjustments, settlement, current legal exposure, due position, and exceptions from the active finance anchor.',
@@ -1089,7 +1089,7 @@ export default function SettlementsPage() {
       <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)]">
         <CardHeader className="pb-3">
           <CardTitle>{tt('settlements.filters', 'Filters')}</CardTitle>
-          <CardDescription>{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
+          <CardDescription className="hidden sm:block">{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Tabs value={tab} onValueChange={(value) => setTab(value as 'receive' | 'pay')}>
@@ -1160,6 +1160,7 @@ export default function SettlementsPage() {
                 </div>
                 <div className="flex items-end">
                   <Button
+                    className="w-full sm:w-auto"
                     variant="outline"
                     onClick={() => {
                       setSearch('')
@@ -1183,7 +1184,7 @@ export default function SettlementsPage() {
       <Card className="border-border/80 shadow-sm">
         <CardHeader>
           <CardTitle>{tab === 'receive' ? tt('settlements.pendingReceive', 'Pending to receive') : tt('settlements.pendingPay', 'Pending to pay')}</CardTitle>
-          <CardDescription>
+          <CardDescription className="hidden sm:block">
             {tab === 'receive'
               ? tt('settlements.receiveHelp', 'Receivables appear here from approved sales orders before issue and from issued sales invoices after issue. Once issued, the invoice becomes the canonical settlement anchor.')
               : tt('settlements.payHelp', 'Payables appear here from approved purchase orders before booking and from posted vendor bills after booking. Once posted, the vendor bill becomes the canonical settlement anchor.')}
@@ -1207,7 +1208,7 @@ export default function SettlementsPage() {
                     <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
                       {tt('settlements.reconciliationTitle', 'Settlement bridge')}
                     </div>
-                    <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                    <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                       {tt('settlements.reconciliationHelp', 'Current legal equals original minus credits plus debits. Outstanding equals current legal minus actual cash and bank settlement.')}
                     </p>
                   </div>
@@ -1418,7 +1419,7 @@ export default function SettlementsPage() {
           <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)]">
             <CardHeader className="pb-3">
               <CardTitle>{tt('financeDocs.reconciliation.filters', 'Review filters')}</CardTitle>
-              <CardDescription>{tt('financeDocs.reconciliation.filtersHelp', 'Switch between AR and AP, then filter by counterparty, due position, review state, currency, or document date without leaving the active company.')}</CardDescription>
+              <CardDescription className="hidden sm:block">{tt('financeDocs.reconciliation.filtersHelp', 'Switch between AR and AP, then filter by counterparty, due position, review state, currency, or document date without leaving the active company.')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Tabs value={reviewSide} onValueChange={(value) => setReviewSide(value as FinanceReconciliationRow['ledger_side'])}>
@@ -1530,7 +1531,7 @@ export default function SettlementsPage() {
               <Card className="border-border/80 shadow-sm">
                 <CardHeader>
                   <CardTitle>{tt('financeDocs.reconciliation.exceptionQueue', 'Exception queue')}</CardTitle>
-                  <CardDescription>{tt('financeDocs.reconciliation.exceptionQueueHelp', 'Flag records that need controller attention because the bridge, anchor chain, or issue/post readiness is inconsistent with finance expectations.')}</CardDescription>
+                  <CardDescription className="hidden sm:block">{tt('financeDocs.reconciliation.exceptionQueueHelp', 'Flag records that need controller attention because the bridge, anchor chain, or issue/post readiness is inconsistent with finance expectations.')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {loading ? (
@@ -1580,7 +1581,7 @@ export default function SettlementsPage() {
               <Card className="border-border/80 shadow-sm">
                 <CardHeader>
                   <CardTitle>{tt('financeDocs.reconciliation.registerTitle', 'Reconciliation register')}</CardTitle>
-                  <CardDescription>{tt('financeDocs.reconciliation.registerHelp', 'Scan every active finance anchor with original value, net adjustments, current legal amount, settlement, outstanding balance, due logic, and controller review state in one register.')}</CardDescription>
+                  <CardDescription className="hidden sm:block">{tt('financeDocs.reconciliation.registerHelp', 'Scan every active finance anchor with original value, net adjustments, current legal amount, settlement, outstanding balance, due logic, and controller review state in one register.')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-2xl border border-border/70 bg-muted/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">

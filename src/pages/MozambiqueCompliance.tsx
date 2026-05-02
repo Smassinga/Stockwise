@@ -105,7 +105,7 @@ export default function MozambiqueCompliancePage() {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
@@ -113,7 +113,7 @@ export default function MozambiqueCompliancePage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.mz.complianceTitle', 'Fiscal compliance')}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
               {tt('financeDocs.mz.complianceSubtitle', 'Review the live fiscal settings, active series, SAF-T history, archive rows, and audit activity that support Mozambique issuance readiness.')}
             </p>
           </div>
@@ -182,7 +182,7 @@ export default function MozambiqueCompliancePage() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.seriesTitle', 'Active fiscal series')}</CardTitle>
-            <CardDescription>{tt('financeDocs.mz.seriesHelp', 'These rows drive the next legal references for invoice, credit note, and debit note issuance.')}</CardDescription>
+            <CardDescription className="hidden sm:block">{tt('financeDocs.mz.seriesHelp', 'These rows drive the next legal references for invoice, credit note, and debit note issuance.')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -219,7 +219,7 @@ export default function MozambiqueCompliancePage() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.saftTitle', 'SAF-T (Moz) history')}</CardTitle>
-            <CardDescription>{tt('financeDocs.mz.saftHelp', 'The DB-side run history is live. The remaining app step is a storage-backed generation and submission workflow instead of a read-only history view.')}</CardDescription>
+            <CardDescription className="hidden sm:block">{tt('financeDocs.mz.saftHelp', 'The DB-side run history is live. The remaining app step is a storage-backed generation and submission workflow instead of a read-only history view.')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -254,7 +254,7 @@ export default function MozambiqueCompliancePage() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.archiveTitle', 'Archive and artifact history')}</CardTitle>
-            <CardDescription>{tt('financeDocs.mz.archiveAdminHelp', 'This is the company-level archive registry fed by fiscal document artifacts. A storage-backed output worker is still the next step for canonical invoice files.')}</CardDescription>
+          <CardDescription className="hidden sm:block">{tt('financeDocs.mz.archiveAdminHelp', 'This is the company-level archive registry fed by fiscal document artifacts. A storage-backed output worker is still the next step for canonical invoice files.')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -280,7 +280,7 @@ export default function MozambiqueCompliancePage() {
       <Card className="border-border/80 shadow-sm">
         <CardHeader>
           <CardTitle>{tt('financeDocs.mz.auditTrail', 'Audit trail')}</CardTitle>
-          <CardDescription>{tt('financeDocs.mz.auditAdminHelp', 'Recent finance-document and SAF-T activity for the active company.')}</CardDescription>
+          <CardDescription className="hidden sm:block">{tt('financeDocs.mz.auditAdminHelp', 'Recent finance-document and SAF-T activity for the active company.')}</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (

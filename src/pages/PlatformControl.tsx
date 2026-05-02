@@ -502,7 +502,7 @@ export default function PlatformControlPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background px-4 py-10 sm:px-6 lg:px-8">
+    <div className="min-h-screen overflow-x-hidden bg-background px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
       <AlertDialog
         open={resetOpen}
         onOpenChange={(open) => {
@@ -516,16 +516,16 @@ export default function PlatformControlPage() {
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {tt('platform.eyebrow', 'Platform control')}
               </div>
-              <CardTitle className="mt-4 text-3xl tracking-tight">
+              <CardTitle className="mt-4 text-2xl tracking-tight sm:text-3xl">
                 {tt('platform.title', 'Manual subscription and access control')}
               </CardTitle>
-              <CardDescription className="max-w-3xl text-base leading-7">
+              <CardDescription className="hidden max-w-3xl text-base leading-7 sm:block">
                 {tt(
                   'platform.description',
                   'This control plane governs 7-day trials, manual paid activation, suspensions, expiry, commercial notices, and guarded operational resets. Payment automation remains intentionally deferred.',
                 )}
               </CardDescription>
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="mobile-primary-actions mt-5">
                 <Button variant="outline" asChild>
                   <Link to="/dashboard">
                     <ArrowLeft className="mr-2 h-4 w-4" />
@@ -540,8 +540,8 @@ export default function PlatformControlPage() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6 text-sm text-muted-foreground">
-              <div className="max-w-3xl leading-6">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-muted-foreground sm:p-6">
+              <div className="hidden max-w-3xl leading-6 sm:block">
                 {tt(
                   'platform.heroNote',
                   'Use the analytics workspace below to monitor plan mix, expiring companies, restricted access, and catalogue-based recurring value before opening the selected company controls.',

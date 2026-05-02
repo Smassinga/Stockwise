@@ -114,10 +114,12 @@
   .app-page {
     width: 100%;
     max-width: 108rem;
+    min-width: 0;
     margin-inline: auto;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    overflow-x: hidden;
   }
 
   .app-page--workspace {
@@ -148,6 +150,14 @@
 
   .mobile-register-list {
     @apply flex flex-col gap-3;
+  }
+
+  .mobile-primary-actions {
+    @apply flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap;
+  }
+
+  .mobile-primary-actions > * {
+    @apply w-full sm:w-auto;
   }
 
   .app-page table,
@@ -236,6 +246,40 @@
   .dark .mobile-container table thead,
   .dark .mx-auto.max-w-7xl table thead {
     background: hsl(var(--muted) / 0.24);
+  }
+
+  @media (max-width: 767px) {
+    main > div,
+    main > section,
+    .mobile-container,
+    .mx-auto.max-w-7xl {
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    main h1.text-3xl {
+      font-size: 1.5rem;
+      line-height: 2rem;
+    }
+
+    main table:not([data-mobile-cards='true']) {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    main table:not([data-mobile-cards='true']) th,
+    main table:not([data-mobile-cards='true']) td {
+      white-space: nowrap;
+    }
+
+    main .rounded-2xl.border-dashed {
+      padding: 1.25rem;
+    }
   }
 
   @media (min-width: 768px) {

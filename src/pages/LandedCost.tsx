@@ -385,7 +385,7 @@ export default function LandedCostPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
@@ -393,13 +393,13 @@ export default function LandedCostPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('landedCost.title', 'Landed Cost')}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
               {tt('landedCost.subtitle', 'Attach extra freight, customs, and handling to a received purchase order. The posted run revalues on-hand inventory through the same weighted-average stock logic used by PO receipts.')}
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="mobile-primary-actions">
           <Button asChild variant="outline">
             <Link to="/orders?tab=purchase">{tt('orders.title', 'Orders')}</Link>
           </Button>
@@ -430,7 +430,7 @@ export default function LandedCostPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.source', 'Purchase source')}</CardTitle>
-              <CardDescription>{tt('landedCost.sourceHelp', 'Pick a purchase order that already has received stock. Landed cost will be allocated across those receipt buckets and revalue the matching on-hand inventory.')}</CardDescription>
+              <CardDescription className="hidden sm:block">{tt('landedCost.sourceHelp', 'Pick a purchase order that already has received stock. Landed cost will be allocated across those receipt buckets and revalue the matching on-hand inventory.')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               <div>
@@ -481,7 +481,7 @@ export default function LandedCostPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.extraCosts', 'Additional landed costs')}</CardTitle>
-              <CardDescription>{tt('landedCost.extraCostsHelp', 'Enter the extra charges in the PO currency. Stock revaluation is posted in base value using the purchase order FX rate.')}</CardDescription>
+              <CardDescription className="hidden sm:block">{tt('landedCost.extraCostsHelp', 'Enter the extra charges in the PO currency. Stock revaluation is posted in base value using the purchase order FX rate.')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-3 md:grid-cols-2">
@@ -496,10 +496,10 @@ export default function LandedCostPage() {
                   <div key={cost.id} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px_auto]">
                     <Input value={cost.label} onChange={(event) => setExtraCosts(prev => prev.map(row => row.id === cost.id ? { ...row, label: event.target.value } : row))} placeholder={tt('landedCost.otherCostLabel', 'Other cost label')} />
                     <Input inputMode="decimal" value={cost.amount} onChange={(event) => setExtraCosts(prev => prev.map(row => row.id === cost.id ? { ...row, amount: event.target.value } : row))} placeholder="0.00" />
-                    <Button variant="ghost" onClick={() => setExtraCosts(prev => prev.filter(row => row.id !== cost.id))}>{tt('common.remove', 'Remove')}</Button>
+                    <Button className="w-full md:w-auto" variant="ghost" onClick={() => setExtraCosts(prev => prev.filter(row => row.id !== cost.id))}>{tt('common.remove', 'Remove')}</Button>
                   </div>
                 ))}
-                <Button variant="outline" onClick={() => setExtraCosts(prev => [...prev, { id: uid(), label: '', amount: '' }])}>
+                <Button className="w-full sm:w-auto" variant="outline" onClick={() => setExtraCosts(prev => [...prev, { id: uid(), label: '', amount: '' }])}>
                   {tt('landedCost.addCostRow', 'Add another cost')}
                 </Button>
               </div>
@@ -516,7 +516,7 @@ export default function LandedCostPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.summary', 'Revaluation summary')}</CardTitle>
-              <CardDescription>{tt('landedCost.summaryHelp', 'Before posting, review how much value will be applied to current stock and how much remains unapplied because the received units are no longer on hand.')}</CardDescription>
+              <CardDescription className="hidden sm:block">{tt('landedCost.summaryHelp', 'Before posting, review how much value will be applied to current stock and how much remains unapplied because the received units are no longer on hand.')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -543,7 +543,7 @@ export default function LandedCostPage() {
                     <div className="text-sm font-medium">{tt('landedCost.preview', 'Allocation preview')}</div>
                     <div className="text-xs text-muted-foreground">{tt('landedCost.previewNote', 'The current valuation model is weighted average per stock bucket. Revaluation updates the affected stock level average cost rather than isolated receipt layers.')}</div>
                   </div>
-                  {selectedOrder && <Button asChild variant="ghost" size="sm"><Link to={`/orders?tab=purchase&orderId=${selectedOrder.id}`}>{tt('landedCost.viewOrder', 'View order')}</Link></Button>}
+                  {selectedOrder && <Button asChild className="w-full sm:w-auto" variant="ghost" size="sm"><Link to={`/orders?tab=purchase&orderId=${selectedOrder.id}`}>{tt('landedCost.viewOrder', 'View order')}</Link></Button>}
                 </div>
 
                 <div className="mt-3 overflow-x-auto">
@@ -590,7 +590,7 @@ export default function LandedCostPage() {
                   </table>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                <div className="mobile-primary-actions mt-4 justify-end">
                   <Button variant="outline" onClick={() => setDetailVersion(version => version + 1)}>{tt('common.refresh', 'Refresh')}</Button>
                   <Button onClick={applyLandedCost} disabled={applying || !schemaReady || !previewState.preview.length || extraCostTotal <= 0}>
                     {applying ? tt('landedCost.applying', 'Applying...') : tt('landedCost.apply', 'Apply landed cost')}
@@ -603,7 +603,7 @@ export default function LandedCostPage() {
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.history', 'Applied runs')}</CardTitle>
-              <CardDescription>{tt('landedCost.historyHelp', 'Every posted landed cost run keeps a PO-level audit trail with the applied and unapplied value split.')}</CardDescription>
+              <CardDescription className="hidden sm:block">{tt('landedCost.historyHelp', 'Every posted landed cost run keeps a PO-level audit trail with the applied and unapplied value split.')}</CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               {historyAccessDenied && (

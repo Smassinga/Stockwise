@@ -861,9 +861,9 @@ export default function OpeningImport() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <CardTitle>{copy.review}</CardTitle>
-                    <CardDescription>{preview ? copy.previewRows : copy.noPreview}</CardDescription>
+                    <CardDescription className="hidden sm:block">{preview ? copy.previewRows : copy.noPreview}</CardDescription>
                   </div>
-                  <Button disabled={!preview || importing || !canImport || preview.issues.length > 0 || preview.payload.length === 0} onClick={() => void commitImport()}>
+                  <Button className="w-full sm:w-auto" disabled={!preview || importing || !canImport || preview.issues.length > 0 || preview.payload.length === 0} onClick={() => void commitImport()}>
                     <Upload className="mr-2 h-4 w-4" />
                     {importing ? copy.importing : copy.importRows}
                   </Button>

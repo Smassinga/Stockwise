@@ -619,9 +619,9 @@ function Settings() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl space-y-1">
           <h1 className="text-3xl font-semibold tracking-tight">{t("settings.title")}</h1>
-          <p className="text-muted-foreground">{t("settings.subtitle")}</p>
+          <p className="hidden text-muted-foreground sm:block">{t("settings.subtitle")}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="mobile-primary-actions">
           <Button
             onClick={saveProfile}
             disabled={savingProfile || !canEditOps}
