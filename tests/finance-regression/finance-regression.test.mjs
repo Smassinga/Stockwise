@@ -196,6 +196,8 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     await safeDelete(() => admin.from('sales_invoice_lines').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('vendor_bills').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('sales_invoices').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('landed_cost_run_lines').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('landed_cost_runs').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('purchase_order_lines').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('sales_order_lines').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('builds').delete().eq('company_id', companyId))
@@ -931,10 +933,135 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
   })
 
+  await t.test('Landed cost uses receipt value fallback and blocks zero-value value allocation', async () => {
+    const zeroValuePo = await ownerClient
+      .from('purchase_orders')
+      .insert({
+        company_id: companyId,
+        supplier_id: supplierId,
+        order_date: todayIso(),
+        due_date: plusDaysIso(14),
+        currency_code: 'MZN',
+        status: 'approved',
+        subtotal: 0,
+        tax_total: 0,
+        total: 0,
+        fx_to_base: 1,
+        created_by: ownerUser.userId,
+      })
+      .select('id')
+      .single()
+    if (zeroValuePo.error) throw zeroValuePo.error
+
+    const zeroValueReceipt = await ownerClient.from('stock_movements').insert({
+      company_id: companyId,
+      type: 'receive',
+      item_id: componentItemId,
+      uom_id: eachUomId,
+      qty: 1,
+      qty_base: 1,
+      unit_cost: null,
+      total_value: null,
+      warehouse_to_id: warehouseId,
+      bin_to_id: sourceBinId,
+      notes: `${PREFIX} zero-value landed cost guard`,
+      created_by: ownerUser.userId,
+      ref_type: 'PO',
+      ref_id: zeroValuePo.data.id,
+    })
+    if (zeroValueReceipt.error) throw zeroValueReceipt.error
+
+    await expectPostgrestError(
+      ownerClient.rpc('apply_landed_cost_run', {
+        p_company_id: companyId,
+        p_purchase_order_id: zeroValuePo.data.id,
+        p_supplier_id: supplierId,
+        p_applied_by: ownerUser.userId,
+        p_currency_code: 'MZN',
+        p_fx_to_base: 1,
+        p_allocation_method: 'value',
+        p_total_extra_cost: 5,
+        p_notes: 'Zero-value receipt guard',
+        p_charges: [{ label: 'Freight', amount: 5 }],
+        p_lines: [],
+      }),
+      'value_allocation_requires_receipt_value',
+    )
+
+    const receipt = await ownerClient.from('stock_movements').insert({
+      company_id: companyId,
+      type: 'receive',
+      item_id: componentItemId,
+      uom_id: eachUomId,
+      qty: 2,
+      qty_base: 2,
+      unit_cost: 5,
+      total_value: null,
+      warehouse_to_id: warehouseId,
+      bin_to_id: sourceBinId,
+      notes: `${PREFIX} landed cost receipt fallback`,
+      created_by: ownerUser.userId,
+      ref_type: 'PO',
+      ref_id: purchaseOrderId,
+    })
+    if (receipt.error) throw receipt.error
+
+    const componentLevelBeforeLandedCost = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', componentItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    const expectedLandedCostNewAvg = round2(
+      Number(componentLevelBeforeLandedCost.avg_cost || 0)
+        + (20 / Number(componentLevelBeforeLandedCost.qty || 1)),
+    )
+
+    const landedCostRun = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('apply_landed_cost_run', {
+          p_company_id: companyId,
+          p_purchase_order_id: purchaseOrderId,
+          p_supplier_id: supplierId,
+          p_applied_by: ownerUser.userId,
+          p_currency_code: 'MZN',
+          p_fx_to_base: 1,
+          p_allocation_method: 'value',
+          p_total_extra_cost: 20,
+          p_notes: 'Receipt value fallback regression',
+          p_charges: [{ label: 'Freight', amount: 20 }],
+          p_lines: [],
+        }),
+        'Expected landed cost value allocation to use unit_cost * qty fallback',
+      ),
+    )
+    assert.ok(landedCostRun?.run_id, 'Expected landed cost run id')
+    assert.equal(landedCostRun.line_count, 1)
+    assert.equal(round2(landedCostRun.total_applied_value), 20)
+    assert.equal(round2(landedCostRun.total_unapplied_value), 0)
+
+    const landedCostLine = await querySingle(
+      ownerClient,
+      'landed_cost_run_lines',
+      'received_qty_base, allocated_extra, applied_revaluation, previous_avg_cost, new_avg_cost',
+      [['eq', 'run_id', landedCostRun.run_id]],
+    )
+    assert.equal(round2(landedCostLine.received_qty_base), 2)
+    assert.equal(round2(landedCostLine.allocated_extra), 20)
+    assert.equal(round2(landedCostLine.applied_revaluation), 20)
+    assert.equal(round2(landedCostLine.previous_avg_cost), round2(componentLevelBeforeLandedCost.avg_cost))
+    assert.equal(round2(landedCostLine.new_avg_cost), expectedLandedCostNewAvg)
+  })
+
   await t.test('Operator sale batches walk-in lines, creates a shipped order, and reduces stock', async () => {
     const operatorSale = unwrapRpcSingle(
       expectNoSupabaseError(
-        await ownerClient.rpc('create_operator_sale_issue', {
+        await ownerClient.rpc('create_operator_sale_issue_with_settlement', {
           p_company_id: companyId,
           p_bin_from_id: destinationBinId,
           p_customer_id: null,
@@ -947,14 +1074,19 @@ test('Phase 4/5 finance hardening suite', async (t) => {
             { item_id: productItemId, qty: 2, unit_price: 116 },
             { item_id: resaleItemId, qty: 3, unit_price: 32 },
           ],
+          p_settlement_method: 'cash',
+          p_bank_account_id: null,
         }),
-        'Expected operator sale issue RPC to succeed',
+        'Expected operator sale issue and settlement RPC to succeed',
       ),
     )
 
     assert.ok(operatorSale?.sales_order_id, 'Expected operator sale RPC to return a sales order id')
     assert.equal(operatorSale.line_count, 2)
     assert.equal(round2(operatorSale.total_amount), 328)
+    assert.equal(operatorSale.settlement_method, 'cash')
+    assert.ok(operatorSale.settlement_id, 'Expected POS cash settlement id')
+    assert.equal(round2(operatorSale.settled_amount_base), 328)
 
     const operatorOrder = await querySingle(
       ownerClient,
@@ -997,6 +1129,17 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     if (saleMovesError) throw saleMovesError
     assert.equal(saleMoves.length, 2)
 
+    const { data: posCashSettlements, error: posCashSettlementsError } = await ownerClient
+      .from('cash_transactions')
+      .select('id, type, ref_type, ref_id, amount_base')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'SO')
+      .eq('ref_id', operatorSale.sales_order_id)
+    if (posCashSettlementsError) throw posCashSettlementsError
+    assert.equal(posCashSettlements.length, 1)
+    assert.equal(posCashSettlements[0].type, 'sale_receipt')
+    assert.equal(round2(posCashSettlements[0].amount_base), 328)
+
     const productStockAfter = await querySingle(
       ownerClient,
       'stock_levels',
@@ -1024,6 +1167,69 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
     assert.equal(round2(resaleStockAfter.qty), 3)
     assert.equal(round2(resaleStockAfter.allocated_qty || 0), 0)
+
+    await expectPostgrestError(
+      ownerClient.rpc('create_operator_sale_issue_with_settlement', {
+        p_company_id: companyId,
+        p_bin_from_id: destinationBinId,
+        p_customer_id: null,
+        p_order_date: todayIso(),
+        p_currency_code: 'MZN',
+        p_fx_to_base: 1,
+        p_reference_no: `${PREFIX.toUpperCase()}-BANK-MISSING`,
+        p_notes: 'Missing bank account regression guard',
+        p_lines: [{ item_id: productItemId, qty: 1, unit_price: 116 }],
+        p_settlement_method: 'bank',
+        p_bank_account_id: null,
+      }),
+      'Choose a bank account',
+    )
+
+    const bankPaidSale = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_operator_sale_issue_with_settlement', {
+          p_company_id: companyId,
+          p_bin_from_id: destinationBinId,
+          p_customer_id: null,
+          p_order_date: todayIso(),
+          p_currency_code: 'MZN',
+          p_fx_to_base: 1,
+          p_reference_no: `${PREFIX.toUpperCase()}-BANK`,
+          p_notes: 'Operator sale bank settlement regression',
+          p_lines: [{ item_id: productItemId, qty: 1, unit_price: 116 }],
+          p_settlement_method: 'bank',
+          p_bank_account_id: bankAccountId,
+        }),
+        'Expected bank-paid POS sale to create a bank settlement',
+      ),
+    )
+    assert.equal(bankPaidSale.settlement_method, 'bank')
+    assert.equal(bankPaidSale.bank_account_id, bankAccountId)
+    assert.equal(round2(bankPaidSale.settled_amount_base), 116)
+
+    const { data: posBankSettlements, error: posBankSettlementsError } = await ownerClient
+      .from('bank_transactions')
+      .select('id, bank_id, ref_type, ref_id, amount_base')
+      .eq('bank_id', bankAccountId)
+      .eq('ref_type', 'SO')
+      .eq('ref_id', bankPaidSale.sales_order_id)
+    if (posBankSettlementsError) throw posBankSettlementsError
+    assert.equal(posBankSettlements.length, 1)
+    assert.equal(round2(posBankSettlements[0].amount_base), 116)
+
+    const productStockAfterBankSettlement = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(productStockAfterBankSettlement.qty), 1)
+    assert.equal(round2(productStockAfterBankSettlement.allocated_qty || 0), 0)
 
     await expectPostgrestError(
       ownerClient.rpc('create_operator_sale_issue', {

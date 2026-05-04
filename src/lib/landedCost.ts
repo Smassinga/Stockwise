@@ -51,6 +51,7 @@ export function buildLandedCostPreview(options: {
   const totalExtra = round(options.charges.reduce((sum, charge) => sum + n(charge.amount), 0))
   const totalReceiptQty = round(validBuckets.reduce((sum, bucket) => sum + n(bucket.receivedQtyBase), 0))
   const totalReceiptValue = round(validBuckets.reduce((sum, bucket) => sum + n(bucket.receiptValueBase), 0))
+  const canAllocate = options.method !== 'value' || totalReceiptValue > 0
 
   let allocatedSoFar = 0
 
@@ -65,7 +66,9 @@ export function buildLandedCostPreview(options: {
         ? valueShare
         : equalShare
 
-    const allocatedExtra = index === validBuckets.length - 1
+    const allocatedExtra = !canAllocate
+      ? 0
+      : index === validBuckets.length - 1
       ? round(totalExtra - allocatedSoFar)
       : round(totalExtra * share)
 

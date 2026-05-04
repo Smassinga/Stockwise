@@ -31,6 +31,7 @@ type ReceiptMovement = {
   item_id: string
   ref_line_id?: string | null
   qty_base?: number | null
+  unit_cost?: number | null
   total_value?: number | null
   warehouse_to_id?: string | null
   bin_to_id?: string | null
@@ -91,6 +92,8 @@ export default function LandedCostPage() {
   const [applying, setApplying] = useState(false)
   const [schemaReady, setSchemaReady] = useState(true)
   const [detailVersion, setDetailVersion] = useState(0)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [loadedPurchaseOrderId, setLoadedPurchaseOrderId] = useState('')
   const [baseCurrencyCode, setBaseCurrencyCode] = useState('BASE')
   const [detailError, setDetailError] = useState<string | null>(null)
   const [historyAccessDenied, setHistoryAccessDenied] = useState(false)
@@ -128,6 +131,8 @@ export default function LandedCostPage() {
       setPurchaseOrders([])
       setReceiptBuckets([])
       setHistoryRuns([])
+      setDetailLoading(false)
+      setLoadedPurchaseOrderId('')
       setDetailError(null)
       setHistoryAccessDenied(false)
       return
@@ -181,12 +186,19 @@ export default function LandedCostPage() {
     if (!purchaseOrderId || !companyId) {
       setReceiptBuckets([])
       setHistoryRuns([])
+      setDetailLoading(false)
+      setLoadedPurchaseOrderId('')
       setDetailError(null)
       setHistoryAccessDenied(false)
       return
     }
 
     let cancelled = false
+    const activePurchaseOrderId = purchaseOrderId
+    setReceiptBuckets([])
+    setHistoryRuns([])
+    setDetailLoading(true)
+    setLoadedPurchaseOrderId('')
     ;(async () => {
       try {
         setDetailError(null)
@@ -194,11 +206,11 @@ export default function LandedCostPage() {
         detailErrorToastRef.current = ''
         const receiptRes = await supabase
           .from('stock_movements')
-          .select('item_id,ref_line_id,qty_base,total_value,warehouse_to_id,bin_to_id')
+          .select('item_id,ref_line_id,qty_base,unit_cost,total_value,warehouse_to_id,bin_to_id')
           .eq('company_id', companyId)
           .eq('type', 'receive')
           .eq('ref_type', 'PO')
-          .eq('ref_id', purchaseOrderId)
+          .eq('ref_id', activePurchaseOrderId)
 
         if (receiptRes.error) throw receiptRes.error
 
@@ -221,7 +233,7 @@ export default function LandedCostPage() {
           .from('landed_cost_runs')
           .select('id,created_at,allocation_method,total_extra_cost,total_applied_value,total_unapplied_value,currency_code,notes')
           .eq('company_id', companyId)
-          .eq('purchase_order_id', purchaseOrderId)
+          .eq('purchase_order_id', activePurchaseOrderId)
           .order('created_at', { ascending: false })
         if (runRes.error) {
           if (isMissingSchema(runRes.error)) {
@@ -254,10 +266,13 @@ export default function LandedCostPage() {
           const warehouse = receipt.warehouse_to_id ? warehouseById.get(receipt.warehouse_to_id) : null
           const bin = receipt.bin_to_id ? binById.get(receipt.bin_to_id) : null
           const existing = bucketMap.get(key)
+          const receiptValueBase = receipt.total_value == null
+            ? round(n(receipt.unit_cost) * n(receipt.qty_base))
+            : n(receipt.total_value)
 
           if (existing) {
             existing.receivedQtyBase += n(receipt.qty_base)
-            existing.receiptValueBase += n(receipt.total_value)
+            existing.receiptValueBase += receiptValueBase
             if (!existing.poLineId && receipt.ref_line_id) existing.poLineId = receipt.ref_line_id
             continue
           }
@@ -273,7 +288,7 @@ export default function LandedCostPage() {
             binLabel: bin ? `${bin.code} - ${bin.name}` : null,
             stockLevelId: stock?.id || null,
             receivedQtyBase: n(receipt.qty_base),
-            receiptValueBase: n(receipt.total_value),
+            receiptValueBase,
             onHandQtyBase: n(stock?.qty),
             previousAvgCost: n(stock?.avg_cost),
           })
@@ -281,17 +296,23 @@ export default function LandedCostPage() {
 
         setReceiptBuckets(Array.from(bucketMap.values()).sort((a, b) => a.itemLabel.localeCompare(b.itemLabel)))
         setHistoryRuns(runs)
+        setLoadedPurchaseOrderId(activePurchaseOrderId)
       } catch (error: any) {
         console.error(error)
         if (!cancelled) {
           const message = error?.message || tt('landedCost.prefillFailed', 'Failed to load the purchase order receipts')
           setDetailError(message)
-          const errorKey = `${purchaseOrderId}:${String(error?.code || '')}:${message}`
+          setReceiptBuckets([])
+          setHistoryRuns([])
+          setLoadedPurchaseOrderId('')
+          const errorKey = `${activePurchaseOrderId}:${String(error?.code || '')}:${message}`
           if (detailErrorToastRef.current !== errorKey) {
             toast.error(message)
             detailErrorToastRef.current = errorKey
           }
         }
+      } finally {
+        if (!cancelled) setDetailLoading(false)
       }
     })()
 
@@ -330,12 +351,19 @@ export default function LandedCostPage() {
     }),
     [allocationMethod, chargePayload, receiptBuckets],
   )
+  const detailReady = Boolean(purchaseOrderId) && !detailLoading && loadedPurchaseOrderId === purchaseOrderId
+  const valueAllocationUnavailable = detailReady
+    && allocationMethod === 'value'
+    && receiptBuckets.length > 0
+    && previewState.totalReceiptValue <= 0
 
   async function applyLandedCost() {
     if (!companyId || !purchaseOrderId || !selectedOrder) return
     if (!schemaReady) return toast.error(tt('landedCost.migrationNeeded', 'Apply the landed cost migration before posting revaluation runs'))
+    if (!detailReady) return toast.error(tt('landedCost.waitForReceipts', 'Wait for the selected purchase order receipts to load'))
     if (!chargePayload.length || extraCostTotal <= 0) return toast.error(tt('landedCost.enterCosts', 'Enter at least one landed cost'))
     if (!previewState.preview.length) return toast.error(tt('landedCost.noReceipts', 'Receive the purchase order before applying landed cost'))
+    if (valueAllocationUnavailable) return toast.error(tt('landedCost.valueAllocationUnavailable', 'By item value requires receipt values. Choose quantity or equal distribution.'))
 
     try {
       setApplying(true)
@@ -547,6 +575,11 @@ export default function LandedCostPage() {
                 </div>
 
                 <div className="mt-3 overflow-x-auto">
+                  {valueAllocationUnavailable && (
+                    <div className="mb-3 rounded-xl border border-amber-400/60 bg-amber-50/70 p-3 text-sm text-amber-900 dark:bg-amber-500/12 dark:text-amber-100">
+                      {tt('landedCost.valueAllocationUnavailable', 'By item value requires receipt values. Choose quantity or equal distribution.')}
+                    </div>
+                  )}
                   <table className="w-full min-w-[880px] text-sm">
                     <thead>
                       <tr className="border-b text-left">
@@ -584,7 +617,7 @@ export default function LandedCostPage() {
                         </tr>
                       ))}
                       {!previewState.preview.length && (
-                        <tr><td colSpan={8} className="py-6 text-center text-muted-foreground">{loading ? tt('loading', 'Loading') : tt('landedCost.noReceipts', 'Receive the purchase order first to generate revaluable stock buckets.')}</td></tr>
+                        <tr><td colSpan={8} className="py-6 text-center text-muted-foreground">{loading || detailLoading ? tt('loading', 'Loading') : tt('landedCost.noReceipts', 'Receive the purchase order first to generate revaluable stock buckets.')}</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -592,7 +625,7 @@ export default function LandedCostPage() {
 
                 <div className="mobile-primary-actions mt-4 justify-end">
                   <Button variant="outline" onClick={() => setDetailVersion(version => version + 1)}>{tt('common.refresh', 'Refresh')}</Button>
-                  <Button onClick={applyLandedCost} disabled={applying || !schemaReady || !previewState.preview.length || extraCostTotal <= 0}>
+                  <Button onClick={applyLandedCost} disabled={applying || !schemaReady || !detailReady || valueAllocationUnavailable || !previewState.preview.length || extraCostTotal <= 0}>
                     {applying ? tt('landedCost.applying', 'Applying...') : tt('landedCost.apply', 'Apply landed cost')}
                   </Button>
                 </div>
@@ -625,12 +658,12 @@ export default function LandedCostPage() {
                 <tbody>
                   {historyRuns.map(run => (
                     <tr key={run.id} className="border-b">
-                      <td className="py-2 pr-3 whitespace-nowrap">{run.created_at ? new Date(run.created_at).toLocaleString(lang) : '—'}</td>
-                      <td className="py-2 pr-3 capitalize">{run.allocation_method || '—'}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">{run.created_at ? new Date(run.created_at).toLocaleString(lang) : '-'}</td>
+                      <td className="py-2 pr-3 capitalize">{run.allocation_method || '-'}</td>
                       <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(n(run.total_extra_cost))} {(run.currency_code || selectedOrder?.currency_code || 'USD').toUpperCase()}</td>
                       <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(n(run.total_applied_value))} {baseCurrencyCode}</td>
                       <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmt(n(run.total_unapplied_value))} {baseCurrencyCode}</td>
-                      <td className="py-2 text-muted-foreground">{run.notes || '—'}</td>
+                      <td className="py-2 text-muted-foreground">{run.notes || '-'}</td>
                     </tr>
                   ))}
                   {!historyRuns.length && (

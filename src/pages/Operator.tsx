@@ -20,13 +20,13 @@ import { supabase } from '../lib/supabase'
 import { createOperatorSaleIssue } from '../lib/operatorSale'
 import toast from 'react-hot-toast'
 import {
-  ArrowRight,
+  Building2,
   Minus,
-  Package,
   Plus,
   Search,
   ShoppingBag,
   UserRound,
+  Wallet,
   Warehouse,
 } from 'lucide-react'
 import { getBaseCurrencyCode } from '../lib/currency'
@@ -72,6 +72,13 @@ type StockLevelRow = {
   qty: number
   allocatedQty: number
   avgCost: number
+}
+
+type BankAccountRow = {
+  id: string
+  name: string
+  bankName: string | null
+  currencyCode: string | null
 }
 
 type CartLine = {
@@ -135,6 +142,17 @@ const copyByLang = {
     pricingHelp: 'Each line starts from the item default sell price and can still be adjusted before posting.',
     defaultPrice: 'Default sell price',
     lineTotal: 'Line total',
+    paymentTitle: 'Payment destination',
+    paymentBody: 'Point of Sale records immediate payment in the normal cash/bank settlement ledger.',
+    paymentMethod: 'Payment method',
+    cashMethod: 'Cash',
+    bankMethod: 'Bank',
+    bankAccount: 'Bank account',
+    chooseBankAccount: 'Choose bank account',
+    bankRequired: 'Choose a bank account before completing a bank-paid sale.',
+    noBanks: 'No bank accounts configured.',
+    cashSettlementHelp: 'Cash posts to the company cash book as a sale receipt.',
+    bankSettlementHelp: 'Bank posts to the selected bank account as a sale receipt.',
     couldNotPost: 'Could not post the sale.',
     loadFailed: 'Could not load the Point of Sale workspace.',
   },
@@ -188,6 +206,17 @@ const copyByLang = {
     pricingHelp: 'Cada linha começa com o preço de venda padrão do artigo e continua ajustável antes do lançamento.',
     defaultPrice: 'Preço de venda padrão',
     lineTotal: 'Total da linha',
+    paymentTitle: 'Destino do pagamento',
+    paymentBody: 'O Ponto de Venda regista o pagamento imediato no livro normal de caixa/banco.',
+    paymentMethod: 'Método de pagamento',
+    cashMethod: 'Caixa',
+    bankMethod: 'Banco',
+    bankAccount: 'Conta bancária',
+    chooseBankAccount: 'Escolher conta bancária',
+    bankRequired: 'Escolha uma conta bancária antes de concluir uma venda paga por banco.',
+    noBanks: 'Sem contas bancárias configuradas.',
+    cashSettlementHelp: 'A caixa lança no livro de caixa da empresa como recebimento de venda.',
+    bankSettlementHelp: 'O banco lança na conta bancária selecionada como recebimento de venda.',
     couldNotPost: 'Não foi possível lançar a venda.',
     loadFailed: 'Não foi possível carregar o workspace de Ponto de Venda.',
   },
@@ -223,10 +252,13 @@ export default function Operator() {
   const [notes, setNotes] = useState('')
   const [referenceNo, setReferenceNo] = useState('')
   const [baseCurrencyCode, setBaseCurrencyCode] = useState('MZN')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank'>('cash')
+  const [bankAccountId, setBankAccountId] = useState('')
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([])
   const [bins, setBins] = useState<BinRow[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
   const [customers, setCustomers] = useState<CustomerRow[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [stockLevels, setStockLevels] = useState<StockLevelRow[]>([])
   const [cart, setCart] = useState<CartLine[]>([])
@@ -237,6 +269,7 @@ export default function Operator() {
       setBins([])
       setItems([])
       setCustomers([])
+      setBankAccounts([])
       setStockLevels([])
       setUoms([])
       setLoading(false)
@@ -245,7 +278,7 @@ export default function Operator() {
 
     setLoading(true)
     try {
-      const [warehouseRes, itemRes, customerRes, uomRes, stockRes, currencyCode] = await Promise.all([
+      const [warehouseRes, itemRes, customerRes, bankRes, uomRes, stockRes, currencyCode] = await Promise.all([
         supabase
           .from('warehouses')
           .select('id, code, name')
@@ -263,6 +296,11 @@ export default function Operator() {
           .eq('company_id', companyId)
           .order('name', { ascending: true }),
         supabase
+          .from('bank_accounts')
+          .select('id, name, bank_name, currency_code')
+          .eq('company_id', companyId)
+          .order('name', { ascending: true }),
+        supabase
           .from('uoms')
           .select('id, code')
           .order('code', { ascending: true }),
@@ -276,6 +314,7 @@ export default function Operator() {
       if (warehouseRes.error) throw warehouseRes.error
       if (itemRes.error) throw itemRes.error
       if (customerRes.error) throw customerRes.error
+      if (bankRes.error) throw bankRes.error
       if (uomRes.error) throw uomRes.error
       if (stockRes.error) throw stockRes.error
 
@@ -315,6 +354,16 @@ export default function Operator() {
         code: row.code ? String(row.code) : null,
         name: String(row.name ?? ''),
       })))
+      const bankRows = ((bankRes.data || []) as any[]).map((row) => ({
+        id: String(row.id),
+        name: String(row.name ?? ''),
+        bankName: row.bank_name ? String(row.bank_name) : null,
+        currencyCode: row.currency_code ? String(row.currency_code) : null,
+      }))
+      setBankAccounts(bankRows)
+      if (bankRows[0]?.id && !bankAccountId) {
+        setBankAccountId(bankRows[0].id)
+      }
       setUoms(((uomRes.data || []) as any[]).map((row) => ({
         id: String(row.id),
         code: String(row.code ?? ''),
@@ -365,6 +414,17 @@ export default function Operator() {
 
   const uomCodeById = useMemo(() => new Map(uoms.map((row) => [row.id, row.code])), [uoms])
   const itemById = useMemo(() => new Map(items.map((row) => [row.id, row])), [items])
+
+  useEffect(() => {
+    if (paymentMethod !== 'bank') return
+    if (!bankAccounts.length) {
+      setBankAccountId('')
+      return
+    }
+    if (!bankAccounts.some((row) => row.id === bankAccountId)) {
+      setBankAccountId(bankAccounts[0].id)
+    }
+  }, [bankAccountId, bankAccounts, paymentMethod])
 
   const stockRows = useMemo(() => {
     return stockLevels
@@ -466,6 +526,10 @@ export default function Operator() {
       toast.error(copy.addLines)
       return
     }
+    if (paymentMethod === 'bank' && !bankAccountId) {
+      toast.error(copy.bankRequired)
+      return
+    }
 
     try {
       setSubmitting(true)
@@ -478,6 +542,8 @@ export default function Operator() {
         fxToBase: 1,
         referenceNo: referenceNo.trim() || null,
         notes: notes.trim() || null,
+        settlementMethod: paymentMethod,
+        bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
         lines: cart.map((line) => ({
           itemId: line.itemId,
           qty: line.qty,
@@ -491,6 +557,7 @@ export default function Operator() {
       setReferenceNo('')
       setUseNamedCustomer(false)
       setCustomerId('')
+      setPaymentMethod('cash')
       setDrawerOpen(false)
       if (result?.order_no) {
         toast.success(copy.successWithOrder.replace('{orderNo}', result.order_no))
@@ -562,6 +629,65 @@ export default function Operator() {
 
         <div className="rounded-[1.2rem] border border-border/70 bg-muted/15 p-3 text-xs leading-5 text-muted-foreground">
           {copy.pricingHelp}
+        </div>
+
+        <div className="space-y-3 rounded-[1.25rem] border border-border/70 bg-background/88 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Label className="text-sm font-semibold">{copy.paymentTitle}</Label>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.paymentBody}</p>
+            </div>
+            <Badge variant="secondary" className="rounded-full">
+              {paymentMethod === 'bank' ? (
+                <Building2 className="mr-1 h-3.5 w-3.5" />
+              ) : (
+                <Wallet className="mr-1 h-3.5 w-3.5" />
+              )}
+              {paymentMethod === 'bank' ? copy.bankMethod : copy.cashMethod}
+            </Badge>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>{copy.paymentMethod}</Label>
+              <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as 'cash' | 'bank')}>
+                <SelectTrigger className="rounded-2xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">{copy.cashMethod}</SelectItem>
+                  <SelectItem value="bank">{copy.bankMethod}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {paymentMethod === 'bank' ? (
+              <div className="space-y-2">
+                <Label>{copy.bankAccount}</Label>
+                <Select value={bankAccountId} onValueChange={setBankAccountId}>
+                  <SelectTrigger className="rounded-2xl">
+                    <SelectValue placeholder={copy.chooseBankAccount} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bankAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {[account.name, account.bankName, account.currencyCode].filter(Boolean).join(' • ')}
+                      </SelectItem>
+                    ))}
+                    {!bankAccounts.length ? (
+                      <SelectItem value="NO_BANK_ACCOUNT" disabled>
+                        {copy.noBanks}
+                      </SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+
+          <p className="text-xs leading-5 text-muted-foreground">
+            {paymentMethod === 'bank' ? copy.bankSettlementHelp : copy.cashSettlementHelp}
+          </p>
         </div>
 
         <div className="min-w-0 space-y-4">
