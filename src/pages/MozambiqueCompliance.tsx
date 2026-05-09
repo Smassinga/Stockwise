@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { Download } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { useOrg } from '../hooks/useOrg'
+import {
+  exportFiscalDocumentWorkbook,
+  type FiscalDocumentExportDocumentType,
+  type FiscalDocumentExportFilters,
+  type FiscalDocumentExportStatus,
+} from '../lib/fiscalDocumentExport'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import {
   getCompanyFiscalSettings,
@@ -19,6 +29,7 @@ import {
   type FiscalDocumentArtifactRow,
   type SaftMozExportRow,
 } from '../lib/mzFinance'
+import { can } from '../lib/permissions'
 
 function exportTone(status: SaftMozExportRow['status']) {
   switch (status) {
@@ -33,16 +44,21 @@ function exportTone(status: SaftMozExportRow['status']) {
 
 function shortDate(value?: string | null) {
   const text = String(value || '').trim()
-  return text ? text.slice(0, 10) : '—'
+  return text ? text.slice(0, 10) : '-'
 }
 
 export default function MozambiqueCompliancePage() {
-  const { companyId, companyName } = useOrg()
+  const { companyId, companyName, myRole } = useOrg()
   const { t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
 
   const [loading, setLoading] = useState(true)
+  const [exportingFiscalDocuments, setExportingFiscalDocuments] = useState(false)
+  const [exportFilters, setExportFilters] = useState<FiscalDocumentExportFilters>({
+    documentType: 'all',
+    status: 'all',
+  })
   const [settings, setSettings] = useState<CompanyFiscalSettingsRow | null>(null)
   const [series, setSeries] = useState<FinanceDocumentFiscalSeriesRow[]>([])
   const [exports, setExports] = useState<SaftMozExportRow[]>([])
@@ -103,6 +119,42 @@ export default function MozambiqueCompliancePage() {
   const activeSeries = series.filter((row) => row.is_active).sort((left, right) =>
     `${left.fiscal_year}-${left.document_type}`.localeCompare(`${right.fiscal_year}-${right.document_type}`),
   )
+  const canExportFiscalDocuments = can.exportReports(myRole)
+
+  function updateExportFilter<Key extends keyof FiscalDocumentExportFilters>(
+    key: Key,
+    value: FiscalDocumentExportFilters[Key],
+  ) {
+    setExportFilters((current) => ({ ...current, [key]: value }))
+  }
+
+  async function handleFiscalDocumentExport() {
+    if (!companyId) return
+    if (!canExportFiscalDocuments) {
+      toast.error(tt('financeDocs.mz.fiscalExportDenied', 'You do not have permission to export fiscal documents.'))
+      return
+    }
+
+    try {
+      setExportingFiscalDocuments(true)
+      const result = await exportFiscalDocumentWorkbook(companyId, exportFilters)
+      if (!result.filename) {
+        toast(tt('financeDocs.mz.fiscalExportEmpty', 'No fiscal documents match the selected filters.'))
+        return
+      }
+      toast.success(
+        tt('financeDocs.mz.fiscalExportReady', 'Fiscal export generated: {documents} documents, {lines} lines.', {
+          documents: result.documentCount,
+          lines: result.lineCount,
+        }),
+      )
+    } catch (error: any) {
+      reportRuntimeError('fiscalDocumentExport', error, { filters: exportFilters })
+      toast.error(error?.message || tt('financeDocs.mz.fiscalExportFailed', 'Failed to generate fiscal document export.'))
+    } finally {
+      setExportingFiscalDocuments(false)
+    }
+  }
 
   return (
     <div className="space-y-6 overflow-x-hidden">
@@ -114,7 +166,7 @@ export default function MozambiqueCompliancePage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.mz.complianceTitle', 'Fiscal compliance')}</h1>
             <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
-              {tt('financeDocs.mz.complianceSubtitle', 'Review the live fiscal settings, active series, SAF-T history, archive rows, and audit activity that support Mozambique issuance readiness.')}
+              {tt('financeDocs.mz.complianceSubtitle', 'Review fiscal settings, active series, SAF-T readiness history, archive rows, audit activity, and fiscal document exports for Mozambique readiness.')}
             </p>
           </div>
         </div>
@@ -133,7 +185,7 @@ export default function MozambiqueCompliancePage() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.settingsTitle', 'Company fiscal settings')}</CardTitle>
-            <CardDescription>{companyName || companyId || '—'}</CardDescription>
+            <CardDescription>{companyName || companyId || '-'}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -215,11 +267,131 @@ export default function MozambiqueCompliancePage() {
         </Card>
       </div>
 
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <CardTitle>{tt('financeDocs.mz.fiscalExportTitle', 'Exportação de Documentos Fiscais / Fiscal Document Export')}</CardTitle>
+            <CardDescription className="mt-2 max-w-4xl leading-6">
+              {tt(
+                'financeDocs.mz.fiscalExportHelp',
+                'Esta exportação organiza os dados fiscais e comerciais registados no StockWise para revisão e apoio à conformidade. A submissão oficial SAF-T/XML deve obedecer ao formato técnico exigido pela Autoridade Tributária e deve ser validada pelo contabilista ou consultor fiscal antes de submissão.',
+              )}
+            </CardDescription>
+            <CardDescription className="mt-2 max-w-4xl leading-6">
+              {tt(
+                'financeDocs.mz.fiscalExportHelpEn',
+                'This export organises fiscal and commercial data recorded in StockWise for review and compliance support. Official SAF-T/XML submission must follow the technical format required by the Tax Authority and should be validated by an accountant or tax advisor before submission.',
+              )}
+            </CardDescription>
+          </div>
+          <Badge variant="outline" className="w-fit shrink-0 rounded-full">
+            XLSX
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="space-y-2">
+              <Label>{tt('financeDocs.mz.dateFrom', 'Date from')}</Label>
+              <Input
+                type="date"
+                value={exportFilters.dateFrom || ''}
+                onChange={(event) => updateExportFilter('dateFrom', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{tt('financeDocs.mz.dateTo', 'Date to')}</Label>
+              <Input
+                type="date"
+                value={exportFilters.dateTo || ''}
+                onChange={(event) => updateExportFilter('dateTo', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{tt('financeDocs.mz.documentType', 'Document type')}</Label>
+              <Select
+                value={exportFilters.documentType || 'all'}
+                onValueChange={(value) => updateExportFilter('documentType', value as FiscalDocumentExportDocumentType)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{tt('common.all', 'All')}</SelectItem>
+                  <SelectItem value="sales_invoice">{tt('financeDocs.mz.invoiceType', 'Factura / Invoice')}</SelectItem>
+                  <SelectItem value="sales_credit_note">{tt('financeDocs.mz.creditNoteType', 'Nota de Crédito / Credit Note')}</SelectItem>
+                  <SelectItem value="sales_debit_note">{tt('financeDocs.mz.debitNoteType', 'Nota de Débito / Debit Note')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{tt('financeDocs.mz.status', 'Status')}</Label>
+              <Select
+                value={exportFilters.status || 'all'}
+                onValueChange={(value) => updateExportFilter('status', value as FiscalDocumentExportStatus)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{tt('common.all', 'All')}</SelectItem>
+                  <SelectItem value="draft">{tt('financeDocs.workflow.draft', 'Draft')}</SelectItem>
+                  <SelectItem value="issued">{tt('financeDocs.workflow.issued', 'Issued')}</SelectItem>
+                  <SelectItem value="voided">{tt('financeDocs.workflow.voided', 'Voided')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{tt('financeDocs.fields.customer', 'Customer')}</Label>
+              <Input
+                value={exportFilters.customer || ''}
+                onChange={(event) => updateExportFilter('customer', event.target.value)}
+                placeholder={tt('financeDocs.mz.customerFilter', 'Name or NUIT')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{tt('financeDocs.mz.presentationCurrency', 'Currency')}</Label>
+              <Input
+                value={exportFilters.currency || ''}
+                onChange={(event) => updateExportFilter('currency', event.target.value.toUpperCase())}
+                placeholder="MZN"
+                maxLength={3}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-5 text-muted-foreground">
+              {tt(
+                'financeDocs.mz.fiscalExportScope',
+                'Exports sales invoices, credit notes, debit notes, line details, available settlement status, issuer NUIT, customer NUIT, VAT totals, currency, and exchange rate.',
+              )}
+            </p>
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              disabled={!companyId || !canExportFiscalDocuments || exportingFiscalDocuments}
+              onClick={() => void handleFiscalDocumentExport()}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {exportingFiscalDocuments
+                ? tt('actions.saving', 'Saving')
+                : tt('financeDocs.mz.exportFiscalDocuments', 'Export fiscal documents')}
+            </Button>
+          </div>
+
+          {!canExportFiscalDocuments ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              {tt('financeDocs.mz.fiscalExportPermissionHelp', 'Fiscal document exports require an active company role with report export access.')}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
-            <CardTitle>{tt('financeDocs.mz.saftTitle', 'SAF-T (Moz) history')}</CardTitle>
-            <CardDescription className="hidden sm:block">{tt('financeDocs.mz.saftHelp', 'The DB-side run history is live. The remaining app step is a storage-backed generation and submission workflow instead of a read-only history view.')}</CardDescription>
+            <CardTitle>{tt('financeDocs.mz.saftTitle', 'SAF-T (Moz) run registry')}</CardTitle>
+            <CardDescription className="hidden sm:block">{tt('financeDocs.mz.saftHelp', 'This is a registry of requested SAF-T preparation runs. StockWise does not yet generate an official SAF-T/XML submission file from this screen.')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -231,12 +403,11 @@ export default function MozambiqueCompliancePage() {
                 {exports.map((row) => (
                   <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-medium">{shortDate(row.period_start)} → {shortDate(row.period_end)}</div>
+                      <div className="font-medium">{shortDate(row.period_start)} - {shortDate(row.period_end)}</div>
                       <Badge variant={exportTone(row.status)}>{row.status.toUpperCase()}</Badge>
                     </div>
                     <div className="mt-2 text-sm text-muted-foreground">
-                      {tt('financeDocs.mz.saftDocs', 'Documents')}: {row.source_document_count} ·
-                      {' '}
+                      {tt('financeDocs.mz.saftDocs', 'Documents')}: {row.source_document_count} /{' '}
                       {tt('financeDocs.mz.saftTotal', 'Total MZN')}: {row.source_total_mzn}
                     </div>
                     {row.submission_reference ? (
@@ -254,7 +425,7 @@ export default function MozambiqueCompliancePage() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.archiveTitle', 'Archive and artifact history')}</CardTitle>
-          <CardDescription className="hidden sm:block">{tt('financeDocs.mz.archiveAdminHelp', 'This is the company-level archive registry fed by fiscal document artifacts. A storage-backed output worker is still the next step for canonical invoice files.')}</CardDescription>
+            <CardDescription className="hidden sm:block">{tt('financeDocs.mz.archiveAdminHelp', 'This is the company-level archive registry fed by fiscal document artifacts. A storage-backed output worker is still the next step for canonical invoice files.')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -267,7 +438,7 @@ export default function MozambiqueCompliancePage() {
                   <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                     <div className="font-medium">{row.file_name || row.storage_path}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {row.document_kind} · {row.artifact_type} · {tt('financeDocs.mz.retainedUntil', 'Retained until')} {shortDate(row.retained_until)}
+                      {row.document_kind} / {row.artifact_type} / {tt('financeDocs.mz.retainedUntil', 'Retained until')} {shortDate(row.retained_until)}
                     </div>
                   </div>
                 ))}
@@ -292,11 +463,11 @@ export default function MozambiqueCompliancePage() {
               {events.slice(0, 15).map((row) => (
                 <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-medium">{row.document_kind} · {row.event_type}</div>
+                    <div className="font-medium">{row.document_kind} / {row.event_type}</div>
                     <div className="text-xs text-muted-foreground">{row.occurred_at.replace('T', ' ').slice(0, 19)}</div>
                   </div>
                   {(row.from_status || row.to_status) ? (
-                    <div className="mt-1 text-sm text-muted-foreground">{row.from_status || '—'} → {row.to_status || '—'}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{row.from_status || '-'} - {row.to_status || '-'}</div>
                   ) : null}
                 </div>
               ))}
