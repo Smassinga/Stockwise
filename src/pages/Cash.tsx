@@ -103,6 +103,10 @@ export default function CashPage() {
   }, [canManageSettlement])
 
   useEffect(() => {
+    if (!companyId) {
+      setBaseCurrency('MZN')
+      return
+    }
     let mounted = true
     ;(async () => {
       try {
@@ -118,7 +122,13 @@ export default function CashPage() {
   }, [companyId])
 
   useEffect(() => {
-    if (!companyId) return
+    if (!companyId) {
+      setBook(null)
+      setSummary({ beginning: 0, inflows: 0, outflows: 0, net: 0, ending: 0 })
+      setRows([])
+      setOrderRefByKey({})
+      return
+    }
     loadBook()
     loadData()
   }, [companyId, from, to, typeFilter])

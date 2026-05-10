@@ -74,7 +74,10 @@ export function Warehouses() {
     if (!companyId) {
       setWarehouses([])
       setBins([])
+      setError(null)
       setLoading(false)
+      resetForm()
+      resetBinForm()
       return
     }
     let cancelled = false
@@ -82,7 +85,7 @@ export function Warehouses() {
       try {
         setLoading(true)
         setError(null)
-        await loadAll()
+        await loadAll(companyId, () => cancelled)
       } catch (e: any) {
         console.error(e)
         if (!cancelled) setError(e?.message || t('errors.title'))
@@ -96,17 +99,18 @@ export function Warehouses() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
-  async function loadAll() {
-    if (!companyId) return
+  async function loadAll(activeCompanyId = companyId, isCancelled: () => boolean = () => false) {
+    if (!activeCompanyId) return
 
     // Warehouses are snake_case in DB
     const { data: whRaw, error: whErr } = await supabase
       .from('warehouses')
       .select('id,code,name,address,status,created_at,updated_at,company_id')
-      .eq('company_id', companyId)
+      .eq('company_id', activeCompanyId)
       .order('created_at', { ascending: false })
 
     if (whErr) throw whErr
+    if (isCancelled()) return
 
     const whs: Warehouse[] = (whRaw || []).map((w: any) => ({
       id: w.id,
@@ -133,9 +137,10 @@ export function Warehouses() {
       .in('warehouseId', whIds)
       .order('createdAt', { ascending: false })
 
+    if (isCancelled()) return
     if (bnErr) {
       console.error(bnErr)
-        toast.error(bnErr.message || tt('warehouses.toast.binLoadFailed', 'Failed to load bins'))
+      toast.error(bnErr.message || tt('warehouses.toast.binLoadFailed', 'Failed to load bins'))
       setBins([])
       return
     }
@@ -317,8 +322,16 @@ export function Warehouses() {
         toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
+      if (!companyId) {
+        toast.error(t('org.noCompany'))
+        return
+      }
       if (!binForm.warehouseId) {
         toast.error(t('warehouses.selectFirst') ?? 'Select a warehouse first')
+        return
+      }
+      if (!warehouses.some((warehouse) => warehouse.id === binForm.warehouseId)) {
+        toast.error(tt('warehouses.toast.selectActiveWarehouse', 'Select a warehouse from the active company'))
         return
       }
       const code = binForm.code.trim()

@@ -78,6 +78,12 @@ export default function Banks() {
   const [form, setForm] = useState<BankForm>(() => emptyForm('MZN'))
 
   useEffect(() => {
+    if (!companyId) {
+      setBaseCurrency('MZN')
+      setRows([])
+      setBalances({})
+      return
+    }
     let mounted = true
     ;(async () => {
       try {
@@ -95,7 +101,11 @@ export default function Banks() {
   }, [companyId])
 
   useEffect(() => {
-    if (!companyId) return
+    if (!companyId) {
+      setRows([])
+      setBalances({})
+      return
+    }
     loadBanks()
     loadBalances()
   }, [companyId])

@@ -236,25 +236,34 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- load settings + master (COMPANY-SCOPED) ---------- */
   useEffect(() => {
+    if (!companyId) {
+      setWarehouses([]); setBins([]); setItems([]); setLevels([]); setMoves([]); setCustomers([])
+      setOrders([]); setCashSales([])
+      setOrdersSource(''); setCashSource('')
+      setOrdersUnavailable(false); setCashUnavailable(false)
+      setBaseCurrency('MZN'); setDisplayCurrency('MZN'); setFxRate(1); setFxNote('')
+      void supabase
+        .from('currencies')
+        .select('code,name')
+        .order('code', { ascending: true })
+        .then((cRes) => setCurrencies((cRes.data || []) as Currency[]))
+      return
+    }
+
+    let cancelled = false
     ;(async () => {
       try {
         // Settings (not company-scoped)
         const { data: settingsRows } = await supabase.from('app_settings').select('data').eq('id', 'app').limit(1)
+        if (cancelled) return
         const setting: any = Array.isArray(settingsRows) && settingsRows.length ? settingsRows[0]?.data ?? null : null
-
-        if (!companyId) {
-          setWarehouses([]); setBins([]); setItems([]); setLevels([]); setMoves([]); setCustomers([])
-          // currencies still helpful even without company
-          const cRes = await supabase.from('currencies').select('code,name').order('code', { ascending: true })
-          setCurrencies((cRes.data || []) as Currency[])
-          return
-        }
 
         // Warehouses, Items — scoped
         const [whRes, itRes] = await Promise.all([
           supabase.from('warehouses').select('id,name,code').eq('company_id', companyId).order('name', { ascending: true }),
           supabase.from('items').select('id,name,sku,base_uom_id').eq('company_id', companyId).order('name', { ascending: true }),
         ])
+        if (cancelled) return
         if (whRes.error) throw whRes.error
         if (itRes.error) throw itRes.error
 
@@ -268,6 +277,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         const whIds = wh.map(w => w.id)
         if (whIds.length) {
           const bRes = await supabase.from('bins').select('id,code,name,warehouseId').in('warehouseId', whIds).order('code', { ascending: true })
+          if (cancelled) return
           setBins(((bRes.data || []) as any[]).map(b => ({ id: b.id, code: b.code, name: b.name, warehouseId: b.warehouseId })) as Bin[])
         } else {
           setBins([])
@@ -278,6 +288,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
           .from('stock_levels')
           .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,updated_at')
           .eq('company_id', companyId)
+        if (cancelled) return
         if (slRes.error) throw slRes.error
         setLevels(((slRes.data || []) as any[]).map(normalizeStockLevel))
 
@@ -287,6 +298,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
           .select('id,type,item_id,qty,qty_base,unit_cost,total_value,warehouse_id,warehouse_from_id,warehouse_to_id,bin_from_id,bin_to_id,created_at')
           .eq('company_id', companyId)
           .order('created_at', { ascending: true })
+        if (cancelled) return
         if (mvRes.error) throw mvRes.error
         setMoves(((mvRes.data || []) as any[]).map(r => ({
           id: r.id,
@@ -306,14 +318,17 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
 
         // Currencies (global)
         const cs = await supabase.from('currencies').select('code,name').order('code', { ascending: true })
+        if (cancelled) return
         setCurrencies((cs.data || []) as Currency[])
 
         // Customers (scoped)
         const custs = await supabase.from('customers').select('id,name,code').eq('company_id', companyId).order('name', { ascending: true })
+        if (cancelled) return
         if (!custs.error) setCustomers((custs.data || []) as Customer[])
 
         // Base currency follows the active company's currency settings.
         const baseCur = await getBaseCurrencyCode(companyId)
+        if (cancelled) return
         setBaseCurrency(baseCur); setDisplayCurrency(prev => prev || baseCur)
 
         // Revenue table/view names (not necessarily company-scoped; we’ll try to filter later)
@@ -332,10 +347,14 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         if (ordersSrc) setOrdersSource(ordersSrc)
         if (cashSrc) setCashSource(cashSrc)
       } catch (err: any) {
+        if (cancelled) return
         console.error(err)
         toast.error(err?.message || 'Failed to load report prerequisites')
       }
     })()
+    return () => {
+      cancelled = true
+    }
   }, [companyId])
 
   /* ---------- revenue sources by date window (TRY to apply company filter) ---------- */
@@ -345,6 +364,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       if (ordersFetchKeyRef.current === key) return
       ordersFetchKeyRef.current = key
       setOrders([]); setOrdersUnavailable(false)
+      if (!companyId) return
       if (!ordersSource) { setOrdersUnavailable(true); return }
 
       const startIso = `${startDate}T00:00:00Z`; const endIso = `${endDate}T23:59:59.999Z`
@@ -384,6 +404,7 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
       if (cashFetchKeyRef.current === key) return
       cashFetchKeyRef.current = key
       setCashSales([]); setCashUnavailable(false)
+      if (!companyId) return
       if (!cashSource) { setCashUnavailable(true); return }
 
       const startIso = `${startDate}T00:00:00Z`; const endIso = `${endDate}T23:59:59.999Z`

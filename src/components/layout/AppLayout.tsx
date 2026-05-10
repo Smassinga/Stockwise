@@ -309,7 +309,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [displayCompany, displayName, displayRole, isPlatformAdmin, logout, navSections, t, tt]
+    [displayCompany, displayName, displayRole, isPlatformAdmin, location.pathname, logout, navSections, t, tt]
   )
 
   const handleSearch = (e: FormEvent) => {

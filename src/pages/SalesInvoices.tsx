@@ -34,7 +34,10 @@ export default function SalesInvoicesPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    if (!companyId) return
+    if (!companyId) {
+      setBaseCode('MZN')
+      return
+    }
     let active = true
     ;(async () => {
       try {

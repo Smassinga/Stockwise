@@ -641,20 +641,21 @@ export default function BankDetail() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card>
         <CardHeader><CardTitle>{t('bank.bookBalance')}</CardTitle></CardHeader>
-          <CardContent className="text-2xl">{formatMoneyBase(bookBalance)}</CardContent>
+          <CardContent className="text-2xl">{formatMoneyBase(bookBalance, baseCurrency)}</CardContent>
         </Card>
         <Card>
         <CardHeader><CardTitle>{t('bank.statementBalance')}</CardTitle></CardHeader>
           <CardContent className="text-2xl">
             {formatMoneyBase(
               statements.find(s => s.reconciled)?.closing_balance_base ??
-              statements[0]?.closing_balance_base ?? 0
+              statements[0]?.closing_balance_base ?? 0,
+              baseCurrency,
             )}
           </CardContent>
         </Card>
         <Card>
         <CardHeader><CardTitle>{t('bank.difference')}</CardTitle></CardHeader>
-          <CardContent className="text-2xl">{formatMoneyBase(diff)}</CardContent>
+          <CardContent className="text-2xl">{formatMoneyBase(diff, baseCurrency)}</CardContent>
         </Card>
       </div>
 
@@ -739,7 +740,7 @@ export default function BankDetail() {
                     )}
                   </td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
-                  <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base)}</td>
+                  <td className="py-2 pr-3 text-right">{formatMoneyBase(r.amount_base, baseCurrency)}</td>
                   <td className="py-2 pl-3 text-right">
                     <Button
                       variant={r.reconciled ? 'secondary' : 'outline'}
@@ -798,7 +799,7 @@ export default function BankDetail() {
                 {statements.map(s => (
                   <tr key={s.id} className="border-t">
                     <td className="py-2 pr-3">{s.statement_date}</td>
-                    <td className="py-2 pr-3 text-right">{formatMoneyBase(s.closing_balance_base)}</td>
+                    <td className="py-2 pr-3 text-right">{formatMoneyBase(s.closing_balance_base, baseCurrency)}</td>
                     <td className="py-2 pr-3">
                       {s.file_path ? (
                         <Button variant="link" className="px-0" onClick={() => openFile(s.file_path!)}>{t('bank.view')}</Button>
