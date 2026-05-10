@@ -106,7 +106,7 @@ export default function CashPage() {
     let mounted = true
     ;(async () => {
       try {
-        const code = await getBaseCurrencyCode()
+        const code = await getBaseCurrencyCode(companyId)
         if (mounted && code) setBaseCurrency(code)
       } catch (error) {
         console.warn('Failed to load base currency in Cash:', error)
@@ -115,7 +115,7 @@ export default function CashPage() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [companyId])
 
   useEffect(() => {
     if (!companyId) return
@@ -530,7 +530,7 @@ export default function CashPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold tracking-tight">
-              {formatMoneyBase(card.value)}
+              {formatMoneyBase(card.value, baseCurrency)}
             </CardContent>
           </Card>
         ))}
@@ -645,8 +645,8 @@ export default function CashPage() {
                       )}
                     </td>
                     <td className="py-3 pr-3 align-top text-muted-foreground">{row.memo ?? tf('common.dash', '—')}</td>
-                    <td className="py-3 pr-3 text-right align-top">{formatMoneyBase(row.amount_base)}</td>
-                    <td className="py-3 pl-3 text-right align-top font-medium">{formatMoneyBase(row.running_balance)}</td>
+                    <td className="py-3 pr-3 text-right align-top">{formatMoneyBase(row.amount_base, baseCurrency)}</td>
+                    <td className="py-3 pl-3 text-right align-top font-medium">{formatMoneyBase(row.running_balance, baseCurrency)}</td>
                   </tr>
                 )
               })}

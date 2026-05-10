@@ -578,7 +578,7 @@ export default function PurchaseOrders() {
         if (uomsRes.error) throw uomsRes.error
         setUoms(((uomsRes.data || []) as any[]).map(u => ({ ...u, code: String(u.code || '').toUpperCase() })))
         setCurrencies((curRes.data || []) as Currency[])
-        setBaseCode(await getBaseCurrencyCode())
+        setBaseCode(await getBaseCurrencyCode(companyId))
 
         const { data: convRows, error: convErr } = await supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
         setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))

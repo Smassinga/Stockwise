@@ -168,7 +168,7 @@ export default function LandedCostPage() {
         setWarehouses((warehouseRes.data || []) as Warehouse[])
         setBins(((binRes.data || []) as Bin[]).filter(row => warehouseIds.has(row.warehouseId)))
         setPurchaseOrders((poRes.data || []) as PurchaseOrder[])
-        getBaseCurrencyCode().then((code) => {
+        getBaseCurrencyCode(companyId).then((code) => {
           if (!cancelled && code) setBaseCurrencyCode(code)
         }).catch(() => {})
       } catch (error: any) {

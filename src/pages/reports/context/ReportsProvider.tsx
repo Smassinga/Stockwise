@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { supabase } from '../../../lib/supabase' // ← use the same client as your app
 import { useAuth } from '../../../hooks/useAuth'
 import { useOrg } from '../../../hooks/useOrg'
+import { getBaseCurrencyCode } from '../../../lib/currency'
 import toast from 'react-hot-toast'
 
 type Warehouse = { id: string; name: string; code?: string }
@@ -311,13 +312,8 @@ export function ReportsProvider({ children }: { children: React.ReactNode }) {
         const custs = await supabase.from('customers').select('id,name,code').eq('company_id', companyId).order('name', { ascending: true })
         if (!custs.error) setCustomers((custs.data || []) as Customer[])
 
-        // Base currency from settings
-        const baseCur = pickString(
-          setting?.baseCurrencyCode, setting?.base_currency_code,
-          at(setting, 'documents.finance.baseCurrency'),
-          at(setting, 'documents.reports.baseCurrency'),
-          at(setting, 'finance.baseCurrency')
-        ) || 'MZN'
+        // Base currency follows the active company's currency settings.
+        const baseCur = await getBaseCurrencyCode(companyId)
         setBaseCurrency(baseCur); setDisplayCurrency(prev => prev || baseCur)
 
         // Revenue table/view names (not necessarily company-scoped; we’ll try to filter later)

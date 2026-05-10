@@ -308,7 +308,7 @@ export default function Operator() {
           .from('stock_levels')
           .select('item_id, warehouse_id, bin_id, qty, allocated_qty, avg_cost')
           .eq('company_id', companyId),
-        getBaseCurrencyCode().catch(() => 'MZN'),
+        getBaseCurrencyCode(companyId).catch(() => 'MZN'),
       ])
 
       if (warehouseRes.error) throw warehouseRes.error

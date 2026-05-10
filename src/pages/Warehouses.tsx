@@ -71,7 +71,13 @@ export function Warehouses() {
     status === 'active' ? tt('warehouses.active', 'Active') : tt('warehouses.inactive', 'Inactive')
 
   useEffect(() => {
-    if (!companyId) return
+    if (!companyId) {
+      setWarehouses([])
+      setBins([])
+      setLoading(false)
+      return
+    }
+    let cancelled = false
     ;(async () => {
       try {
         setLoading(true)
@@ -79,11 +85,14 @@ export function Warehouses() {
         await loadAll()
       } catch (e: any) {
         console.error(e)
-        setError(e?.message || t('errors.title'))
+        if (!cancelled) setError(e?.message || t('errors.title'))
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
@@ -161,11 +170,17 @@ export function Warehouses() {
         toast.error(t('org.noCompany'))
         return
       }
+      const code = form.code.trim()
+      const name = form.name.trim()
+      if (!code || !name) {
+        toast.error(tt('warehouses.toast.required', 'Warehouse code and name are required'))
+        return
+      }
       const payload = {
         company_id: companyId,
-        code: form.code,
-        name: form.name,
-        address: form.address || null,
+        code,
+        name,
+        address: form.address.trim() || null,
         status: form.status,
       }
       const { data, error } = await supabase
@@ -205,16 +220,27 @@ export function Warehouses() {
         toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
+      if (!companyId) {
+        toast.error(t('org.noCompany'))
+        return
+      }
+      const code = form.code.trim()
+      const name = form.name.trim()
+      if (!code || !name) {
+        toast.error(tt('warehouses.toast.required', 'Warehouse code and name are required'))
+        return
+      }
       const patch = {
-        code: form.code,
-        name: form.name,
-        address: form.address || null,
+        code,
+        name,
+        address: form.address.trim() || null,
         status: form.status,
       }
       const { data, error } = await supabase
         .from('warehouses')
         .update(patch)
         .eq('id', editing.id)
+        .eq('company_id', companyId)
         .select('id,code,name,address,status,created_at,updated_at')
         .single()
 
@@ -251,11 +277,16 @@ export function Warehouses() {
         toast.error(tt('warehouses.toast.noPermission', 'Only managers and above can manage warehouses'))
         return
       }
+      if (!companyId) {
+        toast.error(t('org.noCompany'))
+        return
+      }
       // Stock-level check (snake_case)
       const { count, error: slErr } = await supabase
         .from('stock_levels')
         .select('id', { head: true, count: 'exact' })
         .eq('warehouse_id', id)
+        .eq('company_id', companyId)
 
       if (slErr) {
         console.warn('Stock-level check failed; aborting delete:', slErr)
@@ -268,7 +299,7 @@ export function Warehouses() {
       }
 
       // Delete the warehouse; bins should be removed by FK CASCADE if configured.
-      const { error: delErr } = await supabase.from('warehouses').delete().eq('id', id)
+      const { error: delErr } = await supabase.from('warehouses').delete().eq('id', id).eq('company_id', companyId)
       if (delErr) throw delErr
 
       setWarehouses(prev => prev.filter(wh => wh.id !== id))
@@ -290,11 +321,17 @@ export function Warehouses() {
         toast.error(t('warehouses.selectFirst') ?? 'Select a warehouse first')
         return
       }
+      const code = binForm.code.trim()
+      const name = binForm.name.trim()
+      if (!code || !name) {
+        toast.error(tt('warehouses.toast.binRequired', 'Bin code and name are required'))
+        return
+      }
       const payload = {
-        id: `bin_${Date.now()}`, // bins.id is TEXT
+        id: `bin_${globalThis.crypto?.randomUUID?.() ?? Date.now()}`, // bins.id is TEXT
         warehouseId: binForm.warehouseId, // camelCase column
-        code: binForm.code,
-        name: binForm.name,
+        code,
+        name,
         status: binForm.status,
       }
       const { data, error } = await supabase
@@ -375,7 +412,13 @@ export function Warehouses() {
           <p className="text-muted-foreground">{t('warehouses.subtitle') ?? ''}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Dialog open={isAddBinDialogOpen} onOpenChange={setIsAddBinDialogOpen}>
+          <Dialog
+            open={isAddBinDialogOpen}
+            onOpenChange={(open) => {
+              setIsAddBinDialogOpen(open)
+              if (!open) resetBinForm()
+            }}
+          >
             <DialogTrigger asChild>
               <Button variant="outline" onClick={resetBinForm} className={isMobile ? 'px-2' : ''} disabled={!canManage}>
                 <Package className="w-4 h-4 mr-2" />
@@ -430,7 +473,13 @@ export function Warehouses() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <Dialog
+            open={isAddDialogOpen}
+            onOpenChange={(open) => {
+              setIsAddDialogOpen(open)
+              if (!open) resetForm()
+            }}
+          >
             <DialogTrigger asChild>
               <Button onClick={resetForm} className={isMobile ? 'px-2' : ''} disabled={!canManage}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -586,7 +635,22 @@ export function Warehouses() {
                         </div>
                         <Badge variant={wh.status === 'active' ? 'default' : 'secondary'}>{warehouseStatusLabel(wh.status)}</Badge>
                         <div className="flex items-center gap-2">
-                          <Dialog>
+                          <Dialog
+                            open={editing?.id === wh.id}
+                            onOpenChange={(open) => {
+                              if (open) {
+                                setEditing(wh)
+                                setForm({
+                                  code: wh.code,
+                                  name: wh.name,
+                                  address: wh.address ?? '',
+                                  status: wh.status,
+                                })
+                                return
+                              }
+                              if (!open && editing?.id === wh.id) resetForm()
+                            }}
+                          >
                             <DialogTrigger asChild>
                               <Button
                                 variant="ghost"

@@ -46,11 +46,17 @@ function isUnknownColumnError(error: unknown) {
 }
 
 function mapRow(r: AnyRow): Notif {
+  const title = String(pick(r, ['title', 'subject', 'header', 'name'], '(no title)') ?? '(no title)')
+  const body = String(pick(r, ['body', 'message', 'content', 'text'], '') ?? '')
+  const rowTimestamp = ts(r)
+  const createdAt = String(rowTimestamp ?? new Date().toISOString())
+  const fallbackId = [rowTimestamp, title, body].filter(Boolean).join(':') || 'notification:unknown'
+
   return {
-    id: String(r.id ?? r.uuid ?? r.pk ?? Math.random().toString(36).slice(2)),
-    title: String(pick(r, ['title', 'subject', 'header', 'name'], '(no title)') ?? '(no title)'),
-    body: String(pick(r, ['body', 'message', 'content', 'text'], '') ?? ''),
-    createdAt: String(ts(r) ?? new Date().toISOString()),
+    id: String(r.id ?? r.uuid ?? r.pk ?? fallbackId),
+    title,
+    body,
+    createdAt,
     readAt: pick(r, ['read_at', 'readAt'], null) ? String(pick(r, ['read_at', 'readAt'])) : null,
     url: pick(r, ['url', 'action_url', 'href'], null),
     level: String(pick(r, ['level', 'severity'], 'info') ?? 'info'),
@@ -75,7 +81,7 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
 
-  const { user } = useAuth() as any
+  const { user } = useAuth()
   const userId: string | null = user?.id ?? null
   const { companyId } = useOrg()
 

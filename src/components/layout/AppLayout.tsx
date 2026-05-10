@@ -1,5 +1,5 @@
 // src/components/layout/AppLayout.tsx
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -110,6 +110,7 @@ function SearchBar({
   return (
     <form
       onSubmit={onSubmit}
+      role="search"
       className={cn(
         'group relative flex h-12 items-center overflow-hidden rounded-[1.25rem] border border-border/60 bg-card/76 shadow-[0_22px_40px_-34px_hsl(var(--foreground)/0.28)] transition-[border-color,box-shadow,background-color] focus-within:border-primary/35 focus-within:bg-background/94 focus-within:shadow-[0_26px_46px_-34px_hsl(var(--primary)/0.35)]',
         className,
@@ -118,6 +119,7 @@ function SearchBar({
       <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/90" />
       <Input
         placeholder={placeholder}
+        aria-label={placeholder}
         className="h-full rounded-none border-0 bg-transparent pl-11 pr-4 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -130,11 +132,14 @@ export function AppLayout({ user, children }: Props) {
   const location = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const { logout } = useAuth() as any
+  const { logout } = useAuth()
   const { companyName, myRole } = useOrg()
   const { t } = useI18n()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
-    withI18nFallback(t, key, fallback, vars)
+  const tt = useCallback(
+    (key: string, fallback: string, vars?: Record<string, string | number>) =>
+      withI18nFallback(t, key, fallback, vars),
+    [t],
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const searchPlaceholder = tt('common.searchPlaceholder', 'Search items, orders, invoices, bills, customers...')
@@ -241,6 +246,7 @@ export function AppLayout({ user, children }: Props) {
       <Link
         to={item.to}
         onClick={() => setOpen(false)}
+        aria-current={active ? 'page' : undefined}
         className={cn(
           'flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200',
           active

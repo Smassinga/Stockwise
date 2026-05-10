@@ -185,12 +185,12 @@ export default function BankDetail() {
     let mounted = true
     ;(async () => {
       try {
-        const code = await getBaseCurrencyCode()
+        const code = await getBaseCurrencyCode(companyId)
         if (mounted && code) setBaseCurrency(code)
       } catch {}
     })()
     return () => { mounted = false }
-  }, [])
+  }, [companyId])
 
   const currency = (bank?.currency_code ?? baseCurrency) || 'MZN'
 

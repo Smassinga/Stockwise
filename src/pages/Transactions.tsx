@@ -104,8 +104,8 @@ export default function Transactions() {
   useEffect(() => {
     (async () => {
       try {
-        setBaseCode((await getBaseCurrencyCode()) || 'MZN')
         if (!companyId) { setItems([]); setRowsAll([]); setSoNoById({}); setPoNoById({}); setSoNotesById({}); return }
+        setBaseCode((await getBaseCurrencyCode(companyId)) || 'MZN')
 
         // Items: scope to company (align with StockLevels)
         const { data: itemsData, error: itemsErr } = await supabase

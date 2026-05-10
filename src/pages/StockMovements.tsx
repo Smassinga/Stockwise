@@ -214,7 +214,7 @@ export default function StockMovements() {
         const [uRes, cRes, base] = await Promise.all([
           supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
           supabase.from('currencies').select('code,name').order('code', { ascending: true }),
-          getBaseCurrencyCode().catch(() => 'MZN'),
+          getBaseCurrencyCode(companyId).catch(() => 'MZN'),
         ])
         if (uRes.error) throw uRes.error
         setUoms((uRes.data || []).map((u: any) => ({ ...u, code: String(u.code || '').toUpperCase() })))

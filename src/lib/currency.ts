@@ -41,11 +41,13 @@ export async function getBaseCurrencyCode(companyId?: string | null): Promise<st
   if (scopedCached) return scopedCached
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('company_settings_view')
-      .select('base_currency_code')
+      .select('company_id,base_currency_code')
       .limit(1)
-      .maybeSingle()
+    if (resolvedCompanyId) query = query.eq('company_id', resolvedCompanyId)
+
+    const { data, error } = await query.maybeSingle()
 
     if (!error && data?.base_currency_code) {
       const code = String(data.base_currency_code)

@@ -70,8 +70,12 @@ export default function CustomersTab() {
     ;(async () => {
       try {
         setLoading(true)
-        setBaseCode(await getBaseCurrencyCode())
-        if (!companyId) return
+        if (!companyId) {
+          setCustomers([])
+          setRows([])
+          return
+        }
+        setBaseCode(await getBaseCurrencyCode(companyId))
 
         const customersRes = await supabase.from('customers').select('id,code,name,company_id').eq('company_id', companyId).order('name', { ascending: true })
         if (customersRes.error) throw customersRes.error

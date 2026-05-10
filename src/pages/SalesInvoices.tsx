@@ -35,19 +35,28 @@ export default function SalesInvoicesPage() {
 
   useEffect(() => {
     if (!companyId) return
+    let active = true
     ;(async () => {
       try {
         const code = await getBaseCurrencyCode(companyId)
-        if (code) setBaseCode(code)
+        if (active && code) setBaseCode(code)
       } catch {
-        setBaseCode('MZN')
+        if (active) setBaseCode('MZN')
       }
     })()
+    return () => {
+      active = false
+    }
   }, [companyId])
 
   useEffect(() => {
-    if (error) toast.error(error.message || tt('financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoices'))
-  }, [error, tt])
+    if (error) {
+      toast.error(
+        error.message ||
+          withI18nFallback(t, 'financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoices'),
+      )
+    }
+  }, [error, t])
 
   const formatDocumentMoney = (amount: number, code: string) =>
     new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {

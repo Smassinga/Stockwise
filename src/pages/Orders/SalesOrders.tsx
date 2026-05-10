@@ -766,7 +766,7 @@ export default function SalesOrders() {
     ;(async () => {
       try {
         // 0) base currency for this company
-        setBaseCode(await getBaseCurrencyCode())
+        setBaseCode(await getBaseCurrencyCode(companyId))
 
         // 1) currencies scoped to company
         const cs = await supabase

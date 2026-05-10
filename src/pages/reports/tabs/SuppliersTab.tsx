@@ -70,8 +70,12 @@ export default function SuppliersTab() {
     ;(async () => {
       try {
         setLoading(true)
-        setBaseCode(await getBaseCurrencyCode())
-        if (!companyId) return
+        if (!companyId) {
+          setSuppliers([])
+          setRows([])
+          return
+        }
+        setBaseCode(await getBaseCurrencyCode(companyId))
 
         const suppliersRes = await supabase.from('suppliers').select('id,code,name,company_id').eq('company_id', companyId).order('name', { ascending: true })
         if (suppliersRes.error) throw suppliersRes.error

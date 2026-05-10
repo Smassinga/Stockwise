@@ -229,7 +229,7 @@ export default function ItemsPage() {
   async function loadPage() {
     try {
       setLoading(true)
-      const currencyCode = await getBaseCurrencyCode().catch(() => 'MZN')
+      const currencyCode = await getBaseCurrencyCode(companyId).catch(() => 'MZN')
       setBaseCurrencyCode(currencyCode || 'MZN')
       await Promise.all([loadUoms(), loadItems()])
     } catch (error: any) {

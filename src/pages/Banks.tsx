@@ -81,7 +81,7 @@ export default function Banks() {
     let mounted = true
     ;(async () => {
       try {
-        const code = await getBaseCurrencyCode()
+        const code = await getBaseCurrencyCode(companyId)
         if (!mounted || !code) return
         setBaseCurrency(code)
         setForm((current) => (current.currency_code ? current : { ...current, currency_code: code }))
@@ -92,7 +92,7 @@ export default function Banks() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [companyId])
 
   useEffect(() => {
     if (!companyId) return
@@ -133,6 +133,10 @@ export default function Banks() {
       toast.error(tf('banks.toast.noPermission', 'You do not have permission to manage bank accounts'))
       return
     }
+    if (!companyId) {
+      toast.error(tf('org.noCompany', 'Join or create a company first'))
+      return
+    }
     if (!form.name.trim()) {
       toast.error(tf('banks.required.nickname', 'Enter an internal nickname for this bank account'))
       return
@@ -149,7 +153,7 @@ export default function Banks() {
         swift: form.swift.trim() || null,
         nib: form.nib.trim() || null,
       }
-      if (companyId) payload.company_id = companyId
+      payload.company_id = companyId
 
       const { error } = await supabase.from('bank_accounts').insert(payload)
       if (error) throw error
@@ -322,7 +326,7 @@ export default function Banks() {
             <CardTitle className="text-sm font-medium text-muted-foreground">{tf('banks.summary.balance', 'Combined bank position')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{formatMoneyBase(totalBalance)}</div>
+            <div className="text-3xl font-semibold">{formatMoneyBase(totalBalance, baseCurrency)}</div>
             <div className="text-xs text-muted-foreground">{tf('banks.summary.balanceHelp', 'Current book balance across every configured bank account in base currency.')}</div>
           </CardContent>
         </Card>
@@ -387,7 +391,7 @@ export default function Banks() {
                         {tf('banks.balanceBase', 'Book balance')}
                       </div>
                       <div className="mt-1 text-3xl font-semibold tracking-tight">
-                        {formatMoneyBase(balances[row.id] ?? 0)}
+                        {formatMoneyBase(balances[row.id] ?? 0, baseCurrency)}
                       </div>
                     </div>
 
