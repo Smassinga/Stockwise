@@ -62,15 +62,14 @@ type CompletionState = {
 
 const copyByLang = {
   en: {
-    subtitle: 'Secure onboarding keeps company access intentional from the first sign-in.',
-    heroTitle: 'Finish setting up your StockWise workspace.',
+    subtitle: 'Company setup should clarify access before live stock and finance work begins.',
+    heroTitle: 'Set up the workspace that will hold stock, cash, and fiscal records.',
     heroBody:
-      'Join an invited company or create a new one without filling every legal and fiscal detail upfront. The rest can be completed later in Settings.',
+      'Join an invited company or create a new one with only the minimum details, then complete fiscal identity, bank details, users, stock, and opening data in the right order.',
     highlights: [
-      'Choose between joining an invited company and creating a new one',
-      'Minimal company setup first, deeper profile completion later',
-      'Invitation acceptance stays bound to the correct invited account',
-      'Next-step actions stay visible after the first company is ready',
+      'Choose between joining an invited company and creating a new workspace',
+      'Start with minimum company details, then complete fiscal and bank records',
+      'Next-step actions keep stock setup, users, and opening data visible',
     ],
     progressLabel: 'Onboarding progress',
     progressChoose: 'Choose your workspace path',
@@ -158,15 +157,14 @@ const copyByLang = {
       'You can switch back to the invite path later. Creating a company does not delete your pending invitations.',
   },
   pt: {
-    subtitle: 'Um onboarding seguro mantém o acesso à empresa intencional desde o primeiro login.',
-    heroTitle: 'Conclua a configuração do seu workspace StockWise.',
+    subtitle: 'A configuração da empresa deve clarificar acessos antes de trabalho real de stock e finanças.',
+    heroTitle: 'Configure o workspace que vai guardar stock, caixa e registos fiscais.',
     heroBody:
-      'Entre numa empresa convidada ou crie uma nova sem preencher já todos os dados legais e fiscais. O restante pode ser concluído mais tarde nas Definições.',
+      'Entre numa empresa convidada ou crie uma nova com apenas os dados mínimos, depois complete identidade fiscal, dados bancários, utilizadores, stock e dados iniciais na ordem certa.',
     highlights: [
-      'Escolha entre entrar numa empresa convidada e criar uma nova',
-      'Primeiro uma configuração mínima da empresa, depois o perfil completo',
-      'A aceitação do convite continua ligada à conta convidada correta',
-      'Os próximos passos continuam visíveis depois da primeira empresa ficar pronta',
+      'Escolha entre entrar numa empresa convidada e criar um novo workspace',
+      'Comece com dados mínimos da empresa, depois complete registos fiscais e bancários',
+      'Os próximos passos mantêm stock, utilizadores e dados iniciais visíveis',
     ],
     progressLabel: 'Progresso do onboarding',
     progressChoose: 'Escolha o caminho do seu workspace',

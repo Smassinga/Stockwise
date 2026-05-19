@@ -10,11 +10,14 @@ type RouteMeta = {
 
 function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
   const t = {
-    landingTitle: lang === 'pt' ? 'StockWise - Operações de stock e finanças' : 'StockWise - Stock and finance operations',
+    landingTitle:
+      lang === 'pt'
+        ? 'StockWise - Stock, vendas, compras e pagamentos'
+        : 'StockWise - Stock, sales, purchases, and payments',
     landingDescription:
       lang === 'pt'
-        ? 'Controle stock, encomendas, bancos, caixa e finanças a partir de um único sistema operacional.'
-        : 'Control stock, orders, banks, cash, and finance from one operational system.',
+        ? 'Ligue inventário, faturas, vendor bills, liquidações e registos em MZN para decisões mais claras em empresas de Moçambique.'
+        : 'Connect inventory, invoices, vendor bills, settlements, and MZN records for clearer decisions in Mozambique-based businesses.',
     appDescription:
       lang === 'pt'
         ? 'Workspace autenticado do StockWise para stock, encomendas, caixa, bancos e reporting.'

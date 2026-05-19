@@ -103,7 +103,7 @@
     @apply bg-background text-foreground font-sans;
 
     font-feature-settings: "rlig" 1, "calt" 1;
-    text-rendering: optimizeLegibility;
+    text-rendering: optimizelegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
@@ -170,7 +170,7 @@
   .app-page table thead,
   .mobile-container table thead,
   .mx-auto.max-w-7xl table thead {
-    background: hsl(var(--muted) / 0.42);
+    background: hsl(var(--muted) / 42%);
   }
 
   .app-page table th,
@@ -178,7 +178,7 @@
   .mx-auto.max-w-7xl table th {
     height: 2.75rem;
     padding: 0.7rem 0.75rem;
-    border-bottom: 1px solid hsl(var(--border) / 0.72);
+    border-bottom: 1px solid hsl(var(--border) / 72%);
     color: hsl(var(--muted-foreground));
     font-size: 0.69rem;
     font-weight: 700;
@@ -193,7 +193,7 @@
   .mobile-container table td,
   .mx-auto.max-w-7xl table td {
     padding: 0.75rem;
-    border-bottom: 1px solid hsl(var(--border) / 0.48);
+    border-bottom: 1px solid hsl(var(--border) / 48%);
     line-height: 1.5rem;
     vertical-align: middle;
   }
@@ -207,13 +207,13 @@
   .app-page table tbody tr:hover,
   .mobile-container table tbody tr:hover,
   .mx-auto.max-w-7xl table tbody tr:hover {
-    background: hsl(var(--muted) / 0.22);
+    background: hsl(var(--muted) / 22%);
   }
 
   .app-page table tbody tr[data-state='selected'],
   .mobile-container table tbody tr[data-state='selected'],
   .mx-auto.max-w-7xl table tbody tr[data-state='selected'] {
-    background: hsl(var(--primary) / 0.075);
+    background: hsl(var(--primary) / 7.5%);
   }
 
   .app-page table th.text-right,
@@ -245,10 +245,10 @@
   .dark .app-page table thead,
   .dark .mobile-container table thead,
   .dark .mx-auto.max-w-7xl table thead {
-    background: hsl(var(--muted) / 0.24);
+    background: hsl(var(--muted) / 24%);
   }
 
-  @media (max-width: 767px) {
+  @media (width <= 767px) {
     main > div,
     main > section,
     .mobile-container,
@@ -282,7 +282,7 @@
     }
   }
 
-  @media (min-width: 768px) {
+  @media (width >= 768px) {
     .app-page {
       gap: 1.75rem;
     }
@@ -292,7 +292,7 @@
     }
   }
 
-  @media (min-width: 1280px) {
+  @media (width >= 1280px) {
     .app-page {
       gap: 2rem;
     }
@@ -306,7 +306,7 @@
     }
   }
 
-  @media (min-width: 1600px) {
+  @media (width >= 1600px) {
     .app-page {
       max-width: 112rem;
     }

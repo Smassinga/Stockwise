@@ -21,8 +21,9 @@ export default function PublicAuthShell({
   highlights,
 }: Props) {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="absolute inset-x-0 top-0 -z-10 h-[440px] bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.16),_transparent_44%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.16),_transparent_28%)]" />
+    <div className="relative min-h-screen overflow-hidden bg-background">
+      <div className="absolute inset-x-0 top-0 -z-10 h-[520px] bg-gradient-to-b from-primary/10 via-muted/35 to-background" />
+      <div className="pointer-events-none absolute inset-y-0 left-1/2 -z-10 hidden w-px bg-border/60 lg:block" />
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3">
           <Link to="/">
@@ -35,28 +36,30 @@ export default function PublicAuthShell({
         </div>
 
         <div className="flex flex-1 items-center py-8 lg:py-12">
-          <div className="grid w-full gap-8 lg:grid-cols-[1fr_460px] lg:items-center">
+          <div className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] lg:items-center">
             <div className="hidden max-w-xl lg:block">
-              <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary">
+              <div className="inline-flex items-center rounded-full border border-primary/20 bg-background/90 px-4 py-2 text-sm font-medium text-primary shadow-sm">
                 <ShieldCheck className="mr-2 h-4 w-4" />
                 StockWise
               </div>
-              <h1 className="mt-6 text-4xl font-semibold tracking-tight">{heroTitle}</h1>
+              <h1 className="mt-6 text-4xl font-semibold leading-tight">{heroTitle}</h1>
               <p className="mt-5 text-lg leading-8 text-muted-foreground">{heroBody}</p>
-              <div className="mt-8 space-y-3">
+              <div className="mt-8 grid gap-3">
                 {highlights.map((item) => (
                   <div
                     key={item}
-                    className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background/85 p-4 shadow-sm"
+                    className="group flex items-start gap-3 rounded-2xl border border-border/70 bg-background/88 p-4 shadow-sm transition-[transform,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:border-primary/25"
                   >
-                    <Warehouse className="mt-0.5 h-4 w-4 text-primary" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
+                      <Warehouse className="h-4 w-4" />
+                    </span>
                     <span className="text-sm text-muted-foreground">{item}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div>{children}</div>
+            <div className="min-w-0">{children}</div>
           </div>
         </div>
       </div>

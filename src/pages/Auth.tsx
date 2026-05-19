@@ -71,10 +71,10 @@ type Copy = {
 
 const copyByLang: Record<'en' | 'pt', Copy> = {
   en: {
-    subtitle: 'Inventory operations, order execution, and cash visibility in one workspace.',
+    subtitle: 'Stock, invoices, settlements, and MZN records in one workspace.',
     signInTitle: 'Sign in to StockWise',
     signUpTitle: 'Create your StockWise account',
-    signInBody: 'Access your dashboard, warehouses, orders, cash, and reports.',
+    signInBody: 'Access your dashboard, stock, invoices, settlements, vendor bills, cash, and reports.',
     signUpBody: 'Create your login first, then continue straight to company setup.',
     name: 'Full name',
     namePlaceholder: 'Full name',
@@ -119,22 +119,22 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     signUpSupport:
       'After account creation, StockWise will either sign you in immediately or ask for email verification, depending on your workspace security settings.',
     wrongBrowserHint: 'Open verification and reset links in the same browser session you used here.',
-    heroTitle: 'Keep stock, orders, and margin aligned.',
+    heroTitle: 'See stock, cash, and open balances before the next decision.',
     heroBody:
-      'StockWise is the operating layer for teams that need inventory movement, order flow, and financial visibility to stay connected.',
+      'StockWise keeps inventory movement, finance documents, vendor bills, and settlements connected so the workspace you enter is ready for action.',
     highlights: [
-      'Protected dashboard and internal routes',
-      'Inventory, warehouses, cash, and reporting in one app',
-      'EN/PT language toggle carried across public and authenticated screens',
+      'Stock and warehouse signals stay beside sales and purchases',
+      'Invoices, vendor bills, and settlements keep balances visible',
+      'PT/EN output and MZN-first records carry into the workspace',
     ],
     showPasswordLabel: 'Show password',
     hidePasswordLabel: 'Hide password',
   },
   pt: {
-    subtitle: 'Operações de inventário, execução de encomendas e visibilidade de caixa num só workspace.',
+    subtitle: 'Stock, faturas, liquidações e registos em MZN no mesmo workspace.',
     signInTitle: 'Iniciar sessão no StockWise',
     signUpTitle: 'Criar a sua conta no StockWise',
-    signInBody: 'Aceda ao dashboard, armazéns, encomendas, caixa e relatórios.',
+    signInBody: 'Aceda ao dashboard, stock, faturas, liquidações, vendor bills, caixa e relatórios.',
     signUpBody: 'Crie primeiro o seu acesso e siga diretamente para a configuração da empresa.',
     name: 'Nome completo',
     namePlaceholder: 'Nome completo',
@@ -179,13 +179,13 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     signUpSupport:
       'Depois de criar a conta, o StockWise vai iniciar sessão automaticamente ou pedir verificação por e-mail, conforme a política de segurança ativa.',
     wrongBrowserHint: 'Abra links de verificação e recuperação no mesmo navegador usado aqui.',
-    heroTitle: 'Mantenha stock, encomendas e margem alinhados.',
+    heroTitle: 'Veja stock, caixa e saldos em aberto antes da próxima decisão.',
     heroBody:
-      'O StockWise liga movimento de inventário, fluxo de encomendas e visibilidade financeira num único workspace operacional.',
+      'O StockWise mantém movimento de inventário, documentos financeiros, vendor bills e liquidações ligados para que o workspace esteja pronto para ação.',
     highlights: [
-      'Dashboard e rotas internas protegidas',
-      'Inventário, armazéns, caixa e relatórios na mesma aplicação',
-      'Alternância EN/PT preservada entre ecrãs públicos e autenticados',
+      'Sinais de stock e armazém ficam próximos de vendas e compras',
+      'Faturas, vendor bills e liquidações mantêm saldos visíveis',
+      'Saída PT/EN e registos primeiro em MZN seguem para o workspace',
     ],
     showPasswordLabel: 'Mostrar palavra-passe',
     hidePasswordLabel: 'Ocultar palavra-passe',
