@@ -16,8 +16,8 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
         : 'StockWise - Stock, sales, purchases, and payments',
     landingDescription:
       lang === 'pt'
-        ? 'Ligue inventário, faturas, vendor bills, liquidações e registos em MZN para decisões mais claras em empresas de Moçambique.'
-        : 'Connect inventory, invoices, vendor bills, settlements, and MZN records for clearer decisions in Mozambique-based businesses.',
+        ? 'Ligue inventário, vendas, compras, faturas, vendor bills, liquidações e registos para decisões mais claras em empresas de Moçambique.'
+        : 'Connect inventory, sales, purchases, invoices, vendor bills, settlements, and Mozambique-ready records for clearer business decisions.',
     appDescription:
       lang === 'pt'
         ? 'Workspace autenticado do StockWise para stock, encomendas, caixa, bancos e reporting.'

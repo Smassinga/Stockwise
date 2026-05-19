@@ -145,20 +145,20 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     heroEyebrow: 'Mozambique-focused operations, records, and cash visibility',
     heroTitle: 'Run stock, sales, purchases, and payments from one decision-ready system.',
     heroBody:
-      'StockWise helps growing businesses in Mozambique connect inventory, invoices, vendor bills, settlements, and fiscal-ready records, so owners can see what is moving, what is owed, and what needs action.',
-    heroSupport: 'MZN-first pricing and records. Built by WiseCore Technologies, Lda.',
+      'StockWise helps growing businesses in Mozambique connect inventory, invoices, vendor bills, settlements, and fiscal-ready records, so owners can see what is moving, what is unpaid, and where stock needs attention.',
+    heroSupport: 'Plan prices are shown in MZN. Built by WiseCore Technologies, Lda.',
     activationNote:
       'Every new company starts with a 7-day trial. Paid access is still activated manually by the StockWise team.',
-    primaryCta: 'Start with StockWise',
+    primaryCta: 'Start 7-day trial',
     secondaryCta: 'View how it works',
     proof: [
-      { value: 'MZN-first', label: 'pricing and records' },
+      { value: 'MZN', label: 'plan prices shown clearly' },
       { value: 'PT/EN', label: 'document output' },
       { value: '7-day', label: 'trial before activation' },
     ],
     trustPoints: [
       'Built for Mozambique-based stock, sales, purchasing, and settlement workflows.',
-      'MZN-first pricing and operational records.',
+      'Plan prices are shown in MZN for clarity.',
       'Finance-document flow designed around invoices, vendor bills, settlements, and compliance exports.',
       'WiseCore Technologies, Lda.',
     ],
@@ -217,7 +217,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       },
       {
         title: 'Prepare records with context',
-        body: 'MZN values, finance-document history, and Mozambique compliance exports stay connected to the work that created them.',
+        body: 'Values, finance-document history, and Mozambique compliance exports stay connected to the work that created them.',
         points: ['MZN records', 'Document trail', 'Compliance export'],
         icon: 'compliance',
       },
@@ -225,12 +225,12 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     pricingEyebrow: 'Commercial plans',
     pricingTitle: 'Pricing',
     pricingBody:
-      'Choose the operational depth and support level that fits the business. Pricing stays public in MZN while paid access is still activated manually by StockWise.',
+      'Choose the operational depth and support level that fits the business. Plan prices are shown in MZN, and paid access is still activated manually by StockWise.',
     pricingFootnote:
-      'Automatic checkout is not active. Trial access, activation, and rollout are handled directly by the StockWise team.',
+      'Automatic checkout is not active. Trial access, activation, onboarding support, and rollout are handled directly by the StockWise team.',
     finalTitle: 'Ready to see stock, cash, and open balances in one place?',
     finalBody:
-      'Start the trial, review the workflow, or talk to StockWise about a managed rollout for a live workspace.',
+      'Start the 7-day trial, review the workflow, or talk to StockWise about a managed rollout for a live workspace.',
     finalPrimary: 'Open StockWise',
     finalSecondary: 'Talk to us',
     signIn: 'Sign in',
@@ -252,7 +252,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       requestActivation: 'Request activation',
       bookDemo: 'Book a demo',
       talkToUs: 'Talk to us',
-      trial: '7-day trial',
+      trial: 'Start 7-day trial',
       sampleView: 'Sample operating view',
     },
     managedPricingNoteTitle: 'Managed engagement',
@@ -301,20 +301,20 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     heroEyebrow: 'Operações, registos e caixa focados em Moçambique',
     heroTitle: 'Controle stock, vendas, compras e pagamentos num sistema pronto para decisão.',
     heroBody:
-      'O StockWise ajuda empresas em crescimento em Moçambique a ligar inventário, faturas, vendor bills, liquidações e registos preparados para fiscalidade, para que os donos vejam o que está a mexer, o que está em dívida e o que exige ação.',
-    heroSupport: 'Preços e registos primeiro em MZN. Criado pela WiseCore Technologies, Lda.',
+      'O StockWise ajuda empresas em crescimento em Moçambique a ligar inventário, faturas, vendor bills, liquidações e registos preparados para fiscalidade, para que os donos vejam o que está a mexer, o que está por pagar e onde o stock precisa de atenção.',
+    heroSupport: 'Os preços dos planos são mostrados em MZN. Criado pela WiseCore Technologies, Lda.',
     activationNote:
       'Cada nova empresa começa com um teste de 7 dias. O acesso pago continua a ser ativado manualmente pela equipa StockWise.',
-    primaryCta: 'Começar com StockWise',
+    primaryCta: 'Iniciar teste de 7 dias',
     secondaryCta: 'Ver como funciona',
     proof: [
-      { value: 'MZN', label: 'preços e registos' },
+      { value: 'MZN', label: 'preços dos planos claros' },
       { value: 'PT/EN', label: 'saída documental' },
       { value: '7 dias', label: 'teste antes da ativação' },
     ],
     trustPoints: [
       'Criado para fluxos de stock, vendas, compras e liquidações em empresas de Moçambique.',
-      'Preços e registos operacionais primeiro em MZN.',
+      'Os preços dos planos são mostrados em MZN para clareza.',
       'Fluxo documental financeiro desenhado para faturas, vendor bills, liquidações e exportações de conformidade.',
       'WiseCore Technologies, Lda.',
     ],
@@ -373,7 +373,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       },
       {
         title: 'Prepare registos com contexto',
-        body: 'Valores em MZN, histórico documental e exportações de conformidade continuam ligados ao trabalho que os criou.',
+        body: 'Valores, histórico documental e exportações de conformidade em Moçambique continuam ligados ao trabalho que os criou.',
         points: ['Registos em MZN', 'Trilho documental', 'Exportação de conformidade'],
         icon: 'compliance',
       },
@@ -381,12 +381,12 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     pricingEyebrow: 'Planos comerciais',
     pricingTitle: 'Preços',
     pricingBody:
-      'Escolha o nível de controlo operacional e suporte que faz sentido para o negócio. Os valores continuam públicos em MZN enquanto o acesso pago é ativado manualmente pela StockWise.',
+      'Escolha o nível de controlo operacional e suporte que faz sentido para o negócio. Os preços dos planos são mostrados em MZN, e o acesso pago continua a ser ativado manualmente pela StockWise.',
     pricingFootnote:
-      'O checkout automático ainda não está ativo. O teste, a ativação e o rollout são tratados diretamente pela equipa StockWise.',
+      'O checkout automático ainda não está ativo. O teste, a ativação, o suporte de onboarding e o rollout são tratados diretamente pela equipa StockWise.',
     finalTitle: 'Pronto para ver stock, caixa e saldos em aberto no mesmo lugar?',
     finalBody:
-      'Comece o teste, reveja o fluxo ou fale com a StockWise sobre uma implementação acompanhada para um workspace real.',
+      'Inicie o teste de 7 dias, reveja o fluxo ou fale com a StockWise sobre uma implementação acompanhada para um workspace real.',
     finalPrimary: 'Abrir StockWise',
     finalSecondary: 'Falar connosco',
     signIn: 'Iniciar sessão',
@@ -408,7 +408,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
       requestActivation: 'Pedir ativação',
       bookDemo: 'Marcar demonstração',
       talkToUs: 'Falar connosco',
-      trial: 'Teste de 7 dias',
+      trial: 'Iniciar teste de 7 dias',
       sampleView: 'Visão operacional de exemplo',
     },
     managedPricingNoteTitle: 'Engajamento gerido',
@@ -1041,18 +1041,26 @@ export default function LandingPage() {
               <div className="group/nav relative">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
+                  aria-haspopup="true"
+                  data-product-trigger
+                  className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   {copy.productLabel}
                   <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-hover/nav:rotate-180 group-focus-within/nav:rotate-180" />
                 </button>
-                <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-3 w-[760px] -translate-x-1/2 opacity-0 transition-[opacity,transform] duration-200 group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:opacity-100 group-focus-within/nav:pointer-events-auto group-focus-within/nav:translate-y-0 group-focus-within/nav:opacity-100">
-                  <div className="grid grid-cols-[1fr_1fr] gap-2 rounded-[1.4rem] border border-border/70 bg-background/96 p-3 shadow-[0_32px_90px_-54px_rgba(15,23,42,0.55)] backdrop-blur">
+                <div
+                  data-product-menu
+                  className="pointer-events-none absolute left-1/2 top-full z-50 mt-3 w-[760px] -translate-x-1/2 translate-y-1 opacity-0 transition-[opacity,transform] duration-200 group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:opacity-100 group-focus-within/nav:pointer-events-auto group-focus-within/nav:translate-y-0 group-focus-within/nav:opacity-100"
+                >
+                  <div
+                    data-product-menu-panel
+                    className="grid grid-cols-[1fr_1fr] gap-2 rounded-[1.4rem] border border-slate-200/90 bg-white p-3 shadow-[0_30px_90px_-48px_rgba(15,23,42,0.45)] ring-1 ring-slate-950/5 dark:border-slate-700/80 dark:bg-slate-950 dark:shadow-[0_30px_90px_-42px_rgba(0,0,0,0.8)] dark:ring-white/10"
+                  >
                     {copy.productMenu.map((item) => (
                       <a
                         key={item.title}
                         href={item.href}
-                        className="group/item flex gap-3 rounded-2xl border border-transparent p-3 transition-colors hover:border-primary/15 hover:bg-primary/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+                        className="group/item flex gap-3 rounded-2xl border border-transparent p-3 transition-colors hover:border-primary/20 hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:hover:bg-sky-400/10"
                       >
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-primary">
                           <ProductIcon name={item.icon} className="h-5 w-5" />
@@ -1071,7 +1079,7 @@ export default function LandingPage() {
                 <a
                   key={item.href}
                   href={item.href}
-                  className="rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  className="rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   {item.label}
                 </a>
@@ -1116,7 +1124,7 @@ export default function LandingPage() {
                       <a
                         key={item.href}
                         href={item.href}
-                        className="flex items-start gap-3 rounded-xl px-3 py-2 text-sm hover:bg-background"
+                        className="flex items-start gap-3 rounded-xl px-3 py-2 text-sm hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
                         onClick={() => setMenuOpen(false)}
                       >
                         <ProductIcon name={item.icon} className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -1132,7 +1140,7 @@ export default function LandingPage() {
                   <a
                     key={item.href}
                     href={item.href}
-                    className="rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    className="rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.label}

@@ -71,7 +71,7 @@ type Copy = {
 
 const copyByLang: Record<'en' | 'pt', Copy> = {
   en: {
-    subtitle: 'Stock, invoices, settlements, and MZN records in one workspace.',
+    subtitle: 'Stock, invoices, settlements, and records in one workspace.',
     signInTitle: 'Sign in to StockWise',
     signUpTitle: 'Create your StockWise account',
     signInBody: 'Access your dashboard, stock, invoices, settlements, vendor bills, cash, and reports.',
@@ -125,13 +125,13 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     highlights: [
       'Stock and warehouse signals stay beside sales and purchases',
       'Invoices, vendor bills, and settlements keep balances visible',
-      'PT/EN output and MZN-first records carry into the workspace',
+      'PT/EN output and records in MZN carry into the workspace',
     ],
     showPasswordLabel: 'Show password',
     hidePasswordLabel: 'Hide password',
   },
   pt: {
-    subtitle: 'Stock, faturas, liquidações e registos em MZN no mesmo workspace.',
+    subtitle: 'Stock, faturas, liquidações e registos no mesmo workspace.',
     signInTitle: 'Iniciar sessão no StockWise',
     signUpTitle: 'Criar a sua conta no StockWise',
     signInBody: 'Aceda ao dashboard, stock, faturas, liquidações, vendor bills, caixa e relatórios.',
@@ -185,7 +185,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     highlights: [
       'Sinais de stock e armazém ficam próximos de vendas e compras',
       'Faturas, vendor bills e liquidações mantêm saldos visíveis',
-      'Saída PT/EN e registos primeiro em MZN seguem para o workspace',
+      'Saída PT/EN e registos em MZN seguem para o workspace',
     ],
     showPasswordLabel: 'Mostrar palavra-passe',
     hidePasswordLabel: 'Ocultar palavra-passe',
