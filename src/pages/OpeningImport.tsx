@@ -13,7 +13,7 @@ import { downloadImportTemplate, readImportWorkbook, type ParsedImportRow } from
 import { profileFromRole, type ItemPrimaryRole } from '../lib/itemProfiles'
 import { can } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
-import { buildConvGraph, tryConvertQty } from '../lib/uom'
+import { buildConvGraph, normalizeUomCodeInput, tryConvertQty } from '../lib/uom'
 
 type DatasetKey = 'items' | 'customers' | 'suppliers' | 'locations' | 'opening_stock'
 
@@ -409,7 +409,7 @@ export default function OpeningImport() {
           const rowNo = index + 2
           const sku = row.sku?.trim().toUpperCase() || ''
           const name = row.name?.trim() || ''
-          const uomCode = row.base_uom_code?.trim().toUpperCase() || ''
+          const uomCode = normalizeUomCodeInput(row.base_uom_code)
           const role = normalizeRole(row.primary_role || '') || 'general'
 
           if (!sku) issues.push({ row: rowNo, field: 'sku', message: msg('SKU is required.', 'O SKU é obrigatório.') })
@@ -610,7 +610,7 @@ export default function OpeningImport() {
           if (!bin) issues.push({ row: rowNo, field: 'bin_code', message: msg('Bin code was not found for the selected warehouse.', 'O código do bin não foi encontrado para o armazém selecionado.') })
 
           const itemBaseUom = item?.baseUomId ? uoms.find((uom) => uom.id === item.baseUomId) : null
-          const enteredUomCode = row.uom_code?.trim().toUpperCase() || itemBaseUom?.code || ''
+          const enteredUomCode = normalizeUomCodeInput(row.uom_code) || itemBaseUom?.code || ''
           const enteredUom = uomByCode.get(enteredUomCode)
           if (enteredUomCode && !enteredUom) issues.push({ row: rowNo, field: 'uom_code', message: msg('UOM code was not found.', 'O código da UOM não foi encontrado.') })
 

@@ -14,6 +14,7 @@ import {
   type ItemProfileState,
   type ItemProfileWarningCode,
 } from '../lib/itemProfiles'
+import { familySortIndex, isReusableUomCode } from '../lib/uom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -187,7 +188,10 @@ export default function ItemsPage() {
       groups.get(family)!.push(u)
     }
     for (const rows of groups.values()) rows.sort((a, b) => a.code.localeCompare(b.code))
-    const families = Array.from(groups.keys()).sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
+    const families = Array.from(groups.keys()).sort((a, b) => {
+      const familyOrder = familySortIndex(a) - familySortIndex(b)
+      return familyOrder || familyLabel(a).localeCompare(familyLabel(b))
+    })
     return { groups, families }
   }, [uoms])
 
@@ -242,12 +246,14 @@ export default function ItemsPage() {
 
   async function loadUoms() {
     const normalize = (rows: any[]): Uom[] =>
-      (rows ?? []).map((row: any) => ({
-        id: String(row.id),
-        code: String(row.code ?? '').toUpperCase(),
-        name: String(row.name ?? ''),
-        family: String(row.family ?? '').trim() || 'unspecified',
-      }))
+      (rows ?? [])
+        .map((row: any) => ({
+          id: String(row.id),
+          code: String(row.code ?? '').toUpperCase(),
+          name: String(row.name ?? ''),
+          family: String(row.family ?? '').trim() || 'unspecified',
+        }))
+        .filter((row) => isReusableUomCode(row.code))
 
     const safeSelect = async (table: 'uoms' | 'uom', fields: string) => supabase.from(table).select(fields).order('code', { ascending: true })
 

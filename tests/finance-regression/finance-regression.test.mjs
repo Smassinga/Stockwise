@@ -332,29 +332,32 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     if (managerMembership.error) throw managerMembership.error
     await setActiveCompany(managerClient, companyId)
 
+    const { data: existingDefaultUoms, error: existingDefaultUomsError } = await ownerClient
+      .from('uoms')
+      .select('id, code')
+      .in('code', ['EA', 'BOX'])
+    if (existingDefaultUomsError) throw existingDefaultUomsError
+
+    const existingDefaultCodes = new Set((existingDefaultUoms || []).map((row) => row.code))
+    const missingDefaultUoms = [
+      { id: 'uom_ea', code: 'EA', name: 'Each', family: 'count' },
+      { id: 'uom_box', code: 'BOX', name: 'Box', family: 'count' },
+    ].filter((row) => !existingDefaultCodes.has(row.code))
+    if (missingDefaultUoms.length) {
+      const missingInsert = await ownerClient.from('uoms').insert(missingDefaultUoms)
+      if (missingInsert.error) throw missingInsert.error
+    }
+
     const { data: uoms, error: uomsError } = await ownerClient
       .from('uoms')
-      .insert([
-        { code: `${PREFIX.toUpperCase()}-EA`, name: 'Each', family: 'count' },
-        { code: `${PREFIX.toUpperCase()}-BOX`, name: 'Box', family: 'count' },
-      ])
       .select('id, code')
+      .in('code', ['EA', 'BOX'])
     if (uomsError) throw uomsError
     assert.equal(uoms.length, 2)
-    eachUomId = uoms.find((row) => row.code.endsWith('-EA'))?.id ?? null
-    boxUomId = uoms.find((row) => row.code.endsWith('-BOX'))?.id ?? null
-    assert.ok(eachUomId, 'Expected the base Each UOM to exist')
-    assert.ok(boxUomId, 'Expected the Box UOM to exist')
-    created.uomIds.add(eachUomId)
-    created.uomIds.add(boxUomId)
-
-    const { error: conversionError } = await ownerClient.from('uom_conversions').insert({
-      from_uom_id: boxUomId,
-      to_uom_id: eachUomId,
-      factor: 12,
-      company_id: companyId,
-    })
-    if (conversionError) throw conversionError
+    eachUomId = uoms.find((row) => row.code === 'EA')?.id ?? null
+    boxUomId = uoms.find((row) => row.code === 'BOX')?.id ?? null
+    assert.ok(eachUomId, 'Expected the canonical Each UOM to exist')
+    assert.ok(boxUomId, 'Expected the canonical Box UOM to exist')
 
     const companyUpdate = await ownerClient
       .from('companies')
@@ -1523,7 +1526,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     const { data: reactivatedUom, error: reactivatedUomError } = await ownerClient
       .from('uoms')
       .insert({
-        code: `${PREFIX.toUpperCase()}-REA`,
+        code: `${PREFIX.toUpperCase()}REA`,
         name: 'Reactivated unit',
         family: 'count',
       })

@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
-import { buildConvGraph, tryConvertQty, type ConvRow } from '../lib/uom'
+import { buildConvGraph, familySortIndex, isReusableUomCode, normalizeUomCodeInput, type ConvRow } from '../lib/uom'
 import { can, type CompanyRole } from '../lib/permissions'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -60,7 +60,10 @@ export default function UomSettings() {
       groups.get(currentFamily)!.push(uom)
     }
     for (const list of groups.values()) list.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
-    return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+    return Array.from(groups.entries()).sort((a, b) => {
+      const familyOrder = familySortIndex(a[0]) - familySortIndex(b[0])
+      return familyOrder || a[0].localeCompare(b[0])
+    })
   }, [uoms])
 
   useEffect(() => {
@@ -79,7 +82,7 @@ export default function UomSettings() {
       const normalizedUnits = (units.data || []).map((row: any) => ({
         ...row,
         code: String(row.code || '').toUpperCase(),
-      })) as Uom[]
+      })).filter((row: Uom) => isReusableUomCode(row.code)) as Uom[]
       setUoms(normalizedUnits)
 
       let convQuery = supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor,company_id')
@@ -109,10 +112,18 @@ export default function UomSettings() {
       toast.error(tt('uom.toast.noUnitPermission', 'You do not have permission to manage units'))
       return
     }
-    const normalizedCode = code.trim().toUpperCase()
+    const normalizedCode = normalizeUomCodeInput(code)
     const normalizedName = name.trim()
     if (!normalizedCode || !normalizedName) {
       toast.error(tt('uom.required', 'Code and name are required'))
+      return
+    }
+    if (!isReusableUomCode(normalizedCode)) {
+      toast.error(tt('uom.invalidGeneratedCode', 'Use a reusable unit code such as EA, KG, L, BOX, or PACK. Item-specific generated codes are not allowed.'))
+      return
+    }
+    if (uoms.some((uom) => uom.code.toUpperCase() === normalizedCode)) {
+      toast.error(tt('uom.duplicateCode', 'This unit code already exists. Use the existing catalogue entry instead of creating a duplicate.'))
       return
     }
 
