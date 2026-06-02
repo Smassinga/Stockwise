@@ -9,6 +9,15 @@ import { useI18n } from '../lib/i18n'
 import toast from 'react-hot-toast'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
 
+function normalizeProfilePhone(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function isMissingProfilePhoneColumn(error: { message?: string; code?: string } | null | undefined) {
+  const message = String(error?.message || '').toLowerCase()
+  return error?.code === '42703' || message.includes('phone_number')
+}
+
 export default function Profile() {
   const { user, requestPasswordReset } = useAuth()
   const { t } = useI18n()
@@ -31,8 +40,33 @@ export default function Profile() {
         if (error) throw error
         
         if (userData) {
-          setDisplayName(userData.user_metadata?.name || user.name || '')
-          setPhone(userData.user_metadata?.phone || '')
+          const metadataName = userData.user_metadata?.name || userData.user_metadata?.full_name || user.name || ''
+          const metadataPhone = userData.user_metadata?.phone_number || userData.user_metadata?.phone || ''
+
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('name,full_name,phone_number')
+            .eq('id', user.id)
+            .maybeSingle()
+
+          if (profileError && !isMissingProfilePhoneColumn(profileError)) {
+            console.warn('Profile row lookup failed:', profileError.message)
+          }
+
+          if (profileError && isMissingProfilePhoneColumn(profileError)) {
+            const { data: fallbackProfile, error: fallbackError } = await supabase
+              .from('profiles')
+              .select('name,full_name')
+              .eq('id', user.id)
+              .maybeSingle()
+            if (fallbackError) console.warn('Profile fallback lookup failed:', fallbackError.message)
+            setDisplayName(fallbackProfile?.full_name || fallbackProfile?.name || metadataName)
+            setPhone(metadataPhone)
+            return
+          }
+
+          setDisplayName(profile?.full_name || profile?.name || metadataName)
+          setPhone(profile?.phone_number || metadataPhone)
         }
       } catch (error) {
         console.error('Error loading profile:', error)
@@ -47,15 +81,47 @@ export default function Profile() {
     
     setLoading(true)
     try {
+      const cleanPhone = normalizeProfilePhone(phone)
+      const cleanName = displayName.trim()
+
       // Update user metadata including phone number
       const { error } = await supabase.auth.updateUser({
         data: { 
-          name: displayName,
-          phone: phone
+          name: cleanName,
+          full_name: cleanName,
+          phone_number: cleanPhone || null,
         }
       })
       
       if (error) throw error
+
+      const profilePayload = {
+        id: user.id,
+        user_id: user.id,
+        name: cleanName || null,
+        full_name: cleanName || null,
+        phone_number: cleanPhone || null,
+      }
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(profilePayload, { onConflict: 'id' })
+
+      if (profileError && isMissingProfilePhoneColumn(profileError)) {
+        const { error: fallbackError } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: user.id,
+              user_id: user.id,
+              name: cleanName || null,
+              full_name: cleanName || null,
+            },
+            { onConflict: 'id' },
+          )
+        if (fallbackError) throw fallbackError
+      } else if (profileError) {
+        throw profileError
+      }
       
       toast.success(t('profile.updated'))
     } catch (error: any) {

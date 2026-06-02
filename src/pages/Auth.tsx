@@ -1,5 +1,5 @@
-﻿import { useState } from 'react'
-import { ArrowRight, Eye, EyeOff, Mail } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, Eye, EyeOff, Mail, RefreshCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import PublicAuthShell from '../components/auth/PublicAuthShell'
@@ -14,6 +14,8 @@ import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 
 const MIN_PASSWORD_LENGTH = 6
+const RESEND_COOLDOWN_SECONDS = 60
+const SUPPORT_EMAIL = 'support@stockwiseapp.com'
 
 type Copy = {
   subtitle: string
@@ -24,6 +26,10 @@ type Copy = {
   name: string
   namePlaceholder: string
   nameRequired: string
+  phone: string
+  phonePlaceholder: string
+  phoneHint: string
+  phoneInvalid: string
   email: string
   emailPlaceholder: string
   emailRequired: string
@@ -33,6 +39,10 @@ type Copy = {
   passwordRequired: string
   passwordHint: string
   passwordTooShort: string
+  confirmPassword: string
+  confirmPasswordPlaceholder: string
+  confirmPasswordRequired: string
+  passwordsDontMatch: string
   submitSignIn: string
   submitSignUp: string
   loadingSignIn: string
@@ -42,15 +52,21 @@ type Copy = {
   waiting: string
   verifyTitle: string
   verifyBody: (email: string) => string
+  verifyEmailLabel: string
   resend: string
+  resendIn: (seconds: number) => string
   resendDone: string
+  resendFailed: string
   goBackEdit: string
   verified: string
+  backToLogin: string
   signIn: string
   signUp: string
   switchToSignUp: string
   switchToSignIn: string
   verifyPlease: string
+  unconfirmedInline: string
+  verificationSentInline: string
   accountCreated: string
   accountCreatedAndSignedIn: string
   resetSent: string
@@ -61,6 +77,7 @@ type Copy = {
   genericSignUpError: string
   genericUnexpected: string
   signUpSupport: string
+  supportHint: string
   wrongBrowserHint: string
   heroTitle: string
   heroBody: string
@@ -75,10 +92,14 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     signInTitle: 'Sign in to StockWise',
     signUpTitle: 'Create your StockWise account',
     signInBody: 'Access your dashboard, stock, invoices, settlements, vendor bills, cash, and reports.',
-    signUpBody: 'Create your login first, then continue straight to company setup.',
+    signUpBody: 'Create your login first, confirm your email, then choose company setup or an invitation.',
     name: 'Full name',
     namePlaceholder: 'Full name',
     nameRequired: 'Enter your full name.',
+    phone: 'Phone',
+    phonePlaceholder: '+258 ...',
+    phoneHint: 'Optional. Used only as profile contact information.',
+    phoneInvalid: 'Enter a valid phone number or leave it blank.',
     email: 'Email',
     emailPlaceholder: 'name@company.com',
     emailRequired: 'Enter your email address.',
@@ -88,6 +109,10 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     passwordRequired: 'Enter your password.',
     passwordHint: 'Use at least 6 characters. You can change it later from your profile.',
     passwordTooShort: 'Use at least 6 characters for your password.',
+    confirmPassword: 'Confirm password',
+    confirmPasswordPlaceholder: 'Re-enter your password',
+    confirmPasswordRequired: 'Confirm your password.',
+    passwordsDontMatch: 'Passwords do not match.',
     submitSignIn: 'Sign in',
     submitSignUp: 'Create account',
     loadingSignIn: 'Signing in...',
@@ -97,16 +122,22 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     waiting: 'Please wait...',
     verifyTitle: 'Check your inbox',
     verifyBody: (email) =>
-      `We sent a verification link to ${email}. Open it in the same browser profile to finish signing in.`,
+      `We sent a verification link to ${email}. Open it in the same browser profile to finish signing in. After confirming your email, you can create your company or accept a company invitation.`,
+    verifyEmailLabel: 'Verification email',
     resend: 'Resend verification email',
+    resendIn: (seconds) => `Resend available in ${seconds}s`,
     resendDone: 'Verification email resent.',
+    resendFailed: 'We could not resend the verification email right now. Please try again shortly.',
     goBackEdit: 'Go back and edit',
     verified: 'Already verified?',
+    backToLogin: 'Back to login',
     signIn: 'Sign in',
     signUp: 'Sign up',
     switchToSignUp: 'Need an account? Create one',
     switchToSignIn: 'Already have an account? Sign in',
     verifyPlease: 'Verify your email before signing in.',
+    unconfirmedInline: 'This account exists but the email is not confirmed yet. Resend the verification email, then sign in after confirming it.',
+    verificationSentInline: 'Check your inbox for the verification link. The resend button is rate-limited for 60 seconds.',
     accountCreated: 'Account created. Check your email to finish setup.',
     accountCreatedAndSignedIn: 'Account created. Continue with company setup.',
     resetSent: 'Password reset email sent.',
@@ -117,7 +148,8 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     genericSignUpError: 'We could not create your account right now. Please try again shortly.',
     genericUnexpected: 'An unexpected error occurred. Please try again.',
     signUpSupport:
-      'After account creation, StockWise will either sign you in immediately or ask for email verification, depending on your workspace security settings.',
+      'After confirming your email, you can create your company or accept a company invitation.',
+    supportHint: 'Need help?',
     wrongBrowserHint: 'Open verification and reset links in the same browser session you used here.',
     heroTitle: 'See stock, cash, and open balances before the next decision.',
     heroBody:
@@ -135,10 +167,14 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     signInTitle: 'Iniciar sessão no StockWise',
     signUpTitle: 'Criar a sua conta no StockWise',
     signInBody: 'Aceda ao dashboard, stock, faturas, liquidações, vendor bills, caixa e relatórios.',
-    signUpBody: 'Crie primeiro o seu acesso e siga diretamente para a configuração da empresa.',
+    signUpBody: 'Crie o seu acesso, confirme o email e depois escolha configurar a empresa ou aceitar um convite.',
     name: 'Nome completo',
     namePlaceholder: 'Nome completo',
     nameRequired: 'Introduza o seu nome completo.',
+    phone: 'Telefone',
+    phonePlaceholder: '+258 ...',
+    phoneHint: 'Opcional. Usado apenas como contacto do perfil.',
+    phoneInvalid: 'Introduza um telefone válido ou deixe o campo em branco.',
     email: 'Email',
     emailPlaceholder: 'nome@empresa.com',
     emailRequired: 'Introduza o seu e-mail.',
@@ -148,6 +184,10 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     passwordRequired: 'Introduza a sua palavra-passe.',
     passwordHint: 'Use pelo menos 6 caracteres. Depois pode alterar a palavra-passe no perfil.',
     passwordTooShort: 'Use pelo menos 6 caracteres na palavra-passe.',
+    confirmPassword: 'Confirmar palavra-passe',
+    confirmPasswordPlaceholder: 'Repita a sua palavra-passe',
+    confirmPasswordRequired: 'Confirme a sua palavra-passe.',
+    passwordsDontMatch: 'As palavras-passe não coincidem.',
     submitSignIn: 'Iniciar sessão',
     submitSignUp: 'Criar conta',
     loadingSignIn: 'A iniciar sessão...',
@@ -157,16 +197,22 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     waiting: 'Aguarde...',
     verifyTitle: 'Verifique o seu e-mail',
     verifyBody: (email) =>
-      `Enviamos um link de verificação para ${email}. Abra-o no mesmo navegador para concluir a entrada.`,
+      `Enviámos um link de verificação para ${email}. Abra-o no mesmo navegador para concluir a entrada. Depois de confirmar o email, pode criar a sua empresa ou aceitar um convite de empresa.`,
+    verifyEmailLabel: 'Email de verificação',
     resend: 'Reenviar e-mail de verificação',
+    resendIn: (seconds) => `Reenvio disponível em ${seconds}s`,
     resendDone: 'E-mail de verificação reenviado.',
+    resendFailed: 'Não foi possível reenviar o e-mail de verificação agora. Tente novamente em instantes.',
     goBackEdit: 'Voltar e editar',
     verified: 'Já verificou o e-mail?',
+    backToLogin: 'Voltar ao login',
     signIn: 'Iniciar sessão',
     signUp: 'Criar conta',
     switchToSignUp: 'Ainda não tem conta? Criar conta',
     switchToSignIn: 'Já tem conta? Iniciar sessão',
     verifyPlease: 'Verifique o seu e-mail antes de iniciar sessão.',
+    unconfirmedInline: 'Esta conta existe, mas o email ainda não foi confirmado. Reenvie o email de verificação e inicie sessão depois de confirmar.',
+    verificationSentInline: 'Verifique a caixa de entrada para abrir o link de verificação. O reenvio fica limitado durante 60 segundos.',
     accountCreated: 'Conta criada. Verifique o e-mail para concluir.',
     accountCreatedAndSignedIn: 'Conta criada. Continue para configurar a empresa.',
     resetSent: 'E-mail de recuperação enviado.',
@@ -177,7 +223,8 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     genericSignUpError: 'Não foi possível criar a conta agora. Tente novamente em instantes.',
     genericUnexpected: 'Ocorreu um erro inesperado. Tente novamente.',
     signUpSupport:
-      'Depois de criar a conta, o StockWise vai iniciar sessão automaticamente ou pedir verificação por e-mail, conforme a política de segurança ativa.',
+      'Depois de confirmar o email, pode criar a sua empresa ou aceitar um convite de empresa.',
+    supportHint: 'Precisa de ajuda?',
     wrongBrowserHint: 'Abra links de verificação e recuperação no mesmo navegador usado aqui.',
     heroTitle: 'Veja stock, caixa e saldos em aberto antes da próxima decisão.',
     heroBody:
@@ -196,8 +243,17 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase()
 }
 
+function normalizePhone(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
 function isValidEmail(value: string) {
   return /^\S+@\S+\.\S+$/.test(value)
+}
+
+function isValidOptionalPhone(value: string) {
+  const phone = normalizePhone(value)
+  return !phone || /^[+()0-9.\-\s]{6,32}$/.test(phone)
 }
 
 function getFriendlyAuthError(copy: Copy, rawError: string | undefined, mode: 'login' | 'signup' | 'reset') {
@@ -230,15 +286,46 @@ export default function Auth() {
 
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
-  const [formData, setFormData] = useState({ name: '', email: '', password: '' })
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  })
   const [error, setError] = useState('')
+  const [resetMessage, setResetMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [awaitingVerification, setAwaitingVerification] = useState<null | { email: string }>(null)
   const [resending, setResending] = useState(false)
+  const [verificationMessage, setVerificationMessage] = useState('')
+  const [resendAvailableAt, setResendAvailableAt] = useState(0)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!resendAvailableAt || resendAvailableAt <= Date.now()) return undefined
+
+    const id = window.setInterval(() => {
+      const current = Date.now()
+      setNowMs(current)
+      if (current >= resendAvailableAt) {
+        setResendAvailableAt(0)
+        window.clearInterval(id)
+      }
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [resendAvailableAt])
 
   function handleInputChange(field: keyof typeof formData, value: string) {
     setFormData((prev) => ({ ...prev, [field]: value }))
     if (error) setError('')
+    if (resetMessage) setResetMessage('')
+  }
+
+  function startResendCooldown() {
+    const nextAvailableAt = Date.now() + RESEND_COOLDOWN_SECONDS * 1000
+    setNowMs(Date.now())
+    setResendAvailableAt(nextAvailableAt)
   }
 
   function validateForm() {
@@ -247,15 +334,21 @@ export default function Auth() {
     if (!isValidEmail(email)) return copy.emailInvalid
     if (!formData.password) return copy.passwordRequired
     if (!isLogin && !formData.name.trim()) return copy.nameRequired
+    if (!isLogin && !isValidOptionalPhone(formData.phone)) return copy.phoneInvalid
     if (!isLogin && formData.password.length < MIN_PASSWORD_LENGTH) return copy.passwordTooShort
+    if (!isLogin && !formData.confirmPassword) return copy.confirmPasswordRequired
+    if (!isLogin && formData.password !== formData.confirmPassword) return copy.passwordsDontMatch
     return ''
   }
 
   function resetMode(nextIsLogin: boolean) {
     setIsLogin(nextIsLogin)
     setError('')
+    setResetMessage('')
+    setVerificationMessage('')
+    setResendAvailableAt(0)
     setShowPassword(false)
-    setFormData({ name: '', email: '', password: '' })
+    setFormData({ name: '', phone: '', email: '', password: '', confirmPassword: '' })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -268,8 +361,10 @@ export default function Auth() {
 
     const email = normalizeEmail(formData.email)
     const name = formData.name.trim()
+    const phone = normalizePhone(formData.phone)
 
     setError('')
+    setResetMessage('')
     setLoading(true)
 
     try {
@@ -279,7 +374,9 @@ export default function Auth() {
           const message = (result.error || '').toLowerCase()
           if (message.includes('not confirmed') || message.includes('confirm your email')) {
             setAwaitingVerification({ email })
-            toast.success(copy.verifyPlease)
+            setVerificationMessage(copy.unconfirmedInline)
+            setResendAvailableAt(0)
+            toast.error(copy.verifyPlease)
             return
           }
           setError(getFriendlyAuthError(copy, result.error, 'login'))
@@ -290,7 +387,7 @@ export default function Auth() {
         return
       }
 
-      const result = await register(name, email, formData.password)
+      const result = await register(name, email, formData.password, phone || undefined)
       if (!result.success) {
         setError(getFriendlyAuthError(copy, result.error, 'signup'))
         return
@@ -303,6 +400,8 @@ export default function Auth() {
       }
 
       setAwaitingVerification({ email })
+      setVerificationMessage(copy.verificationSentInline)
+      startResendCooldown()
       toast.success(copy.accountCreated)
     } catch (err) {
       console.error(err)
@@ -328,7 +427,10 @@ export default function Auth() {
     setLoading(false)
 
     if (!result.success) setError(getFriendlyAuthError(copy, result.error, 'reset'))
-    else toast.success(copy.resetSent)
+    else {
+      setResetMessage(copy.resetSent)
+      toast.success(copy.resetSent)
+    }
   }
 
   async function resendVerification() {
@@ -336,6 +438,7 @@ export default function Auth() {
 
     try {
       setResending(true)
+      setError('')
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: awaitingVerification.email,
@@ -343,10 +446,14 @@ export default function Auth() {
       })
 
       if (error) {
-        toast.error(getFriendlyAuthError(copy, error.message, 'signup'))
+        const message = getFriendlyAuthError(copy, error.message, 'signup') || copy.resendFailed
+        setVerificationMessage(message)
+        toast.error(message)
         return
       }
 
+      setVerificationMessage(copy.resendDone)
+      startResendCooldown()
       toast.success(copy.resendDone)
     } finally {
       setResending(false)
@@ -365,11 +472,16 @@ export default function Auth() {
       ? copy.signInBody
       : copy.signUpBody
 
+  const resendRemainingSeconds = Math.max(0, Math.ceil((resendAvailableAt - nowMs) / 1000))
+  const canResend = !resending && resendRemainingSeconds <= 0
+
   const canSubmit = isLogin
     ? !!normalizeEmail(formData.email) && !!formData.password && !loading
     : !!formData.name.trim() &&
       !!normalizeEmail(formData.email) &&
+      isValidOptionalPhone(formData.phone) &&
       formData.password.length >= MIN_PASSWORD_LENGTH &&
+      formData.password === formData.confirmPassword &&
       !loading
 
   return (
@@ -393,11 +505,27 @@ export default function Auth() {
                   {copy.verifyTitle}
                 </div>
                 <p className="mt-2 leading-6">{copy.verifyBody(awaitingVerification.email)}</p>
+                <div className="mt-3 rounded-xl border border-border/70 bg-background/80 px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {copy.verifyEmailLabel}
+                  </p>
+                  <p className="mt-1 break-all font-medium text-foreground">{awaitingVerification.email}</p>
+                </div>
               </div>
 
-              <Button onClick={resendVerification} disabled={resending} className="w-full">
-                <Mail className="h-4 w-4" />
-                {resending ? copy.waiting : copy.resend}
+              {verificationMessage ? (
+                <Alert>
+                  <AlertDescription>{verificationMessage}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <Button onClick={resendVerification} disabled={!canResend} className="w-full">
+                {resending ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                {resending
+                  ? copy.waiting
+                  : resendRemainingSeconds > 0
+                    ? copy.resendIn(resendRemainingSeconds)
+                    : copy.resend}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
@@ -428,6 +556,25 @@ export default function Auth() {
                   {copy.signIn}
                 </Button>
               </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setAwaitingVerification(null)
+                  resetMode(true)
+                }}
+              >
+                {copy.backToLogin}
+              </Button>
+
+              <p className="text-center text-xs leading-5 text-muted-foreground">
+                {copy.supportHint}{' '}
+                <a className="font-medium text-primary underline-offset-4 hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+                  {SUPPORT_EMAIL}
+                </a>
+              </p>
             </div>
           ) : (
             <>
@@ -455,6 +602,21 @@ export default function Auth() {
                       </div>
                     ) : null}
 
+                    {!isLogin ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">{copy.phone}</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          value={formData.phone}
+                          onChange={(e) => handleInputChange('phone', e.target.value)}
+                          placeholder={copy.phonePlaceholder}
+                          autoComplete="tel"
+                        />
+                        <p className="text-xs leading-5 text-muted-foreground">{copy.phoneHint}</p>
+                      </div>
+                    ) : null}
+
                     <div className="space-y-2">
                       <Label htmlFor="email">{copy.email}</Label>
                       <Input
@@ -477,6 +639,7 @@ export default function Auth() {
                           value={formData.password}
                           onChange={(e) => handleInputChange('password', e.target.value)}
                           placeholder={copy.passwordPlaceholder}
+                          className="pr-12"
                           required
                           minLength={isLogin ? undefined : MIN_PASSWORD_LENGTH}
                           autoComplete={isLogin ? 'current-password' : 'new-password'}
@@ -496,12 +659,34 @@ export default function Auth() {
                         <p className="text-xs leading-5 text-muted-foreground">{copy.passwordHint}</p>
                       ) : null}
                     </div>
+
+                    {!isLogin ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="confirmPassword">{copy.confirmPassword}</Label>
+                        <Input
+                          id="confirmPassword"
+                          type={showPassword ? 'text' : 'password'}
+                          value={formData.confirmPassword}
+                          onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                          placeholder={copy.confirmPasswordPlaceholder}
+                          required
+                          minLength={MIN_PASSWORD_LENGTH}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
                 {error ? (
                   <Alert variant="destructive">
                     <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {resetMessage ? (
+                  <Alert>
+                    <AlertDescription>{resetMessage}</AlertDescription>
                   </Alert>
                 ) : null}
 

@@ -33,6 +33,8 @@ The maintained product surfaces are:
 
 ## Onboarding Entry
 
+- public signup uses Supabase Auth only; users create credentials, confirm email when required, then choose company creation or explicit invitation acceptance
+- signup may capture an optional phone number as profile contact data, but phone is not a login factor, OTP path, membership key, or tenant-access signal
 - authenticated users who already have an active company membership continue into the dashboard under the existing active-company rules
 - authenticated users without an active membership land on `/onboarding`
 - onboarding now supports two first-class paths: join an invited company or create a new company

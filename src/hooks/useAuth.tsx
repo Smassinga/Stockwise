@@ -28,7 +28,7 @@ type AuthContextValue = {
     name: string,
     email: string,
     password: string,
-    _role?: unknown
+    phoneNumber?: string
   ) => Promise<{
     success: boolean
     error?: string
@@ -45,8 +45,19 @@ const AUTH_REQUEST_TIMEOUT_MS = 15000
 function mapUser(u: User): AppUser {
   const name =
     (u.user_metadata?.name as string) ||
+    (u.user_metadata?.full_name as string) ||
     (u.email ? u.email.split('@')[0] : 'User')
   return { id: u.id, email: u.email || '', name }
+}
+
+function buildSignupMetadata(name: string, phoneNumber?: string) {
+  const cleanName = name.trim()
+  const cleanPhone = phoneNumber?.trim()
+  return {
+    name: cleanName,
+    full_name: cleanName,
+    ...(cleanPhone ? { phone_number: cleanPhone } : {}),
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -123,14 +134,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * We DO NOT set an authenticated user here; the app will show the
    * "awaiting verification" screen and the user finishes via magic link.
    */
-  async function register(name: string, email: string, password: string, _role?: unknown) {
+  async function register(name: string, email: string, password: string, phoneNumber?: string) {
     try {
       const { data, error } = await withTimeout(
         supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { name },
+            data: buildSignupMetadata(name, phoneNumber),
             emailRedirectTo: buildAuthCallbackUrl(), // must be on your Supabase allowlist
           },
         }),
