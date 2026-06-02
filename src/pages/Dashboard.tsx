@@ -783,6 +783,20 @@ export default function Dashboard() {
       : tt('dashboard.chartInterpretationNegative', 'COGS is ahead of operational revenue in the active window.')
     : tt('dashboard.chartEmpty', 'Daily revenue and COGS will appear here after shipped orders and linked issue movements exist in this window.')
 
+  const chartColors = {
+    revenue: 'hsl(var(--chart-revenue-line))',
+    cogs: 'hsl(var(--chart-cogs-line))',
+    margin: 'hsl(var(--chart-margin-line))',
+    grid: 'hsl(var(--chart-grid-border))',
+  }
+
+  const renderSeriesDot = (fill: string, radius: number) => ({ cx, cy }: any) => {
+    if (typeof cx !== 'number' || typeof cy !== 'number') {
+      return <circle cx={0} cy={0} r={0} fill={fill} stroke={chartColors.grid} strokeWidth={1} />
+    }
+    return <circle cx={cx} cy={cy} r={radius} fill={fill} stroke={chartColors.grid} strokeWidth={1} />
+  }
+
   const renderChartTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
 
@@ -797,7 +811,7 @@ export default function Dashboard() {
                   className="h-2.5 w-2.5 rounded-full border"
                   style={{
                     background: entry.color,
-                    borderColor: 'hsl(var(--chart-marker-border))',
+                    borderColor: chartColors.grid,
                   }}
                 />
                 {entry.name}
@@ -1335,9 +1349,10 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-[1.15rem] border border-border/70 bg-background/75 px-4 py-3">
+              <div className="rounded-[1.15rem] border border-card-border bg-surface-elevated px-4 py-3 shadow-[0_16px_34px_-32px_hsl(var(--foreground)/0.34)]">
+                <div className="h-1 w-10 rounded-full" style={{ backgroundColor: chartColors.revenue }} />
                 <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.revenue.title', { days: windowDays })}</div>
-                <div className="mt-2 text-xl font-semibold tracking-tight">{money(revenueWindow)}</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight text-sky-700 dark:text-sky-200">{money(revenueWindow)}</div>
                 <div className="mt-2 text-xs text-muted-foreground">
                   {hasRevenueData
                     ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedCurrent.length })
@@ -1345,9 +1360,10 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="rounded-[1.15rem] border border-border/70 bg-background/75 px-4 py-3">
+              <div className="rounded-[1.15rem] border border-card-border bg-surface-elevated px-4 py-3 shadow-[0_16px_34px_-32px_hsl(var(--foreground)/0.34)]">
+                <div className="h-1 w-10 rounded-full" style={{ backgroundColor: chartColors.cogs }} />
                 <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.cogs.title', { days: windowDays })}</div>
-                <div className="mt-2 text-xl font-semibold tracking-tight">{money(cogsWindow)}</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight text-financial-critical dark:text-rose-200">{money(cogsWindow)}</div>
                 <div className="mt-2 text-xs text-muted-foreground">
                   {hasShipmentData
                     ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsCurrent.length })
@@ -1355,9 +1371,10 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="rounded-[1.15rem] border border-border/70 bg-background/75 px-4 py-3">
+              <div className="rounded-[1.15rem] border border-card-border bg-surface-elevated px-4 py-3 shadow-[0_16px_34px_-32px_hsl(var(--foreground)/0.34)]">
+                <div className="h-1 w-10 rounded-full" style={{ backgroundColor: chartColors.margin }} />
                 <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.grossMargin.title')}</div>
-                <div className={cn('mt-2 text-xl font-semibold tracking-tight', grossMargin < 0 && 'text-rose-600 dark:text-rose-300')}>
+                <div className="mt-2 text-xl font-semibold tracking-tight text-financial-positive dark:text-emerald-200">
                   {money(grossMargin)}
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
@@ -1562,7 +1579,7 @@ export default function Dashboard() {
             <div className="h-[19rem] min-h-[19rem] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={windowChartRows} margin={{ top: 10, right: 14, bottom: 2, left: 0 }}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                  <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" vertical={false} />
                   <XAxis
                     dataKey="label"
                     axisLine={false}
@@ -1577,7 +1594,7 @@ export default function Dashboard() {
                     tickFormatter={formatCompactMoney}
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12, fontWeight: 500 }}
                   />
-                  <Tooltip content={renderChartTooltip} cursor={{ stroke: 'hsl(var(--chart-cogs-line))', strokeWidth: 1.2, strokeDasharray: '4 4' }} />
+                  <Tooltip content={renderChartTooltip} cursor={{ stroke: chartColors.grid, strokeWidth: 1.2, strokeDasharray: '4 4' }} />
                   <Legend
                     iconType="circle"
                     wrapperStyle={{
@@ -1590,30 +1607,30 @@ export default function Dashboard() {
                     type="monotone"
                     dataKey="revenue"
                     name={t('table.revenue')}
-                    stroke="hsl(var(--chart-revenue-line))"
+                    stroke={chartColors.revenue}
                     strokeWidth={2.8}
-                    dot={{ r: 3.2, strokeWidth: 2, fill: 'hsl(var(--chart-revenue-line))', stroke: 'hsl(var(--chart-marker-border))' }}
-                    activeDot={{ r: 5, strokeWidth: 2, fill: 'hsl(var(--chart-revenue-line))', stroke: 'hsl(var(--chart-marker-border))' }}
+                    dot={renderSeriesDot(chartColors.revenue, 4)}
+                    activeDot={renderSeriesDot(chartColors.revenue, 5)}
                     legendType="circle"
                   />
                   <Line
                     type="monotone"
                     dataKey="cogs"
                     name={t('table.cogs')}
-                    stroke="hsl(var(--chart-cogs-line))"
+                    stroke={chartColors.cogs}
                     strokeWidth={2.8}
-                    dot={{ r: 3.2, strokeWidth: 2, fill: 'hsl(var(--chart-cogs-line))', stroke: 'hsl(var(--chart-marker-border))' }}
-                    activeDot={{ r: 5, strokeWidth: 2, fill: 'hsl(var(--chart-cogs-line))', stroke: 'hsl(var(--chart-marker-border))' }}
+                    dot={renderSeriesDot(chartColors.cogs, 4)}
+                    activeDot={renderSeriesDot(chartColors.cogs, 5)}
                     legendType="circle"
                   />
                   <Line
                     type="monotone"
                     dataKey="margin"
                     name={t('table.grossMargin')}
-                    stroke="hsl(var(--chart-margin-line))"
-                    strokeWidth={2.4}
-                    dot={{ r: 2.8, strokeWidth: 1.8, fill: 'hsl(var(--chart-margin-line))', stroke: 'hsl(var(--chart-marker-border))' }}
-                    activeDot={{ r: 4.8, strokeWidth: 2, fill: 'hsl(var(--chart-margin-line))', stroke: 'hsl(var(--chart-marker-border))' }}
+                    stroke={chartColors.margin}
+                    strokeWidth={2.8}
+                    dot={renderSeriesDot(chartColors.margin, 4)}
+                    activeDot={renderSeriesDot(chartColors.margin, 5)}
                     legendType="circle"
                   />
                 </LineChart>
@@ -1643,7 +1660,7 @@ export default function Dashboard() {
           <PremiumMetricCard
             label={t('kpi.revenue.title', { days: windowDays })}
             value={money(revenueWindow)}
-            tone="positive"
+            tone="info"
             icon={<DollarSign size={18} />}
             description={hasRevenueData
               ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedCurrent.length })
@@ -1654,7 +1671,7 @@ export default function Dashboard() {
           <PremiumMetricCard
             label={t('kpi.cogs.title', { days: windowDays })}
             value={money(cogsWindow)}
-            tone="warning"
+            tone="critical"
             icon={<Coins size={18} />}
             description={hasShipmentData
               ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsCurrent.length })
@@ -1665,7 +1682,7 @@ export default function Dashboard() {
           <PremiumMetricCard
             label={t('kpi.grossMargin.title')}
             value={money(grossMargin)}
-            tone={grossMargin >= 0 ? 'positive' : 'critical'}
+            tone="positive"
             icon={grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
             description={revenueWindow > 0
               ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`

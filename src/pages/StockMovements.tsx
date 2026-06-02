@@ -7,21 +7,48 @@
 
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  ArrowRightLeft,
+  Boxes,
+  ClipboardList,
+  FilterX,
+  Inbox,
+  PackageSearch,
+  Plus,
+  Receipt,
+  RefreshCw,
+  Send,
+  Warehouse as WarehouseIcon,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase' // ← use the same client as Warehouses/StockLevels
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import toast from 'react-hot-toast'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
-import { useI18n } from '../lib/i18n'
+import { useI18n, withI18nFallback } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
 import { useOrg } from '../hooks/useOrg'
 import { useIsMobile } from '../hooks/use-mobile'
-import { StockMovementMobileBinContents, StockMovementMobileLog } from '../components/stock/StockMovementsMobile'
+import { cn } from '../lib/utils'
+import {
+  PremiumDataTable,
+  sortPremiumRows,
+  type PremiumDataTableColumn,
+  type PremiumDataTableSortState,
+} from '../components/premium/PremiumDataTable'
+import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
+import { getPremiumPageRows } from '../components/premium/PremiumPagination'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
+import { PremiumTableFilter } from '../components/premium/PremiumTableFilter'
+import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
+import { StockMovementMobileBinContents } from '../components/stock/StockMovementsMobile'
 
 // ---- Local type shim so we can pass notes even if lib/sales isn’t updated yet.
 type CashSaleWithCogsArgsWithNotes =
@@ -98,7 +125,8 @@ const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
 
 export default function StockMovements() {
   const { t, lang } = useI18n()
-  const tt = (key: string, fallback: string) => (t(key as any) === key ? fallback : t(key as any))
+  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    withI18nFallback(t, key, fallback, vars)
   const { companyId, companyName } = useOrg()
   const isMobile = useIsMobile()
 
@@ -144,6 +172,7 @@ export default function StockMovements() {
   const [saleUnitPrice, setSaleUnitPrice] = useState<string>('')
   const [movementRows, setMovementRows] = useState<MovementLogRow[]>([])
   const [movementsLoading, setMovementsLoading] = useState(false)
+  const [movementsError, setMovementsError] = useState<string | null>(null)
   const [movementLogVersion, setMovementLogVersion] = useState(0)
   const [movementSearch, setMovementSearch] = useState('')
   const [movementDateFrom, setMovementDateFrom] = useState(startOf30Ago())
@@ -152,7 +181,11 @@ export default function StockMovements() {
   const [movementRefFilter, setMovementRefFilter] = useState<'ALL' | RefType>('ALL')
   const [movementItemFilter, setMovementItemFilter] = useState<string>('ALL')
   const [movementWarehouseFilter, setMovementWarehouseFilter] = useState<string>('ALL')
+  const [movementBinFilter, setMovementBinFilter] = useState<string>('ALL')
   const [expandedMovementId, setExpandedMovementId] = useState<string>('')
+  const [movementSort, setMovementSort] = useState<PremiumDataTableSortState>({ columnId: 'createdAt', direction: 'desc' })
+  const [movementPage, setMovementPage] = useState(1)
+  const [movementPageSize, setMovementPageSize] = useState(10)
   const [soNoById, setSoNoById] = useState<Record<string, string>>({})
   const [poNoById, setPoNoById] = useState<Record<string, string>>({})
 
@@ -316,6 +349,7 @@ export default function StockMovements() {
     ;(async () => {
       try {
         setMovementsLoading(true)
+        setMovementsError(null)
         let q = supabase
           .from('stock_movements')
           .select('id,item_id,type,qty_base,unit_cost,total_value,warehouse_from_id,warehouse_to_id,bin_from_id,bin_to_id,ref_type,ref_id,notes,created_at')
@@ -354,7 +388,11 @@ export default function StockMovements() {
         setPoNoById(Object.fromEntries(((poRes.data || []) as any[]).map(row => [row.id, row.order_no || row.id])))
       } catch (e: any) {
         console.error(e)
-        if (!cancelled) toast.error(tt('movements.logLoadFailed', 'Failed to load recent movements'))
+        if (!cancelled) {
+          const message = tt('movements.logLoadFailed', 'Failed to load recent movements')
+          setMovementsError(message)
+          toast.error(message)
+        }
       } finally {
         if (!cancelled) setMovementsLoading(false)
       }
@@ -362,6 +400,19 @@ export default function StockMovements() {
 
     return () => { cancelled = true }
   }, [companyId, movementDateFrom, movementDateTo, movementTypeFilter, movementRefFilter, movementItemFilter, movementWarehouseFilter, movementLogVersion])
+
+  useEffect(() => {
+    setMovementPage(1)
+  }, [
+    movementSearch,
+    movementDateFrom,
+    movementDateTo,
+    movementTypeFilter,
+    movementRefFilter,
+    movementItemFilter,
+    movementWarehouseFilter,
+    movementBinFilter,
+  ])
 
   // UoM helpers
   const uomIdFromIdOrCode = (v?: string | null): string => {
@@ -974,17 +1025,53 @@ export default function StockMovements() {
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
   const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
+
+  const movementTypePresentation = (type: MovementType) => {
+    if (type === 'receive') {
+      return {
+        singular: tt('movements.type.receive', 'Entrada'),
+        plural: tt('movements.type.receive.plural', 'Entradas'),
+        tone: 'positive' as PremiumTone,
+        icon: <Receipt />,
+      }
+    }
+    if (type === 'issue') {
+      return {
+        singular: tt('movements.type.issue', 'Saída'),
+        plural: tt('movements.type.issue.plural', 'Saídas'),
+        tone: 'critical' as PremiumTone,
+        icon: <Send />,
+      }
+    }
+    if (type === 'transfer') {
+      return {
+        singular: tt('movements.type.transfer', 'Transferência'),
+        plural: tt('movements.type.transfer.plural', 'Transferências'),
+        tone: 'info' as PremiumTone,
+        icon: <ArrowRightLeft />,
+      }
+    }
+    return {
+      singular: tt('movements.type.adjust', 'Ajuste'),
+      plural: tt('movements.type.adjust.plural', 'Ajustes'),
+      tone: 'warning' as PremiumTone,
+      icon: <ClipboardList />,
+    }
+  }
+
   const movementTypeCards: Array<{ type: MovementType; title: string; description: string }> = [
-    { type: 'receive', title: tt('movement.receive', 'Receive'), description: tt('movements.receiveHint', 'Add stock into a warehouse bin and capture supplier-side cost.') },
-    { type: 'issue', title: tt('movement.issue', 'Issue'), description: tt('movements.issueHint', 'Remove stock for sales, internal use, or write-offs.') },
-    { type: 'transfer', title: tt('movement.transfer', 'Transfer'), description: tt('movements.transferHint', 'Move stock between warehouses or bins without changing ownership.') },
-    { type: 'adjust', title: tt('movement.adjust', 'Adjust'), description: tt('movements.adjustHint', 'Correct on-hand stock when the physical count differs from the system.') },
+    { type: 'receive', title: movementTypePresentation('receive').singular, description: tt('movements.receiveHint', 'Add stock into a warehouse bin and capture supplier-side cost.') },
+    { type: 'issue', title: movementTypePresentation('issue').singular, description: tt('movements.issueHint', 'Remove stock for sales, internal use, or write-offs.') },
+    { type: 'transfer', title: movementTypePresentation('transfer').singular, description: tt('movements.transferHint', 'Move stock between warehouses or bins without changing ownership.') },
+    { type: 'adjust', title: movementTypePresentation('adjust').singular, description: tt('movements.adjustHint', 'Correct on-hand stock when the physical count differs from the system.') },
   ]
 
   const movementRowsFiltered = useMemo(() => {
     const term = movementSearch.trim().toLowerCase()
-    if (!term) return movementRows
     return movementRows.filter(row => {
+      const matchesBin = movementBinFilter === 'ALL' || row.bin_from_id === movementBinFilter || row.bin_to_id === movementBinFilter
+      if (!matchesBin) return false
+      if (!term) return true
       const item = items.find(entry => entry.id === row.item_id)
       const sourceWh = warehouses.find(entry => entry.id === row.warehouse_from_id)
       const destWh = warehouses.find(entry => entry.id === row.warehouse_to_id)
@@ -1004,14 +1091,11 @@ export default function StockMovements() {
       ].join(' ').toLowerCase()
       return hay.includes(term)
     })
-  }, [movementSearch, movementRows, items, warehouses, allBins])
+  }, [movementSearch, movementRows, items, warehouses, allBins, movementBinFilter])
 
   const movementTypeBadge = (type: MovementType) => {
-    const base = 'inline-flex rounded-full px-2.5 py-1 text-xs font-medium'
-    if (type === 'receive') return <span className={`${base} bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300`}>{tt('movement.receive', 'Receive')}</span>
-    if (type === 'issue') return <span className={`${base} bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300`}>{tt('movement.issue', 'Issue')}</span>
-    if (type === 'transfer') return <span className={`${base} bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300`}>{tt('movement.transfer', 'Transfer')}</span>
-    return <span className={`${base} bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300`}>{tt('movement.adjust', 'Adjust')}</span>
+    const movement = movementTypePresentation(type)
+    return <PremiumStatusBadge tone={movement.tone} icon={movement.icon}>{movement.singular}</PremiumStatusBadge>
   }
 
   const warehouseLabel = (warehouseId?: string | null, binId?: string | null) => {
@@ -1030,28 +1114,229 @@ export default function StockMovements() {
     return `${refTypeValue} ${refIdValue.slice(0, 8)}`
   }
 
+  const movementOrderHref = (row: MovementLogRow) => (
+    row.ref_type === 'SO' && row.ref_id
+      ? '/orders?tab=sales&orderId=' + row.ref_id
+      : row.ref_type === 'PO' && row.ref_id
+        ? '/orders?tab=purchase&orderId=' + row.ref_id
+        : ''
+  )
+
+  const movementSummary = useMemo(() => ({
+    total: movementRowsFiltered.length,
+    receive: movementRowsFiltered.filter(row => row.type === 'receive').length,
+    issue: movementRowsFiltered.filter(row => row.type === 'issue').length,
+    transfer: movementRowsFiltered.filter(row => row.type === 'transfer').length,
+    adjust: movementRowsFiltered.filter(row => row.type === 'adjust').length,
+  }), [movementRowsFiltered])
+
+  const movementEmptyState = (
+    <PremiumEmptyState
+      icon={<Inbox />}
+      title={tt('movements.emptyTitle', 'No stock movements in this view')}
+      description={
+        movementRows.length === 0
+          ? tt('movements.emptyBody', 'Movements appear here when stock is received, issued, transferred, adjusted, or sold.')
+          : tt('movements.emptyFiltered', 'Clear or relax the filters to see more stock movements.')
+      }
+    />
+  )
+
+  const movementPaginationLabels = {
+    rowsPerPage: tt('register.rows', 'Rows'),
+    previous: tt('common.previous', 'Previous'),
+    next: tt('common.next', 'Next'),
+    pageSummary: (page: number, totalPages: number) => tt('register.pageSummary', 'Page {page} of {totalPages}', { page, totalPages }),
+    rangeSummary: (from: number, to: number, total: number) => tt('register.rangeSummary', '{from}-{to} of {total}', { from, to, total }),
+  }
+
+  const movementTableColumns: PremiumDataTableColumn<MovementLogRow>[] = [
+    {
+      id: 'createdAt',
+      header: tt('table.date', 'Date'),
+      cell: (row) => <span className="whitespace-nowrap text-sm">{new Date(row.created_at).toLocaleString(lang)}</span>,
+      sortValue: (row) => new Date(row.created_at),
+      minWidth: 170,
+    },
+    {
+      id: 'type',
+      header: tt('table.type', 'Type'),
+      cell: (row) => movementTypeBadge(row.type),
+      sortValue: (row) => movementTypePresentation(row.type).singular,
+      minWidth: 140,
+    },
+    {
+      id: 'item',
+      header: tt('table.item', 'Item'),
+      cell: (row) => {
+        const item = items.find(entry => entry.id === row.item_id)
+        const detailsOpen = expandedMovementId === row.id
+        return (
+          <div className="min-w-0">
+            <div className="truncate font-medium">{item?.name || row.item_id}</div>
+            <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{item?.sku || tt('common.dash', '—')}</div>
+            {detailsOpen ? (
+              <div className="mt-3 rounded-xl border border-card-border bg-surface-muted/35 p-3 text-xs leading-5 text-muted-foreground">
+                <div className="grid gap-2 md:grid-cols-3">
+                  <div>
+                    <div className="premium-label">{tt('table.notes', 'Notes')}</div>
+                    <div className="mt-1">{row.notes || tt('common.dash', '—')}</div>
+                  </div>
+                  <div>
+                    <div className="premium-label">{tt('movements.unitCost', 'Unit Cost')}</div>
+                    <div className="mt-1 font-mono tabular-nums">{fmtAcct(num(row.unit_cost, 0))}</div>
+                  </div>
+                  <div>
+                    <div className="premium-label">{tt('movements.referenceTrace', 'Reference trace')}</div>
+                    <div className="mt-1">{refLabel(row)}</div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )
+      },
+      sortValue: (row) => items.find(entry => entry.id === row.item_id)?.name || row.item_id,
+      minWidth: 240,
+    },
+    {
+      id: 'route',
+      header: tt('movements.route', 'Route'),
+      cell: (row) => (
+        <div className="min-w-[13rem] text-sm text-muted-foreground">
+          <div className="truncate">{warehouseLabel(row.warehouse_from_id, row.bin_from_id)}</div>
+          <div className="mt-1 truncate">-&gt; {warehouseLabel(row.warehouse_to_id, row.bin_to_id)}</div>
+        </div>
+      ),
+      sortValue: (row) => `${warehouseLabel(row.warehouse_from_id, row.bin_from_id)} ${warehouseLabel(row.warehouse_to_id, row.bin_to_id)}`,
+      minWidth: 220,
+    },
+    {
+      id: 'qty',
+      header: tt('movements.quantity', 'Quantidade'),
+      cell: (row) => <span className="font-mono tabular-nums">{fmtAcct(num(row.qty_base, 0))}</span>,
+      sortValue: (row) => num(row.qty_base, 0),
+      align: 'right',
+      minWidth: 130,
+    },
+    {
+      id: 'value',
+      header: tt('table.value', 'Valor'),
+      cell: (row) => <span className="font-mono tabular-nums">{fmtAcct(num(row.total_value, 0))}</span>,
+      sortValue: (row) => num(row.total_value, 0),
+      align: 'right',
+      minWidth: 130,
+    },
+    {
+      id: 'ref',
+      header: tt('table.ref', 'Ref'),
+      cell: (row) => <span className="font-medium">{refLabel(row)}</span>,
+      sortValue: refLabel,
+      minWidth: 140,
+    },
+    {
+      id: 'actions',
+      header: tt('orders.actions', 'Actions'),
+      cell: (row) => {
+        const detailsOpen = expandedMovementId === row.id
+        const orderHref = movementOrderHref(row)
+        return (
+          <div className="flex flex-wrap justify-end gap-2">
+            {orderHref ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link to={orderHref}>
+                  <PackageSearch className="h-4 w-4" />
+                  {tt('movements.viewSource', 'View source')}
+                </Link>
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={() => setExpandedMovementId(detailsOpen ? '' : row.id)}>
+              {detailsOpen ? tt('common.hide', 'Hide') : tt('common.details', 'Details')}
+            </Button>
+          </div>
+        )
+      },
+      align: 'right',
+      minWidth: 210,
+    },
+  ]
+
+  const sortedMovementRows = sortPremiumRows(movementRowsFiltered, movementTableColumns, movementSort)
+  const pagedMovementRows = getPremiumPageRows(sortedMovementRows, movementPage, movementPageSize)
+
   // ------------------------------- UI ----------------------------------------
   return (
     <div className="app-page app-page--workspace space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('movements.eyebrow', 'Warehouse control')}
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{tt('nav.movements', 'Movements')}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('movements.subtitle', 'Receive, issue, transfer, and adjust stock with full warehouse and bin context. Use issue with an SO reference when the movement should also create a cash-sale trace.')}
-            </p>
-          </div>
-        </div>
-
-        {companyName && (
-          <Badge variant="outline" className="w-fit px-3 py-1 text-xs">
-            {companyName}
-          </Badge>
-        )}
-      </div>
+      <PremiumRegisterHeader
+        eyebrow={tt('movements.eyebrow', 'Warehouse control')}
+        title={tt('nav.movements', 'Movimentos de stock')}
+        description={tt('movements.subtitle', 'Receba, emita, transfira e ajuste stock com contexto claro de armazém e bin.')}
+        badges={
+          <>
+            <PremiumStatusBadge tone="info" icon={<ClipboardList />}>
+              {tt('movements.ledgerBadge', 'Stock movement ledger')}
+            </PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral" icon={<WarehouseIcon />}>
+              {companyName || tt('common.currentCompany', 'Current company')}
+            </PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral">
+              {movementDateFrom} - {movementDateTo}
+            </PremiumStatusBadge>
+          </>
+        }
+        actions={
+          <>
+            <Button asChild>
+              <a href="#movement-form">
+                <Plus className="h-4 w-4" />
+                {tt('movements.actions.post', 'Registar movimento')}
+              </a>
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setMovementLogVersion(version => version + 1)} disabled={movementsLoading}>
+              <RefreshCw className={cn('h-4 w-4', movementsLoading && 'animate-spin')} />
+              {tt('common.refresh', 'Refresh')}
+            </Button>
+          </>
+        }
+        metrics={movementRows.length > 0 ? (
+          <>
+            <PremiumMetricCard
+              label={tt('movements.summary.total', 'Total movements')}
+              value={movementSummary.total}
+              description={tt('movements.summary.totalHelp', 'Movements in the current filtered register view.')}
+              icon={<ClipboardList />}
+            />
+            <PremiumMetricCard
+              label={movementTypePresentation('receive').plural}
+              value={movementSummary.receive}
+              description={tt('movements.summary.receiptsHelp', 'Stock received into warehouses or bins.')}
+              icon={<Receipt />}
+              tone="positive"
+            />
+            <PremiumMetricCard
+              label={movementTypePresentation('issue').plural}
+              value={movementSummary.issue}
+              description={tt('movements.summary.issuesHelp', 'Stock issued for sales, internal use, or write-offs.')}
+              icon={<Send />}
+              tone="critical"
+            />
+            <PremiumMetricCard
+              label={movementTypePresentation('transfer').plural}
+              value={movementSummary.transfer}
+              description={tt('movements.summary.transfersHelp', 'Stock moved between warehouses or bins.')}
+              icon={<ArrowRightLeft />}
+              tone="info"
+            />
+            <PremiumMetricCard
+              label={movementTypePresentation('adjust').plural}
+              value={movementSummary.adjust}
+              description={tt('movements.summary.adjustmentsHelp', 'Physical-count corrections recorded through stock movements.')}
+              icon={<Boxes />}
+              tone="warning"
+            />
+          </>
+        ) : undefined}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {movementTypeCards.map(card => (
@@ -1064,10 +1349,10 @@ export default function StockMovements() {
               setFromBin(''); setToBin(''); setItemId(''); setQtyEntered(''); setUnitCost(''); setNotes('')
               setMovementUomId('')
             }}
-            className={`rounded-2xl border p-4 text-left transition-colors ${
+            className={`rounded-[calc(var(--radius)+0.15rem)] border p-4 text-left shadow-[0_16px_34px_-32px_hsl(var(--foreground)/0.34)] transition-colors ${
               movementType === card.type
-                ? 'border-primary/60 bg-primary/5 shadow-sm'
-                : 'border-border/80 bg-card hover:border-primary/30 hover:bg-muted/30'
+                ? 'border-primary/60 bg-primary/5'
+                : 'border-card-border bg-card hover:border-primary/30 hover:bg-muted/30'
             }`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -1483,187 +1768,237 @@ export default function StockMovements() {
         </CardContent>
       </Card>
 
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader>
-          <CardTitle>{tt('movements.logTitle', 'Recent movement log')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="mobile-filter-stack grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <div>
-              <Label>{tt('filters.from', 'From')}</Label>
-              <Input type="date" value={movementDateFrom} onChange={e => setMovementDateFrom(e.target.value)} />
-            </div>
-            <div>
-              <Label>{tt('filters.to', 'To')}</Label>
-              <Input type="date" value={movementDateTo} onChange={e => setMovementDateTo(e.target.value)} />
-            </div>
-            <div>
-              <Label>{tt('filters.type', 'Type')}</Label>
-              <Select value={movementTypeFilter} onValueChange={(v: 'ALL' | MovementType) => setMovementTypeFilter(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">{tt('filters.type.all', 'All types')}</SelectItem>
-                  <SelectItem value="receive">{tt('movement.receive', 'Receive')}</SelectItem>
-                  <SelectItem value="issue">{tt('movement.issue', 'Issue')}</SelectItem>
-                  <SelectItem value="transfer">{tt('movement.transfer', 'Transfer')}</SelectItem>
-                  <SelectItem value="adjust">{tt('movement.adjust', 'Adjust')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{tt('filters.ref', 'Reference')}</Label>
-              <Select value={movementRefFilter} onValueChange={(v: 'ALL' | RefType) => setMovementRefFilter(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">{tt('filters.ref.all', 'All refs')}</SelectItem>
-                  <SelectItem value="SO">SO</SelectItem>
-                  <SelectItem value="PO">PO</SelectItem>
-                  <SelectItem value="ADJUST">{tt('ref.adjust', 'Adjust')}</SelectItem>
-                  <SelectItem value="TRANSFER">{tt('ref.transfer', 'Transfer')}</SelectItem>
-                  <SelectItem value="WRITE_OFF">{tt('ref.writeOff', 'Write off')}</SelectItem>
-                  <SelectItem value="INTERNAL_USE">{tt('ref.internalUse', 'Internal use')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{tt('orders.item', 'Item')}</Label>
-              <Select value={movementItemFilter} onValueChange={setMovementItemFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
-                  {items.map(item => (
-                    <SelectItem key={item.id} value={item.id}>{item.name}{item.sku ? ' (' + item.sku + ')' : ''}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{tt('filters.warehouse.label', 'Warehouse')}</Label>
-              <Select value={movementWarehouseFilter} onValueChange={setMovementWarehouseFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
-                  {warehouses.map(warehouse => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
+      <section className="space-y-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <Label>{tt('common.search', 'Search')}</Label>
-            <Input value={movementSearch} onChange={e => setMovementSearch(e.target.value)} placeholder={tt('movements.searchPlaceholder', 'Search by item, note, warehouse, or reference')} />
+            <h2 className="text-[1.05rem] font-semibold leading-7 tracking-tight">{tt('movements.logTitle', 'Registo de movimentos de stock')}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              {tt('movements.registerHelp', 'Consulte o razão de stock por data, tipo de movimento, armazém, bin, artigo e referência.')}
+            </p>
           </div>
+        </div>
 
+        <PremiumTableToolbar
+          searchValue={movementSearch}
+          onSearchChange={setMovementSearch}
+          searchPlaceholder={tt('movements.searchPlaceholder', 'Pesquisar por artigo, nota, armazém, bin ou referência')}
+          searchLabel={tt('common.search', 'Search')}
+          filters={
+            <>
+              <PremiumTableFilter label={tt('filters.from', 'From')}>
+                <Input type="date" value={movementDateFrom} onChange={e => setMovementDateFrom(e.target.value)} />
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('filters.to', 'To')}>
+                <Input type="date" value={movementDateTo} onChange={e => setMovementDateTo(e.target.value)} />
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('filters.type', 'Type')}>
+                <Select value={movementTypeFilter} onValueChange={(v: 'ALL' | MovementType) => setMovementTypeFilter(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{tt('filters.type.all', 'All types')}</SelectItem>
+                    <SelectItem value="receive">{movementTypePresentation('receive').plural}</SelectItem>
+                    <SelectItem value="issue">{movementTypePresentation('issue').plural}</SelectItem>
+                    <SelectItem value="transfer">{movementTypePresentation('transfer').plural}</SelectItem>
+                    <SelectItem value="adjust">{movementTypePresentation('adjust').plural}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('filters.ref', 'Reference')}>
+                <Select value={movementRefFilter} onValueChange={(v: 'ALL' | RefType) => setMovementRefFilter(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{tt('filters.ref.all', 'All refs')}</SelectItem>
+                    <SelectItem value="SO">SO</SelectItem>
+                    <SelectItem value="PO">PO</SelectItem>
+                    <SelectItem value="ADJUST">{tt('ref.adjust', 'Adjust')}</SelectItem>
+                    <SelectItem value="TRANSFER">{tt('ref.transfer', 'Transfer')}</SelectItem>
+                    <SelectItem value="WRITE_OFF">{tt('ref.writeOff', 'Write off')}</SelectItem>
+                    <SelectItem value="INTERNAL_USE">{tt('ref.internalUse', 'Internal use')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('orders.item', 'Item')}>
+                <Select value={movementItemFilter} onValueChange={setMovementItemFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                    {items.map(item => (
+                      <SelectItem key={item.id} value={item.id}>{item.name}{item.sku ? ' (' + item.sku + ')' : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('filters.warehouse.label', 'Armazém')}>
+                <Select value={movementWarehouseFilter} onValueChange={setMovementWarehouseFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                    {warehouses.map(warehouse => (
+                      <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('movements.bin', 'Bin')}>
+                <Select value={movementBinFilter} onValueChange={setMovementBinFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                    {allBins.map(bin => {
+                      const warehouse = warehouses.find(entry => entry.id === bin.warehouseId)
+                      return (
+                        <SelectItem key={bin.id} value={bin.id}>
+                          {warehouse ? `${warehouse.name} / ` : ''}{bin.code}{bin.name ? ` - ${bin.name}` : ''}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+            </>
+          }
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setMovementSearch('')
+                setMovementTypeFilter('ALL')
+                setMovementRefFilter('ALL')
+                setMovementItemFilter('ALL')
+                setMovementWarehouseFilter('ALL')
+                setMovementBinFilter('ALL')
+                setMovementDateFrom(startOf30Ago())
+                setMovementDateTo(today())
+              }}
+            >
+              <FilterX className="h-4 w-4" />
+              {tt('common.clear', 'Clear')}
+            </Button>
+          }
+          summary={
+            <div className="flex flex-wrap items-center gap-2">
+              <span>{tt('movements.registerCount', '{count} movements in view', { count: movementRowsFiltered.length })}</span>
+              {movementBinFilter !== 'ALL' ? <PremiumStatusBadge tone="info">{tt('movements.bin', 'Bin')}</PremiumStatusBadge> : null}
+              {movementsError ? <PremiumStatusBadge tone="critical">{movementsError}</PremiumStatusBadge> : null}
+            </div>
+          }
+        />
+
+        <div className="rounded-[calc(var(--radius)+0.25rem)] border border-card-border bg-card p-3 shadow-[0_20px_48px_-36px_hsl(var(--foreground)/0.24)] sm:p-4">
           {isMobile ? (
-            <StockMovementMobileLog
-              rows={movementRowsFiltered}
-              items={items}
-              lang={lang}
-              tt={tt}
-              expandedMovementId={expandedMovementId}
-              onToggleDetails={(id) => setExpandedMovementId(expandedMovementId === id ? '' : id)}
-              movementTypeBadge={movementTypeBadge}
-              warehouseLabel={warehouseLabel}
-              refLabel={refLabel}
-              formatValue={fmtAcct}
+            <PremiumMobileCardList
+              rows={pagedMovementRows}
+              getRowId={(row) => row.id}
               loading={movementsLoading}
+              error={movementsError}
+              emptyState={movementEmptyState}
+              pagination={{
+                page: movementPage,
+                pageSize: movementPageSize,
+                totalItems: sortedMovementRows.length,
+                onPageChange: setMovementPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setMovementPageSize(nextPageSize)
+                  setMovementPage(1)
+                },
+                labels: movementPaginationLabels,
+              }}
+              renderCard={(row) => {
+                const item = items.find(entry => entry.id === row.item_id)
+                const detailsOpen = expandedMovementId === row.id
+                const orderHref = movementOrderHref(row)
+                return (
+                  <article className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-elevated p-4 shadow-[0_16px_34px_-30px_hsl(var(--foreground)/0.34)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString(lang)}</div>
+                        <div className="mt-1 truncate font-medium">{item?.name || row.item_id}</div>
+                        <div className="truncate font-mono text-xs text-muted-foreground">{item?.sku || tt('common.dash', '—')}</div>
+                      </div>
+                      {movementTypeBadge(row.type)}
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                      <div className="premium-label">{tt('movements.route', 'Route')}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        <div>{warehouseLabel(row.warehouse_from_id, row.bin_from_id)}</div>
+                        <div className="mt-1">-&gt; {warehouseLabel(row.warehouse_to_id, row.bin_to_id)}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                        <div className="premium-label">{tt('movements.quantity', 'Quantidade')}</div>
+                        <div className="mt-1 text-sm font-semibold">{fmtAcct(num(row.qty_base, 0))}</div>
+                      </div>
+                      <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                        <div className="premium-label">{tt('table.value', 'Valor')}</div>
+                        <div className="mt-1 text-sm font-semibold">{fmtAcct(num(row.total_value, 0))}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="premium-label">{tt('table.ref', 'Ref')}</div>
+                      <div className="mt-1 truncate font-medium">{refLabel(row)}</div>
+                    </div>
+
+                    {detailsOpen ? (
+                      <div className="mt-3 space-y-2 rounded-xl border border-card-border bg-surface-muted/35 p-3 text-sm">
+                        <div>
+                          <div className="premium-label">{tt('table.notes', 'Notes')}</div>
+                          <div className="mt-1 text-muted-foreground">{row.notes || tt('common.dash', '—')}</div>
+                        </div>
+                        <div>
+                          <div className="premium-label">{tt('movements.unitCost', 'Unit Cost')}</div>
+                          <div className="mt-1 font-mono tabular-nums">{fmtAcct(num(row.unit_cost, 0))}</div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                      {orderHref ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link to={orderHref}>
+                            <PackageSearch className="h-4 w-4" />
+                            {tt('movements.viewSource', 'View source')}
+                          </Link>
+                        </Button>
+                      ) : null}
+                      <Button size="sm" variant="outline" onClick={() => setExpandedMovementId(detailsOpen ? '' : row.id)}>
+                        {detailsOpen ? tt('common.hide', 'Hide') : tt('common.details', 'Details')}
+                      </Button>
+                    </div>
+                  </article>
+                )
+              }}
             />
           ) : (
-            <div className="overflow-x-auto rounded-xl border">
-              <table className="w-full min-w-[960px] text-sm">
-                <thead className="bg-muted/40">
-                  <tr className="border-b text-left">
-                    <th className="py-2 px-3">{tt('table.date', 'Date')}</th>
-                    <th className="py-2 px-3">{tt('table.type', 'Type')}</th>
-                    <th className="py-2 px-3">{tt('table.item', 'Item')}</th>
-                    <th className="py-2 px-3">{tt('movements.route', 'Route')}</th>
-                    <th className="py-2 px-3 text-right">{tt('table.qtyBase', 'Qty (base)')}</th>
-                    <th className="py-2 px-3 text-right">{tt('movements.avgCost', 'Unit Cost')}</th>
-                    <th className="py-2 px-3">{tt('table.ref', 'Ref')}</th>
-                    <th className="py-2 px-3 text-right">{tt('orders.actions', 'Actions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!movementsLoading && movementRowsFiltered.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">
-                        {tt('movements.logEmpty', 'No movements match the current filters.')}
-                      </td>
-                    </tr>
-                  )}
-                  {movementsLoading && (
-                    <tr>
-                      <td colSpan={8} className="py-6 px-3 text-center text-muted-foreground">{tt('loading', 'Loading')}</td>
-                    </tr>
-                  )}
-                  {movementRowsFiltered.map(row => {
-                    const item = items.find(entry => entry.id === row.item_id)
-                    const detailsOpen = expandedMovementId === row.id
-                    const orderHref = row.ref_type === 'SO' && row.ref_id
-                      ? '/orders?tab=sales&orderId=' + row.ref_id
-                      : row.ref_type === 'PO' && row.ref_id
-                        ? '/orders?tab=purchase&orderId=' + row.ref_id
-                        : ''
-                    return (
-                      <Fragment key={row.id}>
-                        <tr className="border-b align-top">
-                          <td className="py-2 px-3 whitespace-nowrap">{new Date(row.created_at).toLocaleString(lang)}</td>
-                          <td className="py-2 px-3">{movementTypeBadge(row.type)}</td>
-                          <td className="py-2 px-3">
-                            <div className="font-medium">{item?.name || row.item_id}</div>
-                            <div className="text-xs text-muted-foreground">{item?.sku || ''}</div>
-                          </td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            <div>{warehouseLabel(row.warehouse_from_id, row.bin_from_id)}</div>
-                            <div className="text-xs">-&gt; {warehouseLabel(row.warehouse_to_id, row.bin_to_id)}</div>
-                          </td>
-                          <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.qty_base, 0))}</td>
-                          <td className="py-2 px-3 text-right font-mono tabular-nums">{fmtAcct(num(row.unit_cost, 0))}</td>
-                          <td className="py-2 px-3 font-medium">{refLabel(row)}</td>
-                          <td className="py-2 px-3 text-right">
-                            <div className="flex justify-end gap-2">
-                              {orderHref ? (
-                                <Button asChild size="sm" variant="ghost">
-                                  <Link to={orderHref}>{tt('movements.viewSource', 'View source')}</Link>
-                                </Button>
-                              ) : <span className="text-xs text-muted-foreground">-</span>}
-                              <Button size="sm" variant="outline" onClick={() => setExpandedMovementId(detailsOpen ? '' : row.id)}>
-                                {detailsOpen ? tt('common.hide', 'Hide') : tt('common.details', 'Details')}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                        {detailsOpen && (
-                          <tr className="border-b bg-muted/20">
-                            <td colSpan={8} className="px-3 py-3 text-sm">
-                              <div className="grid gap-3 md:grid-cols-3">
-                                <div>
-                                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.notes', 'Notes')}</div>
-                                  <div className="mt-1 text-muted-foreground">{row.notes || '-'}</div>
-                                </div>
-                                <div>
-                                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('table.value', 'Value')}</div>
-                                  <div className="mt-1 font-mono tabular-nums">{fmtAcct(num(row.total_value, 0))}</div>
-                                </div>
-                                <div>
-                                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.referenceTrace', 'Reference trace')}</div>
-                                  <div className="mt-1 text-muted-foreground">{refLabel(row)}</div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <PremiumDataTable
+              rows={movementRowsFiltered}
+              columns={movementTableColumns}
+              getRowId={(row) => row.id}
+              loading={movementsLoading}
+              error={movementsError}
+              emptyState={movementEmptyState}
+              sort={movementSort}
+              onSortChange={setMovementSort}
+              ariaLabel={tt('movements.logTitle', 'Registo de movimentos de stock')}
+              pagination={{
+                page: movementPage,
+                pageSize: movementPageSize,
+                onPageChange: setMovementPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setMovementPageSize(nextPageSize)
+                  setMovementPage(1)
+                },
+                labels: movementPaginationLabels,
+              }}
+            />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
     </div>
   )

@@ -36,6 +36,8 @@ The dashboard is structured as a management cockpit:
 
 Dashboard content must preserve existing data sources and finance semantics. Visual polish must not change posting logic, COGS logic, settlement anchoring, RLS, or access behavior.
 
+The external dashboard guide used in the June 2026 polish pass is inspiration only for hierarchy, card/chart composition, responsive behaviour, and light/dark polish. It must not trigger a migration to Next.js, `next-themes`, a standalone theme selector, or a copied template architecture. StockWise remains the existing Vite + React + TypeScript app unless a separate architecture decision says otherwise.
+
 ## Chart Styling
 
 Finance charts should look like operating insight, not decoration.
@@ -44,7 +46,9 @@ Rules:
 
 - Revenue, COGS, margin, inventory, and receivables use named chart tokens.
 - Revenue and COGS must be readable in both light and dark mode.
-- Daily finance trend charts use the premium purple/pink direction: `--chart-revenue-line`, `--chart-cogs-line`, `--chart-margin-line`, `--chart-bar-primary`, and `--chart-marker-border`.
+- Daily finance trend charts use semantic operating colors: Revenue is blue through `--chart-revenue-line`, COGS is red through `--chart-cogs-line`, and Gross Margin is green through `--chart-margin-line`.
+- Daily line-chart markers are visible circles: normal dots are 8x8 px (`r=4`), active/hover dots are 10x10 px (`r=5`), and both use `--chart-grid-border` with `strokeWidth=1`.
+- `--chart-grid-border` controls grid lines, marker strokes, and tooltip marker borders so chart furniture stays consistent in light and dark mode.
 - Daily Revenue vs COGS is rendered as a timeline line chart with visible circular markers for each point; chart styling changed without changing the dashboard data-source logic.
 - Do not make key financial values look disabled through weak opacity.
 - Tooltips use clear surfaces, tabular numbers, and semantic color markers.
@@ -77,11 +81,14 @@ Operational registers now have a shared premium pattern under `src/components/pr
 
 Desktop registers may use wide tables when comparison matters. Android registers should show searchable cards first, with location, status, and next action visible without horizontal scrolling.
 
-Items and Stock Levels are the first implementation:
+Items, Stock Levels, and Movements follow this implementation:
 
 - Items uses the register pattern for SKU/name, role indicators, base UoM, default sell price, stock status, readiness, minimum-stock editing, and guarded delete actions.
 - Stock Levels uses the register pattern for item/location lookup, warehouse filters, stock-risk filters, valuation columns, low-stock badges, Excel export, and movement/item shortcuts.
+- Movements uses the register pattern as a premium stock-ledger surface over `stock_movements`: summary cards for total movements, Entradas/Receipts, Saídas/Issues, Ajustes/Adjustments, and Transferências/Transfers; search plus date/type/reference/item/warehouse/bin filters; semantic movement badges; desktop sortable table; Android cards with details and source actions.
 - Bin filtering is not exposed on Stock Levels until the current stock-level read model exposes bin data to the page.
+
+Movements must stay a register, not another dashboard. It may improve presentation, filtering, loading/error states, and empty states, but it must not manually mutate `stock_levels`, change posting/valuation/POS/purchase logic, or imply a costing-policy change. `stock_movements` remains canonical and `stock_levels` remains derived.
 
 Import/export rules:
 

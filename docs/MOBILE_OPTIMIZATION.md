@@ -26,7 +26,8 @@ Current design rules:
 - the mobile drawer uses a dedicated scroll body so lower navigation entries remain reachable on smaller Android screens
 - compact inventory workspaces such as Items, Movements, and Stock Levels now switch to card-style review surfaces instead of relying only on wide desktop tables
 - the dashboard now exposes a mobile-first operating flow: Today/status context, Action Needed, Quick Actions, Recent Activity, then deeper performance review
-- Items and Stock Levels now use the shared premium register pattern: search and filters appear before review content, Android shows cards first, and desktop keeps sortable paginated tables for comparison work
+- Items, Movements, and Stock Levels now use the shared premium register pattern: search and filters appear before review content, Android shows cards first, and desktop keeps sortable paginated tables for comparison work
+- Movements is treated as a stock-ledger register on Android: type/date/item/warehouse/bin filters stay above the card list, movement badges are semantic, and Details/View source actions remain visible without hover-only controls
 - onboarding now presents join-invite and create-company as separate mobile decision cards, with invite acceptance kept as an explicit action
 - Settings now starts with a mobile-friendly operating setup map so company administrators can jump to real backed setup areas without scanning the entire long form first
 - Users/Roles keeps invite controls, role definitions, status badges, and member review usable as stacked cards on phones
@@ -56,6 +57,7 @@ Future UI changes should preserve:
 - explicit empty states and first-use guidance
 - chart and table content lower in the mobile flow unless it is immediately actionable
 - mobile register cards that surface status, location, and the next safe action before exposing wide-table detail
+- stock movement cards should show item, type, route, quantity, value, reference, and details without requiring horizontal scrolling
 
 Future UI changes should avoid:
 
