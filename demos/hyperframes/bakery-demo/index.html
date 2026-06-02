@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="pt" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Noto Sans";
+        src: url("assets/NotoSans-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Noto Sans";
+        src: url("assets/NotoSans-Bold.ttf") format("truetype");
+        font-weight: 700;
+        font-style: normal;
+      }
+
+      :root {
+        --background: 214 31% 97%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --primary: 218 86% 45%;
+        --primary-foreground: 210 20% 98%;
+        --muted: 214 32% 94%;
+        --muted-foreground: 217 14% 42%;
+        --border: 216 24% 88%;
+        --card-border: 216 24% 88%;
+        --surface-elevated: 0 0% 100%;
+        --surface-muted: 214 30% 94%;
+        --financial-positive: 158 64% 34%;
+        --financial-warning: 38 92% 46%;
+        --financial-critical: 0 76% 52%;
+        --premium-dashboard-panel: 220 43% 12%;
+        --premium-dashboard-panel-foreground: 210 29% 97%;
+        --premium-dashboard-panel-muted: 215 18% 73%;
+        --premium-dashboard-panel-border: 217 31% 22%;
+        --radius: 16px;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family: Inter, "Noto Sans", "Segoe UI", Arial, sans-serif;
+      }
+
+      [data-composition-id="main"] {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.35) 52%, hsl(var(--background)) 100%);
+      }
+
+      .clip {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+
+      .scene-content {
+        position: relative;
+        z-index: 3;
+        width: 100%;
+        height: 100%;
+        padding: 74px 104px 86px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 32px;
+      }
+
+      .scene-grid {
+        display: grid;
+        grid-template-columns: 0.86fr 1.14fr;
+        align-items: center;
+        gap: 64px;
+        width: 100%;
+        height: 100%;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        border: 1px solid hsl(var(--border) / 0.7);
+        border-radius: 22px;
+        background: rgb(255 255 255 / 0.95);
+        padding: 14px 20px;
+        box-shadow: 0 20px 50px -32px rgb(15 23 42 / 0.55);
+      }
+
+      .brand-logo {
+        display: block;
+        width: 254px;
+        height: auto;
+      }
+
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        width: fit-content;
+        border-radius: 999px;
+        border: 1px solid hsl(var(--primary) / 0.18);
+        background: hsl(var(--primary) / 0.1);
+        padding: 10px 16px;
+        color: hsl(var(--primary));
+        font-size: 18px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .headline {
+        max-width: 780px;
+        margin-top: 34px;
+        color: hsl(var(--foreground));
+        font-size: 78px;
+        line-height: 0.98;
+        font-weight: 900;
+        letter-spacing: -0.035em;
+      }
+
+      .headline.dark {
+        color: hsl(var(--premium-dashboard-panel-foreground));
+      }
+
+      .support {
+        max-width: 710px;
+        margin-top: 28px;
+        color: hsl(var(--muted-foreground));
+        font-size: 31px;
+        line-height: 1.36;
+        font-weight: 500;
+      }
+
+      .support.dark {
+        color: hsl(var(--premium-dashboard-panel-muted));
+      }
+
+      .caption {
+        position: absolute;
+        left: 104px;
+        right: 104px;
+        bottom: 34px;
+        z-index: 8;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+      }
+
+      .caption span {
+        max-width: 1260px;
+        border: 1px solid hsl(var(--premium-dashboard-panel-border));
+        border-radius: 999px;
+        background: hsl(var(--premium-dashboard-panel) / 0.92);
+        padding: 16px 28px;
+        color: hsl(var(--premium-dashboard-panel-foreground));
+        font-size: 34px;
+        line-height: 1.18;
+        font-weight: 800;
+        text-align: center;
+        box-shadow: 0 24px 80px hsl(var(--foreground) / 0.25);
+      }
+
+      .sample-note {
+        position: absolute;
+        top: 72px;
+        right: 104px;
+        z-index: 7;
+        border-radius: 999px;
+        border: 1px solid hsl(var(--border) / 0.8);
+        background: hsl(var(--card) / 0.88);
+        padding: 10px 16px;
+        color: hsl(var(--muted-foreground));
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .grain {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 0.32;
+        background-image:
+          linear-gradient(hsl(var(--border) / 0.42) 1px, transparent 1px),
+          linear-gradient(90deg, hsl(var(--border) / 0.32) 1px, transparent 1px);
+        background-size: 44px 44px;
+      }
+
+      .ingredient-wall {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 22px;
+      }
+
+      .item-chip {
+        min-height: 132px;
+        border: 1px solid hsl(var(--card-border));
+        border-radius: calc(var(--radius) + 2px);
+        background: hsl(var(--surface-elevated));
+        padding: 24px;
+        box-shadow: 0 20px 48px -36px hsl(var(--foreground) / 0.24);
+      }
+
+      .item-chip strong {
+        display: block;
+        color: hsl(var(--foreground));
+        font-size: 28px;
+        line-height: 1.1;
+      }
+
+      .item-chip small {
+        display: block;
+        margin-top: 12px;
+        color: hsl(var(--muted-foreground));
+        font-size: 19px;
+        font-weight: 700;
+      }
+
+      .bakery-symbol {
+        width: 96px;
+        height: 96px;
+        margin-bottom: 18px;
+        border-radius: calc(var(--radius) + 4px);
+        background:
+          radial-gradient(circle at 48% 72%, #d98b00 0 12px, transparent 13px),
+          radial-gradient(circle at 32% 58%, #f0c078 0 20px, transparent 21px),
+          radial-gradient(circle at 56% 48%, #f4d29b 0 23px, transparent 24px),
+          radial-gradient(circle at 72% 60%, #e7ae5f 0 18px, transparent 19px),
+          #fff6e4;
+      }
+
+      .ui-frame {
+        border: 1px solid hsl(var(--card-border));
+        border-radius: calc(var(--radius) + 4px);
+        background: hsl(var(--card) / 0.96);
+        box-shadow: 0 24px 56px -42px hsl(var(--foreground) / 0.32);
+        overflow: hidden;
+      }
+
+      .ui-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 74px;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--surface-muted) / 0.52);
+        padding: 0 28px;
+      }
+
+      .ui-title {
+        font-size: 23px;
+        font-weight: 900;
+        color: hsl(var(--foreground));
+      }
+
+      .ui-meta {
+        color: hsl(var(--muted-foreground));
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .metric-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+        padding: 22px;
+      }
+
+      .metric {
+        border: 1px solid hsl(var(--card-border));
+        border-radius: var(--radius);
+        background: hsl(var(--card));
+        padding: 18px;
+      }
+
+      .metric label {
+        display: block;
+        color: hsl(var(--muted-foreground));
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 10px;
+        color: hsl(var(--foreground));
+        font-size: 30px;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .metric.positive strong {
+        color: hsl(var(--financial-positive));
+      }
+
+      .metric.warning strong {
+        color: hsl(var(--financial-warning));
+      }
+
+      .metric.info strong {
+        color: hsl(var(--primary));
+      }
+
+      .register {
+        padding: 0 22px 22px;
+      }
+
+      .table-row {
+        display: grid;
+        grid-template-columns: 1.2fr 0.55fr 0.55fr;
+        align-items: center;
+        min-height: 68px;
+        border-top: 1px solid hsl(var(--border) / 0.8);
+        color: hsl(var(--foreground));
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .table-row.header {
+        min-height: 50px;
+        color: hsl(var(--muted-foreground));
+        font-size: 16px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .badge {
+        justify-self: start;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        padding: 8px 13px;
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .badge.ok {
+        border-color: #a7f3d0;
+        background: #ecfdf5;
+        color: hsl(var(--financial-positive));
+      }
+
+      .badge.low {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: hsl(var(--financial-warning));
+      }
+
+      .badge.warn {
+        border-color: #bae6fd;
+        background: #f0f9ff;
+        color: #0369a1;
+      }
+
+      .pos-layout {
+        display: grid;
+        grid-template-columns: 0.92fr 1.08fr;
+        gap: 26px;
+        padding: 28px;
+      }
+
+      .receipt,
+      .movement-panel,
+      .alert-card,
+      .final-card {
+        border: 1px solid hsl(var(--card-border));
+        border-radius: calc(var(--radius) + 2px);
+        background: hsl(var(--surface-elevated));
+        box-shadow: 0 16px 34px -30px hsl(var(--foreground) / 0.34);
+      }
+
+      .receipt {
+        padding: 28px;
+      }
+
+      .receipt h3,
+      .movement-panel h3 {
+        font-size: 27px;
+        color: hsl(var(--foreground));
+      }
+
+      .sale-line {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid hsl(var(--border) / 0.8);
+        padding: 18px 0;
+        color: hsl(var(--foreground) / 0.86);
+        font-size: 23px;
+        font-weight: 760;
+      }
+
+      .sale-total {
+        margin-top: 22px;
+        border-radius: calc(var(--radius) + 2px);
+        background: hsl(var(--premium-dashboard-panel));
+        padding: 22px;
+        color: hsl(var(--premium-dashboard-panel-foreground));
+        font-size: 31px;
+        font-weight: 900;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .movement-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 28px;
+      }
+
+      .movement-line {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        border: 1px solid hsl(var(--card-border));
+        border-radius: var(--radius);
+        background: hsl(var(--surface-muted) / 0.45);
+        padding: 19px 22px;
+        color: hsl(var(--foreground));
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .movement-line span {
+        color: hsl(var(--financial-positive));
+        font-weight: 900;
+      }
+
+      .check-state {
+        margin-top: 6px;
+        border: 1px solid #a7f3d0;
+        border-radius: calc(var(--radius) + 2px);
+        background: #ecfdf5;
+        padding: 22px;
+        color: hsl(var(--financial-positive));
+        font-size: 28px;
+        font-weight: 900;
+      }
+
+      .alert-stack {
+        display: grid;
+        gap: 22px;
+      }
+
+      .alert-card {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 20px;
+        min-height: 138px;
+        padding: 26px;
+      }
+
+      .alert-icon {
+        display: grid;
+        place-items: center;
+        width: 62px;
+        height: 62px;
+        border: 1px solid #fde68a;
+        border-radius: var(--radius);
+        background: #fffbeb;
+        color: hsl(var(--financial-warning));
+        font-size: 32px;
+        font-weight: 900;
+      }
+
+      .alert-card strong {
+        display: block;
+        color: hsl(var(--foreground));
+        font-size: 29px;
+        line-height: 1.1;
+      }
+
+      .alert-card small {
+        display: block;
+        margin-top: 9px;
+        color: hsl(var(--muted-foreground));
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .alert-card em {
+        border-radius: 999px;
+        border: 1px solid #fde68a;
+        background: #fffbeb;
+        padding: 10px 14px;
+        color: hsl(var(--financial-warning));
+        font-style: normal;
+        font-size: 17px;
+        font-weight: 900;
+      }
+
+      .dark-stage {
+        background: hsl(var(--premium-dashboard-panel));
+      }
+
+      .final-wrap {
+        display: grid;
+        grid-template-columns: 0.82fr 1.18fr;
+        align-items: center;
+        gap: 56px;
+        width: 100%;
+        height: 100%;
+      }
+
+      .final-card {
+        background: hsl(var(--surface-elevated));
+        padding: 28px;
+      }
+
+      .final-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .final-metric {
+        min-height: 164px;
+        border: 1px solid hsl(var(--card-border));
+        border-radius: var(--radius);
+        background: hsl(var(--card));
+        padding: 24px;
+      }
+
+      .final-metric label {
+        color: hsl(var(--muted-foreground));
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .final-metric strong {
+        display: block;
+        margin-top: 20px;
+        color: hsl(var(--foreground));
+        font-size: 42px;
+        font-weight: 950;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .final-metric.positive strong {
+        color: hsl(var(--financial-positive));
+      }
+
+      .final-metric.warning strong {
+        color: hsl(var(--financial-warning));
+      }
+
+      .final-metric.info strong {
+        color: hsl(var(--primary));
+      }
+
+      .dark-stage .grain {
+        opacity: 0.16;
+        background-image:
+          linear-gradient(hsl(var(--premium-dashboard-panel-border) / 0.62) 1px, transparent 1px),
+          linear-gradient(90deg, hsl(var(--premium-dashboard-panel-border) / 0.46) 1px, transparent 1px);
+      }
+
+      .dark-stage .final-card {
+        border-color: hsl(var(--premium-dashboard-panel-border));
+        background: rgb(255 255 255 / 0.055);
+        color: hsl(var(--premium-dashboard-panel-foreground));
+        box-shadow: 0 28px 80px -52px rgb(0 0 0 / 0.55);
+      }
+
+      .dark-stage .ui-topbar {
+        border-bottom-color: hsl(var(--premium-dashboard-panel-border));
+        background: rgb(255 255 255 / 0.045);
+      }
+
+      .dark-stage .ui-title {
+        color: hsl(var(--premium-dashboard-panel-foreground));
+      }
+
+      .dark-stage .ui-meta,
+      .dark-stage .final-metric label {
+        color: hsl(var(--premium-dashboard-panel-muted));
+      }
+
+      .dark-stage .final-metric {
+        border-color: hsl(var(--premium-dashboard-panel-border));
+        background: rgb(255 255 255 / 0.055);
+      }
+
+      .dark-stage .final-metric strong {
+        color: hsl(var(--premium-dashboard-panel-foreground));
+      }
+
+      .dark-stage .final-metric.positive strong {
+        color: #a7f3d0;
+      }
+
+      .dark-stage .final-metric.warning strong {
+        color: #fde68a;
+      }
+
+      .dark-stage .final-metric.info strong {
+        color: #bae6fd;
+      }
+
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 34px;
+        border-radius: 18px;
+        background: hsl(var(--primary));
+        padding: 24px 34px;
+        color: hsl(var(--primary-foreground));
+        font-size: 28px;
+        font-weight: 900;
+        box-shadow: 0 12px 24px -16px hsl(var(--primary) / 0.85);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <section id="scene-1" class="clip scene" data-start="0" data-duration="3" data-track-index="1">
+        <div class="grain"></div>
+        <div class="scene-content">
+          <div class="brand scene-1-brand">
+            <img class="brand-logo" src="assets/stockwise-logo.png" alt="StockWise" />
+          </div>
+          <div class="scene-grid">
+            <div>
+              <div class="kicker scene-1-kicker">Padaria Pão Dourado</div>
+              <h1 class="headline scene-1-title">O stock de uma padaria muda todos os dias.</h1>
+              <p class="support scene-1-copy">Ingredientes, produtos acabados e vendas precisam estar sempre ligados.</p>
+            </div>
+            <div class="ingredient-wall scene-1-items">
+              <div class="item-chip">
+                <div class="bakery-symbol"></div>
+                <strong>Farinha 25kg</strong>
+                <small>Ingrediente principal</small>
+              </div>
+              <div class="item-chip">
+                <div class="bakery-symbol"></div>
+                <strong>Pão</strong>
+                <small>Venda diária</small>
+              </div>
+              <div class="item-chip">
+                <div class="bakery-symbol"></div>
+                <strong>Bolo de chocolate</strong>
+                <small>Produto de alto valor</small>
+              </div>
+              <div class="item-chip">
+                <div class="bakery-symbol"></div>
+                <strong>Pastel de nata</strong>
+                <small>Pastelaria rápida</small>
+              </div>
+            </div>
+          </div>
+          <div class="caption"><span>O stock de uma padaria muda todos os dias.</span></div>
+        </div>
+      </section>
+
+      <section id="scene-2" class="clip scene" data-start="3" data-duration="4" data-track-index="1">
+        <div class="grain"></div>
+        <div class="sample-note">Dados ilustrativos para demonstração.</div>
+        <div class="scene-content">
+          <div class="scene-grid">
+            <div>
+              <div class="kicker scene-2-kicker">Tudo no mesmo sistema</div>
+              <h2 class="headline scene-2-title">Ingredientes, produtos e vendas ligados.</h2>
+              <p class="support scene-2-copy">Uma visão clara para decidir antes que a produção seja afectada.</p>
+            </div>
+            <div class="ui-frame scene-2-ui">
+              <div class="ui-topbar">
+                <div class="ui-title">StockWise · Itens e stock</div>
+                <div class="ui-meta">Padaria Pão Dourado</div>
+              </div>
+              <div class="metric-row">
+                <div class="metric positive"><label>Vendas do dia</label><strong>MZN 12.750</strong></div>
+                <div class="metric info"><label>Valor em stock</label><strong>MZN 48.900</strong></div>
+                <div class="metric warning"><label>Baixo stock</label><strong>3</strong></div>
+                <div class="metric"><label>Movimentos</label><strong>18</strong></div>
+              </div>
+              <div class="register">
+                <div class="table-row header"><span>Item</span><span>Qtd.</span><span>Estado</span></div>
+                <div class="table-row"><span>Farinha 25kg</span><span>2</span><span class="badge low">Baixo stock</span></div>
+                <div class="table-row"><span>Açúcar 10kg</span><span>9</span><span class="badge ok">Em stock</span></div>
+                <div class="table-row"><span>Fermento</span><span>4</span><span class="badge low">Baixo stock</span></div>
+                <div class="table-row"><span>Pão</span><span>86</span><span class="badge ok">Em stock</span></div>
+                <div class="table-row"><span>Bolo de chocolate</span><span>7</span><span class="badge warn">Atenção</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="caption"><span>Com o StockWise, ingredientes, produtos e vendas ficam no mesmo sistema.</span></div>
+        </div>
+      </section>
+
+      <section id="scene-3" class="clip scene" data-start="7" data-duration="5" data-track-index="1">
+        <div class="grain"></div>
+        <div class="sample-note">Dados ilustrativos para demonstração.</div>
+        <div class="scene-content">
+          <div class="scene-grid">
+            <div>
+              <div class="kicker scene-3-kicker">POS e movimentos</div>
+              <h2 class="headline scene-3-title">Venda registada. Stock actualizado.</h2>
+              <p class="support scene-3-copy">A equipa vende no balcão e o movimento ajuda a manter o stock visível.</p>
+            </div>
+            <div class="ui-frame scene-3-ui">
+              <div class="ui-topbar">
+                <div class="ui-title">Venda POS · Hoje</div>
+                <div class="ui-meta">Caixa principal</div>
+              </div>
+              <div class="pos-layout">
+                <div class="receipt">
+                  <h3>Venda POS</h3>
+                  <div class="sale-line"><span>Pão</span><strong>MZN 450</strong></div>
+                  <div class="sale-line"><span>Bolo de chocolate</span><strong>MZN 650</strong></div>
+                  <div class="sale-line"><span>Pastel de nata</span><strong>MZN 150</strong></div>
+                  <div class="sale-total"><span>Total</span><strong>MZN 1.250</strong></div>
+                </div>
+                <div class="movement-panel">
+                  <h3>Movimento de stock</h3>
+                  <div class="movement-line"><strong>Pão</strong><span>-12 un.</span></div>
+                  <div class="movement-line"><strong>Bolo de chocolate</strong><span>-1 un.</span></div>
+                  <div class="movement-line"><strong>Pastel de nata</strong><span>-6 un.</span></div>
+                  <div class="check-state">Stock actualizado</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="caption"><span>Registe vendas no POS e movimentos de stock.</span></div>
+        </div>
+      </section>
+
+      <section id="scene-4" class="clip scene" data-start="12" data-duration="4" data-track-index="1">
+        <div class="grain"></div>
+        <div class="sample-note">Dados ilustrativos para demonstração.</div>
+        <div class="scene-content">
+          <div class="scene-grid">
+            <div>
+              <div class="kicker scene-4-kicker">Acção necessária</div>
+              <h2 class="headline scene-4-title">Veja o que está abaixo do mínimo.</h2>
+              <p class="support scene-4-copy">Atenção antes de faltar ingrediente ou embalagem no momento de produção.</p>
+            </div>
+            <div class="alert-stack scene-4-alerts">
+              <div class="alert-card">
+                <div class="alert-icon">!</div>
+                <div>
+                  <strong>Farinha 25kg abaixo do mínimo</strong>
+                  <small>2 sacos disponíveis · mínimo definido: 5</small>
+                </div>
+                <em>Repor</em>
+              </div>
+              <div class="alert-card">
+                <div class="alert-icon">!</div>
+                <div>
+                  <strong>Fermento abaixo do mínimo</strong>
+                  <small>4 unidades disponíveis · atenção para produção</small>
+                </div>
+                <em>Rever</em>
+              </div>
+              <div class="alert-card">
+                <div class="alert-icon">!</div>
+                <div>
+                  <strong>Caixa para bolo precisa reposição</strong>
+                  <small>Embalagens quase no limite</small>
+                </div>
+                <em>Atenção</em>
+              </div>
+            </div>
+          </div>
+          <div class="caption"><span>Veja o que está abaixo do mínimo antes da produção parar.</span></div>
+        </div>
+      </section>
+
+      <section id="scene-5" class="clip scene dark-stage" data-start="16" data-duration="4" data-track-index="1">
+        <div class="grain"></div>
+        <div class="scene-content">
+          <div class="final-wrap">
+            <div class="scene-5-copy">
+              <div class="brand">
+                <img class="brand-logo" src="assets/stockwise-logo.png" alt="StockWise" />
+              </div>
+              <h2 class="headline dark scene-5-title">Controle stock, vendas e decisões diárias com mais segurança.</h2>
+              <div class="cta scene-5-cta">Começar teste grátis de 7 dias</div>
+            </div>
+            <div class="final-card scene-5-card">
+              <div class="ui-topbar">
+                <div class="ui-title">Painel diário · Padaria Pão Dourado</div>
+                <div class="ui-meta">Dados ilustrativos</div>
+              </div>
+              <div class="final-metrics">
+                <div class="final-metric positive"><label>Vendas do dia</label><strong>MZN 12.750</strong></div>
+                <div class="final-metric info"><label>Valor em stock</label><strong>MZN 48.900</strong></div>
+                <div class="final-metric warning"><label>Itens abaixo do mínimo</label><strong>3</strong></div>
+                <div class="final-metric"><label>Movimentos hoje</label><strong>18</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="caption"><span>Comece o teste grátis de 7 dias.</span></div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.from(".scene-1-brand", { y: 20, opacity: 0, duration: 0.45, ease: "power3.out" }, 0.15);
+      tl.from(".scene-1-kicker", { y: 20, opacity: 0, duration: 0.45, ease: "power3.out" }, 0.3);
+      tl.from(".scene-1-title", { y: 48, opacity: 0, duration: 0.62, ease: "power3.out" }, 0.42);
+      tl.from(".scene-1-copy", { y: 34, opacity: 0, duration: 0.5, ease: "power3.out" }, 0.72);
+      tl.from(".scene-1-items .item-chip", { y: 46, opacity: 0, scale: 0.96, duration: 0.54, stagger: 0.08, ease: "power3.out" }, 0.58);
+      tl.to("#scene-1", { opacity: 0, duration: 0.32, ease: "power2.in" }, 2.72);
+
+      tl.from(".scene-2-kicker", { y: 20, opacity: 0, duration: 0.42, ease: "power3.out" }, 3.12);
+      tl.from(".scene-2-title", { y: 42, opacity: 0, duration: 0.58, ease: "power3.out" }, 3.28);
+      tl.from(".scene-2-copy", { y: 28, opacity: 0, duration: 0.48, ease: "power3.out" }, 3.56);
+      tl.from(".scene-2-ui", { x: 54, opacity: 0, scale: 0.97, duration: 0.62, ease: "power3.out" }, 3.35);
+      tl.from(".scene-2-ui .metric", { y: 20, opacity: 0, duration: 0.36, stagger: 0.05, ease: "power2.out" }, 3.8);
+      tl.from(".scene-2-ui .table-row:not(.header)", { y: 18, opacity: 0, duration: 0.34, stagger: 0.055, ease: "power2.out" }, 4.05);
+      tl.to("#scene-2", { opacity: 0, duration: 0.32, ease: "power2.in" }, 6.72);
+
+      tl.from(".scene-3-kicker", { y: 20, opacity: 0, duration: 0.42, ease: "power3.out" }, 7.12);
+      tl.from(".scene-3-title", { y: 42, opacity: 0, duration: 0.58, ease: "power3.out" }, 7.28);
+      tl.from(".scene-3-copy", { y: 28, opacity: 0, duration: 0.48, ease: "power3.out" }, 7.56);
+      tl.from(".scene-3-ui", { x: 54, opacity: 0, scale: 0.97, duration: 0.6, ease: "power3.out" }, 7.35);
+      tl.from(".receipt .sale-line", { x: -22, opacity: 0, duration: 0.34, stagger: 0.08, ease: "power2.out" }, 8.05);
+      tl.from(".sale-total", { y: 18, opacity: 0, scale: 0.98, duration: 0.4, ease: "power2.out" }, 8.42);
+      tl.from(".movement-line", { x: 28, opacity: 0, duration: 0.35, stagger: 0.08, ease: "power2.out" }, 8.78);
+      tl.from(".check-state", { y: 20, opacity: 0, scale: 0.97, duration: 0.45, ease: "power3.out" }, 9.26);
+      tl.to("#scene-3", { opacity: 0, duration: 0.32, ease: "power2.in" }, 11.72);
+
+      tl.from(".scene-4-kicker", { y: 20, opacity: 0, duration: 0.42, ease: "power3.out" }, 12.12);
+      tl.from(".scene-4-title", { y: 42, opacity: 0, duration: 0.58, ease: "power3.out" }, 12.28);
+      tl.from(".scene-4-copy", { y: 28, opacity: 0, duration: 0.48, ease: "power3.out" }, 12.56);
+      tl.from(".scene-4-alerts .alert-card", { y: 34, opacity: 0, scale: 0.98, duration: 0.46, stagger: 0.11, ease: "power3.out" }, 12.55);
+      tl.to("#scene-4", { opacity: 0, duration: 0.32, ease: "power2.in" }, 15.72);
+
+      tl.from(".scene-5-copy .brand", { y: 20, opacity: 0, duration: 0.48, ease: "power3.out" }, 16.12);
+      tl.from(".scene-5-title", { y: 42, opacity: 0, duration: 0.62, ease: "power3.out" }, 16.32);
+      tl.from(".scene-5-cta", { y: 26, opacity: 0, scale: 0.97, duration: 0.48, ease: "power3.out" }, 16.82);
+      tl.from(".scene-5-card", { x: 52, opacity: 0, scale: 0.97, duration: 0.62, ease: "power3.out" }, 16.42);
+      tl.from(".final-metric", { y: 24, opacity: 0, duration: 0.38, stagger: 0.07, ease: "power2.out" }, 16.94);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

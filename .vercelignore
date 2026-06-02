@@ -1,0 +1,20 @@
+# Local caches and temporary working directories
+.tmp/
+.tmp_pip/
+.tmp_pg8000/
+.tmp-doc-output/
+.tmp-ui-validation/
+.pip-cache/
+.pydeps/
+.npm-cache/
+.playwright-cli/
+output/
+
+# Offline pitch/demo assets are not part of the live website payload
+demos/
+stockwise_concept_c_brandkit/
+
+# Local one-off artifacts
+*.log
+*.local
+.tmp-login.png

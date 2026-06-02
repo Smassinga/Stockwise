@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, Download, ExternalLink, Package, PackageCheck, Pencil, Plus, Settings2, Tags, Trash2, Upload, Warehouse } from 'lucide-react'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
@@ -31,7 +33,23 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Switch } from '../components/ui/switch'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { PremiumColumnVisibilityMenu } from '../components/premium/PremiumColumnVisibilityMenu'
+import {
+  PremiumDataTable,
+  sortPremiumRows,
+  type PremiumColumnVisibilityState,
+  type PremiumDataTableColumn,
+  type PremiumDataTableSortState,
+} from '../components/premium/PremiumDataTable'
+import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { PremiumImportExportActions } from '../components/premium/PremiumImportExportActions'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
+import { getPremiumPageRows } from '../components/premium/PremiumPagination'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
+import { PremiumTableFilter } from '../components/premium/PremiumTableFilter'
+import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
 
 type Uom = {
   id: string
@@ -117,6 +135,13 @@ export default function ItemsPage() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | ItemPrimaryRole>('all')
   const [stockFilter, setStockFilter] = useState<'all' | 'assembly' | 'stocked' | 'service'>('all')
+  const [itemSort, setItemSort] = useState<PremiumDataTableSortState>({ columnId: 'name', direction: 'asc' })
+  const [itemColumnVisibility, setItemColumnVisibility] = useState<PremiumColumnVisibilityState>({
+    sku: false,
+    readiness: false,
+  })
+  const [itemPage, setItemPage] = useState(1)
+  const [itemPageSize, setItemPageSize] = useState(10)
 
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editMinStock, setEditMinStock] = useState('0')
@@ -225,6 +250,10 @@ export default function ItemsPage() {
       warnings: warningCount,
     }
   }, [items])
+
+  useEffect(() => {
+    setItemPage(1)
+  }, [roleFilter, search, stockFilter])
 
   useEffect(() => {
     void loadPage()
@@ -521,62 +550,253 @@ export default function ItemsPage() {
     return labels[code]
   }
 
+  function itemStockPresentation(item: ItemRow): { label: string; tone: PremiumTone; rank: number } {
+    if (!item.trackInventory) {
+      return { label: tt('items.preview.nonStock', 'Non-stock'), tone: 'neutral', rank: 3 }
+    }
+    const onHand = Number(item.onHandQty ?? 0)
+    const min = Number(item.minStock ?? 0)
+    if (onHand <= 0) {
+      return { label: tt('stock.status.out', 'Out of stock'), tone: 'critical', rank: 0 }
+    }
+    if (min > 0 && onHand < min) {
+      return { label: tt('stock.status.low', 'Low stock'), tone: 'warning', rank: 1 }
+    }
+    return { label: tt('stock.status.healthy', 'Healthy'), tone: 'positive', rank: 2 }
+  }
+
+  function uomLabel(item: ItemRow) {
+    const baseUom = uomById.get(item.baseUomId)
+    return baseUom ? `${baseUom.code} - ${baseUom.name}` : item.baseUomId
+  }
+
+  function itemRoleBadges(item: ItemRow) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <PremiumStatusBadge tone="info">{roleLabel(item.primaryRole)}</PremiumStatusBadge>
+        <PremiumStatusBadge tone={item.trackInventory ? 'neutral' : 'warning'}>
+          {item.trackInventory ? tt('items.preview.stocked', 'Stocked') : tt('items.preview.nonStock', 'Non-stock')}
+        </PremiumStatusBadge>
+        {item.canBuy ? <PremiumStatusBadge tone="neutral">{tt('items.preview.bought', 'Bought')}</PremiumStatusBadge> : null}
+        {item.canSell ? <PremiumStatusBadge tone="positive">{tt('items.preview.sold', 'Sold')}</PremiumStatusBadge> : null}
+        {item.isAssembled ? <PremiumStatusBadge tone="info">{tt('items.preview.assembled', 'Assembled')}</PremiumStatusBadge> : null}
+        {item.usedAsComponent ? <PremiumStatusBadge tone="neutral">{tt('items.table.component', 'Component')}</PremiumStatusBadge> : null}
+        {item.hasActiveBom ? <PremiumStatusBadge tone="neutral">{tt('items.table.activeBom', 'Active BOM')}</PremiumStatusBadge> : null}
+      </div>
+    )
+  }
+
+  function itemReadiness(item: ItemRow) {
+    const warnings = deriveItemProfileWarnings(item)
+    if (!warnings.length) {
+      return <PremiumStatusBadge tone="positive">{tt('items.ready', 'Ready')}</PremiumStatusBadge>
+    }
+    return (
+      <div className="flex flex-wrap gap-2">
+        {warnings.map((warning) => (
+          <PremiumStatusBadge
+            key={warning}
+            tone={warningVariant(warning) === 'destructive' ? 'critical' : 'warning'}
+            className="whitespace-normal"
+          >
+            {warningLabel(warning)}
+          </PremiumStatusBadge>
+        ))}
+      </div>
+    )
+  }
+
+  const paginationLabels = {
+    rowsPerPage: tt('register.rowsPerPage', 'Rows'),
+    previous: tt('register.previous', 'Previous'),
+    next: tt('register.next', 'Next'),
+    pageSummary: (page: number, total: number) =>
+      tt('register.pageSummary', 'Page {page} of {total}', { page, total }),
+    rangeSummary: (from: number, to: number, total: number) =>
+      tt('register.rangeSummary', '{from}-{to} of {total}', { from, to, total }),
+  }
+
+  const itemTableColumns: PremiumDataTableColumn<ItemRow>[] = [
+    {
+      id: 'sku',
+      header: tt('items.fields.sku', 'SKU'),
+      cell: (item) => <span className="font-mono text-xs font-medium tabular-nums">{item.sku}</span>,
+      sortValue: (item) => item.sku,
+      minWidth: 120,
+    },
+    {
+      id: 'name',
+      header: tt('table.item', 'Item'),
+      cell: (item) => (
+        <div className="min-w-0 space-y-1.5">
+          <div className="font-medium">{item.name}</div>
+          <div className="text-xs text-muted-foreground">{item.sku}</div>
+        </div>
+      ),
+      sortValue: (item) => item.name,
+      minWidth: 220,
+      enableHiding: false,
+    },
+    {
+      id: 'role',
+      header: tt('items.table.role', 'Role'),
+      cell: (item) => itemRoleBadges(item),
+      sortValue: (item) => roleLabel(item.primaryRole),
+      minWidth: 230,
+    },
+    {
+      id: 'uom',
+      header: tt('items.table.baseUom', 'Base UoM'),
+      cell: (item) => <span className="text-sm text-muted-foreground">{uomLabel(item)}</span>,
+      sortValue: (item) => uomLabel(item),
+      minWidth: 180,
+    },
+    {
+      id: 'unitPrice',
+      header: tt('items.table.unitPrice', 'Default sell price'),
+      cell: (item) => (item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : tt('common.dash', '-')),
+      sortValue: (item) => (item.canSell ? Number(item.unitPrice ?? 0) : -1),
+      align: 'right',
+      minWidth: 150,
+    },
+    {
+      id: 'stock',
+      header: tt('items.table.stockStatus', 'Stock status'),
+      cell: (item) => {
+        const stock = itemStockPresentation(item)
+        return (
+          <div className="flex flex-col items-end gap-2">
+            <PremiumStatusBadge tone={stock.tone}>{stock.label}</PremiumStatusBadge>
+            <div className="text-xs text-muted-foreground">
+              {tt('items.table.stockLine', '{onHand} on hand / {minStock} min', {
+                onHand: formatQty(item.onHandQty),
+                minStock: formatStockThreshold(item.minStock),
+              })}
+            </div>
+          </div>
+        )
+      },
+      sortValue: (item) => itemStockPresentation(item).rank,
+      align: 'right',
+      minWidth: 190,
+    },
+    {
+      id: 'readiness',
+      header: tt('items.table.readiness', 'Readiness'),
+      cell: (item) => itemReadiness(item),
+      sortValue: (item) => deriveItemProfileWarnings(item).length,
+      minWidth: 220,
+    },
+    {
+      id: 'actions',
+      header: tt('common.actions', 'Actions'),
+      cell: (item) => (
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => openEditItem(item)} disabled={!can.updateItem(role)}>
+            <Pencil className="h-4 w-4" />
+            {tt('items.actions.minStock', 'Edit minimum')}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} disabled={!can.deleteItem(role)}>
+            <Trash2 className="h-4 w-4" />
+            {tt('common.delete', 'Delete')}
+          </Button>
+        </div>
+      ),
+      align: 'right',
+      minWidth: 210,
+      enableHiding: false,
+    },
+  ]
+
+  const sortedItems = sortPremiumRows(filteredItems, itemTableColumns, itemSort)
+  const pagedItems = getPremiumPageRows(sortedItems, itemPage, itemPageSize)
+
+  const itemImportExportActions = (
+    <PremiumImportExportActions
+      importAction={
+        <Button variant="outline" asChild>
+          <Link to="/setup/import">
+            <Upload className="h-4 w-4" />
+            {tt('register.import', 'Import')}
+          </Link>
+        </Button>
+      }
+      exportAction={
+        <Button
+          variant="outline"
+          disabled
+          title={tt('items.exportUnavailable', 'Item master export is not enabled on this register yet.')}
+        >
+          <Download className="h-4 w-4" />
+          {tt('register.export', 'Export')}
+        </Button>
+      }
+    />
+  )
+
   if (loading) return <div className="app-page app-page--workspace p-6">{tt('loading', 'Loading...')}</div>
 
   return (
     <div className="app-page app-page--workspace">
-      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
-        <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(23rem,0.92fr)] xl:p-8 2xl:grid-cols-[minmax(0,1.14fr)_minmax(27rem,0.86fr)]">
-          <div className="space-y-3">
-            <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em]">
-              {tt('items.eyebrow', 'Master data clarity')}
-            </Badge>
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight">{tt('items.title', 'Items')}</h1>
-              <p className="hidden max-w-3xl text-sm leading-6 text-muted-foreground sm:block">
-                {tt(
-                  'items.subtitle',
-                  'Set up each item once with a clear operational role. Stock, purchasing, selling, and assembly should be obvious before anyone uses the item in orders, builds, or finance documents.',
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="hidden grid-cols-2 gap-3 sm:grid sm:grid-cols-2">
-            <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-3 sm:p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.total', 'Total items')}</div>
-                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.total}</div>
-                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.totalHelp', 'All item masters in the active company.')}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-3 sm:p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.stocked', 'Stock-tracked')}</div>
-                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.stocked}</div>
-                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.stockedHelp', 'Items that participate in inventory balances and minimum-stock alerts.')}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-3 sm:p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.assembled', 'Assembly-related')}</div>
-                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.assembled}</div>
-                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.assembledHelp', 'Items that are assembled themselves or consumed inside BOMs.')}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm backdrop-blur">
-              <CardContent className="p-3 sm:p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('items.summary.attention', 'Needs attention')}</div>
-                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{summary.warnings}</div>
-                <div className="mt-2 hidden text-sm text-muted-foreground sm:block">{tt('items.summary.attentionHelp', 'Profile mismatches that can confuse stock or assembly workflows.')}</div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </section>
+      <PremiumRegisterHeader
+        eyebrow={tt('items.eyebrow', 'Master data clarity')}
+        title={tt('items.title', 'Items')}
+        description={tt(
+          'items.subtitle',
+          'Set up each item once with a clear operational role. Stock, purchasing, selling, and assembly should be obvious before anyone uses the item in orders, builds, or finance documents.',
+        )}
+        badges={
+          <>
+            <PremiumStatusBadge tone="info" icon={<Tags />}>{tt('items.registerTitle', 'Item register')}</PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral">{baseCurrencyCode}</PremiumStatusBadge>
+          </>
+        }
+        actions={
+          <>
+            <Button asChild>
+              <a href="#item-create">
+                <Plus className="h-4 w-4" />
+                {tt('items.actions.create', 'Create item')}
+              </a>
+            </Button>
+            {itemImportExportActions}
+          </>
+        }
+        metrics={
+          <>
+            <PremiumMetricCard
+              label={tt('items.summary.total', 'Total items')}
+              value={summary.total}
+              description={tt('items.summary.totalHelp', 'All item masters in the active company.')}
+              icon={<Package />}
+            />
+            <PremiumMetricCard
+              label={tt('items.summary.stocked', 'Stock-tracked')}
+              value={summary.stocked}
+              description={tt('items.summary.stockedHelp', 'Items that participate in inventory balances and minimum-stock alerts.')}
+              icon={<Warehouse />}
+              tone="positive"
+            />
+            <PremiumMetricCard
+              label={tt('items.summary.assembled', 'Assembly-related')}
+              value={summary.assembled}
+              description={tt('items.summary.assembledHelp', 'Items that are assembled themselves or consumed inside BOMs.')}
+              icon={<PackageCheck />}
+              tone="info"
+            />
+            <PremiumMetricCard
+              label={tt('items.summary.attention', 'Needs attention')}
+              value={summary.warnings}
+              description={tt('items.summary.attentionHelp', 'Profile mismatches that can confuse stock or assembly workflows.')}
+              icon={<AlertTriangle />}
+              tone={summary.warnings > 0 ? 'warning' : 'positive'}
+            />
+          </>
+        }
+      />
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.06fr)_minmax(20rem,0.94fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
-        <Card className="border-border/70 bg-card shadow-sm">
+        <Card id="item-create" className="border-border/70 bg-card shadow-sm">
           <CardHeader className="space-y-1 p-4 pb-2 sm:space-y-2 sm:p-6">
             <CardTitle className="text-base sm:text-lg">{tt('items.createTitle', 'Create a clear item master')}</CardTitle>
             <CardDescription className="hidden sm:block">
@@ -813,203 +1033,208 @@ export default function ItemsPage() {
         </Card>
       </section>
 
-      <Card className="border-border/70 bg-card shadow-[0_20px_48px_-36px_hsl(var(--foreground)/0.24)]">
-        <CardHeader className="space-y-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>{tt('items.registerTitle', 'Item register')}</CardTitle>
-              <CardDescription>{tt('items.registerHelp', 'Review stock behavior, commercial role, and assembly participation before the item reaches orders, production, or costing.')}</CardDescription>
-            </div>
-            <div className="mobile-filter-stack grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)] xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tt('items.searchPlaceholder', 'Search by name or SKU')} />
-              <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as 'all' | ItemPrimaryRole)}>
-                <SelectTrigger><SelectValue placeholder={tt('items.filters.role', 'All roles')} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{tt('items.filters.roleAll', 'All roles')}</SelectItem>
-                  {roleOptions.map((option) => (
-                    <SelectItem key={option.role} value={option.role}>{option.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={stockFilter} onValueChange={(value) => setStockFilter(value as typeof stockFilter)}>
-                <SelectTrigger><SelectValue placeholder={tt('items.filters.scope', 'All scopes')} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{tt('items.filters.scopeAll', 'All scopes')}</SelectItem>
-                  <SelectItem value="stocked">{tt('items.filters.scopeStocked', 'Stocked only')}</SelectItem>
-                  <SelectItem value="assembly">{tt('items.filters.scopeAssembly', 'Assembly-related')}</SelectItem>
-                  <SelectItem value="service">{tt('items.filters.scopeService', 'Services')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      <section id="item-register" className="space-y-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-[1.05rem] font-semibold leading-7 tracking-tight">{tt('items.registerTitle', 'Item register')}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              {tt('items.registerHelp', 'Review stock behavior, commercial role, and assembly participation before the item reaches orders, production, or costing.')}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {filteredItems.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/80 bg-muted/15 p-8 text-center">
-              <div className="text-lg font-medium">{tt('items.emptyTitle', 'No items match this view')}</div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {items.length === 0
-                  ? tt('items.emptyBody', 'Start with a resale item, raw material, or assembled product so the rest of the workflow has a clean master-data base.')
-                  : tt('items.emptyFiltered', 'Clear the filters or search term to see more items.')}
-              </p>
-            </div>
-          ) : isMobile ? (
-            <div className="mobile-register-list space-y-3">
-              {filteredItems.map((item) => {
-                const warnings = deriveItemProfileWarnings(item)
-                const baseUom = uomById.get(item.baseUomId)
+        </div>
+
+        <PremiumTableToolbar
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={tt('items.searchPlaceholder', 'Search by name or SKU')}
+          searchLabel={tt('common.search', 'Search')}
+          filters={
+            <>
+              <PremiumTableFilter label={tt('items.filters.role', 'All roles')}>
+                <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as 'all' | ItemPrimaryRole)}>
+                  <SelectTrigger><SelectValue placeholder={tt('items.filters.role', 'All roles')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{tt('items.filters.roleAll', 'All roles')}</SelectItem>
+                    {roleOptions.map((option) => (
+                      <SelectItem key={option.role} value={option.role}>{option.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+              <PremiumTableFilter label={tt('items.filters.scope', 'All scopes')}>
+                <Select value={stockFilter} onValueChange={(value) => setStockFilter(value as typeof stockFilter)}>
+                  <SelectTrigger><SelectValue placeholder={tt('items.filters.scope', 'All scopes')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{tt('items.filters.scopeAll', 'All scopes')}</SelectItem>
+                    <SelectItem value="stocked">{tt('items.filters.scopeStocked', 'Stocked only')}</SelectItem>
+                    <SelectItem value="assembly">{tt('items.filters.scopeAssembly', 'Assembly-related')}</SelectItem>
+                    <SelectItem value="service">{tt('items.filters.scopeService', 'Services')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </PremiumTableFilter>
+            </>
+          }
+          actions={
+            <>
+              <PremiumColumnVisibilityMenu
+                columns={itemTableColumns}
+                visibility={itemColumnVisibility}
+                onVisibilityChange={setItemColumnVisibility}
+                label={tt('register.columns', 'Columns')}
+                menuLabel={tt('register.visibleColumns', 'Visible columns')}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearch('')
+                  setRoleFilter('all')
+                  setStockFilter('all')
+                }}
+              >
+                <Settings2 className="h-4 w-4" />
+                {tt('common.clear', 'Clear')}
+              </Button>
+            </>
+          }
+          summary={tt('items.registerCount', '{count} of {total} items in view', {
+            count: filteredItems.length,
+            total: items.length,
+          })}
+        />
+
+        <div className="rounded-[calc(var(--radius)+0.25rem)] border border-card-border bg-card p-3 shadow-[0_20px_48px_-36px_hsl(var(--foreground)/0.24)] sm:p-4">
+          {isMobile ? (
+            <PremiumMobileCardList
+              rows={pagedItems}
+              getRowId={(item) => item.id}
+              pagination={{
+                page: itemPage,
+                pageSize: itemPageSize,
+                totalItems: sortedItems.length,
+                onPageChange: setItemPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setItemPageSize(nextPageSize)
+                  setItemPage(1)
+                },
+                labels: paginationLabels,
+              }}
+              emptyState={
+                <PremiumEmptyState
+                  icon={<Package />}
+                  title={tt('items.emptyTitle', 'No items match this view')}
+                  description={
+                    items.length === 0
+                      ? tt('items.emptyBody', 'Start with a resale item, raw material, or assembled product so the rest of the workflow has a clean master-data base.')
+                      : tt('items.emptyFiltered', 'Clear the filters or search term to see more items.')
+                  }
+                  action={
+                    items.length === 0 ? (
+                      <Button asChild>
+                        <a href="#item-create">{tt('items.actions.create', 'Create item')}</a>
+                      </Button>
+                    ) : null
+                  }
+                />
+              }
+              renderCard={(item) => {
+                const stock = itemStockPresentation(item)
                 return (
-                  <div key={item.id} className="rounded-2xl border border-border/70 bg-background/92 p-4 shadow-sm">
+                  <article className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-elevated p-4 shadow-[0_16px_34px_-30px_hsl(var(--foreground)/0.34)]">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-2">
-                        <div>
-                          <div className="truncate font-medium">{item.name}</div>
-                          <div className="truncate text-xs text-muted-foreground">{item.sku}</div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge>{roleLabel(item.primaryRole)}</Badge>
-                          <Badge variant={item.trackInventory ? 'outline' : 'secondary'}>
-                            {item.trackInventory ? tt('items.preview.stocked', 'Stocked') : tt('items.preview.nonStock', 'Non-stock')}
-                          </Badge>
-                          {item.canSell ? <Badge variant="outline">{tt('items.preview.sold', 'Sold')}</Badge> : null}
-                          {item.isAssembled ? <Badge variant="secondary">{tt('items.preview.assembled', 'Assembled')}</Badge> : null}
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{item.name}</div>
+                        <div className="mt-1 font-mono text-xs text-muted-foreground">{item.sku}</div>
+                      </div>
+                      <PremiumStatusBadge tone={stock.tone}>{stock.label}</PremiumStatusBadge>
+                    </div>
+
+                    <div className="mt-3">{itemRoleBadges(item)}</div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                        <div className="premium-label">{tt('items.table.baseUom', 'Base UoM')}</div>
+                        <div className="mt-1 text-sm font-medium">{uomLabel(item)}</div>
+                      </div>
+                      <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                        <div className="premium-label">{tt('items.table.unitPrice', 'Default sell price')}</div>
+                        <div className="mt-1 text-sm font-medium">
+                          {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : tt('common.dash', '-')}
                         </div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.unitPrice', 'Default sell price')}</div>
-                        <div className="mt-1 text-sm font-semibold">
-                          {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : '—'}
-                        </div>
+                      <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                        <div className="premium-label">{tt('items.table.onHand', 'On hand')}</div>
+                        <div className="mt-1 text-sm font-medium">{formatQty(item.onHandQty)}</div>
+                      </div>
+                      <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                        <div className="premium-label">{tt('items.fields.minStock', 'Minimum stock')}</div>
+                        <div className="mt-1 text-sm font-medium">{formatStockThreshold(item.minStock)}</div>
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.baseUom', 'Base UoM')}</div>
-                        <div className="mt-1 text-sm">{baseUom ? `${baseUom.code} — ${baseUom.name}` : item.baseUomId}</div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.onHand', 'On hand')}</div>
-                          <div className="mt-1 text-sm font-semibold">{formatQty(item.onHandQty)}</div>
-                        </div>
-                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.available', 'Available')}</div>
-                          <div className="mt-1 text-sm font-semibold">{formatQty(item.availableQty)}</div>
-                        </div>
-                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.fields.minStock', 'Minimum stock')}</div>
-                          <div className="mt-1 text-sm font-semibold">{formatStockThreshold(item.minStock)}</div>
-                        </div>
-                      </div>
-                    </div>
+                    <div className="mt-4">{itemReadiness(item)}</div>
 
-                    <div className="mt-4 space-y-2">
-                      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('items.table.readiness', 'Readiness')}</div>
-                      {warnings.length ? (
-                        <div className="flex flex-wrap gap-2">
-                          {warnings.map((warning) => (
-                            <Badge key={warning} variant={warningVariant(warning)} className="max-w-full whitespace-normal">
-                              {warningLabel(warning)}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">{tt('items.ready', 'Ready')}</span>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex flex-col gap-2">
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to="/stock-levels">
+                          <ExternalLink className="h-4 w-4" />
+                          {tt('items.actions.stockLookup', 'View stock')}
+                        </Link>
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to="/movements">
+                          <ExternalLink className="h-4 w-4" />
+                          {tt('items.actions.movement', 'Movement')}
+                        </Link>
+                      </Button>
                       <Button variant="outline" size="sm" onClick={() => openEditItem(item)} disabled={!can.updateItem(role)}>
+                        <Pencil className="h-4 w-4" />
                         {tt('items.actions.minStock', 'Edit minimum')}
                       </Button>
                       <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} disabled={!can.deleteItem(role)}>
+                        <Trash2 className="h-4 w-4" />
                         {tt('common.delete', 'Delete')}
                       </Button>
                     </div>
-                  </div>
+                  </article>
                 )
-              })}
-            </div>
+              }}
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{tt('table.item', 'Item')}</TableHead>
-                  <TableHead>{tt('items.table.role', 'Role')}</TableHead>
-                  <TableHead>{tt('items.table.baseUom', 'Base UoM')}</TableHead>
-                  <TableHead className="text-right">{tt('items.table.unitPrice', 'Default sell price')}</TableHead>
-                  <TableHead className="text-right">{tt('items.table.onHand', 'On hand')}</TableHead>
-                  <TableHead className="text-right">{tt('items.table.available', 'Available')}</TableHead>
-                  <TableHead className="text-right">{tt('items.fields.minStock', 'Minimum stock')}</TableHead>
-                  <TableHead>{tt('items.table.readiness', 'Readiness')}</TableHead>
-                  <TableHead className="text-right">{tt('common.actions', 'Actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredItems.map((item) => {
-                  const warnings = deriveItemProfileWarnings(item)
-                  const baseUom = uomById.get(item.baseUomId)
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell className="align-top">
-                        <div className="space-y-2">
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-xs text-muted-foreground">{item.sku}</div>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge>{roleLabel(item.primaryRole)}</Badge>
-                            <Badge variant={item.trackInventory ? 'outline' : 'secondary'}>
-                              {item.trackInventory ? tt('items.preview.stocked', 'Stocked') : tt('items.preview.nonStock', 'Non-stock')}
-                            </Badge>
-                            {item.canBuy ? <Badge variant="outline">{tt('items.preview.bought', 'Bought')}</Badge> : null}
-                            {item.canSell ? <Badge variant="outline">{tt('items.preview.sold', 'Sold')}</Badge> : null}
-                            {item.isAssembled ? <Badge variant="secondary">{tt('items.preview.assembled', 'Assembled')}</Badge> : null}
-                            {item.usedAsComponent ? <Badge variant="outline">{tt('items.table.component', 'Component')}</Badge> : null}
-                            {item.hasActiveBom ? <Badge variant="outline">{tt('items.table.activeBom', 'Active BOM')}</Badge> : null}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top text-sm text-muted-foreground">{roleLabel(item.primaryRole)}</TableCell>
-                      <TableCell className="align-top text-sm text-muted-foreground">
-                        {baseUom ? `${baseUom.code} — ${baseUom.name}` : item.baseUomId}
-                      </TableCell>
-                      <TableCell className="text-right align-top">
-                        {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : '—'}
-                      </TableCell>
-                      <TableCell className="text-right align-top">{formatQty(item.onHandQty)}</TableCell>
-                      <TableCell className="text-right align-top">{formatQty(item.availableQty)}</TableCell>
-                      <TableCell className="text-right align-top">{formatStockThreshold(item.minStock)}</TableCell>
-                      <TableCell className="align-top">
-                        {warnings.length ? (
-                          <div className="flex flex-wrap gap-2">
-                            {warnings.map((warning) => (
-                              <Badge key={warning} variant={warningVariant(warning)} className="max-w-full whitespace-normal">
-                                {warningLabel(warning)}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">{tt('items.ready', 'Ready')}</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right align-top">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => openEditItem(item)} disabled={!can.updateItem(role)}>
-                            {tt('items.actions.minStock', 'Edit minimum')}
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} disabled={!can.deleteItem(role)}>
-                            {tt('common.delete', 'Delete')}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+            <PremiumDataTable
+              rows={filteredItems}
+              columns={itemTableColumns}
+              getRowId={(item) => item.id}
+              sort={itemSort}
+              onSortChange={setItemSort}
+              columnVisibility={itemColumnVisibility}
+              ariaLabel={tt('items.registerTitle', 'Item register')}
+              emptyState={
+                <PremiumEmptyState
+                  icon={<Package />}
+                  title={tt('items.emptyTitle', 'No items match this view')}
+                  description={
+                    items.length === 0
+                      ? tt('items.emptyBody', 'Start with a resale item, raw material, or assembled product so the rest of the workflow has a clean master-data base.')
+                      : tt('items.emptyFiltered', 'Clear the filters or search term to see more items.')
+                  }
+                />
+              }
+              pagination={{
+                page: itemPage,
+                pageSize: itemPageSize,
+                onPageChange: setItemPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setItemPageSize(nextPageSize)
+                  setItemPage(1)
+                },
+                labels: paginationLabels,
+              }}
+            />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <Dialog open={Boolean(editingItem)} onOpenChange={(open) => { if (!open) closeEditItem() }}>
         <DialogContent>

@@ -50,6 +50,7 @@ Current rules:
 
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the rollup used for availability and weighted-average bucket cost
+- application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - `movements` is no longer part of the intended product direction
 
 Legacy structures removed in cleanup:

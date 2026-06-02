@@ -11,16 +11,16 @@ export type AuthFetchInit = Omit<RequestInit, 'headers' | 'body'> & {
 }
 
 const BASE =
-  (import.meta as any)?.env?.VITE_SUPABASE_URL?.replace(/\/+$/, '') ??
+  import.meta.env.VITE_SUPABASE_URL?.replace(/\/+$/, '') ??
   ''
 
 const FUNCS_BASE = `${BASE}/functions/v1`
 
-const ANON_KEY = (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY ?? ''
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
 
 const DEBUG =
   (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_AUTHFETCH') === '1') ||
-  (import.meta as any)?.env?.DEV
+  import.meta.env.DEV
 
 function toUrl(pathOrUrl: string) {
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl

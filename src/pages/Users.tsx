@@ -12,6 +12,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 import { hasMinRole, canAssignRole, canInviteRole } from '../lib/roles'
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER'
@@ -534,20 +537,24 @@ export default function Users() {
 
   return (
     <div className="space-y-6 overflow-x-hidden">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{t('sections.users.title')}</h1>
-          <p className="hidden text-muted-foreground sm:block">
-            {tt('users.subtitle', 'Invite teammates, track pending access, and manage company roles from one page.')}
-          </p>
-        </div>
-        <div className="space-y-3">
-          {companyId ? (
-            <div className="text-sm text-muted-foreground">
-              {t('users.company')}: {companyName || companyId}
-              {myRole ? ` - ${t('users.yourRole')}: ${myRole}` : ''}
-            </div>
-          ) : null}
+      <PremiumPageHeader
+        title={t('sections.users.title')}
+        description={tt('users.subtitle', 'Invite teammates, track pending access, and manage company roles from one page.')}
+        context={
+          <PremiumStatusBadge tone="info" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+            {myRole ? `${t('users.yourRole')}: ${roleLabel(myRole as Role)}` : roleCopy.canonicalTitle}
+          </PremiumStatusBadge>
+        }
+        meta={
+          companyId ? (
+            <>
+              <span>{t('users.company')}: {companyName || companyId}</span>
+              <span aria-hidden="true">/</span>
+              <span>{isRolesView ? roleCopy.navRoles : roleCopy.navMembers}</span>
+            </>
+          ) : null
+        }
+        actions={
           <div className="mobile-primary-actions">
             <Button asChild size="sm" variant={isRolesView ? 'outline' : 'default'}>
               <Link to="/users">
@@ -562,49 +569,38 @@ export default function Users() {
               </Link>
             </Button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.members', 'Members')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-end justify-between">
-            <div>
-              <div className="text-3xl font-semibold">{memberStats.total}</div>
-              <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.membersHelp', 'Active and invited company records')}</div>
-            </div>
-            <UsersIcon className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.active', 'Active')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{memberStats.active}</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.activeHelp', 'Members currently able to access the company')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.invited', 'Invited')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{memberStats.invited}</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('users.summary.disabled', 'Disabled')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{memberStats.disabled}</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">{tt('users.summary.disabledHelp', 'Historical users kept without active access')}</div>
-          </CardContent>
-        </Card>
+        <PremiumMetricCard
+          label={tt('users.summary.members', 'Members')}
+          value={memberStats.total}
+          description={tt('users.summary.membersHelp', 'Active and invited company records')}
+          icon={<UsersIcon />}
+          tone="neutral"
+        />
+        <PremiumMetricCard
+          label={tt('users.summary.active', 'Active')}
+          value={memberStats.active}
+          description={tt('users.summary.activeHelp', 'Members currently able to access the company')}
+          icon={<CheckCircle2 />}
+          tone="positive"
+        />
+        <PremiumMetricCard
+          label={tt('users.summary.invited', 'Invited')}
+          value={memberStats.invited}
+          description={tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}
+          icon={<UserPlus />}
+          tone={memberStats.invited ? 'info' : 'neutral'}
+        />
+        <PremiumMetricCard
+          label={tt('users.summary.disabled', 'Disabled')}
+          value={memberStats.disabled}
+          description={tt('users.summary.disabledHelp', 'Historical users kept without active access')}
+          icon={<XCircle />}
+          tone={memberStats.disabled ? 'warning' : 'neutral'}
+        />
       </div>
 
       {isRolesView ? (

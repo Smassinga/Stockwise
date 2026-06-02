@@ -164,7 +164,6 @@ type PurchaseOrderVendorBillActionState = {
   reason: string
 }
 
-const nowISO = () => new Date().toISOString()
 const n = (v: string | number | null | undefined, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 const fmtAcct = (v: number) => { const neg = v < 0; const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return neg ? `(${s})` : s }
@@ -733,42 +732,6 @@ export default function PurchaseOrders() {
     return m
   }
 
-  // stock helpers
-  const num = (v: any, d=0) => (Number.isFinite(Number(v)) ? Number(v) : d)
-  async function upsertStockLevel(
-    whId: string, binId: string | null, itemId: string, deltaQtyBase: number, unitCostForReceipts?: number
-  ) {
-    if (!companyId) throw new Error('No company selected')
-    let q = supabase.from('stock_levels')
-      .select('id,qty,avg_cost')
-      .eq('company_id', companyId)
-      .eq('warehouse_id', whId)
-      .eq('item_id', itemId)
-      .limit(1)
-    q = binId ? q.eq('bin_id', binId) : q.is('bin_id', null)
-    const { data: found, error: selErr } = await q
-    if (selErr) throw selErr
-
-    const unitCost = num(unitCostForReceipts, 0)
-    if (!found || found.length === 0) {
-      if (deltaQtyBase < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock at source bin'))
-      const { error: insErr } = await supabase.from('stock_levels').insert({
-        company_id: companyId,
-        warehouse_id: whId, bin_id: binId, item_id: itemId,
-        qty: deltaQtyBase, allocated_qty: 0, avg_cost: unitCost, updated_at: nowISO(),
-      } as any)
-      if (insErr) throw insErr
-      return
-    }
-    const row = found[0] as { id: string; qty: number | null; avg_cost: number | null }
-    const oldQty = num(row.qty, 0), oldAvg = num(row.avg_cost, 0)
-    const newQty = oldQty + deltaQtyBase
-    if (newQty < 0) throw new Error(tt('orders.insufficientStock', 'Insufficient stock at source bin'))
-    const newAvg = deltaQtyBase > 0 ? (newQty > 0 ? ((oldQty * oldAvg) + (deltaQtyBase * unitCost)) / newQty : unitCost) : oldAvg
-    const { error: updErr } = await supabase.from('stock_levels').update({ qty: newQty, avg_cost: newAvg, updated_at: nowISO() }).eq('id', row.id)
-    if (updErr) throw updErr
-  }
-
   async function tryUpdateStatus(id: string, candidates: string[]) {
     for (const status of candidates) {
       const { error } = await supabase.from('purchase_orders').update({ status }).eq('id', id).eq('company_id', companyId!)
@@ -942,8 +905,7 @@ export default function PurchaseOrders() {
     const totalBase = n(line.unit_price) * qtyRequested * (1 - disc/100) * fxToBase
     const unitCostBase = qtyBase > 0 ? totalBase / qtyBase : 0
 
-    await upsertStockLevel(whId, binId, it.id, qtyBase, unitCostBase)
-    await supabase.from('stock_movements').insert({
+    const { error: movementError } = await supabase.from('stock_movements').insert({
       company_id: companyId,
       type: 'receive',
       item_id: it.id,
@@ -960,6 +922,7 @@ export default function PurchaseOrders() {
       ref_id: String((po as any).id), // ensure TEXT
       ref_line_id: line.id ?? null,
     } as any)
+    if (movementError) throw movementError
   }
 
   // Receive a single line (used by the per-line button)

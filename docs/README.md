@@ -26,6 +26,10 @@ This folder is the maintained current-truth layer for StockWise. Documents that 
 - [Monitoring and Operational Signals](MONITORING.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Android-First UX Position](MOBILE_OPTIMIZATION.md)
+- [Premium UI Direction](premium-ui-direction.md)
+- [Landing Page Brief](landing-page/brief.md)
+- [Landing Page Style Guide](landing-page/style-guide.md)
+- [Landing Page Section Specs](landing-page/section-specs.md)
 - [Tauri Release Workflow](TAURI_RELEASE_WORKFLOW.md)
 - [Tauri Desktop Guide](TAURI_DESKTOP_GUIDE.md)
 

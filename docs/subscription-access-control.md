@@ -128,6 +128,7 @@ Platform control is permission-based. There is no fake admin toggle in the app.
 - route: `/platform-control`
 - visibility: only active platform admins see the Platform section in navigation
 - non-admin behavior: the route stays blocked and normal company users do not see admin UI
+- company Settings may explain that Subscription & Access is platform-managed, but it must not expose self-serve plan switches, payment toggles, or fake company-admin access controls
 
 The intended first-admin path is:
 

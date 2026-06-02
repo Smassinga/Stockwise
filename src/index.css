@@ -8,40 +8,65 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 220 39% 11%;
+    --background: 214 31% 97%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 220 39% 11%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 39% 11%;
-    --primary: 221 83% 53%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 218 86% 45%;
     --primary-foreground: 210 20% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 220 39% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 38 92% 50%;
-    --accent-foreground: 220 39% 11%;
-    --destructive: 0 84% 60%;
+    --secondary: 214 32% 93%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 32% 94%;
+    --muted-foreground: 217 14% 42%;
+    --accent: 38 92% 48%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 76% 52%;
     --destructive-foreground: 210 20% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 221 83% 53%;
-    --chart-1: 221 83% 53%;
-    --chart-2: 38 92% 50%;
-    --chart-3: 160 84% 39%;
-    --chart-4: 0 84% 60%;
-    --chart-5: 248 53% 58%;
+    --border: 216 24% 88%;
+    --input: 216 24% 88%;
+    --ring: 218 86% 45%;
+    --app-background: 214 31% 97%;
+    --surface-elevated: 0 0% 100%;
+    --surface-muted: 214 30% 94%;
+    --card-border: 216 24% 88%;
+    --panel-border: 215 25% 83%;
+    --financial-positive: 158 64% 34%;
+    --financial-negative: 354 70% 50%;
+    --financial-warning: 38 92% 46%;
+    --financial-critical: 0 76% 52%;
+    --financial-neutral: 216 15% 43%;
+    --chart-1: 218 86% 45%;
+    --chart-2: 38 92% 48%;
+    --chart-3: 160 84% 35%;
+    --chart-4: 0 76% 52%;
+    --chart-5: 248 53% 54%;
+    --chart-revenue-line: 262 70% 50%;
+    --chart-cogs-line: 333 67% 45%;
+    --chart-margin-line: 334 67% 62%;
+    --chart-bar-primary: 221 39% 11%;
+    --chart-marker-border: 0 0% 100%;
+    --chart-revenue: 262 70% 50%;
+    --chart-cogs: 333 67% 45%;
+    --chart-margin: 334 67% 62%;
+    --chart-inventory: 199 89% 40%;
+    --chart-receivables: 252 54% 54%;
+    --focus-ring: 218 86% 45%;
+    --premium-dashboard-panel: 220 43% 12%;
+    --premium-dashboard-panel-foreground: 210 29% 97%;
+    --premium-dashboard-panel-muted: 215 18% 73%;
+    --premium-dashboard-panel-border: 217 31% 22%;
     --sidebar: 0 0% 100%;
-    --sidebar-foreground: 220 39% 11%;
-    --sidebar-primary: 221 83% 53%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 218 86% 45%;
     --sidebar-primary-foreground: 210 20% 98%;
-    --sidebar-accent: 38 92% 50%;
-    --sidebar-accent-foreground: 220 39% 11%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 221 83% 53%;
+    --sidebar-accent: 38 92% 48%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 216 24% 88%;
+    --sidebar-ring: 218 86% 45%;
     --sidebar-background: 0 0% 100%;
-    --radius: 0.85rem;
+    --radius: 0.65rem;
     --app-safe-top: env(safe-area-inset-top);
     --app-safe-right: env(safe-area-inset-right);
     --app-safe-bottom: env(safe-area-inset-bottom);
@@ -51,39 +76,64 @@
   }
 
   .dark {
-    --background: 220 39% 11%;
-    --foreground: 210 20% 98%;
-    --card: 215 28% 17%;
-    --card-foreground: 210 20% 98%;
-    --popover: 215 28% 17%;
-    --popover-foreground: 210 20% 98%;
-    --primary: 221 83% 53%;
+    --background: 222 36% 8%;
+    --foreground: 210 29% 96%;
+    --card: 220 30% 12%;
+    --card-foreground: 210 29% 96%;
+    --popover: 220 30% 12%;
+    --popover-foreground: 210 29% 96%;
+    --primary: 214 88% 60%;
     --primary-foreground: 210 20% 98%;
-    --secondary: 215 19% 35%;
-    --secondary-foreground: 210 20% 98%;
-    --muted: 215 19% 35%;
-    --muted-foreground: 217 10% 64%;
-    --accent: 38 92% 50%;
-    --accent-foreground: 220 39% 11%;
-    --destructive: 0 84% 60%;
+    --secondary: 219 25% 18%;
+    --secondary-foreground: 210 29% 96%;
+    --muted: 219 25% 18%;
+    --muted-foreground: 215 16% 70%;
+    --accent: 38 92% 55%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 74% 58%;
     --destructive-foreground: 210 20% 98%;
-    --border: 215 19% 35%;
-    --input: 215 19% 35%;
-    --ring: 221 83% 53%;
-    --chart-1: 221 83% 53%;
-    --chart-2: 38 92% 50%;
-    --chart-3: 160 84% 39%;
-    --chart-4: 0 84% 60%;
-    --chart-5: 248 53% 58%;
-    --sidebar: 215 28% 17%;
-    --sidebar-foreground: 210 20% 98%;
-    --sidebar-primary: 221 83% 53%;
+    --border: 218 22% 23%;
+    --input: 218 22% 23%;
+    --ring: 214 88% 60%;
+    --app-background: 222 36% 8%;
+    --surface-elevated: 220 30% 12%;
+    --surface-muted: 219 25% 16%;
+    --card-border: 218 22% 23%;
+    --panel-border: 217 26% 26%;
+    --financial-positive: 157 72% 44%;
+    --financial-negative: 351 83% 66%;
+    --financial-warning: 39 95% 58%;
+    --financial-critical: 0 74% 58%;
+    --financial-neutral: 215 16% 70%;
+    --chart-1: 214 88% 60%;
+    --chart-2: 39 95% 58%;
+    --chart-3: 157 72% 44%;
+    --chart-4: 351 83% 66%;
+    --chart-5: 252 78% 72%;
+    --chart-revenue-line: 255 91% 76%;
+    --chart-cogs-line: 330 81% 71%;
+    --chart-margin-line: 327 87% 82%;
+    --chart-bar-primary: 210 29% 97%;
+    --chart-marker-border: 222 45% 8%;
+    --chart-revenue: 255 91% 76%;
+    --chart-cogs: 330 81% 71%;
+    --chart-margin: 327 87% 82%;
+    --chart-inventory: 199 95% 58%;
+    --chart-receivables: 252 78% 72%;
+    --focus-ring: 214 88% 60%;
+    --premium-dashboard-panel: 222 45% 8%;
+    --premium-dashboard-panel-foreground: 210 29% 97%;
+    --premium-dashboard-panel-muted: 215 18% 72%;
+    --premium-dashboard-panel-border: 216 30% 21%;
+    --sidebar: 220 30% 12%;
+    --sidebar-foreground: 210 29% 96%;
+    --sidebar-primary: 214 88% 60%;
     --sidebar-primary-foreground: 210 20% 98%;
-    --sidebar-accent: 38 92% 50%;
-    --sidebar-accent-foreground: 220 39% 11%;
-    --sidebar-border: 215 19% 35%;
-    --sidebar-ring: 221 83% 53%;
-    --sidebar-background: 215 28% 17%;
+    --sidebar-accent: 38 92% 55%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 218 22% 23%;
+    --sidebar-ring: 214 88% 60%;
+    --sidebar-background: 220 30% 12%;
   }
 }
 
@@ -100,7 +150,7 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-app-background text-foreground font-sans;
 
     font-feature-settings: "rlig" 1, "calt" 1;
     text-rendering: optimizelegibility;
@@ -137,11 +187,27 @@
   }
 
   .screen-title {
-    @apply text-xl font-semibold tracking-tight text-foreground md:text-2xl;
+    @apply text-2xl font-semibold tracking-tight text-foreground md:text-[2rem];
+
+    line-height: 1.1;
   }
 
   .screen-subtitle {
     @apply text-sm leading-6 text-muted-foreground;
+  }
+
+  .premium-label {
+    @apply text-[0.78rem] font-semibold uppercase leading-4 text-muted-foreground;
+
+    letter-spacing: 0.1em;
+  }
+
+  .premium-kpi-value {
+    @apply text-2xl font-semibold tracking-tight tabular-nums text-foreground md:text-3xl;
+  }
+
+  .premium-meta {
+    @apply font-mono text-[0.78rem] leading-5 text-muted-foreground;
   }
 
   .mobile-filter-stack {
@@ -317,6 +383,47 @@
 
     .app-page--analytics {
       max-width: 132rem;
+    }
+  }
+
+  .landing-scroll-reveal {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .landing-hover-lift {
+    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .landing-scroll-reveal {
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 520ms cubic-bezier(0.22, 1, 0.36, 1), transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+      transition-delay: var(--landing-delay, 0ms);
+    }
+
+    .landing-scroll-reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .landing-hover-lift:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 55px -38px hsl(222 47% 11% / 45%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .landing-scroll-reveal,
+    .landing-scroll-reveal.is-visible,
+    .landing-hover-lift,
+    .landing-hover-lift:hover {
+      opacity: 1;
+      transform: none;
+      transition: none;
+      transition-delay: 0ms;
+      animation: none;
     }
   }
 }

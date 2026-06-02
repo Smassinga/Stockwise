@@ -1,0 +1,8 @@
+O stock de uma padaria muda todos os dias. Com o StockWise, ingredientes, produtos e vendas ficam no mesmo sistema. Registe vendas no POS, acompanhe movimentos de stock e veja o que está abaixo do mínimo antes da produção parar. Comece o teste grátis de 7 dias.
+
+Subtitle-safe:
+O stock de uma padaria muda todos os dias.
+Ingredientes, produtos e vendas no mesmo sistema.
+Registe vendas no POS e movimentos de stock.
+Veja o que está abaixo do mínimo.
+Comece o teste grátis de 7 dias.

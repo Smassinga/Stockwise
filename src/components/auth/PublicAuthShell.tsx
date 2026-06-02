@@ -36,7 +36,7 @@ export default function PublicAuthShell({
         </div>
 
         <div className="flex flex-1 items-center py-8 lg:py-12">
-          <div className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] lg:items-center">
+          <div className="grid w-full gap-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,540px)] lg:items-center">
             <div className="hidden max-w-xl lg:block">
               <div className="inline-flex items-center rounded-full border border-primary/20 bg-background/90 px-4 py-2 text-sm font-medium text-primary shadow-sm">
                 <ShieldCheck className="mr-2 h-4 w-4" />

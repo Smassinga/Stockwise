@@ -62,14 +62,14 @@ type CompletionState = {
 
 const copyByLang = {
   en: {
-    subtitle: 'Company setup should clarify access before live stock and finance work begins.',
-    heroTitle: 'Set up the workspace that will hold stock, cash, and fiscal records.',
+    subtitle: 'Company workspace setup',
+    heroTitle: 'Create or join your company workspace',
     heroBody:
-      'Join an invited company or create a new one with only the minimum details, then complete fiscal identity, bank details, users, stock, and opening data in the right order.',
+      'Start with the company access decision. Tax, bank, stock, and team setup can be completed after the workspace exists.',
     highlights: [
-      'Choose between joining an invited company and creating a new workspace',
-      'Start with minimum company details, then complete fiscal and bank records',
-      'Next-step actions keep stock setup, users, and opening data visible',
+      'Join an invited company or create a separate workspace',
+      'Create with only a company name first',
+      'Finish fiscal, stock, and team setup from the guided next steps',
     ],
     progressLabel: 'Onboarding progress',
     progressChoose: 'Choose your workspace path',
@@ -97,9 +97,9 @@ const copyByLang = {
     companyCreatedToast: 'Company created successfully.',
     inviteAcceptedToast: (companyName: string) =>
       `Invitation accepted. Entering ${companyName || 'your company'} now.`,
-    choiceTitle: 'Choose how you want to start',
+    choiceTitle: 'Create or join your company workspace',
     choiceBody:
-      'You already have at least one pending invitation. Join it now, or keep the invitation for later and create your own company instead.',
+      'You have pending invitations. Join one of them, or create a separate company workspace.',
     joinPathTitle: 'Join invited company',
     joinPathBody: 'Use the invitation already addressed to your account and enter the correct company context.',
     joinPathHint: 'Recommended when a team already invited you.',
@@ -119,24 +119,49 @@ const copyByLang = {
     createInstead: 'Create company instead',
     inviteSearchPlaceholder: 'Search invitations',
     noInviteSearchResults: 'No invitations match that search.',
-    noInvitesTitle: 'Create your first company',
+    noInvitesTitle: 'Create or join your company workspace',
     noInvitesBody:
-      'There are no pending invitations for this account, so you can start directly with a new company.',
+      'No pending invitations were found for this email. You can create a new company workspace now.',
     createTitle: 'Create a company',
     createBody:
-      'Only the company name is required right now. Fiscal identity, address, contacts, bank details, and branding can be completed later in Settings.',
+      'Start with a company name. You can complete tax, bank, stock, and team setup later.',
     companyNameLabel: 'Company name',
     companyPlaceholder: 'Company name',
     companyLabelHint: 'Use the trading or legal name customers will recognize first.',
-    finishLaterLabel: 'Complete the full profile later',
+    finishLaterLabel: 'Complete setup later',
     finishLaterTooltip:
-      'Settings covers legal identity, address, contacts, logo, bank details, tax details, and other advanced company setup.',
+      'Tax, bank, stock, and team setup can be completed from Settings and setup pages.',
     createCompanyCta: 'Create company',
     creatingCompany: 'Creating company...',
     readyTitle: 'Your workspace is ready',
     readyBody:
-      'Continue to the dashboard now, or finish the company profile and opening setup before you start posting live activity.',
+      'Continue to the dashboard, or finish the setup areas that matter before posting live activity.',
     readySummaryLabel: 'Company created',
+    readinessTitle: 'Setup checklist',
+    readinessBody:
+      'Finish only the areas needed before your team starts daily work.',
+    readinessItems: [
+      {
+        title: 'Company shell',
+        body: 'Created and selected as the active workspace.',
+        status: 'Done',
+      },
+      {
+        title: 'Fiscal and legal profile',
+        body: 'Add legal name, NUIT, address, logo, and document defaults.',
+        status: 'Next',
+      },
+      {
+        title: 'Team access',
+        body: 'Invite users and assign roles.',
+        status: 'Next',
+      },
+      {
+        title: 'Opening data',
+        body: 'Import items, warehouses, stock, and opening balances.',
+        status: 'Next',
+      },
+    ],
     continueDashboard: 'Continue to dashboard',
     completeProfile: 'Complete company profile',
     importOpeningData: 'Import opening data',
@@ -157,14 +182,14 @@ const copyByLang = {
       'You can switch back to the invite path later. Creating a company does not delete your pending invitations.',
   },
   pt: {
-    subtitle: 'A configuração da empresa deve clarificar acessos antes de trabalho real de stock e finanças.',
-    heroTitle: 'Configure o workspace que vai guardar stock, caixa e registos fiscais.',
+    subtitle: 'Configuração do workspace da empresa',
+    heroTitle: 'Crie ou entre no workspace da sua empresa',
     heroBody:
-      'Entre numa empresa convidada ou crie uma nova com apenas os dados mínimos, depois complete identidade fiscal, dados bancários, utilizadores, stock e dados iniciais na ordem certa.',
+      'Comece pela decisão de acesso à empresa. Impostos, bancos, stock e equipa podem ser configurados depois do workspace existir.',
     highlights: [
-      'Escolha entre entrar numa empresa convidada e criar um novo workspace',
-      'Comece com dados mínimos da empresa, depois complete registos fiscais e bancários',
-      'Os próximos passos mantêm stock, utilizadores e dados iniciais visíveis',
+      'Entre numa empresa convidada ou crie um workspace separado',
+      'Crie primeiro apenas com o nome da empresa',
+      'Conclua fiscalidade, stock e equipa a partir dos próximos passos',
     ],
     progressLabel: 'Progresso do onboarding',
     progressChoose: 'Escolha o caminho do seu workspace',
@@ -192,9 +217,9 @@ const copyByLang = {
     companyCreatedToast: 'Empresa criada com sucesso.',
     inviteAcceptedToast: (companyName: string) =>
       `Convite aceite. A entrar agora em ${companyName || 'sua empresa'}.`,
-    choiceTitle: 'Escolha como quer começar',
+    choiceTitle: 'Crie ou entre no workspace da sua empresa',
     choiceBody:
-      'Já tem pelo menos um convite pendente. Pode aceitá-lo agora, ou manter o convite para mais tarde e criar a sua própria empresa.',
+      'Tem convites pendentes. Entre num deles ou crie um workspace separado para a empresa.',
     joinPathTitle: 'Entrar na empresa convidada',
     joinPathBody: 'Use o convite já endereçado à sua conta e entre no contexto certo da empresa.',
     joinPathHint: 'Recomendado quando a sua equipa já o convidou.',
@@ -214,24 +239,49 @@ const copyByLang = {
     createInstead: 'Criar empresa em vez disso',
     inviteSearchPlaceholder: 'Pesquisar convites',
     noInviteSearchResults: 'Nenhum convite corresponde a essa pesquisa.',
-    noInvitesTitle: 'Crie a sua primeira empresa',
+    noInvitesTitle: 'Crie ou entre no workspace da sua empresa',
     noInvitesBody:
-      'Não existem convites pendentes para esta conta, por isso pode começar diretamente com uma nova empresa.',
+      'Não foram encontrados convites pendentes para este email. Pode criar agora um novo workspace da empresa.',
     createTitle: 'Criar empresa',
     createBody:
-      'Neste momento, só o nome da empresa é obrigatório. Identidade fiscal, morada, contactos, dados bancários e branding podem ser concluídos mais tarde nas Definições.',
+      'Comece com o nome da empresa. Pode completar impostos, bancos, stock e equipa mais tarde.',
     companyNameLabel: 'Nome da empresa',
     companyPlaceholder: 'Nome da empresa',
     companyLabelHint: 'Use primeiro o nome comercial ou legal que os clientes reconhecem.',
-    finishLaterLabel: 'Complete o perfil completo mais tarde',
+    finishLaterLabel: 'Complete a configuração depois',
     finishLaterTooltip:
-      'As Definições cobrem identidade legal, morada, contactos, logótipo, dados bancários, dados fiscais e outras configurações avançadas da empresa.',
+      'Impostos, bancos, stock e equipa podem ser completados nas Definições e páginas de configuração.',
     createCompanyCta: 'Criar empresa',
     creatingCompany: 'A criar empresa...',
     readyTitle: 'O seu workspace está pronto',
     readyBody:
-      'Continue agora para o dashboard, ou conclua o perfil da empresa e a configuração inicial antes de começar a registar atividade real.',
+      'Continue para o dashboard ou conclua as áreas de configuração necessárias antes de registar atividade real.',
     readySummaryLabel: 'Empresa criada',
+    readinessTitle: 'Checklist de configuração',
+    readinessBody:
+      'Conclua apenas as áreas necessárias antes de a equipa começar o trabalho diário.',
+    readinessItems: [
+      {
+        title: 'Estrutura da empresa',
+        body: 'Criada e seleccionada como workspace activo.',
+        status: 'Concluído',
+      },
+      {
+        title: 'Perfil fiscal e legal',
+        body: 'Adicione nome legal, NUIT, morada, logótipo e padrões documentais.',
+        status: 'Próximo',
+      },
+      {
+        title: 'Acesso da equipa',
+        body: 'Convide utilizadores e atribua funções.',
+        status: 'Próximo',
+      },
+      {
+        title: 'Dados iniciais',
+        body: 'Importe artigos, armazéns, stock e saldos iniciais.',
+        status: 'Próximo',
+      },
+    ],
     continueDashboard: 'Continuar para o dashboard',
     completeProfile: 'Completar perfil da empresa',
     importOpeningData: 'Importar dados iniciais',
@@ -797,6 +847,54 @@ export default function Onboarding() {
                         {copy.finishLaterTooltip}
                       </p>
                     </div>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-border/70 bg-background/70 p-5 sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-base font-semibold text-foreground">{copy.readinessTitle}</div>
+                      <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted-foreground sm:block">
+                        {copy.readinessBody}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="w-fit rounded-full px-3 py-1">
+                      {copy.progressReady}
+                    </Badge>
+                  </div>
+                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                    {copy.readinessItems.map((item, index) => {
+                      const done = index === 0
+                      const StepIcon = index === 0 ? CheckCircle2 : index === 1 ? Settings2 : index === 2 ? UserPlus : Building2
+                      return (
+                        <div
+                          key={item.title}
+                          className="flex min-h-[150px] flex-col gap-4 rounded-2xl border border-border/70 bg-card/85 p-5 shadow-[0_14px_34px_-30px_hsl(var(--foreground)/0.32)]"
+                        >
+                          <div className="flex min-w-0 items-start gap-3">
+                            <span
+                              className={cn(
+                                'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border',
+                                done
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/30 dark:bg-emerald-300/10 dark:text-emerald-200'
+                                  : 'border-border/70 bg-muted/25 text-primary',
+                              )}
+                            >
+                              <StepIcon className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="font-semibold text-foreground">{item.title}</div>
+                                <Badge variant={done ? 'default' : 'outline'} className="shrink-0">
+                                  {item.status}
+                                </Badge>
+                              </div>
+                              <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 

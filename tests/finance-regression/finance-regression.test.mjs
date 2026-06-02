@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 import {
   createAdminClient,
@@ -48,6 +49,26 @@ async function querySingle(client, table, select, filters = []) {
   const { data, error } = await query.single()
   if (error) throw error
   return data
+}
+
+async function assertPurchaseReceivingUsesStockMovementLedgerOnly() {
+  const source = await readFile('src/pages/Orders/PurchaseOrders.tsx', 'utf8')
+  const start = source.indexOf('async function postReceiptForLine')
+  const end = source.indexOf('// Receive a single line', start)
+  assert.notEqual(start, -1, 'Expected PurchaseOrders.tsx to expose the PO receipt posting block')
+  assert.notEqual(end, -1, 'Expected PurchaseOrders.tsx to expose the PO receipt posting block end marker')
+  const postReceiptSource = source.slice(start, end)
+
+  assert.match(
+    postReceiptSource,
+    /\.from\(\s*['"]stock_movements['"]\s*\)\.insert\(/,
+    'Expected PO receipt posting to insert a stock movement',
+  )
+  assert.doesNotMatch(
+    postReceiptSource,
+    /\.from\(\s*['"]stock_levels['"]\s*\)[\s\S]{0,300}\.(?:insert|upsert|update|delete)\s*\(/,
+    'PO receipt posting must not mutate stock_levels directly; stock_movements triggers own the rollup',
+  )
 }
 
 async function openOrCreateSalesInvoiceDraftFromOrder(client, companyId, salesOrderId) {
@@ -200,6 +221,8 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     await safeDelete(() => admin.from('landed_cost_runs').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('purchase_order_lines').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('sales_order_lines').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('purchase_orders').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('sales_orders').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('builds').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('stock_movements').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('stock_levels').delete().eq('company_id', companyId))
@@ -648,6 +671,196 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       description: `${PREFIX} Flour purchase`,
     })
     if (purchaseOrderLine.error) throw purchaseOrderLine.error
+  })
+
+  await t.test('Purchase receiving posts one receipt movement without double-counting stock levels', async () => {
+    await assertPurchaseReceivingUsesStockMovementLedgerOnly()
+
+    const receiptItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-PO-RECEIPT`,
+        name: `${PREFIX} PO receipt guard`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 0,
+        primary_role: 'raw_material',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: false,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    if (receiptItem.error) throw receiptItem.error
+    const receiptItemId = receiptItem.data.id
+
+    const purchaseOrder = await ownerClient
+      .from('purchase_orders')
+      .insert({
+        company_id: companyId,
+        supplier_id: supplierId,
+        order_date: todayIso(),
+        due_date: plusDaysIso(14),
+        currency_code: 'MZN',
+        status: 'approved',
+        subtotal: 1350,
+        tax_total: 0,
+        total: 1350,
+        fx_to_base: 1,
+        created_by: ownerUser.userId,
+      })
+      .select('id')
+      .single()
+    if (purchaseOrder.error) throw purchaseOrder.error
+    const receiptPoId = purchaseOrder.data.id
+
+    const purchaseOrderLine = await ownerClient
+      .from('purchase_order_lines')
+      .insert({
+        po_id: receiptPoId,
+        company_id: companyId,
+        line_no: 1,
+        item_id: receiptItemId,
+        uom_id: eachUomId,
+        qty: 10,
+        unit_price: 135,
+        line_total: 1350,
+        description: `${PREFIX} PO receipt guard line`,
+      })
+      .select('id, qty, unit_price, line_total')
+      .single()
+    if (purchaseOrderLine.error) throw purchaseOrderLine.error
+    const receiptLine = purchaseOrderLine.data
+
+    const movementBefore = await ownerClient
+      .from('stock_movements')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('ref_type', 'PO')
+      .eq('ref_id', receiptPoId)
+      .eq('ref_line_id', receiptLine.id)
+    if (movementBefore.error) throw movementBefore.error
+    assert.equal(movementBefore.count, 0, 'Expected no receipt movement before receiving the PO line')
+
+    const receipt = await ownerClient
+      .from('stock_movements')
+      .insert({
+        company_id: companyId,
+        type: 'receive',
+        item_id: receiptItemId,
+        uom_id: eachUomId,
+        qty: 10,
+        qty_base: 10,
+        unit_cost: 135,
+        total_value: 1350,
+        warehouse_to_id: warehouseId,
+        bin_to_id: sourceBinId,
+        notes: `${PREFIX} PO receipt double-count regression`,
+        created_by: ownerUser.userId,
+        ref_type: 'PO',
+        ref_id: receiptPoId,
+        ref_line_id: receiptLine.id,
+      })
+      .select('id')
+      .single()
+    if (receipt.error) throw receipt.error
+    assert.ok(receipt.data.id, 'Expected receipt movement insert to return an id')
+
+    const trimResult = expectNoSupabaseError(
+      await ownerClient.rpc('po_trim_and_close', {
+        p_company_id: companyId,
+        p_po_id: receiptPoId,
+      }),
+      'Expected fully received PO to close',
+    )
+    assert.equal(trimResult?.[0]?.closed, true, 'Expected the PO close RPC to mark the PO as closed')
+
+    const { data: movements, error: movementsError } = await ownerClient
+      .from('stock_movements')
+      .select('id, type, qty, qty_base, unit_cost, total_value, ref_type, ref_id, ref_line_id')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'PO')
+      .eq('ref_id', receiptPoId)
+      .eq('ref_line_id', receiptLine.id)
+      .order('created_at', { ascending: true })
+    if (movementsError) throw movementsError
+
+    assert.equal(movements.length, 1, 'Expected exactly one PO receipt movement')
+    assert.equal(movements[0].type, 'receive')
+    assert.equal(round2(movements[0].qty_base), 10)
+    assert.equal(round2(movements[0].qty), 10)
+    assert.equal(round2(movements[0].unit_cost), 135)
+    assert.equal(round2(movements[0].total_value), 1350)
+
+    const stockLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', receiptItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(stockLevel.qty), 10, 'Expected derived stock level to increase by 10, not 20')
+    assert.equal(round2(stockLevel.allocated_qty), 0)
+    assert.equal(round2(stockLevel.avg_cost), 135)
+    assert.equal(round2(Number(stockLevel.qty) * Number(stockLevel.avg_cost)), 1350)
+
+    const stockLevelAgain = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', receiptItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(stockLevelAgain.qty), 10, 'Expected stock-level re-read to stay at the receipt quantity')
+    assert.equal(round2(Number(stockLevelAgain.qty) * Number(stockLevelAgain.avg_cost)), 1350)
+
+    const receivedQty = movements.reduce((sum, movement) => sum + Number(movement.qty_base || 0), 0)
+    const remainingQty = Number(receiptLine.qty || 0) - receivedQty
+    assert.equal(round2(remainingQty), 0, 'Expected the PO line remaining quantity to be zero')
+
+    const purchaseOrderAfterReceipt = await querySingle(
+      ownerClient,
+      'purchase_orders',
+      'status, received_at',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', receiptPoId],
+      ],
+    )
+    assert.equal(purchaseOrderAfterReceipt.status, 'closed')
+    assert.ok(purchaseOrderAfterReceipt.received_at, 'Expected fully received PO to capture received_at')
+
+    const purchaseOrderState = await querySingle(
+      ownerClient,
+      'v_purchase_order_state',
+      'legacy_status, receipt_status',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', receiptPoId],
+      ],
+    )
+    assert.equal(purchaseOrderState.legacy_status, 'closed')
+    assert.equal(purchaseOrderState.receipt_status, 'complete')
+
+    const movementAfterStateRead = await ownerClient
+      .from('stock_movements')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('ref_type', 'PO')
+      .eq('ref_id', receiptPoId)
+      .eq('ref_line_id', receiptLine.id)
+    if (movementAfterStateRead.error) throw movementAfterStateRead.error
+    assert.equal(movementAfterStateRead.count, 1, 'Expected no duplicate movement after re-reading PO state')
   })
 
   await t.test('Sales Order -> Sales Invoice draft -> approval -> issue readiness -> issue', async () => {

@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, FileDown, Package, RefreshCw, Search, Warehouse as WarehouseIcon } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { AlertTriangle, Boxes, CircleDollarSign, ExternalLink, FileDown, FilterX, Package, PackageSearch, RefreshCw, Warehouse as WarehouseIcon } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import { Badge } from '../components/ui/badge'
 import { toast } from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
@@ -13,6 +10,24 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useIsMobile } from '../hooks/use-mobile'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
+import { PremiumColumnVisibilityMenu } from '../components/premium/PremiumColumnVisibilityMenu'
+import {
+  PremiumDataTable,
+  sortPremiumRows,
+  type PremiumColumnVisibilityState,
+  type PremiumDataTableColumn,
+  type PremiumDataTableSortState,
+} from '../components/premium/PremiumDataTable'
+import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { PremiumImportExportActions } from '../components/premium/PremiumImportExportActions'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
+import { getPremiumPageRows } from '../components/premium/PremiumPagination'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
+import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
+import { PremiumTableFilter } from '../components/premium/PremiumTableFilter'
+import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
 
 interface Item {
   id: string
@@ -45,6 +60,7 @@ type SortOption =
   | 'risk_desc'
 
 type StockStatus = 'healthy' | 'low' | 'out'
+type StockRiskFilter = 'all' | StockStatus
 
 type StockRow = {
   id: string
@@ -87,7 +103,12 @@ export function StockLevels() {
   const [search, setSearch] = useState('')
   const [itemFilter, setItemFilter] = useState<string>('all')
   const [warehouseFilter, setWarehouseFilter] = useState<string>('all')
+  const [riskFilter, setRiskFilter] = useState<StockRiskFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('value_desc')
+  const [stockSort, setStockSort] = useState<PremiumDataTableSortState>({ columnId: 'totalValue', direction: 'desc' })
+  const [stockColumnVisibility, setStockColumnVisibility] = useState<PremiumColumnVisibilityState>({})
+  const [stockPage, setStockPage] = useState(1)
+  const [stockPageSize, setStockPageSize] = useState(10)
 
   useEffect(() => {
     if (!companyId) return
@@ -176,6 +197,7 @@ export function StockLevels() {
       })
       .filter((row) => (itemFilter === 'all' ? true : row.itemId === itemFilter))
       .filter((row) => (warehouseFilter === 'all' ? true : row.warehouseId === warehouseFilter))
+      .filter((row) => (riskFilter === 'all' ? true : row.status === riskFilter))
       .filter((row) =>
         needle
           ? [row.itemName, row.sku, row.warehouseName, row.warehouseCode]
@@ -204,7 +226,7 @@ export function StockLevels() {
           return right.totalValue - left.totalValue
       }
     })
-  }, [itemById, itemFilter, search, sortBy, stockLevels, warehouseById, warehouseFilter])
+  }, [itemById, itemFilter, riskFilter, search, sortBy, stockLevels, warehouseById, warehouseFilter])
 
   const totals = useMemo(() => {
     const totalUnits = rows.reduce((sum, row) => sum + row.onHandQty, 0)
@@ -217,8 +239,13 @@ export function StockLevels() {
       lowStock,
       outOfStock,
       positions: rows.length,
+      warehouseCount: new Set(rows.map((row) => row.warehouseId)).size,
     }
   }, [rows])
+
+  useEffect(() => {
+    setStockPage(1)
+  }, [itemFilter, riskFilter, search, sortBy, warehouseFilter])
 
   const activeWarehouse = warehouseFilter === 'all' ? null : warehouses.find((warehouse) => warehouse.id === warehouseFilter)
 
@@ -228,6 +255,139 @@ export function StockLevels() {
     if (status === 'low') return tt('stock.status.low', 'Low stock')
     return tt('stock.status.healthy', 'Healthy')
   }
+
+  const statusTone = (status: StockStatus): PremiumTone => {
+    if (status === 'out') return 'critical'
+    if (status === 'low') return 'warning'
+    return 'positive'
+  }
+
+  const paginationLabels = {
+    rowsPerPage: tt('register.rowsPerPage', 'Rows'),
+    previous: tt('register.previous', 'Previous'),
+    next: tt('register.next', 'Next'),
+    pageSummary: (page: number, total: number) =>
+      tt('register.pageSummary', 'Page {page} of {total}', { page, total }),
+    rangeSummary: (from: number, to: number, total: number) =>
+      tt('register.rangeSummary', '{from}-{to} of {total}', { from, to, total }),
+  }
+
+  const stockColumns: PremiumDataTableColumn<StockRow>[] = [
+    {
+      id: 'item',
+      header: tt('table.item', 'Item'),
+      cell: (row) => (
+        <div className="min-w-0 space-y-1">
+          <div className="font-medium">{row.itemName}</div>
+          <div className="font-mono text-xs text-muted-foreground">{row.sku || tt('common.dash', '-')}</div>
+        </div>
+      ),
+      sortValue: (row) => row.itemName,
+      minWidth: 220,
+      enableHiding: false,
+    },
+    {
+      id: 'warehouse',
+      header: tt('warehouses.warehouse', 'Warehouse'),
+      cell: (row) => (
+        <div className="min-w-0 space-y-1">
+          <div className="font-medium">{row.warehouseName}</div>
+          <div className="font-mono text-xs text-muted-foreground">{row.warehouseCode || tt('common.dash', '-')}</div>
+        </div>
+      ),
+      sortValue: (row) => row.warehouseName,
+      minWidth: 190,
+      enableHiding: false,
+    },
+    {
+      id: 'qty',
+      header: tt('table.onHand', 'On hand'),
+      cell: (row) => <span className="font-mono font-medium tabular-nums">{formatQuantity(row.onHandQty)}</span>,
+      sortValue: (row) => row.onHandQty,
+      align: 'right',
+      minWidth: 120,
+    },
+    {
+      id: 'minStock',
+      header: tt('table.minStock', 'Min stock'),
+      cell: (row) => <span className="font-mono tabular-nums">{row.minStock > 0 ? formatQuantity(row.minStock) : tt('common.dash', '-')}</span>,
+      sortValue: (row) => row.minStock,
+      align: 'right',
+      minWidth: 120,
+    },
+    {
+      id: 'avgCost',
+      header: t('stock.avgCost'),
+      cell: (row) => <span className="font-mono tabular-nums">{formatCurrency(row.avgCost)}</span>,
+      sortValue: (row) => row.avgCost,
+      align: 'right',
+      minWidth: 140,
+    },
+    {
+      id: 'totalValue',
+      header: t('stock.totalValue'),
+      cell: (row) => <span className="font-mono font-medium tabular-nums">{formatCurrency(row.totalValue)}</span>,
+      sortValue: (row) => row.totalValue,
+      align: 'right',
+      minWidth: 150,
+    },
+    {
+      id: 'status',
+      header: tt('stock.status', 'Status'),
+      cell: (row) => (
+        <div className="flex flex-col gap-2">
+          <PremiumStatusBadge tone={statusTone(row.status)}>{statusLabel(row.status)}</PremiumStatusBadge>
+          {row.shortageQty > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
+            </span>
+          ) : null}
+        </div>
+      ),
+      sortValue: (row) => {
+        const rank = { out: 0, low: 1, healthy: 2 }
+        return rank[row.status]
+      },
+      minWidth: 170,
+    },
+    {
+      id: 'actions',
+      header: tt('common.actions', 'Actions'),
+      cell: () => (
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/movements">
+              <ExternalLink className="h-4 w-4" />
+              {tt('items.actions.movement', 'Movement')}
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/items">
+              <ExternalLink className="h-4 w-4" />
+              {tt('table.item', 'Item')}
+            </Link>
+          </Button>
+        </div>
+      ),
+      align: 'right',
+      minWidth: 210,
+      enableHiding: false,
+    },
+  ]
+
+  const sortedRows = sortPremiumRows(rows, stockColumns, stockSort)
+  const pagedRows = getPremiumPageRows(sortedRows, stockPage, stockPageSize)
+
+  const stockExportActions = (
+    <PremiumImportExportActions
+      exportAction={
+        <Button onClick={() => void exportToExcel()} disabled={exporting}>
+          <FileDown className="h-4 w-4" />
+          {exporting ? t('actions.saving') : tt('export.xlsx', 'Export Excel')}
+        </Button>
+      }
+    />
+  )
 
   async function exportToExcel() {
     if (!companyId) return
@@ -243,6 +403,7 @@ export function StockLevels() {
       const filters = [
         `${tt('stock.export.baseCurrency', 'Base currency')}: ${baseCode}`,
         `${tt('warehouses.warehouse', 'Warehouse')}: ${activeWarehouse?.name || tt('filters.warehouse.all', 'All warehouses')}`,
+        `${tt('stock.filters.status', 'Stock status')}: ${riskFilter === 'all' ? tt('stock.filters.statusAll', 'All statuses') : statusLabel(riskFilter)}`,
         `${tt('stock.sortBy', 'Sort by')}: ${tt(`stock.sort.${sortBy.replace('_desc', '').replace('_asc', '')}`, sortBy)}`,
       ]
       if (selectedItem) filters.push(`${tt('table.item', 'Item')}: ${selectedItem.name} (${selectedItem.sku})`)
@@ -295,340 +456,311 @@ export function StockLevels() {
   if (loading) {
     return (
       <div className="app-page app-page--workspace space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">{t('nav.stockLevels')}</h1>
+        <PremiumSkeleton className="min-h-44" lines={4} />
+        <div className="grid gap-4 md:grid-cols-3">
+          <PremiumSkeleton lines={2} />
+          <PremiumSkeleton lines={2} />
+          <PremiumSkeleton lines={2} />
         </div>
-        <div className="animate-pulse space-y-3">
-          <div className="grid gap-4 md:grid-cols-3">
-            {[...Array(3)].map((_, index) => (
-              <div key={index} className="h-28 rounded-xl bg-muted" />
-            ))}
-          </div>
-          <div className="h-24 rounded-xl bg-muted" />
-          <div className="h-72 rounded-xl bg-muted" />
-        </div>
+        <PremiumSkeleton className="min-h-80" lines={7} />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="app-page app-page--workspace p-6">
-        <h2 className="mb-2 text-xl font-bold">{t('errors.title') ?? 'Error'}</h2>
-        <p className="mb-4 text-muted-foreground">{error}</p>
-        <Button onClick={() => void loadData()}>{t('common.retry') ?? 'Retry'}</Button>
+      <div className="app-page app-page--workspace">
+        <PremiumEmptyState
+          icon={<AlertTriangle />}
+          title={t('errors.title') ?? 'Error'}
+          description={error}
+          action={<Button onClick={() => void loadData()}>{t('common.retry') ?? 'Retry'}</Button>}
+        />
       </div>
     )
   }
 
+  const stockEmptyState = (
+    <PremiumEmptyState
+      icon={<Package />}
+      title={
+        search || itemFilter !== 'all' || warehouseFilter !== 'all' || riskFilter !== 'all'
+          ? tt('stock.empty.filteredTitle', 'No stock positions match the current filters.')
+          : t('stock.none')
+      }
+      description={
+        search || itemFilter !== 'all' || warehouseFilter !== 'all' || riskFilter !== 'all'
+          ? tt('stock.empty.filteredBody', 'Clear or relax the filters to widen the stock view.')
+          : tt('stock.empty.defaultBody', 'Receive stock or post movements to start building a live valuation view.')
+      }
+    />
+  )
+
   return (
     <div className="app-page app-page--workspace space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">{t('nav.stockLevels')}</h1>
-          <p className="text-muted-foreground">
-            {tt('stock.description', 'Review on-hand quantity, weighted average cost, and inventory value by warehouse.')}
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">{tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}</Badge>
-            <Badge variant="outline">
+      <PremiumRegisterHeader
+        eyebrow={tt('stock.eyebrow', 'Inventory valuation')}
+        title={t('nav.stockLevels')}
+        description={tt('stock.description', 'Review on-hand quantity, weighted average cost, and inventory value by warehouse.')}
+        badges={
+          <>
+            <PremiumStatusBadge tone="info" icon={<CircleDollarSign />}>
+              {tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}
+            </PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral" icon={<WarehouseIcon />}>
               {activeWarehouse
                 ? `${tt('warehouses.warehouse', 'Warehouse')}: ${activeWarehouse.name}`
                 : tt('filters.warehouse.all', 'All warehouses')}
-            </Badge>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void loadData()}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {t('common.refresh') ?? 'Refresh'}
-          </Button>
-          <Button onClick={() => void exportToExcel()} disabled={exporting}>
-            <FileDown className="mr-2 h-4 w-4" />
-            {exporting ? t('actions.saving') : tt('export.xlsx', 'Export Excel')}
-          </Button>
-        </div>
-      </div>
+            </PremiumStatusBadge>
+          </>
+        }
+        actions={
+          <>
+            <Button variant="outline" onClick={() => void loadData()}>
+              <RefreshCw className="h-4 w-4" />
+              {t('common.refresh') ?? 'Refresh'}
+            </Button>
+            {stockExportActions}
+          </>
+        }
+        metrics={
+          <>
+            <PremiumMetricCard
+              label={tt('stock.summary.value', 'Inventory value')}
+              value={formatCurrency(totals.totalValue)}
+              description={tt('stock.summary.valueHelp', 'Value of the filtered stock position using average cost.')}
+              icon={<CircleDollarSign />}
+              tone="positive"
+            />
+            <PremiumMetricCard
+              label={tt('stock.summary.units', 'On-hand units')}
+              value={formatQuantity(totals.totalUnits)}
+              description={tt('stock.summary.unitsHelp', '{count} stock positions in view.', { count: totals.positions })}
+              icon={<Boxes />}
+            />
+            <PremiumMetricCard
+              label={tt('stock.summary.low', 'Low stock positions')}
+              value={totals.lowStock}
+              description={tt('stock.summary.lowHelp', 'Includes {count} positions already at zero stock.', { count: totals.outOfStock })}
+              icon={<AlertTriangle />}
+              tone={totals.lowStock > 0 ? 'warning' : 'positive'}
+            />
+            <PremiumMetricCard
+              label={tt('stock.summary.coverage', 'Warehouse coverage')}
+              value={totals.warehouseCount}
+              description={tt('stock.summary.coverageHelp', 'Warehouses represented in the current filtered result.')}
+              icon={<WarehouseIcon />}
+              tone="info"
+            />
+          </>
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-mono text-3xl font-semibold tabular-nums">{formatCurrency(totals.totalValue)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {tt('stock.summary.valueHelp', 'Value of the filtered stock position using average cost.')}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.units', 'On-hand units')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-mono text-3xl font-semibold tabular-nums">{formatQuantity(totals.totalUnits)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {tt('stock.summary.unitsHelp', '{count} stock positions in view.', { count: totals.positions })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('stock.summary.low', 'Low stock positions')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-mono text-3xl font-semibold tabular-nums">{totals.lowStock}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {tt('stock.summary.lowHelp', 'Includes {count} positions already at zero stock.', { count: totals.outOfStock })}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader>
-          <CardTitle>{t('reports.filters')}</CardTitle>
-          <CardDescription>
-            {tt('stock.filtersHelp', 'Narrow the valuation view by item, warehouse, and risk priority without losing the current company context.')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="mobile-filter-stack grid gap-3 lg:grid-cols-[1.3fr_repeat(3,minmax(0,1fr))_auto]">
-          <div>
-            <Label htmlFor="search">{t('common.search')}</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="search"
-                placeholder={t('stock.searchPlaceholder') ?? ''}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
-          <div>
-            <Label>{t('table.item')}</Label>
-            <Select value={itemFilter} onValueChange={setItemFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder={t('stock.allItems') ?? ''} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('stock.allItems') ?? ''}</SelectItem>
-                {items.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.name} ({item.sku})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>{t('warehouses.warehouse')}</Label>
-            <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder={t('filters.warehouse.all')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('filters.warehouse.all')}</SelectItem>
-                {warehouses.map((warehouse) => (
-                  <SelectItem key={warehouse.id} value={warehouse.id}>
-                    {warehouse.name} ({warehouse.code})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>{tt('stock.sortBy', 'Sort by')}</Label>
-            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="value_desc">{tt('stock.sort.value', 'Value (high to low)')}</SelectItem>
-                <SelectItem value="qty_desc">{tt('stock.sort.qty', 'Quantity (high to low)')}</SelectItem>
-                <SelectItem value="risk_desc">{tt('stock.sort.risk', 'Stock risk first')}</SelectItem>
-                <SelectItem value="item_asc">{tt('stock.sort.item', 'Item name')}</SelectItem>
-                <SelectItem value="warehouse_asc">{tt('stock.sort.warehouse', 'Warehouse name')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end">
+      <PremiumTableToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder={t('stock.searchPlaceholder') ?? ''}
+        searchLabel={t('common.search') ?? 'Search'}
+        filters={
+          <>
+            <PremiumTableFilter label={t('table.item')}>
+              <Select value={itemFilter} onValueChange={setItemFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('stock.allItems') ?? ''} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('stock.allItems') ?? ''}</SelectItem>
+                  {items.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name} ({item.sku})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </PremiumTableFilter>
+            <PremiumTableFilter label={t('warehouses.warehouse')}>
+              <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('filters.warehouse.all')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('filters.warehouse.all')}</SelectItem>
+                  {warehouses.map((warehouse) => (
+                    <SelectItem key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name} ({warehouse.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </PremiumTableFilter>
+            <PremiumTableFilter label={tt('stock.filters.status', 'Stock status')}>
+              <Select value={riskFilter} onValueChange={(value) => setRiskFilter(value as StockRiskFilter)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{tt('stock.filters.statusAll', 'All statuses')}</SelectItem>
+                  <SelectItem value="healthy">{statusLabel('healthy')}</SelectItem>
+                  <SelectItem value="low">{statusLabel('low')}</SelectItem>
+                  <SelectItem value="out">{tt('stock.filters.zeroNegative', 'Zero or negative')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </PremiumTableFilter>
+            <PremiumTableFilter label={tt('stock.sortBy', 'Sort by')}>
+              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="value_desc">{tt('stock.sort.value', 'Value (high to low)')}</SelectItem>
+                  <SelectItem value="qty_desc">{tt('stock.sort.qty', 'Quantity (high to low)')}</SelectItem>
+                  <SelectItem value="risk_desc">{tt('stock.sort.risk', 'Stock risk first')}</SelectItem>
+                  <SelectItem value="item_asc">{tt('stock.sort.item', 'Item name')}</SelectItem>
+                  <SelectItem value="warehouse_asc">{tt('stock.sort.warehouse', 'Warehouse name')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </PremiumTableFilter>
+          </>
+        }
+        actions={
+          <>
+            <PremiumColumnVisibilityMenu
+              columns={stockColumns}
+              visibility={stockColumnVisibility}
+              onVisibilityChange={setStockColumnVisibility}
+              label={tt('register.columns', 'Columns')}
+              menuLabel={tt('register.visibleColumns', 'Visible columns')}
+            />
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => {
                 setSearch('')
                 setItemFilter('all')
                 setWarehouseFilter('all')
+                setRiskFilter('all')
                 setSortBy('value_desc')
               }}
             >
+              <FilterX className="h-4 w-4" />
               {t('common.clear')}
             </Button>
+          </>
+        }
+        summary={
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{tt('stock.registerCount', '{count} stock positions in view', { count: rows.length })}</span>
+            {totals.lowStock > 0 ? (
+              <PremiumStatusBadge tone="warning" icon={<AlertTriangle />}>
+                {tt('stock.resultsAttention', '{count} positions need attention', { count: totals.lowStock })}
+              </PremiumStatusBadge>
+            ) : null}
           </div>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>{t('transactions.results')} ({rows.length})</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {tt('stock.resultsHelp', 'Use this view to review stock valuation and identify rows that need replenishment attention.')}
-            </p>
-          </div>
-          {totals.lowStock > 0 ? (
-            <div className="flex items-center gap-2 rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
-              <AlertTriangle className="h-4 w-4" />
-              {tt('stock.resultsAttention', '{count} positions need attention', { count: totals.lowStock })}
-            </div>
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          {rows.length ? isMobile ? (
-            <div className="mobile-register-list space-y-3">
-              {rows.map((row) => {
-                const badgeClass =
-                  row.status === 'out'
-                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                    : row.status === 'low'
-                      ? 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-200'
-                      : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
-
-                return (
-                  <div key={row.id} className="rounded-2xl border border-border/70 bg-background/92 p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{row.itemName}</div>
-                        <div className="truncate text-xs text-muted-foreground">{row.sku || t('common.dash')}</div>
-                      </div>
-                      <Badge variant="outline" className={badgeClass}>
-                        {statusLabel(row.status)}
-                      </Badge>
-                    </div>
-
-                    <div className="mt-3 rounded-2xl border border-border/60 bg-muted/20 p-3">
-                      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('warehouses.warehouse', 'Warehouse')}</div>
-                      <div className="mt-1 text-sm font-medium">{row.warehouseName}</div>
-                      <div className="text-xs text-muted-foreground">{row.warehouseCode || t('common.dash')}</div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('table.onHand', 'On hand')}</div>
-                        <div className="mt-1 text-sm font-semibold">{formatQuantity(row.onHandQty)}</div>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{tt('table.minStock', 'Min stock')}</div>
-                        <div className="mt-1 text-sm font-semibold">
-                          {row.minStock > 0 ? formatQuantity(row.minStock) : t('common.dash')}
-                        </div>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('stock.avgCost')}</div>
-                        <div className="mt-1 text-sm font-semibold">{formatCurrency(row.avgCost)}</div>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{t('stock.totalValue')}</div>
-                        <div className="mt-1 text-sm font-semibold">{formatCurrency(row.totalValue)}</div>
-                      </div>
-                    </div>
-
-                    {row.shortageQty > 0 ? (
-                      <div className="mt-3 text-sm text-muted-foreground">
-                        {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
-                      </div>
-                    ) : null}
+      <div className="rounded-[calc(var(--radius)+0.25rem)] border border-card-border bg-card p-3 shadow-[0_20px_48px_-36px_hsl(var(--foreground)/0.24)] sm:p-4">
+        {isMobile ? (
+          <PremiumMobileCardList
+            rows={pagedRows}
+            getRowId={(row) => row.id}
+            emptyState={stockEmptyState}
+            pagination={{
+              page: stockPage,
+              pageSize: stockPageSize,
+              totalItems: sortedRows.length,
+              onPageChange: setStockPage,
+              onPageSizeChange: (nextPageSize) => {
+                setStockPageSize(nextPageSize)
+                setStockPage(1)
+              },
+              labels: paginationLabels,
+            }}
+            renderCard={(row) => (
+              <article className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-elevated p-4 shadow-[0_16px_34px_-30px_hsl(var(--foreground)/0.34)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{row.itemName}</div>
+                    <div className="mt-1 font-mono text-xs text-muted-foreground">{row.sku || tt('common.dash', '-')}</div>
                   </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="py-3 pr-4">{tt('table.item', 'Item')}</th>
-                    <th className="py-3 pr-4">{tt('warehouses.warehouse', 'Warehouse')}</th>
-                    <th className="py-3 pr-4 text-right">{tt('table.onHand', 'On hand')}</th>
-                    <th className="py-3 pr-4 text-right">{tt('table.minStock', 'Min stock')}</th>
-                    <th className="py-3 pr-4 text-right">{t('stock.avgCost')}</th>
-                    <th className="py-3 pr-4 text-right">{t('stock.totalValue')}</th>
-                    <th className="py-3 pr-4">{tt('stock.status', 'Status')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => {
-                    const rowTone =
-                      row.status === 'out'
-                        ? 'bg-destructive/5'
-                        : row.status === 'low'
-                          ? 'bg-amber-500/5'
-                          : ''
-                    const badgeClass =
-                      row.status === 'out'
-                        ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                        : row.status === 'low'
-                          ? 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-200'
-                          : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                  <PremiumStatusBadge tone={statusTone(row.status)}>{statusLabel(row.status)}</PremiumStatusBadge>
+                </div>
 
-                    return (
-                      <tr key={row.id} className={`border-b align-top transition-colors hover:bg-muted/20 ${rowTone}`}>
-                        <td className="py-4 pr-4">
-                          <div className="flex flex-col gap-1">
-                            <div className="font-medium">{row.itemName}</div>
-                            <div className="text-xs text-muted-foreground">{row.sku || t('common.dash')}</div>
-                          </div>
-                        </td>
-                        <td className="py-4 pr-4">
-                          <div className="flex flex-col gap-1">
-                            <div className="font-medium">{row.warehouseName}</div>
-                            <div className="text-xs text-muted-foreground">{row.warehouseCode || t('common.dash')}</div>
-                          </div>
-                        </td>
-                        <td className="py-4 pr-4 text-right font-mono font-medium tabular-nums">{formatQuantity(row.onHandQty)}</td>
-                        <td className="py-4 pr-4 text-right font-mono tabular-nums">
-                          {row.minStock > 0 ? formatQuantity(row.minStock) : t('common.dash')}
-                        </td>
-                        <td className="py-4 pr-4 text-right font-mono tabular-nums">{formatCurrency(row.avgCost)}</td>
-                        <td className="py-4 pr-4 text-right font-mono font-medium tabular-nums">{formatCurrency(row.totalValue)}</td>
-                        <td className="py-4 pr-4">
-                          <div className="flex flex-col gap-2">
-                            <Badge variant="outline" className={badgeClass}>
-                              {statusLabel(row.status)}
-                            </Badge>
-                            {row.shortageQty > 0 ? (
-                              <span className="text-xs text-muted-foreground">
-                                {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
-                              </span>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
-              <Package className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-              <div className="text-lg font-medium">
-                {search || itemFilter !== 'all' || warehouseFilter !== 'all'
-                  ? tt('stock.empty.filteredTitle', 'No stock positions match the current filters.')
-                  : t('stock.none')}
-              </div>
-              <div className="mt-2 text-sm text-muted-foreground">
-                {search || itemFilter !== 'all' || warehouseFilter !== 'all'
-                  ? tt('stock.empty.filteredBody', 'Clear or relax the filters to widen the stock view.')
-                  : tt('stock.empty.defaultBody', 'Receive stock or post movements to start building a live valuation view.')}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <div className="mt-3 rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                  <div className="premium-label">{tt('warehouses.warehouse', 'Warehouse')}</div>
+                  <div className="mt-1 text-sm font-medium">{row.warehouseName}</div>
+                  <div className="font-mono text-xs text-muted-foreground">{row.warehouseCode || tt('common.dash', '-')}</div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                    <div className="premium-label">{tt('table.onHand', 'On hand')}</div>
+                    <div className="mt-1 text-sm font-semibold">{formatQuantity(row.onHandQty)}</div>
+                  </div>
+                  <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                    <div className="premium-label">{tt('table.minStock', 'Min stock')}</div>
+                    <div className="mt-1 text-sm font-semibold">{row.minStock > 0 ? formatQuantity(row.minStock) : tt('common.dash', '-')}</div>
+                  </div>
+                  <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                    <div className="premium-label">{t('stock.avgCost')}</div>
+                    <div className="mt-1 text-sm font-semibold">{formatCurrency(row.avgCost)}</div>
+                  </div>
+                  <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
+                    <div className="premium-label">{t('stock.totalValue')}</div>
+                    <div className="mt-1 text-sm font-semibold">{formatCurrency(row.totalValue)}</div>
+                  </div>
+                </div>
+
+                {row.shortageQty > 0 ? (
+                  <div className="mt-3 text-sm text-muted-foreground">
+                    {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/movements">
+                      <ExternalLink className="h-4 w-4" />
+                      {tt('items.actions.movement', 'Movement')}
+                    </Link>
+                  </Button>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/items">
+                      <PackageSearch className="h-4 w-4" />
+                      {tt('table.item', 'Item')}
+                    </Link>
+                  </Button>
+                </div>
+              </article>
+            )}
+          />
+        ) : (
+          <PremiumDataTable
+            rows={rows}
+            columns={stockColumns}
+            getRowId={(row) => row.id}
+            sort={stockSort}
+            onSortChange={setStockSort}
+            columnVisibility={stockColumnVisibility}
+            ariaLabel={t('nav.stockLevels')}
+            emptyState={stockEmptyState}
+            rowClassName={(row) =>
+              row.status === 'out' ? 'bg-destructive/5' : row.status === 'low' ? 'bg-amber-500/5' : undefined
+            }
+            pagination={{
+              page: stockPage,
+              pageSize: stockPageSize,
+              onPageChange: setStockPage,
+              onPageSizeChange: (nextPageSize) => {
+                setStockPageSize(nextPageSize)
+                setStockPage(1)
+              },
+              labels: paginationLabels,
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }

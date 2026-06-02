@@ -46,12 +46,16 @@ Current protected workflows:
 4. AR and AP bridge / reconciliation calculations
 5. item and UOM dependencies that affect inventory and finance correctness
 6. BOM / assembly gating and successful build posting
-7. access-control lifecycle:
+7. purchase receiving stock integrity:
+   - exactly one PO receipt movement is recorded for a receipt action
+   - `stock_levels` increases from the movement trigger only, preventing receipt double-counting
+   - PO receipt state reaches fully received with zero remaining quantity
+8. access-control lifecycle:
    - 7-day trial bootstrap
    - expiry restriction
    - reactivation
    - purge scheduling
-8. public abuse protection on repeated company bootstrap
+9. public abuse protection on repeated company bootstrap
 
 ## What The Suite Asserts
 
@@ -66,6 +70,7 @@ The suite currently protects:
 - current-legal-value bridge math
 - item / UOM integrity assumptions used by inventory and finance paths
 - assembly build gating under sufficient and insufficient stock
+- PO receiving ledger integrity, including protection against app-side `stock_levels` double-counting
 - trial and entitlement enforcement
 
 ## Test Architecture
@@ -103,6 +108,8 @@ For DB work:
 2. attempt `npx supabase db pull` when remote state may have changed
 3. apply migrations with `npx supabase db push`
 4. rerun lint, build, and the finance regression suite
+
+For premium UI phases that do not change backend logic, posting logic, or schema, keep the same automated gates and add manual route QA for the touched authenticated surfaces. Phase 4 requires `/onboarding`, `/settings`, `/users`, and `/users/roles` checks at desktop and mobile widths, with special attention to explicit invitation acceptance, backed Settings navigation, and role copy staying aligned with `roles.ts` and `permissions.ts`.
 
 ## Known Limits
 

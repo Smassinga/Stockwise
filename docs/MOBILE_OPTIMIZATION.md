@@ -13,6 +13,7 @@ Current design rules:
 - touch targets must remain comfortably tappable
 - avoid dense multi-column admin layouts on phones
 - use clearer vertical flow and fewer competing actions per section
+- prioritize operator actions such as Start POS, item lookup, stock movements, low-stock review, and recent activity over passive desktop analytics
 - compact data-entry screens prioritise inputs/actions first; non-critical explanatory cards should collapse, shorten, or move below the main form while critical validation and warnings stay visible
 
 ## What Is Implemented
@@ -24,6 +25,11 @@ Current design rules:
 - the Android runtime now fits inside the system window area instead of drawing app chrome into the status bar space
 - the mobile drawer uses a dedicated scroll body so lower navigation entries remain reachable on smaller Android screens
 - compact inventory workspaces such as Items, Movements, and Stock Levels now switch to card-style review surfaces instead of relying only on wide desktop tables
+- the dashboard now exposes a mobile-first operating flow: Today/status context, Action Needed, Quick Actions, Recent Activity, then deeper performance review
+- Items and Stock Levels now use the shared premium register pattern: search and filters appear before review content, Android shows cards first, and desktop keeps sortable paginated tables for comparison work
+- onboarding now presents join-invite and create-company as separate mobile decision cards, with invite acceptance kept as an explicit action
+- Settings now starts with a mobile-friendly operating setup map so company administrators can jump to real backed setup areas without scanning the entire long form first
+- Users/Roles keeps invite controls, role definitions, status badges, and member review usable as stacked cards on phones
 
 ## Current Mobile-Sensitive Surfaces
 
@@ -32,6 +38,9 @@ These surfaces matter most when checking Android usability:
 - dashboard
 - Point of Sale
 - items
+- onboarding
+- settings
+- users and roles
 - assembly
 - opening import
 - settlements
@@ -45,12 +54,15 @@ Future UI changes should preserve:
 - readable typography without shrinking the app into a dense spreadsheet
 - single-direction flow per form or task
 - explicit empty states and first-use guidance
+- chart and table content lower in the mobile flow unless it is immediately actionable
+- mobile register cards that surface status, location, and the next safe action before exposing wide-table detail
 
 Future UI changes should avoid:
 
 - forcing four or five actions into one mobile header
 - burying key actions only inside hover menus or dense desktop tables
 - reintroducing generic demo-style "responsive showcase" code paths
+- copying the desktop dashboard hierarchy directly onto Android
 
 ## Tauri Android Implication
 
@@ -66,5 +78,6 @@ Current Android shell/runtime rules:
 - the shell must respect safe-area insets at the top and bottom
 - the drawer must scroll independently from the page body
 - compact pages should prefer stacked cards, filters, and action groups before falling back to horizontal data tables
+- dashboard-linked operator workflows should stay one tap away where practical
 
 If Android packaging is prepared from stale metadata or stale copy, the packaged app will immediately feel older than the web product even if the core frontend is current.

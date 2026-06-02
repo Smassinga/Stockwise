@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useI18n, withI18nFallback } from "../lib/i18n";
 import { useOrg } from "../hooks/useOrg";
 import { financeCan } from "../lib/permissions";
+import { getPlatformAdminStatus } from "../lib/companyAccess";
 
 import {
   Card,
@@ -24,11 +26,34 @@ import {
   SelectLabel,
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
+import { PremiumMetricCard } from "../components/premium/PremiumMetricCard";
+import { PremiumPageHeader } from "../components/premium/PremiumPageHeader";
+import { PremiumStatusBadge, type PremiumTone } from "../components/premium/PremiumStatusBadge";
 
 // Existing uploader (fast preview / storage)
 import LogoUploader from "../components/settings/LogoUploader";
 
-import { Globe, Bell, FileText, Building, Clock, Plus, X } from "lucide-react";
+import {
+  Banknote,
+  Bell,
+  Building,
+  ChevronRight,
+  ArrowLeft,
+  Clock,
+  Coins,
+  FileCheck2,
+  FileText,
+  Globe,
+  KeyRound,
+  Landmark,
+  ListChecks,
+  Plus,
+  ShieldCheck,
+  UploadCloud,
+  Users,
+  Warehouse,
+  X,
+} from "lucide-react";
 
 type Warehouse = { id: string; name: string };
 
@@ -103,6 +128,222 @@ type SettingsData = {
     sendAt?: string;
   };
 };
+
+type SettingsGuideCard = {
+  key: string;
+  title: string;
+  description: string;
+  status: string;
+  actionLabel?: string;
+  href?: string;
+  section?: SettingsSectionKey;
+  tone: PremiumTone;
+  icon: ReactNode;
+};
+
+type SettingsSectionKey =
+  | "company-profile"
+  | "localization"
+  | "operations"
+  | "inventory"
+  | "notifications"
+  | "due-reminders"
+  | "documents";
+
+const settingsGuideCopy = {
+  en: {
+    eyebrow: "Company setup",
+    headerTitle: "Settings command centre",
+    headerBody:
+      "Open only the setup area you need, then return to this map without scrolling through every company control.",
+    saveCompany: "Save company",
+    saveChanges: "Save changes",
+    backToSettings: "Back to settings",
+    operatingMapTitle: "Operating setup map",
+    operatingMapBody:
+      "Use these backed setup areas to move directly to the right workspace. Only live routes and editable sections are shown.",
+    review: "Review",
+    open: "Open",
+    statusReady: "Ready",
+    statusNeedsWork: "Needs review",
+    statusBacked: "Backed workflow",
+    statusCurrent: "Current",
+    statusPlatform: "Platform-managed",
+    cards: {
+      companyProfile: {
+        title: "Company Profile",
+        description:
+          "Legal and trading identity, contacts, address, logo, and print footer used by onboarding, exports, and documents.",
+      },
+      fiscalLegal: {
+        title: "Fiscal & Legal",
+        description:
+          "NUIT, legal identity, Mozambique fiscal readiness, document language, and issued-document compliance checks.",
+      },
+      usersRoles: {
+        title: "Users & Roles",
+        description:
+          "Invite teammates, track pending access, and review canonical role boundaries before assigning authority.",
+      },
+      warehousesBins: {
+        title: "Warehouses & Bins",
+        description:
+          "Maintain physical stock locations and bin structures used by movements, receiving, picking, and stock review.",
+      },
+      localization: {
+        title: "Localization & UI",
+        description:
+          "Set company language, default dashboard window, default warehouse, and zero-value display preferences.",
+      },
+      operations: {
+        title: "Sales & Dashboard Defaults",
+        description:
+          "Control fulfilment defaults and dashboard workflow settings without changing posting rules.",
+      },
+      inventory: {
+        title: "Inventory Valuation",
+        description:
+          "Review the current weighted-average valuation policy used by stock levels and landed-cost revaluations.",
+      },
+      dueReminders: {
+        title: "Due Reminders",
+        description:
+          "Configure receivable reminder timing, offsets, timezone, and internal BCC controls.",
+      },
+      documents: {
+        title: "Documents & Branding",
+        description:
+          "Maintain printed document brand name, logo, and packing-slip price visibility.",
+      },
+      currencies: {
+        title: "Currencies",
+        description:
+          "Set the company base currency, allowed currencies, and recent exchange rates used by commercial documents.",
+      },
+      numbering: {
+        title: "Document Numbering",
+        description:
+          "Fiscal series and legal references are governed by the Mozambique compliance workspace, not by manual Settings edits.",
+      },
+      banks: {
+        title: "Bank Accounts",
+        description:
+          "Configure settlement and reconciliation bank accounts used by finance workflows and statement imports.",
+      },
+      notifications: {
+        title: "Notifications",
+        description:
+          "Control daily digest recipients and due-reminder policy from the current Settings form.",
+      },
+      importsExports: {
+        title: "Import/Export",
+        description:
+          "Open the governed opening-data importer and keep exports on the registers and reports that already support them.",
+      },
+      subscription: {
+        title: "Platform Access Control",
+        description:
+          "Open platform-only access controls for paid activation, suspension, purge schedule, and audit review.",
+      },
+    },
+  },
+  pt: {
+    eyebrow: "Configuração da empresa",
+    headerTitle: "Centro de comando das definições",
+    headerBody:
+      "Abra apenas a área de configuração necessária e volte a este mapa sem percorrer todos os controlos da empresa.",
+    saveCompany: "Guardar empresa",
+    saveChanges: "Guardar alterações",
+    backToSettings: "Voltar às definições",
+    operatingMapTitle: "Mapa de configuração operacional",
+    operatingMapBody:
+      "Use estas áreas suportadas para ir diretamente ao workspace certo. Só são mostradas rotas reais e secções editáveis.",
+    review: "Rever",
+    open: "Abrir",
+    statusReady: "Pronto",
+    statusNeedsWork: "Rever",
+    statusBacked: "Workflow suportado",
+    statusCurrent: "Actual",
+    statusPlatform: "Gerido pela plataforma",
+    cards: {
+      companyProfile: {
+        title: "Perfil da Empresa",
+        description:
+          "Identidade legal e comercial, contactos, morada, logótipo e rodapé usados por onboarding, exportações e documentos.",
+      },
+      fiscalLegal: {
+        title: "Fiscal & Legal",
+        description:
+          "NUIT, identidade legal, prontidão fiscal de Moçambique, idioma documental e verificações de conformidade de documentos emitidos.",
+      },
+      usersRoles: {
+        title: "Utilizadores & Funções",
+        description:
+          "Convide colegas, acompanhe acessos pendentes e reveja limites canónicos de função antes de atribuir autoridade.",
+      },
+      warehousesBins: {
+        title: "Armazéns & Locais",
+        description:
+          "Mantenha localizações físicas de stock e estruturas de locais usadas por movimentos, recepção, picking e revisão de stock.",
+      },
+      localization: {
+        title: "Localização & UI",
+        description:
+          "Defina idioma da empresa, janela padrão do dashboard, armazém padrão e preferências de valores zero.",
+      },
+      operations: {
+        title: "Padrões de Vendas & Dashboard",
+        description:
+          "Controle padrões de fulfilment e fluxo do dashboard sem alterar regras de lançamento.",
+      },
+      inventory: {
+        title: "Valorização de Inventário",
+        description:
+          "Reveja a política atual de média ponderada usada por stock e revalorizações de custo landed.",
+      },
+      dueReminders: {
+        title: "Lembretes de Vencimento",
+        description:
+          "Configure hora, intervalos, timezone e BCC interno para lembretes de contas a receber.",
+      },
+      documents: {
+        title: "Documentos & Marca",
+        description:
+          "Mantenha nome de marca documental, logótipo e visibilidade de preços em packing slips.",
+      },
+      currencies: {
+        title: "Moedas",
+        description:
+          "Defina a moeda base da empresa, moedas permitidas e taxas de câmbio recentes usadas por documentos comerciais.",
+      },
+      numbering: {
+        title: "Numeração Documental",
+        description:
+          "Séries fiscais e referências legais são governadas pelo workspace de conformidade de Moçambique, não por edição manual nas Definições.",
+      },
+      banks: {
+        title: "Contas Bancárias",
+        description:
+          "Configure contas bancárias de liquidação e reconciliação usadas por workflows financeiros e importação de extractos.",
+      },
+      notifications: {
+        title: "Notificações",
+        description:
+          "Controle destinatários do resumo diário e política de lembretes de vencimento a partir do formulário actual de Definições.",
+      },
+      importsExports: {
+        title: "Importação/Exportação",
+        description:
+          "Abra o importador governado de dados iniciais e mantenha exportações nos registos e relatórios que já as suportam.",
+      },
+      subscription: {
+        title: "Controlo de Acesso da Plataforma",
+        description:
+          "Abra controlos exclusivos da plataforma para ativação paga, suspensão, purga e auditoria.",
+      },
+    },
+  },
+} as const;
 
 const DEFAULTS: SettingsData = {
   locale: { language: "en" },
@@ -262,7 +503,8 @@ function pathFromPublicUrl(url: string | null | undefined): string | null {
 }
 
 function Settings() {
-  const { t, setLang } = useI18n();
+  const { lang, t, setLang } = useI18n();
+  const copy = settingsGuideCopy[lang];
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars);
   const { companyId, myRole } = useOrg();
@@ -271,6 +513,8 @@ function Settings() {
   const [saving, setSaving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [missingRow, setMissingRow] = useState(false);
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   const [data, setData] = useState<SettingsData>(DEFAULTS);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
@@ -311,6 +555,187 @@ function Settings() {
     return { companyLabel, defaultWarehouse, valuationMethod };
   }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses]);
 
+  const profileReady = Boolean((profile?.trade_name || profile?.legal_name) && profile?.tax_id);
+  const fiscalReady = Boolean(profile?.legal_name && profile?.tax_id && profile?.country_code);
+  const settingsGuideCards = useMemo<SettingsGuideCard[]>(
+    () => {
+      const cards: SettingsGuideCard[] = [
+        {
+          key: "company-profile",
+          title: copy.cards.companyProfile.title,
+          description: copy.cards.companyProfile.description,
+          status: profileReady ? copy.statusReady : copy.statusNeedsWork,
+          actionLabel: copy.review,
+          section: "company-profile",
+          tone: profileReady ? "positive" : "warning",
+          icon: <Building className="h-4 w-4" />,
+        },
+        {
+          key: "fiscal-legal",
+          title: copy.cards.fiscalLegal.title,
+          description: copy.cards.fiscalLegal.description,
+          status: fiscalReady ? copy.statusReady : copy.statusNeedsWork,
+          actionLabel: copy.open,
+          href: "/compliance/mz",
+          tone: fiscalReady ? "positive" : "warning",
+          icon: <FileCheck2 className="h-4 w-4" />,
+        },
+        {
+          key: "users-roles",
+          title: copy.cards.usersRoles.title,
+          description: copy.cards.usersRoles.description,
+          status: canEditOps ? copy.statusBacked : tt("settings.readOnlyShort", "Read-only"),
+          actionLabel: copy.open,
+          href: "/users",
+          tone: canEditOps ? "info" : "neutral",
+          icon: <Users className="h-4 w-4" />,
+        },
+        {
+          key: "warehouses-bins",
+          title: copy.cards.warehousesBins.title,
+          description: copy.cards.warehousesBins.description,
+          status: warehouses.length
+            ? tt("warehouses.summary.totalCount", "{count} warehouses", { count: warehouses.length })
+            : copy.statusNeedsWork,
+          actionLabel: copy.open,
+          href: "/warehouses",
+          tone: warehouses.length ? "positive" : "warning",
+          icon: <Warehouse className="h-4 w-4" />,
+        },
+        {
+          key: "localization",
+          title: copy.cards.localization.title,
+          description: copy.cards.localization.description,
+          status: copy.statusCurrent,
+          actionLabel: copy.review,
+          section: "localization",
+          tone: "info",
+          icon: <Globe className="h-4 w-4" />,
+        },
+        {
+          key: "operations",
+          title: copy.cards.operations.title,
+          description: copy.cards.operations.description,
+          status: copy.statusCurrent,
+          actionLabel: copy.review,
+          section: "operations",
+          tone: "info",
+          icon: <ListChecks className="h-4 w-4" />,
+        },
+        {
+          key: "inventory",
+          title: copy.cards.inventory.title,
+          description: copy.cards.inventory.description,
+          status: copy.statusCurrent,
+          actionLabel: copy.review,
+          section: "inventory",
+          tone: "neutral",
+          icon: <Landmark className="h-4 w-4" />,
+        },
+        {
+          key: "currencies",
+          title: copy.cards.currencies.title,
+          description: copy.cards.currencies.description,
+          status: copy.statusCurrent,
+          actionLabel: copy.open,
+          href: "/currency",
+          tone: "info",
+          icon: <Coins className="h-4 w-4" />,
+        },
+        {
+          key: "document-numbering",
+          title: copy.cards.numbering.title,
+          description: copy.cards.numbering.description,
+          status: copy.statusBacked,
+          actionLabel: copy.open,
+          href: "/compliance/mz",
+          tone: "info",
+          icon: <ListChecks className="h-4 w-4" />,
+        },
+        {
+          key: "bank-accounts",
+          title: copy.cards.banks.title,
+          description: copy.cards.banks.description,
+          status: copy.statusBacked,
+          actionLabel: copy.open,
+          href: "/banks",
+          tone: "neutral",
+          icon: <Banknote className="h-4 w-4" />,
+        },
+        {
+          key: "notifications",
+          title: copy.cards.notifications.title,
+          description: copy.cards.notifications.description,
+          status: data.notifications.dailyDigest ? copy.statusCurrent : copy.statusNeedsWork,
+          actionLabel: copy.review,
+          section: "notifications",
+          tone: data.notifications.dailyDigest ? "positive" : "neutral",
+          icon: <Bell className="h-4 w-4" />,
+        },
+        {
+          key: "due-reminders",
+          title: copy.cards.dueReminders.title,
+          description: copy.cards.dueReminders.description,
+          status: canEditDueReminders ? copy.statusCurrent : tt("settings.readOnlyShort", "Read-only"),
+          actionLabel: copy.review,
+          section: "due-reminders",
+          tone: canEditDueReminders ? "info" : "neutral",
+          icon: <Clock className="h-4 w-4" />,
+        },
+        {
+          key: "documents",
+          title: copy.cards.documents.title,
+          description: copy.cards.documents.description,
+          status: copy.statusCurrent,
+          actionLabel: copy.review,
+          section: "documents",
+          tone: "info",
+          icon: <FileText className="h-4 w-4" />,
+        },
+        {
+          key: "imports-exports",
+          title: copy.cards.importsExports.title,
+          description: copy.cards.importsExports.description,
+          status: copy.statusBacked,
+          actionLabel: copy.open,
+          href: "/setup/import",
+          tone: "info",
+          icon: <UploadCloud className="h-4 w-4" />,
+        },
+      ];
+
+      if (isPlatformAdmin) {
+        cards.push({
+          key: "subscription-access",
+          title: copy.cards.subscription.title,
+          description: copy.cards.subscription.description,
+          status: copy.statusPlatform,
+          actionLabel: copy.open,
+          href: "/platform-control",
+          tone: "neutral",
+          icon: <KeyRound className="h-4 w-4" />,
+        });
+      }
+
+      return cards;
+    },
+    [
+      canEditOps,
+      canEditDueReminders,
+      copy,
+      data.notifications.dailyDigest,
+      fiscalReady,
+      isPlatformAdmin,
+      profileReady,
+      t,
+      tt,
+      warehouses.length,
+    ],
+  );
+  const activeSectionTitle = activeSection
+    ? settingsGuideCards.find((card) => card.section === activeSection)?.title
+    : null;
+
   const reminderLeadDays = useMemo(
     () =>
       normalizeLeadDays(
@@ -335,6 +760,22 @@ function Settings() {
     data.dueReminders?.sendAt,
     data.dueReminders?.hours?.join(","),
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await getPlatformAdminStatus();
+        if (!cancelled) setIsPlatformAdmin(Boolean(status?.is_admin));
+      } catch {
+        if (!cancelled) setIsPlatformAdmin(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -616,33 +1057,57 @@ function Settings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight">{t("settings.title")}</h1>
-          <p className="hidden text-muted-foreground sm:block">{t("settings.subtitle")}</p>
-        </div>
-        <div className="mobile-primary-actions">
-          <Button
-            onClick={saveProfile}
-            disabled={savingProfile || !canEditOps}
-            variant="secondary"
-          >
-            {savingProfile ? t("actions.saving") : tt("settings.actions.saveCompany", "Save company")}
-          </Button>
-          <Button onClick={save} disabled={saving || !canEditOps}>
-            {saving ? t("actions.saving") : t("actions.save")}
-          </Button>
-        </div>
-      </div>
+      <PremiumPageHeader
+        title={copy.headerTitle}
+        description={copy.headerBody}
+        context={
+          <PremiumStatusBadge tone={canEditOps ? "positive" : "neutral"} icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+            {canEditOps ? tt("settings.editableStatus", "Editable setup") : tt("settings.readOnlyShort", "Read-only")}
+          </PremiumStatusBadge>
+        }
+        meta={
+          <>
+            <span>{tt("settings.title", "Settings")}</span>
+            <span aria-hidden="true">/</span>
+            {activeSectionTitle ? (
+              <span>{activeSectionTitle}</span>
+            ) : (
+              <>
+                <span>{settingsSummary.defaultWarehouse}</span>
+                <span aria-hidden="true">/</span>
+                <span>{data.dashboard.defaultWindowDays}d</span>
+              </>
+            )}
+          </>
+        }
+        actions={
+          activeSection && activeSection !== "inventory" ? (
+            <div className="mobile-primary-actions">
+              {activeSection === "company-profile" ? (
+                <Button
+                  onClick={saveProfile}
+                  disabled={savingProfile || !canEditOps}
+                >
+                  {savingProfile ? t("actions.saving") : copy.saveCompany}
+                </Button>
+              ) : (
+                <Button onClick={save} disabled={saving || !canEditOps}>
+                  {saving ? t("actions.saving") : copy.saveChanges}
+                </Button>
+              )}
+            </div>
+          ) : null
+        }
+      />
 
       {!canEditOps && (
-        <div className="text-sm text-muted-foreground">
+        <div className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-muted/35 px-4 py-3 text-sm text-muted-foreground">
           {tt("settings.readOnly", "Read-only: only Owners / Admins / Managers can edit settings.")}
         </div>
       )}
 
       {missingRow && !canEditAll && (
-        <div className="text-sm text-muted-foreground">
+        <div className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-muted/35 px-4 py-3 text-sm text-muted-foreground">
           {tt(
             "settings.notInitialized",
             "Settings are not initialized yet. Ask an Owner or Admin to open this page once to create them."
@@ -651,58 +1116,101 @@ function Settings() {
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {tt("settings.summary.companyTitle", "Company profile")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-semibold">{settingsSummary.companyLabel}</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">
-              {tt(
-                "settings.summary.companyHelp",
-                "Maintained from the live company profile used in onboarding, exports, and printed documents."
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {tt("settings.summary.warehouseTitle", "Default warehouse")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-semibold">{settingsSummary.defaultWarehouse}</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">
-              {tt(
-                "settings.summary.warehouseHelp",
-                "Used as the default operational context for the dashboard and sales defaults."
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {tt("settings.summary.valuationTitle", "Inventory valuation")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-semibold">{settingsSummary.valuationMethod}</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">
-              {tt(
-                "settings.summary.valuationHelp",
-                "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <PremiumMetricCard
+          label={tt("settings.summary.companyTitle", "Company profile")}
+          value={settingsSummary.companyLabel}
+          description={tt(
+            "settings.summary.companyHelp",
+            "Maintained from the live company profile used in onboarding, exports, and printed documents."
+          )}
+          icon={<Building />}
+          tone={profileReady ? "positive" : "warning"}
+        />
+        <PremiumMetricCard
+          label={tt("settings.summary.warehouseTitle", "Default warehouse")}
+          value={settingsSummary.defaultWarehouse}
+          description={tt(
+            "settings.summary.warehouseHelp",
+            "Used as the default operational context for the dashboard and sales defaults."
+          )}
+          icon={<Warehouse />}
+          tone={warehouses.length ? "info" : "neutral"}
+        />
+        <PremiumMetricCard
+          label={tt("settings.summary.valuationTitle", "Inventory valuation")}
+          value={settingsSummary.valuationMethod}
+          description={tt(
+            "settings.summary.valuationHelp",
+            "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
+          )}
+          icon={<Landmark />}
+          tone="neutral"
+        />
       </div>
 
+      <section className="rounded-[calc(var(--radius)+0.25rem)] border border-card-border bg-card p-4 shadow-[0_20px_48px_-38px_hsl(var(--foreground)/0.28)] sm:p-5">
+        <div>
+          <div className="premium-label">{copy.eyebrow}</div>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight text-foreground">{copy.operatingMapTitle}</h2>
+          <p className="mt-2 hidden max-w-3xl text-sm leading-6 text-muted-foreground sm:block">
+            {copy.operatingMapBody}
+          </p>
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          {settingsGuideCards.map((card) => (
+            <article
+              key={card.key}
+              className="group flex min-h-[180px] flex-col rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-elevated p-5 shadow-[0_16px_34px_-30px_hsl(var(--foreground)/0.34)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_22px_48px_-36px_hsl(var(--foreground)/0.42)]"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-card-border bg-surface-muted text-primary">
+                  {card.icon}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold leading-5 text-foreground">{card.title}</h3>
+                  <div className="mt-2">
+                    <PremiumStatusBadge tone={card.tone}>{card.status}</PremiumStatusBadge>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">{card.description}</p>
+              {card.href ? (
+                <Button asChild variant="ghost" className="mt-auto h-auto justify-start px-0 pt-4 text-sm font-semibold text-primary hover:text-primary">
+                  <Link to={card.href}>
+                    {card.actionLabel || copy.open}
+                    <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </Button>
+              ) : card.section ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="mt-auto h-auto justify-start px-0 pt-4 text-sm font-semibold text-primary hover:text-primary"
+                  onClick={() => setActiveSection(card.section!)}
+                >
+                  {card.actionLabel || copy.review}
+                  <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </Button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {activeSection ? (
+        <div className="space-y-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-fit"
+            onClick={() => setActiveSection(null)}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {copy.backToSettings}
+          </Button>
+
       {/* ===================== Company Profile (companies) ===================== */}
-      <Card>
+      <Card id="settings-company-profile" className={activeSection === "company-profile" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building className="w-5 h-5" />{" "}
@@ -1133,7 +1641,7 @@ function Settings() {
       </Card>
 
       {/* Localization & UI */}
-      <Card>
+      <Card id="settings-localization" className={activeSection === "localization" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="w-5 h-5" /> {t("sections.localization.title")}
@@ -1215,7 +1723,7 @@ function Settings() {
       </Card>
 
       {/* Sales & Fulfilment */}
-      <Card>
+      <Card id="settings-operations" className={activeSection === "operations" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>{t("sections.sales.title")}</CardTitle>
         </CardHeader>
@@ -1274,7 +1782,7 @@ function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-inventory" className={activeSection === "inventory" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>{tt("settings.inventory.title", "Inventory valuation")}</CardTitle>
         </CardHeader>
@@ -1302,7 +1810,7 @@ function Settings() {
       </Card>
 
       {/* Notifications */}
-      <Card>
+      <Card id="settings-notifications" className={activeSection === "notifications" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="w-5 h-5" /> {tt("settings.digest.title", "Daily digest")}
@@ -1385,7 +1893,7 @@ function Settings() {
       </Card>
 
       {/* Due Reminder Worker Settings */}
-      <Card>
+      <Card id="settings-due-reminders" className={activeSection === "due-reminders" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5" /> {t("settings.dueReminders.title")}
@@ -1698,7 +2206,7 @@ function Settings() {
       </Card>
 
       {/* Documents & Templates (kept) */}
-      <Card>
+      <Card id="settings-documents" className={activeSection === "documents" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="w-5 h-5" /> {t("sections.documents.title")}
@@ -1746,6 +2254,8 @@ function Settings() {
           </div>
         </CardContent>
       </Card>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -42,6 +42,28 @@ module.exports = {
         card: {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
+          border: 'hsl(var(--card-border))',
+        },
+        app: {
+          background: 'hsl(var(--app-background))',
+        },
+        surface: {
+          elevated: 'hsl(var(--surface-elevated))',
+          muted: 'hsl(var(--surface-muted))',
+        },
+        panel: {
+          border: 'hsl(var(--panel-border))',
+          premium: 'hsl(var(--premium-dashboard-panel))',
+          'premium-foreground': 'hsl(var(--premium-dashboard-panel-foreground))',
+          'premium-muted': 'hsl(var(--premium-dashboard-panel-muted))',
+          'premium-border': 'hsl(var(--premium-dashboard-panel-border))',
+        },
+        financial: {
+          positive: 'hsl(var(--financial-positive))',
+          negative: 'hsl(var(--financial-negative))',
+          warning: 'hsl(var(--financial-warning))',
+          critical: 'hsl(var(--financial-critical))',
+          neutral: 'hsl(var(--financial-neutral))',
         },
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
@@ -59,6 +81,14 @@ module.exports = {
           3: 'hsl(var(--chart-3))',
           4: 'hsl(var(--chart-4))',
           5: 'hsl(var(--chart-5))',
+          revenue: 'hsl(var(--chart-revenue))',
+          cogs: 'hsl(var(--chart-cogs))',
+          margin: 'hsl(var(--chart-margin))',
+          inventory: 'hsl(var(--chart-inventory))',
+          receivables: 'hsl(var(--chart-receivables))',
+        },
+        focus: {
+          ring: 'hsl(var(--focus-ring))',
         },
       },
       borderRadius: {

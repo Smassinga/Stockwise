@@ -10,6 +10,7 @@ Primary layers:
 
 - routes and feature workspaces under `src/pages`
 - shared UI, layout, and brand components under `src/components`
+- premium UI primitives for cockpit pages and operational registers under `src/components/premium`
 - workflow helpers, data mappers, and commercial/access helpers under `src/lib`
 - Supabase schema, policies, RPCs, views, and Edge Functions under `supabase`
 - Tauri desktop and Android shell metadata under `src-tauri`
@@ -19,6 +20,9 @@ Primary layers:
 The maintained product surfaces are:
 
 - dashboard and operational review
+- premium dashboard cockpit for operating status, action needed, recent activity, and shipment-linked performance
+- premium register primitives applied first to Items and Stock Levels, with desktop tables and Android card lists sharing sorting, filtering, pagination, and status presentation patterns
+- premium onboarding and administration surfaces for explicit company setup, backed Settings navigation, and canonical Users/Roles review
 - Point of Sale for fast small-store counter sales with a default walk-in / cash customer
 - items, UOM, warehouses, bins, stock levels, and stock movements
 - BOM and assembly, including lightweight time planning
@@ -33,6 +37,7 @@ The maintained product surfaces are:
 - authenticated users without an active membership land on `/onboarding`
 - onboarding now supports two first-class paths: join an invited company or create a new company
 - onboarding company creation is intentionally minimal and only requires the company name; legal identity, address, contacts, logo, bank details, tax details, and other deeper setup remain editable later in `Settings`
+- after company creation, onboarding shows the setup checklist for company profile, fiscal/legal readiness, users, and opening data; these are navigation and readiness cues, not new backend workflow gates
 - pending invitation discovery is email-bound and uses a dedicated authenticated RPC that only returns invites for the signed-in account email
 - invitation acceptance stays secure through the authenticated email match plus invite validity checks; expired invite rows are excluded from the onboarding list and rejected on acceptance
 - choosing `Create new company` no longer auto-consumes pending invitations; the invitation record remains pending unless the user explicitly accepts it
@@ -58,9 +63,12 @@ The maintained product surfaces are:
 - mobile UX is a general app concern, not a separate product mode
 - the shell now uses adaptive page-width variants instead of one rigid content canvas, so dashboard-style pages and task workspaces can use wider screens more intelligently without losing readable structure
 - the small-screen shell prioritizes a smaller route set, clearer vertical flow, and a persistent bottom navigation dock that stays visually separated from page content
+- dashboard mobile flow prioritizes Today/status, Action Needed, Quick Actions, and Recent Activity before deeper chart review
 - the Android runtime now fits the system window area and uses safe-area-aware top/bottom spacing instead of allowing app chrome to collide with the status bar
 - the mobile drawer has its own scroll body so lower navigation entries remain reachable on shorter Android screens
 - compact review-heavy pages such as Items, Movements, and Stock Levels should expose card/register views before falling back to horizontal tables
+- onboarding, Settings, and Users/Roles should preserve the same Android-first principle: decision cards, setup categories, role explanations, invite forms, and member cards must remain usable without hover or horizontal-table dependence
+- register import/export controls must wrap existing approved workflows; visual register work must not create new posting, costing, access-control, or data-import authority
 - Point of Sale and onboarding import are packaged into Tauri builds exactly as they exist on the web app
 - desktop and Android releases must reflect current StockWise branding, route naming, and operator-facing copy
 
@@ -77,3 +85,4 @@ The maintained product surfaces are:
 - treat `db pull` `*_remote_schema.sql` files as review artifacts by default
 - do not use inventory cost as a default selling price
 - validate finance and operational continuity with `npm run test:finance-regression`
+- keep UI polish inside the existing Tailwind/shadcn-style system unless a new dependency is explicitly justified
