@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
+import { IconBadge } from './IconBadge'
 import type { PremiumTone } from './PremiumStatusBadge'
 
 const toneText: Record<PremiumTone, string> = {
@@ -9,15 +10,6 @@ const toneText: Record<PremiumTone, string> = {
   warning: 'text-financial-warning dark:text-amber-200',
   critical: 'text-financial-critical dark:text-rose-200',
   info: 'text-sky-700 dark:text-sky-200',
-}
-
-const toneIcon: Record<PremiumTone, string> = {
-  neutral: 'border-border/70 bg-surface-muted text-financial-neutral dark:border-panel-border dark:bg-white/5 dark:text-panel-premium-muted',
-  positive: 'border-emerald-200 bg-emerald-50 text-financial-positive dark:border-emerald-300/25 dark:bg-emerald-300/10 dark:text-emerald-200',
-  negative: 'border-rose-200 bg-rose-50 text-financial-negative dark:border-rose-300/25 dark:bg-rose-300/10 dark:text-rose-200',
-  warning: 'border-amber-200 bg-amber-50 text-financial-warning dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-200',
-  critical: 'border-rose-200 bg-rose-50 text-financial-critical dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-200',
-  info: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/25 dark:bg-sky-300/10 dark:text-sky-200',
 }
 
 export function PremiumMetricCard({
@@ -59,9 +51,9 @@ export function PremiumMetricCard({
           </div>
         </div>
         {icon ? (
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border [&_svg]:h-4 [&_svg]:w-4', toneIcon[tone])}>
+          <IconBadge tone={tone} size="card">
             {icon}
-          </div>
+          </IconBadge>
         ) : null}
       </div>
       {description ? (

@@ -33,8 +33,10 @@ The maintained product surfaces are:
 
 ## Onboarding Entry
 
-- public signup uses Supabase Auth only; users create credentials, confirm email when required, then choose company creation or explicit invitation acceptance
+- public signup uses Supabase Auth only; production users must confirm email before normal app access, then choose company creation or explicit invitation acceptance
 - signup may capture an optional phone number as profile contact data, but phone is not a login factor, OTP path, membership key, or tenant-access signal
+- Brevo-backed Supabase Auth email templates handle confirmation, password reset, invite, and email-change messages; no parallel auth or organisation system is used
+- Supabase password recovery callbacks route to `/update-password` before normal membership routing; the update screen changes the password through Supabase Auth, clears the recovery marker, and returns the user to login
 - authenticated users who already have an active company membership continue into the dashboard under the existing active-company rules
 - authenticated users without an active membership land on `/onboarding`
 - onboarding now supports two first-class paths: join an invited company or create a new company

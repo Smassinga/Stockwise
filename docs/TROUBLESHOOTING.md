@@ -16,6 +16,13 @@ What to do:
 2. do not treat it as canonical by default
 3. keep it out of commits unless it is explicitly accepted
 4. run `npm run check:migrations`
+5. if `db pull` or `migration fetch` accidentally records a synthetic artifact in remote migration history, repair only that tracking row after review, for example `npx supabase migration repair --status reverted <version>`
+
+2026-06-03 note:
+
+- remote history entry `20260531145805` was confirmed as an accidental synthetic `*_remote_schema.sql` artifact and repaired with `npx supabase migration repair --status reverted 20260531145805`
+- a later pull-generated synthetic artifact `20260603050127_remote_schema.sql` was also inspected, removed, and repaired as reverted after `db pull` recorded it
+- neither artifact was accepted as a canonical migration
 
 ### Shadow replay fails
 
@@ -48,6 +55,59 @@ Also check:
 - `npm run test:finance-regression` when finance, access, or posting logic changed
 
 ## Access and Company State
+
+### New signup enters the app without verification
+
+Expected production behavior:
+
+- Supabase Auth email confirmation is enabled
+- signup should show the verification/check-email state
+- no company membership, entitlement, finance, inventory, POS, invoice, settlement, valuation, or RLS behavior is changed by this setting
+
+Check:
+
+- Auth config keeps `mailer_autoconfirm=false`
+- unverified email sign-ins stay disabled
+- Site URL is `https://stockwiseapp.com`
+- redirect allow-list includes `https://stockwiseapp.com/auth/callback`
+- Brevo-backed Supabase Auth SMTP is configured
+- Confirm signup template still uses `{{ .ConfirmationURL }}`
+
+### Auth emails do not arrive or render correctly
+
+Current production delivery path:
+
+- Supabase Auth sends confirm-signup, resend-confirmation, and reset-password emails through Brevo SMTP
+- the production Site URL is `https://stockwiseapp.com`
+- the callback allow-list must include `https://stockwiseapp.com/auth/callback`
+
+Check:
+
+- Supabase Auth SMTP settings still point to the approved Brevo sender
+- the affected template still preserves the required Supabase link variable
+- the template keeps a visible CTA, fallback plain link text, support mailto, and "ignore this email" security note
+- the HTML remains simple, UTF-8-safe, and email-client compatible
+- Brevo delivery logs show accepted/sent status for the recipient
+- the recipient provider did not put the message in spam, quarantine, promotions, or a blocked-sender rule
+
+2026-06-05 QA note:
+
+- controlled inboxes received confirm signup, resend confirmation, and reset password messages
+- button and fallback links followed Brevo wrappers and reached StockWise after Supabase verification/recovery
+- after the 2026-06-05 deployment, reset-password links were verified to reach `/update-password`, update the password through Supabase Auth, return to `/login`, and preserve normal onboarding/dashboard routing after sign-in
+- login-before-confirmation was verified to show the resend panel; the resend button sent another Brevo-backed confirmation email and displayed the 60-second cooldown state
+- spam placement remains a provider-specific risk because the disposable test inbox had no separate spam/quarantine folder
+
+### Reset password email opens the app but does not show a password update screen
+
+Expected production behavior after the 2026-06-05 recovery fix:
+
+- reset-password button and fallback links exchange the Supabase recovery token successfully
+- `/auth/callback` detects the Supabase password recovery event or recovery URL marker
+- recovery sessions route to `/update-password` before normal membership-based onboarding/dashboard routing
+- the update screen applies the new password through Supabase Auth and then returns the user to `/login`
+
+If a reset link goes directly to `/onboarding` or `/dashboard`, check the auth callback recovery marker first. The fix must preserve Supabase Auth as the only auth system and must not change company membership authority, entitlement logic, Platform Control permissions, finance, inventory, POS, invoice, settlement, valuation, schema, or RLS behavior.
 
 ### User can sign in but cannot use the app
 

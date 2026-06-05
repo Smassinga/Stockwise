@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
+import { IconBadge } from './IconBadge'
 
 export function PremiumEmptyState({
   title,
@@ -25,9 +26,9 @@ export function PremiumEmptyState({
       )}
     >
       {icon ? (
-        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-card-border bg-card text-muted-foreground [&_svg]:h-5 [&_svg]:w-5">
+        <IconBadge tone="neutral" size="empty" className="mb-3 bg-card">
           {icon}
-        </div>
+        </IconBadge>
       ) : null}
       <p className="max-w-xl text-sm font-semibold text-foreground">{title}</p>
       {description ? <p className="mt-2 max-w-xl text-xs leading-5 text-muted-foreground">{description}</p> : null}

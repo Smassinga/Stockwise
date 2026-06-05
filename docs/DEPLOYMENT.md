@@ -30,6 +30,8 @@ Before a web release:
 
 ```bash
 npm run lint:js
+npm run check:css-vars
+npm run check:css-classes
 npm run build
 npm run test:finance-regression
 ```
@@ -44,6 +46,41 @@ npx supabase db push
 
 Only report a live schema change if `npx supabase db push` succeeded in the same session.
 
+## Current Production Release Notes
+
+2026-06-05 production deployment:
+
+- deployed with `npx vercel build --prod` and `npx vercel deploy --prebuilt --prod`
+- latest production deployment URL: `https://stockwise-popyw0hqa-honeythiefs-projects.vercel.app`
+- custom production domain verified at `https://stockwiseapp.com`
+- reset-password recovery now routes through `/auth/callback` to `/update-password` before normal membership routing
+- password updates use Supabase Auth `updateUser({ password })`, clear the recovery marker, and return the user to `/login`
+- signup confirmation and resend-confirmation routing remain unchanged: confirmed no-company users reach onboarding and active-company users reach dashboard
+- landing card icon spacing fix is included; feature/workflow/use-case icon badges stay in normal card flow with visible top padding
+- no Supabase migration was created or pushed for this package
+- no schema, RLS, company membership authority, entitlement/trial, finance, inventory, POS, invoice, settlement, valuation, or Platform Control permission logic was changed
+
+2026-06-04 Supabase Auth email confirmation update:
+
+- production Supabase Auth requires email confirmation before normal app access (`mailer_autoconfirm=false`)
+- unverified email sign-ins remain disallowed
+- production Site URL is `https://stockwiseapp.com`
+- redirect allow-list includes `https://stockwiseapp.com/auth/callback`
+- Supabase Auth transactional email uses configured custom SMTP through Brevo
+- Confirm signup, Reset password, Invite user, and Change email templates were polished with Portuguese-first StockWise/WiseCore Technologies copy
+- no Supabase migration was created or pushed for this package
+- no change was made to company membership authority, entitlement/trial logic, finance, inventory, POS, invoices, settlements, valuation, or RLS
+
+2026-06-03 production deployment:
+
+- auth/signup polish is live after `npx vercel build --prod` and `npx vercel deploy --prebuilt --prod`
+- latest production deployment URL: `https://stockwise-b7dqlzgvu-honeythiefs-projects.vercel.app`
+- Supabase migration `20260602191520_add_profile_phone_number.sql` was applied live with `npx supabase db push`
+- `profiles.phone_number` is nullable, profile-only contact data
+- profile phone saves use Supabase Auth metadata plus the `handle_user_profile_sync` trigger as the authoritative write path when direct `profiles` writes are blocked by RLS
+- remote migration history entry `20260531145805` was repaired as an accidental synthetic `*_remote_schema.sql` artifact; it was not committed as a real migration
+- no change was made to company membership authority, entitlement/trial logic, finance, inventory, POS, invoices, settlements, valuation, or RLS
+
 ## Supabase and Email Release Requirements
 
 StockWise depends on Supabase for:
@@ -54,6 +91,8 @@ StockWise depends on Supabase for:
 - outbound company-access email sending
 
 Edge-function mail flows require the configured Brevo SMTP secrets. Verify required secrets before deploying or testing an email function.
+
+Supabase Auth email confirmation uses the Auth service SMTP configuration, also backed by Brevo. Do not confuse those Auth SMTP settings with Edge Function secrets; both must remain configured for their respective flows.
 
 Current support inbox:
 

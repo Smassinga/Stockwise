@@ -29,29 +29,35 @@ import { Switch } from "../components/ui/switch";
 import { PremiumMetricCard } from "../components/premium/PremiumMetricCard";
 import { PremiumPageHeader } from "../components/premium/PremiumPageHeader";
 import { PremiumStatusBadge, type PremiumTone } from "../components/premium/PremiumStatusBadge";
+import { IconBadge } from "../components/premium/IconBadge";
+import { BankIcon } from "@phosphor-icons/react/dist/csr/Bank";
+import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
+import { BuildingsIcon } from "@phosphor-icons/react/dist/csr/Buildings";
+import { ClipboardTextIcon } from "@phosphor-icons/react/dist/csr/ClipboardText";
+import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
+import { CoinsIcon } from "@phosphor-icons/react/dist/csr/Coins";
+import { FileTextIcon as PhosphorFileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
+import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
+import { KeyIcon } from "@phosphor-icons/react/dist/csr/Key";
+import { ListChecksIcon } from "@phosphor-icons/react/dist/csr/ListChecks";
+import { ScalesIcon } from "@phosphor-icons/react/dist/csr/Scales";
+import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
+import { UsersThreeIcon } from "@phosphor-icons/react/dist/csr/UsersThree";
+import { WarehouseIcon } from "@phosphor-icons/react/dist/csr/Warehouse";
 
 // Existing uploader (fast preview / storage)
 import LogoUploader from "../components/settings/LogoUploader";
 
 import {
-  Banknote,
   Bell,
   Building,
   ChevronRight,
   ArrowLeft,
   Clock,
-  Coins,
-  FileCheck2,
   FileText,
   Globe,
-  KeyRound,
-  Landmark,
-  ListChecks,
   Plus,
   ShieldCheck,
-  UploadCloud,
-  Users,
-  Warehouse,
   X,
 } from "lucide-react";
 
@@ -568,7 +574,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "company-profile",
           tone: profileReady ? "positive" : "warning",
-          icon: <Building className="h-4 w-4" />,
+          icon: <BuildingsIcon weight="duotone" />,
         },
         {
           key: "fiscal-legal",
@@ -578,7 +584,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/compliance/mz",
           tone: fiscalReady ? "positive" : "warning",
-          icon: <FileCheck2 className="h-4 w-4" />,
+          icon: <ClipboardTextIcon weight="duotone" />,
         },
         {
           key: "users-roles",
@@ -588,7 +594,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/users",
           tone: canEditOps ? "info" : "neutral",
-          icon: <Users className="h-4 w-4" />,
+          icon: <UsersThreeIcon weight="duotone" />,
         },
         {
           key: "warehouses-bins",
@@ -600,7 +606,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/warehouses",
           tone: warehouses.length ? "positive" : "warning",
-          icon: <Warehouse className="h-4 w-4" />,
+          icon: <WarehouseIcon weight="duotone" />,
         },
         {
           key: "localization",
@@ -610,7 +616,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "localization",
           tone: "info",
-          icon: <Globe className="h-4 w-4" />,
+          icon: <GlobeIcon weight="duotone" />,
         },
         {
           key: "operations",
@@ -620,7 +626,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "operations",
           tone: "info",
-          icon: <ListChecks className="h-4 w-4" />,
+          icon: <ListChecksIcon weight="duotone" />,
         },
         {
           key: "inventory",
@@ -630,7 +636,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "inventory",
           tone: "neutral",
-          icon: <Landmark className="h-4 w-4" />,
+          icon: <ScalesIcon weight="duotone" />,
         },
         {
           key: "currencies",
@@ -640,7 +646,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/currency",
           tone: "info",
-          icon: <Coins className="h-4 w-4" />,
+          icon: <CoinsIcon weight="duotone" />,
         },
         {
           key: "document-numbering",
@@ -650,7 +656,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/compliance/mz",
           tone: "info",
-          icon: <ListChecks className="h-4 w-4" />,
+          icon: <ListChecksIcon weight="duotone" />,
         },
         {
           key: "bank-accounts",
@@ -660,7 +666,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/banks",
           tone: "neutral",
-          icon: <Banknote className="h-4 w-4" />,
+          icon: <BankIcon weight="duotone" />,
         },
         {
           key: "notifications",
@@ -670,7 +676,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "notifications",
           tone: data.notifications.dailyDigest ? "positive" : "neutral",
-          icon: <Bell className="h-4 w-4" />,
+          icon: <BellIcon weight="duotone" />,
         },
         {
           key: "due-reminders",
@@ -680,7 +686,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "due-reminders",
           tone: canEditDueReminders ? "info" : "neutral",
-          icon: <Clock className="h-4 w-4" />,
+          icon: <ClockIcon weight="duotone" />,
         },
         {
           key: "documents",
@@ -690,7 +696,7 @@ function Settings() {
           actionLabel: copy.review,
           section: "documents",
           tone: "info",
-          icon: <FileText className="h-4 w-4" />,
+          icon: <PhosphorFileTextIcon weight="duotone" />,
         },
         {
           key: "imports-exports",
@@ -700,7 +706,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/setup/import",
           tone: "info",
-          icon: <UploadCloud className="h-4 w-4" />,
+          icon: <UploadSimpleIcon weight="duotone" />,
         },
       ];
 
@@ -713,7 +719,7 @@ function Settings() {
           actionLabel: copy.open,
           href: "/platform-control",
           tone: "neutral",
-          icon: <KeyRound className="h-4 w-4" />,
+          icon: <KeyIcon weight="duotone" />,
         });
       }
 
@@ -1123,7 +1129,7 @@ function Settings() {
             "settings.summary.companyHelp",
             "Maintained from the live company profile used in onboarding, exports, and printed documents."
           )}
-          icon={<Building />}
+          icon={<BuildingsIcon weight="duotone" />}
           tone={profileReady ? "positive" : "warning"}
         />
         <PremiumMetricCard
@@ -1133,7 +1139,7 @@ function Settings() {
             "settings.summary.warehouseHelp",
             "Used as the default operational context for the dashboard and sales defaults."
           )}
-          icon={<Warehouse />}
+          icon={<WarehouseIcon weight="duotone" />}
           tone={warehouses.length ? "info" : "neutral"}
         />
         <PremiumMetricCard
@@ -1143,7 +1149,7 @@ function Settings() {
             "settings.summary.valuationHelp",
             "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
           )}
-          icon={<Landmark />}
+          icon={<ScalesIcon weight="duotone" />}
           tone="neutral"
         />
       </div>
@@ -1162,10 +1168,10 @@ function Settings() {
               key={card.key}
               className="group flex min-h-[180px] flex-col rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-elevated p-5 shadow-[0_16px_34px_-30px_hsl(var(--foreground)/0.34)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_22px_48px_-36px_hsl(var(--foreground)/0.42)]"
             >
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-card-border bg-surface-muted text-primary">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
+                <IconBadge tone={card.tone} size="card">
                   {card.icon}
-                </span>
+                </IconBadge>
                 <div className="min-w-0">
                   <h3 className="text-sm font-semibold leading-5 text-foreground">{card.title}</h3>
                   <div className="mt-2">

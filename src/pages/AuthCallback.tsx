@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
+import {
+  hasPasswordRecoveryPending,
+  isPasswordRecoveryUrl,
+  markPasswordRecoveryPending,
+} from '../lib/authRecovery'
 import { readInviteToken } from '../lib/inviteToken'
 import { supabase } from '../lib/supabase'
 import { withTimeout } from '../lib/withTimeout'
@@ -28,6 +33,10 @@ export default function AuthCallback() {
   useEffect(() => {
     const run = async () => {
       try {
+        if (isPasswordRecoveryUrl()) {
+          markPasswordRecoveryPending()
+        }
+
         const {
           data: { session },
         } = await withTimeout(
@@ -37,6 +46,10 @@ export default function AuthCallback() {
         )
 
         if (session?.user) {
+          if (hasPasswordRecoveryPending()) {
+            nav('/update-password', { replace: true })
+            return
+          }
           if (readInviteToken()) {
             nav('/accept-invite', { replace: true })
             return
@@ -99,6 +112,12 @@ export default function AuthCallback() {
           } catch (e) {
             console.warn('admin user sync failed during auth callback:', e)
           }
+        }
+
+        if (hasPasswordRecoveryPending()) {
+          setMsg('Opening password update...')
+          nav('/update-password', { replace: true })
+          return
         }
 
         if (readInviteToken()) {

@@ -58,6 +58,7 @@ Future UI changes should preserve:
 - chart and table content lower in the mobile flow unless it is immediately actionable
 - mobile register cards that surface status, location, and the next safe action before exposing wide-table detail
 - stock movement cards should show item, type, route, quantity, value, reference, and details without requiring horizontal scrolling
+- premium card icons should use stable badge containers and stack above text on narrow screens when horizontal rows become cramped
 
 Future UI changes should avoid:
 

@@ -2,7 +2,6 @@ import {
   AlertCircle,
   ArrowRight,
   Building2,
-  CheckCircle2,
   ChevronRight,
   Info,
   Loader2,
@@ -10,8 +9,12 @@ import {
   Search,
   Settings2,
   UserPlus,
-  Users,
 } from 'lucide-react'
+import { BuildingsIcon } from '@phosphor-icons/react/dist/csr/Buildings'
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
+import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
+import { UserPlusIcon as PhosphorUserPlusIcon } from '@phosphor-icons/react/dist/csr/UserPlus'
+import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
@@ -25,6 +28,7 @@ import { Label } from '../components/ui/label'
 import { Progress } from '../components/ui/progress'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip'
+import { IconBadge } from '../components/premium/IconBadge'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { rememberCompanyLocally } from '../lib/companySelectionMemory'
@@ -428,12 +432,12 @@ function PathCard({
           : 'border-border/70 hover:border-primary/20',
       )}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3 text-base font-semibold text-foreground">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card text-primary">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex min-w-0 flex-col gap-3 text-base font-semibold text-foreground sm:flex-row sm:items-center">
+            <IconBadge tone={active ? 'primary' : 'neutral'} size="card">
               {icon}
-            </span>
+            </IconBadge>
             <span>{title}</span>
           </div>
             <p className="hidden text-sm leading-6 text-muted-foreground sm:block">{body}</p>
@@ -837,9 +841,9 @@ export default function Onboarding() {
               <div className="space-y-6">
                 <div className="rounded-3xl border border-primary/15 bg-primary/5 p-5">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-2xl border border-primary/20 bg-background p-2 text-primary">
-                      <CheckCircle2 className="h-5 w-5" />
-                    </div>
+                    <IconBadge tone="positive" size="feature" className="mt-0.5 bg-background">
+                      <CheckCircleIcon weight="duotone" />
+                    </IconBadge>
                     <div className="space-y-2">
                       <div className="text-sm font-medium text-muted-foreground">{copy.readySummaryLabel}</div>
                       <div className="text-xl font-semibold tracking-tight text-foreground">{completion.companyName}</div>
@@ -865,23 +869,16 @@ export default function Onboarding() {
                   <div className="mt-5 grid gap-4 lg:grid-cols-2">
                     {copy.readinessItems.map((item, index) => {
                       const done = index === 0
-                      const StepIcon = index === 0 ? CheckCircle2 : index === 1 ? Settings2 : index === 2 ? UserPlus : Building2
+                      const StepIcon = index === 0 ? CheckCircleIcon : index === 1 ? GearSixIcon : index === 2 ? PhosphorUserPlusIcon : BuildingsIcon
                       return (
                         <div
                           key={item.title}
                           className="flex min-h-[150px] flex-col gap-4 rounded-2xl border border-border/70 bg-card/85 p-5 shadow-[0_14px_34px_-30px_hsl(var(--foreground)/0.32)]"
                         >
                           <div className="flex min-w-0 items-start gap-3">
-                            <span
-                              className={cn(
-                                'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border',
-                                done
-                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/30 dark:bg-emerald-300/10 dark:text-emerald-200'
-                                  : 'border-border/70 bg-muted/25 text-primary',
-                              )}
-                            >
-                              <StepIcon className="h-4 w-4" />
-                            </span>
+                            <IconBadge tone={done ? 'positive' : 'primary'} size="card" className="mt-0.5">
+                              <StepIcon weight="duotone" />
+                            </IconBadge>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <div className="font-semibold text-foreground">{item.title}</div>
@@ -931,7 +928,7 @@ export default function Onboarding() {
                         body={copy.joinPathBody}
                         hint={copy.joinPathHint}
                         active={path === 'join'}
-                        icon={<Users className="h-5 w-5" />}
+                        icon={<UsersThreeIcon weight="duotone" />}
                         onClick={() => setPath('join')}
                       />
                       <PathCard
@@ -939,7 +936,7 @@ export default function Onboarding() {
                         body={copy.createPathBody}
                         hint={copy.createPathHint}
                         active={path === 'create'}
-                        icon={<Building2 className="h-5 w-5" />}
+                        icon={<BuildingsIcon weight="duotone" />}
                         onClick={() => setPath('create')}
                       />
                     </div>

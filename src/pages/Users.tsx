@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Crown, Search, ShieldCheck, UserPlus, Users as UsersIcon, XCircle } from 'lucide-react'
+import { Search } from 'lucide-react'
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
+import { CrownIcon } from '@phosphor-icons/react/dist/csr/Crown'
+import { ShieldCheckIcon as PhosphorShieldCheckIcon } from '@phosphor-icons/react/dist/csr/ShieldCheck'
+import { UserPlusIcon } from '@phosphor-icons/react/dist/csr/UserPlus'
+import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree'
+import { WarningIcon } from '@phosphor-icons/react/dist/csr/Warning'
+import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle'
 import toast from 'react-hot-toast'
 import { Link, useLocation } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
@@ -14,6 +21,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { IconBadge } from '../components/premium/IconBadge'
 import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 import { hasMinRole, canAssignRole, canInviteRole } from '../lib/roles'
 
@@ -541,7 +549,7 @@ export default function Users() {
         title={t('sections.users.title')}
         description={tt('users.subtitle', 'Invite teammates, track pending access, and manage company roles from one page.')}
         context={
-          <PremiumStatusBadge tone="info" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+          <PremiumStatusBadge tone="info" icon={<PhosphorShieldCheckIcon className="h-3.5 w-3.5" weight="duotone" />}>
             {myRole ? `${t('users.yourRole')}: ${roleLabel(myRole as Role)}` : roleCopy.canonicalTitle}
           </PremiumStatusBadge>
         }
@@ -558,13 +566,13 @@ export default function Users() {
           <div className="mobile-primary-actions">
             <Button asChild size="sm" variant={isRolesView ? 'outline' : 'default'}>
               <Link to="/users">
-                <UsersIcon className="h-4 w-4" />
+                <UsersThreeIcon className="h-4 w-4" weight="duotone" />
                 {roleCopy.navMembers}
               </Link>
             </Button>
             <Button asChild size="sm" variant={isRolesView ? 'default' : 'outline'}>
               <Link to="/users/roles">
-                <ShieldCheck className="h-4 w-4" />
+                <PhosphorShieldCheckIcon className="h-4 w-4" weight="duotone" />
                 {roleCopy.navRoles}
               </Link>
             </Button>
@@ -577,28 +585,28 @@ export default function Users() {
           label={tt('users.summary.members', 'Members')}
           value={memberStats.total}
           description={tt('users.summary.membersHelp', 'Active and invited company records')}
-          icon={<UsersIcon />}
+          icon={<UsersThreeIcon weight="duotone" />}
           tone="neutral"
         />
         <PremiumMetricCard
           label={tt('users.summary.active', 'Active')}
           value={memberStats.active}
           description={tt('users.summary.activeHelp', 'Members currently able to access the company')}
-          icon={<CheckCircle2 />}
+          icon={<CheckCircleIcon weight="duotone" />}
           tone="positive"
         />
         <PremiumMetricCard
           label={tt('users.summary.invited', 'Invited')}
           value={memberStats.invited}
           description={tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}
-          icon={<UserPlus />}
+          icon={<UserPlusIcon weight="duotone" />}
           tone={memberStats.invited ? 'info' : 'neutral'}
         />
         <PremiumMetricCard
           label={tt('users.summary.disabled', 'Disabled')}
           value={memberStats.disabled}
           description={tt('users.summary.disabledHelp', 'Historical users kept without active access')}
-          icon={<XCircle />}
+          icon={<XCircleIcon weight="duotone" />}
           tone={memberStats.disabled ? 'warning' : 'neutral'}
         />
       </div>
@@ -608,7 +616,7 @@ export default function Users() {
           <Card className="border-border/70 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-primary" />
+                <PhosphorShieldCheckIcon className="h-5 w-5 text-primary" weight="duotone" />
                 {roleCopy.definitionsTitle}
               </CardTitle>
               <CardDescription className="hidden sm:block">{roleCopy.definitionsBody}</CardDescription>
@@ -626,7 +634,15 @@ export default function Users() {
                             <CardTitle className="text-lg">{roleLabel(role)}</CardTitle>
                             <CardDescription className="mt-2 leading-6">{definition.summary}</CardDescription>
                           </div>
-                          {role === 'OWNER' ? <Crown className="h-5 w-5 text-amber-600" /> : powerful ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : null}
+                          {role === 'OWNER' ? (
+                            <IconBadge tone="warning" size="compact">
+                              <CrownIcon weight="duotone" />
+                            </IconBadge>
+                          ) : powerful ? (
+                            <IconBadge tone="warning" size="compact">
+                              <WarningIcon weight="duotone" />
+                            </IconBadge>
+                          ) : null}
                         </div>
                         {powerful ? (
                           <Badge variant="outline" className="w-fit border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-300/40 dark:bg-amber-300/15 dark:text-amber-100">
@@ -641,7 +657,7 @@ export default function Users() {
                         </div>
                         <div>
                           <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            <CheckCircleIcon className="h-4 w-4 text-emerald-600" weight="duotone" />
                             {roleCopy.canDo}
                           </div>
                           <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
@@ -652,7 +668,7 @@ export default function Users() {
                         </div>
                         <div>
                           <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                            <XCircle className="h-4 w-4 text-destructive" />
+                            <XCircleIcon className="h-4 w-4 text-destructive" weight="duotone" />
                             {roleCopy.cannotDo}
                           </div>
                           <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
@@ -685,7 +701,7 @@ export default function Users() {
       <Card className="border-dashed">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5" />
+            <UserPlusIcon className="h-5 w-5" weight="duotone" />
             {tt('users.inviteTitle', 'Invite teammate')}
           </CardTitle>
         </CardHeader>

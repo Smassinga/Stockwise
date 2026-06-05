@@ -1,34 +1,37 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, MotionConfig } from 'framer-motion'
+import type { Icon as PhosphorIcon } from '@phosphor-icons/react/dist/lib/types'
+import { BankIcon } from '@phosphor-icons/react/dist/csr/Bank'
+import { ChartBarIcon } from '@phosphor-icons/react/dist/csr/ChartBar'
+import { ChartLineUpIcon } from '@phosphor-icons/react/dist/csr/ChartLineUp'
+import { CoinsIcon } from '@phosphor-icons/react/dist/csr/Coins'
+import { DeviceMobileIcon } from '@phosphor-icons/react/dist/csr/DeviceMobile'
+import { FileArrowUpIcon } from '@phosphor-icons/react/dist/csr/FileArrowUp'
+import { FileTextIcon } from '@phosphor-icons/react/dist/csr/FileText'
+import { HandCoinsIcon } from '@phosphor-icons/react/dist/csr/HandCoins'
+import { LifebuoyIcon } from '@phosphor-icons/react/dist/csr/Lifebuoy'
+import { PackageIcon } from '@phosphor-icons/react/dist/csr/Package'
+import { ReceiptIcon } from '@phosphor-icons/react/dist/csr/Receipt'
+import { ShieldCheckIcon as PhosphorShieldCheckIcon } from '@phosphor-icons/react/dist/csr/ShieldCheck'
+import { StorefrontIcon } from '@phosphor-icons/react/dist/csr/Storefront'
+import { TrendUpIcon } from '@phosphor-icons/react/dist/csr/TrendUp'
+import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree'
+import { WarehouseIcon } from '@phosphor-icons/react/dist/csr/Warehouse'
 import {
   ArrowRight,
-  Banknote,
-  BarChart3,
-  Boxes,
   Building2,
   CheckCircle2,
   ChevronDown,
-  CircleDollarSign,
-  FileCheck2,
-  FileSpreadsheet,
   HelpCircle,
-  LifeBuoy,
   LockKeyhole,
   Menu,
-  ReceiptText,
-  ShieldCheck,
-  Smartphone,
-  Store,
-  TrendingUp,
-  UsersRound,
-  WalletCards,
-  Warehouse,
   X,
 } from 'lucide-react'
 import BrandLockup from '../components/brand/BrandLockup'
 import LocaleToggle from '../components/LocaleToggle'
 import ThemeToggle from '../components/ThemeToggle'
+import { IconBadge } from '../components/premium/IconBadge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
 import { useAuth } from '../hooks/useAuth'
@@ -132,20 +135,20 @@ type PlanContent = {
 }
 
 const iconMap = {
-  stock: Warehouse,
-  pos: Store,
-  documents: ReceiptText,
-  roles: UsersRound,
-  reports: BarChart3,
-  records: FileCheck2,
-  purchases: Boxes,
-  settlements: WalletCards,
-  imports: FileSpreadsheet,
-  cash: Banknote,
-  mobile: Smartphone,
-  support: LifeBuoy,
-  security: ShieldCheck,
-} satisfies Record<IconName, typeof Warehouse>
+  stock: WarehouseIcon,
+  pos: StorefrontIcon,
+  documents: ReceiptIcon,
+  roles: UsersThreeIcon,
+  reports: ChartLineUpIcon,
+  records: FileTextIcon,
+  purchases: PackageIcon,
+  settlements: HandCoinsIcon,
+  imports: FileArrowUpIcon,
+  cash: BankIcon,
+  mobile: DeviceMobileIcon,
+  support: LifebuoyIcon,
+  security: PhosphorShieldCheckIcon,
+} satisfies Record<IconName, PhosphorIcon>
 
 const revealEase = [0.22, 1, 0.36, 1] as const
 
@@ -877,7 +880,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
   const Component = iconMap[name]
-  return <Component className={className} aria-hidden="true" />
+  return <Component className={className} weight="duotone" aria-hidden="true" />
 }
 
 function SectionIntro({
@@ -915,16 +918,9 @@ function SectionIntro({
 
 function SurfaceIcon({ name, dark = false }: { name: IconName; dark?: boolean }) {
   return (
-    <span
-      className={cn(
-        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border',
-        dark
-          ? 'border-sky-300/25 bg-sky-300/10 text-sky-100'
-          : 'border-primary/15 bg-primary/10 text-primary',
-      )}
-    >
+    <IconBadge tone={dark ? 'inverse' : 'primary'} size="feature">
       <Icon name={name} className="h-5 w-5" />
-    </span>
+    </IconBadge>
   )
 }
 
@@ -985,10 +981,10 @@ function ProductPreview({ copy, lang }: { copy: LandingCopy; lang: Lang }) {
         }
 
   const metrics = [
-    { label: labels.inventory, value: 'MZN 128K', icon: Warehouse, tone: 'blue' as const },
-    { label: labels.revenue, value: 'MZN 42K', icon: TrendingUp, tone: 'green' as const },
-    { label: labels.cogs, value: 'MZN 18K', icon: CircleDollarSign, tone: 'amber' as const },
-    { label: labels.margin, value: 'MZN 24K', icon: BarChart3, tone: 'green' as const },
+    { label: labels.inventory, value: 'MZN 128K', icon: WarehouseIcon, tone: 'blue' as const },
+    { label: labels.revenue, value: 'MZN 42K', icon: TrendUpIcon, tone: 'green' as const },
+    { label: labels.cogs, value: 'MZN 18K', icon: CoinsIcon, tone: 'amber' as const },
+    { label: labels.margin, value: 'MZN 24K', icon: ChartBarIcon, tone: 'green' as const },
   ]
 
   return (
@@ -1020,6 +1016,7 @@ function ProductPreview({ copy, lang }: { copy: LandingCopy; lang: Lang }) {
                         metric.tone === 'amber' ? 'text-amber-600 dark:text-amber-200' : '',
                         metric.tone === 'blue' ? 'text-primary dark:text-sky-200' : '',
                       )}
+                      weight="duotone"
                       aria-hidden="true"
                     />
                   </div>
@@ -1507,10 +1504,10 @@ export default function LandingPage() {
               <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
                 {copy.capabilities.map((capability) => (
                   <Card key={capability.title} className="group border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl">
-                    <CardContent className="p-5">
+                    <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
                       <SurfaceIcon name={capability.icon} />
-                      <h3 className="mt-5 text-lg font-semibold leading-tight">{capability.title}</h3>
-                      <p className="mt-3 text-sm leading-6 text-muted-foreground">{capability.body}</p>
+                      <h3 className="mt-4 text-lg font-semibold leading-tight">{capability.title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{capability.body}</p>
                     </CardContent>
                   </Card>
                 ))}
@@ -1543,15 +1540,15 @@ export default function LandingPage() {
               <div className="mt-10 grid gap-4 lg:grid-cols-5" data-landing-stagger>
                 {copy.workflowSteps.map((step, index) => (
                   <Card key={step.title} className="landing-hover-lift border-border/70 bg-card shadow-sm">
-                    <CardContent className="p-5">
+                    <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
                       <div className="flex items-center justify-between gap-3">
                         <SurfaceIcon name={step.icon} />
                         <span className="font-mono text-sm font-semibold text-muted-foreground">
                           {String(index + 1).padStart(2, '0')}
                         </span>
                       </div>
-                      <h3 className="mt-5 text-lg font-semibold leading-tight">{step.title}</h3>
-                      <p className="mt-3 text-sm leading-6 text-muted-foreground">{step.body}</p>
+                      <h3 className="mt-4 text-lg font-semibold leading-tight">{step.title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.body}</p>
                     </CardContent>
                   </Card>
                 ))}
@@ -1564,10 +1561,10 @@ export default function LandingPage() {
               <SectionIntro title={copy.useCasesTitle} body={copy.useCasesBody} />
               <div className="grid gap-4 sm:grid-cols-2" data-landing-stagger>
                 {copy.useCases.map((useCase) => (
-                  <div key={useCase.title} className="landing-hover-lift rounded-lg border border-border bg-background p-5">
+                  <div key={useCase.title} className="landing-hover-lift rounded-lg border border-border bg-background p-5 sm:p-6">
                     <SurfaceIcon name={useCase.icon} />
-                    <h3 className="mt-5 text-lg font-semibold">{useCase.title}</h3>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{useCase.body}</p>
+                    <h3 className="mt-4 text-lg font-semibold">{useCase.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{useCase.body}</p>
                   </div>
                 ))}
               </div>

@@ -134,6 +134,12 @@ The current premium primitives live under `src/components/premium` and should st
 
 Phase 4 keeps this decision: no paid or broad UI dependency was added for onboarding, Settings, or Users/Roles work.
 
+## Icon System
+
+The first icon-system pass adds `@phosphor-icons/react` as the approved premium accent library for high-visibility cards and public landing features. Phosphor is used with direct per-icon imports and `currentColor` so the existing token system still controls color. Lucide remains approved for shadcn primitives, navigation, search, close, chevron, and other standard UI controls until a separate navigation audit is completed.
+
+Premium icon containers should use `IconBadge` instead of one-off inline spans. Dashboard and Settings card icon badges should stay around 40-48 px on desktop and 36-40 px on mobile; landing feature icons should be slightly larger. Full rules are maintained in [Icon System](icon-system.md).
+
 ## Public Landing Page Direction
 
 The public landing page follows the same premium-business standard but remains a marketing surface, not an authenticated workflow surface. Its maintained source-of-truth docs live under `docs/landing-page/`.

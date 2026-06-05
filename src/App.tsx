@@ -32,6 +32,7 @@ const LandedCostPage = lazy(() => import('./pages/LandedCost'))
 const Auth = lazy(() => import('./pages/Auth'))
 const UomSettings = lazy(() => import('./pages/UomSettings'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
 const Transactions = lazy(() => import('./pages/Transactions'))
@@ -227,6 +228,7 @@ export default function App() {
         <Route path="/auth" element={<Navigate to="/login" replace />} />
 
         <Route path="/auth/callback" element={<Suspense fallback={<LoadingSplash />}><AuthCallback /></Suspense>} />
+        <Route path="/update-password" element={<Suspense fallback={<LoadingSplash />}><UpdatePassword /></Suspense>} />
         <Route path="/accept-invite" element={<Suspense fallback={<LoadingSplash />}><AcceptInvite /></Suspense>} />
 
         <Route element={<RequireAuth />}>

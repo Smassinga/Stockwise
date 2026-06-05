@@ -32,26 +32,26 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { ArrowRightIcon as PhosphorArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight'
+import { BasketIcon } from '@phosphor-icons/react/dist/csr/Basket'
+import { BuildingsIcon } from '@phosphor-icons/react/dist/csr/Buildings'
+import { ChartLineUpIcon } from '@phosphor-icons/react/dist/csr/ChartLineUp'
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
+import { ClipboardTextIcon } from '@phosphor-icons/react/dist/csr/ClipboardText'
+import { ClockIcon } from '@phosphor-icons/react/dist/csr/Clock'
+import { CoinsIcon } from '@phosphor-icons/react/dist/csr/Coins'
+import { CurrencyCircleDollarIcon } from '@phosphor-icons/react/dist/csr/CurrencyCircleDollar'
+import { MagnifyingGlassIcon } from '@phosphor-icons/react/dist/csr/MagnifyingGlass'
+import { PackageIcon } from '@phosphor-icons/react/dist/csr/Package'
+import { TrendDownIcon } from '@phosphor-icons/react/dist/csr/TrendDown'
+import { TrendUpIcon } from '@phosphor-icons/react/dist/csr/TrendUp'
+import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
+import { WarningIcon } from '@phosphor-icons/react/dist/csr/Warning'
 
-// per-icon imports to avoid lucide bundle resolution issues
 import {
-  AlertTriangle,
   ArrowRight,
   ArrowUpRight,
-  Building2,
   Calendar,
-  CheckCircle2,
-  CircleAlert,
-  ClipboardList,
-  Clock3,
-  Coins,
-  DollarSign,
-  Package,
-  PackageSearch,
-  Search,
-  ShoppingBasket,
-  TrendingDown,
-  TrendingUp,
 } from 'lucide-react'
 
 type Item = { id: string; name: string; sku: string; minStock?: number | null }
@@ -844,7 +844,7 @@ export default function Dashboard() {
       badgeClass:
         'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/40 dark:bg-emerald-300/20 dark:text-emerald-100',
       iconClass: 'text-emerald-700 dark:text-emerald-300',
-      icon: <CheckCircle2 size={18} />,
+      icon: <CheckCircleIcon weight="duotone" />,
     },
     attention: {
       label: tt('dashboard.statusAttention', 'Needs attention'),
@@ -855,7 +855,7 @@ export default function Dashboard() {
       badgeClass:
         'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-300/50 dark:bg-amber-300/20 dark:text-amber-100',
       iconClass: 'text-amber-700 dark:text-amber-300',
-      icon: <CircleAlert size={18} />,
+      icon: <WarningCircleIcon weight="duotone" />,
     },
     critical: {
       label: tt('dashboard.statusCritical', 'Action required'),
@@ -866,7 +866,7 @@ export default function Dashboard() {
       badgeClass:
         'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-300/50 dark:bg-rose-300/20 dark:text-rose-100',
       iconClass: 'text-rose-700 dark:text-rose-300',
-      icon: <AlertTriangle size={18} />,
+      icon: <WarningIcon weight="duotone" />,
     },
     setup: {
       label: tt('dashboard.statusSetup', 'Setup in progress'),
@@ -877,7 +877,7 @@ export default function Dashboard() {
       badgeClass:
         'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/50 dark:bg-sky-300/20 dark:text-sky-100',
       iconClass: 'text-sky-700 dark:text-sky-300',
-      icon: <Clock3 size={18} />,
+      icon: <ClockIcon weight="duotone" />,
     },
   }[operatingStatus]
 
@@ -972,7 +972,7 @@ export default function Dashboard() {
       title: tt('dashboard.firstUseItemsTitle', 'Add items'),
       body: tt('dashboard.firstUseItemsBody', 'Create the item master so stock, POS, and COGS signals have a clean base.'),
       tone: 'info' as PremiumTone,
-      icon: <Package size={16} />,
+      icon: <PackageIcon weight="duotone" />,
       actionLabel: tt('dashboard.firstUseItemsAction', 'Create items'),
       action: () => navigate('/items'),
     },
@@ -980,7 +980,7 @@ export default function Dashboard() {
       title: tt('dashboard.firstUseImportTitle', 'Import opening stock'),
       body: tt('dashboard.firstUseImportBody', 'Bring existing stock balances into the operating workspace before daily use.'),
       tone: 'neutral' as PremiumTone,
-      icon: <ClipboardList size={16} />,
+      icon: <ClipboardTextIcon weight="duotone" />,
       actionLabel: tt('dashboard.firstUseImportAction', 'Open import'),
       action: () => navigate('/setup/import'),
     },
@@ -988,7 +988,7 @@ export default function Dashboard() {
       title: tt('dashboard.firstUseWarehouseTitle', 'Create warehouse'),
       body: tt('dashboard.firstUseWarehouseBody', 'Set the physical stock context operators will use for movements and review.'),
       tone: 'neutral' as PremiumTone,
-      icon: <Building2 size={16} />,
+      icon: <BuildingsIcon weight="duotone" />,
       actionLabel: tt('dashboard.firstUseWarehouseAction', 'Open warehouses'),
       action: () => navigate('/warehouses'),
     },
@@ -996,7 +996,7 @@ export default function Dashboard() {
       title: tt('dashboard.firstUsePosTitle', 'Start POS'),
       body: tt('dashboard.firstUsePosBody', 'Use the operator surface when items and stock are ready for live sales.'),
       tone: 'positive' as PremiumTone,
-      icon: <ShoppingBasket size={16} />,
+      icon: <BasketIcon weight="duotone" />,
       actionLabel: tt('dashboard.startPos', 'Start POS'),
       action: () => navigate('/operator'),
     },
@@ -1009,7 +1009,7 @@ export default function Dashboard() {
           body: tt('dashboard.actionCardLowStockBody', '{count} items are already below minimum stock.', { count: lowStock.length }),
           count: formatCount(lowStock.length),
           tone: 'critical' as PremiumTone,
-          icon: <AlertTriangle size={16} />,
+          icon: <WarningIcon weight="duotone" />,
           actionLabel: tt('dashboard.reviewItems', 'Review items'),
           action: () => navigate('/items'),
         }
@@ -1020,7 +1020,7 @@ export default function Dashboard() {
           body: tt('dashboard.actionCardSetupBody', '{count} items still need a minimum-stock threshold.', { count: itemsWithoutMinStock }),
           count: formatCount(itemsWithoutMinStock),
           tone: 'warning' as PremiumTone,
-          icon: <CircleAlert size={16} />,
+          icon: <WarningCircleIcon weight="duotone" />,
           actionLabel: tt('dashboard.reviewItems', 'Review items'),
           action: () => navigate('/items'),
         }
@@ -1031,7 +1031,7 @@ export default function Dashboard() {
           body: tt('dashboard.actionCardMarginBody', 'Operational gross margin is negative in the active window.'),
           count: money(grossMargin),
           tone: 'critical' as PremiumTone,
-          icon: <TrendingDown size={16} />,
+          icon: <TrendDownIcon weight="duotone" />,
           actionLabel: tt('dashboard.reviewTransactions', 'Review movements'),
           action: () => navigate('/transactions'),
         }
@@ -1042,7 +1042,7 @@ export default function Dashboard() {
           body: tt('dashboard.actionCardMonitorBody', 'No urgent exceptions are open right now.'),
           count: formatCount(shippedCurrent.length),
           tone: 'positive' as PremiumTone,
-          icon: <CheckCircle2 size={16} />,
+          icon: <CheckCircleIcon weight="duotone" />,
           actionLabel: tt('dashboard.reviewTransactions', 'Review movements'),
           action: () => navigate('/transactions'),
         }
@@ -1060,25 +1060,25 @@ export default function Dashboard() {
   const mobileQuickActions = [
     {
       label: tt('dashboard.startPos', 'Start POS'),
-      icon: <ShoppingBasket />,
+      icon: <BasketIcon weight="duotone" />,
       tone: 'positive' as PremiumTone,
       onClick: () => navigate('/operator'),
     },
     {
       label: tt('dashboard.searchItem', 'Search item'),
-      icon: <Search />,
+      icon: <MagnifyingGlassIcon weight="duotone" />,
       tone: 'info' as PremiumTone,
       onClick: () => navigate('/items'),
     },
     {
       label: tt('dashboard.recordMovement', 'Record movement'),
-      icon: <ArrowRight />,
+      icon: <PhosphorArrowRightIcon weight="duotone" />,
       tone: 'neutral' as PremiumTone,
       onClick: () => navigate('/movements'),
     },
     {
       label: tt('dashboard.viewLowStock', 'View low stock'),
-      icon: <PackageSearch />,
+      icon: <PackageIcon weight="duotone" />,
       tone: lowStock.length ? 'warning' as PremiumTone : 'neutral' as PremiumTone,
       onClick: () => navigate('/stock-levels'),
     },
@@ -1131,7 +1131,7 @@ export default function Dashboard() {
         description={tt('dashboard.subtitle', "Use this dashboard to spot today's operating risks, recent changes, and shipment-linked performance without leaving the main workspace.")}
         context={(
           <>
-            <PremiumStatusBadge tone="info" icon={<Building2 className="h-3.5 w-3.5" />}>
+            <PremiumStatusBadge tone="info" icon={<BuildingsIcon className="h-3.5 w-3.5" weight="duotone" />}>
               {companyName || tt('company.selectCompany', 'Company')}
             </PremiumStatusBadge>
             <PremiumStatusBadge tone="neutral">
@@ -1150,7 +1150,7 @@ export default function Dashboard() {
         meta={<span className="premium-meta">{currentWindowLabel}</span>}
         actions={(
           <Button onClick={() => navigate('/operator')}>
-            <ShoppingBasket className="h-4 w-4" />
+            <BasketIcon className="h-4 w-4" weight="duotone" />
             {tt('dashboard.startPos', 'Start POS')}
           </Button>
         )}
@@ -1417,7 +1417,7 @@ export default function Dashboard() {
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  <WarningIcon className="h-5 w-5 text-amber-600" weight="duotone" />
                   <span>{t('lowStock.title')}</span>
                 </CardTitle>
                 <CardDescription>
@@ -1434,7 +1434,7 @@ export default function Dashboard() {
               {lowStock.length === 0 ? (
                 <PremiumEmptyState
                   compact
-                  icon={<CheckCircle2 />}
+                  icon={<CheckCircleIcon weight="duotone" />}
                   title={tt('dashboard.lowStockClear', 'Everything in the current view is at or above minimum stock.')}
                   description={itemsWithoutMinStock
                     ? tt('dashboard.actionCardSetupBody', '{count} items still need a minimum-stock threshold.', { count: itemsWithoutMinStock })
@@ -1507,7 +1507,7 @@ export default function Dashboard() {
               {urgentActionCount === 0 ? (
                 <PremiumEmptyState
                   compact
-                  icon={<CheckCircle2 />}
+                  icon={<CheckCircleIcon weight="duotone" />}
                   title={tt('dashboard.reviewQueueClear', 'No review items are open right now.')}
                   description={tt('dashboard.actionCardMonitorBody', 'No urgent exceptions are open right now.')}
                 />
@@ -1638,7 +1638,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="flex min-h-[18rem] flex-col items-center justify-center rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-muted/35 px-5 py-10 text-center dark:border-panel-premium-border dark:bg-white/[0.045]">
-              <TrendingUp className="mb-3 h-10 w-10 text-muted-foreground dark:text-panel-premium-muted" />
+              <ChartLineUpIcon className="mb-3 h-10 w-10 text-muted-foreground dark:text-panel-premium-muted" weight="duotone" />
               <p className="max-w-lg text-sm font-semibold text-foreground dark:text-panel-premium-foreground">{tt('dashboard.chartEmptyTitle', 'No daily performance trend yet')}</p>
               <p className="mt-2 max-w-lg text-xs leading-5 text-muted-foreground dark:text-panel-premium-muted">{chartInterpretation}</p>
             </div>
@@ -1650,7 +1650,7 @@ export default function Dashboard() {
             label={t('kpi.inventoryValue.title')}
             value={money(inventoryValue)}
             tone={lowStock.length ? 'warning' : 'info'}
-            icon={<Package size={18} />}
+            icon={<PackageIcon weight="duotone" />}
             description={`${formatCount(inventoryUnits)} ${tt('dashboard.inventoryUnits', 'units on hand')}`}
             meta={lowStock.length
               ? tt('dashboard.inventoryAttention', '{count} items are below minimum stock.', { count: lowStock.length })
@@ -1661,7 +1661,7 @@ export default function Dashboard() {
             label={t('kpi.revenue.title', { days: windowDays })}
             value={money(revenueWindow)}
             tone="info"
-            icon={<DollarSign size={18} />}
+            icon={<CurrencyCircleDollarIcon weight="duotone" />}
             description={hasRevenueData
               ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedCurrent.length })
               : tt('dashboard.revenueEmpty', 'No shipment-linked order revenue is available in the selected window.')}
@@ -1672,7 +1672,7 @@ export default function Dashboard() {
             label={t('kpi.cogs.title', { days: windowDays })}
             value={money(cogsWindow)}
             tone="critical"
-            icon={<Coins size={18} />}
+            icon={<CoinsIcon weight="duotone" />}
             description={hasShipmentData
               ? tt('dashboard.cogsShipments', '{count} shipped issue movements contributed to COGS.', { count: shipmentsCurrent.length })
               : tt('dashboard.cogsEmpty', 'No shipped issue movements were found in the selected window.')}
@@ -1683,7 +1683,7 @@ export default function Dashboard() {
             label={t('kpi.grossMargin.title')}
             value={money(grossMargin)}
             tone="positive"
-            icon={grossMargin >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+            icon={grossMargin >= 0 ? <TrendUpIcon weight="duotone" /> : <TrendDownIcon weight="duotone" />}
             description={revenueWindow > 0
               ? `${(grossMarginPct * 100).toFixed(1)}% ${t('kpi.grossMargin.help_pct')}`
               : tt('dashboard.marginEmpty', 'Margin will appear once shipment-linked operational revenue is present in the selected window.')}
@@ -1731,7 +1731,7 @@ export default function Dashboard() {
               {recentMoves.length === 0 ? (
                 <PremiumEmptyState
                   compact
-                  icon={<Clock3 />}
+                  icon={<ClockIcon weight="duotone" />}
                   title={t('recentMovements.empty')}
                   description={tt('dashboard.activityEmpty', 'No recent warehouse movement is available yet.')}
                 />
@@ -1791,7 +1791,7 @@ export default function Dashboard() {
           <CardContent className="space-y-4">
             {topGM.length === 0 ? (
               <PremiumEmptyState
-                icon={<Coins />}
+                icon={<CoinsIcon weight="duotone" />}
                 title={t('topProducts.empty')}
                 description={tt('dashboard.activityHelp', 'Confirm the system is active and see what changed most recently.')}
               />

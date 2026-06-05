@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
+import { IconBadge } from './IconBadge'
 import type { PremiumTone } from './PremiumStatusBadge'
 import { PremiumStatusBadge } from './PremiumStatusBadge'
 
@@ -31,14 +32,17 @@ export function PremiumActionCard({
         className,
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        {icon ? (
+          <IconBadge tone={tone} size="card">
+            {icon}
+          </IconBadge>
+        ) : null}
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold leading-5 text-foreground">{title}</div>
           {count ? (
             <div className="mt-2">
-              <PremiumStatusBadge tone={tone} icon={icon}>
-                {count}
-              </PremiumStatusBadge>
+              <PremiumStatusBadge tone={tone}>{count}</PremiumStatusBadge>
             </div>
           ) : null}
         </div>

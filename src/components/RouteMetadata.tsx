@@ -61,6 +61,7 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
     '/platform-control': { title: 'Platform Control | StockWise', description: t.appDescription, noindex: true },
     '/accept-invite': { title: 'Accept Invite | StockWise', description: t.appDescription, noindex: true },
     '/auth/callback': { title: 'Signing In | StockWise', description: t.appDescription, noindex: true },
+    '/update-password': { title: 'Update Password | StockWise', description: t.appDescription, noindex: true },
   }
 
   if (exact[pathname]) return exact[pathname]

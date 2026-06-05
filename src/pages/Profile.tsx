@@ -18,6 +18,11 @@ function isMissingProfilePhoneColumn(error: { message?: string; code?: string } 
   return error?.code === '42703' || message.includes('phone_number')
 }
 
+function isProfileWritePermissionError(error: { message?: string; code?: string } | null | undefined) {
+  const message = String(error?.message || '').toLowerCase()
+  return error?.code === '42501' || message.includes('permission denied')
+}
+
 export default function Profile() {
   const { user, requestPasswordReset } = useAuth()
   const { t } = useI18n()
@@ -118,7 +123,10 @@ export default function Profile() {
             },
             { onConflict: 'id' },
           )
-        if (fallbackError) throw fallbackError
+        if (fallbackError && !isProfileWritePermissionError(fallbackError)) throw fallbackError
+        if (fallbackError) console.warn('Profile table write blocked; Auth metadata sync remains authoritative:', fallbackError.message)
+      } else if (profileError && isProfileWritePermissionError(profileError)) {
+        console.warn('Profile table write blocked; Auth metadata sync remains authoritative:', profileError.message)
       } else if (profileError) {
         throw profileError
       }

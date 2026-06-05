@@ -1,5 +1,6 @@
 // src/lib/supabase.ts
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js'
+import { clearPasswordRecoveryPending, markPasswordRecoveryPending } from './authRecovery'
 
 const isDev = import.meta.env.DEV
 
@@ -39,6 +40,13 @@ export const realtimeReady = new Promise((res) => { _resolveReady = res })
 
 /** Keep the socket's token in sync after login/refresh/logout. */
 supabase.auth.onAuthStateChange((_event, session) => {
+  if (_event === 'PASSWORD_RECOVERY' && session?.user) {
+    markPasswordRecoveryPending()
+  }
+  if (_event === 'SIGNED_OUT') {
+    clearPasswordRecoveryPending()
+  }
+
   const token = session?.access_token ?? ''
   supabase.realtime.setAuth(token)
   debugLog('[Supabase] Auth state changed, updating realtime token', {
