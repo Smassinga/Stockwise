@@ -4,6 +4,8 @@ This file records the current practical troubleshooting cases for this repo. It 
 
 ## Supabase Migration Workflow
 
+For broader incident response, rollback, restore, Auth/email, Edge Function redeploy, and emergency platform-admin procedures, use [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md). For the current enforcement, rate-limiting, monitoring, CI/CD, and scaling baseline, use [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md).
+
 ### `db pull` creates `*_remote_schema.sql`
 
 Cause:

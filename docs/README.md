@@ -24,6 +24,8 @@ This folder is the maintained current-truth layer for StockWise. Documents that 
 - [Deployment and Release Position](DEPLOYMENT.md)
 - [Testing](TESTING.md)
 - [Monitoring and Operational Signals](MONITORING.md)
+- [Security and Scale Baseline](SECURITY_AND_SCALE_BASELINE.md)
+- [Availability and Recovery](AVAILABILITY_AND_RECOVERY.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Android-First UX Position](MOBILE_OPTIMIZATION.md)
 - [Premium UI Direction](premium-ui-direction.md)

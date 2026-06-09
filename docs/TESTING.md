@@ -7,6 +7,7 @@ This document records the current testing baseline that actually exists in the r
 Implemented today:
 
 - lint and build checks for every material code change
+- a non-mutating GitHub Actions validation gate for pull requests and pushes to `main`
 - a real finance regression suite driven by the Node test runner and live Supabase clients
 
 Not yet implemented as first-class repo tooling:
@@ -14,6 +15,31 @@ Not yet implemented as first-class repo tooling:
 - dedicated Jest unit-test suite
 - dedicated Cypress or Playwright browser E2E suite
 - CI isolation for every finance mutation scenario
+
+## Automated CI Validation
+
+GitHub Actions runs `.github/workflows/validation.yml` on pull requests and pushes to `main`.
+
+The workflow runs only non-mutating checks:
+
+```bash
+npm ci
+npm run check:migrations
+npm run lint:js
+npm run check:css-vars
+npm run check:css-classes
+npm run build
+```
+
+Normal CI does not receive Supabase service-role credentials and does not run `npx supabase db push`. The workflow uses non-secret Vite placeholder values for Supabase compile-time variables so the production bundle check does not require real Supabase keys.
+
+`npm run test:finance-regression` is intentionally not part of always-on public CI because it uses live Supabase clients, requires service-role access, creates temporary Auth/company/finance data, and then cleans it up. It remains a protected manual release gate until a dedicated isolated Supabase test project and guarded GitHub Actions secrets are configured.
+
+If finance regression is later enabled in CI, use a non-production Supabase project only and provide these secrets through protected GitHub Actions environments:
+
+- `VITE_SUPABASE_URL` or `SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY` or `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` or `SERVICE_ROLE_KEY`
 
 ## Primary Regression Command
 
@@ -176,12 +202,13 @@ The 2026-06-03 auth/signup production QA covered:
 
 Current gaps that remain future scope:
 
-- CI wiring for the finance regression suite
+- CI wiring for the finance regression suite in an isolated Supabase test project
 - broader isolated environment strategy beyond the current temp-data cleanup model
 - long-tail browser interaction coverage outside the finance-critical mutation suite
 - dedicated lower-level unit testing for shared helpers
 - first-class automated browser E2E coverage for the auth verification/resend UX
 - production deliverability checks against mailbox providers with real spam/quarantine folders, especially Gmail and Microsoft 365/Outlook
+- formal monthly recovery drill evidence using [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md)
 
 ## Recommended Next Testing Layer
 
@@ -189,6 +216,7 @@ The next practical expansion is not another vanity smoke layer.
 
 Recommended next steps:
 
-- wire the finance regression suite into CI with guarded environment rules
+- require the non-mutating validation workflow as a protected branch check
+- wire the finance regression suite into CI only after a dedicated non-production Supabase project and guarded environment rules exist
 - add smaller targeted unit tests around shared helper math and access-state formatting
 - add browser-level route verification only for high-value public/commercial and blocked-access flows

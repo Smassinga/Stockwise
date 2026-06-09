@@ -36,6 +36,19 @@ npm run build
 npm run test:finance-regression
 ```
 
+The GitHub Actions validation workflow runs the non-mutating subset automatically on pull requests and pushes to `main`:
+
+```bash
+npm ci
+npm run check:migrations
+npm run lint:js
+npm run check:css-vars
+npm run check:css-classes
+npm run build
+```
+
+The workflow uses non-secret Vite placeholder values for Supabase compile-time variables. The finance regression suite remains a protected manual release gate unless a dedicated non-production Supabase test project and guarded CI secrets are configured. Normal CI must not receive production Supabase service-role credentials and must not perform production database mutations.
+
 If database changes are included:
 
 ```bash
@@ -45,6 +58,11 @@ npx supabase db push
 ```
 
 Only report a live schema change if `npx supabase db push` succeeded in the same session.
+
+For production-impacting releases, also review:
+
+- [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for current enforcement, monitoring, rate-limiting, and scaling assumptions
+- [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for rollback, restore, Edge Function, Auth/email, and emergency platform-admin checklists
 
 ## Current Production Release Notes
 
@@ -118,12 +136,14 @@ Use:
 Use this checklist before calling a build or release "ready":
 
 1. verify current docs still match the product and release path
-2. run `npm run lint:js`
-3. run `npm run build`
-4. run `npm run test:finance-regression`
-5. run `npm run tauri:prepare` if desktop or Android packaging metadata matters for this release
-6. verify branding, Point of Sale naming, and Android-first navigation assumptions on the current UI
-7. if DB code changed, validate the canonical migration workflow before shipping
+2. confirm the GitHub Actions non-mutating validation workflow passed for the release ref
+3. run `npm run lint:js`
+4. run `npm run build`
+5. run `npm run test:finance-regression`
+6. run `npm run tauri:prepare` if desktop or Android packaging metadata matters for this release
+7. verify branding, Point of Sale naming, and Android-first navigation assumptions on the current UI
+8. if DB code changed, validate the canonical migration workflow before shipping
+9. if the release changes operational posture, update the security baseline or recovery runbook in the same pass
 
 ## What This Document Does Not Cover
 
