@@ -137,6 +137,8 @@ For DB work:
 
 For premium UI phases that do not change backend logic, posting logic, or schema, keep the same automated gates and add manual route QA for the touched authenticated surfaces. Phase 4 requires `/onboarding`, `/settings`, `/users`, and `/users/roles` checks at desktop and mobile widths, with special attention to explicit invitation acceptance, backed Settings navigation, and role copy staying aligned with `roles.ts` and `permissions.ts`.
 
+The 2026-06-10 Recipes & Assemblies Phase 1 pass is a UX and workflow-clarity change over the existing BOM/assembly flow. It introduced no schema migration and did not change stock posting, valuation, POS pricing, finance posting, settlements, invoice issuance, RLS, entitlement, or access-control logic. Validate `/bom` at desktop `1440`, laptop `1200`, tablet `820`, and phone `390`, checking that recipe/BOM selection, ingredient/component cards, readiness states, insufficient-stock messaging, estimated material-cost wording, and the existing post-assembly action remain clear without implying full production costing. `npm run test:finance-regression` remains required before any future production posting, valuation, or backend costing change; for this UI-only pass it may be skipped unless the connected Supabase target is a safe mutation test project.
+
 ## Auth Production QA
 
 The 2026-06-04 Auth confirmation change requires these production smoke checks whenever the auth surface or Auth settings are changed:

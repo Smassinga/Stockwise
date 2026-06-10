@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
+import {
+  AlertTriangle,
+  Boxes,
+  Calculator,
+  CheckCircle2,
+  Clock3,
+  Factory,
+  Layers3,
+  PackageCheck,
+  Plus,
+  Scale,
+} from 'lucide-react'
 import { supabase } from '../lib/db'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
@@ -8,11 +20,16 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { deriveItemProfileWarnings, profileFromRole, type ItemPrimaryRole } from '../lib/itemProfiles'
+import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import {
   calculateAssemblyPlanningEstimate,
   durationInputFromMinutes,
@@ -56,6 +73,7 @@ type StockLevel = {
   bin_id: string | null
   qty: number | null
   allocated_qty: number | null
+  avg_cost: number | null
 }
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -160,11 +178,26 @@ export default function BOMPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [building, setBuilding] = useState(false)
   const [profileFieldsSupported, setProfileFieldsSupported] = useState(false)
+  const [baseCode, setBaseCode] = useState('MZN')
 
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
   const uomById  = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms])
   const canManageBom = can.createMaster(role)
   const canBuildAssembly = can.createMovement(role)
+
+  useEffect(() => {
+    let active = true
+    getBaseCurrencyCode(companyId)
+      .then((code) => {
+        if (active) setBaseCode(code || 'MZN')
+      })
+      .catch(() => {
+        if (active) setBaseCode('MZN')
+      })
+    return () => {
+      active = false
+    }
+  }, [companyId])
 
   // Initial load
   useEffect(() => {
@@ -297,7 +330,7 @@ export default function BOMPage() {
       }
       const { data, error } = await supabase
         .from('stock_levels')
-        .select('item_id,warehouse_id,bin_id,qty,allocated_qty')
+        .select('item_id,warehouse_id,bin_id,qty,allocated_qty,avg_cost')
         .eq('company_id', companyId)
         .eq('warehouse_id', warehouseFromId)
       if (error) {
@@ -802,22 +835,49 @@ export default function BOMPage() {
   const plannedQty = num(buildQty, 0)
 
   const stockByItem = useMemo(() => {
-    const map = new Map<string, { warehouseQty: number; warehouseAvailable: number; binQty: Record<string, number>; binAvailable: Record<string, number> }>()
+    const map = new Map<string, {
+      warehouseQty: number
+      warehouseAvailable: number
+      warehouseValue: number
+      warehouseCostQty: number
+      warehouseLastAvgCost: number | null
+      binQty: Record<string, number>
+      binAvailable: Record<string, number>
+      binAvgCost: Record<string, number>
+    }>()
     for (const row of stockLevels) {
       const itemId = String(row.item_id || '')
       if (!itemId) continue
       if (!map.has(itemId)) {
-        map.set(itemId, { warehouseQty: 0, warehouseAvailable: 0, binQty: {}, binAvailable: {} })
+        map.set(itemId, {
+          warehouseQty: 0,
+          warehouseAvailable: 0,
+          warehouseValue: 0,
+          warehouseCostQty: 0,
+          warehouseLastAvgCost: null,
+          binQty: {},
+          binAvailable: {},
+          binAvgCost: {},
+        })
       }
       const bucket = map.get(itemId)!
       const qty = num(row.qty, 0)
       const available = Math.max(qty - num(row.allocated_qty, 0), 0)
+      const avgCost = Number.isFinite(Number(row.avg_cost)) ? Number(row.avg_cost) : null
       bucket.warehouseQty += qty
       bucket.warehouseAvailable += available
+      if (avgCost != null) {
+        bucket.warehouseLastAvgCost = avgCost
+        if (qty > 0) {
+          bucket.warehouseValue += qty * avgCost
+          bucket.warehouseCostQty += qty
+        }
+      }
       const binId = String(row.bin_id || '')
       if (binId) {
         bucket.binQty[binId] = (bucket.binQty[binId] || 0) + qty
         bucket.binAvailable[binId] = (bucket.binAvailable[binId] || 0) + available
+        if (avgCost != null) bucket.binAvgCost[binId] = avgCost
       }
     }
     return map
@@ -834,9 +894,18 @@ export default function BOMPage() {
       const availableOnHand = binFromId
         ? num(stockBucket?.binQty?.[binFromId], 0)
         : num(stockBucket?.warehouseQty, 0)
+      const sourceUnitCost = binFromId
+        ? (stockBucket?.binAvgCost?.[binFromId] ?? null)
+        : stockBucket
+          ? stockBucket.warehouseCostQty > 0
+            ? stockBucket.warehouseValue / stockBucket.warehouseCostQty
+            : stockBucket.warehouseLastAvgCost
+          : null
       const required = plannedQty > 0 ? usagePerUnit * plannedQty : 0
       const shortage = Math.max(required - available, 0)
       const maxBuildable = usagePerUnit > 0 ? available / usagePerUnit : null
+      const estimatedCostPerFinishedUnit = sourceUnitCost != null ? usagePerUnit * sourceUnitCost : null
+      const estimatedMaterialCost = sourceUnitCost != null ? required * sourceUnitCost : null
       const warnings = item
         ? deriveItemProfileWarnings({
             primaryRole: item.primary_role || 'general',
@@ -859,6 +928,9 @@ export default function BOMPage() {
         required,
         shortage,
         maxBuildable,
+        sourceUnitCost,
+        estimatedCostPerFinishedUnit,
+        estimatedMaterialCost,
         warnings,
       }
     })
@@ -912,6 +984,24 @@ export default function BOMPage() {
     () => new Intl.NumberFormat(lang === 'pt' ? 'pt-PT' : 'en-US', { maximumFractionDigits: 2 }),
     [lang],
   )
+  const formatCurrency = (value: number) => formatMoneyBase(value, baseCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')
+
+  const materialCostSummary = useMemo(() => {
+    const rowsWithUsage = componentPlanning.filter((row) => row.usagePerUnit > 0)
+    const missingRows = rowsWithUsage.filter((row) => row.estimatedCostPerFinishedUnit == null)
+    const unitCost = rowsWithUsage.reduce((sum, row) => sum + num(row.estimatedCostPerFinishedUnit, 0), 0)
+    const totalCost = plannedQty > 0 ? unitCost * plannedQty : 0
+    return {
+      unitCost,
+      totalCost,
+      missingRows,
+      knownRows: rowsWithUsage.length - missingRows.length,
+      hasComponents: rowsWithUsage.length > 0,
+      isComplete: rowsWithUsage.length > 0 && missingRows.length === 0,
+    }
+  }, [componentPlanning, plannedQty])
+
+  const activeRecipeCount = useMemo(() => boms.filter((bom) => bom.is_active).length, [boms])
 
   function formatPlanningQty(value: number | null | undefined) {
     if (value == null || !Number.isFinite(value)) return '—'
@@ -1038,6 +1128,29 @@ export default function BOMPage() {
 
   const buildIsReady = canBuildAssembly && buildBlockers.length === 0
 
+  const readinessTone: PremiumTone = !selectedBom
+    ? 'neutral'
+    : !canBuildAssembly
+      ? 'neutral'
+    : buildIsReady
+      ? 'positive'
+      : totalShortages > 0
+        ? 'critical'
+        : 'warning'
+
+  const readinessLabel = !selectedBom
+    ? tt('bom.readiness.selectRecipe', 'Select recipe / BOM')
+    : !canBuildAssembly
+      ? tt('bom.readiness.viewOnly', 'View only')
+    : buildIsReady
+      ? tt('bom.readiness.ready', 'Ready to post')
+      : totalShortages > 0
+        ? tt('bom.readiness.stockShort', 'Stock insufficient')
+        : tt('bom.readiness.blocked', 'Needs setup')
+
+  const limitingComponentLabel = limitingComponent?.item?.name
+    || (limitingComponent ? limitingComponent.component_item_id : tt('bom.summary.noLimiter', 'No limiting component yet'))
+
   const buildDestinationLabel = useMemo(() => {
     if (advanced && splits.length) return tt('bom.destination.multiple', 'Multiple destination bins')
     const warehouse = warehouses.find((row) => row.id === warehouseToId)
@@ -1060,83 +1173,143 @@ export default function BOMPage() {
   const removeSplit = (id: string) => setSplits(prev => prev.filter(s => s.id !== id))
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-card via-card to-muted/25 shadow-sm">
-        <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr,0.8fr] lg:p-8">
-          <div className="space-y-3">
-            <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em]">
-              {tt('bom.eyebrow', 'Production clarity')}
-            </Badge>
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight">{t('bom.title')}</h1>
-              <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+    <div className="space-y-6 p-4 sm:p-6">
+      <PremiumRegisterHeader
+        eyebrow={tt('bom.eyebrow', 'Production clarity')}
+        title={t('bom.title')}
+        description={tt(
+          'bom.subtitlePhase3b',
+          'Turn ingredients and components into finished stock with a clear recipe / BOM, source stock check, material-cost estimate, and existing assembly posting flow.',
+        )}
+        badges={(
+          <>
+            <PremiumStatusBadge tone={readinessTone}>{readinessLabel}</PremiumStatusBadge>
+            <PremiumStatusBadge tone="info">
+              {companyId ? tt('bom.context.companyActive', 'Company workspace active') : tt('bom.context.noCompany', 'No company selected')}
+            </PremiumStatusBadge>
+            {selectedBom ? <PremiumStatusBadge tone="neutral">{tt('bom.recipeVersion', 'Version')}: {selectedBom.version}</PremiumStatusBadge> : null}
+          </>
+        )}
+        actions={canManageBom ? (
+          <Button asChild>
+            <a href="#recipe-create" className="inline-flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              {tt('bom.recipeCreateActionShort', 'New recipe / BOM')}
+            </a>
+          </Button>
+        ) : null}
+        metrics={(
+          <>
+            <PremiumMetricCard
+              label={tt('bom.summary.recipes', 'Active recipes')}
+              value={`${activeRecipeCount}/${boms.length}`}
+              description={tt('bom.summary.recipesHelp', 'Active recipe / BOM versions available for finished items.')}
+              icon={<Layers3 />}
+              tone="info"
+              variant="panel"
+            />
+            <PremiumMetricCard
+              label={tt('bom.summary.plannedOutput', 'Planned output')}
+              value={selectedBom && plannedQty > 0 ? formatPlanningQty(plannedQty) : tt('bom.summary.noPlannedOutput', 'Not entered')}
+              description={selectedProduct?.name || tt('bom.summary.plannedOutputHelp', 'Select a recipe / BOM and enter the quantity to make.')}
+              icon={<PackageCheck />}
+              tone="neutral"
+              variant="panel"
+            />
+            <PremiumMetricCard
+              label={tt('bom.summary.readiness', 'Readiness')}
+              value={readinessLabel}
+              description={buildBlockers.length ? buildBlockers[0] : tt('bom.summary.readinessHelp', 'Stock, routing and component checks are clear for the current plan.')}
+              icon={buildIsReady ? <CheckCircle2 /> : <AlertTriangle />}
+              tone={readinessTone}
+              variant="panel"
+            />
+            <PremiumMetricCard
+              label={tt('bom.summary.limitingComponent', 'Limiting ingredient / component')}
+              value={limitingComponentLabel}
+              description={tt('bom.summary.limitingComponentHelp', 'Based on available stock in the current source selection.')}
+              icon={<Scale />}
+              tone={totalShortages > 0 ? 'critical' : 'neutral'}
+              variant="panel"
+            />
+            <PremiumMetricCard
+              label={tt('bom.cost.unitLabel', 'Estimated material cost / unit')}
+              value={materialCostSummary.isComplete ? formatCurrency(materialCostSummary.unitCost) : tt('bom.cost.incomplete', 'Incomplete')}
+              description={tt('bom.cost.basisShort', 'Based on current weighted-average stock cost.')}
+              icon={<Calculator />}
+              tone={materialCostSummary.isComplete ? 'neutral' : 'warning'}
+              variant="panel"
+            />
+            <PremiumMetricCard
+              label={tt('bom.summary.timeEstimate', 'Estimated build duration')}
+              value={selectedBom
+                ? planningEstimate.timeConfigured
+                  ? plannedQty > 0
+                    ? formatPlanningDuration(planningEstimate.totalRequiredMinutes)
+                    : formatPlanningDuration(assemblyTimePerUnitMinutes)
+                  : tt('bom.time.missingShort', 'Not configured')
+                : tt('bom.summary.noPlannedOutput', 'Not entered')}
+              description={planningEstimate.timeConfigured
+                ? tt('bom.summary.timeEstimateHelp', 'Advisory setup and time-per-unit estimate only.')
+                : tt('bom.summary.timeEstimateMissing', 'Add planning time on the recipe to estimate duration.')}
+              icon={<Clock3 />}
+              tone="neutral"
+              variant="panel"
+            />
+          </>
+        )}
+      />
+
+      <div className="grid gap-3 lg:grid-cols-[1fr,1fr]">
+        <Card className="border-border/80 shadow-sm">
+          <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Boxes className="h-4 w-4 text-muted-foreground" />
+                {t('bom.helperTitle')}
+              </div>
+              <div className="mt-1 text-sm leading-6 text-muted-foreground">{t('bom.helperBody')}</div>
+            </div>
+            <Button asChild variant="outline">
+              <Link to="/landed-cost">{t('landedCost.title')}</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-sky-200/70 bg-sky-50/70 shadow-sm dark:border-sky-300/20 dark:bg-sky-300/10">
+          <CardContent className="flex gap-3 p-4">
+            <Factory className="mt-0.5 h-5 w-5 shrink-0 text-sky-700 dark:text-sky-200" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-sky-950 dark:text-sky-100">{tt('bom.future.title', 'Future Production & Costing')}</div>
+              <p className="mt-1 text-sm leading-6 text-sky-800/85 dark:text-sky-100/80">
                 {tt(
-                  'bom.subtitlePhase3b',
-                  'Use Assembly to plan what you are building, check stock sufficiency, estimate effort, and then post the build with clear source and destination decisions.',
+                  'bom.future.body',
+                  'Future phases will add production runs, labour, utilities, overhead allocation, frozen cost snapshots, and growth batches for livestock and crops. This page still uses the existing assembly posting flow.',
                 )}
               </p>
             </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.recipes', 'Active recipes')}</div>
-                <div className="mt-2 text-3xl font-semibold">{boms.length}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.recipesHelp', 'BOM versions available for finished products.')}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.components', 'Components')}</div>
-                <div className="mt-2 text-3xl font-semibold">{components.length}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.componentsHelp', 'Lines currently defined for the selected assembly recipe.')}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.maxBuildable', 'Buildable now')}</div>
-                <div className="mt-2 text-3xl font-semibold">{selectedBom ? maxBuildableNow.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</div>
-                <div className="mt-2 text-sm text-muted-foreground">{tt('bom.summary.maxBuildableHelp', 'Estimated from the current source stock before you post the build.')}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{tt('bom.summary.timeEstimate', 'Estimated time')}</div>
-                <div className="mt-2 text-3xl font-semibold">
-                  {selectedBom
-                    ? planningEstimate.timeConfigured
-                      ? plannedQty > 0
-                        ? formatPlanningDuration(planningEstimate.totalRequiredMinutes)
-                        : formatPlanningDuration(assemblyTimePerUnitMinutes)
-                      : tt('bom.time.missingShort', 'Not configured')
-                    : '—'}
-                </div>
-                <div className="mt-2 text-sm text-muted-foreground">
-                  {selectedBom
-                    ? planningEstimate.timeConfigured
-                      ? plannedQty > 0
-                        ? tt('bom.summary.timeEstimateHelp', 'Estimated effort for the current requested quantity, including setup time when configured.')
-                        : tt('bom.summary.timeEstimateIdleHelp', 'Add a build quantity to convert this recipe pace into a total time estimate.')
-                      : tt('bom.summary.timeEstimateMissing', 'Add planning time on the recipe to estimate duration and capacity.')
-                    : tt('bom.summary.timeEstimateSelect', 'Select a recipe to see time planning.')}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="border-border/80 shadow-sm">
-        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-sm font-medium">{t('bom.helperTitle')}</div>
-            <div className="text-sm text-muted-foreground">{t('bom.helperBody')}</div>
-          </div>
-          <Button asChild variant="outline">
-            <Link to="/landed-cost">{t('landedCost.title')}</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      {boms.length === 0 ? (
+        <PremiumEmptyState
+          icon={<Layers3 />}
+          title={tt('bom.empty.title', 'Create your first recipe / BOM')}
+          description={tt(
+            'bom.empty.body',
+            'Use Recipes & Assemblies for bread recipes, furniture assemblies, kit bundles, workshop builds, and other simple ingredient/component-to-finished-item flows.',
+          )}
+          action={canManageBom ? (
+            <Button asChild>
+              <a href="#recipe-create" className="inline-flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                {tt('bom.empty.action', 'Create first recipe / BOM')}
+              </a>
+            </Button>
+          ) : null}
+        />
+      ) : null}
 
       <Card className="border-border/70 bg-card shadow-sm">
         <CardHeader className="space-y-2">
@@ -1148,8 +1321,8 @@ export default function BOMPage() {
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[1fr,1fr]">
-          <div className="space-y-2">
+        <CardContent className="grid min-w-0 gap-4 lg:grid-cols-[1fr,1fr]">
+          <div className="min-w-0 space-y-2">
             <Label>{tt('bom.targetSelect', 'Assembly recipe')}</Label>
             <Select value={selectedBomId} onValueChange={setSelectedBomId}>
               <SelectTrigger aria-label={tt('bom.targetSelect', 'Assembly recipe')}><SelectValue placeholder={tt('bom.targetPlaceholder', 'Select a recipe to plan or build')} /></SelectTrigger>
@@ -1230,15 +1403,15 @@ export default function BOMPage() {
       </Card>
 
       {/* Recipe creation */}
-      <Card>
+      <Card id="recipe-create">
         <CardHeader>
           <CardTitle>{tt('bom.recipeCreateTitle', 'Create an assembly recipe')}</CardTitle>
           <CardDescription>
             {tt('bom.recipeCreateHelp', 'Use this when a finished product does not yet have a BOM. Recipe setup is separate from posting the build itself.')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-6">
-          <div className="md:col-span-2">
+        <CardContent className="grid min-w-0 gap-4 md:grid-cols-6">
+          <div className="min-w-0 md:col-span-2">
             <Label>{t('orders.item')}</Label>
             <Select value={newBomProductId} onValueChange={setNewBomProductId}>
               <SelectTrigger><SelectValue placeholder={tt('bom.recipeCreatePlaceholder', 'Select the finished product')} /></SelectTrigger>
@@ -1250,14 +1423,14 @@ export default function BOMPage() {
               {tt('bom.recipeCreateHint', 'Pick the exact item you will stock as the finished output.')}
             </div>
           </div>
-          <div className="md:col-span-2">
+          <div className="min-w-0 md:col-span-2">
             <Label>{t('items.fields.name')}</Label>
             <Input value={newBomName} onChange={e => setNewBomName(e.target.value)} placeholder={tt('bom.recipeCreateNamePlaceholder', 'e.g. Sweet Bread v1')} />
             <div className="text-[11px] text-muted-foreground mt-1">
               {tt('bom.recipeCreateVersionHint', 'Include a version in the recipe name so later revisions stay traceable.')}
             </div>
           </div>
-          <div className="md:col-span-2 grid gap-3 rounded-2xl border border-border/70 bg-muted/15 p-4">
+          <div className="grid min-w-0 gap-3 rounded-2xl border border-border/70 bg-muted/15 p-4 md:col-span-2">
             <div className="text-sm font-medium">{tt('bom.time.configTitle', 'Time planning')}</div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
@@ -1325,8 +1498,8 @@ export default function BOMPage() {
             {tt('bom.recipeManageHelp', 'Choose the recipe version that should drive the current build. Update names or duplicate to create a controlled next revision.')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <div>
+        <CardContent className="grid min-w-0 gap-4 md:grid-cols-2">
+          <div className="min-w-0">
             <Label>{tt('bom.recipeSelect', 'Recipe')}</Label>
             <Select value={selectedBomId} onValueChange={setSelectedBomId}>
               <SelectTrigger><SelectValue placeholder={tt('bom.recipeSelectPlaceholder', 'Select a recipe')} /></SelectTrigger>
@@ -1344,13 +1517,13 @@ export default function BOMPage() {
           </div>
 
           {selectedBom && (
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div className="grid min-w-0 gap-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="min-w-0">
                 <Label>{t('items.fields.name')}</Label>
                 <Input value={editName} onChange={e => setEditName(e.target.value)} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label>{tt('bom.recipeVersion', 'Version')}</Label>
                 <Input value={editVersion} onChange={e => setEditVersion(e.target.value)} />
               </div>
@@ -1433,7 +1606,108 @@ export default function BOMPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <table className="w-full text-sm">
+            <div className="space-y-3 md:hidden">
+              {components.length === 0 ? (
+                <PremiumEmptyState
+                  compact
+                  icon={<Boxes />}
+                  title={tt('bom.components.emptyTitle', 'No ingredients / components yet')}
+                  description={tt('bom.components.emptyBody', 'Add the items consumed for one finished unit before planning or posting an assembly.')}
+                />
+              ) : components.map((component) => {
+                const item = itemById.get(component.component_item_id)
+                const sources = sourcesByComponent[component.component_item_id] || []
+                return (
+                  <div key={component.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">{item?.name ?? component.component_item_id}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{uomLabel(item?.base_uom_id)}</div>
+                      </div>
+                      <Badge variant="outline">{tt('bom.recipe.scrapShort', 'Waste')}: {component.scrap_pct ?? 0}</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.recipe.qtyPer', 'Qty per unit')}</div>
+                        <div className="mt-1 font-medium">{component.qty_per}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('items.table.baseUom', 'Base UoM')}</div>
+                        <div className="mt-1 font-medium">{uomById.get(item?.base_uom_id || '')?.code || '-'}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button size="sm" variant="destructive" onClick={() => deleteComponent(component.id)} disabled={!canManageBom}>{t('common.remove')}</Button>
+                      <Button size="sm" variant="secondary" onClick={() => addSourceRow(component.component_item_id)} disabled={!useComponentSources || !canManageBom}>
+                        {tt('bom.recipe.addSource', 'Add source')}
+                      </Button>
+                    </div>
+                    {useComponentSources ? (
+                      <div className="mt-4 space-y-3 border-t border-border/70 pt-4">
+                        {sources.length === 0 ? (
+                          <div className="text-xs leading-5 text-muted-foreground">{tt('bom.recipe.sourcesEmpty', 'No source routing has been configured for this component yet.')}</div>
+                        ) : sources.map((row) => {
+                          const bins = row.warehouseId ? (binCache[row.warehouseId] || []) : []
+                          return (
+                            <div key={row.id} className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-3">
+                              <div className="space-y-2">
+                                <Label>{t('orders.fromWarehouse')}</Label>
+                                <Select
+                                  value={row.warehouseId}
+                                  onValueChange={async (value) => {
+                                    updateSourceRow(component.component_item_id, row.id, { warehouseId: value, binId: '' })
+                                    await ensureBinsFor(value)
+                                  }}
+                                >
+                                  <SelectTrigger><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
+                                  <SelectContent>
+                                    {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label>{t('orders.fromBin')}</Label>
+                                <Select
+                                  value={row.binId}
+                                  onValueChange={(value) => updateSourceRow(component.component_item_id, row.id, { binId: value })}
+                                  disabled={!row.warehouseId}
+                                >
+                                  <SelectTrigger><SelectValue placeholder={row.warehouseId ? t('orders.selectSourceBin') : t('movements.pickFromBinFirst')} /></SelectTrigger>
+                                  <SelectContent className="max-h-64 overflow-auto">
+                                    {bins.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} - {bin.name}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="grid grid-cols-[1fr,auto] gap-2">
+                                <div className="space-y-2">
+                                  <Label>{tt('bom.recipe.sharePct', 'Share %')}</Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    value={row.sharePct}
+                                    onChange={(event) => updateSourceRow(component.component_item_id, row.id, { sharePct: event.target.value })}
+                                    placeholder={tt('bom.recipe.sharePlaceholder', 'e.g. 60')}
+                                  />
+                                </div>
+                                <div className="flex items-end">
+                                  <Button size="sm" variant="destructive" onClick={() => removeSourceRow(component.component_item_id, row.id)} disabled={!canManageBom}>
+                                    {t('common.remove')}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+
+            <table className="hidden w-full text-sm md:table">
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-2">{t('table.item')}</th>
@@ -1475,8 +1749,8 @@ export default function BOMPage() {
                               {sources.map(row => {
                                 const bins = row.warehouseId ? (binCache[row.warehouseId] || []) : []
                                 return (
-                                  <div key={row.id} className="grid md:grid-cols-4 gap-2">
-                                    <div>
+                                  <div key={row.id} className="grid min-w-0 gap-2 md:grid-cols-4">
+                                    <div className="min-w-0">
                                       <Label>{t('orders.fromWarehouse')}</Label>
                                       <Select
                                         value={row.warehouseId}
@@ -1490,7 +1764,7 @@ export default function BOMPage() {
                                         </SelectContent>
                                       </Select>
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <Label>{t('orders.fromBin')}</Label>
                                       <Select
                                         value={row.binId}
@@ -1503,7 +1777,7 @@ export default function BOMPage() {
                                         </SelectContent>
                                       </Select>
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <Label>{tt('bom.recipe.sharePct', 'Share %')}</Label>
                                       <Input
                                         type="number"
@@ -1530,8 +1804,8 @@ export default function BOMPage() {
             </table>
 
             {/* Add component row */}
-            <div className="grid md:grid-cols-6 gap-3">
-              <div className="md:col-span-2">
+            <div className="grid min-w-0 gap-3 md:grid-cols-6">
+              <div className="min-w-0 md:col-span-2">
                 <Label>{t('table.item')}</Label>
                 <Select value={compItemId} onValueChange={(v) => { setCompItemId(v); setCompQtyPer('1') }}>
                   <SelectTrigger><SelectValue placeholder={t('movements.selectItem')} /></SelectTrigger>
@@ -1541,12 +1815,12 @@ export default function BOMPage() {
                 </Select>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <Label>{t('orders.qty')}</Label>
                 <Input type="number" min="0.0001" step="0.0001" value={compQtyPer} onChange={e => setCompQtyPer(e.target.value)} placeholder="1" />
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <Label>{t('orders.uom')}</Label>
                 <Select
                   value={compUomId}
@@ -1580,7 +1854,7 @@ export default function BOMPage() {
                 </Select>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <Label>{tt('bom.recipe.scrap', 'Scrap (0..1)')}</Label>
                 <Input type="number" min="0" max="1" step="0.01" value={compScrap} onChange={e => setCompScrap(e.target.value)} placeholder="0" />
               </div>
@@ -1625,8 +1899,8 @@ export default function BOMPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
+              <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                <div className="min-w-0 space-y-2">
                   <Label htmlFor="assembly-build-qty">{t('orders.qty')}</Label>
                   <Input id="assembly-build-qty" type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
                 </div>
@@ -1680,8 +1954,8 @@ export default function BOMPage() {
               </div>
 
               {!useComponentSources && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>{t('orders.fromWarehouse')}</Label>
                     <Select value={warehouseFromId} onValueChange={(value) => { setWarehouseFromId(value); setBinFromId('') }}>
                       <SelectTrigger aria-label={t('orders.fromWarehouse')}><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
@@ -1690,7 +1964,7 @@ export default function BOMPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>{t('orders.fromBin')}</Label>
                     <Select value={binFromId} onValueChange={setBinFromId}>
                       <SelectTrigger aria-label={t('orders.fromBin')}><SelectValue placeholder={t('orders.selectSourceBin')} /></SelectTrigger>
@@ -1703,8 +1977,8 @@ export default function BOMPage() {
               )}
 
               {!advanced && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>{t('orders.toWarehouse')}</Label>
                     <Select value={warehouseToId} onValueChange={(value) => { setWarehouseToId(value); setBinToId('') }}>
                       <SelectTrigger aria-label={t('orders.toWarehouse')}><SelectValue placeholder={t('orders.selectDestWh')} /></SelectTrigger>
@@ -1713,7 +1987,7 @@ export default function BOMPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>{t('orders.toBin')}</Label>
                     <Select value={binToId} onValueChange={setBinToId}>
                       <SelectTrigger aria-label={t('orders.toBin')}><SelectValue placeholder={t('orders.selectDestBin')} /></SelectTrigger>
@@ -1741,8 +2015,8 @@ export default function BOMPage() {
                     {splits.map((split) => {
                       const destBins = split.warehouseId ? (binCache[split.warehouseId] || []) : []
                       return (
-                        <div key={split.id} className="grid gap-3 md:grid-cols-4">
-                          <div className="space-y-2">
+                        <div key={split.id} className="grid min-w-0 gap-3 md:grid-cols-4">
+                          <div className="min-w-0 space-y-2">
                             <Label>{t('orders.toWarehouse')}</Label>
                             <Select
                               value={split.warehouseId}
@@ -1757,7 +2031,7 @@ export default function BOMPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="space-y-2">
+                          <div className="min-w-0 space-y-2">
                             <Label>{t('orders.toBin')}</Label>
                             <Select value={split.binId} onValueChange={(value) => updateSplit(split.id, { binId: value })} disabled={!split.warehouseId}>
                               <SelectTrigger><SelectValue placeholder={split.warehouseId ? t('orders.toBin') : t('movements.pickToBinFirst')} /></SelectTrigger>
@@ -1766,7 +2040,7 @@ export default function BOMPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="space-y-2">
+                          <div className="min-w-0 space-y-2">
                             <Label>{t('orders.qty')}</Label>
                             <Input type="number" min="0.0001" step="0.0001" value={split.qty} onChange={e => updateSplit(split.id, { qty: e.target.value })} placeholder="0" />
                           </div>
@@ -1888,12 +2162,23 @@ export default function BOMPage() {
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Button onClick={runBuild} disabled={building || !buildIsReady}>
-                  {building ? tt('bom.building', 'Building...') : t('bom.build')}
-                </Button>
-                <div className="flex items-center text-sm text-muted-foreground">
-                  {tt('bom.plan.postHelp', 'After a successful build, the quantity input clears so the operator can see the action posted.')}
+              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{tt('bom.post.title', 'Post existing assembly flow')}</div>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {tt(
+                        'bom.post.body',
+                        'Posting consumes the ingredients/components from the selected source stock and receives the finished item into the destination stock using the current assembly RPC.',
+                      )}
+                    </p>
+                  </div>
+                  <Button onClick={runBuild} disabled={building || !buildIsReady} className="w-full sm:w-auto">
+                    {building ? tt('bom.building', 'Posting...') : t('bom.build')}
+                  </Button>
+                </div>
+                <div className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {tt('bom.plan.postHelp', 'The button is disabled while posting to prevent double-clicks in the UI. Backend idempotency is future production-run scope.')}
                 </div>
               </div>
             </CardContent>
@@ -1933,7 +2218,7 @@ export default function BOMPage() {
                           {row.warnings.length > 0 ? <Badge variant="secondary">{tt('bom.sufficiency.profileWarning', 'Review item profile')}</Badge> : null}
                         </div>
                       </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.required', 'Required')}</div>
                           <div className="mt-1 text-sm">{row.required.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
@@ -1947,6 +2232,22 @@ export default function BOMPage() {
                           <div className="mt-1 text-sm">{row.availableOnHand.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                         </div>
                         <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.cost.sourceUnitCost', 'Current stock cost')}</div>
+                          <div className="mt-1 text-sm">
+                            {row.sourceUnitCost != null ? formatCurrency(row.sourceUnitCost) : tt('bom.cost.noSourceCost', 'No cost in source')}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.cost.lineEstimate', 'Material estimate')}</div>
+                          <div className="mt-1 text-sm">
+                            {row.estimatedMaterialCost != null && plannedQty > 0
+                              ? formatCurrency(row.estimatedMaterialCost)
+                              : row.estimatedCostPerFinishedUnit != null
+                                ? formatCurrency(row.estimatedCostPerFinishedUnit)
+                                : tt('bom.cost.incomplete', 'Incomplete')}
+                          </div>
+                        </div>
+                        <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.maxBuildable', 'Buildable')}</div>
                           <div className="mt-1 text-sm">
                             {row.maxBuildable != null ? row.maxBuildable.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
@@ -1957,6 +2258,49 @@ export default function BOMPage() {
                   ))}
                 </div>
               )}
+              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{tt('bom.cost.title', 'Estimated material cost')}</div>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {tt(
+                        'bom.cost.body',
+                        'This estimate uses current weighted-average stock cost for the selected source stock. It is not a frozen production-run cost.',
+                      )}
+                    </p>
+                  </div>
+                  <PremiumStatusBadge tone={materialCostSummary.isComplete ? 'neutral' : 'warning'}>
+                    {materialCostSummary.isComplete
+                      ? tt('bom.cost.complete', 'Estimate complete')
+                      : tt('bom.cost.needsCost', 'Needs source cost')}
+                  </PremiumStatusBadge>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.cost.totalLabel', 'Estimated total materials')}</div>
+                    <div className="mt-1 text-lg font-semibold">
+                      {materialCostSummary.isComplete && plannedQty > 0 ? formatCurrency(materialCostSummary.totalCost) : tt('bom.cost.incomplete', 'Incomplete')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.cost.unitLabel', 'Estimated material cost / unit')}</div>
+                    <div className="mt-1 text-lg font-semibold">
+                      {materialCostSummary.isComplete ? formatCurrency(materialCostSummary.unitCost) : tt('bom.cost.incomplete', 'Incomplete')}
+                    </div>
+                  </div>
+                </div>
+                {materialCostSummary.missingRows.length > 0 ? (
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    {tt('bom.cost.missingRows', '{count} ingredient/component line(s) do not yet have a source stock cost.', { count: materialCostSummary.missingRows.length })}
+                  </p>
+                ) : null}
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {tt(
+                    'bom.cost.futureScope',
+                    'Labour, utilities, overhead, recurring costs and frozen cost snapshots are future Production & Costing scope.',
+                  )}
+                </p>
+              </div>
             </CardContent>
           </Card>
         </div>

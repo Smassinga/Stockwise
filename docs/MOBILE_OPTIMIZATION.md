@@ -28,6 +28,7 @@ Current design rules:
 - the dashboard now exposes a mobile-first operating flow: Today/status context, Action Needed, Quick Actions, Recent Activity, then deeper performance review
 - Items, Movements, and Stock Levels now use the shared premium register pattern: search and filters appear before review content, Android shows cards first, and desktop keeps sortable paginated tables for comparison work
 - Movements is treated as a stock-ledger register on Android: type/date/item/warehouse/bin filters stay above the card list, movement badges are semantic, and Details/View source actions remain visible without hover-only controls
+- Recipes & Assemblies is now an Android-friendly operational workspace: premium summary cards appear before dense detail, ingredient/component lines render as mobile cards, readiness and estimated material-cost panels are scan-friendly, and the post action remains a single explicit assembly action
 - onboarding now presents join-invite and create-company as separate mobile decision cards, with invite acceptance kept as an explicit action
 - Settings now starts with a mobile-friendly operating setup map so company administrators can jump to real backed setup areas without scanning the entire long form first
 - Users/Roles keeps invite controls, role definitions, status badges, and member review usable as stacked cards on phones
@@ -42,7 +43,7 @@ These surfaces matter most when checking Android usability:
 - onboarding
 - settings
 - users and roles
-- assembly
+- recipes and assemblies
 - opening import
 - settlements
 - banks, cash, and UOM
@@ -58,6 +59,7 @@ Future UI changes should preserve:
 - chart and table content lower in the mobile flow unless it is immediately actionable
 - mobile register cards that surface status, location, and the next safe action before exposing wide-table detail
 - stock movement cards should show item, type, route, quantity, value, reference, and details without requiring horizontal scrolling
+- recipe/assembly cards should show finished item, ingredient/component sufficiency, limiting component, source/destination routing, estimated material cost, and the post action without requiring horizontal scrolling
 - premium card icons should use stable badge containers and stack above text on narrow screens when horizontal rows become cramped
 
 Future UI changes should avoid:

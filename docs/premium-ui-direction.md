@@ -90,6 +90,21 @@ Items, Stock Levels, and Movements follow this implementation:
 
 Movements must stay a register, not another dashboard. It may improve presentation, filtering, loading/error states, and empty states, but it must not manually mutate `stock_levels`, change posting/valuation/POS/purchase logic, or imply a costing-policy change. `stock_movements` remains canonical and `stock_levels` remains derived.
 
+## Recipes & Assemblies
+
+The former Assembly/BOM workspace is now presented as **Recipes & Assemblies**. This is Phase 1 of the Production & Costing direction and is intentionally a UX and workflow-clarity upgrade around the existing BOM/assembly model.
+
+The workspace should answer operational questions before posting: what finished item is being made, which recipe/BOM is selected, which ingredients/components are consumed, what quantity is planned, what blocks readiness, what the current weighted-average material estimate is, and where stock is consumed from and received into.
+
+Current boundaries:
+
+- no Supabase migration was introduced
+- no stock posting, valuation, POS pricing, finance posting, settlement, invoice, RLS, entitlement, or access-control logic changed
+- current assembly cost remains an estimated material cost based on existing weighted-average stock cost
+- full Production Runs, frozen cost snapshots, labour/utilities/overhead allocation, recurring costs, and Growth Batches remain future scope
+- `build_from_bom_sources`, `inv_issue_component`, and `inv_receive_finished` were not expanded and still require separate backend review before future Production & Costing work depends on them
+- Android/mobile layout must remain card-first, with component/ingredient cards and readiness/cost/action panels available without horizontal table dependence
+
 Import/export rules:
 
 - Register buttons may link to existing import/export workflows.

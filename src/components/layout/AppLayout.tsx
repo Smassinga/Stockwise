@@ -70,7 +70,7 @@ function buildNavLabels(tt: (key: string, fallback: string) => string): NavItem[
     { label: tt('nav.dashboard', 'Dashboard'), to: '/dashboard', icon: LayoutGrid },
     { label: tt('nav.operator', 'Point of Sale'), to: '/operator', icon: ShoppingBasket },
     { label: tt('nav.items', 'Items'), to: '/items', icon: Package },
-    { label: tt('nav.bom', 'BOM'), to: '/bom', icon: Layers },
+    { label: tt('nav.bom', 'Recipes & Assemblies'), to: '/bom', icon: Layers },
     { label: tt('nav.movements', 'Movements'), to: '/movements', icon: ArrowLeftRight },
     { label: tt('nav.transactions', 'Transactions'), to: '/transactions', icon: Receipt },
     { label: tt('nav.cash', 'Cash'), to: '/cash', icon: Wallet },
