@@ -96,6 +96,9 @@ The suite currently protects:
 - current-legal-value bridge math
 - item / UOM integrity assumptions used by inventory and finance paths
 - assembly build gating under sufficient and insufficient stock
+- assembly movement audit linkage through `ref_type = 'BUILD'` and `ref_id = build_id`
+- assembly backend authority checks, including OPERATOR+ posting and VIEWER blocking
+- hardened source-split assembly posting or an explicit blocked-path assertion when disabled
 - PO receiving ledger integrity, including protection against app-side `stock_levels` double-counting
 - trial and entitlement enforcement
 
@@ -138,6 +141,10 @@ For DB work:
 For premium UI phases that do not change backend logic, posting logic, or schema, keep the same automated gates and add manual route QA for the touched authenticated surfaces. Phase 4 requires `/onboarding`, `/settings`, `/users`, and `/users/roles` checks at desktop and mobile widths, with special attention to explicit invitation acceptance, backed Settings navigation, and role copy staying aligned with `roles.ts` and `permissions.ts`.
 
 The 2026-06-10 Recipes & Assemblies Phase 1 pass is a UX and workflow-clarity change over the existing BOM/assembly flow. It introduced no schema migration and did not change stock posting, valuation, POS pricing, finance posting, settlements, invoice issuance, RLS, entitlement, or access-control logic. Validate `/bom` at desktop `1440`, laptop `1200`, tablet `820`, and phone `390`, checking that recipe/BOM selection, ingredient/component cards, readiness states, insufficient-stock messaging, estimated material-cost wording, and the existing post-assembly action remain clear without implying full production costing. `npm run test:finance-regression` remains required before any future production posting, valuation, or backend costing change; for this UI-only pass it may be skipped unless the connected Supabase target is a safe mutation test project.
+
+The 2026-06-11 Phase A1 assembly backend hardening pass changes only existing assembly RPC authority, company scoping, helper exposure, and build movement audit linkage. It does not add Production Runs, Growth Batches, POS pricing changes, finance posting, invoice issuance, settlements, entitlement, Platform Control, subscription logic, or a new RLS model. Before staging A1, run the normal static/build gates and run `npm run test:finance-regression` against a confirmed safe mutation Supabase target. A2 remains required for idempotency, repeated-click replay, concurrent stock-decrement safety, and simultaneous assembly/POS/receipt stress coverage.
+
+The 2026-06-11 opening-stock regression unblocker keeps canonical UOM IDs as text and verifies `import_opening_stock_batch` accepts IDs such as `uom_ea`. This was found while validating A1 locally and does not change Production Runs, Growth Batches, POS pricing, invoice issuance, settlements, entitlement, Platform Control, or subscription behavior.
 
 ## Auth Production QA
 

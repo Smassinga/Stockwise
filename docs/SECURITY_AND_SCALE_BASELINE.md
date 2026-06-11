@@ -153,7 +153,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Sales invoices | No | Finance policies | issue/post/state RPCs | No | No | State guards | Backend issue/post invariants protect repeated clicks. |
 | Vendor bills | No | Finance policies | approval/post RPCs | No | No | State guards | Backend AP anchors. |
 | Settlements, bank, and cash | No | Finance policies | settlement guards/RPCs | No | No | State guards | Backend settlement authority. |
-| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | State guards | Finance regression covers key paths. |
+| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | State guards, no idempotency yet | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2 must add idempotency and concurrency hardening before Production Runs. |
 | Reports and exports | Mostly UI | Read policies | Read helpers | No | No | Missing | Browser generation can become a performance risk. |
 | Company-access emails | No | Control tables | audit RPCs | mailer-company-access | Yes | Edge limits | Brevo SMTP required. |
 | Due reminders and digest worker | No | Company data policies via service role | Worker queries | Edge worker | No | Hook/worker controls | Requires worker secrets and Brevo config. |

@@ -1114,6 +1114,13 @@ test('Phase 4/5 finance hardening suite', async (t) => {
   })
 
   await t.test('BOM assembly build succeeds when ready and blocks when stock is insufficient', async () => {
+    const originalProduct = await querySingle(
+      ownerClient,
+      'items',
+      'id, unit_price',
+      [['eq', 'id', productItemId]],
+    )
+
     const buildCall = await ownerClient.rpc('build_from_bom', {
       p_bom_id: bomId,
       p_qty: 4,
@@ -1135,6 +1142,68 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(round2(build.qty), 4)
     assert.equal(build.bom_id, bomId)
     assert.ok(Number(build.cost_total) > 0, 'Expected build cost to be positive')
+    assert.equal(round2(build.cost_total), 40)
+
+    const { data: buildMovements, error: buildMovementsError } = await ownerClient
+      .from('stock_movements')
+      .select('id, type, item_id, qty_base, unit_cost, total_value, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id, ref_type, ref_id')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'BUILD')
+      .eq('ref_id', buildId)
+      .order('type', { ascending: true })
+    if (buildMovementsError) throw buildMovementsError
+    assert.equal(buildMovements.length, 2, 'Expected one component issue and one finished receipt movement')
+
+    const componentIssue = buildMovements.find((movement) => movement.type === 'issue')
+    const finishedReceipt = buildMovements.find((movement) => movement.type === 'receive')
+    assert.ok(componentIssue, 'Expected component issue movement linked to the build')
+    assert.ok(finishedReceipt, 'Expected finished receipt movement linked to the build')
+    assert.equal(componentIssue.item_id, componentItemId)
+    assert.equal(componentIssue.warehouse_from_id, warehouseId)
+    assert.equal(componentIssue.bin_from_id, sourceBinId)
+    assert.equal(round2(componentIssue.qty_base), 8)
+    assert.equal(round2(componentIssue.unit_cost), 5)
+    assert.equal(finishedReceipt.item_id, productItemId)
+    assert.equal(finishedReceipt.warehouse_to_id, warehouseId)
+    assert.equal(finishedReceipt.bin_to_id, destinationBinId)
+    assert.equal(round2(finishedReceipt.qty_base), 4)
+    assert.equal(round2(finishedReceipt.unit_cost), 10)
+
+    const sourceLevelAfterBuild = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', componentItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(sourceLevelAfterBuild.qty), 2)
+    assert.equal(round2(sourceLevelAfterBuild.avg_cost), 5)
+
+    const finishedLevelAfterBuild = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(finishedLevelAfterBuild.qty), 4)
+    assert.equal(round2(finishedLevelAfterBuild.avg_cost), 10)
+
+    const productAfterBuild = await querySingle(
+      ownerClient,
+      'items',
+      'id, unit_price',
+      [['eq', 'id', productItemId]],
+    )
+    assert.equal(round2(productAfterBuild.unit_price), round2(originalProduct.unit_price))
 
     await expectPostgrestError(
       ownerClient.rpc('build_from_bom', {
@@ -1146,6 +1215,127 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         p_bin_to: destinationBinId,
       }),
       'stock|insufficient|negative|forbidden',
+    )
+
+    const sourceSplitCall = await ownerClient.rpc('build_from_bom_sources', {
+      p_bom_id: bomId,
+      p_qty: 1,
+      p_component_sources: [
+        {
+          component_item_id: componentItemId,
+          sources: [{ warehouse_id: warehouseId, bin_id: sourceBinId, share_pct: 100 }],
+        },
+      ],
+      p_output_splits: [{ warehouse_id: warehouseId, bin_id: destinationBinId, qty: 1 }],
+    })
+    if (sourceSplitCall.error) throw sourceSplitCall.error
+
+    const { data: sourceSplitBuilds, error: sourceSplitBuildsError } = await ownerClient
+      .from('builds')
+      .select('id, qty, cost_total')
+      .eq('company_id', companyId)
+      .eq('bom_id', bomId)
+      .eq('qty', 1)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (sourceSplitBuildsError) throw sourceSplitBuildsError
+    assert.equal(sourceSplitBuilds.length, 1, 'Expected source-split build to create a build row')
+    const sourceSplitBuildId = sourceSplitBuilds[0].id
+
+    const { data: sourceSplitMovements, error: sourceSplitMovementsError } = await ownerClient
+      .from('stock_movements')
+      .select('id, type, item_id, qty_base, ref_type, ref_id')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'BUILD')
+      .eq('ref_id', sourceSplitBuildId)
+    if (sourceSplitMovementsError) throw sourceSplitMovementsError
+    assert.equal(sourceSplitMovements.length, 2, 'Expected source-split build movements to link to the build')
+    assert.ok(sourceSplitMovements.some((movement) => movement.type === 'issue' && movement.item_id === componentItemId))
+    assert.ok(sourceSplitMovements.some((movement) => movement.type === 'receive' && movement.item_id === productItemId))
+
+    const operatorUser = await createTempUser(admin, PREFIX, 'assembly-operator')
+    const viewerUser = await createTempUser(admin, PREFIX, 'assembly-viewer')
+    created.userIds.add(operatorUser.userId)
+    created.userIds.add(viewerUser.userId)
+    const roleUserIds = [operatorUser.userId, viewerUser.userId]
+
+    try {
+      const operatorClient = await signIn(operatorUser.email, operatorUser.password)
+      const viewerClient = await signIn(viewerUser.email, viewerUser.password)
+      const memberships = await admin.from('company_members').insert([
+        {
+          company_id: companyId,
+          user_id: operatorUser.userId,
+          email: operatorUser.email.toLowerCase(),
+          role: 'OPERATOR',
+          status: 'active',
+          invited_by: ownerUser.userId,
+        },
+        {
+          company_id: companyId,
+          user_id: viewerUser.userId,
+          email: viewerUser.email.toLowerCase(),
+          role: 'VIEWER',
+          status: 'active',
+          invited_by: ownerUser.userId,
+        },
+      ])
+      if (memberships.error) throw memberships.error
+      await setActiveCompany(operatorClient, companyId)
+      await setActiveCompany(viewerClient, companyId)
+
+      const replenishment = await ownerClient.from('stock_movements').insert({
+        company_id: companyId,
+        type: 'receive',
+        item_id: componentItemId,
+        uom_id: eachUomId,
+        qty: 6,
+        qty_base: 6,
+        unit_cost: 5,
+        total_value: 30,
+        warehouse_to_id: warehouseId,
+        bin_to_id: sourceBinId,
+        notes: `${PREFIX} assembly role-test replenishment`,
+        created_by: ownerUser.userId,
+        ref_type: 'ADJUST',
+      })
+      if (replenishment.error) throw replenishment.error
+
+      const operatorBuild = await operatorClient.rpc('build_from_bom', {
+        p_bom_id: bomId,
+        p_qty: 1,
+        p_warehouse_from: warehouseId,
+        p_bin_from: sourceBinId,
+        p_warehouse_to: warehouseId,
+        p_bin_to: destinationBinId,
+      })
+      if (operatorBuild.error) throw operatorBuild.error
+      assert.ok(operatorBuild.data, 'Expected OPERATOR role to post assembly build')
+
+      await expectPostgrestError(
+        viewerClient.rpc('build_from_bom', {
+          p_bom_id: bomId,
+          p_qty: 1,
+          p_warehouse_from: warehouseId,
+          p_bin_from: sourceBinId,
+          p_warehouse_to: warehouseId,
+          p_bin_to: destinationBinId,
+        }),
+        'forbidden|permission|not allowed',
+      )
+    } finally {
+      await safeDelete(() => admin.from('company_members').delete().eq('company_id', companyId).in('user_id', roleUserIds))
+    }
+
+    await expectPostgrestError(
+      ownerClient.rpc('inv_issue_component', {
+        p_item_id: componentItemId,
+        p_qty_base: 1,
+        p_warehouse_id: warehouseId,
+        p_bin_id: sourceBinId,
+        p_note: `${PREFIX} direct helper misuse`,
+      }),
+      'permission|denied|execute|forbidden',
     )
   })
 
@@ -1275,6 +1465,18 @@ test('Phase 4/5 finance hardening suite', async (t) => {
   })
 
   await t.test('Operator sale batches walk-in lines, creates a shipped order, and reduces stock', async () => {
+    const productStockBefore = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+
     const operatorSale = unwrapRpcSingle(
       expectNoSupabaseError(
         await ownerClient.rpc('create_operator_sale_issue_with_settlement', {
@@ -1367,7 +1569,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         ['eq', 'bin_id', destinationBinId],
       ],
     )
-    assert.equal(round2(productStockAfter.qty), 2)
+    assert.equal(round2(productStockAfter.qty), round2(productStockBefore.qty - 2))
     assert.equal(round2(productStockAfter.allocated_qty || 0), 0)
 
     const resaleStockAfter = await querySingle(
@@ -1444,7 +1646,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         ['eq', 'bin_id', destinationBinId],
       ],
     )
-    assert.equal(round2(productStockAfterBankSettlement.qty), 1)
+    assert.equal(round2(productStockAfterBankSettlement.qty), round2(productStockAfter.qty - 1))
     assert.equal(round2(productStockAfterBankSettlement.allocated_qty || 0), 0)
 
     await expectPostgrestError(
@@ -1457,7 +1659,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         p_fx_to_base: 1,
         p_reference_no: `${PREFIX.toUpperCase()}-OVER`,
         p_notes: 'Over-issue regression guard',
-        p_lines: [{ item_id: productItemId, qty: 5, unit_price: 116 }],
+        p_lines: [{ item_id: productItemId, qty: round2(productStockAfterBankSettlement.qty + 1), unit_price: 116 }],
       }),
       'does not have enough stock',
     )

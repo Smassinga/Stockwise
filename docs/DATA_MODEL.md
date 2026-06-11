@@ -52,6 +52,9 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the rollup used for availability and weighted-average bucket cost
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
+- assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
+- helper RPCs such as `inv_issue_component` and `inv_receive_finished` are legacy/internal utilities, not normal client-facing assembly APIs
+- canonical UOM identifiers remain text (`uoms.id`, `items.base_uom_id`, and `stock_movements.uom_id`); opening-stock import must preserve text IDs such as `uom_ea` and must not cast them to UUID
 - `movements` is no longer part of the intended product direction
 - the `/movements` UI is a register over `stock_movements`, not a separate data model; visual filtering, badges, and mobile cards must not imply manual `stock_levels` posting or a different costing policy
 
@@ -67,6 +70,7 @@ Current commercial default:
 - `items_view.unitPrice` exposes it to the app
 - Point of Sale prefills line pricing from `items.unit_price`
 - Point of Sale never uses stock cost or weighted-average valuation as the default sell price
+- assembly material cost estimates and build receipt unit costs must not mutate `items.unit_price`
 
 ### Walk-in / cash sale model
 

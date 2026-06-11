@@ -48,3 +48,24 @@ The following existing backend functions were not expanded in Phase 1 and need s
 - `inv_receive_finished`
 
 Future posting/costing phases must add dedicated regression coverage before changing inventory valuation, stock posting, finance posting, or production costing behavior.
+
+## Phase A1 Assembly Backend Hardening
+
+Phase A1 hardens the current assembly RPCs without introducing Production Runs, Growth Batches, labour/utilities/overhead allocation, frozen cost snapshots, or biological costing.
+
+What changed:
+
+- `build_from_bom` now enforces active-company and OPERATOR+ backend authority before posting
+- `build_from_bom` links component issue and finished receipt movements to the generated build with `ref_type = 'BUILD'` and `ref_id = build_id`
+- `build_from_bom_sources` remains callable for the current `/bom` source-routing flow, but now applies the same company, active-BOM, role, item, warehouse, and bin validations
+- source-split assembly posting now creates a `builds` row and links all assembly movements to that build
+- legacy helper RPCs `inv_issue_component` and `inv_receive_finished` are restricted from normal client execution and no longer create zero `stock_levels` rows directly
+
+What did not change:
+
+- no POS pricing, finance posting, invoice issuance, settlements, entitlement, Platform Control, company-access, subscription, or broader access-control model changes were introduced
+- `stock_movements` remains the stock ledger
+- `stock_levels` remains the trigger-derived availability and weighted-average rollup
+- item default selling price remains `items.unit_price` and is not derived from stock cost
+
+Phase A2 is still required before Production Runs: backend idempotency, repeated-click replay, concurrent stock-decrement safety, and simultaneous assembly/POS/receipt regression tests.
