@@ -51,13 +51,15 @@ Canonical structures:
 Current rules:
 
 - `stock_movements` is the canonical stock ledger
-- `stock_levels` is the rollup used for availability and weighted-average bucket cost
+- `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
+- stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
 - `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; A2.1/A2.2 applies it to assembly only
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
 - helper RPCs such as `inv_issue_component` and `inv_receive_finished` are legacy/internal utilities, not normal client-facing assembly APIs
 - canonical UOM identifiers remain text (`uoms.id`, `items.base_uom_id`, and `stock_movements.uom_id`); opening-stock import must preserve text IDs such as `uom_ea` and must not cast them to UUID
+- direct idempotency remains assembly-only after A2.3; POS, PO receiving, sales-order shipping, opening-stock import, and manual movements still need later backend RPC/idempotency hardening
 - `movements` is no longer part of the intended product direction
 - the `/movements` UI is a register over `stock_movements`, not a separate data model; visual filtering, badges, and mobile cards must not imply manual `stock_levels` posting or a different costing policy
 

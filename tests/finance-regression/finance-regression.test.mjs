@@ -1484,6 +1484,357 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(round2(productAfterIdempotentBuilds.unit_price), round2(originalProduct.unit_price))
   })
 
+  await t.test('Stock rollup is safe for concurrent issues and receipts', async () => {
+    async function createTrackedItem(suffix, overrides = {}) {
+      const item = await ownerClient
+        .from('items')
+        .insert({
+          company_id: companyId,
+          sku: `${PREFIX.toUpperCase()}-${suffix}`,
+          name: `${PREFIX} ${suffix}`,
+          base_uom_id: eachUomId,
+          min_stock: 0,
+          unit_price: overrides.unit_price ?? 25,
+          primary_role: overrides.primary_role ?? 'general',
+          track_inventory: true,
+          can_buy: overrides.can_buy ?? true,
+          can_sell: overrides.can_sell ?? false,
+          is_assembled: overrides.is_assembled ?? false,
+        })
+        .select('id')
+        .single()
+      if (item.error) throw item.error
+      return item.data.id
+    }
+
+    async function createSimpleBom({ suffix, componentId, productId, qtyPer }) {
+      const bom = await ownerClient
+        .from('boms')
+        .insert({
+          company_id: companyId,
+          product_id: productId,
+          name: `${PREFIX} ${suffix} BOM`,
+          version: 'v1',
+          is_active: true,
+        })
+        .select('id')
+        .single()
+      if (bom.error) throw bom.error
+
+      const component = await ownerClient.from('bom_components').insert({
+        bom_id: bom.data.id,
+        component_item_id: componentId,
+        qty_per: qtyPer,
+        scrap_pct: 0,
+      })
+      if (component.error) throw component.error
+      return bom.data.id
+    }
+
+    async function seedReceipt({ itemId, qty, unitCost, binId, note }) {
+      const receipt = await ownerClient
+        .from('stock_movements')
+        .insert({
+          company_id: companyId,
+          type: 'receive',
+          item_id: itemId,
+          uom_id: eachUomId,
+          qty,
+          qty_base: qty,
+          unit_cost: unitCost,
+          total_value: qty * unitCost,
+          warehouse_to_id: warehouseId,
+          bin_to_id: binId,
+          notes: note,
+          created_by: ownerUser.userId,
+          ref_type: 'ADJUST',
+        })
+      if (receipt.error) throw receipt.error
+    }
+
+    function summarizeBucketMovements(rows, itemId, binId) {
+      return rows.reduce((sum, row) => {
+        const qty = Number(row.qty_base || 0)
+        if (row.item_id !== itemId) return sum
+        if (row.type === 'receive' || row.type === 'adjust') {
+          return row.warehouse_to_id === warehouseId && row.bin_to_id === binId ? sum + qty : sum
+        }
+        if (row.type === 'issue') {
+          return row.warehouse_from_id === warehouseId && row.bin_from_id === binId ? sum - qty : sum
+        }
+        if (row.type === 'transfer') {
+          let next = sum
+          if (row.warehouse_from_id === warehouseId && row.bin_from_id === binId) next -= qty
+          if (row.warehouse_to_id === warehouseId && row.bin_to_id === binId) next += qty
+          return next
+        }
+        return sum
+      }, 0)
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const raceComponentId = await createTrackedItem(`RACE-COMP-${attempt}`, {
+        primary_role: 'raw_material',
+        can_sell: false,
+      })
+      const raceProductId = await createTrackedItem(`RACE-FG-${attempt}`, {
+        primary_role: 'assembled_product',
+        can_buy: false,
+        can_sell: true,
+        is_assembled: true,
+        unit_price: 75,
+      })
+      const raceBomId = await createSimpleBom({
+        suffix: `Race ${attempt}`,
+        componentId: raceComponentId,
+        productId: raceProductId,
+        qtyPer: 2,
+      })
+
+      await seedReceipt({
+        itemId: raceComponentId,
+        qty: 10,
+        unitCost: 4,
+        binId: sourceBinId,
+        note: `${PREFIX} race seed ${attempt}`,
+      })
+
+      const firstPayload = {
+        p_bom_id: raceBomId,
+        p_qty: 3,
+        p_warehouse_from: warehouseId,
+        p_bin_from: sourceBinId,
+        p_warehouse_to: warehouseId,
+        p_bin_to: destinationBinId,
+        p_request_key: `${PREFIX}-race-${attempt}-a`,
+      }
+      const secondPayload = {
+        ...firstPayload,
+        p_request_key: `${PREFIX}-race-${attempt}-b`,
+      }
+
+      const results = await Promise.all([
+        ownerClient.rpc('post_build_from_bom', firstPayload),
+        managerClient.rpc('post_build_from_bom', secondPayload),
+      ])
+      const successes = results.filter((result) => !result.error)
+      const failures = results.filter((result) => result.error)
+
+      assert.equal(
+        successes.length,
+        1,
+        `Expected exactly one concurrent assembly build to succeed on attempt ${attempt}: ${results
+          .map((result) => result.error?.message || result.data)
+          .join(' | ')}`,
+      )
+      assert.equal(failures.length, 1, `Expected exactly one concurrent assembly build to fail on attempt ${attempt}`)
+      assert.match(failures[0].error.message, /stock|insufficient|negative|not enough/i)
+
+      const successfulBuildId = successes[0].data
+      const sourceLevel = await querySingle(
+        ownerClient,
+        'stock_levels',
+        'qty, avg_cost',
+        [
+          ['eq', 'company_id', companyId],
+          ['eq', 'item_id', raceComponentId],
+          ['eq', 'warehouse_id', warehouseId],
+          ['eq', 'bin_id', sourceBinId],
+        ],
+      )
+      assert.equal(round2(sourceLevel.qty), 4)
+      assert.ok(Number(sourceLevel.qty) >= 0, 'Concurrent assembly issue must not drive stock negative')
+      assert.equal(round2(sourceLevel.avg_cost), 4)
+
+      const { data: raceBuildRows, error: raceBuildRowsError } = await ownerClient
+        .from('builds')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('bom_id', raceBomId)
+      if (raceBuildRowsError) throw raceBuildRowsError
+      assert.deepEqual(
+        raceBuildRows.map((row) => row.id),
+        [successfulBuildId],
+        'Failed concurrent assembly request must not leave an extra build row',
+      )
+
+      const { data: raceMovements, error: raceMovementsError } = await ownerClient
+        .from('stock_movements')
+        .select('id, type, item_id, qty_base, warehouse_from_id, warehouse_to_id, bin_from_id, bin_to_id, ref_type, ref_id')
+        .eq('company_id', companyId)
+        .eq('item_id', raceComponentId)
+      if (raceMovementsError) throw raceMovementsError
+      assert.equal(
+        round2(summarizeBucketMovements(raceMovements, raceComponentId, sourceBinId)),
+        round2(sourceLevel.qty),
+        'Component movement ledger should reconcile to the source bucket rollup',
+      )
+
+      const { data: buildMovements, error: buildMovementsError } = await ownerClient
+        .from('stock_movements')
+        .select('id, type')
+        .eq('company_id', companyId)
+        .eq('ref_type', 'BUILD')
+        .eq('ref_id', successfulBuildId)
+      if (buildMovementsError) throw buildMovementsError
+      assert.equal(buildMovements.length, 2, 'Only the successful concurrent build should create movements')
+    }
+
+    const receiptItemId = await createTrackedItem('RACE-RECEIPT', {
+      primary_role: 'raw_material',
+      can_sell: false,
+    })
+
+    const receiptResults = await Promise.all([
+      ownerClient
+        .from('stock_movements')
+        .insert({
+          company_id: companyId,
+          type: 'receive',
+          item_id: receiptItemId,
+          uom_id: eachUomId,
+          qty: 3,
+          qty_base: 3,
+          unit_cost: 5,
+          total_value: 15,
+          warehouse_to_id: warehouseId,
+          bin_to_id: sourceBinId,
+          notes: `${PREFIX} concurrent receipt A`,
+          created_by: ownerUser.userId,
+          ref_type: 'ADJUST',
+        })
+        .select('id')
+        .single(),
+      managerClient
+        .from('stock_movements')
+        .insert({
+          company_id: companyId,
+          type: 'receive',
+          item_id: receiptItemId,
+          uom_id: eachUomId,
+          qty: 7,
+          qty_base: 7,
+          unit_cost: 11,
+          total_value: 77,
+          warehouse_to_id: warehouseId,
+          bin_to_id: sourceBinId,
+          notes: `${PREFIX} concurrent receipt B`,
+          created_by: managerUser.userId,
+          ref_type: 'ADJUST',
+        })
+        .select('id')
+        .single(),
+    ])
+    for (const result of receiptResults) {
+      if (result.error) throw result.error
+    }
+
+    const receiptLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', receiptItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(receiptLevel.qty), 10)
+    assert.equal(round2(receiptLevel.avg_cost), 9.2)
+
+    const { data: receiptMovements, error: receiptMovementsError } = await ownerClient
+      .from('stock_movements')
+      .select('type, item_id, qty_base, total_value, warehouse_from_id, warehouse_to_id, bin_from_id, bin_to_id')
+      .eq('company_id', companyId)
+      .eq('item_id', receiptItemId)
+    if (receiptMovementsError) throw receiptMovementsError
+
+    const receiptLedgerQty = summarizeBucketMovements(receiptMovements, receiptItemId, sourceBinId)
+    const receiptLedgerValue = receiptMovements.reduce(
+      (sum, row) => sum + Number(row.total_value || 0),
+      0,
+    )
+    assert.equal(round2(receiptLedgerQty), round2(receiptLevel.qty))
+    assert.equal(round2(receiptLedgerValue / receiptLedgerQty), round2(receiptLevel.avg_cost))
+
+    const sharedIssueItemId = await createTrackedItem('RACE-SHARED', {
+      primary_role: 'raw_material',
+      can_sell: true,
+      unit_price: 19,
+    })
+    const sharedProductId = await createTrackedItem('RACE-SHARED-FG', {
+      primary_role: 'assembled_product',
+      can_buy: false,
+      can_sell: true,
+      is_assembled: true,
+      unit_price: 80,
+    })
+    const sharedBomId = await createSimpleBom({
+      suffix: 'Shared competition',
+      componentId: sharedIssueItemId,
+      productId: sharedProductId,
+      qtyPer: 2,
+    })
+    await seedReceipt({
+      itemId: sharedIssueItemId,
+      qty: 10,
+      unitCost: 6,
+      binId: sourceBinId,
+      note: `${PREFIX} shared race seed`,
+    })
+
+    const crossWorkflowResults = await Promise.all([
+      ownerClient.rpc('post_build_from_bom', {
+        p_bom_id: sharedBomId,
+        p_qty: 3,
+        p_warehouse_from: warehouseId,
+        p_bin_from: sourceBinId,
+        p_warehouse_to: warehouseId,
+        p_bin_to: destinationBinId,
+        p_request_key: `${PREFIX}-shared-assembly`,
+      }),
+      managerClient.rpc('create_operator_sale_issue_with_settlement', {
+        p_company_id: companyId,
+        p_bin_from_id: sourceBinId,
+        p_customer_id: null,
+        p_order_date: todayIso(),
+        p_currency_code: 'MZN',
+        p_fx_to_base: 1,
+        p_reference_no: `${PREFIX.toUpperCase()}-SHARED-RACE`,
+        p_notes: 'Concurrent POS versus assembly stock guard',
+        p_lines: [{ item_id: sharedIssueItemId, qty: 6, unit_price: 19 }],
+        p_settlement_method: 'cash',
+        p_bank_account_id: null,
+      }),
+    ])
+    const crossWorkflowSuccesses = crossWorkflowResults.filter((result) => !result.error)
+    const crossWorkflowFailures = crossWorkflowResults.filter((result) => result.error)
+    assert.equal(
+      crossWorkflowSuccesses.length,
+      1,
+      `Expected one POS-versus-assembly issue to succeed: ${crossWorkflowResults
+        .map((result) => result.error?.message || JSON.stringify(result.data))
+        .join(' | ')}`,
+    )
+    assert.equal(crossWorkflowFailures.length, 1)
+    assert.match(crossWorkflowFailures[0].error.message, /stock|insufficient|negative|not enough/i)
+
+    const sharedLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', sharedIssueItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(sharedLevel.qty), 4)
+    assert.ok(Number(sharedLevel.qty) >= 0, 'POS-versus-assembly competition must not drive stock negative')
+  })
+
   await t.test('Landed cost uses receipt value fallback and blocks zero-value value allocation', async () => {
     const zeroValuePo = await ownerClient
       .from('purchase_orders')

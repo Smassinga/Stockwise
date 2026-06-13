@@ -85,7 +85,26 @@ What did not change:
 - no labour, utilities, overhead, frozen cost snapshots, or biological costing were implemented
 - no POS, PO receiving, sales-order shipping, opening-stock import, manual stock movement, finance posting, invoice issuance, settlement, entitlement, Platform Control, company-access, or subscription idempotency was added
 - `stock_movements` remains the ledger and `stock_levels` remains the derived rollup
-- `apply_stock_delta` concurrency behavior is unchanged
 - item default selling price remains `items.unit_price` and is not derived from stock cost
 
-Phase A2.3 is still required before Production Runs: concurrent stock-decrement safety, simultaneous assembly/POS/receipt stress coverage, and follow-on idempotency rollout for other stock-sensitive workflows.
+## Phase A2.3 Stock Rollup Concurrency Safety
+
+Phase A2.3 hardens the shared `apply_stock_delta` rollup path used by stock movement inserts. This is a stock-engine safety change, not a costing-policy change.
+
+What changed:
+
+- negative stock deltas are guarded by an atomic conditional update on the affected `stock_levels` bucket
+- concurrent receipts into the same bucket use nullable-bin aware upserts so receipt quantity and weighted-average updates are not lost
+- duplicate bucket preflight is explicit; hosted deployment must stop for manual cleanup if duplicate `stock_levels` buckets already exist
+- regression coverage now includes concurrent assembly issue protection, concurrent receipt rollup, movement-ledger reconciliation, and POS-versus-assembly stock competition
+
+What did not change:
+
+- no Production Runs or Growth Batches were implemented
+- no labour, utilities, overhead, frozen cost snapshots, or biological costing were implemented
+- no POS pricing, finance posting, invoice issuance, settlement, entitlement, Platform Control, company-access, or subscription behavior changed
+- no idempotency was added to POS, PO receiving, sales-order shipping, opening-stock import, or manual movements
+- `stock_movements` remains the ledger and `stock_levels` remains the derived rollup
+- reversals remain append-only compensating movements
+
+Phase A2.4 remains required before Production Runs: move remaining direct client posting workflows behind backend RPCs and expand idempotency beyond assembly.
