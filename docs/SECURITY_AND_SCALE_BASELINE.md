@@ -1,6 +1,6 @@
 # StockWise Security and Scale Baseline
 
-Status: 2026-06-06.
+Status: 2026-06-11.
 
 This document records the current security, scalability, monitoring, rate-limiting, deployment, and operational baseline for StockWise. It is an audit and operating package, not a schema-change package. No business logic, RLS policy, migration, finance posting, stock posting, POS, invoice, settlement, valuation, entitlement, membership, or Platform Control authority change is introduced by this document.
 
@@ -113,7 +113,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 ## Partial Protections
 
 - Auth signup, resend confirmation, and reset password have Supabase/Brevo provider controls plus frontend cooldowns, but not a StockWise-owned database rate limit.
-- Company bootstrap has backend rate limiting; other high-cost mutations rely mainly on authority checks and idempotency/state guards.
+- Company bootstrap has backend rate limiting; assembly posting now has backend idempotency through `posting_requests`; other high-cost mutations rely mainly on authority checks and state guards.
 - Platform Control mailers and guarded reset paths have stronger rate limiting than ordinary frontend reads.
 - Monitoring relies on Vercel logs, Supabase logs, Edge Function logs, browser console checks, and regression output. No third-party exception tracker is committed.
 - CI/CD validation is wired for non-mutating checks on pull requests and pushes to `main`; finance regression remains a protected manual/live-environment gate.
@@ -153,7 +153,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Sales invoices | No | Finance policies | issue/post/state RPCs | No | No | State guards | Backend issue/post invariants protect repeated clicks. |
 | Vendor bills | No | Finance policies | approval/post RPCs | No | No | State guards | Backend AP anchors. |
 | Settlements, bank, and cash | No | Finance policies | settlement guards/RPCs | No | No | State guards | Backend settlement authority. |
-| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | State guards, no idempotency yet | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2 must add idempotency and concurrency hardening before Production Runs. |
+| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, but A2.3 must still add concurrent stock-decrement safety before Production Runs. |
 | Reports and exports | Mostly UI | Read policies | Read helpers | No | No | Missing | Browser generation can become a performance risk. |
 | Company-access emails | No | Control tables | audit RPCs | mailer-company-access | Yes | Edge limits | Brevo SMTP required. |
 | Due reminders and digest worker | No | Company data policies via service role | Worker queries | Edge worker | No | Hook/worker controls | Requires worker secrets and Brevo config. |

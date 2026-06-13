@@ -223,6 +223,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     await safeDelete(() => admin.from('sales_order_lines').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('purchase_orders').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('sales_orders').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('posting_requests').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('builds').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('stock_movements').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('stock_levels').delete().eq('company_id', companyId))
@@ -1337,6 +1338,150 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       }),
       'permission|denied|execute|forbidden',
     )
+  })
+
+  await t.test('Idempotent assembly posting replays successful requests without duplicate movements', async () => {
+    const originalProduct = await querySingle(
+      ownerClient,
+      'items',
+      'id, unit_price',
+      [['eq', 'id', productItemId]],
+    )
+
+    const simpleRequestKey = `${PREFIX}-assembly-simple-idempotent`
+    const simplePayload = {
+      p_bom_id: bomId,
+      p_qty: 1,
+      p_warehouse_from: warehouseId,
+      p_bin_from: sourceBinId,
+      p_warehouse_to: warehouseId,
+      p_bin_to: destinationBinId,
+      p_request_key: simpleRequestKey,
+    }
+
+    const simpleFirst = await ownerClient.rpc('post_build_from_bom', simplePayload)
+    if (simpleFirst.error) throw simpleFirst.error
+    const simpleBuildId = simpleFirst.data
+    assert.ok(simpleBuildId, 'Expected idempotent simple assembly to return a build id')
+
+    const simpleReplay = await ownerClient.rpc('post_build_from_bom', simplePayload)
+    if (simpleReplay.error) throw simpleReplay.error
+    assert.equal(simpleReplay.data, simpleBuildId, 'Expected idempotent replay to return the original build id')
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_build_from_bom', {
+        ...simplePayload,
+        p_qty: 2,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const simpleRequest = await querySingle(
+      ownerClient,
+      'posting_requests',
+      'operation_type, request_key, payload_hash, status, result_ref_type, result_ref_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'operation_type', 'assembly.build'],
+        ['eq', 'request_key', simpleRequestKey],
+      ],
+    )
+    assert.equal(simpleRequest.status, 'succeeded')
+    assert.equal(simpleRequest.result_ref_type, 'BUILD')
+    assert.equal(simpleRequest.result_ref_id, simpleBuildId)
+    assert.ok(simpleRequest.payload_hash, 'Expected payload hash to be stored')
+
+    const { data: simpleBuildRows, error: simpleBuildRowsError } = await ownerClient
+      .from('builds')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('id', simpleBuildId)
+    if (simpleBuildRowsError) throw simpleBuildRowsError
+    assert.equal(simpleBuildRows.length, 1, 'Expected replay not to create an extra simple build')
+
+    const { data: simpleMovements, error: simpleMovementsError } = await ownerClient
+      .from('stock_movements')
+      .select('id, type, ref_type, ref_id')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'BUILD')
+      .eq('ref_id', simpleBuildId)
+    if (simpleMovementsError) throw simpleMovementsError
+    assert.equal(simpleMovements.length, 2, 'Expected replay not to create extra simple build movements')
+    assert.ok(simpleMovements.some((movement) => movement.type === 'issue'))
+    assert.ok(simpleMovements.some((movement) => movement.type === 'receive'))
+
+    const sourceRequestKey = `${PREFIX}-assembly-source-idempotent`
+    const sourcePayload = {
+      p_bom_id: bomId,
+      p_qty: 1,
+      p_component_sources: [
+        {
+          component_item_id: componentItemId,
+          sources: [{ warehouse_id: warehouseId, bin_id: sourceBinId, share_pct: 100 }],
+        },
+      ],
+      p_output_splits: [{ warehouse_id: warehouseId, bin_id: destinationBinId, qty: 1 }],
+      p_request_key: sourceRequestKey,
+    }
+
+    const sourceFirst = await ownerClient.rpc('post_build_from_bom_sources', sourcePayload)
+    if (sourceFirst.error) throw sourceFirst.error
+    const sourceBuildId = sourceFirst.data
+    assert.ok(sourceBuildId, 'Expected idempotent source-split assembly to return a build id')
+
+    const sourceReplay = await ownerClient.rpc('post_build_from_bom_sources', sourcePayload)
+    if (sourceReplay.error) throw sourceReplay.error
+    assert.equal(sourceReplay.data, sourceBuildId, 'Expected source-split replay to return the original build id')
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_build_from_bom_sources', {
+        ...sourcePayload,
+        p_qty: 2,
+        p_output_splits: [{ warehouse_id: warehouseId, bin_id: destinationBinId, qty: 2 }],
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const sourceRequest = await querySingle(
+      ownerClient,
+      'posting_requests',
+      'operation_type, request_key, status, result_ref_type, result_ref_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'operation_type', 'assembly.build_sources'],
+        ['eq', 'request_key', sourceRequestKey],
+      ],
+    )
+    assert.equal(sourceRequest.status, 'succeeded')
+    assert.equal(sourceRequest.result_ref_type, 'BUILD')
+    assert.equal(sourceRequest.result_ref_id, sourceBuildId)
+
+    const { data: sourceBuildRows, error: sourceBuildRowsError } = await ownerClient
+      .from('builds')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('id', sourceBuildId)
+    if (sourceBuildRowsError) throw sourceBuildRowsError
+    assert.equal(sourceBuildRows.length, 1, 'Expected replay not to create an extra source-split build')
+
+    const { data: sourceMovements, error: sourceMovementsError } = await ownerClient
+      .from('stock_movements')
+      .select('id, type, ref_type, ref_id')
+      .eq('company_id', companyId)
+      .eq('ref_type', 'BUILD')
+      .eq('ref_id', sourceBuildId)
+    if (sourceMovementsError) throw sourceMovementsError
+    assert.equal(sourceMovements.length, 2, 'Expected replay not to create extra source-split movements')
+    assert.ok(sourceMovements.some((movement) => movement.type === 'issue'))
+    assert.ok(sourceMovements.some((movement) => movement.type === 'receive'))
+
+    const productAfterIdempotentBuilds = await querySingle(
+      ownerClient,
+      'items',
+      'id, unit_price',
+      [['eq', 'id', productItemId]],
+    )
+    assert.equal(round2(productAfterIdempotentBuilds.unit_price), round2(originalProduct.unit_price))
   })
 
   await t.test('Landed cost uses receipt value fallback and blocks zero-value value allocation', async () => {

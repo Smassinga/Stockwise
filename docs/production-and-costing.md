@@ -68,4 +68,24 @@ What did not change:
 - `stock_levels` remains the trigger-derived availability and weighted-average rollup
 - item default selling price remains `items.unit_price` and is not derived from stock cost
 
-Phase A2 is still required before Production Runs: backend idempotency, repeated-click replay, concurrent stock-decrement safety, and simultaneous assembly/POS/receipt regression tests.
+## Phase A2.1/A2.2 Assembly Idempotency
+
+Phase A2.1 introduces `posting_requests` as the reusable company-scoped backend idempotency ledger.
+
+Phase A2.2 applies that foundation to existing assembly posting only:
+
+- `post_build_from_bom` wraps the hardened simple assembly build path and returns the original build id on successful replay
+- `post_build_from_bom_sources` wraps source-split assembly posting and returns the build id for first success and replay
+- repeated calls with the same request key and same payload do not create duplicate builds or stock movements
+- reused request keys with changed payloads are rejected
+
+What did not change:
+
+- no Production Runs or Growth Batches were implemented
+- no labour, utilities, overhead, frozen cost snapshots, or biological costing were implemented
+- no POS, PO receiving, sales-order shipping, opening-stock import, manual stock movement, finance posting, invoice issuance, settlement, entitlement, Platform Control, company-access, or subscription idempotency was added
+- `stock_movements` remains the ledger and `stock_levels` remains the derived rollup
+- `apply_stock_delta` concurrency behavior is unchanged
+- item default selling price remains `items.unit_price` and is not derived from stock cost
+
+Phase A2.3 is still required before Production Runs: concurrent stock-decrement safety, simultaneous assembly/POS/receipt stress coverage, and follow-on idempotency rollout for other stock-sensitive workflows.

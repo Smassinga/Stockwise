@@ -98,6 +98,7 @@ The suite currently protects:
 - assembly build gating under sufficient and insufficient stock
 - assembly movement audit linkage through `ref_type = 'BUILD'` and `ref_id = build_id`
 - assembly backend authority checks, including OPERATOR+ posting and VIEWER blocking
+- idempotent assembly posting through `post_build_from_bom` and `post_build_from_bom_sources`, including successful replay, payload-mismatch rejection, and no duplicate build or movement rows
 - hardened source-split assembly posting or an explicit blocked-path assertion when disabled
 - PO receiving ledger integrity, including protection against app-side `stock_levels` double-counting
 - trial and entitlement enforcement
@@ -145,6 +146,8 @@ The 2026-06-10 Recipes & Assemblies Phase 1 pass is a UX and workflow-clarity ch
 The 2026-06-11 Phase A1 assembly backend hardening pass changes only existing assembly RPC authority, company scoping, helper exposure, and build movement audit linkage. It does not add Production Runs, Growth Batches, POS pricing changes, finance posting, invoice issuance, settlements, entitlement, Platform Control, subscription logic, or a new RLS model. Before staging A1, run the normal static/build gates and run `npm run test:finance-regression` against a confirmed safe mutation Supabase target. A2 remains required for idempotency, repeated-click replay, concurrent stock-decrement safety, and simultaneous assembly/POS/receipt stress coverage.
 
 The 2026-06-11 opening-stock regression unblocker keeps canonical UOM IDs as text and verifies `import_opening_stock_batch` accepts IDs such as `uom_ea`. This was found while validating A1 locally and does not change Production Runs, Growth Batches, POS pricing, invoice issuance, settlements, entitlement, Platform Control, or subscription behavior.
+
+The 2026-06-11 A2.1/A2.2 pass introduces `posting_requests` as the backend idempotency foundation and applies it only to assembly posting. The finance regression suite must verify simple and source-split idempotent assembly replay, payload mismatch rejection, stable build/movement counts, and unchanged `items.unit_price`. A2.3 remains required for concurrent stock-decrement safety; POS, PO receiving, sales-order shipping, opening-stock import, manual stock movements, finance posting, invoice issuance, settlements, entitlement, Platform Control, company access, and subscription behavior are out of scope for this pass.
 
 ## Auth Production QA
 

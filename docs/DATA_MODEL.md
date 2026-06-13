@@ -44,6 +44,7 @@ Canonical structures:
 - `bins`
 - `stock_movements`
 - `stock_levels`
+- `posting_requests`
 - `boms`
 - `bom_components`
 
@@ -51,8 +52,10 @@ Current rules:
 
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the rollup used for availability and weighted-average bucket cost
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; A2.1/A2.2 applies it to assembly only
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
+- idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
 - helper RPCs such as `inv_issue_component` and `inv_receive_finished` are legacy/internal utilities, not normal client-facing assembly APIs
 - canonical UOM identifiers remain text (`uoms.id`, `items.base_uom_id`, and `stock_movements.uom_id`); opening-stock import must preserve text IDs such as `uom_ea` and must not cast them to UUID
 - `movements` is no longer part of the intended product direction
@@ -110,5 +113,6 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
+- posting idempotency: `posting_requests`
 - item default sell price: `items.unit_price`
 - entitlement/control plane: `company_subscription_state` + `platform_admins`

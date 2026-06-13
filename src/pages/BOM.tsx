@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment } from 'react'
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import {
@@ -78,6 +78,10 @@ type StockLevel = {
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || ''))
+const createPostingRequestKey = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 type OutputSplit = { id: string; warehouseId: string; binId: string; qty: string }
 type ComponentSourceRow = { id: string; warehouseId: string; binId: string; sharePct: string }
@@ -177,6 +181,7 @@ export default function BOMPage() {
   const [savingBOM, setSavingBOM] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [building, setBuilding] = useState(false)
+  const activeBuildRequestKeyRef = useRef<string | null>(null)
   const [profileFieldsSupported, setProfileFieldsSupported] = useState(false)
   const [baseCode, setBaseCode] = useState('MZN')
 
@@ -716,11 +721,15 @@ export default function BOMPage() {
 
   // Build
   async function runBuild() {
+    if (building || activeBuildRequestKeyRef.current) return
     if (!selectedBomId) return toast.error(tt('bom.toast.pickBom', 'Select a recipe first'))
     const qty = num(buildQty, 0)
     if (!(qty > 0)) return toast.error(tt('bom.toast.quantityPositive', 'Quantity must be greater than zero'))
     if (!components.length) return toast.error(tt('bom.toast.componentsRequired', 'Add recipe components before posting a build'))
     if (totalShortages > 0) return toast.error(tt('bom.plan.blockedShortage', 'The current plan is short on at least one component.'))
+
+    const requestKey = createPostingRequestKey()
+    activeBuildRequestKeyRef.current = requestKey
 
     try {
       setBuilding(true)
@@ -737,14 +746,15 @@ export default function BOMPage() {
           return toast.error(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
         }
 
-        const { error } = await supabase.rpc('build_from_bom_sources', {
+        const { error } = await supabase.rpc('post_build_from_bom_sources', {
           p_bom_id: selectedBomId,
           p_qty: qty,
           p_component_sources: componentSourcePayload,
           p_output_splits: outSplits,
+          p_request_key: requestKey,
         })
         if (error) {
-          console.error('[build_from_bom_sources] error', error, { componentSourcePayload, outSplits })
+          console.error('[post_build_from_bom_sources] error', error, { componentSourcePayload, outSplits })
           if (error.code === '42883' || /does not exist/i.test(error.message || '')) {
             toast.error(tt('bom.toast.buildRpcMissing', 'The Assembly source-routing RPC is not available in the current database.'))
           } else {
@@ -778,14 +788,15 @@ export default function BOMPage() {
         return toast.error(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
       }
 
-      for (const r of runs) {
-        const { error } = await supabase.rpc('build_from_bom', {
+      for (const [index, r] of runs.entries()) {
+        const { error } = await supabase.rpc('post_build_from_bom', {
           p_bom_id: selectedBomId,
           p_qty: r.qty,
           p_warehouse_from: warehouseFromId,
           p_bin_from: binFromId,
           p_warehouse_to: r.wTo,
           p_bin_to: r.bTo,
+          p_request_key: `${requestKey}:${index + 1}`,
         })
         if (error) throw error
       }
@@ -798,6 +809,7 @@ export default function BOMPage() {
       console.error(e)
       toast.error(e?.message || tt('bom.toast.buildFailed', 'Build failed'))
     } finally {
+      activeBuildRequestKeyRef.current = null
       setBuilding(false)
     }
   }
