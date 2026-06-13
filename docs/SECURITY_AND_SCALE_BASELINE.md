@@ -114,6 +114,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 
 - Auth signup, resend confirmation, and reset password have Supabase/Brevo provider controls plus frontend cooldowns, but not a StockWise-owned database rate limit.
 - Company bootstrap has backend rate limiting; assembly posting now has backend idempotency through `posting_requests`; shared stock rollups now use atomic negative-delta guards and receipt upserts. Other high-cost mutations rely mainly on authority checks and state guards.
+- The A1-A2.3 assembly and stock-engine hardening chain is live in hosted Supabase as of 2026-06-13 and passed controlled production assembly smoke validation. The smoke confirmed build-linked movement audit, stock rollup reconciliation, weighted-average cost behavior, unchanged `items.unit_price`, and zero duplicate stock buckets.
 - Platform Control mailers and guarded reset paths have stronger rate limiting than ordinary frontend reads.
 - Monitoring relies on Vercel logs, Supabase logs, Edge Function logs, browser console checks, and regression output. No third-party exception tracker is committed.
 - CI/CD validation is wired for non-mutating checks on pull requests and pushes to `main`; finance regression remains a protected manual/live-environment gate.
@@ -153,7 +154,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Sales invoices | No | Finance policies | issue/post/state RPCs | No | No | State guards | Backend issue/post invariants protect repeated clicks. |
 | Vendor bills | No | Finance policies | approval/post RPCs | No | No | State guards | Backend AP anchors. |
 | Settlements, bank, and cash | No | Finance policies | settlement guards/RPCs | No | No | State guards | Backend settlement authority. |
-| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, atomic stock rollup guards, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, and A2.3 hardens shared rollup concurrency. A2.4 must still move remaining direct client posting workflows behind backend RPCs before Production Runs. |
+| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, atomic stock rollup guards, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, and A2.3 hardens shared rollup concurrency. This chain is live and production-smoke validated. A2.4 must still move remaining direct client posting workflows behind backend RPCs before Production Runs. |
 | Reports and exports | Mostly UI | Read policies | Read helpers | No | No | Missing | Browser generation can become a performance risk. |
 | Company-access emails | No | Control tables | audit RPCs | mailer-company-access | Yes | Edge limits | Brevo SMTP required. |
 | Due reminders and digest worker | No | Company data policies via service role | Worker queries | Edge worker | No | Hook/worker controls | Requires worker secrets and Brevo config. |

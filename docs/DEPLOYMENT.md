@@ -66,6 +66,20 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-13 Assembly A1-A2.3 production rollout:
+
+- production frontend and backend are aligned at Git commit `2bfb31d fix(inventory): make stock rollups concurrency safe`
+- hosted Supabase migrations `20260611035202_harden_assembly_rpc_authority.sql`, `20260611201848_fix_opening_stock_uom_text_id.sql`, `20260611211051_add_posting_requests_and_idempotent_assembly.sql`, and `20260613050914_make_stock_rollup_concurrency_safe.sql` were applied successfully
+- controlled production assembly smoke validation passed after the database rollout
+- the smoke build created one build, seven component issue movements, and one finished-item receipt movement through the `/bom` Recipes & Assemblies UI
+- all eight assembly movements were linked with `ref_type = 'BUILD'` and the generated build id
+- component and finished-item `stock_levels` reconciled to the posted movement deltas, weighted-average cost updated as expected, and no stock bucket became negative
+- `items.unit_price` stayed unchanged, preserving separation between commercial selling price and inventory cost
+- duplicate stock bucket detection still returned zero rows after the smoke build
+- no production finance regression suite was run, because that suite creates broad temporary Auth, company, inventory, and finance data
+- no POS or PO production mutation smoke was run, because no separately approved controlled target was provided
+- the follow-up `/bom` success-feedback patch is UI-only and does not change posting authority, idempotency, stock valuation, finance posting, or access control
+
 2026-06-05 production deployment:
 
 - deployed with `npx vercel build --prod` and `npx vercel deploy --prebuilt --prod`

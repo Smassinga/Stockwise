@@ -152,6 +152,10 @@ The 2026-06-11 A2.1/A2.2 pass introduces `posting_requests` as the backend idemp
 
 The 2026-06-13 A2.3 pass hardens the shared stock rollup path behind `stock_movements` inserts. The finance regression suite must verify atomic insufficient-stock behavior under concurrent assembly issue attempts, concurrent receipt quantity and weighted-average rollup, ledger-to-rollup reconciliation, and cross-workflow POS-versus-assembly stock competition. This pass does not add idempotency to POS, PO receiving, sales-order shipping, opening-stock import, or manual movements; A2.4 remains required for those workflow authority boundaries.
 
+The 2026-06-13 production rollout for A1 through A2.3 was smoke-validated against a controlled assembly target after the hosted migrations were applied. The smoke created one build, seven component issue movements, and one finished-item receipt movement from `/bom`; all eight movements carried `ref_type = 'BUILD'` and the generated build id. Stock rollups reconciled to the movement deltas, weighted-average cost updated as expected, `items.unit_price` stayed unchanged, and duplicate stock buckets remained zero. The full finance regression suite was not run against production because it creates broad temporary Auth, company, inventory, and finance data. POS and PO production mutation smokes were not run because no separately approved controlled targets were provided.
+
+The post-rollout `/bom` success-feedback patch is UI-only. Validate that the durable success panel remains visible after the immediate form reset/data refresh, displays the finished item, quantity, and shortened build reference, can be dismissed, and clears when the operator changes the BOM or starts another build plan. This patch does not change posting authority, request-key generation, idempotency behavior, stock movement posting, stock valuation, finance posting, POS, PO receiving, sales shipping, opening-stock import, or manual movement behavior.
+
 ## Auth Production QA
 
 The 2026-06-04 Auth confirmation change requires these production smoke checks whenever the auth surface or Auth settings are changed:

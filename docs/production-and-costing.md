@@ -107,4 +107,24 @@ What did not change:
 - `stock_movements` remains the ledger and `stock_levels` remains the derived rollup
 - reversals remain append-only compensating movements
 
+## Production Release Closeout
+
+The A1 through A2.3 chain is live in hosted Supabase as of 13 June 2026, with the production frontend and backend aligned at commit `2bfb31d`.
+
+Production smoke validation passed against a controlled assembly target:
+
+- `/bom` loaded as Recipes & Assemblies
+- one UI submit created exactly one build
+- seven component issue movements and one finished-item receipt movement were created
+- all assembly movements were linked through `ref_type = 'BUILD'` and the generated build id
+- component stock decreased and finished stock increased according to the BOM quantities
+- no stock bucket became negative
+- duplicate stock bucket detection returned zero rows
+- weighted-average cost updated according to the existing rollup policy
+- `items.unit_price` remained unchanged and separate from inventory cost
+- one `posting_requests` row recorded the successful `assembly.build` result
+- production Postgres logs showed no relevant error during the smoke window
+
+The follow-up durable success confirmation on `/bom` is a UI feedback improvement only. It does not change posting authority, request-key generation, idempotency behavior, valuation, stock movement insertion, finance posting, POS, PO receiving, opening-stock import, sales shipping, manual movements, access control, Platform Control, or subscriptions.
+
 Phase A2.4 remains required before Production Runs: move remaining direct client posting workflows behind backend RPCs and expand idempotency beyond assembly.

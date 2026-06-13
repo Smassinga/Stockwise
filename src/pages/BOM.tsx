@@ -82,9 +82,11 @@ const createPostingRequestKey = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
+const shortBuildReference = (id: string) => (id.length > 8 ? `${id.slice(0, 8)}…` : id)
 
 type OutputSplit = { id: string; warehouseId: string; binId: string; qty: string }
 type ComponentSourceRow = { id: string; warehouseId: string; binId: string; sharePct: string }
+type BuildSuccessNotice = { itemName: string; qty: number; buildIds: string[] }
 
 type ComponentSourcesPayload = Array<{
   component_item_id: string
@@ -181,6 +183,7 @@ export default function BOMPage() {
   const [savingBOM, setSavingBOM] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [building, setBuilding] = useState(false)
+  const [buildSuccess, setBuildSuccess] = useState<BuildSuccessNotice | null>(null)
   const activeBuildRequestKeyRef = useRef<string | null>(null)
   const [profileFieldsSupported, setProfileFieldsSupported] = useState(false)
   const [baseCode, setBaseCode] = useState('MZN')
@@ -203,6 +206,10 @@ export default function BOMPage() {
       active = false
     }
   }, [companyId])
+
+  useEffect(() => {
+    setBuildSuccess(null)
+  }, [companyId, selectedBomId])
 
   // Initial load
   useEffect(() => {
@@ -658,6 +665,7 @@ export default function BOMPage() {
 
   // Per-component sources editor helpers
   function addSourceRow(componentItemId: string) {
+    setBuildSuccess(null)
     setSourcesByComponent(prev => {
       const rows = prev[componentItemId] || []
       return {
@@ -667,6 +675,7 @@ export default function BOMPage() {
     })
   }
   function updateSourceRow(componentItemId: string, rowId: string, patch: Partial<ComponentSourceRow>) {
+    setBuildSuccess(null)
     setSourcesByComponent(prev => {
       const rows = prev[componentItemId] || []
       return {
@@ -676,6 +685,7 @@ export default function BOMPage() {
     })
   }
   function removeSourceRow(componentItemId: string, rowId: string) {
+    setBuildSuccess(null)
     setSourcesByComponent(prev => {
       const rows = prev[componentItemId] || []
       return { ...prev, [componentItemId]: rows.filter(r => r.id !== rowId) }
@@ -722,6 +732,7 @@ export default function BOMPage() {
   // Build
   async function runBuild() {
     if (building || activeBuildRequestKeyRef.current) return
+    setBuildSuccess(null)
     if (!selectedBomId) return toast.error(tt('bom.toast.pickBom', 'Select a recipe first'))
     const qty = num(buildQty, 0)
     if (!(qty > 0)) return toast.error(tt('bom.toast.quantityPositive', 'Quantity must be greater than zero'))
@@ -730,6 +741,7 @@ export default function BOMPage() {
 
     const requestKey = createPostingRequestKey()
     activeBuildRequestKeyRef.current = requestKey
+    const finishedItemName = selectedProduct?.name || selectedBom?.name || tt('bom.plan.summaryTargetFallback', 'finished item')
 
     try {
       setBuilding(true)
@@ -746,7 +758,7 @@ export default function BOMPage() {
           return toast.error(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
         }
 
-        const { error } = await supabase.rpc('post_build_from_bom_sources', {
+        const { data, error } = await supabase.rpc('post_build_from_bom_sources', {
           p_bom_id: selectedBomId,
           p_qty: qty,
           p_component_sources: componentSourcePayload,
@@ -761,8 +773,10 @@ export default function BOMPage() {
             toast.error(error.message || tt('bom.toast.buildFailed', 'Build failed'))
           }
         } else {
+          const buildId = data ? String(data) : ''
           setBuildQty('')
           setSplits([])
+          setBuildSuccess({ itemName: finishedItemName, qty, buildIds: buildId ? [buildId] : [] })
           toast.success(tt('bom.toast.buildCreated', 'Build posted'))
         }
         setBuilding(false)
@@ -788,8 +802,9 @@ export default function BOMPage() {
         return toast.error(tt('bom.toast.invalidDestination', 'Select a valid destination bin or complete every destination split.'))
       }
 
+      const buildIds: string[] = []
       for (const [index, r] of runs.entries()) {
-        const { error } = await supabase.rpc('post_build_from_bom', {
+        const { data, error } = await supabase.rpc('post_build_from_bom', {
           p_bom_id: selectedBomId,
           p_qty: r.qty,
           p_warehouse_from: warehouseFromId,
@@ -799,11 +814,14 @@ export default function BOMPage() {
           p_request_key: `${requestKey}:${index + 1}`,
         })
         if (error) throw error
+        if (data) buildIds.push(String(data))
       }
 
+      const postedQty = runs.reduce((total, run) => total + run.qty, 0)
       setBuildQty('')
       if (!advanced) setBinToId('')
       setSplits([])
+      setBuildSuccess({ itemName: finishedItemName, qty: postedQty, buildIds })
       toast.success(advanced ? tt('bom.toast.buildCreatedAdvanced', 'Builds posted') : tt('bom.toast.buildCreated', 'Build posted'))
     } catch (e: any) {
       console.error(e)
@@ -1180,9 +1198,14 @@ export default function BOMPage() {
     return u ? `${u.code} — ${u.name}` : String(id)
   }
 
-  const updateSplit = (id: string, patch: Partial<OutputSplit>) =>
+  const updateSplit = (id: string, patch: Partial<OutputSplit>) => {
+    setBuildSuccess(null)
     setSplits(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)))
-  const removeSplit = (id: string) => setSplits(prev => prev.filter(s => s.id !== id))
+  }
+  const removeSplit = (id: string) => {
+    setBuildSuccess(null)
+    setSplits(prev => prev.filter(s => s.id !== id))
+  }
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -1336,7 +1359,7 @@ export default function BOMPage() {
         <CardContent className="grid min-w-0 gap-4 lg:grid-cols-[1fr,1fr]">
           <div className="min-w-0 space-y-2">
             <Label>{tt('bom.targetSelect', 'Assembly recipe')}</Label>
-            <Select value={selectedBomId} onValueChange={setSelectedBomId}>
+            <Select value={selectedBomId} onValueChange={(value) => { setBuildSuccess(null); setSelectedBomId(value) }}>
               <SelectTrigger aria-label={tt('bom.targetSelect', 'Assembly recipe')}><SelectValue placeholder={tt('bom.targetPlaceholder', 'Select a recipe to plan or build')} /></SelectTrigger>
               <SelectContent className="max-h-64 overflow-auto">
                 {boms.map((bom) => {
@@ -1513,7 +1536,7 @@ export default function BOMPage() {
         <CardContent className="grid min-w-0 gap-4 md:grid-cols-2">
           <div className="min-w-0">
             <Label>{tt('bom.recipeSelect', 'Recipe')}</Label>
-            <Select value={selectedBomId} onValueChange={setSelectedBomId}>
+            <Select value={selectedBomId} onValueChange={(value) => { setBuildSuccess(null); setSelectedBomId(value) }}>
               <SelectTrigger><SelectValue placeholder={tt('bom.recipeSelectPlaceholder', 'Select a recipe')} /></SelectTrigger>
               <SelectContent className="max-h-64 overflow-auto">
                 {boms.map(b => {
@@ -1889,7 +1912,7 @@ export default function BOMPage() {
 
             {/* Toggle per-component sources */}
             <div className="mt-3 flex items-center gap-2">
-              <input id="pcs" type="checkbox" className="h-4 w-4" checked={useComponentSources} onChange={(e) => setUseComponentSources(e.target.checked)} />
+              <input id="pcs" type="checkbox" className="h-4 w-4" checked={useComponentSources} onChange={(e) => { setBuildSuccess(null); setUseComponentSources(e.target.checked) }} />
               <Label htmlFor="pcs">{tt('bom.recipe.useSources', 'Use per-component source bins during build')}</Label>
             </div>
             {useComponentSources && (
@@ -1914,7 +1937,7 @@ export default function BOMPage() {
               <div className="grid min-w-0 gap-4 md:grid-cols-2">
                 <div className="min-w-0 space-y-2">
                   <Label htmlFor="assembly-build-qty">{t('orders.qty')}</Label>
-                  <Input id="assembly-build-qty" type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => setBuildQty(e.target.value)} placeholder="1" />
+                  <Input id="assembly-build-qty" type="number" min="0.0001" step="0.0001" value={buildQty} onChange={e => { setBuildSuccess(null); setBuildQty(e.target.value) }} placeholder="1" />
                 </div>
                 <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.plan.timeTitle', 'Time plan')}</div>
@@ -1969,7 +1992,7 @@ export default function BOMPage() {
                 <div className="grid min-w-0 gap-4 md:grid-cols-2">
                   <div className="min-w-0 space-y-2">
                     <Label>{t('orders.fromWarehouse')}</Label>
-                    <Select value={warehouseFromId} onValueChange={(value) => { setWarehouseFromId(value); setBinFromId('') }}>
+                    <Select value={warehouseFromId} onValueChange={(value) => { setBuildSuccess(null); setWarehouseFromId(value); setBinFromId('') }}>
                       <SelectTrigger aria-label={t('orders.fromWarehouse')}><SelectValue placeholder={t('orders.selectSourceWh')} /></SelectTrigger>
                       <SelectContent>
                         {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>)}
@@ -1978,7 +2001,7 @@ export default function BOMPage() {
                   </div>
                   <div className="min-w-0 space-y-2">
                     <Label>{t('orders.fromBin')}</Label>
-                    <Select value={binFromId} onValueChange={setBinFromId}>
+                    <Select value={binFromId} onValueChange={(value) => { setBuildSuccess(null); setBinFromId(value) }}>
                       <SelectTrigger aria-label={t('orders.fromBin')}><SelectValue placeholder={t('orders.selectSourceBin')} /></SelectTrigger>
                       <SelectContent className="max-h-64 overflow-auto">
                         {binsFrom.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} — {bin.name}</SelectItem>)}
@@ -1992,7 +2015,7 @@ export default function BOMPage() {
                 <div className="grid min-w-0 gap-4 md:grid-cols-2">
                   <div className="min-w-0 space-y-2">
                     <Label>{t('orders.toWarehouse')}</Label>
-                    <Select value={warehouseToId} onValueChange={(value) => { setWarehouseToId(value); setBinToId('') }}>
+                    <Select value={warehouseToId} onValueChange={(value) => { setBuildSuccess(null); setWarehouseToId(value); setBinToId('') }}>
                       <SelectTrigger aria-label={t('orders.toWarehouse')}><SelectValue placeholder={t('orders.selectDestWh')} /></SelectTrigger>
                       <SelectContent>
                         {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>)}
@@ -2001,7 +2024,7 @@ export default function BOMPage() {
                   </div>
                   <div className="min-w-0 space-y-2">
                     <Label>{t('orders.toBin')}</Label>
-                    <Select value={binToId} onValueChange={setBinToId}>
+                    <Select value={binToId} onValueChange={(value) => { setBuildSuccess(null); setBinToId(value) }}>
                       <SelectTrigger aria-label={t('orders.toBin')}><SelectValue placeholder={t('orders.selectDestBin')} /></SelectTrigger>
                       <SelectContent className="max-h-64 overflow-auto">
                         {binsTo.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} — {bin.name}</SelectItem>)}
@@ -2018,7 +2041,7 @@ export default function BOMPage() {
                     <div className="text-sm text-muted-foreground">{tt('bom.plan.advancedHelp', 'Use this only when the finished output must be split across multiple destination bins or components need explicit source routing.')}</div>
                   </div>
                   <label className="flex items-center gap-2 text-sm">
-                    <input id="adv-clarity" type="checkbox" className="h-4 w-4" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />
+                    <input id="adv-clarity" type="checkbox" className="h-4 w-4" checked={advanced} onChange={e => { setBuildSuccess(null); setAdvanced(e.target.checked) }} />
                     <span>{tt('bom.plan.advancedToggle', 'Split output across bins')}</span>
                   </label>
                 </div>
@@ -2065,6 +2088,7 @@ export default function BOMPage() {
                     <Button
                       variant="secondary"
                       onClick={async () => {
+                        setBuildSuccess(null)
                         const nextWh = warehouseToId || (warehouses[0]?.id || '')
                         if (nextWh) await ensureBinsFor(nextWh)
                         setSplits(prev => [...prev, { id: crypto.randomUUID(), warehouseId: nextWh, binId: '', qty: '' }])
@@ -2190,8 +2214,54 @@ export default function BOMPage() {
                   </Button>
                 </div>
                 <div className="mt-3 text-xs leading-5 text-muted-foreground">
-                  {tt('bom.plan.postHelp', 'The button is disabled while posting to prevent double-clicks in the UI. Backend idempotency is future production-run scope.')}
+                  {tt('bom.plan.postHelp', 'The button is disabled while posting to prevent double-clicks in the UI. Backend idempotency protects repeated assembly submits with the same request.')}
                 </div>
+                {buildSuccess ? (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-50"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 gap-3">
+                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <div className="font-medium">
+                            {tt(
+                              buildSuccess.buildIds.length > 1 ? 'bom.success.titleMany' : 'bom.success.title',
+                              buildSuccess.buildIds.length > 1 ? 'Assemblies posted successfully' : 'Assembly posted successfully',
+                            )}
+                          </div>
+                          <p className="mt-1 leading-6">
+                            {tt('bom.success.body', 'Produced {qty} {item} and updated stock.', {
+                              qty: buildSuccess.qty.toLocaleString(undefined, { maximumFractionDigits: 4 }),
+                              item: buildSuccess.itemName,
+                            })}
+                          </p>
+                          {buildSuccess.buildIds.length > 0 ? (
+                            <div className="mt-2 break-words text-xs text-emerald-800 dark:text-emerald-200">
+                              {tt(
+                                buildSuccess.buildIds.length > 1 ? 'bom.success.references' : 'bom.success.reference',
+                                buildSuccess.buildIds.length > 1 ? 'Build references: {refs}' : 'Build reference: {refs}',
+                                { refs: buildSuccess.buildIds.map(shortBuildReference).join(', ') },
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full shrink-0 text-emerald-950 hover:bg-emerald-100/80 sm:w-auto dark:text-emerald-50 dark:hover:bg-emerald-900/60"
+                        aria-label={tt('bom.success.dismissLabel', 'Dismiss assembly confirmation')}
+                        onClick={() => setBuildSuccess(null)}
+                      >
+                        {tt('bom.success.dismiss', 'Dismiss')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
