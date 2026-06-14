@@ -1,6 +1,6 @@
 # StockWise Availability and Recovery Runbook
 
-Status: 2026-06-06.
+Status: 2026-06-14.
 
 This runbook defines the current recovery posture for early commercial rollout. It is not a guarantee of service level and does not prove that a restore drill has been completed. Use it to drive incident response, monthly recovery tests, and future hardening work.
 
@@ -11,16 +11,18 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Migration history is currently aligned through `20260602191520`.
+- Local and hosted migration history is currently aligned through `20260613144412`.
 
 ## Backup Assumptions
 
 These assumptions must be verified in the Supabase dashboard before treating them as an SLA:
 
 - Supabase database backups and point-in-time recovery depend on the active Supabase project plan and configured retention.
+- The production Supabase project was last verified on 2026-06-14 as Pro, with scheduled daily physical database backups enabled and PITR not enabled.
+- No formal restore drill has yet been completed.
 - Supabase Auth user recovery is tied to the same project recovery posture and Auth logs/configuration.
 - Supabase Storage recovery depends on project backup support and any separate object backup/export process the operator maintains.
-- Vercel deployment rollback is available through previous immutable deployments.
+- Vercel deployment rollback remains available through previous immutable deployments.
 - Edge Functions are source-controlled and can be redeployed from this repo once secrets are present.
 - Supabase Auth email templates and settings are not fully represented as code; keep reviewed exports/backups of templates after material edits.
 

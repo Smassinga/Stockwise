@@ -66,6 +66,19 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-14 A2.4a.1 normal web POS idempotency rollout:
+
+- hosted Supabase migration `20260613144412_add_idempotent_operator_sale.sql` was applied successfully
+- production frontend is aligned at Git commit `80c7c70 fix(pos): add idempotent sale posting`
+- Vercel production deployment `dpl_DLz4QxxMooVrNDutD2e2H4YNzzEh` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- normal web Point of Sale now calls `post_operator_sale`, backed by `posting_requests` operation type `operator.sale`
+- controlled production POS smoke validation passed after the database-first rollout and frontend deployment
+- the smoke submitted one cash sale once, creating one sales order, one sales-order line, one stock issue movement, one cash transaction, and one `operator.sale` posting request
+- no duplicate sale, movement, or settlement was created, and stock moved from `2` to `1` for the approved controlled item
+- the posted selling price remained `1500`, `items.unit_price` remained `1500`, and commercial POS pricing stayed separate from inventory cost
+- duplicate stock bucket and negative stock checks remained clear after the smoke
+- legacy POS RPCs remain temporarily executable for deployment compatibility and stale Tauri clients until A2.4a.2 closes normal authenticated legacy execution
+
 2026-06-13 Assembly A1-A2.3 production rollout:
 
 - production frontend and backend are aligned at Git commit `2bfb31d fix(inventory): make stock rollups concurrency safe`

@@ -1,6 +1,6 @@
 # StockWise Security and Scale Baseline
 
-Status: 2026-06-11.
+Status: 2026-06-14.
 
 This document records the current security, scalability, monitoring, rate-limiting, deployment, and operational baseline for StockWise. It is an audit and operating package, not a schema-change package. No business logic, RLS policy, migration, finance posting, stock posting, POS, invoice, settlement, valuation, entitlement, membership, or Platform Control authority change is introduced by this document.
 
@@ -48,7 +48,7 @@ This pass did not run destructive recovery tests and did not change production s
 
 ### Database and RLS
 
-- The local migration chain is aligned through `20260602191520`.
+- The local and hosted migration chains are aligned through `20260613144412`.
 - The canonical migration baseline enables RLS on the public business tables and defines company-scoped policies.
 - Core protected tables include `companies`, `company_members`, `profiles`, `user_active_company`, `company_subscription_state`, `platform_admins`, item/stock/finance tables, invitations, notifications, and operational control-plane tables.
 - Storage policies exist for private `bank-statements` and public `brand-logos` buckets, with company-scoped access rules.
@@ -113,7 +113,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 ## Partial Protections
 
 - Auth signup, resend confirmation, and reset password have Supabase/Brevo provider controls plus frontend cooldowns, but not a StockWise-owned database rate limit.
-- Company bootstrap has backend rate limiting; assembly posting has backend idempotency through `posting_requests`; shared stock rollups now use atomic negative-delta guards and receipt upserts. The A2.4a.1 package extends `posting_requests` to normal web POS after hosted migration and frontend rollout, while the legacy POS RPC remains temporarily executable for deployment and stale-client compatibility until A2.4a.2. Other high-cost mutations rely mainly on authority checks and state guards.
+- Company bootstrap has backend rate limiting; assembly posting and normal web POS posting have backend idempotency through `posting_requests`; shared stock rollups use atomic negative-delta guards and receipt upserts. A2.4a.1 is live in hosted Supabase as of 2026-06-14: normal web POS uses `post_operator_sale` with operation type `operator.sale`, the production smoke passed, `authenticated` can execute the wrapper, and `anon` cannot execute it. The legacy POS RPCs remain a temporary compatibility bypass until A2.4a.2 reviews stale Tauri clients and closes normal authenticated legacy execution. PO receiving, sales shipping, opening-stock import, and manual movement posting remain outstanding.
 - The A1-A2.3 assembly and stock-engine hardening chain is live in hosted Supabase as of 2026-06-13 and passed controlled production assembly smoke validation. The smoke confirmed build-linked movement audit, stock rollup reconciliation, weighted-average cost behavior, unchanged `items.unit_price`, and zero duplicate stock buckets.
 - Platform Control mailers and guarded reset paths have stronger rate limiting than ordinary frontend reads.
 - Monitoring relies on Vercel logs, Supabase logs, Edge Function logs, browser console checks, and regression output. No third-party exception tracker is committed.
@@ -149,7 +149,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Users and roles | No | `company_members` policies | role/member RPC paths | `admin-users` | No | Edge limits | Frontend guard is usability only. |
 | Platform Control | No | `platform_admins` and control tables | platform-admin RPCs | access mailer | Yes | Partial | Company roles do not grant this. |
 | Subscription/trial access | No | entitlement tables | access-state helpers/RPCs | access mailer | Mutations yes | Partial | Route guard mirrors backend state. |
-| POS sale issue | No | Stock/finance/company policies | operator sale RPCs | No | No | A2.4a.1 normal web POS idempotency, state guards, no explicit throttle | `post_operator_sale` uses `posting_requests` with `operator.sale` after its migration is applied; legacy POS RPCs remain temporarily executable until A2.4a.2. |
+| POS sale issue | No | Stock/finance/company policies | operator sale RPCs | No | No | A2.4a.1 normal web POS idempotency, state guards, no explicit throttle | `post_operator_sale` uses `posting_requests` with `operator.sale` for normal web POS. Production smoke passed on 2026-06-14. Legacy POS RPCs remain temporarily executable until A2.4a.2. |
 | Stock movements and levels | No | Stock policies | triggers/RPCs | No | No | State guards | `stock_movements` is ledger; `stock_levels` is rollup. |
 | Sales invoices | No | Finance policies | issue/post/state RPCs | No | No | State guards | Backend issue/post invariants protect repeated clicks. |
 | Vendor bills | No | Finance policies | approval/post RPCs | No | No | State guards | Backend AP anchors. |

@@ -133,8 +133,8 @@ Phase A2.4a.1 starts the governed-posting expansion beyond assembly by adding an
 
 Release boundary:
 
-- this package is not live until the new migration is applied to hosted Supabase and the matching frontend is deployed
-- do not claim POS idempotency is production-active until hosted `db push`, frontend deployment, and controlled smoke validation are completed
+- this package is live and production-smoke validated as of 14 June 2026
+- hosted migration `20260613144412_add_idempotent_operator_sale.sql` is applied, and the production frontend is aligned at commit `80c7c70`
 - the legacy POS RPCs remain executable during the compatibility window
 
 What changed:
@@ -145,6 +145,8 @@ What changed:
 - same-key/changed-payload requests are rejected before business rows are created
 - the web POS flow now calls `post_operator_sale`
 - POS commercial pricing remains based on `items.unit_price` or the operator's explicit line price override, not inventory cost
+- production smoke submitted exactly one controlled cash sale for `Leny Doçuras`, creating one sales order, one line, one issue movement, one cash transaction, and one idempotency request
+- the smoke moved stock from `2` to `1`, left `items.unit_price` at `1500`, created no duplicate or negative stock bucket, and recorded one succeeded `operator.sale` request referencing the sales order
 
 What did not change:
 
@@ -153,4 +155,4 @@ What did not change:
 - the legacy POS RPCs remain temporarily executable for migration/deployment compatibility and stale Tauri clients
 - A2.4a.2 must review maintained Tauri/packaged-client posture and then close normal authenticated legacy POS execution
 
-Phase A2.4 remains required before Production Runs: finish governed and idempotent posting for PO receiving, sales shipping, opening-stock import, manual movements, transfers, and adjustments.
+Phase A2.4 remains required before Production Runs: A2.4a.2 must close legacy POS execution, and A2.4b PO receiving authority/idempotency is the next governed-posting package before sales shipping, opening-stock import, manual movements, transfers, and adjustments.
