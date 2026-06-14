@@ -113,7 +113,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 ## Partial Protections
 
 - Auth signup, resend confirmation, and reset password have Supabase/Brevo provider controls plus frontend cooldowns, but not a StockWise-owned database rate limit.
-- Company bootstrap has backend rate limiting; assembly posting now has backend idempotency through `posting_requests`; shared stock rollups now use atomic negative-delta guards and receipt upserts. Other high-cost mutations rely mainly on authority checks and state guards.
+- Company bootstrap has backend rate limiting; assembly posting has backend idempotency through `posting_requests`; shared stock rollups now use atomic negative-delta guards and receipt upserts. The A2.4a.1 package extends `posting_requests` to normal web POS after hosted migration and frontend rollout, while the legacy POS RPC remains temporarily executable for deployment and stale-client compatibility until A2.4a.2. Other high-cost mutations rely mainly on authority checks and state guards.
 - The A1-A2.3 assembly and stock-engine hardening chain is live in hosted Supabase as of 2026-06-13 and passed controlled production assembly smoke validation. The smoke confirmed build-linked movement audit, stock rollup reconciliation, weighted-average cost behavior, unchanged `items.unit_price`, and zero duplicate stock buckets.
 - Platform Control mailers and guarded reset paths have stronger rate limiting than ordinary frontend reads.
 - Monitoring relies on Vercel logs, Supabase logs, Edge Function logs, browser console checks, and regression output. No third-party exception tracker is committed.
@@ -149,12 +149,12 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Users and roles | No | `company_members` policies | role/member RPC paths | `admin-users` | No | Edge limits | Frontend guard is usability only. |
 | Platform Control | No | `platform_admins` and control tables | platform-admin RPCs | access mailer | Yes | Partial | Company roles do not grant this. |
 | Subscription/trial access | No | entitlement tables | access-state helpers/RPCs | access mailer | Mutations yes | Partial | Route guard mirrors backend state. |
-| POS sale issue | No | Stock/finance/company policies | operator sale RPCs | No | No | State guards, no explicit throttle | Backend posting remains authority. |
+| POS sale issue | No | Stock/finance/company policies | operator sale RPCs | No | No | A2.4a.1 normal web POS idempotency, state guards, no explicit throttle | `post_operator_sale` uses `posting_requests` with `operator.sale` after its migration is applied; legacy POS RPCs remain temporarily executable until A2.4a.2. |
 | Stock movements and levels | No | Stock policies | triggers/RPCs | No | No | State guards | `stock_movements` is ledger; `stock_levels` is rollup. |
 | Sales invoices | No | Finance policies | issue/post/state RPCs | No | No | State guards | Backend issue/post invariants protect repeated clicks. |
 | Vendor bills | No | Finance policies | approval/post RPCs | No | No | State guards | Backend AP anchors. |
 | Settlements, bank, and cash | No | Finance policies | settlement guards/RPCs | No | No | State guards | Backend settlement authority. |
-| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, atomic stock rollup guards, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, and A2.3 hardens shared rollup concurrency. This chain is live and production-smoke validated. A2.4 must still move remaining direct client posting workflows behind backend RPCs before Production Runs. |
+| Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, atomic stock rollup guards, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, and A2.3 hardens shared rollup concurrency. This chain is live and production-smoke validated. The broader A2.4 chain must still cover PO receiving, sales shipping, opening-stock import, manual movements, transfers, and adjustments before Production Runs. |
 | Reports and exports | Mostly UI | Read policies | Read helpers | No | No | Missing | Browser generation can become a performance risk. |
 | Company-access emails | No | Control tables | audit RPCs | mailer-company-access | Yes | Edge limits | Brevo SMTP required. |
 | Due reminders and digest worker | No | Company data policies via service role | Worker queries | Edge worker | No | Hook/worker controls | Requires worker secrets and Brevo config. |
@@ -171,7 +171,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Invite flows | Partial Edge/mail limits and email-bound acceptance | Review direct invite mutation paths before scale. |
 | Platform Control actions | Platform-admin gating; guarded reset is rate-limited | Keep audit log review in release checks. |
 | Edge Function emails | Shared Edge limiter where implemented | Verify every mailer uses the shared limiter before expanding. |
-| POS posting | Backend authority/state guards, no explicit throttle | Add only if abuse or repeated-submit load appears. |
+| POS posting | Backend authority, normal web idempotency, state guards, no explicit throttle | Complete A2.4a.2 legacy RPC closure after frontend deployment and maintained Tauri clients are reviewed; add throttles only if abuse or repeated-submit load appears. |
 | Invoice issuing/posting | Backend authority/state guards, no explicit throttle | State invariants matter more than arbitrary limits. |
 | Settlement posting | Backend authority/state guards, no explicit throttle | Add per-user throttles only after reviewing operator workflows. |
 | Exports/PDF generation | Mostly browser-local; no server throttle | Watch browser performance and Supabase read volume. |

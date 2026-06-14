@@ -37,6 +37,16 @@ function operatorMessageFromError(message: string) {
   }
   if (normalized.includes('selected bank account does not belong')) return 'Choose a bank account for the active company.'
   if (normalized.includes('payment destination must be cash or bank')) return 'Choose Cash or Bank before posting the sale.'
+  if (normalized.includes('request_key_required') || normalized.includes('idempotency_key_required')) {
+    return 'Try posting the sale again. The request was missing a posting key.'
+  }
+  if (normalized.includes('idempotency_key_payload_mismatch')) {
+    return 'This sale changed while it was being posted. Review the cart before trying again.'
+  }
+  if (normalized.includes('request_in_progress')) return 'This sale is still being processed. Wait a moment, then retry.'
+  if (normalized.includes('idempotency_request_failed_use_new_key')) {
+    return 'The previous sale attempt failed. Review the cart and start a new posting attempt.'
+  }
 
   return message || 'Could not post the sale.'
 }
@@ -52,6 +62,7 @@ export async function createOperatorSaleIssue(input: {
   notes?: string | null
   settlementMethod?: OperatorSettlementMethod
   bankAccountId?: string | null
+  requestKey: string
   lines: OperatorSaleLineInput[]
 }) {
   const settlementMethod = input.settlementMethod ?? 'cash'
@@ -71,9 +82,10 @@ export async function createOperatorSaleIssue(input: {
     })),
     p_settlement_method: settlementMethod,
     p_bank_account_id: settlementMethod === 'bank' ? input.bankAccountId ?? null : null,
+    p_request_key: input.requestKey,
   }
 
-  const { data, error } = await supabase.rpc('create_operator_sale_issue_with_settlement', payload)
+  const { data, error } = await supabase.rpc('post_operator_sale', payload)
   if (error) {
     throw new Error(operatorMessageFromError(String(error.message || '')))
   }

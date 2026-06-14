@@ -53,13 +53,15 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
 - stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
-- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; A2.1/A2.2 applies it to assembly only
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; A2.1/A2.2 applies it to assembly, and the A2.4a.1 package extends the pattern to normal web Point of Sale after its migration and frontend rollout
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
+- idempotent normal web POS posting is implemented in the A2.4a.1 package through `post_operator_sale` with operation type `operator.sale`; repeated calls with the same request key and same payload return the original sales order result, while reused keys with changed payloads are rejected
 - helper RPCs such as `inv_issue_component` and `inv_receive_finished` are legacy/internal utilities, not normal client-facing assembly APIs
 - canonical UOM identifiers remain text (`uoms.id`, `items.base_uom_id`, and `stock_movements.uom_id`); opening-stock import must preserve text IDs such as `uom_ea` and must not cast them to UUID
-- direct idempotency remains assembly-only after A2.3; POS, PO receiving, sales-order shipping, opening-stock import, and manual movements still need later backend RPC/idempotency hardening
+- legacy POS RPCs remain temporarily executable for deployment and stale-client compatibility; A2.4a.2 must close normal authenticated legacy execution after frontend and Tauri distribution posture is reviewed
+- PO receiving, sales-order shipping, opening-stock import, and manual movements still need later backend RPC/idempotency hardening
 - `movements` is no longer part of the intended product direction
 - the `/movements` UI is a register over `stock_movements`, not a separate data model; visual filtering, badges, and mobile cards must not imply manual `stock_levels` posting or a different costing policy
 
@@ -82,7 +84,7 @@ Current commercial default:
 Current rule:
 
 - quick store-counter sales default to the company cash customer
-- `create_operator_sale_issue(...)` creates or reuses that customer when a named customer is not selected
+- the A2.4a.1 web POS cutover calls `post_operator_sale(...)`, which delegates to the existing sale-and-settlement RPC path and creates or reuses the cash customer when a named customer is not selected
 - named customer override is optional
 
 ## Settings Models
@@ -115,6 +117,6 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
-- posting idempotency: `posting_requests`
+- posting idempotency: `posting_requests` for assembly and normal web POS
 - item default sell price: `items.unit_price`
 - entitlement/control plane: `company_subscription_state` + `platform_admins`

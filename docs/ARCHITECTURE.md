@@ -51,6 +51,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting today; the A2.4a.1 package extends it to normal web Point of Sale after the hosted migration and frontend rollout. Remaining stock-sensitive workflows move behind the same pattern in later A2.4 packages.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -59,6 +60,7 @@ The maintained product surfaces are:
 - the active migration history starts from the canonical baseline plus forward migrations only
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
+- `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
@@ -75,6 +77,7 @@ The maintained product surfaces are:
 - onboarding, Settings, and Users/Roles should preserve the same Android-first principle: decision cards, setup categories, role explanations, invite forms, and member cards must remain usable without hover or horizontal-table dependence
 - register import/export controls must wrap existing approved workflows; visual register work must not create new posting, costing, access-control, or data-import authority
 - Point of Sale and onboarding import are packaged into Tauri builds exactly as they exist on the web app
+- because installed Tauri builds can lag the web deployment, legacy POS RPC execution remains a temporary compatibility boundary until A2.4a.2 reviews maintained desktop/Android clients and closes normal legacy execution
 - desktop and Android releases must reflect current StockWise branding, route naming, and operator-facing copy
 
 ## Notification Direction

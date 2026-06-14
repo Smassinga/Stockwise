@@ -51,6 +51,14 @@ async function querySingle(client, table, select, filters = []) {
   return data
 }
 
+async function countRows(client, table, filters = []) {
+  let query = client.from(table).select('id', { count: 'exact', head: true })
+  for (const [method, ...args] of filters) query = query[method](...args)
+  const { count, error } = await query
+  if (error) throw error
+  return count ?? 0
+}
+
 async function assertPurchaseReceivingUsesStockMovementLedgerOnly() {
   const source = await readFile('src/pages/Orders/PurchaseOrders.tsx', 'utf8')
   const start = source.indexOf('async function postReceiptForLine')
@@ -1794,7 +1802,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         p_bin_to: destinationBinId,
         p_request_key: `${PREFIX}-shared-assembly`,
       }),
-      managerClient.rpc('create_operator_sale_issue_with_settlement', {
+      managerClient.rpc('post_operator_sale', {
         p_company_id: companyId,
         p_bin_from_id: sourceBinId,
         p_customer_id: null,
@@ -1806,6 +1814,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         p_lines: [{ item_id: sharedIssueItemId, qty: 6, unit_price: 19 }],
         p_settlement_method: 'cash',
         p_bank_account_id: null,
+        p_request_key: `${PREFIX}-shared-pos`,
       }),
     ])
     const crossWorkflowSuccesses = crossWorkflowResults.filter((result) => !result.error)
@@ -1961,10 +1970,16 @@ test('Phase 4/5 finance hardening suite', async (t) => {
   })
 
   await t.test('Operator sale batches walk-in lines, creates a shipped order, and reduces stock', async () => {
+    const productItemBeforeSale = await querySingle(
+      ownerClient,
+      'items',
+      'id, unit_price',
+      [['eq', 'id', productItemId]],
+    )
     const productStockBefore = await querySingle(
       ownerClient,
       'stock_levels',
-      'qty, allocated_qty',
+      'qty, allocated_qty, avg_cost',
       [
         ['eq', 'company_id', companyId],
         ['eq', 'item_id', productItemId],
@@ -1972,25 +1987,111 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         ['eq', 'bin_id', destinationBinId],
       ],
     )
+    assert.notEqual(
+      round2(productStockBefore.avg_cost),
+      round2(productItemBeforeSale.unit_price),
+      'Regression fixture should keep inventory cost distinct from commercial sell price',
+    )
+
+    const orderCountBefore = await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]])
+    const movementCountBefore = await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+    ])
+    const lineCountBefore = await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]])
+    const cashSettlementCountBefore = await countRows(ownerClient, 'cash_transactions', [
+      ['eq', 'company_id', companyId],
+    ])
+    const bankSettlementCountBefore = await countRows(ownerClient, 'bank_transactions', [
+      ['eq', 'bank_id', bankAccountId],
+    ])
+    const operatorRequestCountBefore = await countRows(ownerClient, 'posting_requests', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'operation_type', 'operator.sale'],
+    ])
+
+    const operatorSaleRequestKey = `${PREFIX}-operator-sale-idempotent`
+    const operatorSalePayload = {
+      p_company_id: companyId,
+      p_bin_from_id: destinationBinId,
+      p_customer_id: null,
+      p_order_date: todayIso(),
+      p_currency_code: 'MZN',
+      p_fx_to_base: 1,
+      p_reference_no: `${PREFIX.toUpperCase()}-OP`,
+      p_notes: 'Operator sale regression',
+      p_lines: [
+        { item_id: productItemId, qty: 2, unit_price: 116 },
+        { item_id: resaleItemId, qty: 3, unit_price: 32 },
+      ],
+      p_settlement_method: 'cash',
+      p_bank_account_id: null,
+      p_request_key: operatorSaleRequestKey,
+    }
+
+    async function assertMissingRequestKeyRejected(payload, label) {
+      await expectPostgrestError(ownerClient.rpc('post_operator_sale', payload), 'request_key_required')
+      assert.equal(
+        await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]),
+        orderCountBefore,
+        `${label}: missing request key must not create a sales order`,
+      )
+      assert.equal(
+        await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]),
+        lineCountBefore,
+        `${label}: missing request key must not create sales-order lines`,
+      )
+      assert.equal(
+        await countRows(ownerClient, 'stock_movements', [
+          ['eq', 'company_id', companyId],
+          ['eq', 'ref_type', 'SO'],
+        ]),
+        movementCountBefore,
+        `${label}: missing request key must not create stock movements`,
+      )
+      assert.equal(
+        await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]),
+        cashSettlementCountBefore,
+        `${label}: missing request key must not create cash settlements`,
+      )
+      assert.equal(
+        await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]),
+        bankSettlementCountBefore,
+        `${label}: missing request key must not create bank settlements`,
+      )
+      assert.equal(
+        await countRows(ownerClient, 'posting_requests', [
+          ['eq', 'company_id', companyId],
+          ['eq', 'operation_type', 'operator.sale'],
+        ]),
+        operatorRequestCountBefore,
+        `${label}: missing request key must not create a posting request`,
+      )
+      const productStockAfterRejectedKey = await querySingle(
+        ownerClient,
+        'stock_levels',
+        'qty, allocated_qty',
+        [
+          ['eq', 'company_id', companyId],
+          ['eq', 'item_id', productItemId],
+          ['eq', 'warehouse_id', warehouseId],
+          ['eq', 'bin_id', destinationBinId],
+        ],
+      )
+      assert.equal(round2(productStockAfterRejectedKey.qty), round2(productStockBefore.qty))
+      assert.equal(round2(productStockAfterRejectedKey.allocated_qty || 0), 0)
+    }
+
+    const { p_request_key: _omittedRequestKey, ...operatorSalePayloadWithoutRequestKey } = operatorSalePayload
+    assert.ok(_omittedRequestKey)
+    await assertMissingRequestKeyRejected(operatorSalePayloadWithoutRequestKey, 'omitted request key')
+    await assertMissingRequestKeyRejected({ ...operatorSalePayload, p_request_key: null }, 'null request key')
+    await assertMissingRequestKeyRejected({ ...operatorSalePayload, p_request_key: '' }, 'empty request key')
+    await assertMissingRequestKeyRejected({ ...operatorSalePayload, p_request_key: '   ' }, 'blank request key')
 
     const operatorSale = unwrapRpcSingle(
       expectNoSupabaseError(
-        await ownerClient.rpc('create_operator_sale_issue_with_settlement', {
-          p_company_id: companyId,
-          p_bin_from_id: destinationBinId,
-          p_customer_id: null,
-          p_order_date: todayIso(),
-          p_currency_code: 'MZN',
-          p_fx_to_base: 1,
-          p_reference_no: `${PREFIX.toUpperCase()}-OP`,
-          p_notes: 'Operator sale regression',
-          p_lines: [
-            { item_id: productItemId, qty: 2, unit_price: 116 },
-            { item_id: resaleItemId, qty: 3, unit_price: 32 },
-          ],
-          p_settlement_method: 'cash',
-          p_bank_account_id: null,
-        }),
+        await ownerClient.rpc('post_operator_sale', operatorSalePayload),
         'Expected operator sale issue and settlement RPC to succeed',
       ),
     )
@@ -2001,6 +2102,8 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(operatorSale.settlement_method, 'cash')
     assert.ok(operatorSale.settlement_id, 'Expected POS cash settlement id')
     assert.equal(round2(operatorSale.settled_amount_base), 328)
+    assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]), orderCountBefore + 1)
+    assert.equal(await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]), lineCountBefore + 2)
 
     const operatorOrder = await querySingle(
       ownerClient,
@@ -2022,7 +2125,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
 
     const { data: operatorLines, error: operatorLinesError } = await ownerClient
       .from('sales_order_lines')
-      .select('id, item_id, qty, shipped_qty, is_shipped')
+      .select('id, item_id, qty, shipped_qty, is_shipped, unit_price, line_total')
       .eq('company_id', companyId)
       .eq('so_id', operatorSale.sales_order_id)
       .order('line_no', { ascending: true })
@@ -2030,8 +2133,12 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(operatorLines.length, 2)
     assert.equal(round2(operatorLines[0].shipped_qty), round2(operatorLines[0].qty))
     assert.equal(operatorLines[0].is_shipped, true)
+    assert.equal(round2(operatorLines[0].unit_price), round2(productItemBeforeSale.unit_price))
+    assert.equal(round2(operatorLines[0].line_total), 232)
     assert.equal(round2(operatorLines[1].shipped_qty), round2(operatorLines[1].qty))
     assert.equal(operatorLines[1].is_shipped, true)
+    assert.equal(round2(operatorLines[1].unit_price), 32)
+    assert.equal(round2(operatorLines[1].line_total), 96)
 
     const { data: saleMoves, error: saleMovesError } = await ownerClient
       .from('stock_movements')
@@ -2042,6 +2149,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       .order('created_at', { ascending: true })
     if (saleMovesError) throw saleMovesError
     assert.equal(saleMoves.length, 2)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+    ]), movementCountBefore + 2)
 
     const { data: posCashSettlements, error: posCashSettlementsError } = await ownerClient
       .from('cash_transactions')
@@ -2053,6 +2164,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(posCashSettlements.length, 1)
     assert.equal(posCashSettlements[0].type, 'sale_receipt')
     assert.equal(round2(posCashSettlements[0].amount_base), 328)
+    assert.equal(
+      await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]),
+      cashSettlementCountBefore + 1,
+    )
 
     const productStockAfter = await querySingle(
       ownerClient,
@@ -2082,8 +2197,142 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(round2(resaleStockAfter.qty), 3)
     assert.equal(round2(resaleStockAfter.allocated_qty || 0), 0)
 
+    const operatorSaleReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_operator_sale', operatorSalePayload),
+        'Expected idempotent POS replay to return the original sale',
+      ),
+    )
+    assert.equal(operatorSaleReplay.sales_order_id, operatorSale.sales_order_id)
+    assert.equal(operatorSaleReplay.order_no, operatorSale.order_no)
+    assert.equal(operatorSaleReplay.settlement_id, operatorSale.settlement_id)
+    assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]), orderCountBefore + 1)
+    assert.equal(await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]), lineCountBefore + 2)
+    assert.equal(await countRows(ownerClient, 'sales_order_lines', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'so_id', operatorSale.sales_order_id],
+    ]), 2)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+    ]), movementCountBefore + 2)
+    assert.equal(
+      await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]),
+      cashSettlementCountBefore + 1,
+    )
+
+    const productStockAfterReplay = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(productStockAfterReplay.qty), round2(productStockAfter.qty))
+    assert.equal(round2(productStockAfterReplay.allocated_qty || 0), 0)
+
+    const operatorSaleReplayEquivalentNumerics = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_operator_sale', {
+          ...operatorSalePayload,
+          p_lines: [
+            { item_id: productItemId, qty: '2.00', unit_price: '116.00' },
+            { item_id: resaleItemId, qty: '3.0', unit_price: '32.000' },
+          ],
+        }),
+        'Expected numeric-equivalent POS replay payload to return the original sale',
+      ),
+    )
+    assert.equal(operatorSaleReplayEquivalentNumerics.sales_order_id, operatorSale.sales_order_id)
+    assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]), orderCountBefore + 1)
+    assert.equal(await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]), lineCountBefore + 2)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+    ]), movementCountBefore + 2)
+    assert.equal(
+      await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]),
+      cashSettlementCountBefore + 1,
+    )
+
+    const productStockAfterEquivalentReplay = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(productStockAfterEquivalentReplay.qty), round2(productStockAfter.qty))
+    assert.equal(round2(productStockAfterEquivalentReplay.allocated_qty || 0), 0)
+
     await expectPostgrestError(
-      ownerClient.rpc('create_operator_sale_issue_with_settlement', {
+      ownerClient.rpc('post_operator_sale', {
+        ...operatorSalePayload,
+        p_lines: [
+          { item_id: productItemId, qty: 1, unit_price: 116 },
+          { item_id: resaleItemId, qty: 3, unit_price: 32 },
+        ],
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]), orderCountBefore + 1)
+    assert.equal(await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]), lineCountBefore + 2)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+    ]), movementCountBefore + 2)
+    assert.equal(
+      await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]),
+      cashSettlementCountBefore + 1,
+    )
+    const productStockAfterMismatch = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, allocated_qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', productItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(productStockAfterMismatch.qty), round2(productStockAfter.qty))
+    assert.equal(round2(productStockAfterMismatch.allocated_qty || 0), 0)
+
+    const operatorRequest = await querySingle(
+      ownerClient,
+      'posting_requests',
+      'operation_type, request_key, payload_hash, status, result_ref_type, result_ref_id, result_payload',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'operation_type', 'operator.sale'],
+        ['eq', 'request_key', operatorSaleRequestKey],
+      ],
+    )
+    assert.equal(operatorRequest.status, 'succeeded')
+    assert.equal(operatorRequest.result_ref_type, 'SO')
+    assert.equal(operatorRequest.result_ref_id, operatorSale.sales_order_id)
+    assert.equal(operatorRequest.result_payload.sales_order_id, operatorSale.sales_order_id)
+    assert.ok(operatorRequest.payload_hash, 'Expected POS payload hash to be stored')
+
+    const productItemAfterSale = await querySingle(
+      ownerClient,
+      'items',
+      'id, unit_price',
+      [['eq', 'id', productItemId]],
+    )
+    assert.equal(round2(productItemAfterSale.unit_price), round2(productItemBeforeSale.unit_price))
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_operator_sale', {
         p_company_id: companyId,
         p_bin_from_id: destinationBinId,
         p_customer_id: null,
@@ -2095,13 +2344,14 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         p_lines: [{ item_id: productItemId, qty: 1, unit_price: 116 }],
         p_settlement_method: 'bank',
         p_bank_account_id: null,
+        p_request_key: `${PREFIX}-operator-bank-missing`,
       }),
       'Choose a bank account',
     )
 
     const bankPaidSale = unwrapRpcSingle(
       expectNoSupabaseError(
-        await ownerClient.rpc('create_operator_sale_issue_with_settlement', {
+        await ownerClient.rpc('post_operator_sale', {
           p_company_id: companyId,
           p_bin_from_id: destinationBinId,
           p_customer_id: null,
@@ -2110,16 +2360,29 @@ test('Phase 4/5 finance hardening suite', async (t) => {
           p_fx_to_base: 1,
           p_reference_no: `${PREFIX.toUpperCase()}-BANK`,
           p_notes: 'Operator sale bank settlement regression',
-          p_lines: [{ item_id: productItemId, qty: 1, unit_price: 116 }],
+          p_lines: [{ item_id: productItemId, qty: 1, unit_price: 117 }],
           p_settlement_method: 'bank',
           p_bank_account_id: bankAccountId,
+          p_request_key: `${PREFIX}-operator-bank`,
         }),
         'Expected bank-paid POS sale to create a bank settlement',
       ),
     )
     assert.equal(bankPaidSale.settlement_method, 'bank')
     assert.equal(bankPaidSale.bank_account_id, bankAccountId)
-    assert.equal(round2(bankPaidSale.settled_amount_base), 116)
+    assert.equal(round2(bankPaidSale.settled_amount_base), 117)
+
+    const bankPaidLine = await querySingle(
+      ownerClient,
+      'sales_order_lines',
+      'unit_price, line_total',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'so_id', bankPaidSale.sales_order_id],
+      ],
+    )
+    assert.equal(round2(bankPaidLine.unit_price), 117)
+    assert.equal(round2(bankPaidLine.line_total), 117)
 
     const { data: posBankSettlements, error: posBankSettlementsError } = await ownerClient
       .from('bank_transactions')
@@ -2129,7 +2392,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       .eq('ref_id', bankPaidSale.sales_order_id)
     if (posBankSettlementsError) throw posBankSettlementsError
     assert.equal(posBankSettlements.length, 1)
-    assert.equal(round2(posBankSettlements[0].amount_base), 116)
+    assert.equal(round2(posBankSettlements[0].amount_base), 117)
 
     const productStockAfterBankSettlement = await querySingle(
       ownerClient,
@@ -2144,6 +2407,109 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
     assert.equal(round2(productStockAfterBankSettlement.qty), round2(productStockAfter.qty - 1))
     assert.equal(round2(productStockAfterBankSettlement.allocated_qty || 0), 0)
+
+    const posOperatorUser = await createTempUser(admin, PREFIX, 'pos-operator')
+    created.userIds.add(posOperatorUser.userId)
+    const posOperatorClient = await signIn(posOperatorUser.email, posOperatorUser.password)
+    const posOperatorMembership = await admin.from('company_members').insert({
+      company_id: companyId,
+      user_id: posOperatorUser.userId,
+      email: posOperatorUser.email.toLowerCase(),
+      role: 'OPERATOR',
+      status: 'active',
+      invited_by: ownerUser.userId,
+    })
+    if (posOperatorMembership.error) throw posOperatorMembership.error
+    try {
+      await setActiveCompany(posOperatorClient, companyId)
+      const operatorRoleSale = unwrapRpcSingle(
+        expectNoSupabaseError(
+          await posOperatorClient.rpc('post_operator_sale', {
+            p_company_id: companyId,
+            p_bin_from_id: destinationBinId,
+            p_customer_id: null,
+            p_order_date: todayIso(),
+            p_currency_code: 'MZN',
+            p_fx_to_base: 1,
+            p_reference_no: `${PREFIX.toUpperCase()}-OPERATOR-POS`,
+            p_notes: 'Operator role POS authority regression',
+            p_lines: [{ item_id: resaleItemId, qty: 1, unit_price: 32 }],
+            p_settlement_method: 'cash',
+            p_bank_account_id: null,
+            p_request_key: `${PREFIX}-operator-role-sale`,
+          }),
+          'Expected OPERATOR role to post a POS sale through the idempotent wrapper',
+        ),
+      )
+      assert.ok(operatorRoleSale?.sales_order_id, 'Expected OPERATOR POS sale to return a sales order id')
+    } finally {
+      await safeDelete(() =>
+        admin
+          .from('company_members')
+          .delete()
+          .eq('company_id', companyId)
+          .eq('user_id', posOperatorUser.userId),
+      )
+    }
+
+    const posViewerUser = await createTempUser(admin, PREFIX, 'pos-viewer')
+    created.userIds.add(posViewerUser.userId)
+    const posViewerClient = await signIn(posViewerUser.email, posViewerUser.password)
+    const posViewerMembership = await admin.from('company_members').insert({
+      company_id: companyId,
+      user_id: posViewerUser.userId,
+      email: posViewerUser.email.toLowerCase(),
+      role: 'VIEWER',
+      status: 'active',
+      invited_by: ownerUser.userId,
+    })
+    if (posViewerMembership.error) throw posViewerMembership.error
+    try {
+      await setActiveCompany(posViewerClient, companyId)
+      await expectPostgrestError(
+        posViewerClient.rpc('post_operator_sale', {
+          p_company_id: companyId,
+          p_bin_from_id: destinationBinId,
+          p_customer_id: null,
+          p_order_date: todayIso(),
+          p_currency_code: 'MZN',
+          p_fx_to_base: 1,
+          p_reference_no: `${PREFIX.toUpperCase()}-VIEWER-POS`,
+          p_notes: 'Viewer POS authority regression',
+          p_lines: [{ item_id: productItemId, qty: 1, unit_price: 116 }],
+          p_settlement_method: 'cash',
+          p_bank_account_id: null,
+          p_request_key: `${PREFIX}-operator-viewer-blocked`,
+        }),
+        'operators and above|permission|access|forbidden',
+      )
+    } finally {
+      await safeDelete(() =>
+        admin
+          .from('company_members')
+          .delete()
+          .eq('company_id', companyId)
+          .eq('user_id', posViewerUser.userId),
+      )
+    }
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_operator_sale', {
+        p_company_id: '00000000-0000-0000-0000-000000000001',
+        p_bin_from_id: destinationBinId,
+        p_customer_id: null,
+        p_order_date: todayIso(),
+        p_currency_code: 'MZN',
+        p_fx_to_base: 1,
+        p_reference_no: `${PREFIX.toUpperCase()}-CROSS-POS`,
+        p_notes: 'Cross-company POS authority regression',
+        p_lines: [{ item_id: productItemId, qty: 1, unit_price: 116 }],
+        p_settlement_method: 'cash',
+        p_bank_account_id: null,
+        p_request_key: `${PREFIX}-operator-cross-company`,
+      }),
+      'Switch into the target company',
+    )
 
     await expectPostgrestError(
       ownerClient.rpc('create_operator_sale_issue', {
@@ -2181,6 +2547,18 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       .single()
     if (importedItem.error) throw importedItem.error
     const importedItemId = importedItem.data.id
+
+    const resaleLevelBeforeOpeningImport = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', resaleItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
 
     const openingImport = unwrapRpcSingle(
       expectNoSupabaseError(
@@ -2245,8 +2623,13 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         ['eq', 'bin_id', destinationBinId],
       ],
     )
-    assert.equal(round2(updatedResaleLevel.qty), 7)
-    assert.equal(round2(updatedResaleLevel.avg_cost), 16.57)
+    const expectedUpdatedResaleQty = round2(Number(resaleLevelBeforeOpeningImport.qty || 0) + 4)
+    const expectedUpdatedResaleAvgCost = round2(
+      ((Number(resaleLevelBeforeOpeningImport.qty || 0) * Number(resaleLevelBeforeOpeningImport.avg_cost || 0)) + 80)
+        / expectedUpdatedResaleQty,
+    )
+    assert.equal(round2(updatedResaleLevel.qty), expectedUpdatedResaleQty)
+    assert.equal(round2(updatedResaleLevel.avg_cost), expectedUpdatedResaleAvgCost)
     assert.equal(round2(updatedResaleLevel.allocated_qty || 0), 0)
 
     const { data: openingMoves, error: openingMovesError } = await ownerClient

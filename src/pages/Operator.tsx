@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -89,6 +89,11 @@ type CartLine = {
   availableQty: number
   unitPrice: number
   baseUomCode: string
+}
+
+type PendingSaleRequest = {
+  key: string
+  fingerprint: string
 }
 
 const copyByLang = {
@@ -262,6 +267,7 @@ export default function Operator() {
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [stockLevels, setStockLevels] = useState<StockLevelRow[]>([])
   const [cart, setCart] = useState<CartLine[]>([])
+  const pendingSaleRequestRef = useRef<PendingSaleRequest | null>(null)
 
   const loadData = async () => {
     if (!companyId) {
@@ -460,6 +466,45 @@ export default function Operator() {
   const cartQty = useMemo(() => round2(cart.reduce((sum, line) => sum + line.qty, 0)), [cart])
   const selectedBin = bins.find((row) => row.id === binId) || null
   const selectedWarehouse = warehouses.find((row) => row.id === warehouseId) || null
+  const saleOrderDate = new Date().toISOString().slice(0, 10)
+  const saleRequestFingerprint = useMemo(
+    () =>
+      JSON.stringify({
+        companyId: companyId || null,
+        sourceBinId: binId || null,
+        customerId: useNamedCustomer ? customerId || null : null,
+        orderDate: saleOrderDate,
+        currencyCode: baseCurrencyCode,
+        fxToBase: 1,
+        referenceNo: referenceNo.trim() || null,
+        notes: notes.trim() || null,
+        settlementMethod: paymentMethod,
+        bankAccountId: paymentMethod === 'bank' ? bankAccountId || null : null,
+        lines: cart.map((line, index) => ({
+          lineNo: index + 1,
+          itemId: line.itemId,
+          qty: line.qty,
+          unitPrice: line.unitPrice,
+        })),
+      }),
+    [
+      bankAccountId,
+      baseCurrencyCode,
+      binId,
+      cart,
+      companyId,
+      customerId,
+      notes,
+      paymentMethod,
+      referenceNo,
+      saleOrderDate,
+      useNamedCustomer,
+    ],
+  )
+
+  useEffect(() => {
+    pendingSaleRequestRef.current = null
+  }, [saleRequestFingerprint])
 
   function addItem(itemId: string) {
     const stockRow = stockRows.find((row) => row.item.id === itemId)
@@ -533,17 +578,24 @@ export default function Operator() {
 
     try {
       setSubmitting(true)
+      const requestKey =
+        pendingSaleRequestRef.current?.fingerprint === saleRequestFingerprint
+          ? pendingSaleRequestRef.current.key
+          : crypto.randomUUID()
+      pendingSaleRequestRef.current = { key: requestKey, fingerprint: saleRequestFingerprint }
+
       const result = await createOperatorSaleIssue({
         companyId,
         sourceBinId: binId,
         customerId: useNamedCustomer ? customerId || null : null,
-        orderDate: new Date().toISOString().slice(0, 10),
+        orderDate: saleOrderDate,
         currencyCode: baseCurrencyCode,
         fxToBase: 1,
         referenceNo: referenceNo.trim() || null,
         notes: notes.trim() || null,
         settlementMethod: paymentMethod,
         bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
+        requestKey,
         lines: cart.map((line) => ({
           itemId: line.itemId,
           qty: line.qty,
@@ -551,6 +603,7 @@ export default function Operator() {
         })),
       })
 
+      pendingSaleRequestRef.current = null
       await loadData()
       setCart([])
       setNotes('')

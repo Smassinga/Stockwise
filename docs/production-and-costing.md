@@ -127,4 +127,30 @@ Production smoke validation passed against a controlled assembly target:
 
 The follow-up durable success confirmation on `/bom` is a UI feedback improvement only. It does not change posting authority, request-key generation, idempotency behavior, valuation, stock movement insertion, finance posting, POS, PO receiving, opening-stock import, sales shipping, manual movements, access control, Platform Control, or subscriptions.
 
-Phase A2.4 remains required before Production Runs: move remaining direct client posting workflows behind backend RPCs and expand idempotency beyond assembly.
+## Phase A2.4a.1 Normal Web POS Idempotency
+
+Phase A2.4a.1 starts the governed-posting expansion beyond assembly by adding an idempotent wrapper for normal web Point of Sale posting.
+
+Release boundary:
+
+- this package is not live until the new migration is applied to hosted Supabase and the matching frontend is deployed
+- do not claim POS idempotency is production-active until hosted `db push`, frontend deployment, and controlled smoke validation are completed
+- the legacy POS RPCs remain executable during the compatibility window
+
+What changed:
+
+- `post_operator_sale` wraps the existing POS sale-and-settlement backend transaction with `posting_requests`
+- the operation type is `operator.sale`
+- same-key/same-payload replay returns the original sales order result without creating another sales order, sales-order line, stock movement, or settlement
+- same-key/changed-payload requests are rejected before business rows are created
+- the web POS flow now calls `post_operator_sale`
+- POS commercial pricing remains based on `items.unit_price` or the operator's explicit line price override, not inventory cost
+
+What did not change:
+
+- no PO receiving, sales-order shipping, opening-stock import, manual receipt/issue, transfer, or adjustment idempotency was added
+- no POS pricing policy, stock valuation policy, finance posting, invoice issuance, settlement model, entitlement, Platform Control, company-access, or subscription behavior changed
+- the legacy POS RPCs remain temporarily executable for migration/deployment compatibility and stale Tauri clients
+- A2.4a.2 must review maintained Tauri/packaged-client posture and then close normal authenticated legacy POS execution
+
+Phase A2.4 remains required before Production Runs: finish governed and idempotent posting for PO receiving, sales shipping, opening-stock import, manual movements, transfers, and adjustments.
