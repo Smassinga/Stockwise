@@ -69,8 +69,13 @@ async function assertPurchaseReceivingUsesStockMovementLedgerOnly() {
 
   assert.match(
     postReceiptSource,
+    /\.rpc\(\s*['"]post_purchase_receipt['"]/,
+    'Expected PO receipt posting to use the governed purchase receipt RPC',
+  )
+  assert.doesNotMatch(
+    postReceiptSource,
     /\.from\(\s*['"]stock_movements['"]\s*\)\.insert\(/,
-    'Expected PO receipt posting to insert a stock movement',
+    'PO receipt UI must not insert stock movements directly',
   )
   assert.doesNotMatch(
     postReceiptSource,
@@ -753,38 +758,76 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     if (movementBefore.error) throw movementBefore.error
     assert.equal(movementBefore.count, 0, 'Expected no receipt movement before receiving the PO line')
 
-    const receipt = await ownerClient
-      .from('stock_movements')
-      .insert({
-        company_id: companyId,
-        type: 'receive',
-        item_id: receiptItemId,
-        uom_id: eachUomId,
-        qty: 10,
-        qty_base: 10,
-        unit_cost: 135,
-        total_value: 1350,
-        warehouse_to_id: warehouseId,
-        bin_to_id: sourceBinId,
-        notes: `${PREFIX} PO receipt double-count regression`,
-        created_by: ownerUser.userId,
-        ref_type: 'PO',
-        ref_id: receiptPoId,
-        ref_line_id: receiptLine.id,
-      })
-      .select('id')
-      .single()
-    if (receipt.error) throw receipt.error
-    assert.ok(receipt.data.id, 'Expected receipt movement insert to return an id')
-
-    const trimResult = expectNoSupabaseError(
-      await ownerClient.rpc('po_trim_and_close', {
+    const firstReceiptPayload = {
         p_company_id: companyId,
-        p_po_id: receiptPoId,
-      }),
-      'Expected fully received PO to close',
+        p_purchase_order_id: receiptPoId,
+        p_purchase_order_line_id: receiptLine.id,
+        p_item_id: receiptItemId,
+        p_qty: 4,
+        p_qty_base: 4,
+        p_uom_id: eachUomId,
+        p_warehouse_to_id: warehouseId,
+        p_bin_to_id: sourceBinId,
+        p_unit_cost: 135,
+        p_notes: `${PREFIX} PO receipt double-count regression`,
+        p_received_by: ownerUser.email,
+        p_request_key: `${PREFIX}-po-receipt-first`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_purchase_receipt', { ...firstReceiptPayload, p_request_key: null }),
+      'request_key_required',
     )
-    assert.equal(trimResult?.[0]?.closed, true, 'Expected the PO close RPC to mark the PO as closed')
+
+    const firstReceipt = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_purchase_receipt', firstReceiptPayload),
+        'Expected idempotent partial PO receipt to succeed',
+      ),
+    )
+    assert.ok(firstReceipt.movement_id, 'Expected first purchase receipt to return a movement id')
+    assert.equal(round2(firstReceipt.received_qty), 4)
+    assert.equal(round2(firstReceipt.remaining_qty), 6)
+    assert.equal(firstReceipt.closed, false)
+
+    const firstReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_purchase_receipt', firstReceiptPayload),
+        'Expected same-key purchase receipt replay to succeed',
+      ),
+    )
+    assert.equal(firstReplay.movement_id, firstReceipt.movement_id)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_purchase_receipt', { ...firstReceiptPayload, p_qty: 5, p_qty_base: 5 }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const finalReceipt = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_purchase_receipt', {
+          ...firstReceiptPayload,
+          p_qty: 6,
+          p_qty_base: 6,
+          p_request_key: `${PREFIX}-po-receipt-final`,
+        }),
+        'Expected final PO receipt to close the purchase order',
+      ),
+    )
+    assert.ok(finalReceipt.movement_id)
+    assert.notEqual(finalReceipt.movement_id, firstReceipt.movement_id)
+    assert.equal(round2(finalReceipt.received_qty), 10)
+    assert.equal(round2(finalReceipt.remaining_qty), 0)
+    assert.equal(finalReceipt.closed, true)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_purchase_receipt', {
+        ...firstReceiptPayload,
+        p_qty: 1,
+        p_qty_base: 1,
+        p_request_key: `${PREFIX}-po-receipt-over`,
+      }),
+      'quantity_exceeds_remaining|invalid_receipt_state',
+    )
 
     const { data: movements, error: movementsError } = await ownerClient
       .from('stock_movements')
@@ -796,12 +839,16 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       .order('created_at', { ascending: true })
     if (movementsError) throw movementsError
 
-    assert.equal(movements.length, 1, 'Expected exactly one PO receipt movement')
+    assert.equal(movements.length, 2, 'Expected exactly two PO receipt movements after partial and final receipts')
     assert.equal(movements[0].type, 'receive')
-    assert.equal(round2(movements[0].qty_base), 10)
-    assert.equal(round2(movements[0].qty), 10)
+    assert.equal(round2(movements[0].qty_base), 4)
+    assert.equal(round2(movements[0].qty), 4)
     assert.equal(round2(movements[0].unit_cost), 135)
-    assert.equal(round2(movements[0].total_value), 1350)
+    assert.equal(round2(movements[0].total_value), 540)
+    assert.equal(round2(movements[1].qty_base), 6)
+    assert.equal(round2(movements[1].qty), 6)
+    assert.equal(round2(movements[1].unit_cost), 135)
+    assert.equal(round2(movements[1].total_value), 810)
 
     const stockLevel = await querySingle(
       ownerClient,
@@ -869,7 +916,169 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       .eq('ref_id', receiptPoId)
       .eq('ref_line_id', receiptLine.id)
     if (movementAfterStateRead.error) throw movementAfterStateRead.error
-    assert.equal(movementAfterStateRead.count, 1, 'Expected no duplicate movement after re-reading PO state')
+    assert.equal(movementAfterStateRead.count, 2, 'Expected replay and state reads not to create duplicate PO movements')
+  })
+
+  await t.test('Sales shipment posts issues idempotently and updates shipped state once', async () => {
+    const shipItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-SHIP`,
+        name: `${PREFIX} Shipment Item`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 44,
+        primary_role: 'resale',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: true,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    if (shipItem.error) throw shipItem.error
+
+    const seedStock = await ownerClient.from('stock_levels').insert({
+      company_id: companyId,
+      item_id: shipItem.data.id,
+      warehouse_id: warehouseId,
+      bin_id: sourceBinId,
+      qty: 3,
+      avg_cost: 9,
+      allocated_qty: 0,
+    })
+    if (seedStock.error) throw seedStock.error
+
+    const shipOrder = await ownerClient
+      .from('sales_orders')
+      .insert({
+        company_id: companyId,
+        customer_id: customerId,
+        order_date: todayIso(),
+        due_date: plusDaysIso(7),
+        currency_code: 'MZN',
+        status: 'confirmed',
+        subtotal: 88,
+        tax_total: 0,
+        total: 88,
+        total_amount: 88,
+        fx_to_base: 1,
+        customer: `${PREFIX} Customer`,
+        bill_to_name: `${PREFIX} Customer`,
+        created_by: ownerUser.userId,
+      })
+      .select('id')
+      .single()
+    if (shipOrder.error) throw shipOrder.error
+
+    const shipLine = await ownerClient
+      .from('sales_order_lines')
+      .insert({
+        so_id: shipOrder.data.id,
+        company_id: companyId,
+        line_no: 1,
+        item_id: shipItem.data.id,
+        uom_id: eachUomId,
+        qty: 2,
+        unit_price: 44,
+        line_total: 88,
+        description: `${PREFIX} shipment line`,
+        shipped_qty: 0,
+        is_shipped: false,
+      })
+      .select('id')
+      .single()
+    if (shipLine.error) throw shipLine.error
+
+    const shipmentPayload = {
+      p_company_id: companyId,
+      p_sales_order_id: shipOrder.data.id,
+      p_sales_order_line_id: shipLine.data.id,
+      p_allocations: [{ warehouse_id: warehouseId, bin_id: sourceBinId, qty: 2, qty_base: 2 }],
+      p_request_key: `${PREFIX}-sales-shipment`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_sales_shipment', { ...shipmentPayload, p_request_key: null }),
+      'request_key_required',
+    )
+
+    const shipment = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_sales_shipment', shipmentPayload),
+        'Expected idempotent sales shipment to succeed',
+      ),
+    )
+    assert.equal(shipment.sales_order_id, shipOrder.data.id)
+    assert.equal(shipment.sales_order_line_id, shipLine.data.id)
+    assert.equal(shipment.movement_ids.length, 1)
+    assert.equal(round2(shipment.shipped_qty), 2)
+    assert.equal(round2(shipment.remaining_qty), 0)
+
+    const replay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_sales_shipment', shipmentPayload),
+        'Expected same-key sales shipment replay to return original movement ids',
+      ),
+    )
+    assert.deepEqual(replay.movement_ids, shipment.movement_ids)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_sales_shipment', {
+        ...shipmentPayload,
+        p_allocations: [{ warehouse_id: warehouseId, bin_id: sourceBinId, qty: 1, qty_base: 1 }],
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const movements = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, type, item_id, qty_base, ref_type, ref_id, ref_line_id')
+        .eq('company_id', companyId)
+        .eq('ref_type', 'SO')
+        .eq('ref_id', shipOrder.data.id)
+        .eq('ref_line_id', shipLine.data.id),
+      'Expected sales shipment movement lookup to succeed',
+    )
+    assert.equal(movements.length, 1)
+    assert.equal(movements[0].id, shipment.movement_ids[0])
+    assert.equal(round2(movements[0].qty_base), 2)
+
+    const shippedLine = await querySingle(
+      ownerClient,
+      'sales_order_lines',
+      'shipped_qty, is_shipped',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', shipLine.data.id],
+      ],
+    )
+    assert.equal(round2(shippedLine.shipped_qty), 2)
+    assert.equal(shippedLine.is_shipped, true)
+
+    const shipLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', shipItem.data.id],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(shipLevel.qty), 1)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_sales_shipment', {
+        ...shipmentPayload,
+        p_sales_order_line_id: shipLine.data.id,
+        p_request_key: `${PREFIX}-sales-shipment-over`,
+        p_allocations: [{ warehouse_id: warehouseId, bin_id: sourceBinId, qty: 1, qty_base: 1 }],
+      }),
+      'invalid_shipment_state|quantity_exceeds_remaining',
+    )
   })
 
   await t.test('Sales Order -> Sales Invoice draft -> approval -> issue readiness -> issue', async () => {
@@ -1694,44 +1903,32 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     })
 
     const receiptResults = await Promise.all([
-      ownerClient
-        .from('stock_movements')
-        .insert({
-          company_id: companyId,
-          type: 'receive',
-          item_id: receiptItemId,
-          uom_id: eachUomId,
-          qty: 3,
-          qty_base: 3,
-          unit_cost: 5,
-          total_value: 15,
-          warehouse_to_id: warehouseId,
-          bin_to_id: sourceBinId,
-          notes: `${PREFIX} concurrent receipt A`,
-          created_by: ownerUser.userId,
-          ref_type: 'ADJUST',
-        })
-        .select('id')
-        .single(),
-      managerClient
-        .from('stock_movements')
-        .insert({
-          company_id: companyId,
-          type: 'receive',
-          item_id: receiptItemId,
-          uom_id: eachUomId,
-          qty: 7,
-          qty_base: 7,
-          unit_cost: 11,
-          total_value: 77,
-          warehouse_to_id: warehouseId,
-          bin_to_id: sourceBinId,
-          notes: `${PREFIX} concurrent receipt B`,
-          created_by: managerUser.userId,
-          ref_type: 'ADJUST',
-        })
-        .select('id')
-        .single(),
+      ownerClient.rpc('post_stock_receipt', {
+        p_company_id: companyId,
+        p_item_id: receiptItemId,
+        p_uom_id: eachUomId,
+        p_qty: 3,
+        p_qty_base: 3,
+        p_unit_cost: 5,
+        p_warehouse_to_id: warehouseId,
+        p_bin_to_id: sourceBinId,
+        p_ref_type: 'ADJUST',
+        p_notes: `${PREFIX} concurrent receipt A`,
+        p_request_key: `${PREFIX}-concurrent-receipt-a`,
+      }),
+      managerClient.rpc('post_stock_receipt', {
+        p_company_id: companyId,
+        p_item_id: receiptItemId,
+        p_uom_id: eachUomId,
+        p_qty: 7,
+        p_qty_base: 7,
+        p_unit_cost: 11,
+        p_warehouse_to_id: warehouseId,
+        p_bin_to_id: sourceBinId,
+        p_ref_type: 'ADJUST',
+        p_notes: `${PREFIX} concurrent receipt B`,
+        p_request_key: `${PREFIX}-concurrent-receipt-b`,
+      }),
     ])
     for (const result of receiptResults) {
       if (result.error) throw result.error
@@ -1842,6 +2039,96 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
     assert.equal(round2(sharedLevel.qty), 4)
     assert.ok(Number(sharedLevel.qty) >= 0, 'POS-versus-assembly competition must not drive stock negative')
+
+    const competingItemId = await createTrackedItem('RACE-SHIP-MANUAL', {
+      primary_role: 'resale',
+      can_sell: true,
+      unit_price: 23,
+    })
+    await seedReceipt({
+      itemId: competingItemId,
+      qty: 5,
+      unitCost: 4,
+      binId: sourceBinId,
+      note: `${PREFIX} sales/manual competition seed`,
+    })
+    const competingOrder = await ownerClient
+      .from('sales_orders')
+      .insert({
+        company_id: companyId,
+        customer_id: customerId,
+        order_date: todayIso(),
+        due_date: plusDaysIso(7),
+        currency_code: 'MZN',
+        status: 'confirmed',
+        subtotal: 69,
+        tax_total: 0,
+        total: 69,
+        total_amount: 69,
+        fx_to_base: 1,
+        customer: `${PREFIX} Customer`,
+        bill_to_name: `${PREFIX} Customer`,
+        created_by: ownerUser.userId,
+      })
+      .select('id')
+      .single()
+    if (competingOrder.error) throw competingOrder.error
+    const competingLine = await ownerClient
+      .from('sales_order_lines')
+      .insert({
+        so_id: competingOrder.data.id,
+        company_id: companyId,
+        line_no: 1,
+        item_id: competingItemId,
+        uom_id: eachUomId,
+        qty: 3,
+        unit_price: 23,
+        line_total: 69,
+        description: `${PREFIX} sales/manual race`,
+      })
+      .select('id')
+      .single()
+    if (competingLine.error) throw competingLine.error
+
+    const salesManualResults = await Promise.allSettled([
+      ownerClient.rpc('post_sales_shipment', {
+        p_company_id: companyId,
+        p_sales_order_id: competingOrder.data.id,
+        p_sales_order_line_id: competingLine.data.id,
+        p_allocations: [{ warehouse_id: warehouseId, bin_id: sourceBinId, qty: 3, qty_base: 3 }],
+        p_request_key: `${PREFIX}-race-sales-ship`,
+      }),
+      managerClient.rpc('post_stock_issue', {
+        p_company_id: companyId,
+        p_item_id: competingItemId,
+        p_uom_id: eachUomId,
+        p_qty: 3,
+        p_qty_base: 3,
+        p_warehouse_from_id: warehouseId,
+        p_bin_from_id: sourceBinId,
+        p_unit_cost: 4,
+        p_ref_type: 'INTERNAL_USE',
+        p_notes: `${PREFIX} sales/manual issue race`,
+        p_request_key: `${PREFIX}-race-manual-issue`,
+      }),
+    ])
+    const salesManualSucceeded = salesManualResults.filter((result) => result.status === 'fulfilled' && !result.value.error)
+    const salesManualFailed = salesManualResults.filter((result) => result.status === 'rejected' || result.value.error)
+    assert.equal(salesManualSucceeded.length, 1, 'Only one sales-shipment/manual-issue contender may consume stock')
+    assert.equal(salesManualFailed.length, 1)
+    const competingLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', competingItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(competingLevel.qty), 2)
+    assert.ok(Number(competingLevel.qty) >= 0, 'Sales shipment/manual issue competition must not drive stock negative')
   })
 
   await t.test('Landed cost uses receipt value fallback and blocks zero-value value allocation', async () => {
@@ -2560,35 +2847,44 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       ],
     )
 
+    const openingRows = [
+      {
+        item_id: importedItemId,
+        uom_id: eachUomId,
+        qty: 12,
+        qty_base: 12,
+        unit_cost: 14.5,
+        total_value: 174,
+        warehouse_to_id: warehouseId,
+        bin_to_id: destinationBinId,
+        notes: 'Opening stock import regression',
+      },
+      {
+        item_id: resaleItemId,
+        uom_id: eachUomId,
+        qty: 4,
+        qty_base: 4,
+        unit_cost: 20,
+        total_value: 80,
+        warehouse_to_id: warehouseId,
+        bin_to_id: destinationBinId,
+        notes: 'Opening stock top-up regression',
+      },
+    ]
+
+    const openingImportPayload = {
+      p_company_id: companyId,
+      p_rows: openingRows,
+      p_request_key: `${PREFIX}-opening-import`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_opening_stock_import', { ...openingImportPayload, p_request_key: null }),
+      'request_key_required',
+    )
+
     const openingImport = unwrapRpcSingle(
       expectNoSupabaseError(
-        await ownerClient.rpc('import_opening_stock_batch', {
-          p_company_id: companyId,
-          p_rows: [
-            {
-              item_id: importedItemId,
-              uom_id: eachUomId,
-              qty: 12,
-              qty_base: 12,
-              unit_cost: 14.5,
-              total_value: 174,
-              warehouse_to_id: warehouseId,
-              bin_to_id: destinationBinId,
-              notes: 'Opening stock import regression',
-            },
-            {
-              item_id: resaleItemId,
-              uom_id: eachUomId,
-              qty: 4,
-              qty_base: 4,
-              unit_cost: 20,
-              total_value: 80,
-              warehouse_to_id: warehouseId,
-              bin_to_id: destinationBinId,
-              notes: 'Opening stock top-up regression',
-            },
-          ],
-        }),
+        await ownerClient.rpc('post_opening_stock_import', openingImportPayload),
         'Expected opening stock import RPC to succeed',
       ),
     )
@@ -2596,6 +2892,22 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(openingImport.imported_rows, 2)
     assert.equal(openingImport.bucket_count, 2)
     assert.equal(round2(openingImport.total_qty_base), 16)
+
+    const openingReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_opening_stock_import', openingImportPayload),
+        'Expected same-key opening import replay to return the original summary',
+      ),
+    )
+    assert.deepEqual(openingReplay, openingImport)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_opening_stock_import', {
+        ...openingImportPayload,
+        p_rows: [{ ...openingRows[0], qty: 13, qty_base: 13, total_value: 188.5 }, openingRows[1]],
+      }),
+      'idempotency_key_payload_mismatch',
+    )
 
     const importedLevel = await querySingle(
       ownerClient,
@@ -2649,7 +2961,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.ok(resaleMove, 'Expected a receive movement for the topped-up existing item')
 
     await expectPostgrestError(
-      ownerClient.rpc('import_opening_stock_batch', {
+      ownerClient.rpc('post_opening_stock_import', {
         p_company_id: companyId,
         p_rows: [
           {
@@ -2664,9 +2976,327 @@ test('Phase 4/5 finance hardening suite', async (t) => {
             notes: 'Invalid opening stock regression',
           },
         ],
+        p_request_key: `${PREFIX}-opening-invalid`,
       }),
       'quantity|incomplete',
     )
+  })
+
+  await t.test('Manual receipt, issue, transfer, and adjustment use governed idempotent RPCs', async () => {
+    const manualItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-MANUAL`,
+        name: `${PREFIX} Manual Stock`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 21,
+        primary_role: 'resale',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: true,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    if (manualItem.error) throw manualItem.error
+    const manualItemId = manualItem.data.id
+
+    const receiptPayload = {
+      p_company_id: companyId,
+      p_item_id: manualItemId,
+      p_uom_id: eachUomId,
+      p_qty: 5,
+      p_qty_base: 5,
+      p_unit_cost: 7,
+      p_warehouse_to_id: warehouseId,
+      p_bin_to_id: sourceBinId,
+      p_ref_type: 'ADJUST',
+      p_ref_id: null,
+      p_ref_line_id: null,
+      p_notes: `${PREFIX} manual receipt`,
+      p_request_key: `${PREFIX}-manual-receipt`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_receipt', { ...receiptPayload, p_request_key: null }),
+      'request_key_required',
+    )
+
+    const manualReceipt = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_receipt', receiptPayload),
+        'Expected governed manual receipt to succeed',
+      ),
+    )
+    assert.ok(manualReceipt.movement_id)
+
+    const manualReceiptReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_receipt', receiptPayload),
+        'Expected governed manual receipt replay to return the original movement',
+      ),
+    )
+    assert.equal(manualReceiptReplay.movement_id, manualReceipt.movement_id)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_receipt', { ...receiptPayload, p_qty: 6, p_qty_base: 6 }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const basePurchaseOrderLine = await querySingle(
+      ownerClient,
+      'purchase_order_lines',
+      'id',
+      [['eq', 'po_id', purchaseOrderId]],
+    )
+    const movementCountBeforeReceiptRefErrors = await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', manualItemId],
+    ])
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_receipt', {
+        ...receiptPayload,
+        p_ref_type: 'PO',
+        p_ref_id: purchaseOrderId,
+        p_ref_line_id: basePurchaseOrderLine.id,
+        p_request_key: `${PREFIX}-manual-receipt-po-reference-mismatch`,
+      }),
+      'purchase_order_reference_not_found',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_receipt', {
+        ...receiptPayload,
+        p_ref_type: 'PO',
+        p_ref_id: 'not-a-purchase-order-id',
+        p_ref_line_id: basePurchaseOrderLine.id,
+        p_request_key: `${PREFIX}-manual-receipt-po-reference-invalid`,
+      }),
+      'purchase_order_reference_not_found',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', manualItemId],
+    ]), movementCountBeforeReceiptRefErrors)
+
+    const issuePayload = {
+      p_company_id: companyId,
+      p_item_id: manualItemId,
+      p_uom_id: eachUomId,
+      p_qty: 2,
+      p_qty_base: 2,
+      p_warehouse_from_id: warehouseId,
+      p_bin_from_id: sourceBinId,
+      p_unit_cost: 7,
+      p_ref_type: 'INTERNAL_USE',
+      p_ref_id: null,
+      p_ref_line_id: null,
+      p_notes: `${PREFIX} manual issue`,
+      p_request_key: `${PREFIX}-manual-issue`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_issue', { ...issuePayload, p_request_key: null }),
+      'request_key_required',
+    )
+
+    const manualIssue = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_issue', issuePayload),
+        'Expected governed manual issue to succeed',
+      ),
+    )
+    assert.ok(manualIssue.movement_id)
+    const manualIssueReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_issue', issuePayload),
+        'Expected governed manual issue replay to return the original movement',
+      ),
+    )
+    assert.equal(manualIssueReplay.movement_id, manualIssue.movement_id)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_issue', {
+        ...issuePayload,
+        p_qty: 99,
+        p_qty_base: 99,
+        p_request_key: `${PREFIX}-manual-issue-too-much`,
+      }),
+      'insufficient|stock|negative',
+    )
+
+    const baseSalesOrderLine = await querySingle(
+      ownerClient,
+      'sales_order_lines',
+      'id',
+      [['eq', 'so_id', salesOrderId]],
+    )
+    const movementCountBeforeIssueRefErrors = await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', manualItemId],
+    ])
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_issue', {
+        ...issuePayload,
+        p_ref_type: 'SO',
+        p_ref_id: salesOrderId,
+        p_ref_line_id: baseSalesOrderLine.id,
+        p_request_key: `${PREFIX}-manual-issue-so-reference-mismatch`,
+      }),
+      'sales_order_reference_not_found',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_issue', {
+        ...issuePayload,
+        p_ref_type: 'SO',
+        p_ref_id: 'not-a-sales-order-id',
+        p_ref_line_id: baseSalesOrderLine.id,
+        p_request_key: `${PREFIX}-manual-issue-so-reference-invalid`,
+      }),
+      'sales_order_reference_not_found',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', manualItemId],
+    ]), movementCountBeforeIssueRefErrors)
+
+    const transferPayload = {
+      p_company_id: companyId,
+      p_item_id: manualItemId,
+      p_uom_id: eachUomId,
+      p_qty: 1,
+      p_qty_base: 1,
+      p_warehouse_from_id: warehouseId,
+      p_bin_from_id: sourceBinId,
+      p_warehouse_to_id: warehouseId,
+      p_bin_to_id: destinationBinId,
+      p_notes: `${PREFIX} manual transfer`,
+      p_request_key: `${PREFIX}-manual-transfer`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_transfer', { ...transferPayload, p_request_key: null }),
+      'request_key_required',
+    )
+
+    const transfer = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_transfer', transferPayload),
+        'Expected governed manual transfer to succeed',
+      ),
+    )
+    assert.ok(transfer.transfer_ref)
+    assert.ok(transfer.issue_movement_id)
+    assert.ok(transfer.receipt_movement_id)
+
+    const transferReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_transfer', transferPayload),
+        'Expected governed transfer replay to return both original movement ids',
+      ),
+    )
+    assert.equal(transferReplay.issue_movement_id, transfer.issue_movement_id)
+    assert.equal(transferReplay.receipt_movement_id, transfer.receipt_movement_id)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_transfer', {
+        ...transferPayload,
+        p_bin_to_id: sourceBinId,
+        p_request_key: `${PREFIX}-manual-transfer-same-bucket`,
+      }),
+      'same_source_destination',
+    )
+
+    const adjustmentPayload = {
+      p_company_id: companyId,
+      p_item_id: manualItemId,
+      p_uom_id: eachUomId,
+      p_target_qty: 4,
+      p_target_qty_base: 4,
+      p_warehouse_id: warehouseId,
+      p_bin_id: destinationBinId,
+      p_unit_cost: 8,
+      p_reason: `${PREFIX} positive adjustment`,
+      p_request_key: `${PREFIX}-manual-adjust-positive`,
+    }
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_adjustment', { ...adjustmentPayload, p_request_key: null }),
+      'request_key_required',
+    )
+
+    const adjustment = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_adjustment', adjustmentPayload),
+        'Expected governed positive adjustment to succeed',
+      ),
+    )
+    assert.ok(adjustment.movement_id)
+    const adjustmentReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_adjustment', adjustmentPayload),
+        'Expected governed adjustment replay to return the original movement',
+      ),
+    )
+    assert.equal(adjustmentReplay.movement_id, adjustment.movement_id)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_stock_adjustment', { ...adjustmentPayload, p_target_qty: 5, p_target_qty_base: 5 }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const negativeAdjustment = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_stock_adjustment', {
+          p_company_id: companyId,
+          p_item_id: manualItemId,
+          p_uom_id: eachUomId,
+          p_target_qty: 1,
+          p_target_qty_base: 1,
+          p_warehouse_id: warehouseId,
+          p_bin_id: sourceBinId,
+          p_unit_cost: null,
+          p_reason: `${PREFIX} negative adjustment`,
+          p_request_key: `${PREFIX}-manual-adjust-negative`,
+        }),
+        'Expected governed negative adjustment to succeed',
+      ),
+    )
+    assert.ok(negativeAdjustment.movement_id)
+
+    const sourceLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', manualItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    const destinationLevel = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', manualItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(sourceLevel.qty), 1)
+    assert.equal(round2(destinationLevel.qty), 4)
+    assert.ok(Number(destinationLevel.avg_cost) > 0)
+
+    const manualMovements = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, type, ref_type, ref_id')
+        .eq('company_id', companyId)
+        .eq('item_id', manualItemId),
+      'Expected manual movement lookup to succeed',
+    )
+    assert.equal(manualMovements.length, 6)
+    assert.equal(manualMovements.filter((row) => row.ref_type === 'TRANSFER' && row.ref_id === transfer.transfer_ref).length, 2)
   })
 
   await t.test('Manual access control persists across statuses and exposes company detail metadata', async () => {

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import { useRef } from 'react'
 import { AlertTriangle, FileSpreadsheet, PackagePlus, Upload, Warehouse } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -13,6 +14,12 @@ import { downloadImportTemplate, readImportWorkbook, type ParsedImportRow } from
 import { profileFromRole, type ItemPrimaryRole } from '../lib/itemProfiles'
 import { can } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../lib/postingRequestKeys'
 import { buildConvGraph, normalizeUomCodeInput, tryConvertQty } from '../lib/uom'
 
 type DatasetKey = 'items' | 'customers' | 'suppliers' | 'locations' | 'opening_stock'
@@ -292,6 +299,7 @@ export default function OpeningImport() {
   const [importing, setImporting] = useState(false)
   const [fileName, setFileName] = useState('')
   const [preview, setPreview] = useState<PreviewState | null>(null)
+  const openingStockRequestRef = useRef<PostingRequestKeyRef>(null)
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([])
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([])
@@ -384,6 +392,7 @@ export default function OpeningImport() {
   useEffect(() => {
     setPreview(null)
     setFileName('')
+    clearPostingRequestKey(openingStockRequestRef)
   }, [activeTab])
 
   const uomByCode = useMemo(() => new Map(uoms.map((row) => [row.code.toUpperCase(), row])), [uoms])
@@ -646,6 +655,7 @@ export default function OpeningImport() {
   async function handleFile(file: File | null) {
     if (!file) return
     try {
+      clearPostingRequestKey(openingStockRequestRef)
       const rows = await readImportWorkbook(file)
       setFileName(file.name)
       if (!rows.length) {
@@ -743,11 +753,19 @@ export default function OpeningImport() {
       }
 
       if (activeTab === 'opening_stock') {
-        const { error } = await supabase.rpc('import_opening_stock_batch', {
+        const openingStockRows = preview.payload as OpeningStockPayload[]
+        const fingerprint = stablePostingFingerprint({
+          companyId,
+          rows: openingStockRows,
+        })
+        const requestKey = getPostingRequestKeyForFingerprint(openingStockRequestRef, fingerprint)
+        const { error } = await supabase.rpc('post_opening_stock_import', {
           p_company_id: companyId,
-          p_rows: preview.payload as OpeningStockPayload[],
+          p_rows: openingStockRows,
+          p_request_key: requestKey,
         })
         if (error) throw error
+        clearPostingRequestKey(openingStockRequestRef)
       }
 
       toast.success(copy.importSucceeded.replace('{count}', String(preview.payload.length)))

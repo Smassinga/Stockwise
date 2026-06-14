@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
+const PRODUCTION_PROJECT_REFS = new Set(['ogzhwoqqumkuqhbvuzzp'])
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+
 export function env(name, fallback = null) {
   const value = process.env[name] ?? fallback
   if (!value) {
@@ -10,8 +13,66 @@ export function env(name, fallback = null) {
   return value
 }
 
-export function createAdminClient() {
+export function classifyFinanceRegressionTarget(rawUrl, envSource = process.env) {
+  const value = rawUrl || envSource.VITE_SUPABASE_URL || envSource.SUPABASE_URL || ''
+  let parsed
+  try {
+    parsed = new URL(value)
+  } catch {
+    return {
+      urlProvided: Boolean(value),
+      host: null,
+      projectRef: null,
+      isLocal: false,
+      isProduction: false,
+      remoteOptIn: false,
+    }
+  }
+
+  const host = parsed.hostname.toLowerCase()
+  const supabaseProject = host.match(/^([a-z0-9-]+)\.supabase\.co$/)?.[1] || null
+  return {
+    urlProvided: true,
+    host,
+    projectRef: supabaseProject,
+    isLocal: LOCAL_HOSTS.has(host),
+    isProduction: supabaseProject ? PRODUCTION_PROJECT_REFS.has(supabaseProject) : false,
+    remoteOptIn:
+      envSource.ALLOW_REMOTE_FINANCE_REGRESSION === 'true' &&
+      envSource.FINANCE_REGRESSION_TARGET === 'non-production',
+  }
+}
+
+export function assertFinanceRegressionTargetAllowed(rawUrl, envSource = process.env) {
+  const target = classifyFinanceRegressionTarget(rawUrl, envSource)
+  const label = target.projectRef || target.host || 'unknown'
+
+  if (target.isProduction) {
+    throw new Error(
+      `[finance-regression] blocked before mutations: detected StockWise production Supabase target ` +
+      `${label}. Use local Supabase at http://127.0.0.1:54321. Production cannot be overridden.`,
+    )
+  }
+
+  if (!target.isLocal && !target.remoteOptIn) {
+    throw new Error(
+      `[finance-regression] blocked before mutations: detected remote Supabase target ${label}. ` +
+      `Use local Supabase at http://127.0.0.1:54321, or set ` +
+      `ALLOW_REMOTE_FINANCE_REGRESSION=true and FINANCE_REGRESSION_TARGET=non-production for an isolated non-production project.`,
+    )
+  }
+
+  return target
+}
+
+function regressionUrl() {
   const url = env('VITE_SUPABASE_URL', process.env.SUPABASE_URL)
+  assertFinanceRegressionTargetAllowed(url)
+  return url
+}
+
+export function createAdminClient() {
+  const url = regressionUrl()
   const serviceRoleKey = env('SUPABASE_SERVICE_ROLE_KEY', process.env.SERVICE_ROLE_KEY)
   return createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -19,7 +80,7 @@ export function createAdminClient() {
 }
 
 export function createAnonClient() {
-  const url = env('VITE_SUPABASE_URL', process.env.SUPABASE_URL)
+  const url = regressionUrl()
   const anonKey = env('VITE_SUPABASE_ANON_KEY', process.env.SUPABASE_ANON_KEY)
   return createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },

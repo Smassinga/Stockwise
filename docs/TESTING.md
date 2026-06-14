@@ -58,6 +58,8 @@ The suite currently runs through:
 
 This is not a decorative page-load smoke suite. It mutates real test data against the connected Supabase project and then removes it.
 
+The suite has a startup target guard in `tests/finance-regression/helpers.mjs`. It runs before Supabase clients are created, before Auth users or companies are created, and before mutation RPCs are invoked. Local Supabase targets such as `http://127.0.0.1:54321` and `localhost` are allowed automatically. The known StockWise production project `ogzhwoqqumkuqhbvuzzp` is hard-blocked and cannot be overridden. Any other remote project requires both `ALLOW_REMOTE_FINANCE_REGRESSION=true` and `FINANCE_REGRESSION_TARGET=non-production`, and must be an isolated non-production target.
+
 ## Finance Flows Covered
 
 Current protected workflows:
@@ -100,7 +102,9 @@ The suite currently protects:
 - assembly backend authority checks, including OPERATOR+ posting and VIEWER blocking
 - idempotent assembly posting through `post_build_from_bom` and `post_build_from_bom_sources`, including successful replay, payload-mismatch rejection, and no duplicate build or movement rows
 - idempotent normal web POS posting through `post_operator_sale`, including successful replay, payload-mismatch rejection, no duplicate sales orders, lines, stock movements or settlements, OPERATOR+ authority, VIEWER blocking, and commercial price separation from stock cost
+- idempotent governed stock posting for PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, and adjustment in the consolidated A2.4/A2.5 local package
 - concurrent stock rollup protection, including assembly over-issue races, concurrent receipt weighted-average rollup, ledger-to-rollup reconciliation, and POS-versus-assembly stock competition
+- broader A2.5 stock contention checks, including concurrent PO/manual receipts into one bucket and competing sales/manual issue demand from one bucket
 - hardened source-split assembly posting or an explicit blocked-path assertion when disabled
 - PO receiving ledger integrity, including protection against app-side `stock_levels` double-counting
 - trial and entitlement enforcement
@@ -160,6 +164,8 @@ The post-rollout `/bom` success-feedback patch is UI-only. Validate that the dur
 The 2026-06-13 A2.4a.1 package added `post_operator_sale` as the idempotent wrapper for normal web Point of Sale posting and cut the web POS flow over to that wrapper. The finance regression suite must verify same-key/same-payload replay, same-key/changed-payload rejection, stable sales-order/line/movement/settlement counts, unchanged stock after replay, required request-key rejection, OPERATOR+ success, VIEWER blocking, cross-company rejection, and that commercial line pricing still comes from `items.unit_price` or an explicit operator price override rather than stock cost. The legacy POS RPC remains executable for deployment compatibility and stale Tauri clients until A2.4a.2. This pass does not add idempotency to PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, or adjustment.
 
 The 2026-06-14 A2.4a.1 production rollout and smoke validation completed for normal web POS. The hosted migration and frontend deployment were live at commit `80c7c70`, and one controlled cash sale was submitted exactly once for `Leny Doçuras` using `Bolo de Custarde` from `Casa / CDC001 - Cozinha - Casa`. The smoke created one sales order (`LEN-SO000000001`), one sales-order line, one stock issue movement, one cash transaction, and one `posting_requests` row with `operation_type = 'operator.sale'`, `status = 'succeeded'`, and `result_ref_type = 'SO'`. Stock changed from `2` to `1`, duplicate stock buckets remained zero, and no negative stock bucket existed. The selling price was `1500` and `items.unit_price` remained `1500`, preserving commercial price separation from stock cost. No production replay or payload-mismatch test was performed because those paths are covered by the local finance regression suite, which passed `22/22` including replay, mismatch, authority, cash settlement, and bank settlement coverage. The short-lived success toast was not visible after six seconds, but posting succeeded, the cart reset, and stock refreshed correctly; this was a feedback observation, not a posting failure.
+
+The consolidated A2.4/A2.5 local package expands governed stock-posting regression coverage beyond assembly and POS. The suite must verify `post_purchase_receipt`, `post_sales_shipment`, `post_opening_stock_import`, `post_stock_receipt`, `post_stock_issue`, `post_stock_transfer`, and `post_stock_adjustment` for first success, same-key replay, changed-payload rejection, stable document/movement counts, and stock rollup reconciliation. Required concurrency coverage includes PO receipt plus manual receipt into the same bucket, sales shipment plus manual issue competing for the same stock, no negative stock, no duplicate stock buckets, no lost weighted-average receipt updates, and append-only movement behavior. This package is local until its migrations are reviewed, applied to hosted Supabase, and smoke-validated; Production Runs remain out of scope.
 
 ## Auth Production QA
 

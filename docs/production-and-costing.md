@@ -155,4 +155,28 @@ What did not change:
 - the legacy POS RPCs remain temporarily executable for migration/deployment compatibility and stale Tauri clients
 - A2.4a.2 must review maintained Tauri/packaged-client posture and then close normal authenticated legacy POS execution
 
-Phase A2.4 remains required before Production Runs: A2.4a.2 must close legacy POS execution, and A2.4b PO receiving authority/idempotency is the next governed-posting package before sales shipping, opening-stock import, manual movements, transfers, and adjustments.
+## Consolidated A2.4/A2.5 Local Package
+
+The consolidated A2.4/A2.5 package is implemented locally to move the remaining maintained stock-posting workflows behind backend-authoritative, transactional, idempotent RPCs.
+
+What changed locally:
+
+- normal web PO receiving calls `post_purchase_receipt` with operation type `purchase.receive`
+- normal web sales shipping calls `post_sales_shipment` with operation type `sales.ship`
+- opening-stock import calls `post_opening_stock_import` with operation type `opening_stock.import`
+- maintained manual stock posting uses `post_stock_receipt`, `post_stock_issue`, `post_stock_transfer`, and `post_stock_adjustment`
+- manual operation types are `stock.receipt`, `stock.issue`, `stock.transfer`, and `stock.adjustment`
+- replay of the same request key and payload returns the original result without duplicating document progress or stock movements
+- reusing a request key with a changed payload is rejected
+- transfer posting creates both sides atomically or neither side
+- adjustment posting remains movement-based and append-only
+- `stock_movements` remains the ledger and `stock_levels` remains trigger-derived
+
+What did not change:
+
+- no Production Runs, Growth Batches, Cost Analysis Dashboard, Advanced Allocation, or Industry Templates were implemented
+- no POS legacy RPC revocation was included; A2.4a.2 remains deferred
+- no POS pricing policy, stock valuation policy, finance posting, invoice issuance, settlement model, entitlement, Platform Control, company-access, or subscription behavior changed
+- reversals remain compensating movements rather than edits or deletes to posted movements
+
+Production Runs may start only after this consolidated package is locally validated, reviewed, deployed, and production-smoke validated. A2.4a.2 remains a separate compatibility/authority-closure package.

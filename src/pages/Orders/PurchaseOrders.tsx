@@ -1,5 +1,5 @@
 // src/pages/Orders/PurchaseOrders.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/db'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
@@ -30,6 +30,12 @@ import {
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 import { financeCan } from '../../lib/permissions'
 import { createDraftVendorBillFromPurchaseOrder, findExistingVendorBillForPurchaseOrder } from '../../lib/mzFinance'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../../lib/postingRequestKeys'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -171,9 +177,9 @@ const ts = (row: any) => row?.createdAt ?? row?.created_at ?? row?.createdat ?? 
 
 const initials = (s?: string | null) => {
   const t = (s || '').trim()
-  if (!t) return '—'
+  if (!t) return '?'
   const parts = t.split(/\s+/).filter(Boolean).slice(0, 2)
-  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '—'
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || t[0]?.toUpperCase() || '?'
 }
 
 type PurchaseLineDraft = {
@@ -240,15 +246,15 @@ const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;')
-const docText = (value: unknown, fallback = '—') => {
+const docText = (value: unknown, fallback = '?') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text) : fallback
 }
-const docMultiline = (value: unknown, fallback = '—') => {
+const docMultiline = (value: unknown, fallback = '?') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text).replace(/\r?\n/g, '<br/>') : fallback
 }
-const docDate = (value: unknown, fallback = '—') => {
+const docDate = (value: unknown, fallback = '?') => {
   const text = String(value ?? '').trim()
   return text ? escapeHtml(text.slice(0, 10)) : fallback
 }
@@ -458,6 +464,7 @@ export default function PurchaseOrders() {
   // per-line plan and receipts map
   const [receivePlan, setReceivePlan] = useState<Record<string, { qty: string; whId: string; binId: string }>>({})
   const [receivedMap, setReceivedMap] = useState<Record<string, number>>({})
+  const receiptRequestKeysRef = useRef<Record<string, PostingRequestKeyRef>>({})
 
   useEffect(() => {
     if (user?.name && !poPreparedBy.trim()) setPoPreparedBy(user.name)
@@ -632,7 +639,7 @@ export default function PurchaseOrders() {
             .order('name', { ascending: true }),
           supabase
             .from('bins')
-            .select('id,code,name,warehouseId')   // ✅ camelCase column
+            .select('id,code,name,warehouseId')   // ok camelCase column
             .eq('company_id', companyId)
             .order('code', { ascending: true }),
         ])
@@ -905,24 +912,52 @@ export default function PurchaseOrders() {
     const totalBase = n(line.unit_price) * qtyRequested * (1 - disc/100) * fxToBase
     const unitCostBase = qtyBase > 0 ? totalBase / qtyBase : 0
 
-    const { error: movementError } = await supabase.from('stock_movements').insert({
-      company_id: companyId,
-      type: 'receive',
-      item_id: it.id,
-      uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
+    const lineKey = String(line.id ?? `${line.po_id}-${line.line_no}`)
+    const fingerprint = stablePostingFingerprint({
+      companyId,
+      purchaseOrderId: po.id,
+      purchaseOrderLineId: line.id,
+      itemId: it.id,
       qty: qtyRequested,
-      qty_base: qtyBase,
-      unit_cost: unitCostBase,
-      total_value: totalBase,
-      warehouse_to_id: whId,
-      bin_to_id: binId,
+      qtyBase,
+      uomId: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
+      warehouseToId: whId,
+      binToId: binId,
+      unitCost: unitCostBase,
       notes: `PO ${poNo(po)}`,
-      created_by: 'system',
-      ref_type: 'PO',
-      ref_id: String((po as any).id), // ensure TEXT
-      ref_line_id: line.id ?? null,
-    } as any)
-    if (movementError) throw movementError
+      receivedBy: user?.name || null,
+    })
+    const requestRef = receiptRequestKeysRef.current[lineKey] || null
+    receiptRequestKeysRef.current[lineKey] = requestRef
+    const requestKey = getPostingRequestKeyForFingerprint(
+      {
+        get current() { return receiptRequestKeysRef.current[lineKey] || null },
+        set current(value) { receiptRequestKeysRef.current[lineKey] = value },
+      },
+      fingerprint,
+    )
+
+    const { data, error } = await supabase.rpc('post_purchase_receipt', {
+      p_company_id: companyId,
+      p_purchase_order_id: po.id,
+      p_purchase_order_line_id: line.id,
+      p_item_id: it.id,
+      p_qty: qtyRequested,
+      p_qty_base: qtyBase,
+      p_uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
+      p_warehouse_to_id: whId,
+      p_bin_to_id: binId,
+      p_unit_cost: unitCostBase,
+      p_notes: `PO ${poNo(po)}`,
+      p_received_by: user?.name || null,
+      p_request_key: requestKey,
+    })
+    if (error) throw error
+    clearPostingRequestKey({
+      get current() { return receiptRequestKeysRef.current[lineKey] || null },
+      set current(value) { receiptRequestKeysRef.current[lineKey] = value },
+    })
+    return Array.isArray(data) ? data[0] : data
   }
 
   // Receive a single line (used by the per-line button)
@@ -936,25 +971,7 @@ export default function PurchaseOrders() {
       const already = n(currentMap[lineId] || 0)
       const remaining = Math.max(0, ordered - already)
       if (remaining <= 0) {
-        // Nothing left — try to trim & possibly close
-        let closedViaRpc = false
-        try {
-          const { data, error } = await supabase.rpc('po_trim_and_close', {
-            p_company_id: companyId,
-            p_po_id: po.id,
-          })
-          if (error) {
-            const msg = String(error.message || '').toLowerCase()
-            // tolerate PostgREST 404/routability while function becomes available
-            if (!msg.includes('not found')) throw error
-          } else {
-            closedViaRpc = !!data?.[0]?.closed
-          }
-        } catch (e) {
-          // swallow: fallback happens via refresh + status check
-          console.warn('po_trim_and_close (tolerated):', e)
-        }
-        if (closedViaRpc) toast.success(tt('orders.poClosed', 'PO closed — all items received'))
+        toast(tt('orders.nothingToReceive', 'Nothing left to receive.'))
         await refreshPOData()
         await loadReceiptsMap(po.id)
         return
@@ -966,34 +983,17 @@ export default function PurchaseOrders() {
       if (!plan || qtyRequested <= 0) return toast.error(tt('orders.enterQty', 'Enter a quantity to receive'))
       if (!plan.whId || !plan.binId) return toast.error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
 
-      await postReceiptForLine(po, line, qtyRequested, plan.whId, plan.binId)
-
-      // Trim fully-received lines & possibly close
-      let closed = false
-      try {
-        const { data, error } = await supabase.rpc('po_trim_and_close', {
-          p_company_id: companyId,
-          p_po_id: po.id,
-        })
-        if (error) {
-          const msg = String(error.message || '').toLowerCase()
-          if (!msg.includes('not found')) throw error
-        } else {
-          closed = !!data?.[0]?.closed
-        }
-      } catch (e) {
-        console.warn('po_trim_and_close (tolerated):', e)
-      }
+      const receiptResult = await postReceiptForLine(po, line, qtyRequested, plan.whId, plan.binId)
+      const closed = !!receiptResult?.closed
 
       await refreshPOData()
       await loadReceiptsMap(po.id)
       if (user?.name) {
-        await supabase.from('purchase_orders').update({ received_by: user.name }).eq('id', po.id).eq('company_id', companyId)
         setSelectedPO(prev => (prev?.id === po.id ? { ...prev, received_by: user.name } : prev))
         setSelectedPoMeta(prev => ({ ...prev, receivedBy: user.name }))
       }
       if (closed) {
-        toast.success(tt('orders.poClosed', 'PO closed — all items received'))
+        toast.success(tt('orders.poClosed', 'PO closed ? all items received'))
         setPoViewOpen(false)
         setSelectedPO(null)
       } else {
@@ -1021,7 +1021,7 @@ export default function PurchaseOrders() {
       const currentMap = await loadReceiptsMap(po.id)
       let anyPosted = false
 
-      // Post movements for every line that has a >0 request (clamped to remaining)
+      let closed = false
       for (const l of lines) {
         const lineId = String(l.id || '')
         if (!lineId) continue
@@ -1039,38 +1039,20 @@ export default function PurchaseOrders() {
         if (qtyRequested <= 0) continue
         if (!p.whId || !p.binId) throw new Error(tt('orders.selectDestWhBin', 'Select destination warehouse and bin for each line'))
 
-        await postReceiptForLine(po, l, qtyRequested, p.whId, p.binId)
+        const receiptResult = await postReceiptForLine(po, l, qtyRequested, p.whId, p.binId)
+        if (receiptResult?.closed) closed = true
         anyPosted = true
-      }
-
-      // Always call the RPC — delete fully-received lines and close if none left
-      let closed = false
-      try {
-        const { data, error } = await supabase.rpc('po_trim_and_close', {
-          p_company_id: companyId,
-          p_po_id: po.id,
-        })
-        if (error) {
-          const msg = String(error.message || '').toLowerCase()
-          // Ignore PostgREST 404/“not found” which can surface while the function deploys
-          if (!msg.includes('not found')) throw error
-        } else {
-          closed = !!data?.[0]?.closed
-        }
-      } catch (e) {
-        console.warn('po_trim_and_close (tolerated):', e)
       }
 
       await refreshPOData()
       await loadReceiptsMap(po.id)
       if (user?.name) {
-        await supabase.from('purchase_orders').update({ received_by: user.name }).eq('id', po.id).eq('company_id', companyId)
         setSelectedPO(prev => (prev?.id === po.id ? { ...prev, received_by: user.name } : prev))
         setSelectedPoMeta(prev => ({ ...prev, receivedBy: user.name }))
       }
 
       if (closed) {
-        toast.success(tt('orders.poClosed', 'PO closed — all items received'))
+        toast.success(tt('orders.poClosed', 'PO closed ? all items received'))
         setPoViewOpen(false); setSelectedPO(null); setReceivePlan({})
         return
       }
@@ -1565,7 +1547,7 @@ export default function PurchaseOrders() {
   // --------------------------------------------------
 
   async function printPO(po: PO): Promise<void> {
-    const currency = curPO(po) || '—'
+    const currency = curPO(po) || '?'
     const fx = fxPO(po) || 1
     const lines = polines.filter(l => l.po_id === po.id)
 
@@ -1596,10 +1578,10 @@ export default function PurchaseOrders() {
     const live = await resolveSupplierDetails(po)
     const supp = {
       name: po.supplier_name ?? live.name ?? poSupplierLabel(po),
-      email: po.supplier_email ?? live.email ?? '—',
-      phone: po.supplier_phone ?? live.phone ?? '—',
-      tax_id: po.supplier_tax_id ?? live.tax_id ?? '—',
-      terms: po.payment_terms ?? live.payment_terms ?? '—',
+      email: po.supplier_email ?? live.email ?? '?',
+      phone: po.supplier_phone ?? live.phone ?? '?',
+      tax_id: po.supplier_tax_id ?? live.tax_id ?? '?',
+      terms: po.payment_terms ?? live.payment_terms ?? '?',
     }
     ;(supp as any).referenceNo = (po as any).reference_no ?? ''
     ;(supp as any).deliveryTerms = (po as any).delivery_terms ?? ''
@@ -1717,14 +1699,14 @@ export default function PurchaseOrders() {
       <div class="card">
         <h4>${tt('orders.companyDetails', 'Company Details')}</h4>
         <div class="kv">
-          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || '—'}</b></div>
-          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || '—'}</div>
-          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || '—'}</div>
-          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || '—'}</div>
-          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || '—'}</div>
-          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || '—'}</div>
-          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || '—'}</div>
-          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || '—'}</div>
+          <div class="k">${tt('orders.tradeName', 'Trade name')}</div><div><b>${cp.tradeName || companyName || '?'}</b></div>
+          <div class="k">${tt('orders.legalName', 'Legal name')}</div><div>${cp.legalName || '?'}</div>
+          <div class="k">${tt('orders.taxId', 'Tax ID')}</div><div>${cp.taxId || '?'}</div>
+          <div class="k">${tt('orders.registrationNo', 'Registration No.')}</div><div>${cp.regNo || '?'}</div>
+          <div class="k">${tt('orders.phone', 'Phone')}</div><div>${cp.phone || '?'}</div>
+          <div class="k">${tt('orders.email', 'Email')}</div><div>${cp.email || '?'}</div>
+          <div class="k">${tt('orders.website', 'Website')}</div><div>${cp.website || '?'}</div>
+          <div class="k">${tt('orders.address', 'Address')}</div><div class="addr">${addrLines || '?'}</div>
         </div>
         ${cp.printFooterNote ? `<div class="footnote">${cp.printFooterNote}</div>` : ''}
       </div>
@@ -1736,7 +1718,7 @@ export default function PurchaseOrders() {
         <div class="kv">
           <div class="k">${tt('orders.workflow', 'Workflow')}</div><div><b class="cap">${purchaseStatusLabel(po.status)}</b></div>
           <div class="k">${tt('orders.currency', 'Currency')}</div><div><b>${currency}</b></div>
-          <div class="k">${tt('orders.fxToBaseShort', 'FX → {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
+          <div class="k">${tt('orders.fxToBaseShort', 'FX ? {baseCode}', { baseCode })}</div><div><b>${fmtAcct(fx)}</b></div>
           <div class="k">${tt('orders.expectedDate', 'Expected Date')}</div><div><b>${docDate((po as any).expected_date)}</b></div>
           <div class="k">${tt('orders.createdBy', 'Created by')}</div><div>${docText(audit.createdBy)}</div>
           <div class="k">${tt('orders.createdAt', 'Created at')}</div><div>${docDate(audit.createdAt)}</div>
@@ -1750,7 +1732,7 @@ export default function PurchaseOrders() {
       <div class="card" style="margin-top:8px">
         <h4>${tt('orders.supplier', 'Supplier')}</h4>
         <div><b>${supp.name}</b></div>
-        <div class="muted">${tt('orders.email', 'Email')}: ${supp.email} · ${tt('orders.phone', 'Phone')}: ${supp.phone} · ${tt('orders.taxId', 'Tax ID')}: ${supp.tax_id}</div>
+        <div class="muted">${tt('orders.email', 'Email')}: ${supp.email} Â· ${tt('orders.phone', 'Phone')}: ${supp.phone} Â· ${tt('orders.taxId', 'Tax ID')}: ${supp.tax_id}</div>
         <div class="kv" style="margin-top:6px">
           <div class="k">${tt('orders.paymentTerms', 'Payment Terms')}</div><div>${supp.terms}</div>
         </div>
@@ -1762,7 +1744,7 @@ export default function PurchaseOrders() {
         <div class="header">
           <div class="brand">
             ${headerBrand}
-            <div class="company-name">${companyName || '—'}</div>
+            <div class="company-name">${companyName || '?'}</div>
           </div>
           <div class="doc-meta">
             <h1 class="doc-title">${tt('orders.purchaseOrder', 'Purchase Order')} ${number}</h1>
@@ -1911,7 +1893,7 @@ export default function PurchaseOrders() {
                         <SelectTrigger><SelectValue placeholder={tt('orders.selectSupplier', 'Select supplier')} /></SelectTrigger>
                         <SelectContent className="max-h-64 overflow-auto">
                           {suppliers.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>{(s.code ? s.code + ' — ' : '') + s.name}</SelectItem>
+                            <SelectItem key={s.id} value={s.id}>{(s.code ? s.code + ' ? ' : '') + s.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -2102,7 +2084,7 @@ export default function PurchaseOrders() {
                                 </td>
                                 <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
                                 <td className="py-2 px-3 text-right">
-                                  <Button size="icon" variant="ghost" onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
+                                  <Button size="icon" variant="ghost" onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}>?</Button>
                                 </td>
                               </tr>
                             )
@@ -2435,7 +2417,7 @@ export default function PurchaseOrders() {
                         <Label>{tt('financeDocs.audit.adjustments', 'Adjustments')}</Label>
                         <div>{selectedPOVendorBill.credit_note_count + selectedPOVendorBill.debit_note_count}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {tt('financeDocs.audit.adjustmentsBreakdown', 'Credits {credits} · Debits {debits}', {
+                          {tt('financeDocs.audit.adjustmentsBreakdown', 'Credits {credits} Â· Debits {debits}', {
                             credits: selectedPOVendorBill.credit_note_count,
                             debits: selectedPOVendorBill.debit_note_count,
                           })}
@@ -2602,7 +2584,7 @@ export default function PurchaseOrders() {
                   <Select value={defaultReceiveBinId} onValueChange={setDefaultReceiveBinId}>
                     <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                     <SelectContent>
-                      {binsForWH(defaultReceiveWhId).map(b => (<SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>))}
+                      {binsForWH(defaultReceiveWhId).map(b => (<SelectItem key={b.id} value={b.id}>{b.code} ? {b.name}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2656,7 +2638,7 @@ export default function PurchaseOrders() {
                             <div className="font-medium">{it?.name || l.item_id}</div>
                             {!!l.description && <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{l.description}</div>}
                           </td>
-                          <td className="py-2 px-3">{it?.sku || '—'}</td>
+                          <td className="py-2 px-3">{it?.sku || '?'}</td>
                           <td className="py-2 px-3">{fmtAcct(ordered)} {uomCode}</td>
                           <td className="py-2 px-3">{fmtAcct(received)} {uomCode}</td>
                           <td className="py-2 px-3">{fmtAcct(remaining)} {uomCode}</td>
@@ -2700,7 +2682,7 @@ export default function PurchaseOrders() {
                             >
                               <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                               <SelectContent>
-                                {binsForWH(plan.whId).map(b => (<SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>))}
+                                {binsForWH(plan.whId).map(b => (<SelectItem key={b.id} value={b.id}>{b.code} ? {b.name}</SelectItem>))}
                               </SelectContent>
                             </Select>
                           </td>

@@ -1,5 +1,5 @@
 ﻿// src/pages/Orders/SalesOrders.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { db, supabase } from '../../lib/db'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -32,6 +32,12 @@ import {
 } from '../../lib/orderState'
 import { OrderAuditGrid, OrderDetailSection, OrderWorkflowStrip } from './components/OrderDetailSections'
 import { createDraftSalesInvoiceFromOrder } from '../../lib/mzFinance'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../../lib/postingRequestKeys'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -494,6 +500,7 @@ export default function SalesOrders() {
   // Per-line issue planning across multiple bins and warehouses.
   const [allocationsByLine, setAllocationsByLine] = useState<Record<string, IssueAllocationDraft[]>>({})
   const [stockOptionsByLine, setStockOptionsByLine] = useState<Record<string, StockSourceOption[]>>({})
+  const shipmentRequestKeysRef = useRef<Record<string, PostingRequestKeyRef>>({})
 
   // --- Shipped SOs browser state
   const PAGE_SIZE = 100
@@ -1390,29 +1397,32 @@ export default function SalesOrders() {
         }
       }
 
-      for (const row of plan.rows) {
-        const binDbId = decodeBinValue(row.binId)
-        const key = `${row.warehouseId}::${row.binId}`
-        const snapshot = sourceChecks.get(key)
-        const avgCost = snapshot?.avgCost ?? 0
-        const movementInsert = await supabase.from('stock_movements').insert({
-          type: 'issue',
-          item_id: plan.item.id,
-          uom_id: uomIdFromIdOrCode(line.uom_id) || line.uom_id,
-          qty: row.qtyNumber,
-          qty_base: row.qtyBase,
-          unit_cost: avgCost,
-          total_value: avgCost * row.qtyBase,
-          warehouse_from_id: row.warehouseId,
-          bin_from_id: binDbId,
-          notes: `SO ${soNo(so)}`,
-          created_by: user?.name || 'system',
-          ref_type: 'SO',
-          ref_id: (so as any).id,
-          ref_line_id: line.id ?? null,
-        } as any).select('id').single()
-        if (movementInsert.error) throw movementInsert.error
+      const allocations = plan.rows.map((row) => ({
+        warehouse_id: row.warehouseId,
+        bin_id: decodeBinValue(row.binId),
+        qty: row.qtyNumber,
+        qty_base: row.qtyBase,
+      }))
+      const fingerprint = stablePostingFingerprint({
+        companyId,
+        salesOrderId: so.id,
+        salesOrderLineId: line.id,
+        allocations,
+      })
+      const requestRef = {
+        get current() { return shipmentRequestKeysRef.current[lineKey] || null },
+        set current(value: PostingRequestKeyRef) { shipmentRequestKeysRef.current[lineKey] = value },
       }
+      const requestKey = getPostingRequestKeyForFingerprint(requestRef, fingerprint)
+      const shipment = await supabase.rpc('post_sales_shipment', {
+        p_company_id: companyId,
+        p_sales_order_id: so.id,
+        p_sales_order_line_id: line.id,
+        p_allocations: allocations,
+        p_request_key: requestKey,
+      })
+      if (shipment.error) throw shipment.error
+      clearPostingRequestKey(requestRef)
 
       if (options?.refresh !== false) {
         await refreshSalesData(companyId)

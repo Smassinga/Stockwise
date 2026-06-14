@@ -53,15 +53,18 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
 - stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
-- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; A2.1/A2.2 applies it to assembly, and the A2.4a.1 package extends the pattern to normal web Point of Sale after its migration and frontend rollout
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly and normal web Point of Sale today, and the consolidated A2.4/A2.5 local package extends the pattern to PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, and adjustment
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
 - idempotent normal web POS posting is implemented in the A2.4a.1 package through `post_operator_sale` with operation type `operator.sale`; repeated calls with the same request key and same payload return the original sales order result, while reused keys with changed payloads are rejected
+- the consolidated A2.4/A2.5 local package adds dedicated governed posting RPCs for the remaining maintained stock-posting workflows: `post_purchase_receipt` (`purchase.receive`), `post_sales_shipment` (`sales.ship`), `post_opening_stock_import` (`opening_stock.import`), `post_stock_receipt` (`stock.receipt`), `post_stock_issue` (`stock.issue`), `post_stock_transfer` (`stock.transfer`), and `post_stock_adjustment` (`stock.adjustment`)
+- these RPCs preserve `stock_movements` as the append-only ledger and `stock_levels` as the trigger-derived rollup; replay cannot duplicate stock or document progress, and same-key/changed-payload requests are rejected before business rows are created
 - helper RPCs such as `inv_issue_component` and `inv_receive_finished` are legacy/internal utilities, not normal client-facing assembly APIs
 - canonical UOM identifiers remain text (`uoms.id`, `items.base_uom_id`, and `stock_movements.uom_id`); opening-stock import must preserve text IDs such as `uom_ea` and must not cast them to UUID
 - legacy POS RPCs remain temporarily executable for deployment and stale-client compatibility; A2.4a.2 must close normal authenticated legacy execution after frontend and Tauri distribution posture is reviewed
-- PO receiving, sales-order shipping, opening-stock import, and manual movements still need later backend RPC/idempotency hardening
+- maintained frontend PO receiving, sales-order shipping, opening-stock import, and manual movement flows are moved behind dedicated RPC/idempotency boundaries in the consolidated A2.4/A2.5 local package; production rollout and smoke validation remain separate release steps
+- remaining direct movement access is limited to read/reporting paths, local regression setup fixtures, and stale or legacy helper surfaces. `src/lib/sales.ts` still contains an old direct stock-movement helper with no maintained frontend caller; legacy POS RPC closure remains A2.4a.2.
 - `movements` is no longer part of the intended product direction
 - the `/movements` UI is a register over `stock_movements`, not a separate data model; visual filtering, badges, and mobile cards must not imply manual `stock_levels` posting or a different costing policy
 
@@ -117,6 +120,6 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
-- posting idempotency: `posting_requests` for assembly and normal web POS
+- posting idempotency: `posting_requests` for assembly, normal web POS, and the consolidated A2.4/A2.5 local stock-posting RPCs
 - item default sell price: `items.unit_price`
 - entitlement/control plane: `company_subscription_state` + `platform_admins`

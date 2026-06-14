@@ -1,11 +1,11 @@
-// src/pages/StockMovements.tsx — company-scoped drop-in (v2.1)
+// src/pages/StockMovements.tsx - company-scoped drop-in (v2.1)
 // Notes:
-// • Replaces db.warehouses.list and db.bins.list with explicit Supabase queries scoped by company_id and warehouseId.
-// • Adds .eq('company_id', companyId) to *all* stock_levels reads.
-// • Keeps UI/UX identical; only the data sources and filters are hardened.
-// • Fix: In transfer mode, selecting From/To bin no longer clears the other; Item is enabled after selecting From Bin.
+// - Replaces db.warehouses.list and db.bins.list with explicit Supabase queries scoped by company_id and warehouseId.
+// - Adds .eq('company_id', companyId) to *all* stock_levels reads.
+// - Keeps UI/UX identical; only the data sources and filters are hardened.
+// - Fix: In transfer mode, selecting From/To bin no longer clears the other; Item is enabled after selecting From Bin.
 
-import { useEffect, useMemo, useState, Fragment } from 'react'
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRightLeft,
@@ -20,7 +20,7 @@ import {
   Send,
   Warehouse as WarehouseIcon,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase' // ← use the same client as Warehouses/StockLevels
+import { supabase } from '../lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -30,7 +30,12 @@ import toast from 'react-hot-toast'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { getBaseCurrencyCode } from '../lib/currency'
-import { finalizeCashSaleSOWithCOGS } from '../lib/sales'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../lib/postingRequestKeys'
 import { useOrg } from '../hooks/useOrg'
 import { useIsMobile } from '../hooks/use-mobile'
 import { cn } from '../lib/utils'
@@ -49,10 +54,6 @@ import { PremiumStatusBadge, type PremiumTone } from '../components/premium/Prem
 import { PremiumTableFilter } from '../components/premium/PremiumTableFilter'
 import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
 import { StockMovementMobileBinContents } from '../components/stock/StockMovementsMobile'
-
-// ---- Local type shim so we can pass notes even if lib/sales isn’t updated yet.
-type CashSaleWithCogsArgsWithNotes =
-  Parameters<typeof finalizeCashSaleSOWithCOGS>[0] & { notes?: string }
 
 // Master data types
 type Warehouse = { id: string; name: string; code?: string }
@@ -182,6 +183,7 @@ export default function StockMovements() {
   const [movementItemFilter, setMovementItemFilter] = useState<string>('ALL')
   const [movementWarehouseFilter, setMovementWarehouseFilter] = useState<string>('ALL')
   const [movementBinFilter, setMovementBinFilter] = useState<string>('ALL')
+  const manualPostingRequestRef = useRef<PostingRequestKeyRef>(null)
   const [expandedMovementId, setExpandedMovementId] = useState<string>('')
   const [movementSort, setMovementSort] = useState<PremiumDataTableSortState>({ columnId: 'createdAt', direction: 'desc' })
   const [movementPage, setMovementPage] = useState(1)
@@ -535,7 +537,7 @@ export default function StockMovements() {
   // Item base UoM id (normalized to an id)
   const itemBaseUomId = useMemo(() => uomIdFromIdOrCode(currentItem?.baseUomId || ''), [currentItem, uoms])
 
-  // Live quantity preview (entered → base)
+  // Live quantity preview (entered ? base)
   const preview = useMemo(() => {
     const q = num(qtyEntered, 0)
     if (!q || !currentItem) return null
@@ -552,110 +554,6 @@ export default function StockMovements() {
     return rt || DEFAULT_REF_BY_MOVE[mt]
   }
 
-  // ---------------------- CASH helpers ----------------------
-  async function getOrCreateCashCustomerId(): Promise<string> {
-    if (!companyId) throw new Error('No company selected')
-    const q = await supabase
-      .from('customers')
-      .select('id')
-      .eq('company_id', companyId)
-      .eq('code', 'CASH')
-      .maybeSingle()
-    if (!q.error && q.data?.id) return q.data.id
-    const up = await supabase
-      .from('customers')
-      .upsert({ company_id: companyId, code: 'CASH', name: 'Cash Customer' }, { onConflict: 'company_id,code' })
-      .select('id')
-      .single()
-    if (!up.error && up.data?.id) return up.data.id
-    const msg = String(up.error?.message || '')
-    if ((up as any)?.error?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
-      const q2 = await supabase.from('customers').select('id').eq('company_id', companyId).eq('code', 'CASH').maybeSingle()
-      if (!q2.error && q2.data?.id) return q2.data.id
-    }
-    throw up.error || new Error('Failed to upsert CASH customer')
-  }
-
-  async function getOrCreateCashPurchasesSupplierId(): Promise<string> {
-    if (!companyId) throw new Error('No company selected')
-    const CODE = 'CASH-PURCHASES'
-    const q = await supabase
-      .from('suppliers')
-      .select('id')
-      .eq('company_id', companyId)
-      .eq('code', CODE as any)
-      .maybeSingle()
-    if (!q.error && q.data?.id) return q.data.id
-
-    const up = await supabase
-      .from('suppliers')
-      .upsert({ company_id: companyId, code: CODE as any, name: 'Cash Purchases' }, { onConflict: 'company_id,code' })
-      .select('id')
-      .single()
-    if (!up.error && up.data?.id) return up.data.id
-
-    const msg = String(up.error?.message || '')
-    if ((up as any)?.error?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
-      const q2 = await supabase.from('suppliers').select('id').eq('company_id', companyId).eq('code', CODE as any).maybeSingle()
-      if (!q2.error && q2.data?.id) return q2.data.id
-    }
-    throw up.error || new Error('Failed to upsert CASH-PURCHASES supplier')
-  }
-
-  async function createClosedPOForReceipt(params: {
-    companyId: string
-    supplierId: string
-    itemId: string
-    uomId: string
-    qtyEntered: number
-    qtyBase: number
-    unitCost: number
-    currencyCode: string
-    notes?: string
-  }): Promise<{ poId: string; poLineId: string; poNumber?: string }> {
-    const { companyId, supplierId, itemId, uomId, qtyEntered, qtyBase, unitCost, currencyCode, notes } = params
-    const lineTotalBase = unitCost * qtyBase
-
-    const poIns = await supabase
-      .from('purchase_orders')
-      .insert({
-        company_id: companyId,
-        supplier_id: supplierId,
-        status: 'closed',
-        currency_code: currencyCode,
-        fx_to_base: 1,
-        subtotal: lineTotalBase,
-        tax_total: 0,
-        total: lineTotalBase,
-        notes: notes || null,
-        received_at: new Date().toISOString(),
-      } as any)
-      .select('id,order_no')
-      .single()
-
-    if (poIns.error || !poIns.data?.id) throw poIns.error || new Error('Failed to create PO')
-    const poId = poIns.data.id as string
-    const poNumber = (poIns.data as any)?.order_no || undefined
-
-    const polIns = await supabase
-      .from('purchase_order_lines')
-      .insert({
-        po_id: poId,
-        line_no: 1,
-        item_id: itemId,
-        uom_id: uomId,
-        qty: qtyEntered,
-        unit_price: unitCost,
-        line_total: lineTotalBase,
-        notes: notes || null,
-      } as any)
-      .select('id')
-      .single()
-
-    if (polIns.error || !polIns.data?.id) throw polIns.error || new Error('Failed to create PO line')
-    return { poId, poLineId: polIns.data.id as string, poNumber }
-  }
-
   // ---------------------- Submit handlers ----------------------
 
   async function submitReceive() {
@@ -665,59 +563,50 @@ export default function StockMovements() {
     if (!currentItem) return toast.error(tt('movements.selectItemRequired', 'Select an item'))
     const qty = num(qtyEntered); if (qty <= 0) return toast.error(tt('movements.qtyGtZero', 'Quantity must be > 0'))
     const uomId = movementUomId || itemBaseUomId
-    const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ≥ 0'))
+    const unitCostNum = num(unitCost, NaN); if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostGteZero', 'Unit cost must be ? 0'))
     const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
-    // If the user chose Ref Type PO and didn’t provide an existing ref, create a closed PO under CASH-PURCHASES
-    let effectiveRefId: string | null = null
-    let effectiveRefLineId: string | null = null
-    let poNoteSuffix = ''
-
+    // If the user chose Ref Type PO and didn't provide an existing ref, create a closed PO under CASH-PURCHASES
     const rtRaw = normalizeRefForSubmit('receive', refType)
     if (rtRaw === 'PO' && !refId) {
-      try {
-        const supId = await getOrCreateCashPurchasesSupplierId()
-        const { poId, poLineId, poNumber } = await createClosedPOForReceipt({
-          companyId,
-          supplierId: supId,
-          itemId: currentItem.id,
-          uomId,
-          qtyEntered: qty,
-          qtyBase,
-          unitCost: unitCostNum,
-          currencyCode: baseCode, // PO currency
-          notes,
-        })
-        effectiveRefId = poId
-        effectiveRefLineId = poLineId
-        if (poNumber) poNoteSuffix = `PO ${poNumber}`
-      } catch (e: any) {
-        console.error(e)
-        toast.error(tt('movements.failed', 'Action failed'))
-        return
-      }
+      return toast.error(tt('movements.usePurchaseOrdersForPoReceipt', 'Use Purchase Orders to receive against a PO, or provide an existing PO reference.'))
     }
 
-    const finalRefType = rtRaw
-    const ins = await supabase.from('stock_movements').insert({
-      company_id: companyId,
-      type: 'receive',
-      item_id: currentItem.id,
-      uom_id: uomId,
+    const finalRefType = rtRaw || 'ADJUST'
+    const fingerprint = stablePostingFingerprint({
+      companyId,
+      movementType: 'receive',
+      itemId: currentItem.id,
+      uomId,
       qty,
-      qty_base: qtyBase,
-      unit_cost: unitCostNum,
-      total_value: unitCostNum * qtyBase,
-      warehouse_to_id: warehouseToId,
-      bin_to_id: toBin,
-      notes: [notes, poNoteSuffix].filter(Boolean).join(' ').trim() || null,
-      created_by: (finalRefType === 'SO' ? 'so_ship' : 'system'),
-      ref_type: finalRefType || 'ADJUST',
-      ref_id: finalRefType === 'PO' ? (effectiveRefId || refId || null) : null,
-      ref_line_id: finalRefType === 'PO' ? (effectiveRefLineId || refLineId || null) : null,
-    }).select('id').single()
+      qtyBase,
+      unitCost: unitCostNum,
+      warehouseToId,
+      binToId: toBin,
+      refType: finalRefType,
+      refId: finalRefType === 'PO' ? refId || null : null,
+      refLineId: finalRefType === 'PO' ? refLineId || null : null,
+      notes: notes.trim() || null,
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(manualPostingRequestRef, fingerprint)
+    const posted = await supabase.rpc('post_stock_receipt', {
+      p_company_id: companyId,
+      p_item_id: currentItem.id,
+      p_uom_id: uomId,
+      p_qty: qty,
+      p_qty_base: qtyBase,
+      p_unit_cost: unitCostNum,
+      p_warehouse_to_id: warehouseToId,
+      p_bin_to_id: toBin,
+      p_ref_type: finalRefType,
+      p_ref_id: finalRefType === 'PO' ? refId || null : null,
+      p_ref_line_id: finalRefType === 'PO' ? refLineId || null : null,
+      p_notes: notes.trim() || null,
+      p_request_key: requestKey,
+    })
 
-    if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    if (posted.error) { console.error(posted.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    clearPostingRequestKey(manualPostingRequestRef)
 
     const { data: fresh } = await supabase
       .from('stock_levels')
@@ -745,75 +634,45 @@ export default function StockMovements() {
 
     const rt = normalizeRefForSubmit('issue', refType)
 
-    // SO path: create SO (revenue) + COGS via RPC
-    if (rt === 'SO') {
-      const unitSellPrice = num(saleUnitPrice, NaN)
-      if (!Number.isFinite(unitSellPrice) || unitSellPrice < 0) return toast.error(tt('movements.enterSellPrice', 'Enter a valid sell price'))
-      const cur = saleCurrency || baseCode
-      const fx = num(saleFx, NaN); if (!Number.isFinite(fx) || fx <= 0) return toast.error(tt('movements.enterFx', 'Enter a valid FX to base'))
-
-      try {
-        const effectiveCustomerId = saleCustomerId || await getOrCreateCashCustomerId()
-
-        await finalizeCashSaleSOWithCOGS({
-          itemId: currentItem.id,
-          qty,                 // pricing qty (may be non-base)
-          qtyBase,             // stock qty (base)
-          uomId,
-          unitPrice: unitSellPrice,
-          customerId: effectiveCustomerId,
-          currencyCode: cur,
-          fxToBase: fx,
-          status: 'shipped',
-          binId: fromBin,
-          cogsUnitCost: avgCost,
-          notes: notes?.trim() || undefined,
-        } as CashSaleWithCogsArgsWithNotes)
-
-        const { data: fresh } = await supabase
-          .from('stock_levels')
-          .select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at')
-          .eq('company_id', companyId)
-          .eq('warehouse_id', warehouseFromId)
-        setStockFrom((fresh || []).map(mapSL))
-        setMovementLogVersion(v => v + 1)
-
-        setQtyEntered('')
-        setRefId(''); setRefLineId(''); setNotes('')
-        setSaleUnitPrice(''); setSaleCustomerId('')
-        return toast.success(tt('movements.issued', 'Issued'))
-      } catch (e: any) {
-        console.error(e)
-        const msg = String(e?.message || '')
-        if (/duplicate key|unique constraint|23505/i.test(msg)) {
-          toast.error(tt('customers.cashRace', 'CASH customer just got created by another request. Please try again.'))
-        } else {
-          toast.error(tt('movements.failedCreateSO', 'Failed to create the Sales Order'))
-        }
-        return
-      }
+    if (rt === 'SO' && (!refId || !refLineId)) {
+      return toast.error(tt('movements.usePosOrSalesOrdersForSaleIssue', 'Use POS or Sales Orders for sale issues, or provide an existing SO reference.'))
     }
 
-    // Non-SO issues
-    const ins = await supabase.from('stock_movements').insert({
-      company_id: companyId,
-      type: 'issue',
-      item_id: currentItem.id,
-      uom_id: uomId,
+    const finalRefType = rt || 'ADJUST'
+    const fingerprint = stablePostingFingerprint({
+      companyId,
+      movementType: 'issue',
+      itemId: currentItem.id,
+      uomId,
       qty,
-      qty_base: qtyBase,
-      unit_cost: avgCost,
-      total_value: avgCost * qtyBase,
-      warehouse_from_id: warehouseFromId,
-      bin_from_id: fromBin,
-      notes,
-      created_by: 'system',
-      ref_type: rt || 'ADJUST',
-      ref_id: null,
-      ref_line_id: null,
-    }).select('id').single()
+      qtyBase,
+      warehouseFromId,
+      binFromId: fromBin,
+      unitCost: avgCost,
+      refType: finalRefType,
+      refId: finalRefType === 'SO' ? refId || null : null,
+      refLineId: finalRefType === 'SO' ? refLineId || null : null,
+      notes: notes.trim() || null,
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(manualPostingRequestRef, fingerprint)
+    const posted = await supabase.rpc('post_stock_issue', {
+      p_company_id: companyId,
+      p_item_id: currentItem.id,
+      p_uom_id: uomId,
+      p_qty: qty,
+      p_qty_base: qtyBase,
+      p_warehouse_from_id: warehouseFromId,
+      p_bin_from_id: fromBin,
+      p_unit_cost: avgCost,
+      p_ref_type: finalRefType,
+      p_ref_id: finalRefType === 'SO' ? refId || null : null,
+      p_ref_line_id: finalRefType === 'SO' ? refLineId || null : null,
+      p_notes: notes.trim() || null,
+      p_request_key: requestKey,
+    })
 
-    if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    if (posted.error) { console.error(posted.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    clearPostingRequestKey(manualPostingRequestRef)
 
     const { data: fresh } = await supabase
       .from('stock_levels')
@@ -839,30 +698,40 @@ export default function StockMovements() {
     const uomId = movementUomId || itemBaseUomId
     const qtyBase = safeConvert(qty, uomId, itemBaseUomId); if (qtyBase == null) return toast.error(tt('movements.noConversionToBase', 'No conversion to base UoM'))
 
-    const { qty: onHand, avgCost } = onHandIn(stockFrom, fromBin, currentItem.id)
+    const { qty: onHand } = onHandIn(stockFrom, fromBin, currentItem.id)
     if (onHand < qtyBase) return toast.error(tt('orders.insufficientStock', 'Insufficient stock'))
 
-    const ins = await supabase.from('stock_movements').insert({
-      company_id: companyId,
-      type: 'transfer',
-      item_id: currentItem.id,
-      uom_id: uomId,
+    const transferNote = `${tt('movements.note.transferPrefix', 'Transfer')}: ${warehouseFromId}/${fromBin} -> ${warehouseToId}/${toBin}${notes ? ` | ${notes}` : ''}`
+    const fingerprint = stablePostingFingerprint({
+      companyId,
+      movementType: 'transfer',
+      itemId: currentItem.id,
+      uomId,
       qty,
-      qty_base: qtyBase,
-      unit_cost: avgCost,
-      total_value: avgCost * qtyBase,
-      warehouse_from_id: warehouseFromId,
-      warehouse_to_id: warehouseToId,
-      bin_from_id: fromBin,
-      bin_to_id: toBin,
-      notes: `${tt('movements.note.transferPrefix', 'Transfer')}: ${warehouseFromId}/${fromBin} -> ${warehouseToId}/${toBin}${notes ? ` | ${notes}` : ''}`,
-      created_by: 'system',
-      ref_type: 'TRANSFER',
-      ref_id: null,
-      ref_line_id: null,
-    }).select('id').single()
+      qtyBase,
+      warehouseFromId,
+      binFromId: fromBin,
+      warehouseToId,
+      binToId: toBin,
+      notes: transferNote,
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(manualPostingRequestRef, fingerprint)
+    const posted = await supabase.rpc('post_stock_transfer', {
+      p_company_id: companyId,
+      p_item_id: currentItem.id,
+      p_uom_id: uomId,
+      p_qty: qty,
+      p_qty_base: qtyBase,
+      p_warehouse_from_id: warehouseFromId,
+      p_bin_from_id: fromBin,
+      p_warehouse_to_id: warehouseToId,
+      p_bin_to_id: toBin,
+      p_notes: transferNote,
+      p_request_key: requestKey,
+    })
 
-    if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    if (posted.error) { console.error(posted.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    clearPostingRequestKey(manualPostingRequestRef)
 
     const [freshFrom, freshTo] = await Promise.all([
       supabase.from('stock_levels').select('id,item_id,warehouse_id,bin_id,qty,avg_cost,allocated_qty,updated_at').eq('company_id', companyId).eq('warehouse_id', warehouseFromId),
@@ -894,49 +763,38 @@ export default function StockMovements() {
 
     const adjNote = `${tt('movements.note.adjust', 'Adjust to')} ${targetQtyEntered} ${(uomById.get(uomId)?.code || uomId).toString().toUpperCase()} (${tt('movements.current', 'current')}: ${currentBase})`
 
-    if (delta > 0) {
-      const unitCostNum = num(unitCost, NaN)
-      if (!Number.isFinite(unitCostNum) || unitCostNum < 0) return toast.error(tt('movements.unitCostRequiredForIncrease', 'Unit cost required when increasing on-hand'))
-
-      const ins = await supabase.from('stock_movements').insert({
-        company_id: companyId,
-        type: 'adjust',
-        item_id: currentItem.id,
-        uom_id: uomId,
-        qty: targetQtyEntered,   // human-friendly target
-        qty_base: delta,         // delta applied by trigger
-        unit_cost: unitCostNum,
-        total_value: delta * unitCostNum,
-        warehouse_to_id: warehouseToId,
-        bin_to_id: toBin,
-        notes: `${adjNote}${notes ? ` | ${notes}` : ''}`,
-        created_by: 'system',
-        ref_type: 'ADJUST',
-        ref_id: null,
-        ref_line_id: null,
-      }).select('id').single()
-      if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
-    } else {
-      const qtyBase = Math.abs(delta)
-      const ins = await supabase.from('stock_movements').insert({
-        company_id: companyId,
-        type: 'issue',
-        item_id: currentItem.id,
-        uom_id: uomId,
-        qty: Math.abs(targetQtyEntered - currentBase), // cosmetic
-        qty_base: qtyBase,
-        unit_cost: currentAvg,
-        total_value: currentAvg * qtyBase,
-        warehouse_from_id: warehouseToId,
-        bin_from_id: toBin,
-        notes: `${adjNote}${notes ? ` | ${notes}` : ''}`,
-        created_by: 'system',
-        ref_type: 'ADJUST',
-        ref_id: null,
-        ref_line_id: null,
-      }).select('id').single()
-      if (ins.error) { console.error(ins.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    const unitCostNum = delta > 0 ? num(unitCost, NaN) : currentAvg
+    if (delta > 0 && (!Number.isFinite(unitCostNum) || unitCostNum < 0)) {
+      return toast.error(tt('movements.unitCostRequiredForIncrease', 'Unit cost required when increasing on-hand'))
     }
+    const adjustmentNotes = `${adjNote}${notes ? ` | ${notes}` : ''}`
+    const fingerprint = stablePostingFingerprint({
+      companyId,
+      movementType: 'adjust',
+      itemId: currentItem.id,
+      uomId,
+      targetQty: targetQtyEntered,
+      targetQtyBase: targetBase,
+      warehouseId: warehouseToId,
+      binId: toBin,
+      unitCost: Number.isFinite(unitCostNum) ? unitCostNum : null,
+      reason: adjustmentNotes,
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(manualPostingRequestRef, fingerprint)
+    const posted = await supabase.rpc('post_stock_adjustment', {
+      p_company_id: companyId,
+      p_item_id: currentItem.id,
+      p_uom_id: uomId,
+      p_target_qty: targetQtyEntered,
+      p_target_qty_base: targetBase,
+      p_warehouse_id: warehouseToId,
+      p_bin_id: toBin,
+      p_unit_cost: Number.isFinite(unitCostNum) ? unitCostNum : null,
+      p_reason: adjustmentNotes,
+      p_request_key: requestKey,
+    })
+    if (posted.error) { console.error(posted.error); return toast.error(tt('movements.failed', 'Action failed')) }
+    clearPostingRequestKey(manualPostingRequestRef)
 
     const { data: fresh } = await supabase
       .from('stock_levels')
@@ -1024,7 +882,7 @@ export default function StockMovements() {
 
   const showFromWH = movementType === 'issue' || movementType === 'transfer'
   const showToWH   = movementType !== 'issue'
-  const showSaleBlock = movementType === 'issue' && String(refType || '').toUpperCase().startsWith('SO')
+  const showSaleBlock = false
 
   const movementTypePresentation = (type: MovementType) => {
     if (type === 'receive') {
@@ -1037,16 +895,16 @@ export default function StockMovements() {
     }
     if (type === 'issue') {
       return {
-        singular: tt('movements.type.issue', 'Saída'),
-        plural: tt('movements.type.issue.plural', 'Saídas'),
+        singular: tt('movements.type.issue', 'Sa?da'),
+        plural: tt('movements.type.issue.plural', 'Sa?das'),
         tone: 'critical' as PremiumTone,
         icon: <Send />,
       }
     }
     if (type === 'transfer') {
       return {
-        singular: tt('movements.type.transfer', 'Transferência'),
-        plural: tt('movements.type.transfer.plural', 'Transferências'),
+        singular: tt('movements.type.transfer', 'Transfer?ncia'),
+        plural: tt('movements.type.transfer.plural', 'Transfer?ncias'),
         tone: 'info' as PremiumTone,
         icon: <ArrowRightLeft />,
       }
@@ -1101,14 +959,14 @@ export default function StockMovements() {
   const warehouseLabel = (warehouseId?: string | null, binId?: string | null) => {
     const warehouse = warehouses.find(entry => entry.id === warehouseId)
     const bin = allBins.find(entry => entry.id === binId)
-    if (!warehouse && !bin) return '—'
+    if (!warehouse && !bin) return '?'
     return `${warehouse?.name || tt('common.none', 'None')}${bin ? ` / ${bin.code}` : ''}`
   }
 
   const refLabel = (row: MovementLogRow) => {
     const refTypeValue = String(row.ref_type || '')
     const refIdValue = row.ref_id || ''
-    if (!refIdValue) return refTypeValue || '—'
+    if (!refIdValue) return refTypeValue || '?'
     if (refTypeValue === 'SO') return `SO ${soNoById[refIdValue] || refIdValue.slice(0, 8)}`
     if (refTypeValue === 'PO') return `PO ${poNoById[refIdValue] || refIdValue.slice(0, 8)}`
     return `${refTypeValue} ${refIdValue.slice(0, 8)}`
@@ -1174,13 +1032,13 @@ export default function StockMovements() {
         return (
           <div className="min-w-0">
             <div className="truncate font-medium">{item?.name || row.item_id}</div>
-            <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{item?.sku || tt('common.dash', '—')}</div>
+            <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{item?.sku || tt('common.dash', '?')}</div>
             {detailsOpen ? (
               <div className="mt-3 rounded-xl border border-card-border bg-surface-muted/35 p-3 text-xs leading-5 text-muted-foreground">
                 <div className="grid gap-2 md:grid-cols-3">
                   <div>
                     <div className="premium-label">{tt('table.notes', 'Notes')}</div>
-                    <div className="mt-1">{row.notes || tt('common.dash', '—')}</div>
+                    <div className="mt-1">{row.notes || tt('common.dash', '?')}</div>
                   </div>
                   <div>
                     <div className="premium-label">{tt('movements.unitCost', 'Unit Cost')}</div>
@@ -1270,7 +1128,7 @@ export default function StockMovements() {
       <PremiumRegisterHeader
         eyebrow={tt('movements.eyebrow', 'Warehouse control')}
         title={tt('nav.movements', 'Movimentos de stock')}
-        description={tt('movements.subtitle', 'Receba, emita, transfira e ajuste stock com contexto claro de armazém e bin.')}
+        description={tt('movements.subtitle', 'Receba, emita, transfira e ajuste stock com contexto claro de armaz?m e bin.')}
         badges={
           <>
             <PremiumStatusBadge tone="info" icon={<ClipboardList />}>
@@ -1378,7 +1236,7 @@ export default function StockMovements() {
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.sourceDest', 'Route')}</div>
             <div className="mt-2 text-sm text-muted-foreground">
               {showFromWH ? warehouseLabel(warehouseFromId, fromBin) : tt('movements.noSource', 'No source')}
-              {'  '}→{'  '}
+              {'  '}?{'  '}
               {showToWH ? warehouseLabel(warehouseToId, toBin) : tt('movements.noDestination', 'No destination')}
             </div>
           </div>
@@ -1386,7 +1244,7 @@ export default function StockMovements() {
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.quantityPreview', 'Quantity preview')}</div>
             <div className="mt-2 text-sm text-muted-foreground">
               {preview
-                ? `${fmtAcct(preview.entered)} ${(uomById.get(preview.uomEntered)?.code || '').toUpperCase()} → ${fmtAcct(preview.base)} ${(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}`
+                ? `${fmtAcct(preview.entered)} ${(uomById.get(preview.uomEntered)?.code || '').toUpperCase()} ? ${fmtAcct(preview.base)} ${(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}`
                 : tt('movements.enterQtyToPreview', 'Enter a quantity to preview the base-unit impact')}
             </div>
           </div>
@@ -1461,7 +1319,7 @@ export default function StockMovements() {
                         setItemId(''); setQtyEntered('')
                       }}
                     >
-                      {b.code} — {b.name}
+                      {b.code} ? {b.name}
                     </Button>
                   ))}
                 </div>
@@ -1484,7 +1342,7 @@ export default function StockMovements() {
                         if (movementType !== 'transfer') setFromBin('')
                       }}
                     >
-                      {b.code} — {b.name}
+                      {b.code} ? {b.name}
                     </Button>
                   ))}
                 </div>
@@ -1583,7 +1441,7 @@ export default function StockMovements() {
                 >
                   <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
-                    {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                    {binsFrom.map(b => <SelectItem key={b.id} value={b.id}>{b.code} ? {b.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -1601,7 +1459,7 @@ export default function StockMovements() {
                 >
                   <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
-                    {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} — {b.name}</SelectItem>)}
+                    {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} ? {b.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -1639,7 +1497,7 @@ export default function StockMovements() {
                 <div className={`text-xs mt-1 ${preview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
                   {(movementType === 'adjust' ? tt('movements.preview.target', 'Target') : tt('movements.preview.entered', 'Entered'))}
                   {' '}{fmtAcct(preview.entered)} {(uomById.get(preview.uomEntered)?.code || '').toUpperCase()}
-                  {' '}→ {fmtAcct(preview.base)} {(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}
+                  {' '}? {fmtAcct(preview.base)} {(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}
                   {preview.invalid && tt('movements.preview.noPath', ' (no conversion path)')}
                 </div>
               )}
@@ -1667,7 +1525,7 @@ export default function StockMovements() {
                           const convertible = currentItem ? canConvert(u.id, itemBaseUomId) : false
                           return (
                             <SelectItem key={u.id} value={u.id}>
-                              {u.code} — {u.name}{currentItem && !convertible ? tt('movements.notConvertibleSuffix', ' (no path)') : ''}
+                              {u.code} ? {u.name}{currentItem && !convertible ? tt('movements.notConvertibleSuffix', ' (no path)') : ''}
                             </SelectItem>
                           )
                         })}
@@ -1723,7 +1581,7 @@ export default function StockMovements() {
                   <Select value={saleCustomerId} onValueChange={setSaleCustomerId}>
                     <SelectTrigger><SelectValue placeholder={tt('orders.selectCustomer', 'Select customer')} /></SelectTrigger>
                     <SelectContent className="max-h-64 overflow-auto">
-                      {customers.map(c => <SelectItem key={c.id} value={c.id}>{(c.code ? c.code + ' — ' : '') + c.name}</SelectItem>)}
+                      {customers.map(c => <SelectItem key={c.id} value={c.id}>{(c.code ? c.code + ' ? ' : '') + c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1773,7 +1631,7 @@ export default function StockMovements() {
           <div>
             <h2 className="text-[1.05rem] font-semibold leading-7 tracking-tight">{tt('movements.logTitle', 'Registo de movimentos de stock')}</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              {tt('movements.registerHelp', 'Consulte o razão de stock por data, tipo de movimento, armazém, bin, artigo e referência.')}
+              {tt('movements.registerHelp', 'Consulte o raz?o de stock por data, tipo de movimento, armaz?m, bin, artigo e refer?ncia.')}
             </p>
           </div>
         </div>
@@ -1781,7 +1639,7 @@ export default function StockMovements() {
         <PremiumTableToolbar
           searchValue={movementSearch}
           onSearchChange={setMovementSearch}
-          searchPlaceholder={tt('movements.searchPlaceholder', 'Pesquisar por artigo, nota, armazém, bin ou referência')}
+          searchPlaceholder={tt('movements.searchPlaceholder', 'Pesquisar por artigo, nota, armaz?m, bin ou refer?ncia')}
           searchLabel={tt('common.search', 'Search')}
           filters={
             <>
@@ -1828,7 +1686,7 @@ export default function StockMovements() {
                   </SelectContent>
                 </Select>
               </PremiumTableFilter>
-              <PremiumTableFilter label={tt('filters.warehouse.label', 'Armazém')}>
+              <PremiumTableFilter label={tt('filters.warehouse.label', 'Armaz?m')}>
                 <Select value={movementWarehouseFilter} onValueChange={setMovementWarehouseFilter}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1915,7 +1773,7 @@ export default function StockMovements() {
                       <div className="min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString(lang)}</div>
                         <div className="mt-1 truncate font-medium">{item?.name || row.item_id}</div>
-                        <div className="truncate font-mono text-xs text-muted-foreground">{item?.sku || tt('common.dash', '—')}</div>
+                        <div className="truncate font-mono text-xs text-muted-foreground">{item?.sku || tt('common.dash', '?')}</div>
                       </div>
                       {movementTypeBadge(row.type)}
                     </div>
@@ -1948,7 +1806,7 @@ export default function StockMovements() {
                       <div className="mt-3 space-y-2 rounded-xl border border-card-border bg-surface-muted/35 p-3 text-sm">
                         <div>
                           <div className="premium-label">{tt('table.notes', 'Notes')}</div>
-                          <div className="mt-1 text-muted-foreground">{row.notes || tt('common.dash', '—')}</div>
+                          <div className="mt-1 text-muted-foreground">{row.notes || tt('common.dash', '?')}</div>
                         </div>
                         <div>
                           <div className="premium-label">{tt('movements.unitCost', 'Unit Cost')}</div>

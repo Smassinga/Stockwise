@@ -168,6 +168,11 @@ export type CashSaleWithCogsArgs = {
  * Creates SO (revenue) and records a single COGS stock "issue" by inserting
  * into stock_movements (DB triggers update stock_levels + COGS).
  * NOTE: We derive the warehouseId from the chosen bin.
+ *
+ * @deprecated No maintained web flow calls this helper. Normal POS uses
+ * post_operator_sale, and sales shipping/manual issue flows use governed
+ * posting RPCs. Keep this helper out of new code until it is removed with
+ * stale packaged-client compatibility work.
  */
 export async function finalizeCashSaleSOWithCOGS(args: CashSaleWithCogsArgs) {
   const {

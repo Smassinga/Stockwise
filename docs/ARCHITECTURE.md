@@ -51,7 +51,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
-- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting today; the A2.4a.1 package extends it to normal web Point of Sale after the hosted migration and frontend rollout. Remaining stock-sensitive workflows move behind the same pattern in later A2.4 packages.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting and normal web Point of Sale today. The consolidated A2.4/A2.5 local package extends the same pattern to PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, and adjustment before those migrations are rolled out.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -61,6 +61,7 @@ The maintained product surfaces are:
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
 - `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
+- governed stock-posting operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, and `stock.adjustment`
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
