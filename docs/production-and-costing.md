@@ -155,11 +155,18 @@ What did not change:
 - the legacy POS RPCs remain temporarily executable for migration/deployment compatibility and stale Tauri clients
 - A2.4a.2 must review maintained Tauri/packaged-client posture and then close normal authenticated legacy POS execution
 
-## Consolidated A2.4/A2.5 Local Package
+## Consolidated A2.4/A2.5 Governed Stock Posting
 
-The consolidated A2.4/A2.5 package is implemented locally to move the remaining maintained stock-posting workflows behind backend-authoritative, transactional, idempotent RPCs.
+The consolidated A2.4/A2.5 package is live and representative production-smoke validated as of 14 June 2026. It moves the remaining maintained stock-posting workflows behind backend-authoritative, transactional, idempotent RPCs.
 
-What changed locally:
+Release boundary:
+
+- hosted Supabase is aligned through migration `20260614123300_add_governed_manual_stock_posting.sql`
+- the production frontend is aligned at commit `51c4fd1 fix(inventory): govern remaining stock postings`
+- Vercel production deployment `dpl_AkMrBB8BvcufSRNjDdWTAmXm8WMx` serves the production aliases
+- the local finance regression suite passed `24/24` before rollout, including replay, mismatch, authority, concurrency, and failure-path coverage
+
+What changed:
 
 - normal web PO receiving calls `post_purchase_receipt` with operation type `purchase.receive`
 - normal web sales shipping calls `post_sales_shipment` with operation type `sales.ship`
@@ -172,6 +179,15 @@ What changed locally:
 - adjustment posting remains movement-based and append-only
 - `stock_movements` remains the ledger and `stock_levels` remains trigger-derived
 
+Production smoke:
+
+- `purchase.receive` and `stock.adjustment` passed earlier in the rollout on controlled `Leny Doçuras` data
+- `stock.transfer` moved one `Bolo de Custarde` from `Casa / CDC001 - Cozinha - Casa` to `Casa / QA-A2 - A2 Production Smoke`, creating one `stock.transfer` request and two balanced movements
+- `sales.ship` shipped controlled order `LEN-SO000000002` from the QA bin, creating one `sales.ship` request and one issue movement without creating an invoice or settlement
+- duplicate stock buckets and negative stock rows remained zero
+- `items.unit_price` remained `1500` and stayed separate from inventory cost
+- no replay or payload-mismatch tests were performed in production; those paths remain covered by the local `24/24` regression suite
+
 What did not change:
 
 - no Production Runs, Growth Batches, Cost Analysis Dashboard, Advanced Allocation, or Industry Templates were implemented
@@ -179,4 +195,4 @@ What did not change:
 - no POS pricing policy, stock valuation policy, finance posting, invoice issuance, settlement model, entitlement, Platform Control, company-access, or subscription behavior changed
 - reversals remain compensating movements rather than edits or deletes to posted movements
 
-Production Runs may start only after this consolidated package is locally validated, reviewed, deployed, and production-smoke validated. A2.4a.2 remains a separate compatibility/authority-closure package.
+Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate compatibility/authority-closure package for legacy POS RPC execution and stale Tauri clients.

@@ -66,6 +66,20 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-14 consolidated A2.4/A2.5 governed stock-posting rollout:
+
+- hosted Supabase is aligned through migration `20260614123300_add_governed_manual_stock_posting.sql`
+- production frontend is aligned at Git commit `51c4fd1 fix(inventory): govern remaining stock postings`
+- Vercel production deployment `dpl_AkMrBB8BvcufSRNjDdWTAmXm8WMx` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- governed operation types now live through dedicated backend RPCs: `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, and `stock.adjustment`
+- representative production smokes passed for PO receipt, sales shipment, transfer, and positive adjustment on the controlled `Leny Doçuras` tenant
+- the completed transfer smoke moved one `Bolo de Custarde` from `Casa / CDC001 - Cozinha - Casa` to `Casa / QA-A2 - A2 Production Smoke`, creating one succeeded `stock.transfer` posting request and two balanced movements
+- the completed shipment smoke created controlled sales order `LEN-SO000000002`, shipped one `Bolo de Custarde` from `QA-A2`, created one succeeded `sales.ship` posting request and one issue movement, and created no invoice or settlement
+- duplicate stock bucket and negative stock checks remained zero, and `items.unit_price` remained `1500`
+- no production replay or payload-mismatch tests were performed; those paths remain covered by the local `24/24` finance regression suite
+- the production regression guard blocks the production project `ogzhwoqqumkuqhbvuzzp`
+- legacy POS RPCs remain temporarily executable for stale Tauri compatibility until A2.4a.2
+
 2026-06-14 A2.4a.1 normal web POS idempotency rollout:
 
 - hosted Supabase migration `20260613144412_add_idempotent_operator_sale.sql` was applied successfully
