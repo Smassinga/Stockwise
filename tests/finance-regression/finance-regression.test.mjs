@@ -47,7 +47,9 @@ async function querySingle(client, table, select, filters = []) {
   let query = client.from(table).select(select)
   for (const [method, ...args] of filters) query = query[method](...args)
   const { data, error } = await query.single()
-  if (error) throw error
+  if (error) {
+    throw new Error(`Expected one ${table} row (${select}) for ${JSON.stringify(filters)}: ${error.message || JSON.stringify(error)}`)
+  }
   return data
 }
 
@@ -55,8 +57,97 @@ async function countRows(client, table, filters = []) {
   let query = client.from(table).select('id', { count: 'exact', head: true })
   for (const [method, ...args] of filters) query = query[method](...args)
   const { count, error } = await query
-  if (error) throw error
+  if (error) {
+    throw new Error(`Expected ${table} count for ${JSON.stringify(filters)} to succeed: ${error.message || JSON.stringify(error)}`)
+  }
   return count ?? 0
+}
+
+async function expectDirectMutationBlocked(operationPromise, label = 'direct Production Run mutation') {
+  await expectPostgrestError(operationPromise, 'permission denied|row-level security')
+    .catch((error) => {
+      error.message = `${label}: ${error.message}`
+      throw error
+    })
+}
+
+async function financeIsolationCounts(client, companyId) {
+  const filters = [['eq', 'company_id', companyId]]
+  const bankAccounts = expectNoSupabaseError(
+    await client.from('bank_accounts').select('id').eq('company_id', companyId),
+    'Expected bank-account lookup for finance isolation to succeed',
+  )
+  const bankIds = (bankAccounts || []).map((row) => row.id)
+  return {
+    cash_transactions: await countRows(client, 'cash_transactions', filters),
+    bank_transactions: bankIds.length
+      ? await countRows(client, 'bank_transactions', [['in', 'bank_id', bankIds]])
+      : 0,
+    vendor_bills: await countRows(client, 'vendor_bills', filters),
+    vendor_bill_lines: await countRows(client, 'vendor_bill_lines', filters),
+    sales_invoices: await countRows(client, 'sales_invoices', filters),
+    sales_invoice_lines: await countRows(client, 'sales_invoice_lines', filters),
+    finance_document_events: await countRows(client, 'finance_document_events', filters),
+  }
+}
+
+function assertCountsEqual(actual, expected, label) {
+  assert.deepEqual(actual, expected, label)
+}
+
+function throwSupabaseError(error, label) {
+  if (!error) return
+  throw new Error(`${label}: ${error.message || JSON.stringify(error)}`)
+}
+
+function normalizeMovementSnapshot(row) {
+  return {
+    id: row.id,
+    company_id: row.company_id,
+    item_id: row.item_id,
+    type: row.type,
+    qty: Number(row.qty),
+    qty_base: Number(row.qty_base),
+    uom_id: row.uom_id,
+    warehouse_from_id: row.warehouse_from_id,
+    bin_from_id: row.bin_from_id,
+    warehouse_to_id: row.warehouse_to_id,
+    bin_to_id: row.bin_to_id,
+    unit_cost: Number(row.unit_cost || 0),
+    total_value: Number(row.total_value || 0),
+    ref_type: row.ref_type,
+    ref_id: row.ref_id,
+    ref_line_id: row.ref_line_id,
+    created_at: row.created_at,
+  }
+}
+
+function bucketDelta(movements, itemId, warehouseId, binId) {
+  return movements.reduce((sum, movement) => {
+    const qtyBase = Number(movement.qty_base || 0)
+    const fromMatches =
+      movement.item_id === itemId &&
+      movement.warehouse_from_id === warehouseId &&
+      (movement.bin_from_id ?? null) === (binId ?? null)
+    const toMatches =
+      movement.item_id === itemId &&
+      movement.warehouse_to_id === warehouseId &&
+      (movement.bin_to_id ?? null) === (binId ?? null)
+    return sum + (toMatches ? qtyBase : 0) - (fromMatches ? qtyBase : 0)
+  }, 0)
+}
+
+async function stockQtyOrZero(client, companyId, itemId, warehouseId, binId) {
+  let query = client
+    .from('stock_levels')
+    .select('qty, avg_cost')
+    .eq('company_id', companyId)
+    .eq('item_id', itemId)
+    .eq('warehouse_id', warehouseId)
+  query = binId === null ? query.is('bin_id', null) : query.eq('bin_id', binId)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw error
+  return { qty: Number(data?.qty || 0), avg_cost: Number(data?.avg_cost || 0) }
 }
 
 async function assertPurchaseReceivingUsesStockMovementLedgerOnly() {
@@ -238,6 +329,11 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     await safeDelete(() => admin.from('sales_orders').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('posting_requests').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('builds').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('production_run_extra_costs').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('production_run_outputs').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('production_run_inputs').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('production_runs').delete().eq('company_id', companyId))
+    await safeDelete(() => admin.from('production_run_counters').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('stock_movements').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('stock_levels').delete().eq('company_id', companyId))
     await safeDelete(() => admin.from('boms').delete().eq('company_id', companyId))
@@ -3297,6 +3393,1352 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     )
     assert.equal(manualMovements.length, 6)
     assert.equal(manualMovements.filter((row) => row.ref_type === 'TRANSFER' && row.ref_id === transfer.transfer_ref).length, 2)
+  })
+
+  await t.test('Production runs cover draft preview, idempotent posting, frozen costs, and reversal', async () => {
+    const operatorUser = await createTempUser(admin, PREFIX, 'production-operator')
+    created.userIds.add(operatorUser.userId)
+    const operatorClient = await signIn(operatorUser.email, operatorUser.password)
+    const operatorMembership = await admin.from('company_members').insert({
+      company_id: companyId,
+      user_id: operatorUser.userId,
+      email: operatorUser.email.toLowerCase(),
+      role: 'OPERATOR',
+      status: 'active',
+      invited_by: ownerUser.userId,
+    })
+    throwSupabaseError(operatorMembership.error, 'production operator membership setup failed')
+    await setActiveCompany(operatorClient, companyId)
+
+    const viewerUser = await createTempUser(admin, PREFIX, 'production-viewer')
+    created.userIds.add(viewerUser.userId)
+    const viewerClient = await signIn(viewerUser.email, viewerUser.password)
+    const viewerMembership = await admin.from('company_members').insert({
+      company_id: companyId,
+      user_id: viewerUser.userId,
+      email: viewerUser.email.toLowerCase(),
+      role: 'VIEWER',
+      status: 'active',
+      invited_by: ownerUser.userId,
+    })
+    throwSupabaseError(viewerMembership.error, 'production viewer membership setup failed')
+    await setActiveCompany(viewerClient, companyId)
+
+    const rawItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-PR-RM`,
+        name: `${PREFIX} Production Run Flour`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 0,
+        primary_role: 'raw_material',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: false,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(rawItem.error, 'production raw item setup failed')
+    const prRawItemId = rawItem.data.id
+
+    const outputItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-PR-FG`,
+        name: `${PREFIX} Production Run Cake`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 400,
+        primary_role: 'assembled_product',
+        track_inventory: true,
+        can_buy: false,
+        can_sell: true,
+        is_assembled: true,
+      })
+      .select('id, unit_price')
+      .single()
+    throwSupabaseError(outputItem.error, 'production output item setup failed')
+    const prOutputItemId = outputItem.data.id
+
+    const seedRawLevel = await ownerClient.from('stock_levels').insert({
+      company_id: companyId,
+      item_id: prRawItemId,
+      warehouse_id: warehouseId,
+      bin_id: sourceBinId,
+      qty: 20,
+      avg_cost: 7,
+      allocated_qty: 0,
+    })
+    throwSupabaseError(seedRawLevel.error, 'production raw stock setup failed')
+
+    const runBom = await ownerClient
+      .from('boms')
+      .insert({
+        company_id: companyId,
+        product_id: prOutputItemId,
+        name: `${PREFIX} Production Run BOM`,
+        version: 'pr-v1',
+        is_active: true,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(runBom.error, 'production BOM setup failed')
+    const prBomId = runBom.data.id
+
+    const runBomComponent = await ownerClient.from('bom_components').insert({
+      bom_id: prBomId,
+      component_item_id: prRawItemId,
+      qty_per: 3,
+      scrap_pct: 0,
+    })
+    throwSupabaseError(runBomComponent.error, 'production BOM component setup failed')
+
+    await expectPostgrestError(
+      viewerClient.rpc('create_production_run_draft', {
+        p_company_id: companyId,
+        p_bom_id: prBomId,
+        p_planned_output_qty: 1,
+      }),
+      'operator_role_required',
+    )
+
+    const draft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: prBomId,
+          p_planned_output_qty: 2,
+          p_run_date: todayIso(),
+          p_notes: `${PREFIX} production run draft`,
+        }),
+        'Expected production run draft creation to succeed',
+      ),
+    )
+    assert.ok(draft.run_id)
+    assert.match(draft.reference_no, /-PR\d{9}$/)
+
+    const seededInputs = expectNoSupabaseError(
+      await ownerClient
+        .from('production_run_inputs')
+        .select('id, line_no, item_id, planned_qty, actual_qty')
+        .eq('company_id', companyId)
+        .eq('production_run_id', draft.run_id)
+        .order('line_no'),
+      'Expected production-run input seed lookup to succeed',
+    )
+    assert.equal(seededInputs.length, 1)
+    assert.equal(seededInputs[0].item_id, prRawItemId)
+    assert.equal(round2(seededInputs[0].planned_qty), 6)
+    assert.equal(round2(seededInputs[0].actual_qty), 6)
+    const seededOutput = await querySingle(
+      ownerClient,
+      'production_run_outputs',
+      'id, item_id, uom_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'production_run_id', draft.run_id],
+      ],
+    )
+    assert.equal(seededOutput.item_id, prOutputItemId)
+    assert.equal(seededOutput.uom_id, eachUomId)
+
+    await expectPostgrestError(
+      admin.from('production_run_inputs').update({ uom_id: boxUomId }).eq('id', seededInputs[0].id),
+      'base_uom',
+    )
+    await expectPostgrestError(
+      admin.from('production_run_outputs').update({ uom_id: boxUomId }).eq('id', seededOutput.id),
+      'base_uom',
+    )
+
+    const movementCountBeforeCancel = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    const cancelDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: prBomId,
+          p_planned_output_qty: 1,
+          p_run_date: todayIso(),
+        }),
+        'Expected cancellable production run draft creation to succeed',
+      ),
+    )
+    expectNoSupabaseError(
+      await ownerClient.rpc('cancel_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: cancelDraft.run_id,
+      }),
+      'Expected draft cancellation to succeed',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), movementCountBeforeCancel)
+    await expectPostgrestError(
+      ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: cancelDraft.run_id,
+        p_actual_output_qty: 1,
+      }),
+      'production_run_not_draft',
+    )
+
+    expectNoSupabaseError(
+      await ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_planned_output_qty: 2,
+        p_actual_output_qty: 2,
+        p_run_date: todayIso(),
+        p_destination_warehouse_id: warehouseId,
+        p_destination_bin_id: destinationBinId,
+        p_notes: `${PREFIX} production run ready`,
+        p_inputs: [
+          {
+            line_no: 1,
+            actual_qty: 6,
+            source_warehouse_id: warehouseId,
+            source_bin_id: sourceBinId,
+          },
+        ],
+        p_extra_costs: [
+          {
+            category: 'labour',
+            description: `${PREFIX} direct labour`,
+            amount_base: 10,
+          },
+        ],
+      }),
+      'Expected draft update to succeed',
+    )
+
+    const draftExtraCost = await querySingle(
+      ownerClient,
+      'production_run_extra_costs',
+      'id, line_no',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'production_run_id', draft.run_id],
+      ],
+    )
+    const reparentTargetDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: prBomId,
+          p_planned_output_qty: 1,
+          p_run_date: todayIso(),
+        }),
+        'Expected reparent target draft creation to succeed',
+      ),
+    )
+
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_runs').insert({
+        company_id: companyId,
+        reference_no: `${PREFIX.toUpperCase()}-DIRECT-RUN`,
+        bom_id: prBomId,
+        finished_item_id: prOutputItemId,
+        output_uom_id: eachUomId,
+        planned_output_qty: 1,
+      }),
+      'OPERATOR direct production_runs insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_runs').update({ notes: `${PREFIX} direct update` }).eq('id', draft.run_id),
+      'OPERATOR direct production_runs update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_inputs').insert({
+        company_id: companyId,
+        production_run_id: draft.run_id,
+        line_no: 99,
+        item_id: prRawItemId,
+        uom_id: eachUomId,
+        planned_qty: 1,
+        actual_qty: 1,
+      }),
+      'OPERATOR direct production_run_inputs insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_inputs').update({ actual_qty: 7 }).eq('id', seededInputs[0].id),
+      'OPERATOR direct production_run_inputs update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_inputs').delete().eq('id', seededInputs[0].id),
+      'OPERATOR direct production_run_inputs delete',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_inputs').update({ production_run_id: reparentTargetDraft.run_id }).eq('id', seededInputs[0].id),
+      'OPERATOR direct production_run_inputs reparent',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_outputs').insert({
+        company_id: companyId,
+        production_run_id: draft.run_id,
+        line_no: 99,
+        is_primary: false,
+        item_id: prOutputItemId,
+        uom_id: eachUomId,
+        actual_qty: 1,
+      }),
+      'OPERATOR direct production_run_outputs insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_outputs').update({ actual_qty: 9 }).eq('id', seededOutput.id),
+      'OPERATOR direct production_run_outputs update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_outputs').delete().eq('id', seededOutput.id),
+      'OPERATOR direct production_run_outputs delete',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_extra_costs').insert({
+        company_id: companyId,
+        production_run_id: draft.run_id,
+        line_no: 99,
+        category: 'labour',
+        amount_base: 1,
+      }),
+      'OPERATOR direct production_run_extra_costs insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_extra_costs').update({ amount_base: 99 }).eq('id', draftExtraCost.id),
+      'OPERATOR direct production_run_extra_costs update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_extra_costs').delete().eq('id', draftExtraCost.id),
+      'OPERATOR direct production_run_extra_costs delete',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_counters').update({ next_number: 999 }).eq('company_id', companyId),
+      'OPERATOR direct production_run_counters update',
+    )
+    await expectDirectMutationBlocked(
+      viewerClient.from('production_runs').update({ notes: `${PREFIX} viewer direct update` }).eq('id', draft.run_id),
+      'VIEWER direct production_runs update',
+    )
+    await expectDirectMutationBlocked(
+      viewerClient.from('production_run_inputs').delete().eq('id', seededInputs[0].id),
+      'VIEWER direct production_run_inputs delete',
+    )
+
+    const crossOwnerUser = await createTempUser(admin, PREFIX, 'production-cross-owner')
+    created.userIds.add(crossOwnerUser.userId)
+    const crossOwnerClient = await signIn(crossOwnerUser.email, crossOwnerUser.password)
+
+    const crossCompanyBootstrap = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await crossOwnerClient.rpc('create_company_and_bootstrap', { p_name: `${PREFIX} Production Run Cross Company` }),
+        'Expected cross-company bootstrap to succeed',
+      ),
+    )
+    const crossCompanyId = crossCompanyBootstrap.out_company_id
+    assert.notEqual(crossCompanyId, companyId, 'Cross-company fixture must use a distinct company')
+    created.companyIds.add(crossCompanyId)
+    await setActiveCompany(crossOwnerClient, crossCompanyId)
+
+    const crossWarehouse = await crossOwnerClient
+      .from('warehouses')
+      .insert({
+        company_id: crossCompanyId,
+        code: `${PREFIX.toUpperCase()}-XWH`,
+        name: `${PREFIX} Cross Warehouse`,
+        status: 'active',
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossWarehouse.error, 'cross-company warehouse setup failed')
+    const crossBin = await crossOwnerClient
+      .from('bins')
+      .insert({
+        id: `${PREFIX.toUpperCase()}-XBIN`,
+        company_id: crossCompanyId,
+        warehouseId: crossWarehouse.data.id,
+        code: 'XBIN',
+        name: 'Cross bin',
+        status: 'active',
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossBin.error, 'cross-company bin setup failed')
+    const crossRaw = await crossOwnerClient
+      .from('items')
+      .insert({
+        company_id: crossCompanyId,
+        sku: `${PREFIX.toUpperCase()}-XRM`,
+        name: `${PREFIX} Cross Raw`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 0,
+        primary_role: 'raw_material',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: false,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossRaw.error, 'cross-company raw item setup failed')
+    const crossOutput = await crossOwnerClient
+      .from('items')
+      .insert({
+        company_id: crossCompanyId,
+        sku: `${PREFIX.toUpperCase()}-XFG`,
+        name: `${PREFIX} Cross Finished`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 0,
+        primary_role: 'assembled_product',
+        track_inventory: true,
+        can_buy: false,
+        can_sell: true,
+        is_assembled: true,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossOutput.error, 'cross-company output item setup failed')
+    const crossBom = await crossOwnerClient
+      .from('boms')
+      .insert({
+        company_id: crossCompanyId,
+        product_id: crossOutput.data.id,
+        name: `${PREFIX} Cross BOM`,
+        version: 'cross-v1',
+        is_active: true,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossBom.error, 'cross-company BOM setup failed')
+    const crossBomComponent = await crossOwnerClient.from('bom_components').insert({
+      bom_id: crossBom.data.id,
+      component_item_id: crossRaw.data.id,
+      qty_per: 1,
+      scrap_pct: 0,
+    })
+    throwSupabaseError(crossBomComponent.error, 'cross-company BOM component setup failed')
+    const crossDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await crossOwnerClient.rpc('create_production_run_draft', {
+          p_company_id: crossCompanyId,
+          p_bom_id: crossBom.data.id,
+          p_planned_output_qty: 1,
+          p_run_date: todayIso(),
+        }),
+        'Expected cross-company draft setup to succeed',
+      ),
+    )
+
+    await setActiveCompany(ownerClient, companyId)
+    await setActiveCompany(managerClient, companyId)
+    await setActiveCompany(operatorClient, companyId)
+    await setActiveCompany(viewerClient, companyId)
+
+    const crossFinishedBom = await ownerClient
+      .from('boms')
+      .insert({
+        company_id: companyId,
+        product_id: crossOutput.data.id,
+        name: `${PREFIX} Cross Finished Item BOM`,
+        version: 'cross-finished',
+        is_active: true,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossFinishedBom.error, 'cross-finished BOM setup failed')
+    const crossInputBom = await ownerClient
+      .from('boms')
+      .insert({
+        company_id: companyId,
+        product_id: prOutputItemId,
+        name: `${PREFIX} Cross Input Item BOM`,
+        version: 'cross-input',
+        is_active: true,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(crossInputBom.error, 'cross-input BOM setup failed')
+    const crossInputComponent = await ownerClient.from('bom_components').insert({
+      bom_id: crossInputBom.data.id,
+      component_item_id: crossRaw.data.id,
+      qty_per: 1,
+      scrap_pct: 0,
+    })
+    throwSupabaseError(crossInputComponent.error, 'cross-input BOM component setup failed')
+
+    const movementCountBeforeCrossCompany = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    const postingCountBeforeCrossCompany = await countRows(ownerClient, 'posting_requests', [['eq', 'company_id', companyId]])
+    const runCountBeforeCrossCompany = await countRows(ownerClient, 'production_runs', [['eq', 'company_id', companyId]])
+
+    await expectPostgrestError(
+      ownerClient.rpc('create_production_run_draft', {
+        p_company_id: companyId,
+        p_bom_id: crossBom.data.id,
+        p_planned_output_qty: 1,
+      }),
+      'bom_not_found',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('create_production_run_draft', {
+        p_company_id: companyId,
+        p_bom_id: crossFinishedBom.data.id,
+        p_planned_output_qty: 1,
+      }),
+      'bom_not_found',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('create_production_run_draft', {
+        p_company_id: companyId,
+        p_bom_id: crossInputBom.data.id,
+        p_planned_output_qty: 1,
+      }),
+      'bom_has_no_components',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_destination_warehouse_id: crossWarehouse.data.id,
+        p_destination_bin_id: crossBin.data.id,
+      }),
+      'warehouse_not_found',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_inputs: [
+          {
+            line_no: 1,
+            actual_qty: 1,
+            source_warehouse_id: crossWarehouse.data.id,
+            source_bin_id: crossBin.data.id,
+          },
+        ],
+      }),
+      'warehouse_not_found',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('preview_production_run', {
+        p_company_id: crossCompanyId,
+        p_run_id: crossDraft.run_id,
+      }),
+      'cross_company_access_denied',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_production_run', {
+        p_company_id: crossCompanyId,
+        p_run_id: crossDraft.run_id,
+        p_request_key: `${PREFIX}-cross-post`,
+      }),
+      'cross_company_access_denied',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('cancel_production_run_draft', {
+        p_company_id: crossCompanyId,
+        p_run_id: crossDraft.run_id,
+      }),
+      'cross_company_access_denied',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('reverse_production_run', {
+        p_company_id: crossCompanyId,
+        p_run_id: crossDraft.run_id,
+        p_reason: `${PREFIX} cross reversal`,
+        p_request_key: `${PREFIX}-cross-reverse`,
+      }),
+      'cross_company_access_denied',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), movementCountBeforeCrossCompany)
+    assert.equal(await countRows(ownerClient, 'posting_requests', [['eq', 'company_id', companyId]]), postingCountBeforeCrossCompany)
+    assert.equal(await countRows(ownerClient, 'production_runs', [['eq', 'company_id', companyId]]), runCountBeforeCrossCompany)
+
+    const movementCountBeforePreview = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    const preview = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('preview_production_run', {
+          p_company_id: companyId,
+          p_run_id: draft.run_id,
+        }),
+        'Expected production run preview to succeed',
+      ),
+    )
+    assert.equal(preview.ready, true)
+    assert.equal(preview.advisory_minutes, null)
+    assert.equal(round2(preview.estimated_material_cost), 42)
+    assert.equal(round2(preview.extra_cost_total), 10)
+    assert.equal(round2(preview.estimated_total_cost), 52)
+    assert.equal(round2(preview.estimated_unit_cost), 26)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), movementCountBeforePreview)
+
+    await expectPostgrestError(
+      ownerClient.rpc('post_production_run', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_request_key: '   ',
+      }),
+      'request_key_required',
+    )
+    await expectPostgrestError(
+      viewerClient.rpc('post_production_run', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_request_key: `${PREFIX}-pr-viewer-post`,
+      }),
+      'operator_role_required',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), movementCountBeforePreview)
+
+    const unitPriceBeforePost = await querySingle(
+      ownerClient,
+      'items',
+      'unit_price',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', prOutputItemId],
+      ],
+    )
+    const financeCountsBeforeProductionPost = await financeIsolationCounts(admin, companyId)
+    const postRequestKey = `${PREFIX}-production-run-post`
+    const posted = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_production_run', {
+          p_company_id: companyId,
+          p_run_id: draft.run_id,
+          p_request_key: postRequestKey,
+        }),
+        'Expected production run posting to succeed',
+      ),
+    )
+    assert.equal(posted.run_id, draft.run_id)
+    assert.equal(posted.status, 'posted')
+    assert.equal(posted.input_movements.length, 1)
+    assert.ok(posted.output_movement_id)
+    assert.equal(round2(posted.material_cost_total), 42)
+    assert.equal(round2(posted.extra_cost_total), 10)
+    assert.equal(round2(posted.total_cost), 52)
+    assert.equal(round2(posted.output_unit_cost), 26)
+    assertCountsEqual(
+      await financeIsolationCounts(admin, companyId),
+      financeCountsBeforeProductionPost,
+      'Additional production costs must not create finance postings or settlement rows',
+    )
+
+    const postMovementCount = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    assert.equal(postMovementCount, movementCountBeforePreview + 2)
+
+    const postedRun = await querySingle(
+      ownerClient,
+      'production_runs',
+      'status, material_cost_total, extra_cost_total, total_cost, output_unit_cost, output_receipt_movement_id, posted_by, posted_at',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', draft.run_id],
+      ],
+    )
+    assert.equal(postedRun.status, 'posted')
+    assert.ok(postedRun.posted_by)
+    assert.ok(postedRun.posted_at)
+    assert.equal(round2(postedRun.total_cost), 52)
+    assert.equal(round2(postedRun.output_unit_cost), 26)
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_runs').update({ notes: `${PREFIX} direct posted update` }).eq('id', draft.run_id),
+      'OPERATOR direct posted production_runs update',
+    )
+
+    const postedInput = await querySingle(
+      ownerClient,
+      'production_run_inputs',
+      'actual_qty, frozen_unit_cost, frozen_total_cost, issue_movement_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'production_run_id', draft.run_id],
+      ],
+    )
+    assert.equal(round2(postedInput.actual_qty), 6)
+    assert.equal(round2(postedInput.frozen_unit_cost), 7)
+    assert.equal(round2(postedInput.frozen_total_cost), 42)
+    assert.ok(postedInput.issue_movement_id)
+    await expectDirectMutationBlocked(
+      operatorClient.from('production_run_inputs').update({ actual_qty: 1 }).eq('issue_movement_id', postedInput.issue_movement_id),
+      'OPERATOR direct posted production_run_inputs update',
+    )
+
+    const postedOutput = await querySingle(
+      ownerClient,
+      'production_run_outputs',
+      'actual_qty, frozen_unit_cost, frozen_total_cost, receipt_movement_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'production_run_id', draft.run_id],
+      ],
+    )
+    assert.equal(round2(postedOutput.actual_qty), 2)
+    assert.equal(round2(postedOutput.frozen_unit_cost), 26)
+    assert.equal(round2(postedOutput.frozen_total_cost), 52)
+    assert.ok(postedOutput.receipt_movement_id)
+
+    const productionMovements = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, type, ref_type, ref_id, qty_base, unit_cost')
+        .eq('company_id', companyId)
+        .eq('ref_type', 'PRODUCTION_RUN')
+        .eq('ref_id', draft.run_id)
+        .order('created_at'),
+      'Expected production run movement lookup to succeed',
+    )
+    assert.equal(productionMovements.length, 2)
+    assert.equal(productionMovements.filter((movement) => movement.type === 'issue').length, 1)
+    assert.equal(productionMovements.filter((movement) => movement.type === 'receive').length, 1)
+    const originalMovementRows = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, company_id, item_id, type, qty, qty_base, uom_id, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id, unit_cost, total_value, ref_type, ref_id, ref_line_id, created_at')
+        .in('id', [postedInput.issue_movement_id, postedOutput.receipt_movement_id])
+        .order('id'),
+      'Expected original production movement snapshot lookup to succeed',
+    ).map(normalizeMovementSnapshot)
+
+    const rawStockAfterPost = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', prRawItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(rawStockAfterPost.qty), 14)
+    const outputStockAfterPost = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty, avg_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', prOutputItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', destinationBinId],
+      ],
+    )
+    assert.equal(round2(outputStockAfterPost.qty), 2)
+    assert.equal(round2(outputStockAfterPost.avg_cost), 26)
+
+    const unitPriceAfterPost = await querySingle(
+      ownerClient,
+      'items',
+      'unit_price',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', prOutputItemId],
+      ],
+    )
+    assert.equal(round2(unitPriceAfterPost.unit_price), round2(unitPriceBeforePost.unit_price))
+
+    const postReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_production_run', {
+          p_company_id: companyId,
+          p_run_id: draft.run_id,
+          p_request_key: postRequestKey,
+        }),
+        'Expected production run post replay to return original result',
+      ),
+    )
+    assert.equal(postReplay.output_movement_id, posted.output_movement_id)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), postMovementCount)
+
+    const mismatchDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: prBomId,
+          p_planned_output_qty: 1,
+          p_run_date: todayIso(),
+        }),
+        'Expected mismatch draft creation to succeed',
+      ),
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_production_run', {
+        p_company_id: companyId,
+        p_run_id: mismatchDraft.run_id,
+        p_request_key: postRequestKey,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    await expectPostgrestError(
+      ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_actual_output_qty: 3,
+      }),
+      'production_run_not_draft',
+    )
+
+    const insufficientDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: prBomId,
+          p_planned_output_qty: 100,
+          p_run_date: todayIso(),
+        }),
+        'Expected insufficient-stock draft creation to succeed',
+      ),
+    )
+    expectNoSupabaseError(
+      await ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: insufficientDraft.run_id,
+        p_planned_output_qty: 100,
+        p_actual_output_qty: 100,
+        p_destination_warehouse_id: warehouseId,
+        p_destination_bin_id: destinationBinId,
+        p_inputs: [
+          {
+            line_no: 1,
+            actual_qty: 300,
+            source_warehouse_id: warehouseId,
+            source_bin_id: sourceBinId,
+          },
+        ],
+        p_extra_costs: [],
+      }),
+      'Expected insufficient-stock draft update to succeed',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_production_run', {
+        p_company_id: companyId,
+        p_run_id: insufficientDraft.run_id,
+        p_request_key: `${PREFIX}-production-run-insufficient`,
+      }),
+      'insufficient_stock',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), postMovementCount)
+    const stillDraft = await querySingle(
+      ownerClient,
+      'production_runs',
+      'status',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', insufficientDraft.run_id],
+      ],
+    )
+    assert.equal(stillDraft.status, 'draft')
+
+    const rawReplenishment = await ownerClient.from('stock_movements').insert({
+      company_id: companyId,
+      type: 'receive',
+      item_id: prRawItemId,
+      uom_id: eachUomId,
+      qty: 1,
+      qty_base: 1,
+      unit_cost: 99,
+      total_value: 99,
+      warehouse_to_id: warehouseId,
+      bin_to_id: sourceBinId,
+      notes: `${PREFIX} production frozen-cost check`,
+      created_by: ownerUser.userId,
+      ref_type: 'ADJUST',
+      ref_id: `${PREFIX}-pr-frozen`,
+    })
+    throwSupabaseError(rawReplenishment.error, 'production raw replenishment setup failed')
+    const bomUpdate = await ownerClient.from('bom_components').update({ qty_per: 4 }).eq('bom_id', prBomId)
+    throwSupabaseError(bomUpdate.error, 'production BOM mutation fixture setup failed')
+
+    const frozenRunAfterMasterChange = await querySingle(
+      ownerClient,
+      'production_runs',
+      'material_cost_total, total_cost, output_unit_cost',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', draft.run_id],
+      ],
+    )
+    assert.equal(round2(frozenRunAfterMasterChange.material_cost_total), 42)
+    assert.equal(round2(frozenRunAfterMasterChange.total_cost), 52)
+    assert.equal(round2(frozenRunAfterMasterChange.output_unit_cost), 26)
+
+    await expectPostgrestError(
+      operatorClient.rpc('reverse_production_run', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_reason: `${PREFIX} operator reversal`,
+        p_request_key: `${PREFIX}-operator-reverse`,
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      viewerClient.rpc('reverse_production_run', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_reason: `${PREFIX} viewer reversal`,
+        p_request_key: `${PREFIX}-viewer-reverse`,
+      }),
+      'manager_role_required',
+    )
+
+    const reversalMovementCountBefore = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    const reverseRequestKey = `${PREFIX}-production-run-reverse`
+    const reversed = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await managerClient.rpc('reverse_production_run', {
+          p_company_id: companyId,
+          p_run_id: draft.run_id,
+          p_reason: `${PREFIX} controlled reversal`,
+          p_request_key: reverseRequestKey,
+        }),
+        'Expected manager production run reversal to succeed',
+      ),
+    )
+    assert.equal(reversed.run_id, draft.run_id)
+    assert.equal(reversed.status, 'reversed')
+    assert.ok(reversed.output_reversal_movement_id)
+    assert.equal(reversed.input_reversal_movements.length, 1)
+    const reversalMovementCountAfter = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    assert.equal(reversalMovementCountAfter, reversalMovementCountBefore + 2)
+
+    const reversedRun = await querySingle(
+      ownerClient,
+      'production_runs',
+      'status, reversal_reason, reversed_by, reversed_at, output_receipt_movement_id, reversal_output_issue_movement_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', draft.run_id],
+      ],
+    )
+    assert.equal(reversedRun.status, 'reversed')
+    assert.match(reversedRun.reversal_reason, /controlled reversal/)
+    assert.ok(reversedRun.output_receipt_movement_id)
+    assert.ok(reversedRun.reversal_output_issue_movement_id)
+
+    const reversalMovements = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, type, ref_type, ref_id, ref_line_id, item_id, uom_id, qty, qty_base, unit_cost, total_value, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id')
+        .eq('company_id', companyId)
+        .eq('ref_type', 'PRODUCTION_RUN_REVERSAL')
+        .eq('ref_id', draft.run_id),
+      'Expected reversal movement lookup to succeed',
+    )
+    assert.equal(reversalMovements.length, 2)
+    assert.equal(reversalMovements.filter((movement) => movement.type === 'issue').length, 1)
+    assert.equal(reversalMovements.filter((movement) => movement.type === 'receive').length, 1)
+    const outputReversalMovement = reversalMovements.find((movement) => movement.type === 'issue')
+    const inputReversalMovement = reversalMovements.find((movement) => movement.type === 'receive')
+    assert.equal(outputReversalMovement.id, reversed.output_reversal_movement_id)
+    assert.equal(outputReversalMovement.ref_line_id, seededOutput.id)
+    assert.equal(outputReversalMovement.item_id, prOutputItemId)
+    assert.equal(round2(outputReversalMovement.qty_base), 2)
+    assert.equal(round2(outputReversalMovement.unit_cost), 26)
+    assert.equal(round2(outputReversalMovement.total_value), 52)
+    assert.equal(outputReversalMovement.warehouse_from_id, warehouseId)
+    assert.equal(outputReversalMovement.bin_from_id, destinationBinId)
+    assert.equal(inputReversalMovement.item_id, prRawItemId)
+    assert.equal(round2(inputReversalMovement.qty_base), 6)
+    assert.equal(round2(inputReversalMovement.unit_cost), 7)
+    assert.equal(round2(inputReversalMovement.total_value), 42)
+    assert.equal(inputReversalMovement.warehouse_to_id, warehouseId)
+    assert.equal(inputReversalMovement.bin_to_id, sourceBinId)
+    assert.equal(inputReversalMovement.ref_line_id, seededInputs[0].id)
+    assert.equal(round2(bucketDelta(reversalMovements, prRawItemId, warehouseId, sourceBinId)), 6)
+    assert.equal(round2(bucketDelta(reversalMovements, prOutputItemId, warehouseId, destinationBinId)), -2)
+    const reversedInputLine = await querySingle(
+      ownerClient,
+      'production_run_inputs',
+      'reversal_receipt_movement_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', seededInputs[0].id],
+      ],
+    )
+    const reversedOutputLine = await querySingle(
+      ownerClient,
+      'production_run_outputs',
+      'reversal_issue_movement_id',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', seededOutput.id],
+      ],
+    )
+    assert.equal(reversedInputLine.reversal_receipt_movement_id, inputReversalMovement.id)
+    assert.equal(reversedOutputLine.reversal_issue_movement_id, outputReversalMovement.id)
+    const originalMovementRowsAfterReversal = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, company_id, item_id, type, qty, qty_base, uom_id, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id, unit_cost, total_value, ref_type, ref_id, ref_line_id, created_at')
+        .in('id', [postedInput.issue_movement_id, postedOutput.receipt_movement_id])
+        .order('id'),
+      'Expected original production movement lookup after reversal to succeed',
+    ).map(normalizeMovementSnapshot)
+    assert.deepEqual(originalMovementRowsAfterReversal, originalMovementRows, 'Reversal must not edit original production movements')
+
+    const reverseReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await managerClient.rpc('reverse_production_run', {
+          p_company_id: companyId,
+          p_run_id: draft.run_id,
+          p_reason: `${PREFIX} controlled reversal`,
+          p_request_key: reverseRequestKey,
+        }),
+        'Expected production run reversal replay to return original result',
+      ),
+    )
+    assert.equal(reverseReplay.output_reversal_movement_id, reversed.output_reversal_movement_id)
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), reversalMovementCountAfter)
+
+    await expectPostgrestError(
+      managerClient.rpc('reverse_production_run', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_reason: `${PREFIX} changed reason`,
+        p_request_key: reverseRequestKey,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('reverse_production_run', {
+        p_company_id: companyId,
+        p_run_id: draft.run_id,
+        p_reason: `${PREFIX} second reversal`,
+        p_request_key: `${PREFIX}-production-run-second-reverse`,
+      }),
+      'production_run_not_posted',
+    )
+
+    const failureDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: prBomId,
+          p_planned_output_qty: 1,
+          p_run_date: todayIso(),
+        }),
+        'Expected reversal-failure production draft creation to succeed',
+      ),
+    )
+    expectNoSupabaseError(
+      await ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: failureDraft.run_id,
+        p_planned_output_qty: 1,
+        p_actual_output_qty: 1,
+        p_destination_warehouse_id: warehouseId,
+        p_destination_bin_id: destinationBinId,
+        p_inputs: [
+          {
+            line_no: 1,
+            actual_qty: 4,
+            source_warehouse_id: warehouseId,
+            source_bin_id: sourceBinId,
+          },
+        ],
+        p_extra_costs: [],
+      }),
+      'Expected reversal-failure draft update to succeed',
+    )
+    const failurePosted = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('post_production_run', {
+          p_company_id: companyId,
+          p_run_id: failureDraft.run_id,
+          p_request_key: `${PREFIX}-production-run-reversal-failure-post`,
+        }),
+        'Expected reversal-failure production run post to succeed',
+      ),
+    )
+    const failureLines = await Promise.all([
+      querySingle(ownerClient, 'production_run_inputs', 'id, issue_movement_id', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'production_run_id', failureDraft.run_id],
+      ]),
+      querySingle(ownerClient, 'production_run_outputs', 'id, receipt_movement_id', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'production_run_id', failureDraft.run_id],
+      ]),
+    ])
+    const failureOriginalMovements = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id, company_id, item_id, type, qty, qty_base, uom_id, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id, unit_cost, total_value, ref_type, ref_id, ref_line_id, created_at')
+        .in('id', [failureLines[0].issue_movement_id, failureLines[1].receipt_movement_id])
+        .order('id'),
+      'Expected reversal-failure original movement snapshot lookup to succeed',
+    ).map(normalizeMovementSnapshot)
+    const rawStockBeforeFailedReverse = await stockQtyOrZero(ownerClient, companyId, prRawItemId, warehouseId, sourceBinId)
+    const outputStockBeforeConsumption = await stockQtyOrZero(ownerClient, companyId, prOutputItemId, warehouseId, destinationBinId)
+    assert.equal(round2(outputStockBeforeConsumption.qty), 1)
+    const consumeFailureOutput = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await managerClient.rpc('post_stock_issue', {
+          p_company_id: companyId,
+          p_item_id: prOutputItemId,
+          p_uom_id: eachUomId,
+          p_qty: 1,
+          p_qty_base: 1,
+          p_warehouse_from_id: warehouseId,
+          p_bin_from_id: destinationBinId,
+          p_unit_cost: failurePosted.output_unit_cost,
+          p_ref_type: 'ADJUST',
+          p_ref_id: `${PREFIX}-consume-production-output`,
+          p_ref_line_id: null,
+          p_notes: `${PREFIX} consume production output before reversal`,
+          p_request_key: `${PREFIX}-consume-production-output`,
+        }),
+        'Expected governed issue to consume finished output before failed reversal',
+      ),
+    )
+    assert.ok(consumeFailureOutput.movement_id)
+    const failedReverseKey = `${PREFIX}-production-run-insufficient-output-reverse`
+    const failedReverseMovementCountBefore = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    await expectPostgrestError(
+      managerClient.rpc('reverse_production_run', {
+        p_company_id: companyId,
+        p_run_id: failureDraft.run_id,
+        p_reason: `${PREFIX} insufficient output reversal`,
+        p_request_key: failedReverseKey,
+      }),
+      'insufficient_stock',
+    )
+    assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), failedReverseMovementCountBefore)
+    const failureRunAfterRejectedReverse = await querySingle(
+      ownerClient,
+      'production_runs',
+      'status, reversed_at, reversed_by, reversal_reason',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'id', failureDraft.run_id],
+      ],
+    )
+    assert.equal(failureRunAfterRejectedReverse.status, 'posted')
+    assert.equal(failureRunAfterRejectedReverse.reversed_at, null)
+    assert.equal(failureRunAfterRejectedReverse.reversed_by, null)
+    assert.equal(failureRunAfterRejectedReverse.reversal_reason, null)
+    const failedReverseRequests = expectNoSupabaseError(
+      await ownerClient
+        .from('posting_requests')
+        .select('id, status')
+        .eq('company_id', companyId)
+        .eq('operation_type', 'production.run.reverse')
+        .eq('request_key', failedReverseKey),
+      'Expected failed reversal posting request lookup to succeed',
+    )
+    assert.equal(failedReverseRequests.filter((row) => row.status === 'succeeded').length, 0)
+    assert.equal(
+      await countRows(ownerClient, 'stock_movements', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'ref_type', 'PRODUCTION_RUN_REVERSAL'],
+        ['eq', 'ref_id', failureDraft.run_id],
+      ]),
+      0,
+    )
+    assert.deepEqual(
+      expectNoSupabaseError(
+        await ownerClient
+          .from('stock_movements')
+          .select('id, company_id, item_id, type, qty, qty_base, uom_id, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id, unit_cost, total_value, ref_type, ref_id, ref_line_id, created_at')
+          .in('id', [failureLines[0].issue_movement_id, failureLines[1].receipt_movement_id])
+          .order('id'),
+        'Expected failed-reversal original movement rows to remain readable',
+      ).map(normalizeMovementSnapshot),
+      failureOriginalMovements,
+      'Failed reversal must leave original movement rows unchanged',
+    )
+    assert.deepEqual(await stockQtyOrZero(ownerClient, companyId, prRawItemId, warehouseId, sourceBinId), rawStockBeforeFailedReverse)
+    assert.equal(round2((await stockQtyOrZero(ownerClient, companyId, prOutputItemId, warehouseId, destinationBinId)).qty), 0)
+
+    const productionChainMovements = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('item_id, qty_base, warehouse_from_id, bin_from_id, warehouse_to_id, bin_to_id')
+        .eq('company_id', companyId)
+        .in('item_id', [prRawItemId, prOutputItemId]),
+      'Expected production-chain movement lookup for reconciliation to succeed',
+    )
+    const rawReconciled = await stockQtyOrZero(ownerClient, companyId, prRawItemId, warehouseId, sourceBinId)
+    const outputReconciled = await stockQtyOrZero(ownerClient, companyId, prOutputItemId, warehouseId, destinationBinId)
+    assert.equal(round2(rawReconciled.qty), round2(20 + bucketDelta(productionChainMovements, prRawItemId, warehouseId, sourceBinId)))
+    assert.equal(round2(outputReconciled.qty), round2(bucketDelta(productionChainMovements, prOutputItemId, warehouseId, destinationBinId)))
+
+    const stockLevels = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_levels')
+        .select('company_id,item_id,warehouse_id,bin_id,qty')
+        .eq('company_id', companyId),
+      'Expected stock-level lookup to succeed',
+    )
+    const bucketKeys = stockLevels.map((row) => `${row.company_id}:${row.item_id}:${row.warehouse_id}:${row.bin_id}`)
+    assert.equal(bucketKeys.length, new Set(bucketKeys).size, 'Expected no duplicate stock buckets after production run reversal')
+    assert.equal(stockLevels.some((row) => Number(row.qty || 0) < 0), false, 'Expected no negative stock bucket after production run reversal')
+    const operatorMembershipCleanup = await admin
+      .from('company_members')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('user_id', operatorUser.userId)
+    if (operatorMembershipCleanup.error) throw operatorMembershipCleanup.error
+    const viewerMembershipCleanup = await admin
+      .from('company_members')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('user_id', viewerUser.userId)
+    if (viewerMembershipCleanup.error) throw viewerMembershipCleanup.error
+  })
+
+  await t.test('Production run posting competes safely with another stock issue', async () => {
+    const raceRawItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-PR-RACE-RM`,
+        name: `${PREFIX} Production Race Input`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 0,
+        primary_role: 'raw_material',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: false,
+        is_assembled: false,
+      })
+      .select('id')
+      .single()
+    if (raceRawItem.error) throw raceRawItem.error
+    const raceRawItemId = raceRawItem.data.id
+
+    const raceOutputItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-PR-RACE-FG`,
+        name: `${PREFIX} Production Race Output`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 200,
+        primary_role: 'assembled_product',
+        track_inventory: true,
+        can_buy: false,
+        can_sell: true,
+        is_assembled: true,
+      })
+      .select('id')
+      .single()
+    if (raceOutputItem.error) throw raceOutputItem.error
+    const raceOutputItemId = raceOutputItem.data.id
+
+    const seedRaceStock = await ownerClient.from('stock_levels').insert({
+      company_id: companyId,
+      item_id: raceRawItemId,
+      warehouse_id: warehouseId,
+      bin_id: sourceBinId,
+      qty: 2,
+      avg_cost: 11,
+      allocated_qty: 0,
+    })
+    if (seedRaceStock.error) throw seedRaceStock.error
+
+    const raceBom = await ownerClient
+      .from('boms')
+      .insert({
+        company_id: companyId,
+        product_id: raceOutputItemId,
+        name: `${PREFIX} Production Race BOM`,
+        version: 'race-v1',
+        is_active: true,
+      })
+      .select('id')
+      .single()
+    if (raceBom.error) throw raceBom.error
+
+    const raceBomComponent = await ownerClient.from('bom_components').insert({
+      bom_id: raceBom.data.id,
+      component_item_id: raceRawItemId,
+      qty_per: 2,
+      scrap_pct: 0,
+    })
+    if (raceBomComponent.error) throw raceBomComponent.error
+
+    const raceDraft = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('create_production_run_draft', {
+          p_company_id: companyId,
+          p_bom_id: raceBom.data.id,
+          p_planned_output_qty: 1,
+          p_run_date: todayIso(),
+        }),
+        'Expected race production draft creation to succeed',
+      ),
+    )
+    expectNoSupabaseError(
+      await ownerClient.rpc('update_production_run_draft', {
+        p_company_id: companyId,
+        p_run_id: raceDraft.run_id,
+        p_planned_output_qty: 1,
+        p_actual_output_qty: 1,
+        p_destination_warehouse_id: warehouseId,
+        p_destination_bin_id: destinationBinId,
+        p_inputs: [
+          {
+            line_no: 1,
+            actual_qty: 2,
+            source_warehouse_id: warehouseId,
+            source_bin_id: sourceBinId,
+          },
+        ],
+        p_extra_costs: [],
+      }),
+      'Expected race draft update to succeed',
+    )
+
+    const [productionAttempt, issueAttempt] = await Promise.allSettled([
+      ownerClient.rpc('post_production_run', {
+        p_company_id: companyId,
+        p_run_id: raceDraft.run_id,
+        p_request_key: `${PREFIX}-production-run-race-post`,
+      }),
+      managerClient.rpc('post_stock_issue', {
+        p_company_id: companyId,
+        p_item_id: raceRawItemId,
+        p_uom_id: eachUomId,
+        p_qty: 2,
+        p_qty_base: 2,
+        p_warehouse_from_id: warehouseId,
+        p_bin_from_id: sourceBinId,
+        p_unit_cost: 11,
+        p_ref_type: 'ADJUST',
+        p_ref_id: `${PREFIX}-race-issue`,
+        p_ref_line_id: null,
+        p_notes: `${PREFIX} race issue`,
+        p_request_key: `${PREFIX}-production-run-race-manual-issue`,
+      }),
+    ])
+
+    const attempts = [productionAttempt, issueAttempt].map((entry) => {
+      assert.equal(entry.status, 'fulfilled')
+      return entry.value
+    })
+    const successes = attempts.filter((result) => !result.error)
+    const failures = attempts.filter((result) => result.error)
+    assert.equal(successes.length, 1, 'Expected exactly one competing issue path to win')
+    assert.equal(failures.length, 1, 'Expected exactly one competing issue path to fail')
+    assert.match(String(failures[0].error.message || failures[0].error), /insufficient_stock|insufficient stock|negative_stock/i)
+
+    const raceStock = await querySingle(
+      ownerClient,
+      'stock_levels',
+      'qty',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'item_id', raceRawItemId],
+        ['eq', 'warehouse_id', warehouseId],
+        ['eq', 'bin_id', sourceBinId],
+      ],
+    )
+    assert.equal(round2(raceStock.qty), 0)
   })
 
   await t.test('Manual access control persists across statuses and exposes company detail metadata', async () => {

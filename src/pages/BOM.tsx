@@ -1315,13 +1315,20 @@ export default function BOMPage() {
           <CardContent className="flex gap-3 p-4">
             <Factory className="mt-0.5 h-5 w-5 shrink-0 text-sky-700 dark:text-sky-200" />
             <div className="min-w-0">
-              <div className="text-sm font-medium text-sky-950 dark:text-sky-100">{tt('bom.future.title', 'Future Production & Costing')}</div>
+              <div className="text-sm font-medium text-sky-950 dark:text-sky-100">{tt('bom.productionRuns.title', 'Production Runs')}</div>
               <p className="mt-1 text-sm leading-6 text-sky-800/85 dark:text-sky-100/80">
                 {tt(
-                  'bom.future.body',
-                  'Future phases will add production runs, labour, utilities, overhead allocation, frozen cost snapshots, and growth batches for livestock and crops. This page still uses the existing assembly posting flow.',
+                  'bom.productionRuns.body',
+                  'Use this page for quick assembly and recipe maintenance. Use Production Runs when planned versus actual output, frozen costing, direct costs, and controlled reversal are required.',
                 )}
               </p>
+              <div className="mt-3">
+                <Button asChild variant="outline" size="sm">
+                  <Link to={selectedBomId ? `/production-runs?bomId=${selectedBomId}` : '/production-runs'}>
+                    {tt('bom.productionRuns.action', 'Open Production Runs')}
+                  </Link>
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

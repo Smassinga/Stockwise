@@ -79,6 +79,44 @@ The maintained product surfaces are:
 - register import/export controls must wrap existing approved workflows; visual register work must not create new posting, costing, access-control, or data-import authority
 - Point of Sale and onboarding import are packaged into Tauri builds exactly as they exist on the web app
 - because installed Tauri builds can lag the web deployment, legacy POS RPC execution remains a temporary compatibility boundary until A2.4a.2 reviews maintained desktop/Android clients and closes normal legacy execution
+
+## Production Runs Local Architecture
+
+The first Production Runs package is implemented locally and is not live until the new migrations are applied to hosted Supabase and the frontend is deployed.
+
+Production Runs add a richer operational path beside quick assembly:
+
+- `/bom` remains the Recipes & Assemblies workspace for recipe maintenance and simple quick-build stock transformations.
+- `/production-runs` manages planned versus actual production, frozen costing, additional direct costs, posting, and controlled reversal.
+
+New tables:
+
+- `production_runs`
+- `production_run_inputs`
+- `production_run_outputs`
+- `production_run_extra_costs`
+- `production_run_counters`
+
+New RPCs:
+
+- `create_production_run_draft`
+- `update_production_run_draft`
+- `cancel_production_run_draft`
+- `preview_production_run`
+- `post_production_run`
+- `reverse_production_run`
+
+Posting uses `posting_requests` with operation type `production.run.post`. Reversal uses `posting_requests` with operation type `production.run.reverse`. Both require a nonblank request key, replay the same result for the same key and payload, and reject changed payloads under the same key.
+
+Authority remains domain-specific:
+
+- VIEWER can read permitted Production Run records.
+- OPERATOR+ can create/edit drafts, preview, and post.
+- MANAGER+ can reverse posted runs.
+- authenticated clients have company-scoped read access to Production Run tables, but no direct table INSERT, UPDATE, or DELETE authority; draft/post/reverse mutations are RPC-only.
+
+Production Run posting writes only `stock_movements`; `stock_levels` remains trigger-derived. Additional direct costs are production cost snapshots only and do not create finance postings.
+- first-release Production Run quantities are recorded in each item base UOM only; generic Production Run UOM conversion is deferred to a later explicit design pass.
 - desktop and Android releases must reflect current StockWise branding, route naming, and operator-facing copy
 
 ## Notification Direction

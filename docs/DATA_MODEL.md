@@ -122,4 +122,36 @@ One clean model per responsibility:
 - stock ledger: `stock_movements`
 - posting idempotency: `posting_requests` for assembly, normal web POS, and the consolidated A2.4/A2.5 local stock-posting RPCs
 - item default sell price: `items.unit_price`
+
+## Production Runs
+
+The local Production Runs package adds a planned-versus-actual production model. It is not live until the new migrations are applied to hosted Supabase.
+
+Tables:
+
+- `production_runs` stores the header, reference, BOM snapshot, finished item, planned/actual output, destination, status, cost totals, movement links, actor timestamps, and reversal metadata.
+- `production_run_inputs` stores deterministic input lines, source BOM component links, input item/UOM, planned and actual quantities, source bucket, frozen input WAC, frozen input total, original issue movement, and reversal receipt movement.
+- `production_run_outputs` stores output lines. The first UI supports exactly one primary finished output, while the table shape leaves room for future multi-output/by-product expansion.
+- `production_run_extra_costs` stores additional direct production-cost snapshots in `labour`, `utilities`, `overhead`, `transport`, or `other` categories.
+- `production_run_counters` generates non-fiscal company-scoped production run references.
+
+Lifecycle:
+
+- `draft`: editable by OPERATOR+ through `update_production_run_draft`.
+- `posted`: immutable production result; stock movements and cost snapshots are frozen.
+- `reversed`: original posted run remains auditable and compensating movements are linked.
+- `cancelled`: draft-only closure with no stock movement.
+- normal authenticated clients can read company-scoped Production Run rows but cannot directly insert, update, or delete Production Run business rows; mutation is RPC-only.
+- first-release Production Run input and output quantities use each item base UOM. `production_run_inputs.uom_id`, `production_run_outputs.uom_id`, and `production_runs.output_uom_id` must match the relevant item `base_uom_id`; general UOM conversion is deferred.
+
+Posting and reversal:
+
+- `post_production_run` uses operation type `production.run.post`.
+- `reverse_production_run` uses operation type `production.run.reverse`.
+- both use `posting_requests`, mandatory request keys, deterministic payload hashes, replay safety, and payload-mismatch rejection.
+- posting writes input issues and one output receipt with `ref_type = 'PRODUCTION_RUN'`.
+- reversal writes compensating output issue and input receipts with `ref_type = 'PRODUCTION_RUN_REVERSAL'`.
+- neither path mutates `stock_levels` directly or updates `items.unit_price`.
+
+Additional direct costs do not create bank, cash, supplier, vendor-bill, or journal rows. They are cost snapshots used to calculate total production cost and output unit cost.
 - entitlement/control plane: `company_subscription_state` + `platform_admins`

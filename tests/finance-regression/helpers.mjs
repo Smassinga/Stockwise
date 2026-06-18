@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const PRODUCTION_PROJECT_REFS = new Set(['ogzhwoqqumkuqhbvuzzp'])
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+const reportedRegressionTargets = new Set()
 
 export function env(name, fallback = null) {
   const value = process.env[name] ?? fallback
@@ -62,6 +63,11 @@ export function assertFinanceRegressionTargetAllowed(rawUrl, envSource = process
     )
   }
 
+  if (!reportedRegressionTargets.has(label)) {
+    reportedRegressionTargets.add(label)
+    console.info(`[finance-regression] mutation target allowed: ${label}`)
+  }
+
   return target
 }
 
@@ -115,7 +121,9 @@ export async function signIn(email, password) {
 
 export async function setActiveCompany(client, companyId) {
   const { data, error } = await client.rpc('set_active_company', { p_company: companyId })
-  if (error) throw error
+  if (error) {
+    throw new Error(`set_active_company failed for ${companyId}: ${error.message || JSON.stringify(error)}`)
+  }
   return data
 }
 

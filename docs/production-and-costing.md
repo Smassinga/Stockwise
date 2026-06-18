@@ -196,3 +196,45 @@ What did not change:
 - reversals remain compensating movements rather than edits or deletes to posted movements
 
 Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate compatibility/authority-closure package for legacy POS RPC execution and stale Tauri clients.
+
+## Production Runs Local Package
+
+The first complete Production Runs package is implemented locally and is not live until its migrations are reviewed, applied to hosted Supabase, and the frontend is deployed.
+
+Local migrations:
+
+- `20260615213636_add_production_runs_foundation.sql`
+- `20260615213640_add_production_run_posting.sql`
+
+What the package adds:
+
+- company-scoped `production_runs`, `production_run_inputs`, `production_run_outputs`, `production_run_extra_costs`, and `production_run_counters`
+- `/production-runs` as the planned-versus-actual production workspace
+- draft creation from an active BOM, draft editing, draft cancellation, non-mutating preview, idempotent posting, and controlled reversal
+- posting operation type `production.run.post`
+- reversal operation type `production.run.reverse`
+- frozen snapshots for BOM identity/version, actual input quantities, source locations, input WAC, material cost, extra direct costs, output quantity, output unit cost, movement links, actor, and timestamp
+- additional direct costs in `labour`, `utilities`, `overhead`, `transport`, or `other` categories
+
+Costing and audit rules:
+
+- `stock_movements` remains the append-only stock ledger
+- `stock_levels` remains trigger-derived and is never updated directly by Production Runs
+- posting creates one input issue per actual consumed input and one finished-output receipt, all linked with `ref_type = 'PRODUCTION_RUN'`
+- reversal creates compensating stock movements linked with `ref_type = 'PRODUCTION_RUN_REVERSAL'`; it does not update or delete the original movements
+- additional direct costs are memo production-cost snapshots only and do not create cash, bank, AP, vendor-bill, or journal postings
+- `items.unit_price` remains the commercial selling price and is not derived from Production Run cost
+- current `/bom` quick assembly remains available as the simple stock transformation path
+- authenticated clients have read-only table access for Production Run records; all create/edit/cancel/post/reverse mutations go through the maintained RPCs
+- first-release Production Run quantities are base-UOM-only. BOM component quantities are interpreted as component item base-UOM quantities, output quantities use the finished item base UOM, and general UOM conversion remains deferred.
+- a fresh readiness preview is required after material draft changes before posting, and reversal requires typing the exact run reference in the UI
+
+Reversal limitations:
+
+- only `posted` runs can be reversed
+- MANAGER+ authority is required
+- a reason is required
+- reversal is blocked when the finished output is no longer available in the original destination bucket
+- intervening stock activity means current bucket weighted-average cost may not return exactly to its historical pre-run value
+
+Growth Batches are the next roadmap phase after Production Runs rollout and production smoke validation. Growth Batches, Cost Analysis Dashboard, Advanced Allocation, recurring allocation, overhead pools, and Industry Templates remain out of scope for this package.

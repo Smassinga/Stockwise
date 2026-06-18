@@ -29,6 +29,7 @@ Current design rules:
 - Items, Movements, and Stock Levels now use the shared premium register pattern: search and filters appear before review content, Android shows cards first, and desktop keeps sortable paginated tables for comparison work
 - Movements is treated as a stock-ledger register on Android: type/date/item/warehouse/bin filters stay above the card list, movement badges are semantic, and Details/View source actions remain visible without hover-only controls
 - Recipes & Assemblies is now an Android-friendly operational workspace: premium summary cards appear before dense detail, ingredient/component lines render as mobile cards, readiness and estimated material-cost panels are scan-friendly, and the post action remains a single explicit assembly action
+- Production Runs is implemented locally as a card-first `/production-runs` workspace for planned versus actual production, frozen costs, input buckets, direct costs, preview, posting, and controlled reversal; it is not live until hosted rollout. Draft changes require a fresh readiness preview, and reversal requires the exact run reference before the destructive action is enabled.
 - onboarding now presents join-invite and create-company as separate mobile decision cards, with invite acceptance kept as an explicit action
 - Settings now starts with a mobile-friendly operating setup map so company administrators can jump to real backed setup areas without scanning the entire long form first
 - Users/Roles keeps invite controls, role definitions, status badges, and member review usable as stacked cards on phones
@@ -44,6 +45,7 @@ These surfaces matter most when checking Android usability:
 - settings
 - users and roles
 - recipes and assemblies
+- production runs
 - opening import
 - settlements
 - banks, cash, and UOM
@@ -60,6 +62,7 @@ Future UI changes should preserve:
 - mobile register cards that surface status, location, and the next safe action before exposing wide-table detail
 - stock movement cards should show item, type, route, quantity, value, reference, and details without requiring horizontal scrolling
 - recipe/assembly cards should show finished item, ingredient/component sufficiency, limiting component, source/destination routing, estimated material cost, and the post action without requiring horizontal scrolling
+- production-run cards and detail sections should show status, planned versus actual output, input bucket readiness, estimated versus frozen costs, movement links, and post/reverse actions without requiring horizontal scrolling
 - premium card icons should use stable badge containers and stack above text on narrow screens when horizontal rows become cramped
 
 Future UI changes should avoid:
