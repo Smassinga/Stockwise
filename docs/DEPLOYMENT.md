@@ -66,6 +66,22 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-18 Production Runs rollout:
+
+- hosted Supabase is aligned through migration `20260615213640_add_production_run_posting.sql`
+- production frontend is aligned at Git commit `4f82c5a feat(production): add governed production runs`
+- Vercel production deployment `dpl_8Es8xX6RAAAmof59ssCwuTLWeQmF` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- normal Production Runs now use `/production-runs` with `post_production_run` (`production.run.post`) and `reverse_production_run` (`production.run.reverse`)
+- the controlled production smoke used tenant `Leny Doçuras`, recipe `Bolo Custarde` v1, item `Bolo de Custarde`, and source `Casa / CDC001 - Cozinha - Casa`
+- a controlled `stock.receipt` setup added 3 `Fermento` to `Casa / CDC001 - Cozinha - Casa` through the maintained Movements UI, creating movement `07c1da12-8e7c-45d0-90ba-32b141404163` and succeeded posting request `9b1f5e7c-a046-458c-a889-6f4056d36805`
+- Production Run `LEN-PR000000001` (`0eee505d-a337-480c-9984-e5690399cf35`) was created, previewed, posted once, and reversed once through the maintained production UI
+- posting created one succeeded `production.run.post` request (`33facecd-a63e-45c9-939d-2179303031b1`), seven input issue movements, and one output receipt movement (`bb2fe802-9d58-4f7a-9118-982a44ef84ce`)
+- reversal created one succeeded `production.run.reverse` request (`54409ae2-d3f4-483f-8b7b-ecfd66717ae9`), one compensating output issue movement (`2991d192-223d-42a3-b017-c41850d43c5b`), and seven compensating input receipts
+- Fermento stock in `Casa / CDC001 - Cozinha - Casa` moved `0 -> 3 -> 0 -> 3`; `Bolo de Custarde` stock in `Casa / QA-A2 - A2 Production Smoke` moved `0 -> 1 -> 0`
+- duplicate stock bucket and negative stock checks remained zero, `items.unit_price` remained `1500`, and no cash, bank, or vendor-bill rows were created by the Production Run
+- no production replay or payload-mismatch tests were performed; those paths remain covered by the local `26/26` finance regression suite
+- the remaining non-blocking follow-ups are intentionally clearing previously saved draft destination/notes and reconsidering authenticated SELECT access to `production_run_counters`
+
 2026-06-14 consolidated A2.4/A2.5 governed stock-posting rollout:
 
 - hosted Supabase is aligned through migration `20260614123300_add_governed_manual_stock_posting.sql`

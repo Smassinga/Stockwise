@@ -197,11 +197,11 @@ What did not change:
 
 Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate compatibility/authority-closure package for legacy POS RPC execution and stale Tauri clients.
 
-## Production Runs Local Package
+## Production Runs Live Package
 
-The first complete Production Runs package is implemented locally and is not live until its migrations are reviewed, applied to hosted Supabase, and the frontend is deployed.
+The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Hosted Supabase is aligned through `20260615213640_add_production_run_posting.sql`, and the production frontend is commit `4f82c5a feat(production): add governed production runs`.
 
-Local migrations:
+Live migrations:
 
 - `20260615213636_add_production_runs_foundation.sql`
 - `20260615213640_add_production_run_posting.sql`
@@ -236,5 +236,14 @@ Reversal limitations:
 - a reason is required
 - reversal is blocked when the finished output is no longer available in the original destination bucket
 - intervening stock activity means current bucket weighted-average cost may not return exactly to its historical pre-run value
+
+Production smoke result:
+
+- controlled setup used maintained manual receipt to add 3 `Fermento` to `Leny Doçuras / Casa / CDC001`
+- Production Run `LEN-PR000000001` posted once for one `Bolo de Custarde` from recipe `Bolo Custarde` v1
+- posting created one succeeded `production.run.post` request, seven input issues, and one output receipt
+- immediate reversal created one succeeded `production.run.reverse` request, one compensating output issue, and seven compensating input receipts
+- Fermento source stock returned to `3`, QA output stock returned to `0`, duplicate/negative stock checks stayed zero, `items.unit_price` remained `1500`, and no finance rows were created by Production Runs
+- production replay and payload-mismatch tests were not run; those remain covered by the local `26/26` regression suite
 
 Growth Batches are the next roadmap phase after Production Runs rollout and production smoke validation. Growth Batches, Cost Analysis Dashboard, Advanced Allocation, recurring allocation, overhead pools, and Industry Templates remain out of scope for this package.

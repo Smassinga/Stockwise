@@ -1,6 +1,6 @@
 # StockWise Security and Scale Baseline
 
-Status: 2026-06-14.
+Status: 2026-06-18.
 
 This document records the current security, scalability, monitoring, rate-limiting, deployment, and operational baseline for StockWise. It is an audit and operating package, not a schema-change package. No business logic, RLS policy, migration, finance posting, stock posting, POS, invoice, settlement, valuation, entitlement, membership, or Platform Control authority change is introduced by this document.
 
@@ -48,7 +48,7 @@ This pass did not run destructive recovery tests and did not change production s
 
 ### Database and RLS
 
-- The local and hosted migration chains are aligned through `20260614123300`.
+- The local and hosted migration chains are aligned through `20260615213640`.
 - The canonical migration baseline enables RLS on the public business tables and defines company-scoped policies.
 - Core protected tables include `companies`, `company_members`, `profiles`, `user_active_company`, `company_subscription_state`, `platform_admins`, item/stock/finance tables, invitations, notifications, and operational control-plane tables.
 - Storage policies exist for private `bank-statements` and public `brand-logos` buckets, with company-scoped access rules.
@@ -113,7 +113,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 ## Partial Protections
 
 - Auth signup, resend confirmation, and reset password have Supabase/Brevo provider controls plus frontend cooldowns, but not a StockWise-owned database rate limit.
-- Company bootstrap has backend rate limiting; assembly posting, normal web POS posting, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, and adjustment have backend idempotency through `posting_requests`; shared stock rollups use atomic negative-delta guards and receipt upserts. A2.4a.1 is live in hosted Supabase as of 2026-06-14: normal web POS uses `post_operator_sale` with operation type `operator.sale`, the production smoke passed, `authenticated` can execute the wrapper, and `anon` cannot execute it. The legacy POS RPCs remain a temporary compatibility bypass until A2.4a.2 reviews stale Tauri clients and closes normal authenticated legacy execution. The consolidated A2.4/A2.5 package is live as of 2026-06-14 through `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, and `stock.adjustment`; representative production smokes passed for PO receipt, sales shipment, transfer, and positive adjustment.
+- Company bootstrap has backend rate limiting; assembly posting, normal web POS posting, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, and Production Run post/reversal have backend idempotency through `posting_requests`; shared stock rollups use atomic negative-delta guards and receipt upserts. A2.4a.1 is live in hosted Supabase as of 2026-06-14: normal web POS uses `post_operator_sale` with operation type `operator.sale`, the production smoke passed, `authenticated` can execute the wrapper, and `anon` cannot execute it. The legacy POS RPCs remain a temporary compatibility bypass until A2.4a.2 reviews stale Tauri clients and closes normal authenticated legacy execution. The consolidated A2.4/A2.5 package is live as of 2026-06-14 through `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, and `stock.adjustment`; representative production smokes passed for PO receipt, sales shipment, transfer, and positive adjustment. Production Runs are live as of 2026-06-18 through `production.run.post` and `production.run.reverse`; the controlled post/reversal smoke passed with zero duplicate/negative stock buckets and unchanged `items.unit_price`.
 - The A1-A2.3 assembly and stock-engine hardening chain is live in hosted Supabase as of 2026-06-13 and passed controlled production assembly smoke validation. The smoke confirmed build-linked movement audit, stock rollup reconciliation, weighted-average cost behavior, unchanged `items.unit_price`, and zero duplicate stock buckets.
 - Platform Control mailers and guarded reset paths have stronger rate limiting than ordinary frontend reads.
 - Monitoring relies on Vercel logs, Supabase logs, Edge Function logs, browser console checks, and regression output. No third-party exception tracker is committed.
@@ -155,7 +155,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Vendor bills | No | Finance policies | approval/post RPCs | No | No | State guards | Backend AP anchors. |
 | Settlements, bank, and cash | No | Finance policies | settlement guards/RPCs | No | No | State guards | Backend settlement authority. |
 | Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, atomic stock rollup guards, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, and A2.3 hardens shared rollup concurrency. This chain is live and production-smoke validated. Consolidated A2.4/A2.5 is also live and no longer blocks beginning Production Runs. |
-| Production Runs | No | New company-scoped Production Run read policies; mutation is RPC-only | draft/post/reverse RPCs | No | No | Request-key idempotency, OPERATOR+ post authority, MANAGER+ reversal authority, stock trigger guards, base-UOM-only enforcement | Implemented locally only. Authenticated clients can read permitted rows but cannot directly mutate Production Run business tables. `post_production_run` uses `production.run.post`; `reverse_production_run` uses `production.run.reverse`. Posting and reversal write append-only `stock_movements`, never direct `stock_levels`, and never update `items.unit_price`. |
+| Production Runs | No | Company-scoped Production Run read policies; mutation is RPC-only | draft/post/reverse RPCs | No | No | Request-key idempotency, OPERATOR+ post authority, MANAGER+ reversal authority, stock trigger guards, base-UOM-only enforcement | Live and production-smoke validated as of 2026-06-18. Authenticated clients can read permitted rows but cannot directly mutate Production Run business tables. `post_production_run` uses `production.run.post`; `reverse_production_run` uses `production.run.reverse`. Posting and reversal write append-only `stock_movements`, never direct `stock_levels`, and never update `items.unit_price`. |
 | Reports and exports | Mostly UI | Read policies | Read helpers | No | No | Missing | Browser generation can become a performance risk. |
 | Company-access emails | No | Control tables | audit RPCs | mailer-company-access | Yes | Edge limits | Brevo SMTP required. |
 | Due reminders and digest worker | No | Company data policies via service role | Worker queries | Edge worker | No | Hook/worker controls | Requires worker secrets and Brevo config. |

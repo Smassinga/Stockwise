@@ -101,7 +101,7 @@ Current boundaries:
 - no Supabase migration was introduced
 - no stock posting, valuation, POS pricing, finance posting, settlement, invoice, RLS, entitlement, or access-control logic changed
 - current assembly cost remains an estimated material cost based on existing weighted-average stock cost
-- at the Phase 1 Recipes & Assemblies checkpoint, full Production Runs, frozen cost snapshots, labour/utilities/overhead allocation, recurring costs, and Growth Batches remained future scope; the first Production Runs package is now implemented locally at `/production-runs` and remains not live until reviewed rollout
+- at the Phase 1 Recipes & Assemblies checkpoint, full Production Runs, frozen cost snapshots, labour/utilities/overhead allocation, recurring costs, and Growth Batches remained future scope; the first Production Runs package is now live at `/production-runs`, while recurring allocations, automated overhead pools, Growth Batches, and by-product allocation remain future scope
 - `build_from_bom_sources`, `inv_issue_component`, and `inv_receive_finished` were not expanded and still require separate backend review before future Production & Costing work depends on them
 - Android/mobile layout must remain card-first, with component/ingredient cards and readiness/cost/action panels available without horizontal table dependence
 
@@ -178,7 +178,7 @@ Phase 4 UI work did not change the invitation RPCs, role assignment rules, setti
 
 ## Production Runs Workspace Direction
 
-The first Production Runs workspace is implemented locally at `/production-runs` and is not live until rollout. It uses the same premium register/detail pattern as other operational workspaces:
+The first Production Runs workspace is live at `/production-runs`. It uses the same premium register/detail pattern as other operational workspaces:
 
 - register header, search/filter controls, desktop table, and Android-first cards
 - draft creation from a recipe, editable actual output, source buckets, direct costs, and readiness preview
