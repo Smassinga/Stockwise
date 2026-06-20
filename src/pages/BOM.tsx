@@ -21,6 +21,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { IconBadge } from '../components/premium/IconBadge'
 import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
@@ -1295,44 +1296,54 @@ export default function BOMPage() {
         )}
       />
 
-      <div className="grid gap-3 lg:grid-cols-[1fr,1fr]">
-        <Card className="border-border/80 shadow-sm">
-          <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Boxes className="h-4 w-4 text-muted-foreground" />
-                {t('bom.helperTitle')}
+        <div className="grid gap-4 lg:grid-cols-2 xl:gap-5">
+          <Card className="border-card-border bg-card shadow-[0_18px_42px_-34px_hsl(var(--foreground)/0.32)]">
+            <CardContent className="flex h-full flex-col p-5 sm:p-6">
+              <div className="flex items-start gap-3 sm:gap-4">
+                <IconBadge tone="neutral" size="card">
+                  <Boxes />
+                </IconBadge>
+                <div className="min-w-0 space-y-1.5">
+                  <div className="premium-label">{tt('bom.helperEyebrow', 'Workflow boundary')}</div>
+                  <div className="text-sm font-semibold leading-5">{t('bom.helperTitle')}</div>
+                  <p className="text-sm leading-6 text-muted-foreground">{t('bom.helperBody')}</p>
+                </div>
               </div>
-              <div className="mt-1 text-sm leading-6 text-muted-foreground">{t('bom.helperBody')}</div>
-            </div>
-            <Button asChild variant="outline">
-              <Link to="/landed-cost">{t('landedCost.title')}</Link>
-            </Button>
-          </CardContent>
-        </Card>
+              <div className="mt-auto flex justify-start border-t border-card-border pt-4 sm:justify-end">
+                <Button asChild variant="outline" className="w-full sm:w-auto">
+                  <Link to="/landed-cost">{t('landedCost.title')}</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card className="border-sky-200/70 bg-sky-50/70 shadow-sm dark:border-sky-300/20 dark:bg-sky-300/10">
-          <CardContent className="flex gap-3 p-4">
-            <Factory className="mt-0.5 h-5 w-5 shrink-0 text-sky-700 dark:text-sky-200" />
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-sky-950 dark:text-sky-100">{tt('bom.productionRuns.title', 'Production Runs')}</div>
-              <p className="mt-1 text-sm leading-6 text-sky-800/85 dark:text-sky-100/80">
-                {tt(
-                  'bom.productionRuns.body',
-                  'Use this page for quick assembly and recipe maintenance. Use Production Runs when planned versus actual output, frozen costing, direct costs, and controlled reversal are required.',
-                )}
-              </p>
-              <div className="mt-3">
-                <Button asChild variant="outline" size="sm">
+          <Card className="border-card-border bg-card shadow-[0_18px_42px_-34px_hsl(var(--foreground)/0.32)]">
+            <CardContent className="flex h-full flex-col p-5 sm:p-6">
+              <div className="flex items-start gap-3 sm:gap-4">
+                <IconBadge tone="info" size="card">
+                  <Factory />
+                </IconBadge>
+                <div className="min-w-0 space-y-1.5">
+                  <div className="premium-label">{tt('bom.productionRuns.eyebrow', 'Planned production')}</div>
+                  <div className="text-sm font-semibold leading-5">{tt('bom.productionRuns.title', 'Production Runs')}</div>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {tt(
+                      'bom.productionRuns.body',
+                      'Use this page for quick assembly and recipe maintenance. Use Production Runs when planned versus actual output, frozen costing, direct costs, and controlled reversal are required.',
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-auto flex justify-start border-t border-card-border pt-4 sm:justify-end">
+                <Button asChild variant="outline" className="w-full sm:w-auto">
                   <Link to={selectedBomId ? `/production-runs?bomId=${selectedBomId}` : '/production-runs'}>
                     {tt('bom.productionRuns.action', 'Open Production Runs')}
                   </Link>
                 </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
 
       {boms.length === 0 ? (
         <PremiumEmptyState

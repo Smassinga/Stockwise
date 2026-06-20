@@ -31,6 +31,7 @@ import {
   ShoppingBasket,
   Upload,
   Factory,
+  Sprout,
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -73,6 +74,7 @@ function buildNavLabels(tt: (key: string, fallback: string) => string): NavItem[
     { label: tt('nav.items', 'Items'), to: '/items', icon: Package },
     { label: tt('nav.bom', 'Recipes & Assemblies'), to: '/bom', icon: Layers },
     { label: tt('nav.productionRuns', 'Production Runs'), to: '/production-runs', icon: Factory },
+    { label: tt('nav.growthBatches', 'Growth Batches'), to: '/growth-batches', icon: Sprout },
     { label: tt('nav.movements', 'Movements'), to: '/movements', icon: ArrowLeftRight },
     { label: tt('nav.transactions', 'Transactions'), to: '/transactions', icon: Receipt },
     { label: tt('nav.cash', 'Cash'), to: '/cash', icon: Wallet },
@@ -212,7 +214,7 @@ export function AppLayout({ user, children }: Props) {
       const sectionMap = new Map([
         [
           tt('shell.nav.operations', 'Operations'),
-          ['/dashboard', '/operator', '/items', '/bom', '/production-runs', '/movements', '/stock-levels', '/warehouses'],
+          ['/dashboard', '/operator', '/items', '/bom', '/production-runs', '/growth-batches', '/movements', '/stock-levels', '/warehouses'],
         ],
         [
           tt('shell.nav.commercial', 'Commercial & finance'),

@@ -29,6 +29,7 @@ const CustomersPage = lazy(() => import('./pages/Customers'))
 const SuppliersPage = lazy(() => import('./pages/Suppliers'))
 const BOMPage = lazy(() => import('./pages/BOM'))
 const ProductionRunsPage = lazy(() => import('./pages/ProductionRuns'))
+const GrowthBatchesPage = lazy(() => import('./pages/GrowthBatches'))
 const LandedCostPage = lazy(() => import('./pages/LandedCost'))
 const Auth = lazy(() => import('./pages/Auth'))
 const UomSettings = lazy(() => import('./pages/UomSettings'))
@@ -278,6 +279,7 @@ export default function App() {
                 <Route path="/setup/import" element={<Suspense fallback={<LoadingSplash />}><OpeningImport /></Suspense>} />
                 <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
                 <Route path="/production-runs" element={<Suspense fallback={<LoadingSplash />}><ProductionRunsPage /></Suspense>} />
+                <Route path="/growth-batches" element={<Suspense fallback={<LoadingSplash />}><GrowthBatchesPage /></Suspense>} />
                 <Route path="/landed-cost" element={<Suspense fallback={<LoadingSplash />}><LandedCostPage /></Suspense>} />
                 <Route path="/profile" element={<Suspense fallback={<LoadingSplash />}><Profile /></Suspense>} />
                 <Route path="/search" element={<Suspense fallback={<LoadingSplash />}><SearchResults /></Suspense>} />

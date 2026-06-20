@@ -189,6 +189,19 @@ The first Production Runs workspace is live at `/production-runs`. It uses the s
 
 Do not add a broad UI library for Production Runs. Keep the route on existing Tailwind, shadcn-style primitives, and `src/components/premium`.
 
+## Growth Batches Workspace Direction
+
+Growth Batches G1-G2 uses the same premium register/detail approach at `/growth-batches`:
+
+- `PremiumRegisterHeader`, metric cards, search/filter controls, desktop `PremiumDataTable`, and Android `PremiumMobileCardList`
+- detail tabs for overview, measurements, memo direct costs, timeline, and audit
+- draft actions only while status is `draft`; measurement and memo direct-cost actions only while status is `active`
+- no enabled controls for physical stock inputs, mortality, transfers, harvests, completion, reversal, fair value, FIFO, COGS, or finance posting
+
+The visual reference standard is existing StockWise premium components. MVPBlocks or other galleries may be used only as inspiration; no MVPBlocks dependency or copied block is part of this package.
+
+The `/bom` workflow bridge cards now use the shared premium card spacing pattern: icon badge, eyebrow/title/body stack, and separated action zone. This is a spacing and hierarchy correction only, not a BOM workflow or posting change.
+
 ## What Not To Use
 
 Avoid:

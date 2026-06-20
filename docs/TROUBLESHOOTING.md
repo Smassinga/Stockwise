@@ -46,6 +46,10 @@ Check:
 - `vite.config.ts`
 - `src-tauri/tauri.conf.json` `devUrl`
 
+### Local Supabase visual QA
+
+Normal local browser QA should use `npm run dev` at `http://localhost:3000` with local Supabase at `http://127.0.0.1:54321`. Do not use a permanent CSP bypass. If an embedded browser tool cannot reach that local path while a normal browser/Playwright run can, treat it as a tooling limitation and keep production `vercel.json` CSP and Tauri CSP unchanged.
+
 ### Build passes but the flow is still wrong
 
 Do not stop at `npm run build`.

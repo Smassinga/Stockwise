@@ -48,7 +48,7 @@ This pass did not run destructive recovery tests and did not change production s
 
 ### Database and RLS
 
-- The local and hosted migration chains are aligned through `20260615213640`.
+- Hosted production has 26 active migrations and is aligned through `20260615213640_add_production_run_posting.sql`. The local branch with uncommitted Growth Batches G1-G2 work has 28 active migrations.
 - The canonical migration baseline enables RLS on the public business tables and defines company-scoped policies.
 - Core protected tables include `companies`, `company_members`, `profiles`, `user_active_company`, `company_subscription_state`, `platform_admins`, item/stock/finance tables, invitations, notifications, and operational control-plane tables.
 - Storage policies exist for private `bank-statements` and public `brand-logos` buckets, with company-scoped access rules.
@@ -156,6 +156,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 | Settlements, bank, and cash | No | Finance policies | settlement guards/RPCs | No | No | State guards | Backend settlement authority. |
 | Landed cost, BOM, assembly | No | Company/stock policies | workflow RPCs | No | No | Assembly idempotency, atomic stock rollup guards, state guards | Assembly RPCs enforce OPERATOR+ and build-linked stock movements; A2.1/A2.2 adds idempotent assembly wrappers, and A2.3 hardens shared rollup concurrency. This chain is live and production-smoke validated. Consolidated A2.4/A2.5 is also live and no longer blocks beginning Production Runs. |
 | Production Runs | No | Company-scoped Production Run read policies; mutation is RPC-only | draft/post/reverse RPCs | No | No | Request-key idempotency, OPERATOR+ post authority, MANAGER+ reversal authority, stock trigger guards, base-UOM-only enforcement | Live and production-smoke validated as of 2026-06-18. Authenticated clients can read permitted rows but cannot directly mutate Production Run business tables. `post_production_run` uses `production.run.post`; `reverse_production_run` uses `production.run.reverse`. Posting and reversal write append-only `stock_movements`, never direct `stock_levels`, and never update `items.unit_price`. |
+| Growth Batches | No | Company-scoped Growth Batch read policies; mutation is RPC-only; FORCE RLS on business tables | draft/activate/cancel/measurement/direct-cost RPCs | No | No | Request-key idempotency for create, activate, cancel, measurement, and direct cost; OPERATOR+ mutation; validation triggers; no stock/finance posting | Local G1-G2 package only until hosted DB push is approved. Authenticated clients can read permitted rows/views but cannot directly mutate Growth Batch business tables. Memo direct costs update Growth Batch rollups only and create no stock, COGS, finance, settlement, bill, journal, invoice, or `items.unit_price` changes. |
 | Reports and exports | Mostly UI | Read policies | Read helpers | No | No | Missing | Browser generation can become a performance risk. |
 | Company-access emails | No | Control tables | audit RPCs | mailer-company-access | Yes | Edge limits | Brevo SMTP required. |
 | Due reminders and digest worker | No | Company data policies via service role | Worker queries | Edge worker | No | Hook/worker controls | Requires worker secrets and Brevo config. |

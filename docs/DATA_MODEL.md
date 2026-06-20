@@ -157,3 +157,45 @@ Additional direct costs do not create bank, cash, supplier, vendor-bill, or jour
 - entitlement/control plane: `company_subscription_state` + `platform_admins`
 
 Production smoke validation posted and immediately reversed Production Run `LEN-PR000000001` for `Leny Doçuras`. The post created seven input issues and one output receipt; the reversal created one compensating output issue and seven input receipts. Fermento source stock returned to `3`, the controlled output QA bucket returned to `0`, duplicate and negative stock checks stayed zero, and the finished item `items.unit_price` remained `1500`.
+
+## Growth Batches
+
+Growth Batches G1-G2 add a group-level batch lifecycle for biological and agricultural work. This package is local only until an explicitly approved hosted Supabase push is performed.
+
+Tables:
+
+- `growth_batches` stores the header, reference, family, primary quantity basis, opening/current quantity, optional opening/latest total weight, `weight_uom_id`, optional area/`area_uom_id`, location, status, memo cost rollups, and actor timestamps.
+- `growth_batch_counters` generates company-scoped non-fiscal references such as `LEN-GB000000001`.
+- `growth_batch_events` stores immutable activation, measurement, direct-cost, and cancellation events with per-batch sequence numbers.
+- `growth_batch_measurements` stores typed immutable measurement details.
+- `growth_batch_direct_costs` stores immutable memo direct-cost details.
+
+Read models:
+
+- `growth_batches_register`
+- `growth_batch_current_state`
+- `growth_batch_event_timeline`
+- `growth_batch_measurement_history`
+- `growth_batch_direct_cost_history`
+
+Lifecycle:
+
+- `draft`: editable by OPERATOR+ through `update_growth_batch_draft`.
+- `active`: accepts measurements and memo direct costs.
+- `cancelled`: draft-only closure with a required reason.
+- `completed` is reserved for a later phase and is not exposed by G1-G2 workflows.
+
+Mutation rules:
+
+- normal authenticated clients can read company-scoped Growth Batch rows but cannot directly insert, update, or delete Growth Batch business rows.
+- mutation is RPC-only through `create_growth_batch_draft`, `update_growth_batch_draft`, `cancel_growth_batch_draft`, `activate_growth_batch`, `record_growth_batch_measurement`, and `record_growth_batch_direct_cost`.
+- create, activate, cancel, measurement, and direct-cost actions use `posting_requests` request keys and deterministic structured JSON payload hashes. Optional numeric fields preserve omitted/null/zero distinctions while normalizing equivalent numeric representations such as `1`, `1.0`, and `1.00`.
+- count-based batches require whole-number primary quantities.
+- primary quantities are recorded in selected UOMs with family validation; generic conversion is deferred.
+- total-weight and average-weight measurements require the batch `weight_uom_id` and must use that UOM. Opening/latest total weight is always displayed with its UOM.
+- area observations require the batch `area_uom_id`. Height requires a length-family UOM. Temperature and `other` measurements require an existing UOM but do not claim full physical-dimension validation in G1-G2.
+- temperature observations may be negative; weights, areas, heights, sample sizes, and other non-temperature measurement values remain non-negative.
+- measurement and memo direct-cost effective dates must be on or after the batch `start_date` and not later than the current date. `event_at`/`created_at` remain server-authoritative timestamps.
+- history views expose `event_sequence`, `event_effective_date`, `event_created_at`, and `event_id`; callers must request an explicit order.
+- direct costs update Growth Batch memo rollups only and do not create stock, COGS, AP, AR, cash, bank, settlement, journal, invoice, or `items.unit_price` changes.
+- physical stock inputs, mortality/shrinkage, transfers, harvest/split outputs, completion, reversal, fair value, FIFO, and COGS are future phases, not hidden G1-G2 behavior.

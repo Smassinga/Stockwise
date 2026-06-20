@@ -121,6 +121,48 @@ Production Run posting writes only `stock_movements`; `stock_levels` remains tri
 
 Production smoke validation used `Leny Doçuras` and Production Run `LEN-PR000000001`: setup receipt added Fermento through the maintained Movements UI, posting created seven input issues plus one output receipt, reversal created one compensating output issue plus seven input receipts, duplicate/negative stock checks stayed zero, and `items.unit_price` remained commercial.
 
+## Growth Batches G1-G2 Architecture
+
+Growth Batches are implemented locally as the next Production & Costing foundation after Production Runs. No hosted Supabase migration, deployment, or production smoke is part of this package.
+
+The G1-G2 boundary is intentionally narrow:
+
+- `/growth-batches` manages group-level biological or agricultural batches, not per-animal or per-plant stock.
+- supported lifecycle actions are draft creation/editing, draft cancellation, activation, measurements, and memo direct costs.
+- unsupported actions remain disabled/future scope: physical stock inputs, mortality/shrinkage, transfers, harvests/splits, completion, reversal, fair-value adjustments, FIFO, COGS, and finance posting.
+- direct costs are Growth Batch memo rollups only. They do not create bank, cash, vendor bill, settlement, journal, invoice, stock movement, or `items.unit_price` changes.
+- primary quantities are base-UOM-style entries only for this phase. Count quantities must be whole numbers, weight measurements use the batch `weight_uom_id`, area observations use the batch `area_uom_id`, and generic Growth Batch UOM conversion is deferred.
+- the batch start date is the operational lifecycle boundary. Activation rejects future start dates; measurement and memo direct-cost effective dates must be on or after the start date and not in the future. Server-created timestamps remain separate from operator-entered effective dates.
+- Growth Batch histories expose `event_sequence`, effective date, created timestamp, and event id. Callers must order histories explicitly, normally by `event_sequence`.
+- authenticated clients may read permitted Growth Batch tables/views, but business mutation is RPC-only and protected by RLS, validation triggers, and request-key idempotency where duplicate submission risk exists.
+
+New tables:
+
+- `growth_batches`
+- `growth_batch_counters`
+- `growth_batch_events`
+- `growth_batch_measurements`
+- `growth_batch_direct_costs`
+
+New read models:
+
+- `growth_batches_register`
+- `growth_batch_current_state`
+- `growth_batch_event_timeline`
+- `growth_batch_measurement_history`
+- `growth_batch_direct_cost_history`
+
+New RPCs:
+
+- `create_growth_batch_draft`
+- `update_growth_batch_draft`
+- `cancel_growth_batch_draft`
+- `activate_growth_batch`
+- `record_growth_batch_measurement`
+- `record_growth_batch_direct_cost`
+
+Growth Batch operation types use `posting_requests` for create, activation, cancellation, measurement, and direct-cost replay safety: `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`.
+
 ## Notification Direction
 
 - `public.notifications` remains the company-scoped notification feed consumed by the shell

@@ -12,11 +12,15 @@ npm run build
 npm run test:finance-regression
 ```
 
+`npm run dev` is maintained on `http://localhost:3000` through `vite.config.ts`; Tauri `devUrl` is aligned to the same port. Local Supabase development uses `http://127.0.0.1:54321`.
+
 ## Supabase Workflow
 
 ### Current rule
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
+
+Current release-state wording: hosted production has 26 active migrations through `20260615213640_add_production_run_posting.sql`. The uncommitted local Growth Batches G1-G2 branch has 28 active migrations until an approved hosted push is run.
 
 Before changing the database:
 

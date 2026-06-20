@@ -246,4 +246,32 @@ Production smoke result:
 - Fermento source stock returned to `3`, QA output stock returned to `0`, duplicate/negative stock checks stayed zero, `items.unit_price` remained `1500`, and no finance rows were created by Production Runs
 - production replay and payload-mismatch tests were not run; those remain covered by the local `26/26` regression suite
 
-Growth Batches are the next roadmap phase after Production Runs rollout and production smoke validation. Growth Batches, Cost Analysis Dashboard, Advanced Allocation, recurring allocation, overhead pools, and Industry Templates remain out of scope for this package.
+## Growth Batches G1-G2 Local Package
+
+Growth Batches G1-G2 is implemented locally after the Production Runs rollout. It has not been pushed to hosted Supabase in this package. Hosted production remains at 26 migrations through `20260615213640_add_production_run_posting.sql`; the local uncommitted Growth Batches branch has 28 active migrations.
+
+What the package adds:
+
+- `growth_batches`, `growth_batch_counters`, `growth_batch_events`, `growth_batch_measurements`, and `growth_batch_direct_costs`
+- read models for the register, current state, event timeline, measurement history, and direct-cost history
+- `/growth-batches` as a premium register/detail workspace with desktop table and Android card views
+- draft create/edit, draft cancellation, activation, measurement recording, and memo direct-cost recording
+- operation types `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`
+
+G1-G2 rules:
+
+- Growth Batches are group-level, not individual-animal/plant inventory records.
+- mutation is RPC-only; authenticated table mutation is blocked.
+- count-basis opening quantities must be whole numbers.
+- quantities are first-pass UOM-family validated but no generic conversion is introduced.
+- optional numeric idempotency hashes preserve omitted/null/zero distinctions while treating equivalent numeric forms such as `1`, `1.0`, and `1.00` as the same payload.
+- total-weight and average-weight measurements require the batch weight unit and are displayed with that UOM. Area observations require the batch area unit. Temperature can be negative; other non-temperature measurements remain non-negative.
+- batch start date is the operational lifecycle boundary. Activation rejects future starts, and measurement/direct-cost effective dates must be on or after the start date and not in the future.
+- histories expose event sequence, effective date, server-created timestamp, and event id; callers order histories explicitly.
+- measurements do not alter population counts; total-weight measurements update latest total weight.
+- direct costs are memo rollups only and create no finance, settlement, bill, journal, invoice, stock, COGS, or `items.unit_price` changes.
+- physical stock inputs, mortality, transfers, harvest/split outputs, completion, reversal, fair value, FIFO, and COGS are future G3/G4/G5 scope.
+
+The BOM workflow-card spacing correction in this package is UI-only and does not change BOM posting, planning, costing, or stock logic.
+
+Cost Analysis Dashboard, Advanced Allocation, recurring allocation, overhead pools, and Industry Templates remain future scope.

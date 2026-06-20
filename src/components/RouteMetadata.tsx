@@ -52,6 +52,7 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
     '/setup/import': { title: 'Opening Data Import | StockWise', description: t.appDescription, noindex: true },
     '/bom': { title: 'Assembly | StockWise', description: t.appDescription, noindex: true },
     '/production-runs': { title: 'Production Runs | StockWise', description: t.appDescription, noindex: true },
+    '/growth-batches': { title: 'Growth Batches | StockWise', description: t.appDescription, noindex: true },
     '/landed-cost': { title: 'Landed Cost | StockWise', description: t.appDescription, noindex: true },
     '/users': { title: 'Users | StockWise', description: t.appDescription, noindex: true },
     '/users/roles': { title: 'User Roles | StockWise', description: t.appDescription, noindex: true },
