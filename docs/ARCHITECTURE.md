@@ -28,6 +28,7 @@ The maintained product surfaces are:
 - BOM and assembly, including lightweight time planning
 - purchase orders, sales orders, vendor bills, and sales invoices
 - settlements, bank, and cash workflows
+- Growth Batches for group-level biological and agricultural batch tracking
 - onboarding import for opening/master data
 - platform control for company access, trials, manual paid activation, and guarded reset operations
 
@@ -51,7 +52,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
-- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, and Production Run post/reversal workflows.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost workflows.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -61,7 +62,7 @@ The maintained product surfaces are:
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
 - `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
-- governed stock-posting operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, and `production.run.reverse`
+- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
@@ -82,7 +83,7 @@ The maintained product surfaces are:
 
 ## Production Runs Architecture
 
-The first Production Runs package is live as of 2026-06-18. Hosted Supabase is aligned through `20260615213640_add_production_run_posting.sql`, and the production frontend is commit `4f82c5a feat(production): add governed production runs`.
+The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted Supabase is now further aligned through the Growth Batches G1-G2 migration `20260619175129_add_growth_batch_lifecycle_events.sql`.
 
 Production Runs add a richer operational path beside quick assembly:
 
@@ -123,7 +124,14 @@ Production smoke validation used `Leny Doçuras` and Production Run `LEN-PR00000
 
 ## Growth Batches G1-G2 Architecture
 
-Growth Batches are implemented locally as the next Production & Costing foundation after Production Runs. No hosted Supabase migration, deployment, or production smoke is part of this package.
+Growth Batches G1-G2 is live in production as of 2026-06-20. Hosted Supabase is aligned through `20260619175129_add_growth_batch_lifecycle_events.sql`, the production frontend is commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3`, and the production route is `/growth-batches`.
+
+The rollout applied the two Growth Batch migrations:
+
+- `20260619175117_add_growth_batches_foundation.sql`
+- `20260619175129_add_growth_batch_lifecycle_events.sql`
+
+Production smoke validation passed through the maintained UI using the controlled `Leny Doçuras` tenant and retained active batch `LEN-GB000000001`.
 
 The G1-G2 boundary is intentionally narrow:
 

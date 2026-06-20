@@ -66,9 +66,41 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-20 Growth Batches G1-G2 rollout:
+
+- hosted Supabase is aligned through migration `20260619175129_add_growth_batch_lifecycle_events.sql` with 28 active migrations
+- production frontend is aligned at Git commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3 feat(growth): add governed growth batches foundation`
+- Vercel production deployment `dpl_3ouAxVTpzLpAek6GGSMjP6hQ5pbR` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- the database-first rollout ran from `2026-06-20T09:22:08+02:00` to `2026-06-20T09:42:06+02:00`; pre-rollout hosted history had 26 migrations through `20260615213640`, and post-rollout history had 28 migrations with `20260619175117` and `20260619175129` applied in order
+- `npx supabase db push --linked` exited `0`; the second dry run reported that the remote database was up to date
+- live Growth Batch tables are `growth_batches`, `growth_batch_counters`, `growth_batch_events`, `growth_batch_measurements`, and `growth_batch_direct_costs`
+- live read models are `growth_batches_register`, `growth_batch_current_state`, `growth_batch_event_timeline`, `growth_batch_measurement_history`, and `growth_batch_direct_cost_history`
+- live public RPCs are `create_growth_batch_draft`, `update_growth_batch_draft`, `cancel_growth_batch_draft`, `activate_growth_batch`, `record_growth_batch_measurement`, and `record_growth_batch_direct_cost`
+- authority checks verified RLS and FORCE RLS on all five Growth Batch tables, denied authenticated direct INSERT/UPDATE/DELETE, kept mutation RPC-only, revoked maintained mutation RPC execution from `anon` and `PUBLIC`, and retained `SECURITY DEFINER` functions with restricted `search_path`
+- the controlled production smoke ran from `2026-06-20 10:35:46 +02:00` to `2026-06-20 10:54:48 +02:00` using the maintained production UI, tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`), Admin user context `Samuel Massinga`, and location `Casa / QA-A2 - A2 Production Smoke`
+- retained smoke batch `LEN-GB000000001` (`14490729-afa2-461a-a2f8-5f97afc745a5`) is active with name `QA Growth Smoke — Poultry — 2026-06-20 10:37 CAT`
+- final smoke state was opening/current quantity `10 EA`, latest total weight `10 KG`, material cost `MZN 0.00`, direct cost `MZN 1.00`, total cost `MZN 1.00`, harvested cost `MZN 0.00`, and remaining cost `MZN 1.00`
+- draft creation and notes edit were performed through `/growth-batches`; the backend generated the reference, the reference stayed unchanged, and the draft edit created no lifecycle event
+- activation event `a8106b7a-a5a2-438b-9dbd-02f0b3b6115b` used event sequence `1`
+- total-weight measurement event `d924afa0-53d0-4314-a7d3-1fad1326b98d` with detail `db5ecb06-065b-4c09-a20f-6f1634b2f3f8` used event sequence `2`
+- Water memo direct-cost event `be3a0b50-46f9-4f25-bf27-0f1ce4723b7b` with detail `7d7614dd-a916-4e3f-9aeb-ebc77b8a2dfa` used event sequence `3`
+- succeeded posting requests were `growth.batch.create` (`d20b1c2b-63d4-4c9b-9f18-5a4d0c8cc40e`), `growth.batch.activate` (`feaef562-f931-4d91-af37-d0b71558a452`), `growth.batch.measurement` (`2a9b158f-84aa-4643-85cc-ea5e96727f84`), and `growth.batch.cost` (`a1348996-bb1f-468c-aecf-18090336bc9c`)
+- Production idempotency persistence was verified through succeeded posting requests and non-duplicated events/details. Replay, mismatch, concurrency and failure behavior remain covered by the guarded local `31/31` regression suite.
+- Growth Batch row counts moved as expected: `growth_batches` `0 -> 1`, `growth_batch_events` `0 -> 3`, `growth_batch_measurements` `0 -> 1`, `growth_batch_direct_costs` `0 -> 1`, and `posting_requests` `9 -> 13`
+- stock remained unchanged: `stock_movements` `53 -> 53` and `stock_levels` `9 -> 9`
+- finance remained unchanged: `cash_transactions` `4 -> 4`, `bank_transactions` `0 -> 0`, `vendor_bills` `1 -> 1`, `sales_invoices` `0 -> 0`, and `finance_document_events` `5 -> 5`
+- commercial selling prices remained unchanged: `items.unit_price` sum `2500 -> 2500`, hash `042919f464f3830a8a7c17791d9a43e7` unchanged
+- G1-G2 created no physical stock movement, did not mutate stock levels, and did not create cash, bank, vendor bill, settlement, invoice, supplier liability, finance journal/event, or `items.unit_price` changes
+- `/growth-batches` and `/bom` were validated at widths `1440`, `1200`, `820`, and `390` in light and dark mode; there was no CSP/CORS error, no page-level horizontal overflow, no unlabeled weight, and costs displayed with MZN
+- accepted responsive observation: at `1200` and `820`, the Growth Batches desktop/tablet table uses contained horizontal table scrolling while page/body overflow remains zero
+- BOM workflow cards passed visual review with Landed Cost secondary, Production Runs action-oriented, no BOM posting performed, and no BOM business logic changed
+- local guarded finance regression passed `31/31` before rollout against `http://127.0.0.1:54321`
+- GitHub Actions `Validation` run `27863125281` / `#13` passed for commit `c7b5e299`
+- G3-G5 remain future scope: stock-input consumption, mortality, transfers, harvest, completion, reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, cash/bank settlement, advanced allocation, and profitability dashboards are not live
+
 2026-06-18 Production Runs rollout:
 
-- hosted Supabase is aligned through migration `20260615213640_add_production_run_posting.sql`
+- at the 2026-06-18 Production Runs rollout, hosted Supabase aligned through migration `20260615213640_add_production_run_posting.sql`
 - production frontend is aligned at Git commit `4f82c5a feat(production): add governed production runs`
 - Vercel production deployment `dpl_8Es8xX6RAAAmof59ssCwuTLWeQmF` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
 - normal Production Runs now use `/production-runs` with `post_production_run` (`production.run.post`) and `reverse_production_run` (`production.run.reverse`)

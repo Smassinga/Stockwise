@@ -20,7 +20,7 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release-state wording: hosted production has 26 active migrations through `20260615213640_add_production_run_posting.sql`. The uncommitted local Growth Batches G1-G2 branch has 28 active migrations until an approved hosted push is run.
+Current release state: hosted production and `main` have 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`. Growth Batches G1-G2 is live after the approved database-first rollout and production smoke.
 
 Before changing the database:
 

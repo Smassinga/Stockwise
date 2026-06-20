@@ -30,7 +30,7 @@ Current design rules:
 - Movements is treated as a stock-ledger register on Android: type/date/item/warehouse/bin filters stay above the card list, movement badges are semantic, and Details/View source actions remain visible without hover-only controls
 - Recipes & Assemblies is now an Android-friendly operational workspace: premium summary cards appear before dense detail, ingredient/component lines render as mobile cards, readiness and estimated material-cost panels are scan-friendly, and the post action remains a single explicit assembly action
 - Production Runs is live as a card-first `/production-runs` workspace for planned versus actual production, frozen costs, input buckets, direct costs, preview, posting, and controlled reversal. Draft changes require a fresh readiness preview, and reversal requires the exact run reference before the destructive action is enabled.
-- Growth Batches G1-G2 adds a card-first `/growth-batches` workspace for group-level batch draft/active tracking, measurements, memo direct costs, and lifecycle timelines. Mobile cards must not expose disabled future-scope actions such as stock inputs, mortality, transfers, harvest, completion, reversal, FIFO, COGS, or finance posting.
+- Growth Batches G1-G2 is live as a card-first `/growth-batches` workspace for group-level batch draft/active tracking, measurements, memo direct costs, and lifecycle timelines. Production smoke validated the route at `390` width in light and dark mode with no page-level horizontal overflow, no unlabeled weight, and no missing currency. Mobile cards must not expose disabled future-scope actions such as stock inputs, mortality, transfers, harvest, completion, reversal, FIFO, COGS, or finance posting.
 - onboarding now presents join-invite and create-company as separate mobile decision cards, with invite acceptance kept as an explicit action
 - Settings now starts with a mobile-friendly operating setup map so company administrators can jump to real backed setup areas without scanning the entire long form first
 - Users/Roles keeps invite controls, role definitions, status badges, and member review usable as stacked cards on phones
@@ -47,6 +47,7 @@ These surfaces matter most when checking Android usability:
 - users and roles
 - recipes and assemblies
 - production runs
+- growth batches
 - opening import
 - settlements
 - banks, cash, and UOM
@@ -65,6 +66,7 @@ Future UI changes should preserve:
 - recipe/assembly cards should show finished item, ingredient/component sufficiency, limiting component, source/destination routing, estimated material cost, and the post action without requiring horizontal scrolling
 - production-run cards and detail sections should show status, planned versus actual output, input bucket readiness, estimated versus frozen costs, movement links, and post/reverse actions without requiring horizontal scrolling
 - growth-batch cards and detail sections should show status, family, basis quantity, latest weight, memo cost, location, measurements, and event timeline without requiring horizontal scrolling
+- contained horizontal scrolling inside dense Growth Batch desktop/tablet tables is acceptable at intermediate widths such as `1200` and `820` when page/body overflow remains zero and Android cards stay primary at phone width
 - premium card icons should use stable badge containers and stack above text on narrow screens when horizontal rows become cramped
 
 Future UI changes should avoid:

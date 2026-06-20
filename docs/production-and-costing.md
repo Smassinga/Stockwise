@@ -27,15 +27,18 @@ What did not change:
 
 ## Explicit Future Scope
 
-Full Production & Costing remains future work:
+Production Runs and Growth Batches G1-G2 are now live foundations. Remaining future Production & Costing work includes:
 
-- Production Runs
-- frozen cost snapshots
-- labour, utilities, overhead, recurring costs, and allocation rules
-- production variance
-- controlled production-run reversal and backend idempotency
-- Growth Batches for livestock, poultry, fish, crops, and nurseries
-- margin, break-even, yield, waste, mortality, and batch comparison dashboards
+- physical stock-input consumption for Growth Batches
+- feed/material issue posting
+- mortality and shrinkage
+- batch transfers
+- harvest and split or partial harvest
+- Growth Batch completion and reversal
+- FIFO biological layers, COGS, and fair-value accounting
+- automatic finance posting, vendor-bill allocation, cash/bank settlement, and advanced cost allocation
+- labour, utilities, overhead, recurring costs, and allocation rules beyond the current Production Run memo-cost snapshots
+- production variance, margin, break-even, yield, waste, mortality, profitability, and batch comparison dashboards
 
 ## Backend Review Boundary
 
@@ -199,7 +202,7 @@ Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate c
 
 ## Production Runs Live Package
 
-The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Hosted Supabase is aligned through `20260615213640_add_production_run_posting.sql`, and the production frontend is commit `4f82c5a feat(production): add governed production runs`.
+The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Current hosted migration history now continues through the Growth Batches G1-G2 migration `20260619175129_add_growth_batch_lifecycle_events.sql`.
 
 Live migrations:
 
@@ -246,9 +249,14 @@ Production smoke result:
 - Fermento source stock returned to `3`, QA output stock returned to `0`, duplicate/negative stock checks stayed zero, `items.unit_price` remained `1500`, and no finance rows were created by Production Runs
 - production replay and payload-mismatch tests were not run; those remain covered by the local `26/26` regression suite
 
-## Growth Batches G1-G2 Local Package
+## Growth Batches G1-G2 Live Package
 
-Growth Batches G1-G2 is implemented locally after the Production Runs rollout. It has not been pushed to hosted Supabase in this package. Hosted production remains at 26 migrations through `20260615213640_add_production_run_posting.sql`; the local uncommitted Growth Batches branch has 28 active migrations.
+Growth Batches G1-G2 is live and production-smoke validated as of 20 June 2026. Hosted Supabase has 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`, and the production frontend is deployment `dpl_3ouAxVTpzLpAek6GGSMjP6hQ5pbR` at commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3`.
+
+Live migrations:
+
+- `20260619175117_add_growth_batches_foundation.sql`
+- `20260619175129_add_growth_batch_lifecycle_events.sql`
 
 What the package adds:
 
@@ -257,20 +265,37 @@ What the package adds:
 - `/growth-batches` as a premium register/detail workspace with desktop table and Android card views
 - draft create/edit, draft cancellation, activation, measurement recording, and memo direct-cost recording
 - operation types `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`
+- public RPCs `create_growth_batch_draft`, `update_growth_batch_draft`, `cancel_growth_batch_draft`, `activate_growth_batch`, `record_growth_batch_measurement`, and `record_growth_batch_direct_cost`
 
 G1-G2 rules:
 
 - Growth Batches are group-level, not individual-animal/plant inventory records.
 - mutation is RPC-only; authenticated table mutation is blocked.
 - count-basis opening quantities must be whole numbers.
-- quantities are first-pass UOM-family validated but no generic conversion is introduced.
+- quantities use canonical text UOM IDs. Count, weight, area, and other maintained UOM choices are validated, but no generic conversion engine is introduced.
 - optional numeric idempotency hashes preserve omitted/null/zero distinctions while treating equivalent numeric forms such as `1`, `1.0`, and `1.00` as the same payload.
-- total-weight and average-weight measurements require the batch weight unit and are displayed with that UOM. Area observations require the batch area unit. Temperature can be negative; other non-temperature measurements remain non-negative.
+- total-weight and average-weight measurements require the frozen batch `weight_uom_id` and are displayed with that UOM. Area observations require the batch area unit. Temperature can be negative; other non-temperature measurements remain non-negative.
 - batch start date is the operational lifecycle boundary. Activation rejects future starts, and measurement/direct-cost effective dates must be on or after the start date and not in the future.
 - histories expose event sequence, effective date, server-created timestamp, and event id; callers order histories explicitly.
 - measurements do not alter population counts; total-weight measurements update latest total weight.
 - direct costs are memo rollups only and create no finance, settlement, bill, journal, invoice, stock, COGS, or `items.unit_price` changes.
 - physical stock inputs, mortality, transfers, harvest/split outputs, completion, reversal, fair value, FIFO, and COGS are future G3/G4/G5 scope.
+
+Production smoke result:
+
+- controlled UI smoke used tenant `Leny Doçuras`, company id `b49089cc-af95-44a6-bdff-45faec9d7bc5`, Admin user context `Samuel Massinga`, and location `Casa / QA-A2 - A2 Production Smoke`
+- retained batch `LEN-GB000000001` (`14490729-afa2-461a-a2f8-5f97afc745a5`) remains active as rollout evidence
+- final state is opening/current quantity `10 EA`, latest total weight `10 KG`, material cost `MZN 0.00`, direct cost `MZN 1.00`, total cost `MZN 1.00`, harvested cost `MZN 0.00`, and remaining cost `MZN 1.00`
+- draft creation and notes edit used the maintained UI; the backend generated the reference, and the draft edit created no lifecycle event
+- activation event `a8106b7a-a5a2-438b-9dbd-02f0b3b6115b` used sequence `1`
+- total-weight measurement event `d924afa0-53d0-4314-a7d3-1fad1326b98d` with detail `db5ecb06-065b-4c09-a20f-6f1634b2f3f8` used sequence `2`
+- Water memo direct-cost event `be3a0b50-46f9-4f25-bf27-0f1ce4723b7b` with detail `7d7614dd-a916-4e3f-9aeb-ebc77b8a2dfa` used sequence `3`
+- succeeded posting requests were recorded for `growth.batch.create`, `growth.batch.activate`, `growth.batch.measurement`, and `growth.batch.cost`
+- production idempotency persistence was verified through succeeded posting requests and non-duplicated events/details; replay, mismatch, concurrency, and failure behavior remain covered by the guarded local `31/31` regression suite
+- Growth Batch row counts moved `0 -> 1`, events `0 -> 3`, measurements `0 -> 1`, direct costs `0 -> 1`, and posting requests `9 -> 13`
+- stock remained unchanged (`stock_movements` `53 -> 53`, `stock_levels` `9 -> 9`)
+- finance remained unchanged (`cash_transactions` `4 -> 4`, `bank_transactions` `0 -> 0`, `vendor_bills` `1 -> 1`, `sales_invoices` `0 -> 0`, `finance_document_events` `5 -> 5`)
+- `items.unit_price` sum stayed `2500`, and hash `042919f464f3830a8a7c17791d9a43e7` remained unchanged
 
 The BOM workflow-card spacing correction in this package is UI-only and does not change BOM posting, planning, costing, or stock logic.
 

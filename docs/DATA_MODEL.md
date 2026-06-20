@@ -53,7 +53,7 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
 - stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
-- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, and Production Run post/reversal workflows
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost workflows
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
@@ -120,12 +120,12 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
-- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, and Production Run post/reversal
+- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost operations
 - item default sell price: `items.unit_price`
 
 ## Production Runs
 
-The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18 with hosted Supabase aligned through `20260615213640_add_production_run_posting.sql`.
+The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Current hosted migration history now continues through Growth Batches G1-G2 at `20260619175129_add_growth_batch_lifecycle_events.sql`.
 
 Tables:
 
@@ -160,7 +160,7 @@ Production smoke validation posted and immediately reversed Production Run `LEN-
 
 ## Growth Batches
 
-Growth Batches G1-G2 add a group-level batch lifecycle for biological and agricultural work. This package is local only until an explicitly approved hosted Supabase push is performed.
+Growth Batches G1-G2 add a live group-level batch lifecycle for biological and agricultural work. Hosted Supabase is aligned through `20260619175129_add_growth_batch_lifecycle_events.sql`; production frontend commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3` exposes the maintained `/growth-batches` route.
 
 Tables:
 
@@ -177,6 +177,15 @@ Read models:
 - `growth_batch_event_timeline`
 - `growth_batch_measurement_history`
 - `growth_batch_direct_cost_history`
+
+Public RPCs:
+
+- `create_growth_batch_draft`
+- `update_growth_batch_draft`
+- `cancel_growth_batch_draft`
+- `activate_growth_batch`
+- `record_growth_batch_measurement`
+- `record_growth_batch_direct_cost`
 
 Lifecycle:
 
@@ -199,3 +208,5 @@ Mutation rules:
 - history views expose `event_sequence`, `event_effective_date`, `event_created_at`, and `event_id`; callers must request an explicit order.
 - direct costs update Growth Batch memo rollups only and do not create stock, COGS, AP, AR, cash, bank, settlement, journal, invoice, or `items.unit_price` changes.
 - physical stock inputs, mortality/shrinkage, transfers, harvest/split outputs, completion, reversal, fair value, FIFO, and COGS are future phases, not hidden G1-G2 behavior.
+
+Production smoke retained active batch `LEN-GB000000001` (`14490729-afa2-461a-a2f8-5f97afc745a5`) for `Leny Doçuras`. The smoke verified draft create/edit, activation, one total-weight measurement, one memo direct cost, event sequences `1` activation, `2` measurement, and `3` direct cost, and reconciled the register/current-state/timeline/measurement/direct-cost read models. It created no stock movement, no finance posting, no settlement, no invoice, and no `items.unit_price` change.
