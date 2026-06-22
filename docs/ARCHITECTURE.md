@@ -52,7 +52,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
-- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost workflows. The local Growth Batches G3 package adds stock-input posting and compensating reversal operation types pending hosted rollout.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/input/reversal workflows.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -62,7 +62,7 @@ The maintained product surfaces are:
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
 - `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
-- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`
+- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, and `growth.batch.input.reverse`
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
@@ -83,7 +83,7 @@ The maintained product surfaces are:
 
 ## Production Runs Architecture
 
-The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted Supabase is now further aligned through the Growth Batches G1-G2 migration `20260619175129_add_growth_batch_lifecycle_events.sql`.
+The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted Supabase is now further aligned through the Growth Batches G3 migration `20260620132656_add_growth_batch_stock_input_posting.sql`.
 
 Production Runs add a richer operational path beside quick assembly:
 
@@ -124,7 +124,7 @@ Production smoke validation used `Leny Doçuras` and Production Run `LEN-PR00000
 
 ## Growth Batches G1-G2 Architecture
 
-Growth Batches G1-G2 is live in production as of 2026-06-20. Hosted Supabase is aligned through `20260619175129_add_growth_batch_lifecycle_events.sql`, the production frontend is commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3`, and the production route is `/growth-batches`.
+Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted Supabase is now aligned through the G3 migration `20260620132656_add_growth_batch_stock_input_posting.sql`. The production route is `/growth-batches`.
 
 The rollout applied the two Growth Batch migrations:
 
@@ -137,7 +137,7 @@ The G1-G2 boundary is intentionally narrow:
 
 - `/growth-batches` manages group-level biological or agricultural batches, not per-animal or per-plant stock.
 - supported lifecycle actions are draft creation/editing, draft cancellation, activation, measurements, and memo direct costs.
-- unsupported actions remain disabled/future scope: physical stock inputs, mortality/shrinkage, transfers, harvests/splits, completion, reversal, fair-value adjustments, FIFO, COGS, and finance posting.
+- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by G3 below: mortality/shrinkage, transfers, harvests/splits, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting.
 - direct costs are Growth Batch memo rollups only. They do not create bank, cash, vendor bill, settlement, journal, invoice, stock movement, or `items.unit_price` changes.
 - primary quantities are base-UOM-style entries only for this phase. Count quantities must be whole numbers, weight measurements use the batch `weight_uom_id`, area observations use the batch `area_uom_id`, and generic Growth Batch UOM conversion is deferred.
 - the batch start date is the operational lifecycle boundary. Activation rejects future start dates; measurement and memo direct-cost effective dates must be on or after the start date and not in the future. Server-created timestamps remain separate from operator-entered effective dates.
@@ -171,9 +171,9 @@ New RPCs:
 
 Growth Batch operation types use `posting_requests` for create, activation, cancellation, measurement, and direct-cost replay safety: `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`.
 
-## Growth Batches G3 Local Stock-Input Package
+## Growth Batches G3 Live Stock-Input Package
 
-Growth Batches G3 is complete locally and is not yet hosted or live. Hosted production remains aligned through 28 migrations at `20260619175129_add_growth_batch_lifecycle_events.sql`; the local branch adds two pending migrations for a 30-migration local chain:
+Growth Batches G3 is live in production as of 2026-06-22. Hosted production has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`; the database-first rollout applied these migrations together:
 
 - `20260620132646_add_growth_batch_stock_inputs.sql`
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
@@ -189,7 +189,9 @@ The G3 package keeps Growth Batches group-level and adds governed physical stock
 - material, total, and remaining Growth Batch rollups are recalculated from immutable input/reversal details plus existing memo direct costs while the batch row is locked.
 - `preview_growth_batch_stock_input`, `post_growth_batch_stock_input`, and `reverse_growth_batch_stock_input` preserve RPC-only mutation, company role checks, entitlement checks, RLS/FORCE RLS, and request-key idempotency for posting/reversal.
 
-Local validation has passed: local replay of 30 migrations, Growth Batches regression `5/5`, complete finance regression `31/31`, independent implementation inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static validation, and build. The package is ready for normal-user staging, commit, push, and CI. Hosted rollout has not started and no production smoke has been performed for G3.
+Pre-rollout validation passed: local replay of 30 migrations, Growth Batches regression `5/5`, complete finance regression `31/31`, independent implementation inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static validation, build, and GitHub Validation run `27930016751` for commit `58e8a083c29d70d3b72aa755a80336393bcbb268`. Production is served by Vercel deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i`.
+
+The 2026-06-22 production smoke used tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`) and new batch `LEN-GB000000002` (`QA G3 Stock Input Smoke - 2026-06-22`). It posted `1 EA` of `OV002 - Ovo` from `WH001 - Casa / CDC001 - Cozinha - Casa`, froze WAC `10.304233`, created input event `LEN-GB000000002-E000002`, issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa`, and request `e32dcf72-755d-4d1f-86c8-1e96e9fd761b`. Immediate reversal `LEN-GB000000002-E000003` created receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f` and request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`. Source stock moved `48 -> 47 -> 48`, material cost moved `0 -> 10.304233 -> 0`, memo direct cost stayed `0`, finance rows stayed unchanged, negative stock and duplicate buckets stayed zero, and `items.unit_price` stayed unchanged.
 
 G3 does not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion.
 

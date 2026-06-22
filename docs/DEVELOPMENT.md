@@ -20,14 +20,14 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production and `main` have 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`. Growth Batches G1-G2 is live after the approved database-first rollout and production smoke.
+Current release state: hosted production and `main` have 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`. Growth Batches G3 is live after the approved database-first rollout and controlled production smoke.
 
-Current local Growth Batches G3 work adds two pending, local-only migrations:
+The latest Growth Batches G3 rollout applied:
 
 - `20260620132646_add_growth_batch_stock_inputs.sql`
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
 
-With those pending migrations in the working tree, local replay reports 30 active migrations. G3 local validation has passed: Growth Batches regression `5/5`, complete finance regression `31/31`, independent inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, and build. The package is ready for normal-user staging, commit, push, and CI. Hosted production remains at 28 until a separate approved database-first rollout runs `npx supabase db push --linked` successfully in that rollout session; G3 production smoke has not been performed.
+G3 validation passed before rollout: local replay reports 30 active migrations, Growth Batches regression `5/5`, complete finance regression `31/31`, independent inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, build, and GitHub Validation run `27930016751`. The hosted rollout ran in the authorised 2026-06-22 session with `npx supabase db push --linked` exit `0`; production smoke passed through the maintained UI.
 
 Before changing the database:
 

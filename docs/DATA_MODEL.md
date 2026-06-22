@@ -53,7 +53,7 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
 - stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
-- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost workflows. The local Growth Batches G3 package adds `growth.batch.input` and `growth.batch.input.reverse` pending hosted rollout.
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/reversal workflows.
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
@@ -120,12 +120,12 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
-- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, Production Run post/reversal, Growth Batch create/activate/cancel/measurement/direct-cost operations, and the local pending Growth Batch G3 stock-input post/reversal operations
+- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/reversal operations
 - item default sell price: `items.unit_price`
 
 ## Production Runs
 
-The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Current hosted migration history now continues through Growth Batches G1-G2 at `20260619175129_add_growth_batch_lifecycle_events.sql`.
+The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Current hosted migration history now continues through Growth Batches G3 at `20260620132656_add_growth_batch_stock_input_posting.sql`.
 
 Tables:
 
@@ -160,7 +160,7 @@ Production smoke validation posted and immediately reversed Production Run `LEN-
 
 ## Growth Batches
 
-Growth Batches G1-G2 add a live group-level batch lifecycle for biological and agricultural work. Hosted Supabase is aligned through `20260619175129_add_growth_batch_lifecycle_events.sql`; production frontend commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3` exposes the maintained `/growth-batches` route.
+Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted Supabase is aligned through `20260620132656_add_growth_batch_stock_input_posting.sql`; production frontend commit `58e8a083c29d70d3b72aa755a80336393bcbb268` exposes the maintained `/growth-batches` route through Vercel deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i`.
 
 Tables:
 
@@ -177,6 +177,7 @@ Read models:
 - `growth_batch_event_timeline`
 - `growth_batch_measurement_history`
 - `growth_batch_direct_cost_history`
+- `growth_batch_stock_input_history`
 
 Public RPCs:
 
@@ -186,6 +187,9 @@ Public RPCs:
 - `activate_growth_batch`
 - `record_growth_batch_measurement`
 - `record_growth_batch_direct_cost`
+- `preview_growth_batch_stock_input`
+- `post_growth_batch_stock_input`
+- `reverse_growth_batch_stock_input`
 
 Lifecycle:
 
@@ -197,7 +201,7 @@ Lifecycle:
 Mutation rules:
 
 - normal authenticated clients can read company-scoped Growth Batch rows but cannot directly insert, update, or delete Growth Batch business rows.
-- mutation is RPC-only through `create_growth_batch_draft`, `update_growth_batch_draft`, `cancel_growth_batch_draft`, `activate_growth_batch`, `record_growth_batch_measurement`, and `record_growth_batch_direct_cost`.
+- mutation is RPC-only through `create_growth_batch_draft`, `update_growth_batch_draft`, `cancel_growth_batch_draft`, `activate_growth_batch`, `record_growth_batch_measurement`, `record_growth_batch_direct_cost`, `post_growth_batch_stock_input`, and `reverse_growth_batch_stock_input`; stock-input preview is also RPC-only and non-mutating.
 - create, activate, cancel, measurement, and direct-cost actions use `posting_requests` request keys and deterministic structured JSON payload hashes. Optional numeric fields preserve omitted/null/zero distinctions while normalizing equivalent numeric representations such as `1`, `1.0`, and `1.00`.
 - count-based batches require whole-number primary quantities.
 - primary quantities are recorded in selected UOMs with family validation; generic conversion is deferred.
@@ -207,25 +211,25 @@ Mutation rules:
 - measurement and memo direct-cost effective dates must be on or after the batch `start_date` and not later than the current date. `event_at`/`created_at` remain server-authoritative timestamps.
 - history views expose `event_sequence`, `event_effective_date`, `event_created_at`, and `event_id`; callers must request an explicit order.
 - direct costs update Growth Batch memo rollups only and do not create stock, COGS, AP, AR, cash, bank, settlement, journal, invoice, or `items.unit_price` changes.
-- physical stock inputs, mortality/shrinkage, transfers, harvest/split outputs, completion, reversal, fair value, FIFO, and COGS are future phases, not hidden G1-G2 behavior.
+- G3 physical stock inputs and event-specific input reversal are live. Mortality/shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS are future phases.
 
 Production smoke retained active batch `LEN-GB000000001` (`14490729-afa2-461a-a2f8-5f97afc745a5`) for `Leny Doçuras`. The smoke verified draft create/edit, activation, one total-weight measurement, one memo direct cost, event sequences `1` activation, `2` measurement, and `3` direct cost, and reconciled the register/current-state/timeline/measurement/direct-cost read models. It created no stock movement, no finance posting, no settlement, no invoice, and no `items.unit_price` change.
 
-### Growth Batches G3 Local Stock Inputs
+### Growth Batches G3 Live Stock Inputs
 
-The local G3 branch extends Growth Batches for stock-input posting and is complete locally, but it is not hosted or live. Hosted production remains at 28 migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`; the local migration chain is 30 after:
+G3 extends Growth Batches for stock-input posting and is live after the 2026-06-22 database-first rollout. Hosted production has 30 migrations through:
 
 - `20260620132646_add_growth_batch_stock_inputs.sql`
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
 
-Local G3 schema additions:
+G3 schema additions:
 
 - `growth_batch_stock_inputs` stores immutable input detail lines with item, base UOM, quantity, source warehouse/bin, frozen WAC unit cost, frozen total material cost, issue movement id, notes, actor, and timestamp.
 - `growth_batch_stock_input_reversal_lines` stores immutable compensating reversal detail lines tied to the original stock-input line and receipt movement.
 - `growth_batch_stock_input_history` exposes event sequence, effective date, server timestamp, actor, item/SKU, quantity/UOM, source bucket, frozen costs, issue movement, reversal state, reversal event, reversal actor, reason, and receipt movement.
 - `growth_batch_events` gains `stock_input` and `stock_input_reversal` event types and a narrow original-event relationship for stock-input reversals.
 
-Local G3 RPCs:
+G3 RPCs:
 
 - `preview_growth_batch_stock_input(uuid, date, jsonb, text)` returns readiness, blocker details, current availability, WAC estimates, line costs, and projected Growth Batch rollups without creating events, details, posting requests, stock movements, or finance rows.
 - `post_growth_batch_stock_input(uuid, date, jsonb, text, text)` creates one `stock_input` event, one detail row per canonical line, one stock issue movement per line, a succeeded `growth.batch.input` request, and recalculated material/total/remaining rollups.
@@ -233,6 +237,6 @@ Local G3 RPCs:
 
 G3 stock inputs are base-UOM-only: each consumed line must use `items.base_uom_id`. The consumed stock UOM is independent from the batch primary quantity UOM, `weight_uom_id`, and `area_uom_id`; no conversion is performed. Source WAC is frozen as Growth Batch material cost, while memo direct costs remain separate and non-financial. Stock input and reversal movements use event-specific references (`GROWTH_BATCH_INPUT` / `GROWTH_BATCH_INPUT_REVERSAL`) with the Growth Batch event as `ref_id` and the typed detail row as `ref_line_id`.
 
-Local validation passed with 30-migration replay, Growth Batches regression `5/5`, complete finance regression `31/31`, independent implementation inspection, authenticated local visual QA, static checks, and build. Local visual QA used local-only company `G3 Visual QA Local 20260621120349`, batch `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`: `100 EA` starting stock, frozen WAC `MZN 2.50`, posted material cost `MZN 12.50`, cost after reversal `MZN 0.00`, and restored stock `100 EA at MZN 2.50 WAC`. Hosted rollout has not started and production smoke has not been performed.
+Pre-rollout validation passed with 30-migration replay, Growth Batches regression `5/5`, complete finance regression `31/31`, independent implementation inspection, authenticated local visual QA, static checks, build, and GitHub Validation run `27930016751`. Production smoke used `Leny Doçuras` batch `LEN-GB000000002`, input event `LEN-GB000000002-E000002`, reversal event `LEN-GB000000002-E000003`, item `OV002 - Ovo`, and `1 EA` from `WH001 - Casa / CDC001 - Cozinha - Casa`. Frozen WAC was `10.304233`; material cost moved `0 -> 10.304233 -> 0`; source stock moved `48 -> 47 -> 48`; issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa` and receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f` kept the original issue immutable. No cash, bank, vendor bill, invoice, finance-event, settlement, or `items.unit_price` mutation occurred.
 
 G3 still does not add mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, COGS, fair value, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion.

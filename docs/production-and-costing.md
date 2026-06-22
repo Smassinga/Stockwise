@@ -27,9 +27,8 @@ What did not change:
 
 ## Explicit Future Scope
 
-Production Runs and Growth Batches G1-G2 are live foundations. Growth Batches G3 stock-input posting is complete locally, has passed local replay, regression, independent inspection, authenticated local visual QA, static validation, and build, and is not hosted or live. Remaining future Production & Costing work includes:
+Production Runs and Growth Batches G3 stock-input posting are live foundations. Remaining future Production & Costing work includes:
 
-- hosted rollout and production smoke for Growth Batches G3 stock-input consumption
 - mortality and shrinkage
 - batch transfers
 - harvest and split or partial harvest
@@ -201,7 +200,7 @@ Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate c
 
 ## Production Runs Live Package
 
-The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Current hosted migration history now continues through the Growth Batches G1-G2 migration `20260619175129_add_growth_batch_lifecycle_events.sql`.
+The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Current hosted migration history now continues through the Growth Batches G3 migration `20260620132656_add_growth_batch_stock_input_posting.sql`.
 
 Live migrations:
 
@@ -250,7 +249,7 @@ Production smoke result:
 
 ## Growth Batches G1-G2 Live Package
 
-Growth Batches G1-G2 is live and production-smoke validated as of 20 June 2026. Hosted Supabase has 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`, and the production frontend is deployment `dpl_3ouAxVTpzLpAek6GGSMjP6hQ5pbR` at commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3`.
+Growth Batches G1-G2 is live and production-smoke validated as of 20 June 2026. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted Supabase has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`.
 
 Live migrations:
 
@@ -278,7 +277,7 @@ G1-G2 rules:
 - histories expose event sequence, effective date, server-created timestamp, and event id; callers order histories explicitly.
 - measurements do not alter population counts; total-weight measurements update latest total weight.
 - direct costs are memo rollups only and create no finance, settlement, bill, journal, invoice, stock, COGS, or `items.unit_price` changes.
-- physical stock inputs are G3 local pending hosted rollout. Mortality, transfers, harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future G4/G5 scope.
+- physical stock inputs and event-specific stock-input reversal are live in G3. Mortality, transfers, harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future G4/G5 scope.
 
 Production smoke result:
 
@@ -298,9 +297,9 @@ Production smoke result:
 
 The BOM workflow-card spacing correction in this package is UI-only and does not change BOM posting, planning, costing, or stock logic.
 
-## Growth Batches G3 Local Stock-Input Package
+## Growth Batches G3 Live Stock-Input Package
 
-Growth Batches G3 is complete locally and is not hosted or live. Hosted production remains at 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`. The local branch adds:
+Growth Batches G3 is live and production-smoke validated as of 2026-06-22. Hosted production has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`, and the production frontend is deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i` at commit `58e8a083c29d70d3b72aa755a80336393bcbb268`. The rollout applied:
 
 - `20260620132646_add_growth_batch_stock_inputs.sql`
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
@@ -332,16 +331,21 @@ Movement references:
 - original issue movements and original Growth Batch events remain immutable
 - intervening stock activity means a reversal restores quantity and records the original frozen receipt value, but the current bucket WAC may not return exactly to its historical pre-input value
 
-Local validation:
+Validation and production smoke:
 
 - local replay applied all 30 migrations
 - Growth Batches targeted regression passed `5/5`; complete finance regression passed `31/31`
 - independent implementation inspection passed
 - authenticated local visual QA passed at `1440`, `1200`, `820`, and `390` in light and dark mode
-- local-only QA used company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`
+- isolated local QA used company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`
 - visual QA verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, governed OPERATOR+ posting, stock-input history, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, and preserved original issue event/movement
 - observed local values were `100 EA` starting stock, frozen WAC `MZN 2.50`, posted material cost `MZN 12.50`, cost after reversal `MZN 0.00`, and restored stock `100 EA at MZN 2.50 WAC`
-- current state is ready for normal-user staging, commit, push, and CI; hosted rollout has not started and production smoke has not been performed
+- GitHub Validation run `27930016751` passed for commit `58e8a083c29d70d3b72aa755a80336393bcbb268`
+- production smoke used tenant `Leny Doçuras`, batch `LEN-GB000000002`, item `OV002 - Ovo`, UOM `EA - Each`, and source `WH001 - Casa / CDC001 - Cozinha - Casa`; no dedicated QA bin was used
+- preview displayed source availability `48 EA`, base UOM `EA`, estimated WAC `MZN 10.30`, and estimated material cost `MZN 10.30` without creating a movement or request
+- posting consumed `1 EA`, froze WAC `10.304233`, created input event `LEN-GB000000002-E000002`, detail `6837d2a6-7e29-4a7d-acb1-d3b7e352944c`, issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa`, and succeeded request `e32dcf72-755d-4d1f-86c8-1e96e9fd761b`
+- reversal used mandatory reason `Controlled G3 production smoke reversal`, created event `LEN-GB000000002-E000003`, detail `03b1dd13-cf49-4aa5-abab-6de06aa765a6`, receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f`, and succeeded request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`
+- source stock moved `48 -> 47 -> 48`, material cost moved `MZN 0.00 -> MZN 10.304233 -> MZN 0.00`, memo direct cost stayed `MZN 0.00`, negative stock and duplicate bucket checks stayed zero, finance rows stayed unchanged, and `items.unit_price` sum/hash stayed unchanged
 
 Still future:
 

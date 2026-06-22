@@ -66,9 +66,34 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-22 Growth Batches G3 production rollout:
+
+- hosted Supabase is aligned through migration `20260620132656_add_growth_batch_stock_input_posting.sql` with 30 active migrations
+- production frontend is aligned at Git commit `58e8a083c29d70d3b72aa755a80336393bcbb268`
+- Vercel production deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- GitHub Actions `Validation` run `27930016751` passed before rollout
+- the database-first rollout ran from `2026-06-22T17:10:34.2302646Z` to `2026-06-22T17:10:52.9607505Z`; pre-rollout hosted history had 28 migrations through `20260619175129`, and post-rollout history had 30 migrations
+- `npx supabase db push --linked` exited `0` and applied exactly `20260620132646_add_growth_batch_stock_inputs.sql` then `20260620132656_add_growth_batch_stock_input_posting.sql`; the second dry run reported that the remote database was up to date
+- live G3 tables are `growth_batch_stock_inputs` and `growth_batch_stock_input_reversal_lines`; the live G3 read model is `growth_batch_stock_input_history`
+- live G3 RPCs are `preview_growth_batch_stock_input`, `post_growth_batch_stock_input`, and `reverse_growth_batch_stock_input`
+- RLS and FORCE RLS were verified on both new tables; authenticated company-scoped SELECT exists, authenticated direct INSERT/UPDATE/DELETE is blocked, mutation remains RPC-only, `anon`/`PUBLIC` cannot execute mutation RPCs, functions are `SECURITY DEFINER` with restricted `search_path`, OPERATOR+ is required for posting, and MANAGER+ is required for reversal
+- migration-only invariant checks stayed unchanged before smoke: `growth_batches=1`, `growth_batch_events=3`, `growth_batch_measurements=1`, `growth_batch_direct_costs=1`, `posting_requests=13`, `stock_movements=67`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, `finance_document_events=45`, negative stock `0`, duplicate stock bucket groups `0`, no G3 posting requests, and `items.unit_price` sum `189778`
+- the controlled production smoke used the maintained `/growth-batches` UI, tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`), batch `LEN-GB000000002` (`791d3282-4075-4163-9e23-cb9aa5dea493`), item `OV002 - Ovo`, UOM `EA - Each`, and source `WH001 - Casa / CDC001 - Cozinha - Casa`; a dedicated QA bin was not used so the smoke avoided extra warehouse/bin configuration changes
+- preview showed source availability `48 EA`, base unit `EA`, estimated WAC `MZN 10.30`, and estimated material cost `MZN 10.30`, and preview created no stock movement or posting request
+- stock input event `LEN-GB000000002-E000002` (`0332d6a4-9ef8-4053-8714-0ac7c5bcf7b2`) used sequence `2`, immutable detail `6837d2a6-7e29-4a7d-acb1-d3b7e352944c`, issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa`, and succeeded request `e32dcf72-755d-4d1f-86c8-1e96e9fd761b`
+- the issue movement used `ref_type = 'GROWTH_BATCH_INPUT'`, `ref_id = '0332d6a4-9ef8-4053-8714-0ac7c5bcf7b2'`, and `ref_line_id = '6837d2a6-7e29-4a7d-acb1-d3b7e352944c'`
+- reversal event `LEN-GB000000002-E000003` (`6575aec2-30c8-40ef-9ab9-3b636a5bb02b`) used sequence `3`, detail `03b1dd13-cf49-4aa5-abab-6de06aa765a6`, receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f`, succeeded request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`, and reason `Controlled G3 production smoke reversal`
+- the receipt movement used `ref_type = 'GROWTH_BATCH_INPUT_REVERSAL'`, `ref_id = '6575aec2-30c8-40ef-9ab9-3b636a5bb02b'`, and `ref_line_id = '03b1dd13-cf49-4aa5-abab-6de06aa765a6'`
+- source stock moved `48 -> 47 -> 48`; Growth Batch material cost moved `MZN 0.00 -> MZN 10.304233 -> MZN 0.00`; memo direct cost stayed `MZN 0.00`; total and remaining cost reconciled to `MZN 0.00` after reversal
+- the original issue event, detail, and movement remained unchanged; after reversal the UI no longer exposed a second `Reverse event` action
+- final counts were `growth_batches=2`, `growth_batch_events=6`, `growth_batch_measurements=1`, `growth_batch_direct_costs=1`, `growth_batch_stock_inputs=1`, `growth_batch_stock_input_reversal_lines=1`, `posting_requests=17`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, and `finance_document_events=45`
+- negative stock and duplicate stock bucket checks remained `0`; cash, bank, vendor bill, invoice, settlement, and finance-event rows were unchanged by G3; `items.unit_price` sum stayed `189778` and the preflight hash baseline was unchanged
+- Supabase API logs showed 200 responses for the maintained G3 preview/post/reversal/read-model path. Postgres logs showed no rollout/smoke failure; two inspection-only errors were caused by read-only verification attempts and did not affect the maintained UI path.
+- G4/G5 capabilities remain out of scope: mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records are not implemented by G3
+
 2026-06-20 Growth Batches G1-G2 rollout:
 
-- hosted Supabase is aligned through migration `20260619175129_add_growth_batch_lifecycle_events.sql` with 28 active migrations
+- the 2026-06-20 G1-G2 rollout aligned hosted Supabase through migration `20260619175129_add_growth_batch_lifecycle_events.sql`; the current hosted state is documented in the G3 note above
 - production frontend is aligned at Git commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3 feat(growth): add governed growth batches foundation`
 - Vercel production deployment `dpl_3ouAxVTpzLpAek6GGSMjP6hQ5pbR` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
 - the database-first rollout ran from `2026-06-20T09:22:08+02:00` to `2026-06-20T09:42:06+02:00`; pre-rollout hosted history had 26 migrations through `20260615213640`, and post-rollout history had 28 migrations with `20260619175117` and `20260619175129` applied in order
@@ -98,19 +123,18 @@ For production-impacting releases, also review:
 - GitHub Actions `Validation` run `27863125281` / `#13` passed for commit `c7b5e299`
 - G3-G5 remained future scope at the G1-G2 production rollout: stock-input consumption, mortality, transfers, harvest, completion, reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, cash/bank settlement, advanced allocation, and profitability dashboards were not live.
 
-2026-06-20 local Growth Batches G3 stock-input readiness note:
+2026-06-21 Growth Batches G3 pre-rollout readiness note:
 
-- this is not a production rollout note; hosted production remains at 28 migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`
-- the local G3 branch adds two pending migrations, `20260620132646_add_growth_batch_stock_inputs.sql` and `20260620132656_add_growth_batch_stock_input_posting.sql`, for a 30-migration local chain
+- this note records the local validation that preceded the 2026-06-22 production rollout
+- the G3 branch added `20260620132646_add_growth_batch_stock_inputs.sql` and `20260620132656_add_growth_batch_stock_input_posting.sql`, now live in hosted production
 - local replay of all 30 migrations passed; Growth Batches regression passed `5/5`, complete finance regression passed `31/31`, independent implementation inspection passed, authenticated local visual QA passed at `1440`, `1200`, `820`, and `390` in light and dark mode, and static validation/build passed
-- current G3 state is ready for normal-user staging, commit, push, and CI; hosted rollout has not started and production smoke has not been performed
-- local G3 adds non-mutating stock-input preview, atomic multi-line stock consumption, frozen source-WAC material costs, Growth Batch material/total/remaining rollups, append-only stock-input history, and MANAGER+ compensating reversal
+- G3 adds non-mutating stock-input preview, atomic multi-line stock consumption, frozen source-WAC material costs, Growth Batch material/total/remaining rollups, append-only stock-input history, and MANAGER+ compensating reversal
 - stock-input issue movements use `ref_type = 'GROWTH_BATCH_INPUT'`, the stock-input event id as `ref_id`, and the immutable input detail id as `ref_line_id`
 - reversal receipt movements use `ref_type = 'GROWTH_BATCH_INPUT_REVERSAL'`, the reversal event id as `ref_id`, and the immutable reversal detail id as `ref_line_id`
 - G3 remains base-UOM-only for consumed item lines and does not add generic UOM conversion
 - G3 stock inputs create physical stock issue movements and material-cost rollups, but do not create cash, bank, vendor bill, settlement, invoice, supplier liability, finance journal/event, automatic COGS, or `items.unit_price` changes
-- authenticated local visual QA used local-only company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, batch reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`; it verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, OPERATOR+ posting, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, original issue preservation, material-cost restoration from `MZN 12.50` to `MZN 0.00`, and stock restoration to `100 EA at MZN 2.50 WAC`
-- G4/G5 capabilities remain out of scope: mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records are not implemented by this local package
+- authenticated local visual QA used isolated local company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, batch reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`; it verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, OPERATOR+ posting, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, original issue preservation, material-cost restoration from `MZN 12.50` to `MZN 0.00`, and stock restoration to `100 EA at MZN 2.50 WAC`
+- G4/G5 capabilities remain out of scope: mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records are not implemented by G3
 
 2026-06-18 Production Runs rollout:
 

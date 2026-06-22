@@ -1,6 +1,6 @@
 # StockWise Availability and Recovery Runbook
 
-Status: 2026-06-20.
+Status: 2026-06-22.
 
 This runbook defines the current recovery posture for early commercial rollout. It is not a guarantee of service level and does not prove that a restore drill has been completed. Use it to drive incident response, monthly recovery tests, and future hardening work.
 
@@ -11,14 +11,14 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Local and hosted migration history is currently aligned through `20260619175129`.
+- Local and hosted migration history is currently aligned through `20260620132656`.
 
 ## Backup Assumptions
 
 These assumptions must be verified in the Supabase dashboard before treating them as an SLA:
 
 - Supabase database backups and point-in-time recovery depend on the active Supabase project plan and configured retention.
-- The current documented production backup posture remains scheduled daily physical database backups available and PITR not enabled. No new restore drill was performed during the 2026-06-20 Growth Batches rollout.
+- The current documented production backup posture remains scheduled daily physical database backups available and PITR not enabled. No new restore drill was performed during the 2026-06-22 Growth Batches G3 rollout.
 - No formal restore drill has yet been completed.
 - Supabase Auth user recovery is tied to the same project recovery posture and Auth logs/configuration.
 - Supabase Storage recovery depends on project backup support and any separate object backup/export process the operator maintains.
