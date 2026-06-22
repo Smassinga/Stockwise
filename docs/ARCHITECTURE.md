@@ -52,7 +52,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
-- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost workflows.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost workflows. The local Growth Batches G3 package adds stock-input posting and compensating reversal operation types pending hosted rollout.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -170,6 +170,28 @@ New RPCs:
 - `record_growth_batch_direct_cost`
 
 Growth Batch operation types use `posting_requests` for create, activation, cancellation, measurement, and direct-cost replay safety: `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, and `growth.batch.cost`.
+
+## Growth Batches G3 Local Stock-Input Package
+
+Growth Batches G3 is complete locally and is not yet hosted or live. Hosted production remains aligned through 28 migrations at `20260619175129_add_growth_batch_lifecycle_events.sql`; the local branch adds two pending migrations for a 30-migration local chain:
+
+- `20260620132646_add_growth_batch_stock_inputs.sql`
+- `20260620132656_add_growth_batch_stock_input_posting.sql`
+
+The G3 package keeps Growth Batches group-level and adds governed physical stock input for active batches only:
+
+- `stock_input` and `stock_input_reversal` Growth Batch event types.
+- immutable stock-input detail lines and immutable reversal-detail lines.
+- one append-only `stock_movements` issue per input line, referenced with `ref_type = 'GROWTH_BATCH_INPUT'`, `ref_id = growth_batch_event_id`, and `ref_line_id = growth_batch_stock_inputs.id`.
+- one compensating `stock_movements` receipt per reversal line, referenced with `ref_type = 'GROWTH_BATCH_INPUT_REVERSAL'`, `ref_id = reversal_event_id`, and `ref_line_id = growth_batch_stock_input_reversal_lines.id`.
+- base-UOM-only consumed inventory lines; Growth Batch primary quantity, weight UOM, area UOM, and consumed item UOM remain separate domains with no conversion engine.
+- source WAC is frozen into stock-input detail rows as material cost. Memo direct costs remain separate and non-financial.
+- material, total, and remaining Growth Batch rollups are recalculated from immutable input/reversal details plus existing memo direct costs while the batch row is locked.
+- `preview_growth_batch_stock_input`, `post_growth_batch_stock_input`, and `reverse_growth_batch_stock_input` preserve RPC-only mutation, company role checks, entitlement checks, RLS/FORCE RLS, and request-key idempotency for posting/reversal.
+
+Local validation has passed: local replay of 30 migrations, Growth Batches regression `5/5`, complete finance regression `31/31`, independent implementation inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static validation, and build. The package is ready for normal-user staging, commit, push, and CI. Hosted rollout has not started and no production smoke has been performed for G3.
+
+G3 does not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion.
 
 ## Notification Direction
 

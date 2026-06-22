@@ -8,13 +8,16 @@ import {
   ClipboardList,
   Coins,
   LineChart,
+  PackageMinus,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Ruler,
   Save,
   Search,
   Sprout,
+  Trash2,
   WalletCards,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -85,6 +88,14 @@ type BinRow = {
   warehouseId: string
 }
 
+type ItemRow = {
+  id: string
+  sku: string | null
+  name: string
+  base_uom_id: string | null
+  track_inventory: boolean
+}
+
 type GrowthBatchRegisterRow = {
   id: string
   company_id: string
@@ -136,6 +147,9 @@ type GrowthBatchCurrentState = GrowthBatchRegisterRow & {
   measurement_count: number
   direct_cost_count: number
   direct_cost_total: number
+  stock_input_event_count?: number
+  stock_input_line_count?: number
+  stock_input_material_cost?: number
   created_by: string | null
   updated_by: string | null
   activated_by: string | null
@@ -161,7 +175,7 @@ type GrowthBatchEventRow = {
   id: string
   event_sequence: number
   event_reference: string
-  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation'
+  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal'
   event_at: string
   event_date: string
   actor_display_name: string | null
@@ -170,6 +184,7 @@ type GrowthBatchEventRow = {
   weight_delta: number | null
   weight_uom_id: string | null
   weight_uom_code: string | null
+  material_cost_delta: number
   direct_cost_delta: number
   total_cost_delta: number
   currency_code: string | null
@@ -177,6 +192,7 @@ type GrowthBatchEventRow = {
   reason: string | null
   event_summary: string
   typed_detail_summary: Record<string, unknown> | null
+  original_event_id?: string | null
 }
 
 type GrowthBatchMeasurementRow = {
@@ -213,6 +229,42 @@ type GrowthBatchDirectCostRow = {
   amount: number
   currency_code: string
   actor_display_name: string | null
+}
+
+type GrowthBatchStockInputRow = {
+  id: string
+  growth_batch_id: string
+  event_id: string
+  event_sequence: number
+  event_reference: string
+  event_effective_date: string
+  event_created_at: string
+  actor_display_name: string | null
+  line_no: number
+  item_id: string
+  item_name: string
+  item_sku: string | null
+  quantity: number
+  uom_id: string
+  uom_code: string | null
+  source_warehouse_id: string
+  source_warehouse_name: string | null
+  source_bin_id: string
+  source_bin_code: string | null
+  source_bin_name: string | null
+  frozen_unit_cost: number
+  frozen_total_cost: number
+  currency_code: string
+  issue_movement_id: string
+  line_notes: string | null
+  reversal_status: 'not_reversed' | 'reversed'
+  reversal_event_id: string | null
+  reversal_event_reference: string | null
+  reversal_timestamp: string | null
+  reversal_effective_date: string | null
+  reversal_actor_display_name: string | null
+  reversal_reason: string | null
+  reversal_receipt_movement_id: string | null
 }
 
 type DraftForm = {
@@ -256,6 +308,63 @@ type DirectCostForm = {
   notes: string
 }
 
+type StockInputLineForm = {
+  clientId: string
+  itemId: string
+  quantity: string
+  sourceWarehouseId: string
+  sourceBinId: string
+  lineNotes: string
+}
+
+type StockInputForm = {
+  effectiveDate: string
+  notes: string
+  lines: StockInputLineForm[]
+}
+
+type StockInputPreviewLine = {
+  line_no: number
+  item_id: string
+  item_name: string
+  item_sku: string | null
+  uom_id: string
+  quantity: number
+  source_warehouse_id: string
+  source_warehouse_name: string | null
+  source_bin_id: string
+  source_bin_code: string | null
+  source_bin_name: string | null
+  available_quantity: number
+  shortage: number
+  estimated_unit_cost: number
+  estimated_line_cost: number
+  line_notes: string | null
+}
+
+type StockInputPreview = {
+  ready: boolean
+  blocking_reasons: Array<{ code?: string; line_no?: number; [key: string]: unknown }>
+  lines: StockInputPreviewLine[]
+  estimated_total_material_cost: number
+  current_material_cost: number
+  current_direct_cost: number
+  current_total_cost: number
+  current_harvested_cost: number
+  current_remaining_cost: number
+  projected_material_cost: number
+  projected_total_cost: number
+  projected_remaining_cost: number
+}
+
+type ReversalForm = {
+  eventId: string
+  eventReference: string
+  effectiveDate: string
+  reason: string
+  confirmation: string
+}
+
 const batchFamilies: BatchFamily[] = ['poultry', 'livestock', 'fish', 'crop', 'nursery', 'other']
 const quantityBases: QuantityBasis[] = ['count', 'weight', 'area', 'other']
 const measurementTypes: MeasurementType[] = ['total_weight', 'average_weight', 'height', 'area_observation', 'temperature', 'other']
@@ -272,6 +381,8 @@ const eventTone: Record<GrowthBatchEventRow['event_type'], PremiumTone> = {
   activation: 'positive',
   measurement: 'info',
   direct_cost: 'warning',
+  stock_input: 'positive',
+  stock_input_reversal: 'warning',
   cancellation: 'neutral',
 }
 
@@ -389,6 +500,35 @@ function emptyDirectCostForm(): DirectCostForm {
   }
 }
 
+function emptyStockInputLine(): StockInputLineForm {
+  return {
+    clientId: crypto.randomUUID(),
+    itemId: '',
+    quantity: '',
+    sourceWarehouseId: '',
+    sourceBinId: '',
+    lineNotes: '',
+  }
+}
+
+function emptyStockInputForm(): StockInputForm {
+  return {
+    effectiveDate: today(),
+    notes: '',
+    lines: [emptyStockInputLine()],
+  }
+}
+
+function emptyReversalForm(): ReversalForm {
+  return {
+    eventId: '',
+    eventReference: '',
+    effectiveDate: today(),
+    reason: '',
+    confirmation: '',
+  }
+}
+
 function friendlyError(error: unknown) {
   const raw = error && typeof error === 'object' && 'message' in error ? String((error as { message?: unknown }).message || '') : String(error || '')
   const rules: [RegExp, string][] = [
@@ -405,6 +545,18 @@ function friendlyError(error: unknown) {
     [/growth_batch_start_date_future/i, 'Start date cannot be in the future when activating.'],
     [/growth_batch_event_before_start/i, 'Measurement and memo cost dates must be on or after the batch start date.'],
     [/growth_batch_event_future/i, 'Measurement and memo cost dates cannot be in the future.'],
+    [/growth_batch_input_date_before_start/i, 'Stock input date must be on or after the batch start date.'],
+    [/growth_batch_input_date_in_future/i, 'Stock input date cannot be in the future.'],
+    [/growth_batch_input_lines_required/i, 'Add at least one stock input line.'],
+    [/growth_batch_input_quantity_invalid/i, 'Stock input quantities must be greater than zero.'],
+    [/growth_batch_input_duplicate_bucket/i, 'Combine duplicate stock input lines that use the same item, warehouse, and bin.'],
+    [/growth_batch_input_uom_mismatch/i, 'Stock inputs must use the item base unit.'],
+    [/growth_batch_input_source_invalid|warehouse_not_found|bin_not_found/i, 'Select a valid source warehouse and bin.'],
+    [/growth_batch_input_item_not_stock_tracked/i, 'Select a stock-tracked inventory item.'],
+    [/insufficient_stock/i, 'The selected source bin does not have enough stock.'],
+    [/growth_batch_stock_input_already_reversed/i, 'This stock-input event has already been reversed.'],
+    [/reversal_reason_required/i, 'Enter a reversal reason.'],
+    [/manager_role_required/i, 'Only Manager, Admin, or Owner roles can reverse stock-input events.'],
     [/growth_batch_not_draft/i, 'Only draft Growth Batches can be changed or activated.'],
     [/growth_batch_not_active/i, 'Measurements and direct costs can only be recorded on active Growth Batches.'],
     [/growth_batch_cancelled/i, 'This Growth Batch has already been cancelled.'],
@@ -476,6 +628,7 @@ export default function GrowthBatches() {
   const { companyId, myRole } = useOrg()
   const isMobile = useIsMobile()
   const canOperate = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'])
+  const canManage = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER'])
 
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -485,8 +638,10 @@ export default function GrowthBatches() {
   const [detailRow, setDetailRow] = useState<GrowthBatchDetailRow | null>(null)
   const [measurements, setMeasurements] = useState<GrowthBatchMeasurementRow[]>([])
   const [directCosts, setDirectCosts] = useState<GrowthBatchDirectCostRow[]>([])
+  const [stockInputs, setStockInputs] = useState<GrowthBatchStockInputRow[]>([])
   const [events, setEvents] = useState<GrowthBatchEventRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
+  const [items, setItems] = useState<ItemRow[]>([])
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([])
   const [bins, setBins] = useState<BinRow[]>([])
   const [selectedId, setSelectedId] = useState('')
@@ -505,10 +660,16 @@ export default function GrowthBatches() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [measurementOpen, setMeasurementOpen] = useState(false)
   const [directCostOpen, setDirectCostOpen] = useState(false)
+  const [stockInputOpen, setStockInputOpen] = useState(false)
+  const [reversalOpen, setReversalOpen] = useState(false)
   const [draftForm, setDraftForm] = useState<DraftForm>(() => emptyDraftForm())
   const [editForm, setEditForm] = useState<DraftForm>(() => emptyDraftForm())
   const [measurementForm, setMeasurementForm] = useState<MeasurementForm>(() => emptyMeasurementForm())
   const [directCostForm, setDirectCostForm] = useState<DirectCostForm>(() => emptyDirectCostForm())
+  const [stockInputForm, setStockInputForm] = useState<StockInputForm>(() => emptyStockInputForm())
+  const [stockInputPreview, setStockInputPreview] = useState<StockInputPreview | null>(null)
+  const [stockInputPreviewStale, setStockInputPreviewStale] = useState(false)
+  const [reversalForm, setReversalForm] = useState<ReversalForm>(() => emptyReversalForm())
   const [cancelReason, setCancelReason] = useState('')
 
   const createRequestRef = useRef<PostingRequestKeyRef>(null)
@@ -516,8 +677,11 @@ export default function GrowthBatches() {
   const cancelRequestRef = useRef<PostingRequestKeyRef>(null)
   const measurementRequestRef = useRef<PostingRequestKeyRef>(null)
   const directCostRequestRef = useRef<PostingRequestKeyRef>(null)
+  const stockInputRequestRef = useRef<PostingRequestKeyRef>(null)
+  const stockInputReversalRequestRef = useRef<PostingRequestKeyRef>(null)
 
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
+  const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
   const selectedBatch = useMemo(() => batches.find((batch) => batch.id === selectedId) || null, [batches, selectedId])
   const detailBatch = currentState || selectedBatch
   const selectedCurrency = detailBatch?.base_currency_code || 'MZN'
@@ -593,15 +757,23 @@ export default function GrowthBatches() {
 
   const loadMasterData = useCallback(async () => {
     if (!companyId) return
-    const [uomRes, warehouseRes, binRes] = await Promise.all([
+    const [uomRes, itemRes, warehouseRes, binRes] = await Promise.all([
       supabase.from('uoms').select('id,code,name,family').order('code', { ascending: true }),
+      supabase
+        .from('items')
+        .select('id,sku,name,base_uom_id,track_inventory')
+        .eq('company_id', companyId)
+        .eq('track_inventory', true)
+        .order('name', { ascending: true }),
       supabase.from('warehouses').select('id,code,name').eq('company_id', companyId).order('name', { ascending: true }),
       supabase.from('bins').select('id,code,name,warehouseId').eq('company_id', companyId).order('code', { ascending: true }),
     ])
     if (uomRes.error) throw uomRes.error
+    if (itemRes.error) throw itemRes.error
     if (warehouseRes.error) throw warehouseRes.error
     if (binRes.error) throw binRes.error
     setUoms((uomRes.data || []) as UomRow[])
+    setItems((itemRes.data || []) as ItemRow[])
     setWarehouses((warehouseRes.data || []) as WarehouseRow[])
     setBins((binRes.data || []) as BinRow[])
   }, [companyId])
@@ -629,13 +801,14 @@ export default function GrowthBatches() {
       setDetailRow(null)
       setMeasurements([])
       setDirectCosts([])
+      setStockInputs([])
       setEvents([])
       return
     }
 
     setDetailLoading(true)
     try {
-      const [stateRes, detailRes, measurementRes, costRes, eventRes] = await Promise.all([
+      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, eventRes] = await Promise.all([
         supabase.from('growth_batch_current_state').select('*').eq('id', batchId).maybeSingle(),
         supabase
           .from('growth_batches')
@@ -654,6 +827,12 @@ export default function GrowthBatches() {
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
+          .from('growth_batch_stock_input_history')
+          .select('*')
+          .eq('growth_batch_id', batchId)
+          .order('event_sequence', { ascending: false })
+          .order('line_no', { ascending: true }),
+        supabase
           .from('growth_batch_event_timeline')
           .select('*')
           .eq('growth_batch_id', batchId)
@@ -663,11 +842,13 @@ export default function GrowthBatches() {
       if (detailRes.error) throw detailRes.error
       if (measurementRes.error) throw measurementRes.error
       if (costRes.error) throw costRes.error
+      if (stockInputRes.error) throw stockInputRes.error
       if (eventRes.error) throw eventRes.error
       setCurrentState((stateRes.data || null) as GrowthBatchCurrentState | null)
       setDetailRow((detailRes.data || null) as GrowthBatchDetailRow | null)
       setMeasurements((measurementRes.data || []) as GrowthBatchMeasurementRow[])
       setDirectCosts((costRes.data || []) as GrowthBatchDirectCostRow[])
+      setStockInputs((stockInputRes.data || []) as GrowthBatchStockInputRow[])
       setEvents((eventRes.data || []) as GrowthBatchEventRow[])
     } catch (error) {
       console.error(error)
@@ -1072,6 +1253,197 @@ export default function GrowthBatches() {
     }
   }
 
+  function markStockInputPreviewStale() {
+    setStockInputPreviewStale(true)
+  }
+
+  function updateStockInputLine(clientId: string, patch: Partial<StockInputLineForm>) {
+    markStockInputPreviewStale()
+    setStockInputForm((current) => ({
+      ...current,
+      lines: current.lines.map((line) => (
+        line.clientId === clientId
+          ? {
+              ...line,
+              ...patch,
+              sourceBinId: patch.sourceWarehouseId !== undefined ? '' : patch.sourceBinId ?? line.sourceBinId,
+            }
+          : line
+      )),
+    }))
+  }
+
+  function addStockInputLine() {
+    markStockInputPreviewStale()
+    setStockInputForm((current) => ({ ...current, lines: [...current.lines, emptyStockInputLine()] }))
+  }
+
+  function removeStockInputLine(clientId: string) {
+    markStockInputPreviewStale()
+    setStockInputForm((current) => ({
+      ...current,
+      lines: current.lines.length > 1 ? current.lines.filter((line) => line.clientId !== clientId) : current.lines,
+    }))
+  }
+
+  function stockInputPayloadLines() {
+    return stockInputForm.lines.map((line) => {
+      const item = itemById.get(line.itemId)
+      return {
+        item_id: line.itemId || null,
+        uom_id: item?.base_uom_id || null,
+        quantity: optionalNumber(line.quantity),
+        source_warehouse_id: line.sourceWarehouseId || null,
+        source_bin_id: line.sourceBinId || null,
+        line_notes: cleanText(line.lineNotes),
+      }
+    })
+  }
+
+  function validateStockInputForm() {
+    if (!detailBatch || detailBatch.status !== 'active') return 'Stock inputs can only be posted to active Growth Batches.'
+    if (!stockInputForm.effectiveDate) return 'Select a stock input date.'
+    if (stockInputForm.effectiveDate < detailBatch.start_date) return 'Stock input date must be on or after the batch start date.'
+    if (stockInputForm.effectiveDate > today()) return 'Stock input date cannot be in the future.'
+    const bucketKeys = new Set<string>()
+    for (const line of stockInputForm.lines) {
+      const item = itemById.get(line.itemId)
+      const quantity = requiredNumber(line.quantity)
+      if (!item) return 'Select a stock-tracked item for every line.'
+      if (!item.base_uom_id) return 'Selected stock items must have a base unit.'
+      if (!Number.isFinite(quantity) || quantity <= 0) return 'Stock input quantities must be greater than zero.'
+      if (!line.sourceWarehouseId || !line.sourceBinId) return 'Select a source warehouse and bin for every line.'
+      const key = `${line.itemId}|${line.sourceWarehouseId}|${line.sourceBinId}`
+      if (bucketKeys.has(key)) return 'Combine duplicate stock input lines that use the same item, warehouse, and bin.'
+      bucketKeys.add(key)
+    }
+    return null
+  }
+
+  async function previewStockInput() {
+    if (!detailBatch) return
+    const validation = validateStockInputForm()
+    if (validation) return toast.error(validation)
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.rpc('preview_growth_batch_stock_input', {
+        p_batch_id: detailBatch.id,
+        p_effective_date: stockInputForm.effectiveDate,
+        p_lines: stockInputPayloadLines(),
+        p_notes: cleanText(stockInputForm.notes),
+      })
+      if (error) throw error
+      const preview = data as StockInputPreview
+      setStockInputPreview(preview)
+      setStockInputPreviewStale(false)
+      if (preview.ready) {
+        toast.success('Stock input preview is ready')
+      } else {
+        toast.error('Preview found blockers. Review the line details before posting.')
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function postStockInput() {
+    if (!detailBatch) return
+    const validation = validateStockInputForm()
+    if (validation) return toast.error(validation)
+    if (!stockInputPreview || stockInputPreviewStale) return toast.error('Preview the current stock input before posting.')
+    if (!stockInputPreview.ready) return toast.error('Resolve preview blockers before posting stock input.')
+    const payload = {
+      operation: 'growth.batch.input',
+      batchId: detailBatch.id,
+      effectiveDate: stockInputForm.effectiveDate,
+      notes: cleanText(stockInputForm.notes),
+      lines: stockInputPayloadLines(),
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(stockInputRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('post_growth_batch_stock_input', {
+        p_batch_id: detailBatch.id,
+        p_effective_date: stockInputForm.effectiveDate,
+        p_lines: stockInputPayloadLines(),
+        p_notes: cleanText(stockInputForm.notes),
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(stockInputRequestRef)
+      toast.success('Stock input posted')
+      setStockInputOpen(false)
+      setStockInputForm(emptyStockInputForm())
+      setStockInputPreview(null)
+      setStockInputPreviewStale(false)
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openStockInputDialog() {
+    setStockInputForm(emptyStockInputForm())
+    setStockInputPreview(null)
+    setStockInputPreviewStale(false)
+    setStockInputOpen(true)
+  }
+
+  function openReversalDialog(row: GrowthBatchStockInputRow) {
+    setReversalForm({
+      eventId: row.event_id,
+      eventReference: row.event_reference,
+      effectiveDate: today(),
+      reason: '',
+      confirmation: '',
+    })
+    setReversalOpen(true)
+  }
+
+  async function reverseStockInput() {
+    if (!detailBatch) return
+    if (!reversalForm.eventId) return
+    if (!reversalForm.reason.trim()) return toast.error('Enter a reversal reason.')
+    if (reversalForm.confirmation.trim() !== reversalForm.eventReference) {
+      return toast.error(`Type ${reversalForm.eventReference} to confirm the stock-input reversal.`)
+    }
+    const payload = {
+      operation: 'growth.batch.input.reverse',
+      originalEventId: reversalForm.eventId,
+      effectiveDate: reversalForm.effectiveDate,
+      reason: reversalForm.reason.trim(),
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(stockInputReversalRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('reverse_growth_batch_stock_input', {
+        p_original_event_id: reversalForm.eventId,
+        p_effective_date: reversalForm.effectiveDate,
+        p_reason: reversalForm.reason.trim(),
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(stockInputReversalRequestRef)
+      toast.success('Stock input reversed')
+      setReversalOpen(false)
+      setReversalForm(emptyReversalForm())
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const columns = useMemo<PremiumDataTableColumn<GrowthBatchRegisterRow>[]>(() => [
     {
       id: 'reference',
@@ -1163,6 +1535,10 @@ export default function GrowthBatches() {
 
   const activeActionButtons = detailBatch?.status === 'active' && canOperate ? (
     <div className="flex flex-wrap gap-2">
+      <Button type="button" size="sm" onClick={openStockInputDialog} disabled={saving}>
+        <PackageMinus className="mr-2 h-4 w-4" />
+        Post stock input
+      </Button>
       <Button type="button" size="sm" onClick={() => setMeasurementOpen(true)} disabled={saving}>
         <LineChart className="mr-2 h-4 w-4" />
         Record measurement
@@ -1369,9 +1745,9 @@ export default function GrowthBatches() {
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
       <PremiumRegisterHeader
-        eyebrow="G1-G2 controlled lifecycle"
+        eyebrow="G1-G3 governed lifecycle"
         title="Growth Batches"
-        description="Manage live biological or agricultural batches at group level. G1-G2 supports drafts, activation, measurements, and memo direct costs without stock movements, COGS, harvests, or finance postings."
+        description="Manage live biological or agricultural batches at group level. G3 adds governed physical stock-input posting and material-cost rollups without harvests, COGS, supplier bills, or finance postings."
         badges={
           <>
             <PremiumStatusBadge tone="info">Append-only event ledger</PremiumStatusBadge>
@@ -1401,7 +1777,7 @@ export default function GrowthBatches() {
           <>
             <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
             <PremiumMetricCard label="Drafts" value={metricValues.draft} description="Prepared but not activated" icon={<ClipboardList />} tone="info" variant="panel" />
-            <PremiumMetricCard label="Memo direct costs" value={money(metricValues.directCost, selectedCurrency)} description="Rollup only, no finance posting" icon={<Coins />} tone="warning" variant="panel" />
+            <PremiumMetricCard label="Memo direct costs" value={money(metricValues.directCost, selectedCurrency)} description="Separate from stock-input material cost" icon={<Coins />} tone="warning" variant="panel" />
             <PremiumMetricCard label="Latest activity" value={compactDate(metricValues.latest)} description="Newest event or created batch in the register" icon={<Activity />} tone="neutral" variant="panel" />
           </>
         }
@@ -1532,7 +1908,7 @@ export default function GrowthBatches() {
                     </div>
                     <CardTitle className="mt-3 break-words">{detailBatch.reference_no} - {detailBatch.name}</CardTitle>
                     <CardDescription>
-                      {detailRow?.purpose || 'Group-level Growth Batch tracking for G1-G2. Physical stock inputs, harvests, transfers, COGS, and valuation posting are outside this phase.'}
+                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory and memo direct costs stay non-financial; harvests, transfers, COGS, and valuation posting remain future phases.'}
                     </CardDescription>
                   </div>
                   <div className="flex shrink-0 flex-col gap-2 sm:items-end">
@@ -1544,7 +1920,7 @@ export default function GrowthBatches() {
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <SummaryItem label="Current quantity" value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
                     <SummaryItem label="Latest weight" value={detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
-                    <SummaryItem label="Memo remaining cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                    <SummaryItem label="Remaining cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
                     <SummaryItem label="Start date" value={compactDate(detailBatch.start_date)} />
                     <SummaryItem label="Expected end" value={compactDate(detailBatch.expected_end_date)} />
                     <SummaryItem
@@ -1567,6 +1943,7 @@ export default function GrowthBatches() {
                 <Tabs defaultValue="overview" className="min-w-0">
                   <TabsList className="w-full justify-start overflow-x-auto">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="stock">Stock inputs</TabsTrigger>
                     <TabsTrigger value="measurements">Measurements</TabsTrigger>
                     <TabsTrigger value="costs">Direct costs</TabsTrigger>
                     <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -1591,17 +1968,80 @@ export default function GrowthBatches() {
                     </DetailSection>
 
                     <DetailSection
-                      title="G1-G2 scope guard"
-                      description="These controls are intentionally unavailable until later phases connect stock, harvest, and valuation policies end to end."
+                      title="Future scope guard"
+                      description="These controls remain unavailable until later phases connect harvest, movement, and valuation policies end to end."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {['Stock inputs', 'Mortality / shrinkage', 'Transfers', 'Harvest / split outputs', 'Completion', 'Reversal', 'Fair value adjustments', 'FIFO / COGS posting'].map((item) => (
+                        {['Mortality / shrinkage', 'Transfers', 'Harvest / split outputs', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
                           <div key={item} className="flex items-center gap-2 rounded-xl border border-card-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                             <AlertTriangle className="h-4 w-4 text-amber-600" />
                             <span>{item}</span>
                           </div>
                         ))}
                       </div>
+                    </DetailSection>
+                  </TabsContent>
+
+                  <TabsContent value="stock">
+                    <DetailSection
+                      title="Stock input history"
+                      description="Stock inputs create physical issue movements, freeze source WAC as material cost, and do not create supplier bills, payments, bank transactions, or finance journals."
+                      action={detailBatch.status === 'active' && canOperate ? (
+                        <Button size="sm" onClick={openStockInputDialog}>
+                          <PackageMinus className="mr-2 h-4 w-4" />
+                          Post stock input
+                        </Button>
+                      ) : null}
+                    >
+                      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                        <SummaryItem label="Material cost" value={money(detailBatch.accumulated_material_cost, selectedCurrency)} />
+                        <SummaryItem label="Direct cost" value={money(detailBatch.accumulated_direct_cost, selectedCurrency)} />
+                        <SummaryItem label="Remaining cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                      </div>
+                      {stockInputs.length === 0 ? (
+                        <PremiumEmptyState icon={<PackageMinus />} title="No stock inputs yet" description="Post stock input when physical material is issued to an active batch." compact />
+                      ) : (
+                        <div className="space-y-3">
+                          {stockInputs.map((line) => {
+                            const canReverseLine = canManage && line.reversal_status !== 'reversed'
+                            return (
+                              <div key={line.id} className="rounded-xl border border-card-border bg-card p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="font-medium">{line.item_name}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {[line.item_sku, line.event_reference, `Seq ${line.event_sequence}`].filter(Boolean).join(' / ')}
+                                    </div>
+                                    <div className="mt-2 text-sm text-muted-foreground">
+                                      {[line.source_warehouse_name, line.source_bin_code, line.source_bin_name].filter(Boolean).join(' / ')}
+                                    </div>
+                                  </div>
+                                  <div className="text-right text-sm">
+                                    <div className="font-semibold">{qtyWithUom(line.quantity, line.uom_code || uomById.get(line.uom_id)?.code)}</div>
+                                    <div className="text-xs text-muted-foreground">{money(line.frozen_total_cost, line.currency_code || selectedCurrency)}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                                  <span>Movement {line.issue_movement_id}</span>
+                                  <span>{compactDate(line.event_effective_date)} / {compactDateTime(line.event_created_at)}</span>
+                                </div>
+                                {line.reversal_status === 'reversed' ? (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    Reversed by {line.reversal_event_reference || 'reversal event'} on {compactDate(line.reversal_effective_date)}. Receipt movement {line.reversal_receipt_movement_id}.
+                                  </p>
+                                ) : canReverseLine ? (
+                                  <div className="mt-3">
+                                    <Button type="button" size="sm" variant="outline" onClick={() => openReversalDialog(line)} disabled={saving}>
+                                      <RotateCcw className="mr-2 h-4 w-4" />
+                                      Reverse event
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </DetailSection>
                   </TabsContent>
 
@@ -1888,6 +2328,205 @@ export default function GrowthBatches() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDirectCostOpen(false)} disabled={saving}>Close</Button>
             <Button type="button" onClick={recordDirectCost} disabled={saving}>Add memo cost</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={stockInputOpen} onOpenChange={setStockInputOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Post stock input</DialogTitle>
+            <DialogDescription>
+              This records physical stock consumption and material cost for the batch. It does not create a supplier bill, cash payment, bank transaction or finance journal.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Effective date" htmlFor="growth-stock-input-date">
+                  <Input
+                    id="growth-stock-input-date"
+                    type="date"
+                    value={stockInputForm.effectiveDate}
+                    onChange={(event) => {
+                      markStockInputPreviewStale()
+                      setStockInputForm((current) => ({ ...current, effectiveDate: event.target.value }))
+                    }}
+                  />
+                </Field>
+                <Field label="Transaction notes" htmlFor="growth-stock-input-notes">
+                  <Input
+                    id="growth-stock-input-notes"
+                    value={stockInputForm.notes}
+                    onChange={(event) => {
+                      markStockInputPreviewStale()
+                      setStockInputForm((current) => ({ ...current, notes: event.target.value }))
+                    }}
+                    placeholder="Optional"
+                  />
+                </Field>
+              </div>
+
+              <div className="space-y-3">
+                {stockInputForm.lines.map((line, index) => {
+                  const item = itemById.get(line.itemId)
+                  const previewLine = stockInputPreview?.lines?.find((row) => row.line_no === index + 1)
+                  const lineBins = bins.filter((bin) => !line.sourceWarehouseId || bin.warehouseId === line.sourceWarehouseId)
+                  return (
+                    <div key={line.clientId} className="rounded-xl border border-card-border bg-card p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="font-medium">Line {index + 1}</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Remove stock input line ${index + 1}`}
+                          onClick={() => removeStockInputLine(line.clientId)}
+                          disabled={stockInputForm.lines.length === 1 || saving}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="grid gap-4 lg:grid-cols-[minmax(14rem,1.3fr)_9rem_minmax(12rem,1fr)_minmax(12rem,1fr)]">
+                        <Field label="Item" htmlFor={`growth-stock-input-item-${line.clientId}`}>
+                          <Select value={line.itemId || 'none'} onValueChange={(value) => updateStockInputLine(line.clientId, { itemId: value === 'none' ? '' : value })}>
+                            <SelectTrigger id={`growth-stock-input-item-${line.clientId}`} aria-label={`Stock input item line ${index + 1}`}>
+                              <SelectValue placeholder="Select item" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Select item</SelectItem>
+                              {items.map((option) => (
+                                <SelectItem key={option.id} value={option.id}>
+                                  {option.sku ? `${option.sku} - ` : ''}{option.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Quantity" htmlFor={`growth-stock-input-qty-${line.clientId}`} hint={item?.base_uom_id ? `Base unit: ${uomById.get(item.base_uom_id)?.code || item.base_uom_id}` : 'Base unit appears after item selection.'}>
+                          <Input
+                            id={`growth-stock-input-qty-${line.clientId}`}
+                            type="number"
+                            min="0.000001"
+                            step="0.000001"
+                            value={line.quantity}
+                            onChange={(event) => updateStockInputLine(line.clientId, { quantity: event.target.value })}
+                          />
+                        </Field>
+                        <Field label="Source warehouse" htmlFor={`growth-stock-input-wh-${line.clientId}`}>
+                          <Select value={line.sourceWarehouseId || 'none'} onValueChange={(value) => updateStockInputLine(line.clientId, { sourceWarehouseId: value === 'none' ? '' : value })}>
+                            <SelectTrigger id={`growth-stock-input-wh-${line.clientId}`} aria-label={`Stock input source warehouse line ${index + 1}`}><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Select warehouse</SelectItem>
+                              {warehouses.map((warehouse) => (
+                                <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code ? `${warehouse.code} - ` : ''}{warehouse.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Source bin" htmlFor={`growth-stock-input-bin-${line.clientId}`}>
+                          <Select value={line.sourceBinId || 'none'} onValueChange={(value) => updateStockInputLine(line.clientId, { sourceBinId: value === 'none' ? '' : value })}>
+                            <SelectTrigger id={`growth-stock-input-bin-${line.clientId}`} aria-label={`Stock input source bin line ${index + 1}`}><SelectValue placeholder="Select bin" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Select bin</SelectItem>
+                              {lineBins.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} - {bin.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      </div>
+                      <Field label="Line notes" htmlFor={`growth-stock-input-notes-${line.clientId}`}>
+                        <Input
+                          id={`growth-stock-input-notes-${line.clientId}`}
+                          value={line.lineNotes}
+                          onChange={(event) => updateStockInputLine(line.clientId, { lineNotes: event.target.value })}
+                          placeholder="Optional"
+                        />
+                      </Field>
+                      {previewLine ? (
+                        <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-3">
+                          <SummaryItem label="Available" value={qtyWithUom(previewLine.available_quantity, uomById.get(previewLine.uom_id)?.code)} />
+                          <SummaryItem label="Estimated WAC" value={money(previewLine.estimated_unit_cost, selectedCurrency)} />
+                          <SummaryItem label="Line material cost" value={money(previewLine.estimated_line_cost, selectedCurrency)} />
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <Button type="button" variant="outline" onClick={addStockInputLine} disabled={saving}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add line
+              </Button>
+
+              {stockInputPreview ? (
+                <div className={cn('rounded-xl border p-4 text-sm', stockInputPreview.ready && !stockInputPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                  <div className="font-medium">{stockInputPreviewStale ? 'Preview is stale' : stockInputPreview.ready ? 'Preview ready' : 'Preview blockers'}</div>
+                  {stockInputPreview.blocking_reasons?.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                      {stockInputPreview.blocking_reasons.map((blocker, index) => (
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{labelize(String(blocker.code || 'blocker'))}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <SummaryItem label="Material delta" value={money(stockInputPreview.estimated_total_material_cost, selectedCurrency)} />
+                    <SummaryItem label="Projected material" value={money(stockInputPreview.projected_material_cost, selectedCurrency)} />
+                    <SummaryItem label="Projected remaining" value={money(stockInputPreview.projected_remaining_cost, selectedCurrency)} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setStockInputOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="outline" onClick={previewStockInput} disabled={saving}>Preview</Button>
+            <Button type="button" onClick={postStockInput} disabled={saving || !stockInputPreview || stockInputPreviewStale || !stockInputPreview.ready}>
+              <PackageMinus className="mr-2 h-4 w-4" />
+              Post stock input
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reversalOpen} onOpenChange={setReversalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reverse stock-input event</DialogTitle>
+            <DialogDescription>This creates compensating stock receipts for one stock-input event. It is not a whole-batch reversal.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <Field label="Effective date" htmlFor="growth-stock-reversal-date">
+                <Input
+                  id="growth-stock-reversal-date"
+                  type="date"
+                  value={reversalForm.effectiveDate}
+                  onChange={(event) => setReversalForm((current) => ({ ...current, effectiveDate: event.target.value }))}
+                />
+              </Field>
+              <Field label="Reason" htmlFor="growth-stock-reversal-reason">
+                <Textarea
+                  id="growth-stock-reversal-reason"
+                  value={reversalForm.reason}
+                  onChange={(event) => setReversalForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </Field>
+              <Field label={`Type ${reversalForm.eventReference} to confirm`} htmlFor="growth-stock-reversal-confirm">
+                <Input
+                  id="growth-stock-reversal-confirm"
+                  value={reversalForm.confirmation}
+                  onChange={(event) => setReversalForm((current) => ({ ...current, confirmation: event.target.value }))}
+                />
+              </Field>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReversalOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="destructive" onClick={reverseStockInput} disabled={saving || !canManage}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reverse stock input
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

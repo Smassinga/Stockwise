@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 
 import {
@@ -17,6 +20,9 @@ import {
 const PREFIX = `gb-${Date.now().toString(36)}`
 const CREATE_GROWTH_BATCH_SIGNATURE = 'public.create_growth_batch_draft(uuid,text,text,text,numeric,text,date,date,text,text,numeric,text,numeric,text,uuid,text,text,text,text,boolean,boolean)'
 const MEASUREMENT_SIGNATURE = 'public.record_growth_batch_measurement(uuid,uuid,text,numeric,text,timestamp with time zone,numeric,numeric,numeric,numeric,text,text,text,boolean,boolean,boolean,boolean)'
+const PREVIEW_STOCK_INPUT_SIGNATURE = 'public.preview_growth_batch_stock_input(uuid,date,jsonb,text)'
+const POST_STOCK_INPUT_SIGNATURE = 'public.post_growth_batch_stock_input(uuid,date,jsonb,text,text)'
+const REVERSE_STOCK_INPUT_SIGNATURE = 'public.reverse_growth_batch_stock_input(uuid,date,text,text)'
 
 function addDaysIso(days) {
   const date = new Date(`${todayIso()}T00:00:00.000Z`)
@@ -58,35 +64,173 @@ async function expectDirectMutationBlocked(operationPromise, label) {
     })
 }
 
+function extractJsonPayloads(output) {
+  const payloads = []
+  const extraOutput = []
+  let payload = ''
+  let extra = ''
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (const char of output) {
+    if (depth === 0) {
+      if (char !== '{' && char !== '[') {
+        extra += char
+        continue
+      }
+      if (extra.trim()) extraOutput.push(extra.trim())
+      extra = ''
+      payload = char
+      depth = 1
+      inString = false
+      escaped = false
+      continue
+    }
+
+    payload += char
+
+    if (escaped) {
+      escaped = false
+      continue
+    }
+
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (char === '{' || char === '[') {
+      depth += 1
+    } else if (char === '}' || char === ']') {
+      depth -= 1
+      if (depth === 0) {
+        payloads.push(payload)
+        payload = ''
+      }
+    }
+  }
+
+  if (depth !== 0) {
+    throw new Error(`Incomplete JSON SQL output: ${payload.slice(0, 240)}`)
+  }
+
+  if (extra.trim()) extraOutput.push(extra.trim())
+
+  return { payloads, extraOutput }
+}
+
+function sqlOutputSample(stdout, stderr) {
+  const sample = (value) => value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8)
+    .join('\n')
+
+  return [
+    `stdout:\n${sample(stdout) || '<empty>'}`,
+    `stderr:\n${sample(stderr) || '<empty>'}`,
+  ].join('\n')
+}
+
 async function runLocalSql(sql) {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key, value]) => key && !key.startsWith('=') && value != null),
   )
-  const command = process.platform === 'win32' ? 'cmd.exe' : 'npx'
-  const args = process.platform === 'win32'
-    ? ['/d', '/s', '/c', 'npx supabase db query --local -o json']
+  const supabaseHome = join(tmpdir(), 'stockwise-supabase-home')
+  const npmCache = join(tmpdir(), 'stockwise-npm-cache')
+  mkdirSync(supabaseHome, { recursive: true })
+  mkdirSync(npmCache, { recursive: true })
+
+  const isWindows = process.platform === 'win32'
+  const command = isWindows ? process.env.ComSpec || 'cmd.exe' : 'npx'
+  const args = isWindows
+    ? ['/d', '/s', '/c', 'npx.cmd supabase db query --local -o json']
     : ['supabase', 'db', 'query', '--local', '-o', 'json']
-  const stdout = await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: process.cwd(),
-      env: { ...env, SUPABASE_TELEMETRY_DISABLED: '1' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
+  const timeoutMs = 30_000
+  const result = await new Promise((resolve, reject) => {
+    let child
+    const startError = (error) => new Error([
+      'runLocalSql failed to start local SQL process:',
+      `platform=${process.platform}`,
+      `executable=${command}`,
+      `code=${error.code || 'unknown'}`,
+      `message=${error.message}`,
+    ].join('\n'))
+
+    try {
+      child = spawn(command, args, {
+        cwd: process.cwd(),
+        env: {
+          ...env,
+          HOME: supabaseHome,
+          USERPROFILE: supabaseHome,
+          npm_config_cache: npmCache,
+          SUPABASE_TELEMETRY_DISABLED: '1',
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+    } catch (error) {
+      reject(startError(error))
+      return
+    }
+
     let output = ''
     let stderr = ''
+    let settled = false
+    const finish = (callback) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      callback()
+    }
+    const timeout = setTimeout(() => {
+      child.kill()
+      finish(() => reject(new Error(`supabase db query timed out after ${timeoutMs}ms`)))
+    }, timeoutMs)
+
     child.stdout.on('data', (chunk) => { output += chunk })
     child.stderr.on('data', (chunk) => { stderr += chunk })
-    child.on('error', reject)
+    child.on('error', (error) => finish(() => reject(startError(error))))
     child.on('close', (code) => {
-      if (code === 0) resolve(output)
-      else reject(new Error(`supabase db query failed with code ${code}: ${stderr || output}`))
+      finish(() => {
+        if (code === 0) resolve({ stdout: output, stderr })
+        else reject(new Error(`supabase db query failed with code ${code}:\n${sqlOutputSample(output, stderr)}`))
+      })
     })
     child.stdin.end(sql)
   })
-  const start = stdout.indexOf('{')
-  const end = stdout.lastIndexOf('}')
-  assert.ok(start >= 0 && end > start, `Expected JSON SQL output, got: ${stdout}`)
-  return JSON.parse(stdout.slice(start, end + 1)).rows
+  const { payloads, extraOutput } = extractJsonPayloads(result.stdout)
+  assert.equal(
+    extraOutput.length,
+    0,
+    `Unexpected non-JSON SQL stdout.\n${sqlOutputSample(result.stdout, result.stderr)}`,
+  )
+  assert.equal(
+    payloads.length,
+    1,
+    `Expected exactly one JSON SQL payload, got ${payloads.length}.\n${sqlOutputSample(result.stdout, result.stderr)}`,
+  )
+
+  let parsed
+  try {
+    parsed = JSON.parse(payloads[0])
+  } catch (error) {
+    throw new Error(`Failed to parse JSON SQL payload: ${error.message}\n${sqlOutputSample(result.stdout, result.stderr)}`)
+  }
+
+  const rows = Array.isArray(parsed) ? parsed : parsed?.rows
+  assert.ok(Array.isArray(rows), `Expected JSON SQL output to contain a rows array.\n${sqlOutputSample(result.stdout, result.stderr)}`)
+  return rows
 }
 
 async function financeIsolationCounts(client, companyId) {
@@ -111,7 +255,7 @@ async function stockMovementCount(client, companyId) {
   return countRows(client, 'stock_movements', [['eq', 'company_id', companyId]])
 }
 
-test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', async (t) => {
+test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and read models', async (t) => {
   const admin = createAdminClient()
   const created = {
     companyIds: new Set(),
@@ -121,6 +265,8 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
 
   async function cleanupCompany(companyId) {
     if (!companyId) return
+    await admin.from('growth_batch_stock_input_reversal_lines').delete().eq('company_id', companyId)
+    await admin.from('growth_batch_stock_inputs').delete().eq('company_id', companyId)
     await admin.from('growth_batch_direct_costs').delete().eq('company_id', companyId)
     await admin.from('growth_batch_measurements').delete().eq('company_id', companyId)
     await admin.from('growth_batch_events').delete().eq('company_id', companyId)
@@ -240,6 +386,79 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
     .single()
   throwSupabaseError(priceItem.error, 'Growth Batch item sentinel setup failed')
 
+  const feedItem = await ownerClient
+    .from('items')
+    .insert({
+      company_id: companyId,
+      sku: `${PREFIX.toUpperCase()}-FEED`,
+      name: `${PREFIX} Feed Input`,
+      base_uom_id: kgUomId,
+      min_stock: 0,
+      unit_price: 45,
+      primary_role: 'raw_material',
+      track_inventory: true,
+      can_buy: true,
+      can_sell: false,
+      is_assembled: false,
+    })
+    .select('id, unit_price')
+    .single()
+  throwSupabaseError(feedItem.error, 'Growth Batch feed item setup failed')
+  const feedItemId = feedItem.data.id
+
+  const supplementItem = await ownerClient
+    .from('items')
+    .insert({
+      company_id: companyId,
+      sku: `${PREFIX.toUpperCase()}-SUP`,
+      name: `${PREFIX} Supplement Input`,
+      base_uom_id: kgUomId,
+      min_stock: 0,
+      unit_price: 55,
+      primary_role: 'raw_material',
+      track_inventory: true,
+      can_buy: true,
+      can_sell: false,
+      is_assembled: false,
+    })
+    .select('id, unit_price')
+    .single()
+  throwSupabaseError(supplementItem.error, 'Growth Batch supplement item setup failed')
+  const supplementItemId = supplementItem.data.id
+
+  expectNoSupabaseError(
+    await ownerClient.rpc('post_stock_receipt', {
+      p_company_id: companyId,
+      p_item_id: feedItemId,
+      p_uom_id: kgUomId,
+      p_qty: 100,
+      p_qty_base: 100,
+      p_unit_cost: 2.5,
+      p_warehouse_to_id: warehouseId,
+      p_bin_to_id: binId,
+      p_ref_type: 'ADJUST',
+      p_notes: `${PREFIX} feed opening stock`,
+      p_request_key: `${PREFIX}-feed-opening-stock`,
+    }),
+    'Expected feed input stock receipt to succeed',
+  )
+  expectNoSupabaseError(
+    await ownerClient.rpc('post_stock_receipt', {
+      p_company_id: companyId,
+      p_item_id: supplementItemId,
+      p_uom_id: kgUomId,
+      p_qty: 50,
+      p_qty_base: 50,
+      p_unit_cost: 4,
+      p_warehouse_to_id: warehouseId,
+      p_bin_to_id: binId,
+      p_ref_type: 'ADJUST',
+      p_notes: `${PREFIX} supplement opening stock`,
+      p_request_key: `${PREFIX}-supplement-opening-stock`,
+    }),
+    'Expected supplement input stock receipt to succeed',
+  )
+
   await t.test('schema authority metadata and direct mutation protections', async () => {
     const schemaRows = await runLocalSql(`
       select relname, relrowsecurity, relforcerowsecurity
@@ -249,11 +468,13 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
         'growth_batches',
         'growth_batch_events',
         'growth_batch_measurements',
-        'growth_batch_direct_costs'
+        'growth_batch_direct_costs',
+        'growth_batch_stock_inputs',
+        'growth_batch_stock_input_reversal_lines'
       )
       order by relname;
     `)
-    assert.equal(schemaRows.length, 5, 'Expected all Growth Batch tables to exist')
+    assert.equal(schemaRows.length, 7, 'Expected all Growth Batch tables to exist')
     assert.equal(schemaRows.every((row) => row.relrowsecurity === true), true, 'Expected Growth Batch RLS enabled')
     assert.equal(schemaRows.every((row) => row.relforcerowsecurity === true), true, 'Expected Growth Batch FORCE RLS enabled')
 
@@ -264,14 +485,26 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
         has_function_privilege('anon', 'public.activate_growth_batch(uuid,uuid,text)', 'EXECUTE') as anon_activate,
         has_function_privilege('authenticated', 'public.activate_growth_batch(uuid,uuid,text)', 'EXECUTE') as auth_activate,
         has_function_privilege('anon', '${MEASUREMENT_SIGNATURE}', 'EXECUTE') as anon_measurement,
-        has_function_privilege('authenticated', '${MEASUREMENT_SIGNATURE}', 'EXECUTE') as auth_measurement;
+        has_function_privilege('authenticated', '${MEASUREMENT_SIGNATURE}', 'EXECUTE') as auth_measurement,
+        has_function_privilege('anon', '${PREVIEW_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as anon_stock_preview,
+        has_function_privilege('authenticated', '${PREVIEW_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as auth_stock_preview,
+        has_function_privilege('anon', '${POST_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as anon_stock_post,
+        has_function_privilege('authenticated', '${POST_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as auth_stock_post,
+        has_function_privilege('anon', '${REVERSE_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as anon_stock_reverse,
+        has_function_privilege('authenticated', '${REVERSE_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as auth_stock_reverse;
     `)
     assert.equal(grantRows[0].anon_create, false, 'anon must not execute create_growth_batch_draft')
     assert.equal(grantRows[0].anon_activate, false, 'anon must not execute activate_growth_batch')
     assert.equal(grantRows[0].anon_measurement, false, 'anon must not execute record_growth_batch_measurement')
+    assert.equal(grantRows[0].anon_stock_preview, false, 'anon must not execute preview_growth_batch_stock_input')
+    assert.equal(grantRows[0].anon_stock_post, false, 'anon must not execute post_growth_batch_stock_input')
+    assert.equal(grantRows[0].anon_stock_reverse, false, 'anon must not execute reverse_growth_batch_stock_input')
     assert.equal(grantRows[0].auth_create, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_activate, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_measurement, true, 'authenticated users execute governed Growth Batch RPCs')
+    assert.equal(grantRows[0].auth_stock_preview, true, 'authenticated users execute governed Growth Batch stock preview')
+    assert.equal(grantRows[0].auth_stock_post, true, 'authenticated users execute governed Growth Batch stock posting')
+    assert.equal(grantRows[0].auth_stock_reverse, true, 'authenticated users execute governed Growth Batch stock reversal')
 
     await expectPostgrestError(
       anonClient.rpc('create_growth_batch_draft', {
@@ -310,6 +543,43 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
         opening_primary_qty: 1,
       }),
       'direct growth_batches insert',
+    )
+
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_stock_inputs').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        growth_batch_event_id: '00000000-0000-0000-0000-000000000000',
+        line_no: 1,
+        item_id: feedItemId,
+        uom_id: kgUomId,
+        quantity: 1,
+        source_warehouse_id: warehouseId,
+        source_bin_id: binId,
+        frozen_unit_cost: 1,
+        frozen_total_cost: 1,
+        issue_movement_id: '00000000-0000-0000-0000-000000000000',
+      }),
+      'direct growth_batch_stock_inputs insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_stock_input_reversal_lines').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        reversal_event_id: '00000000-0000-0000-0000-000000000000',
+        original_event_id: '00000000-0000-0000-0000-000000000000',
+        original_stock_input_id: '00000000-0000-0000-0000-000000000000',
+        line_no: 1,
+        item_id: feedItemId,
+        uom_id: kgUomId,
+        quantity: 1,
+        frozen_unit_cost: 1,
+        frozen_total_cost: 1,
+        destination_warehouse_id: warehouseId,
+        destination_bin_id: binId,
+        receipt_movement_id: '00000000-0000-0000-0000-000000000000',
+      }),
+      'direct growth_batch_stock_input_reversal_lines insert',
     )
   })
 
@@ -645,6 +915,9 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
       from public.growth_batches
       where id = '${inProgressDraft.batch_id}'::uuid;
     `)
+    assert.ok(Array.isArray(hashRows), 'Expected activation in-progress fixture hash query to return a rows array')
+    assert.equal(hashRows.length, 1, 'Expected exactly one activation in-progress fixture hash row')
+    assert.ok(hashRows[0].payload_hash, 'Expected activation in-progress fixture payload hash')
     const inProgressInsert = await admin.from('posting_requests').insert({
       company_id: companyId,
       operation_type: 'growth.batch.activate',
@@ -1138,6 +1411,9 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
         from public.growth_batches
         where id = '${batchId}'::uuid;
       `)
+      assert.ok(Array.isArray(rows), 'Expected activation hash query to return a rows array')
+      assert.equal(rows.length, 1, `Expected exactly one activation hash row for batch ${batchId}`)
+      assert.ok(rows[0].payload_hash, `Expected activation payload hash for batch ${batchId}`)
       return rows[0].payload_hash
     }
 
@@ -1584,5 +1860,413 @@ test('Growth Batches G1-G2 authority, lifecycle, idempotency, and read models', 
     assert.equal(requestRows.length, 6)
     assert.equal(requestRows.every((row) => row.status === 'succeeded' && row.result_ref_id), true)
     assert.equal(new Set(requestRows.map((row) => row.request_key)).size, 6)
+
+    const stockBatch = await createDraftBatch('stock-input', { p_weight_uom_id: kgUomId })
+    await activateDraftBatch(stockBatch, 'stock-input')
+    const stockInputLines = [
+      {
+        item_id: feedItemId,
+        uom_id: kgUomId,
+        quantity: 5,
+        source_warehouse_id: warehouseId,
+        source_bin_id: binId,
+        line_notes: 'Feed issued to batch',
+      },
+      {
+        item_id: supplementItemId,
+        uom_id: kgUomId,
+        quantity: 2,
+        source_warehouse_id: warehouseId,
+        source_bin_id: binId,
+        line_notes: 'Supplement issued to batch',
+      },
+    ]
+    const stockBeforePreview = await stockMovementCount(ownerClient, companyId)
+    const inputBeforePreview = await countRows(ownerClient, 'growth_batch_stock_inputs', [['eq', 'growth_batch_id', stockBatch.batch_id]])
+    const preview = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('preview_growth_batch_stock_input', {
+          p_batch_id: stockBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: stockInputLines,
+          p_notes: 'Preview only',
+        }),
+        'Expected stock input preview to succeed',
+      ),
+    )
+    assert.equal(preview.ready, true)
+    assert.equal(preview.lines.length, 2)
+    assert.equal(Number(preview.estimated_total_material_cost), 20.5)
+    assert.equal(await stockMovementCount(ownerClient, companyId), stockBeforePreview, 'Preview must not create stock movements')
+    assert.equal(await countRows(ownerClient, 'growth_batch_stock_inputs', [['eq', 'growth_batch_id', stockBatch.batch_id]]), inputBeforePreview, 'Preview must not create stock input details')
+
+    const duplicatePreview = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('preview_growth_batch_stock_input', {
+          p_batch_id: stockBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: [stockInputLines[0], { ...stockInputLines[0], quantity: 1 }],
+          p_notes: 'Duplicate preview',
+        }),
+        'Expected duplicate preview to return blockers rather than mutate',
+      ),
+    )
+    assert.equal(duplicatePreview.ready, false)
+    assert.match(JSON.stringify(duplicatePreview.blocking_reasons), /growth_batch_input_duplicate_bucket/)
+
+    const insufficientPreview = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('preview_growth_batch_stock_input', {
+          p_batch_id: stockBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: [{ ...stockInputLines[0], quantity: 999 }],
+          p_notes: 'Insufficient preview',
+        }),
+        'Expected insufficient stock preview to return blockers rather than mutate',
+      ),
+    )
+    assert.equal(insufficientPreview.ready, false)
+    assert.match(JSON.stringify(insufficientPreview.blocking_reasons), /insufficient_stock/)
+    assert.equal(await stockMovementCount(ownerClient, companyId), stockBeforePreview, 'Insufficient preview must not create stock movements')
+
+    await expectPostgrestError(
+      viewerClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: stockBatch.batch_id,
+        p_effective_date: todayIso(),
+        p_lines: stockInputLines,
+        p_notes: 'Viewer blocked',
+        p_request_key: `${PREFIX}-viewer-stock-input`,
+      }),
+      'operator_role_required',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: stockBatch.batch_id,
+        p_effective_date: todayIso(),
+        p_lines: stockInputLines,
+        p_notes: 'Missing request key',
+        p_request_key: null,
+      }),
+      'request_key_required',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: stockBatch.batch_id,
+        p_effective_date: addDaysIso(-1),
+        p_lines: stockInputLines,
+        p_notes: 'Before start blocked',
+        p_request_key: `${PREFIX}-stock-input-before-start`,
+      }),
+      'growth_batch_input_date_before_start',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: stockBatch.batch_id,
+        p_effective_date: addDaysIso(1),
+        p_lines: stockInputLines,
+        p_notes: 'Future date blocked',
+        p_request_key: `${PREFIX}-stock-input-future`,
+      }),
+      'growth_batch_input_date_in_future',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: stockBatch.batch_id,
+        p_effective_date: todayIso(),
+        p_lines: [{ ...stockInputLines[0], uom_id: eachUomId }],
+        p_notes: 'Wrong UOM',
+        p_request_key: `${PREFIX}-stock-input-wrong-uom`,
+      }),
+      'growth_batch_input_uom_mismatch',
+    )
+
+    const financeBeforeStockInput = await financeIsolationCounts(admin, companyId)
+    const movementBeforeStockInput = await stockMovementCount(ownerClient, companyId)
+    const priceBeforeStockInput = await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]])
+    const feedBefore = await querySingle(ownerClient, 'stock_levels', 'qty,avg_cost', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', feedItemId],
+      ['eq', 'warehouse_id', warehouseId],
+      ['eq', 'bin_id', binId],
+    ])
+    const postedInput = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('post_growth_batch_stock_input', {
+          p_batch_id: stockBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: stockInputLines,
+          p_notes: 'Post governed stock input',
+          p_request_key: `${PREFIX}-stock-input-post`,
+        }),
+        'Expected stock input posting to succeed',
+      ),
+    )
+    assert.ok(postedInput.event_id)
+    assert.equal(postedInput.event_type, 'stock_input')
+    assert.equal(Number(postedInput.material_cost_delta), 20.5)
+    assert.equal(postedInput.movements.length, 2)
+    assert.equal(await stockMovementCount(ownerClient, companyId), movementBeforeStockInput + 2)
+    const feedAfter = await querySingle(ownerClient, 'stock_levels', 'qty,avg_cost', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', feedItemId],
+      ['eq', 'warehouse_id', warehouseId],
+      ['eq', 'bin_id', binId],
+    ])
+    assert.equal(Number(feedAfter.qty), Number(feedBefore.qty) - 5)
+
+    const stockInputDetails = expectNoSupabaseError(
+      await ownerClient
+        .from('growth_batch_stock_inputs')
+        .select('id,line_no,item_id,uom_id,quantity,frozen_unit_cost,frozen_total_cost,issue_movement_id')
+        .eq('growth_batch_event_id', postedInput.event_id)
+        .order('line_no', { ascending: true }),
+      'Expected stock input details to load',
+    )
+    assert.equal(stockInputDetails.length, 2)
+    assert.deepEqual(stockInputDetails.map((line) => Number(line.frozen_total_cost)), [12.5, 8])
+    const movementRows = expectNoSupabaseError(
+      await ownerClient
+        .from('stock_movements')
+        .select('id,type,item_id,uom_id,qty_base,unit_cost,total_value,warehouse_from_id,bin_from_id,ref_type,ref_id,ref_line_id')
+        .in('id', stockInputDetails.map((line) => line.issue_movement_id)),
+      'Expected stock input movements to load',
+    )
+    assert.equal(movementRows.length, 2)
+    assert.equal(movementRows.every((movement) => movement.type === 'issue' && movement.ref_type === 'GROWTH_BATCH_INPUT' && movement.ref_id === postedInput.event_id), true)
+    assert.equal(new Set(movementRows.map((movement) => movement.ref_line_id)).size, 2)
+
+    const stockRollup = await querySingle(ownerClient, 'growth_batches', 'accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,remaining_cost', [
+      ['eq', 'id', stockBatch.batch_id],
+    ])
+    assert.equal(Number(stockRollup.accumulated_material_cost), 20.5)
+    assert.equal(Number(stockRollup.accumulated_direct_cost), 0)
+    assert.equal(Number(stockRollup.accumulated_total_cost), 20.5)
+    assert.equal(Number(stockRollup.remaining_cost), 20.5)
+    assert.deepEqual(await financeIsolationCounts(admin, companyId), financeBeforeStockInput)
+    assert.deepEqual(await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]]), priceBeforeStockInput)
+
+    const replayInput = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('post_growth_batch_stock_input', {
+          p_batch_id: stockBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: stockInputLines,
+          p_notes: 'Post governed stock input',
+          p_request_key: `${PREFIX}-stock-input-post`,
+        }),
+        'Expected stock input replay to return original result',
+      ),
+    )
+    assert.equal(replayInput.event_id, postedInput.event_id)
+    assert.equal(await countRows(ownerClient, 'growth_batch_stock_inputs', [['eq', 'growth_batch_event_id', postedInput.event_id]]), 2)
+    assert.equal(await stockMovementCount(ownerClient, companyId), movementBeforeStockInput + 2)
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: stockBatch.batch_id,
+        p_effective_date: todayIso(),
+        p_lines: [{ ...stockInputLines[0], quantity: 6 }, stockInputLines[1]],
+        p_notes: 'Post governed stock input',
+        p_request_key: `${PREFIX}-stock-input-post`,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const stockHistory = expectNoSupabaseError(
+      await ownerClient
+        .from('growth_batch_stock_input_history')
+        .select('event_id,event_sequence,line_no,item_id,quantity,uom_id,uom_code,frozen_total_cost,reversal_status')
+        .eq('growth_batch_id', stockBatch.batch_id)
+        .order('event_sequence', { ascending: false })
+        .order('line_no', { ascending: true }),
+      'Expected stock input history to load',
+    )
+    assert.equal(stockHistory.length, 2)
+    assert.equal(stockHistory.every((line) => line.event_id === postedInput.event_id && line.uom_id === kgUomId && line.uom_code === 'KG'), true)
+    assert.equal(stockHistory.every((line) => line.reversal_status === 'not_reversed'), true)
+    const stockTimeline = expectNoSupabaseError(
+      await ownerClient
+        .from('growth_batch_event_timeline')
+        .select('id,event_sequence,event_type,material_cost_delta,total_cost_delta,typed_detail_summary')
+        .eq('growth_batch_id', stockBatch.batch_id)
+        .order('event_sequence', { ascending: true }),
+      'Expected stock input timeline to load',
+    )
+    assert.equal(stockTimeline.some((event) => event.event_type === 'stock_input' && Number(event.material_cost_delta) === 20.5), true)
+
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_stock_inputs').update({ quantity: 99 }).eq('id', stockInputDetails[0].id),
+      'direct growth_batch_stock_inputs update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_stock_inputs').delete().eq('id', stockInputDetails[0].id),
+      'direct growth_batch_stock_inputs delete',
+    )
+
+    await expectPostgrestError(
+      operatorClient.rpc('reverse_growth_batch_stock_input', {
+        p_original_event_id: postedInput.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Operator cannot reverse',
+        p_request_key: `${PREFIX}-stock-input-reverse-operator`,
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_stock_input', {
+        p_original_event_id: postedInput.event_id,
+        p_effective_date: addDaysIso(-1),
+        p_reason: 'Reversal before original blocked',
+        p_request_key: `${PREFIX}-stock-input-reverse-before`,
+      }),
+      'growth_batch_input_reversal_date_before_original',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_stock_input', {
+        p_original_event_id: postedInput.event_id,
+        p_effective_date: addDaysIso(1),
+        p_reason: 'Future reversal blocked',
+        p_request_key: `${PREFIX}-stock-input-reverse-future`,
+      }),
+      'growth_batch_input_date_in_future',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_stock_input', {
+        p_original_event_id: postedInput.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Missing request key',
+        p_request_key: null,
+      }),
+      'request_key_required',
+    )
+    const reversedInput = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('reverse_growth_batch_stock_input', {
+          p_original_event_id: postedInput.event_id,
+          p_effective_date: todayIso(),
+          p_reason: 'Regression reversal',
+          p_request_key: `${PREFIX}-stock-input-reverse`,
+        }),
+        'Expected stock input reversal to succeed',
+      ),
+    )
+    assert.ok(reversedInput.event_id)
+    assert.equal(reversedInput.event_type, 'stock_input_reversal')
+    assert.equal(Number(reversedInput.material_cost_delta), -20.5)
+    assert.equal(reversedInput.receipt_movements.length, 2)
+    assert.equal(await stockMovementCount(ownerClient, companyId), movementBeforeStockInput + 4)
+    const reversedRollup = await querySingle(ownerClient, 'growth_batches', 'accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,remaining_cost', [
+      ['eq', 'id', stockBatch.batch_id],
+    ])
+    assert.equal(Number(reversedRollup.accumulated_material_cost), 0)
+    assert.equal(Number(reversedRollup.accumulated_direct_cost), 0)
+    assert.equal(Number(reversedRollup.accumulated_total_cost), 0)
+    assert.equal(Number(reversedRollup.remaining_cost), 0)
+    const reversalRows = expectNoSupabaseError(
+      await ownerClient
+        .from('growth_batch_stock_input_reversal_lines')
+        .select('id,original_stock_input_id,receipt_movement_id,quantity,frozen_total_cost')
+        .eq('reversal_event_id', reversedInput.event_id),
+      'Expected reversal lines to load',
+    )
+    assert.equal(reversalRows.length, 2)
+    assert.equal(new Set(reversalRows.map((row) => row.original_stock_input_id)).size, 2)
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_stock_input_reversal_lines').update({ quantity: 99 }).eq('id', reversalRows[0].id),
+      'direct growth_batch_stock_input_reversal_lines update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_stock_input_reversal_lines').delete().eq('id', reversalRows[0].id),
+      'direct growth_batch_stock_input_reversal_lines delete',
+    )
+    const reversalReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await ownerClient.rpc('reverse_growth_batch_stock_input', {
+          p_original_event_id: postedInput.event_id,
+          p_effective_date: todayIso(),
+          p_reason: 'Regression reversal',
+          p_request_key: `${PREFIX}-stock-input-reverse`,
+        }),
+        'Expected stock input reversal replay to return original result',
+      ),
+    )
+    assert.equal(reversalReplay.event_id, reversedInput.event_id)
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_stock_input', {
+        p_original_event_id: postedInput.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Second reversal blocked',
+        p_request_key: `${PREFIX}-stock-input-reverse-again`,
+      }),
+      'growth_batch_stock_input_already_reversed',
+    )
+
+    const numericBatch = await createDraftBatch('stock-input-numeric')
+    await activateDraftBatch(numericBatch, 'stock-input-numeric')
+    const numericPost = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('post_growth_batch_stock_input', {
+          p_batch_id: numericBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: [{ ...stockInputLines[0], quantity: 1 }],
+          p_notes: null,
+          p_request_key: `${PREFIX}-stock-input-numeric`,
+        }),
+        'Expected numeric stock input post to succeed',
+      ),
+    )
+    const numericReplay = unwrapRpcSingle(
+      expectNoSupabaseError(
+        await operatorClient.rpc('post_growth_batch_stock_input', {
+          p_batch_id: numericBatch.batch_id,
+          p_effective_date: todayIso(),
+          p_lines: [{ ...stockInputLines[0], quantity: '1.00' }],
+          p_notes: null,
+          p_request_key: `${PREFIX}-stock-input-numeric`,
+        }),
+        'Expected equivalent numeric stock input replay to succeed',
+      ),
+    )
+    assert.equal(numericReplay.event_id, numericPost.event_id)
+
+    const concurrentStockBatch = await createDraftBatch('stock-input-concurrent')
+    await activateDraftBatch(concurrentStockBatch, 'stock-input-concurrent')
+    const concurrentResults = await Promise.all([
+      operatorClient.rpc('post_growth_batch_stock_input', {
+        p_batch_id: concurrentStockBatch.batch_id,
+        p_effective_date: todayIso(),
+        p_lines: [{ ...stockInputLines[0], quantity: 1 }],
+        p_notes: 'Concurrent stock input',
+        p_request_key: `${PREFIX}-concurrent-stock-input`,
+      }),
+      operatorClient.rpc('record_growth_batch_direct_cost', {
+        p_company_id: companyId,
+        p_growth_batch_id: concurrentStockBatch.batch_id,
+        p_category: 'water',
+        p_description: 'Concurrent direct cost with stock input',
+        p_amount: 1.5,
+        p_event_date: todayIso(),
+        p_request_key: `${PREFIX}-concurrent-stock-direct-cost`,
+      }),
+    ])
+    assert.equal(concurrentResults.every((result) => !result.error), true, 'Expected concurrent stock input/direct cost to succeed')
+    const concurrentState = await querySingle(ownerClient, 'growth_batches', 'accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,remaining_cost,latest_event_sequence', [
+      ['eq', 'id', concurrentStockBatch.batch_id],
+    ])
+    assert.equal(Number(concurrentState.accumulated_material_cost), 2.5)
+    assert.equal(Number(concurrentState.accumulated_direct_cost), 1.5)
+    assert.equal(Number(concurrentState.accumulated_total_cost), 4)
+    assert.equal(Number(concurrentState.remaining_cost), 4)
+    assert.equal(Number(concurrentState.latest_event_sequence), 3)
+
+    const g3RequestRows = expectNoSupabaseError(
+      await admin
+        .from('posting_requests')
+        .select('operation_type,request_key,status,result_ref_id')
+        .eq('company_id', companyId)
+        .in('operation_type', ['growth.batch.input', 'growth.batch.input.reverse']),
+      'Expected Growth Batch stock input posting request rows to load',
+    )
+    assert.equal(g3RequestRows.every((row) => row.status === 'succeeded' && row.result_ref_id), true)
+    assert.equal(new Set(g3RequestRows.map((row) => `${row.operation_type}:${row.request_key}`)).size, g3RequestRows.length)
   })
 })

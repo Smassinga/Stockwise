@@ -101,7 +101,7 @@ Current boundaries:
 - no Supabase migration was introduced
 - no stock posting, valuation, POS pricing, finance posting, settlement, invoice, RLS, entitlement, or access-control logic changed
 - current assembly cost remains an estimated material cost based on existing weighted-average stock cost
-- at the Phase 1 Recipes & Assemblies checkpoint, full Production Runs, frozen cost snapshots, labour/utilities/overhead allocation, recurring costs, and Growth Batches remained future scope; Production Runs are now live at `/production-runs`, Growth Batches G1-G2 is live at `/growth-batches`, and recurring allocations, automated overhead pools, by-product allocation, and Growth Batches G3+ remain future scope
+- at the Phase 1 Recipes & Assemblies checkpoint, full Production Runs, frozen cost snapshots, labour/utilities/overhead allocation, recurring costs, and Growth Batches remained future scope; Production Runs are now live at `/production-runs`, Growth Batches G1-G2 is live at `/growth-batches`, local Growth Batches G3 stock-input UI has passed local inspection and authenticated visual QA but is not hosted/live, and recurring allocations, automated overhead pools, by-product allocation, and Growth Batches G4+ remain future scope
 - `build_from_bom_sources`, `inv_issue_component`, and `inv_receive_finished` were not expanded and still require separate backend review before future Production & Costing work depends on them
 - Android/mobile layout must remain card-first, with component/ingredient cards and readiness/cost/action panels available without horizontal table dependence
 
@@ -191,14 +191,16 @@ Do not add a broad UI library for Production Runs. Keep the route on existing Ta
 
 ## Growth Batches Workspace Direction
 
-Growth Batches G1-G2 is live and production-smoke validated at `/growth-batches`. It uses the same premium register/detail approach:
+Growth Batches G1-G2 is live and production-smoke validated at `/growth-batches`. The local G3 branch extends the same workspace with stock-input preview, posting, history, and MANAGER+ reversal UI and has passed authenticated local visual QA pending hosted rollout. It uses the same premium register/detail approach:
 
 - `PremiumRegisterHeader`, metric cards, search/filter controls, desktop `PremiumDataTable`, and Android `PremiumMobileCardList`
-- detail tabs for overview, measurements, memo direct costs, timeline, and audit
-- draft actions only while status is `draft`; measurement and memo direct-cost actions only while status is `active`
-- no enabled controls for physical stock inputs, mortality, transfers, harvests, completion, reversal, fair value, FIFO, COGS, or finance posting
+- detail tabs for overview, stock inputs, measurements, memo direct costs, timeline, and audit
+- draft actions only while status is `draft`; measurement, memo direct-cost, and local G3 stock-input actions only while status is `active`
+- local G3 stock-input dialogs use explicit Preview and Post actions, mark previews stale after edits, keep duplicate/source blockers visible, and display item quantity/UOM, availability, WAC estimate, material cost, and movement references
+- stock-input reversal is event-specific, MANAGER+ only, requires date/reason/exact event confirmation, and must not be labelled as whole-batch reversal
+- no enabled controls for mortality, transfers, harvests, completion, whole-batch reversal, fair value, FIFO, COGS, or finance posting
 
-Production UI smoke validated the register, detail overview, measurement history, direct-cost history, timeline, and audit surfaces with retained batch `LEN-GB000000001`. Weight values displayed their UOM, memo costs displayed MZN, Android cards passed at `390`, and contained table scrolling at `1200` and `820` stayed inside the table surface without page/body overflow.
+Production UI smoke validated the G1-G2 register, detail overview, measurement history, direct-cost history, timeline, and audit surfaces with retained batch `LEN-GB000000001`. Weight values displayed their UOM, memo costs displayed MZN, Android cards passed at `390`, and contained table scrolling at `1200` and `820` stayed inside the table surface without page/body overflow. G3 stock-input visual QA passed locally at `1440`, `1200`, `820`, and `390` in light and dark mode using local-only batch `GVI-GB000000001`; it verified preview, stale-preview protection, duplicate and insufficient-stock blockers, successful posting, history, MANAGER+ event-specific reversal, restored material cost, and restored stock. G3 remains local-only until hosted rollout and production smoke are separately approved.
 
 The visual reference standard is existing StockWise premium components. MVPBlocks or other galleries may be used only as inspiration; no MVPBlocks dependency or copied block is part of this package.
 

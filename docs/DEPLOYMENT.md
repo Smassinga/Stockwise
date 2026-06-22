@@ -96,7 +96,21 @@ For production-impacting releases, also review:
 - BOM workflow cards passed visual review with Landed Cost secondary, Production Runs action-oriented, no BOM posting performed, and no BOM business logic changed
 - local guarded finance regression passed `31/31` before rollout against `http://127.0.0.1:54321`
 - GitHub Actions `Validation` run `27863125281` / `#13` passed for commit `c7b5e299`
-- G3-G5 remain future scope: stock-input consumption, mortality, transfers, harvest, completion, reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, cash/bank settlement, advanced allocation, and profitability dashboards are not live
+- G3-G5 remained future scope at the G1-G2 production rollout: stock-input consumption, mortality, transfers, harvest, completion, reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, cash/bank settlement, advanced allocation, and profitability dashboards were not live.
+
+2026-06-20 local Growth Batches G3 stock-input readiness note:
+
+- this is not a production rollout note; hosted production remains at 28 migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`
+- the local G3 branch adds two pending migrations, `20260620132646_add_growth_batch_stock_inputs.sql` and `20260620132656_add_growth_batch_stock_input_posting.sql`, for a 30-migration local chain
+- local replay of all 30 migrations passed; Growth Batches regression passed `5/5`, complete finance regression passed `31/31`, independent implementation inspection passed, authenticated local visual QA passed at `1440`, `1200`, `820`, and `390` in light and dark mode, and static validation/build passed
+- current G3 state is ready for normal-user staging, commit, push, and CI; hosted rollout has not started and production smoke has not been performed
+- local G3 adds non-mutating stock-input preview, atomic multi-line stock consumption, frozen source-WAC material costs, Growth Batch material/total/remaining rollups, append-only stock-input history, and MANAGER+ compensating reversal
+- stock-input issue movements use `ref_type = 'GROWTH_BATCH_INPUT'`, the stock-input event id as `ref_id`, and the immutable input detail id as `ref_line_id`
+- reversal receipt movements use `ref_type = 'GROWTH_BATCH_INPUT_REVERSAL'`, the reversal event id as `ref_id`, and the immutable reversal detail id as `ref_line_id`
+- G3 remains base-UOM-only for consumed item lines and does not add generic UOM conversion
+- G3 stock inputs create physical stock issue movements and material-cost rollups, but do not create cash, bank, vendor bill, settlement, invoice, supplier liability, finance journal/event, automatic COGS, or `items.unit_price` changes
+- authenticated local visual QA used local-only company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, batch reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`; it verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, OPERATOR+ posting, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, original issue preservation, material-cost restoration from `MZN 12.50` to `MZN 0.00`, and stock restoration to `100 EA at MZN 2.50 WAC`
+- G4/G5 capabilities remain out of scope: mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records are not implemented by this local package
 
 2026-06-18 Production Runs rollout:
 

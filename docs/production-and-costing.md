@@ -27,14 +27,13 @@ What did not change:
 
 ## Explicit Future Scope
 
-Production Runs and Growth Batches G1-G2 are now live foundations. Remaining future Production & Costing work includes:
+Production Runs and Growth Batches G1-G2 are live foundations. Growth Batches G3 stock-input posting is complete locally, has passed local replay, regression, independent inspection, authenticated local visual QA, static validation, and build, and is not hosted or live. Remaining future Production & Costing work includes:
 
-- physical stock-input consumption for Growth Batches
-- feed/material issue posting
+- hosted rollout and production smoke for Growth Batches G3 stock-input consumption
 - mortality and shrinkage
 - batch transfers
 - harvest and split or partial harvest
-- Growth Batch completion and reversal
+- Growth Batch completion and whole-batch reversal
 - FIFO biological layers, COGS, and fair-value accounting
 - automatic finance posting, vendor-bill allocation, cash/bank settlement, and advanced cost allocation
 - labour, utilities, overhead, recurring costs, and allocation rules beyond the current Production Run memo-cost snapshots
@@ -279,7 +278,7 @@ G1-G2 rules:
 - histories expose event sequence, effective date, server-created timestamp, and event id; callers order histories explicitly.
 - measurements do not alter population counts; total-weight measurements update latest total weight.
 - direct costs are memo rollups only and create no finance, settlement, bill, journal, invoice, stock, COGS, or `items.unit_price` changes.
-- physical stock inputs, mortality, transfers, harvest/split outputs, completion, reversal, fair value, FIFO, and COGS are future G3/G4/G5 scope.
+- physical stock inputs are G3 local pending hosted rollout. Mortality, transfers, harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future G4/G5 scope.
 
 Production smoke result:
 
@@ -298,5 +297,67 @@ Production smoke result:
 - `items.unit_price` sum stayed `2500`, and hash `042919f464f3830a8a7c17791d9a43e7` remained unchanged
 
 The BOM workflow-card spacing correction in this package is UI-only and does not change BOM posting, planning, costing, or stock logic.
+
+## Growth Batches G3 Local Stock-Input Package
+
+Growth Batches G3 is complete locally and is not hosted or live. Hosted production remains at 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`. The local branch adds:
+
+- `20260620132646_add_growth_batch_stock_inputs.sql`
+- `20260620132656_add_growth_batch_stock_input_posting.sql`
+
+G3 scope:
+
+- non-mutating stock-input preview for active Growth Batches
+- atomic multi-line physical stock consumption through append-only `stock_movements` issues
+- frozen source WAC snapshots stored on immutable stock-input detail rows
+- material, total, and remaining Growth Batch rollups recalculated from immutable stock-input/reversal details plus existing memo direct costs
+- append-only stock-input history and event timeline entries
+- MANAGER+ event-specific compensating reversal through append-only receipt movements
+- backend idempotency through `growth.batch.input` and `growth.batch.input.reverse`
+- frontend stock-input preview/post/history/reversal workflow
+
+G3 cost boundary:
+
+- consumed item lines are base-UOM-only and must use `items.base_uom_id`
+- Growth Batch primary quantity UOM, weight UOM, area UOM, and consumed item UOM remain separate domains
+- no generic UOM conversion is introduced
+- stock-input source WAC becomes Growth Batch material cost
+- G1-G2 memo direct costs remain separate non-financial cost records
+- G3 does not create cash transactions, bank transactions, vendor bills, settlements, invoices, supplier liabilities, finance journals/events, automatic COGS, or `items.unit_price` changes
+
+Movement references:
+
+- stock-input issues use `GROWTH_BATCH_INPUT`, the stock-input event id as `ref_id`, and the input detail id as `ref_line_id`
+- compensating reversal receipts use `GROWTH_BATCH_INPUT_REVERSAL`, the reversal event id as `ref_id`, and the reversal detail id as `ref_line_id`
+- original issue movements and original Growth Batch events remain immutable
+- intervening stock activity means a reversal restores quantity and records the original frozen receipt value, but the current bucket WAC may not return exactly to its historical pre-input value
+
+Local validation:
+
+- local replay applied all 30 migrations
+- Growth Batches targeted regression passed `5/5`; complete finance regression passed `31/31`
+- independent implementation inspection passed
+- authenticated local visual QA passed at `1440`, `1200`, `820`, and `390` in light and dark mode
+- local-only QA used company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`
+- visual QA verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, governed OPERATOR+ posting, stock-input history, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, and preserved original issue event/movement
+- observed local values were `100 EA` starting stock, frozen WAC `MZN 2.50`, posted material cost `MZN 12.50`, cost after reversal `MZN 0.00`, and restored stock `100 EA at MZN 2.50 WAC`
+- current state is ready for normal-user staging, commit, push, and CI; hosted rollout has not started and production smoke has not been performed
+
+Still future:
+
+- mortality and shrinkage
+- transfers
+- harvest and split/partial harvest
+- completion
+- whole-batch reversal
+- FIFO biological layers
+- fair-value accounting
+- COGS
+- automatic finance posting
+- vendor-bill allocation
+- supplier liabilities
+- cash/bank settlement
+- profitability dashboards
+- per-animal or per-plant records
 
 Cost Analysis Dashboard, Advanced Allocation, recurring allocation, overhead pools, and Industry Templates remain future scope.

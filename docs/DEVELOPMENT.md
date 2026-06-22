@@ -22,6 +22,13 @@ The active migration history is the canonical baseline plus forward migrations f
 
 Current release state: hosted production and `main` have 28 active migrations through `20260619175129_add_growth_batch_lifecycle_events.sql`. Growth Batches G1-G2 is live after the approved database-first rollout and production smoke.
 
+Current local Growth Batches G3 work adds two pending, local-only migrations:
+
+- `20260620132646_add_growth_batch_stock_inputs.sql`
+- `20260620132656_add_growth_batch_stock_input_posting.sql`
+
+With those pending migrations in the working tree, local replay reports 30 active migrations. G3 local validation has passed: Growth Batches regression `5/5`, complete finance regression `31/31`, independent inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, and build. The package is ready for normal-user staging, commit, push, and CI. Hosted production remains at 28 until a separate approved database-first rollout runs `npx supabase db push --linked` successfully in that rollout session; G3 production smoke has not been performed.
+
 Before changing the database:
 
 1. run `npx supabase db pull` if the linked remote may have changed
