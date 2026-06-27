@@ -86,7 +86,7 @@ const ANON_KEY = Deno.env.get("SB_ANON_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY"
 
 const MAIL = getMailConfig();
 const BRAND_NAME = MAIL.defaultFromName || "StockWise";
-const SUPPORT_EMAIL = (Deno.env.get("SUPPORT_EMAIL") ?? "support@stockwiseapp.com").trim().toLowerCase();
+const SUPPORT_EMAIL = "geral@stockwiseapp.com";
 const PUBLIC_SITE_URL = (MAIL.publicSiteUrl ?? "").replace(/\/+$/, "");
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) {

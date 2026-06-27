@@ -213,7 +213,7 @@ Inbound activation/support requests:
 
 These now route to:
 
-- `support@stockwiseapp.com`
+- `geral@stockwiseapp.com`
 
 Outbound commercial/access notices from Platform Control:
 
@@ -238,7 +238,7 @@ Current model:
 - manual preview/send from `/platform-control`
 - no automatic send on status mutation
 - successful send writes to `company_control_action_log`
-- reply-to and support contact in the email use `support@stockwiseapp.com`
+- reply-to and StockWise contact in the email use `geral@stockwiseapp.com`
 
 Template data rules:
 

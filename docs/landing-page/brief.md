@@ -6,15 +6,15 @@ The public landing page should convert visitors into trial users or activation r
 
 ## Product Positioning
 
-StockWise helps businesses control stock, sales, purchases, documents, and payments in one organised workspace.
+StockWise helps businesses control stock, sales, purchases, documents, payments, production activity, and active Growth Batches in one organised workspace.
 
 Primary message:
 
-> Run stock, sales, and business records with more control.
+> StockWise
 
 Supporting message:
 
-> StockWise helps shops, warehouses, and growing businesses replace scattered spreadsheets with a structured system for items, stock, POS, purchases, invoices, settlements, users, and reports.
+> Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.
 
 ## Target Audience
 
@@ -35,7 +35,7 @@ Avoid exaggerated AI/startup language, fake enterprise claims, fake regulatory c
 - Primary CTA: `Start 7-day trial`.
 - Secondary CTA: `View pricing` or `See how it works`.
 - Login CTA: `Sign in`.
-- Contact CTA: mailto support for commercial activation or rollout discussion.
+- Contact CTA: `mailto:geral@stockwiseapp.com` for commercial activation or rollout discussion.
 
 Paid activation is currently controlled manually by the StockWise team. The landing page must not imply instant paid checkout.
 
@@ -53,8 +53,10 @@ Do not claim:
 - official SAF-T generator
 - official SAF-T/XML implemented
 - instant paid checkout
-- FIFO live costing policy unless backend posting, valuation, and COGS are consistent end to end
-- MZN-first pricing
+- unverified costing policies as live product behavior
+- unverified Growth Batch lifecycle or finance-posting behavior as live product behavior
+- unverified capabilities as public product features
+- repetitive currency-positioning copy outside the actual price values
 
 ## Non-Goals
 

@@ -15,7 +15,7 @@ import { supabase } from '../lib/supabase'
 
 const MIN_PASSWORD_LENGTH = 6
 const RESEND_COOLDOWN_SECONDS = 60
-const SUPPORT_EMAIL = 'support@stockwiseapp.com'
+const SUPPORT_EMAIL = 'geral@stockwiseapp.com'
 
 type Copy = {
   subtitle: string

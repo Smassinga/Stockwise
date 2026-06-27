@@ -3,28 +3,32 @@ import { Link } from 'react-router-dom'
 import { motion, MotionConfig } from 'framer-motion'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react/dist/lib/types'
 import { BankIcon } from '@phosphor-icons/react/dist/csr/Bank'
+import { BarcodeIcon } from '@phosphor-icons/react/dist/csr/Barcode'
+import { BuildingsIcon } from '@phosphor-icons/react/dist/csr/Buildings'
+import { CashRegisterIcon } from '@phosphor-icons/react/dist/csr/CashRegister'
 import { ChartBarIcon } from '@phosphor-icons/react/dist/csr/ChartBar'
-import { ChartLineUpIcon } from '@phosphor-icons/react/dist/csr/ChartLineUp'
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
 import { CoinsIcon } from '@phosphor-icons/react/dist/csr/Coins'
 import { DeviceMobileIcon } from '@phosphor-icons/react/dist/csr/DeviceMobile'
+import { FactoryIcon } from '@phosphor-icons/react/dist/csr/Factory'
 import { FileArrowUpIcon } from '@phosphor-icons/react/dist/csr/FileArrowUp'
-import { FileTextIcon } from '@phosphor-icons/react/dist/csr/FileText'
 import { HandCoinsIcon } from '@phosphor-icons/react/dist/csr/HandCoins'
+import { InvoiceIcon } from '@phosphor-icons/react/dist/csr/Invoice'
+import { KeyIcon } from '@phosphor-icons/react/dist/csr/Key'
 import { LifebuoyIcon } from '@phosphor-icons/react/dist/csr/Lifebuoy'
-import { PackageIcon } from '@phosphor-icons/react/dist/csr/Package'
-import { ReceiptIcon } from '@phosphor-icons/react/dist/csr/Receipt'
+import { LinkSimpleIcon } from '@phosphor-icons/react/dist/csr/LinkSimple'
+import { LockKeyIcon } from '@phosphor-icons/react/dist/csr/LockKey'
+import { PlantIcon } from '@phosphor-icons/react/dist/csr/Plant'
+import { PresentationChartIcon } from '@phosphor-icons/react/dist/csr/PresentationChart'
+import { QuestionIcon } from '@phosphor-icons/react/dist/csr/Question'
+import { SealCheckIcon } from '@phosphor-icons/react/dist/csr/SealCheck'
 import { ShieldCheckIcon as PhosphorShieldCheckIcon } from '@phosphor-icons/react/dist/csr/ShieldCheck'
-import { StorefrontIcon } from '@phosphor-icons/react/dist/csr/Storefront'
-import { TrendUpIcon } from '@phosphor-icons/react/dist/csr/TrendUp'
-import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree'
-import { WarehouseIcon } from '@phosphor-icons/react/dist/csr/Warehouse'
+import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
+import { TruckIcon } from '@phosphor-icons/react/dist/csr/Truck'
+import { WarningDiamondIcon } from '@phosphor-icons/react/dist/csr/WarningDiamond'
 import {
   ArrowRight,
-  Building2,
-  CheckCircle2,
   ChevronDown,
-  HelpCircle,
-  LockKeyhole,
   Menu,
   X,
 } from 'lucide-react'
@@ -41,21 +45,34 @@ import { formatMzn, publicPricingPlans, type PublicPricingPlan } from '../lib/pr
 import { cn } from '../lib/utils'
 
 type Lang = 'en' | 'pt'
+type PricingPeriod = 'monthly' | 'six_month' | 'annual'
+
+const PRICING_PERIOD_STORAGE_KEY = 'stockwise:landing:pricing-period'
+
+const pricingPeriodOptions: PricingPeriod[] = ['monthly', 'six_month', 'annual']
 
 type IconName =
   | 'stock'
-  | 'pos'
+  | 'checkout'
   | 'documents'
-  | 'roles'
+  | 'access'
   | 'reports'
   | 'records'
-  | 'purchases'
+  | 'receiving'
   | 'settlements'
   | 'imports'
   | 'cash'
   | 'mobile'
   | 'support'
   | 'security'
+  | 'growth'
+  | 'production'
+  | 'attention'
+  | 'connected'
+  | 'stockReady'
+  | 'company'
+  | 'activation'
+  | 'question'
 
 type LandingCopy = {
   nav: Array<{ label: string; href: string }>
@@ -66,6 +83,9 @@ type LandingCopy = {
   primaryCta: string
   secondaryCta: string
   activationNote: string
+  operationTitle: string
+  operationBody: string
+  operationFits: Array<{ title: string; body: string; icon: IconName }>
   trustSignals: Array<{ title: string; body: string; icon: IconName }>
   problemTitle: string
   problemBody: string
@@ -92,6 +112,9 @@ type LandingCopy = {
   faqTitle: string
   faqBody: string
   faqs: Array<{ question: string; answer: string }>
+  teamTitle: string
+  teamBody: string
+  teamMembers: Array<{ name: string; role: string; body: string }>
   finalTitle: string
   finalBody: string
   finalSecondary: string
@@ -102,6 +125,16 @@ type LandingCopy = {
     annual: string
     monthly: string
     sixMonth: string
+    pricingPeriod: string
+    perMonth: string
+    billedMonthly: string
+    everySixMonths: string
+    perYear: string
+    equivalentMonthly: (amount: string) => string
+    saveEverySixMonths: (amount: string) => string
+    saveAnnually: (amount: string) => string
+    contactUs: string
+    billingByProposal: string
     onboarding: string
     bestFor: string
     includes: string
@@ -118,6 +151,8 @@ type LandingCopy = {
     sectionProduct: string
     supportEmail: string
     wiseCore: string
+    builtBy: string
+    office: string
   }
   pricingContent: Record<string, PlanContent>
   mailSubjects: {
@@ -135,28 +170,52 @@ type PlanContent = {
 }
 
 const iconMap = {
-  stock: WarehouseIcon,
-  pos: StorefrontIcon,
-  documents: ReceiptIcon,
-  roles: UsersThreeIcon,
-  reports: ChartLineUpIcon,
-  records: FileTextIcon,
-  purchases: PackageIcon,
+  stock: StackIcon,
+  checkout: CashRegisterIcon,
+  documents: InvoiceIcon,
+  access: KeyIcon,
+  reports: PresentationChartIcon,
+  records: SealCheckIcon,
+  receiving: TruckIcon,
   settlements: HandCoinsIcon,
   imports: FileArrowUpIcon,
   cash: BankIcon,
   mobile: DeviceMobileIcon,
   support: LifebuoyIcon,
   security: PhosphorShieldCheckIcon,
+  growth: PlantIcon,
+  production: FactoryIcon,
+  attention: WarningDiamondIcon,
+  connected: LinkSimpleIcon,
+  stockReady: BarcodeIcon,
+  company: BuildingsIcon,
+  activation: LockKeyIcon,
+  question: QuestionIcon,
 } satisfies Record<IconName, PhosphorIcon>
 
 const revealEase = [0.22, 1, 0.36, 1] as const
+
+const portuguesePlanCompanyLabels: Record<string, string> = {
+  starter: '1 conta de empresa',
+  growth: '1 conta de empresa',
+  business: '1 conta de empresa',
+  managed_business_plus: 'Acesso ao plano Business',
+}
+
+const portuguesePlanUserLabels: Record<string, string> = {
+  starter: 'Até 2 utilizadores',
+  growth: 'Até 5 utilizadores',
+  business: 'Até 10 utilizadores',
+  managed_business_plus: 'Âmbito de utilizadores por proposta',
+}
 
 const copyByLang: Record<Lang, LandingCopy> = {
   en: {
     nav: [
       { label: 'How it works', href: '#workflow' },
+      { label: 'Use cases', href: '#use-cases' },
       { label: 'Pricing', href: '#pricing' },
+      { label: 'Team', href: '#team' },
       { label: 'FAQ', href: '#faq' },
     ],
     productLabel: 'Product',
@@ -171,7 +230,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
         title: 'POS and sales',
         body: 'Daily selling, sales orders, and stock-linked activity.',
         href: '#capabilities',
-        icon: 'pos',
+        icon: 'checkout',
       },
       {
         title: 'Finance documents',
@@ -180,19 +239,44 @@ const copyByLang: Record<Lang, LandingCopy> = {
         icon: 'documents',
       },
       {
-        title: 'Reports and roles',
-        body: 'Dashboards, controlled access, and owner visibility.',
-        href: '#showcase',
-        icon: 'reports',
+        title: 'Growth batches',
+        body: 'Active batches, measurements, direct costs, stock inputs, and reversals.',
+        href: '#operations',
+        icon: 'growth',
       },
     ],
-    heroTitle: 'Run stock, sales, and business records with more control.',
+    heroTitle: 'StockWise',
     heroBody:
-      'StockWise helps shops, warehouses, and growing businesses replace scattered spreadsheets with a structured system for items, stock, POS, purchases, invoices, settlements, users, and reports.',
+      'Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.',
     primaryCta: 'Start 7-day trial',
     secondaryCta: 'View pricing',
     activationNote:
       'Every new company starts with a 7-day trial. Paid activation is handled manually by the StockWise team.',
+    operationTitle: 'Built around how the business actually works.',
+    operationBody:
+      'StockWise is organised around operating flows first, then modules. That makes the product easier to understand for owners, managers, and teams moving away from spreadsheets.',
+    operationFits: [
+      {
+        title: 'For buying and reselling',
+        body: 'Receive stock, sell through POS or orders, and keep availability, documents, and settlement follow-up connected.',
+        icon: 'stockReady',
+      },
+      {
+        title: 'For production and transformation',
+        body: 'Track materials, production runs, finished goods, cost context, and the records that support daily control.',
+        icon: 'production',
+      },
+      {
+        title: 'For growth batches',
+        body: 'Follow active batches with measurements, direct costs, stock-input material cost, and event-specific reversals.',
+        icon: 'growth',
+      },
+      {
+        title: 'For counter sales and cash control',
+        body: 'Keep selling, stock movement, users, cash, bank, and owner visibility in the same operating picture.',
+        icon: 'checkout',
+      },
+    ],
     trustSignals: [
       {
         title: 'Stock control',
@@ -202,7 +286,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'POS-ready',
         body: 'Keep counter sales connected to items and stock movement.',
-        icon: 'pos',
+        icon: 'checkout',
       },
       {
         title: 'Finance documents',
@@ -212,12 +296,12 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'User roles',
         body: 'Give owners, managers, and operators controlled access.',
-        icon: 'roles',
+        icon: 'access',
       },
       {
-        title: 'Reports',
-        body: 'Review dashboards and operational registers from one place.',
-        icon: 'reports',
+        title: 'Growth Batches',
+        body: 'Track active batches, measurements, direct costs, stock inputs, and reversal evidence.',
+        icon: 'growth',
       },
       {
         title: 'Mozambique-ready records',
@@ -262,12 +346,17 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'POS and sales',
         body: 'Use POS and sales workflows with stock-linked operating records and practical order follow-up.',
-        icon: 'pos',
+        icon: 'checkout',
       },
       {
         title: 'Purchases and vendor bills',
         body: 'Track purchase orders, receiving, supplier obligations, and cost visibility in one operational flow.',
-        icon: 'purchases',
+        icon: 'receiving',
+      },
+      {
+        title: 'Growth batches and inputs',
+        body: 'Manage active batches, measurements, direct costs, stock-input material cost, and controlled reversals.',
+        icon: 'growth',
       },
       {
         title: 'Invoices and notes',
@@ -287,7 +376,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'Users and roles',
         body: 'Invite users and give controlled access to operational and administrative workspaces.',
-        icon: 'roles',
+        icon: 'access',
       },
       {
         title: 'Import and export',
@@ -299,9 +388,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
     showcaseBody:
       'StockWise connects the operational pieces so owners can see what exists, what moved, what was sold, what is owed, and what needs attention.',
     showcaseNote: 'Illustrative preview based on current StockWise workflows. Values shown are sample operating data.',
-    workflowTitle: 'From company setup to clearer daily records.',
+    workflowTitle: 'From company setup to a clearer operating flow.',
     workflowBody:
-      'StockWise gives teams a practical path from scattered information to a managed operating workspace.',
+      'StockWise follows the way daily work moves: setup, stock, operations, documents, settlement follow-up, and review.',
     workflowSteps: [
       {
         title: 'Create the company workspace',
@@ -315,43 +404,43 @@ const copyByLang: Record<Lang, LandingCopy> = {
       },
       {
         title: 'Record sales, purchases, POS, and movements',
-        body: 'Keep daily operating events connected to stock and commercial records.',
-        icon: 'pos',
+        body: 'Keep daily operating events, stock movement, and commercial records in one traceable flow.',
+        icon: 'connected',
+      },
+      {
+        title: 'Control production and active batches',
+        body: 'Use production and Growth Batch records where the operation needs materials, measurements, or input cost evidence.',
+        icon: 'production',
       },
       {
         title: 'Issue documents and track settlements',
-        body: 'Organise invoices, notes, vendor bills, cash, bank, and payment follow-up.',
+        body: 'Organise invoices, notes, vendor bills, cash, bank, payment follow-up, dashboards, and reports.',
         icon: 'documents',
       },
-      {
-        title: 'Review dashboard and reports',
-        body: 'Use reports to see what needs attention before it becomes a stock, cash, or margin issue.',
-        icon: 'reports',
-      },
     ],
-    useCasesTitle: 'Built for businesses where stock and records matter every day.',
+    useCasesTitle: 'Built for businesses where records need to line up.',
     useCasesBody:
-      'StockWise fits teams that need tighter control without adding unnecessary complexity.',
+      'Keep stock, sales, purchases, documents, payments, and operating costs connected in one organised workspace.',
     useCases: [
       {
-        title: 'Retail shop',
-        body: 'Connect POS, stock on hand, low-stock follow-up, and daily sales visibility.',
-        icon: 'pos',
+        title: 'Bakery or small producer',
+        body: 'Connect materials, production runs, counter sales, purchasing, and stock visibility without losing the cost trail.',
+        icon: 'production',
+      },
+      {
+        title: 'Butchery or food retail',
+        body: 'Keep receiving, stock movement, sales, and low-stock signals visible for items where freshness and rotation matter.',
+        icon: 'stockReady',
+      },
+      {
+        title: 'Agro, nursery, or biological growth',
+        body: 'Use active Growth Batches for measurements, direct costs, stock inputs, and reversal evidence.',
+        icon: 'growth',
       },
       {
         title: 'Warehouse or distributor',
-        body: 'Control purchasing, receiving, movements, and stock risk across operating locations.',
+        body: 'Control purchasing, receiving, movements, role-based work, and stock risk across operating locations.',
         icon: 'stock',
-      },
-      {
-        title: 'Service company with materials',
-        body: 'Track materials, supplier bills, customer documents, and settlement progress.',
-        icon: 'purchases',
-      },
-      {
-        title: 'Owner/operator team',
-        body: 'Give managers and operators role-based access while owners keep a clear view of the business.',
-        icon: 'roles',
       },
     ],
     complianceTitle: 'Prepare cleaner fiscal and business records.',
@@ -364,9 +453,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
     ],
     complianceCaution:
       'Official submissions should be validated by your accountant or fiscal advisor.',
-    pricingTitle: 'Clear MZN pricing with a controlled trial path.',
+    pricingTitle: 'Published pricing with a controlled trial path.',
     pricingBody:
-      'Choose the plan that fits the operating depth and support level your business needs. Prices are shown in MZN, and paid activation remains handled by StockWise.',
+      'Choose the plan that fits the operating depth and support level your business needs. Paid activation remains handled by StockWise.',
     pricingFootnote:
       'The 7-day trial can start from the app. Self-serve checkout is not active; activation, onboarding, and rollout support are handled directly.',
     faqTitle: 'Questions before starting',
@@ -386,6 +475,11 @@ const copyByLang: Record<Lang, LandingCopy> = {
         question: 'Can I import items and opening stock?',
         answer:
           'Yes. StockWise includes opening-data import workflows so a company can move from spreadsheets into a structured item and stock baseline.',
+      },
+      {
+        question: 'Can I track active Growth Batches?',
+        answer:
+          'Yes. StockWise supports active batch records, measurements, direct costs, stock inputs, and event-specific reversals.',
       },
       {
         question: 'Does it work on mobile?',
@@ -408,12 +502,32 @@ const copyByLang: Record<Lang, LandingCopy> = {
           'Yes. Company workspaces support user invitations and roles so each person has access appropriate to their work.',
       },
       {
-        question: 'Can I use POS?',
+        question: 'Does StockWise include a Point of Sale workspace?',
         answer:
-          'Yes. StockWise includes POS-oriented workflows connected to stock and business records.',
+          'Yes. StockWise includes a Point of Sale workspace designed for fast counter sales. Each completed sale remains connected to the related stock movement and business records.',
       },
     ],
-    finalTitle: 'Ready to bring stock, sales, and records into one workspace?',
+    teamTitle: 'Built by WiseCore Technologies, Lda.',
+    teamBody:
+      'WiseCore Technologies, Lda. gives StockWise a visible legal and operating identity. The product is built from Beira for businesses that need accountable rollout, support, and practical control.',
+    teamMembers: [
+      {
+        name: 'Samuel Massinga',
+        role: 'Founder and CEO',
+        body: 'Product direction, operating workflow design, rollout discipline, and StockWise delivery.',
+      },
+      {
+        name: 'Alda Jofrice',
+        role: 'Co-Founder and Executive Manager',
+        body: 'Customer operations, implementation follow-up, business controls, and executive coordination.',
+      },
+      {
+        name: 'Galileu Gonçalves',
+        role: 'Co-founder and Chief Operating Officer',
+        body: 'Sales and customer acquisition.',
+      },
+    ],
+    finalTitle: 'Ready to bring stock, operations, and records into one workspace?',
     finalBody:
       'Start the 7-day trial or contact StockWise for a controlled activation and rollout conversation.',
     finalSecondary: 'Talk to us',
@@ -425,6 +539,16 @@ const copyByLang: Record<Lang, LandingCopy> = {
       annual: 'Annual',
       monthly: 'Monthly',
       sixMonth: '6 months',
+      pricingPeriod: 'Pricing period',
+      perMonth: 'per month',
+      billedMonthly: 'Billed monthly',
+      everySixMonths: 'every 6 months',
+      perYear: 'per year',
+      equivalentMonthly: (amount: string) => `Equivalent to ${amount} per month`,
+      saveEverySixMonths: (amount: string) => `Save ${amount} every 6 months`,
+      saveAnnually: (amount: string) => `Save ${amount} annually`,
+      contactUs: 'Contact us',
+      billingByProposal: 'Billing by proposal',
       onboarding: 'Onboarding',
       bestFor: 'Best for',
       includes: 'What is included',
@@ -439,8 +563,10 @@ const copyByLang: Record<Lang, LandingCopy> = {
       productPreview: 'Product preview',
       sampleOnly: 'Sample operating data',
       sectionProduct: 'Product areas',
-      supportEmail: 'Support email',
+      supportEmail: 'Contact email',
       wiseCore: 'WiseCore Technologies, Lda.',
+      builtBy: 'Built by',
+      office: 'Beira, Mozambique',
     },
     pricingContent: {
       starter: {
@@ -517,7 +643,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
   pt: {
     nav: [
       { label: 'Como funciona', href: '#workflow' },
+      { label: 'Casos de uso', href: '#use-cases' },
       { label: 'Preços', href: '#pricing' },
+      { label: 'Equipa', href: '#team' },
       { label: 'FAQ', href: '#faq' },
     ],
     productLabel: 'Produto',
@@ -532,7 +660,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
         title: 'POS e vendas',
         body: 'Vendas diárias, encomendas e atividade ligada ao stock.',
         href: '#capabilities',
-        icon: 'pos',
+        icon: 'checkout',
       },
       {
         title: 'Documentos financeiros',
@@ -541,19 +669,44 @@ const copyByLang: Record<Lang, LandingCopy> = {
         icon: 'documents',
       },
       {
-        title: 'Relatórios e funções',
-        body: 'Dashboards, acesso controlado e visibilidade para o dono.',
-        href: '#showcase',
-        icon: 'reports',
+        title: 'Growth Batches',
+        body: 'Lotes ativos, medições, custos diretos, inputs de stock e reversões.',
+        href: '#operations',
+        icon: 'growth',
       },
     ],
-    heroTitle: 'Controle stock, vendas e registos do negócio com mais segurança.',
+    heroTitle: 'StockWise',
     heroBody:
-      'O StockWise ajuda lojas, armazéns e empresas em crescimento a substituir folhas soltas por um sistema estruturado para itens, stock, POS, compras, faturas, liquidações, utilizadores e relatórios.',
+      'Controle stock, compras, vendas, pagamentos, produção e lotes em crescimento num workspace sério, criado para operações reais em Moçambique.',
     primaryCta: 'Iniciar teste de 7 dias',
     secondaryCta: 'Ver preços',
     activationNote:
       'Cada nova empresa começa com um teste de 7 dias. A ativação paga é tratada manualmente pela equipa StockWise.',
+    operationTitle: 'Construído à volta da forma como o negócio trabalha.',
+    operationBody:
+      'O StockWise organiza primeiro os fluxos operacionais e só depois os módulos. Isso torna o produto mais claro para donos, gestores e equipas que estão a sair das folhas soltas.',
+    operationFits: [
+      {
+        title: 'Para quem compra e revende',
+        body: 'Receba stock, venda por POS ou encomendas e mantenha disponibilidade, documentos e liquidações ligados.',
+        icon: 'stockReady',
+      },
+      {
+        title: 'Para produção e transformação',
+        body: 'Acompanhe materiais, produções, produto acabado, contexto de custo e registos de controlo diário.',
+        icon: 'production',
+      },
+      {
+        title: 'Para lotes em crescimento',
+        body: 'Siga lotes ativos com medições, custos diretos, custo material de inputs e reversões por evento.',
+        icon: 'growth',
+      },
+      {
+        title: 'Para balcão e controlo de caixa',
+        body: 'Mantenha vendas, movimento de stock, utilizadores, caixa, bancos e visibilidade do dono na mesma operação.',
+        icon: 'checkout',
+      },
+    ],
     trustSignals: [
       {
         title: 'Controlo de stock',
@@ -563,7 +716,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'Pronto para POS',
         body: 'Ligue vendas de balcão a itens e movimentos de stock.',
-        icon: 'pos',
+        icon: 'checkout',
       },
       {
         title: 'Documentos financeiros',
@@ -573,12 +726,12 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'Funções de utilizador',
         body: 'Dê acesso controlado a donos, gestores e operadores.',
-        icon: 'roles',
+        icon: 'access',
       },
       {
-        title: 'Relatórios',
-        body: 'Veja dashboards e registos operacionais num só lugar.',
-        icon: 'reports',
+        title: 'Growth Batches',
+        body: 'Acompanhe lotes ativos, medições, custos diretos, inputs de stock e evidência de reversão.',
+        icon: 'growth',
       },
       {
         title: 'Registos para Moçambique',
@@ -623,12 +776,17 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'POS e vendas',
         body: 'Use POS e fluxos de venda com registos operacionais ligados ao stock e ao seguimento de encomendas.',
-        icon: 'pos',
+        icon: 'checkout',
       },
       {
         title: 'Compras e vendor bills',
         body: 'Acompanhe ordens de compra, receções, obrigações de fornecedores e visibilidade de custo.',
-        icon: 'purchases',
+        icon: 'receiving',
+      },
+      {
+        title: 'Growth Batches e inputs',
+        body: 'Gira lotes ativos, medições, custos diretos, custo material de inputs de stock e reversões controladas.',
+        icon: 'growth',
       },
       {
         title: 'Faturas e notas',
@@ -648,7 +806,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
       {
         title: 'Utilizadores e funções',
         body: 'Convide utilizadores e dê acesso controlado a áreas operacionais e administrativas.',
-        icon: 'roles',
+        icon: 'access',
       },
       {
         title: 'Importação e exportação',
@@ -660,9 +818,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
     showcaseBody:
       'O StockWise liga as peças operacionais para que os donos vejam o que existe, o que mexeu, o que foi vendido, o que está por pagar e o que precisa de atenção.',
     showcaseNote: 'Pré-visualização ilustrativa baseada nos fluxos atuais do StockWise. Os valores são exemplos.',
-    workflowTitle: 'Da configuração da empresa a registos diários mais claros.',
+    workflowTitle: 'Da configuração da empresa a um fluxo operacional mais claro.',
     workflowBody:
-      'O StockWise dá à equipa um caminho prático de informação espalhada para um workspace operacional controlado.',
+      'O StockWise segue a forma como o trabalho diário se move: configuração, stock, operações, documentos, liquidações e revisão.',
     workflowSteps: [
       {
         title: 'Crie o workspace da empresa',
@@ -676,43 +834,43 @@ const copyByLang: Record<Lang, LandingCopy> = {
       },
       {
         title: 'Registe vendas, compras, POS e movimentos',
-        body: 'Mantenha eventos diários ligados ao stock e aos registos comerciais.',
-        icon: 'pos',
+        body: 'Mantenha eventos diários, movimento de stock e registos comerciais num fluxo rastreável.',
+        icon: 'connected',
+      },
+      {
+        title: 'Controle produção e lotes ativos',
+        body: 'Use produção e Growth Batches quando a operação precisa de materiais, medições ou evidência de custo de inputs.',
+        icon: 'production',
       },
       {
         title: 'Emita documentos e acompanhe liquidações',
-        body: 'Organize faturas, notas, vendor bills, caixa, banco e seguimento de pagamentos.',
+        body: 'Organize faturas, notas, vendor bills, caixa, banco, pagamentos, dashboards e relatórios.',
         icon: 'documents',
       },
-      {
-        title: 'Reveja dashboard e relatórios',
-        body: 'Veja o que precisa de atenção antes de virar problema de stock, caixa ou margem.',
-        icon: 'reports',
-      },
     ],
-    useCasesTitle: 'Criado para negócios onde stock e registos contam todos os dias.',
+    useCasesTitle: 'Criado para negócios onde os registos precisam de alinhar.',
     useCasesBody:
-      'O StockWise serve equipas que precisam de mais controlo sem adicionar complexidade desnecessária.',
+      'Mantenha stock, vendas, compras, documentos, pagamentos e custos operacionais ligados num workspace organizado.',
     useCases: [
       {
-        title: 'Loja de retalho',
-        body: 'Ligue POS, stock disponível, alertas de reposição e visibilidade diária de vendas.',
-        icon: 'pos',
+        title: 'Pastelaria ou pequena produção',
+        body: 'Ligue materiais, produções, vendas ao balcão, compras e visibilidade de stock sem perder o rasto de custo.',
+        icon: 'production',
+      },
+      {
+        title: 'Talho ou retalho alimentar',
+        body: 'Mantenha receções, movimento de stock, vendas e sinais de reposição visíveis para itens onde frescura e rotação importam.',
+        icon: 'stockReady',
+      },
+      {
+        title: 'Agro, viveiro ou crescimento biológico',
+        body: 'Use Growth Batches ativos para medições, custos diretos, histórico de inputs e evidência de reversão.',
+        icon: 'growth',
       },
       {
         title: 'Armazém ou distribuidor',
-        body: 'Controle compras, receções, movimentos e risco de stock entre locais operacionais.',
+        body: 'Controle compras, receções, movimentos, funções da equipa e risco de stock entre locais operacionais.',
         icon: 'stock',
-      },
-      {
-        title: 'Serviços com materiais',
-        body: 'Acompanhe materiais, vendor bills, documentos de clientes e progresso de liquidações.',
-        icon: 'purchases',
-      },
-      {
-        title: 'Equipa dono/operador',
-        body: 'Dê acesso por função a gestores e operadores enquanto o dono mantém a visão clara.',
-        icon: 'roles',
       },
     ],
     complianceTitle: 'Prepare registos fiscais e comerciais mais limpos.',
@@ -725,9 +883,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
     ],
     complianceCaution:
       'Submissões oficiais devem ser validadas pelo seu contabilista ou consultor fiscal.',
-    pricingTitle: 'Preços em MZN com um caminho de teste controlado.',
+    pricingTitle: 'Preços publicados com um caminho de teste controlado.',
     pricingBody:
-      'Escolha o plano que combina com a profundidade operacional e o suporte de que o negócio precisa. Os preços são mostrados em MZN, e a ativação paga continua a ser tratada pela StockWise.',
+      'Escolha o plano que combina com a profundidade operacional e o suporte de que o negócio precisa. A ativação paga continua a ser tratada pela StockWise.',
     pricingFootnote:
       'O teste de 7 dias pode começar na aplicação. O checkout self-service não está ativo; ativação, onboarding e rollout são tratados diretamente.',
     faqTitle: 'Perguntas antes de começar',
@@ -747,6 +905,11 @@ const copyByLang: Record<Lang, LandingCopy> = {
         question: 'Posso importar itens e stock inicial?',
         answer:
           'Sim. O StockWise inclui fluxos de importação inicial para passar de folhas para uma base estruturada de itens e stock.',
+      },
+      {
+        question: 'Posso acompanhar Growth Batches ativos?',
+        answer:
+          'Sim. O StockWise suporta lotes ativos, medições, custos diretos, inputs de stock e reversões por evento.',
       },
       {
         question: 'Funciona no telemóvel?',
@@ -769,12 +932,32 @@ const copyByLang: Record<Lang, LandingCopy> = {
           'Sim. Os workspaces de empresa suportam convites e funções para ajustar o acesso ao trabalho de cada pessoa.',
       },
       {
-        question: 'Posso usar POS?',
+        question: 'O StockWise inclui um espaço de Ponto de Venda?',
         answer:
-          'Sim. O StockWise inclui fluxos orientados a POS ligados ao stock e aos registos do negócio.',
+          'Sim. O StockWise inclui um espaço de Ponto de Venda concebido para registar vendas ao balcão com rapidez. Cada venda concluída permanece ligada ao respectivo movimento de stock e aos registos comerciais.',
       },
     ],
-    finalTitle: 'Pronto para juntar stock, vendas e registos no mesmo workspace?',
+    teamTitle: 'Criado pela WiseCore Technologies, Lda.',
+    teamBody:
+      'A WiseCore Technologies, Lda. dá ao StockWise uma identidade legal e operacional visível. O produto é construído a partir da Beira para negócios que precisam de rollout responsável, suporte e controlo prático.',
+    teamMembers: [
+      {
+        name: 'Samuel Massinga',
+        role: 'Founder and CEO',
+        body: 'Direção de produto, desenho de fluxos operacionais, disciplina de rollout e entrega do StockWise.',
+      },
+      {
+        name: 'Alda Jofrice',
+        role: 'Co-Founder and Executive Manager',
+        body: 'Operações com clientes, seguimento de implementação, controlos de negócio e coordenação executiva.',
+      },
+      {
+        name: 'Galileu Gonçalves',
+        role: 'Co-founder and Chief Operating Officer',
+        body: 'Vendas e aquisição de clientes.',
+      },
+    ],
+    finalTitle: 'Pronto para juntar stock, operações e registos no mesmo workspace?',
     finalBody:
       'Inicie o teste de 7 dias ou contacte a StockWise para uma conversa controlada de ativação e rollout.',
     finalSecondary: 'Falar connosco',
@@ -786,6 +969,16 @@ const copyByLang: Record<Lang, LandingCopy> = {
       annual: 'Anual',
       monthly: 'Mensal',
       sixMonth: '6 meses',
+      pricingPeriod: 'Período de preço',
+      perMonth: 'por mês',
+      billedMonthly: 'Cobrado mensalmente',
+      everySixMonths: 'a cada 6 meses',
+      perYear: 'por ano',
+      equivalentMonthly: (amount: string) => `Equivalente a ${amount} por mês`,
+      saveEverySixMonths: (amount: string) => `Poupe ${amount} em 6 meses`,
+      saveAnnually: (amount: string) => `Poupe ${amount} por ano`,
+      contactUs: 'Fale connosco',
+      billingByProposal: 'Cobrança por proposta',
       onboarding: 'Onboarding',
       bestFor: 'Mais indicado para',
       includes: 'O que inclui',
@@ -800,8 +993,10 @@ const copyByLang: Record<Lang, LandingCopy> = {
       productPreview: 'Pré-visualização do produto',
       sampleOnly: 'Dados operacionais de exemplo',
       sectionProduct: 'Áreas do produto',
-      supportEmail: 'Email de suporte',
+      supportEmail: 'Email de contacto',
       wiseCore: 'WiseCore Technologies, Lda.',
+      builtBy: 'Criado por',
+      office: 'Beira, Moçambique',
     },
     pricingContent: {
       starter: {
@@ -883,6 +1078,9 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
   return <Component className={className} weight="duotone" aria-hidden="true" />
 }
 
+type LandingIconTone = 'neutral' | 'positive' | 'negative' | 'warning' | 'critical' | 'info' | 'primary' | 'inverse'
+type LandingIconSize = 'compact' | 'card' | 'feature' | 'empty'
+
 function SectionIntro({
   title,
   body,
@@ -916,11 +1114,40 @@ function SectionIntro({
   )
 }
 
-function SurfaceIcon({ name, dark = false }: { name: IconName; dark?: boolean }) {
+function SurfaceIcon({
+  name,
+  dark = false,
+  tone,
+  size = 'feature',
+  className,
+}: {
+  name: IconName
+  dark?: boolean
+  tone?: LandingIconTone
+  size?: LandingIconSize
+  className?: string
+}) {
   return (
-    <IconBadge tone={dark ? 'inverse' : 'primary'} size="feature">
+    <IconBadge tone={tone ?? (dark ? 'inverse' : 'primary')} size={size} className={className}>
       <Icon name={name} className="h-5 w-5" />
     </IconBadge>
+  )
+}
+
+function InlineSurfaceIcon({
+  name,
+  dark = false,
+  className,
+}: {
+  name: IconName
+  dark?: boolean
+  className?: string
+}) {
+  return (
+    <Icon
+      name={name}
+      className={cn('h-5 w-5 shrink-0', dark ? 'text-sky-200' : 'text-primary', className)}
+    />
   )
 }
 
@@ -981,8 +1208,8 @@ function ProductPreview({ copy, lang }: { copy: LandingCopy; lang: Lang }) {
         }
 
   const metrics = [
-    { label: labels.inventory, value: 'MZN 128K', icon: WarehouseIcon, tone: 'blue' as const },
-    { label: labels.revenue, value: 'MZN 42K', icon: TrendUpIcon, tone: 'green' as const },
+    { label: labels.inventory, value: 'MZN 128K', icon: StackIcon, tone: 'blue' as const },
+    { label: labels.revenue, value: 'MZN 42K', icon: CashRegisterIcon, tone: 'green' as const },
     { label: labels.cogs, value: 'MZN 18K', icon: CoinsIcon, tone: 'amber' as const },
     { label: labels.margin, value: 'MZN 24K', icon: ChartBarIcon, tone: 'green' as const },
   ]
@@ -1020,7 +1247,7 @@ function ProductPreview({ copy, lang }: { copy: LandingCopy; lang: Lang }) {
                       aria-hidden="true"
                     />
                   </div>
-                  <div className="mt-2 text-xl font-semibold tracking-tight">{metric.value}</div>
+                  <div className="mt-2 text-xl font-semibold">{metric.value}</div>
                 </div>
               )
             })}
@@ -1096,11 +1323,150 @@ function ProblemRecordsImage({ lang }: { lang: Lang }) {
   )
 }
 
+function StructuredData({ lang }: { lang: Lang }) {
+  const description =
+    lang === 'pt'
+      ? 'StockWise controla stock, vendas, compras, pagamentos, produção e lotes em crescimento para empresas em Moçambique.'
+      : 'StockWise controls stock, sales, purchases, payments, production activity, and growth batches for Mozambican businesses.'
+
+  const data = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': 'https://stockwiseapp.com/#organization',
+        name: 'WiseCore Technologies, Lda.',
+        legalName: 'WiseCore Technologies, Lda.',
+        url: 'https://stockwiseapp.com/',
+        logo: 'https://stockwiseapp.com/brand/wisecore-logo-light.png',
+        email: PUBLIC_CONTACT_EMAIL,
+        address: {
+          '@type': 'PostalAddress',
+          addressLocality: 'Beira',
+          addressCountry: 'MZ',
+        },
+      },
+      {
+        '@type': 'WebApplication',
+        '@id': 'https://stockwiseapp.com/#stockwise',
+        name: 'StockWise',
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        url: 'https://stockwiseapp.com/',
+        image: 'https://stockwiseapp.com/landing/stockwise-records-desk.png',
+        description,
+        publisher: {
+          '@id': 'https://stockwiseapp.com/#organization',
+        },
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'MZN',
+          availability: 'https://schema.org/InStock',
+          url: 'https://stockwiseapp.com/#pricing',
+        },
+      },
+    ],
+  }
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+    />
+  )
+}
+
+function isPricingPeriod(value: string | null): value is PricingPeriod {
+  return value === 'monthly' || value === 'six_month' || value === 'annual'
+}
+
+function getStoredPricingPeriod(): PricingPeriod {
+  if (typeof window === 'undefined') return 'monthly'
+  const stored = window.sessionStorage.getItem(PRICING_PERIOD_STORAGE_KEY)
+  return isPricingPeriod(stored) ? stored : 'monthly'
+}
+
+function formatLandingMzn(value: number | null | undefined, locale: string) {
+  const formatted = formatMzn(value, locale)
+  if (formatted === '--') return formatted
+  return `MZN ${formatted.replace(/\s*MZN$/, '')}`
+}
+
+function pricingPeriodLabel(copy: LandingCopy, period: PricingPeriod) {
+  if (period === 'monthly') return copy.labels.monthly
+  if (period === 'six_month') return copy.labels.sixMonth
+  return copy.labels.annual
+}
+
+function pricingDisplayFor(plan: PublicPricingPlan, period: PricingPeriod, locale: string, copy: LandingCopy) {
+  if (period === 'monthly') {
+    if (plan.monthlyMzn == null) {
+      return {
+        from: false,
+        price: copy.labels.contactUs,
+        cadence: '',
+        note: copy.labels.billingByProposal,
+        savings: null,
+      }
+    }
+
+    return {
+      from: false,
+      price: formatLandingMzn(plan.monthlyMzn, locale),
+      cadence: copy.labels.perMonth,
+      note: copy.labels.billedMonthly,
+      savings: null,
+    }
+  }
+
+  if (period === 'six_month') {
+    const amount = plan.sixMonthMzn ?? (plan.monthlyMzn != null ? plan.monthlyMzn * 6 : null)
+    if (amount == null) {
+      return {
+        from: false,
+        price: copy.labels.contactUs,
+        cadence: '',
+        note: copy.labels.billingByProposal,
+        savings: null,
+      }
+    }
+
+    const saving =
+      plan.sixMonthMzn != null && plan.monthlyMzn != null
+        ? Math.max(0, plan.monthlyMzn * 6 - plan.sixMonthMzn)
+        : 0
+
+    return {
+      from: false,
+      price: formatLandingMzn(amount, locale),
+      cadence: copy.labels.everySixMonths,
+      note: copy.labels.equivalentMonthly(formatLandingMzn(amount / 6, locale)),
+      savings: saving > 0 ? copy.labels.saveEverySixMonths(formatLandingMzn(saving, locale)) : null,
+    }
+  }
+
+  const variableStartingPrice = plan.startingAnnualMzn != null && plan.startingAnnualMzn < plan.annualMzn
+  const annualAmount =
+    variableStartingPrice && plan.startingAnnualMzn != null ? plan.startingAnnualMzn : plan.annualMzn
+  const saving =
+    plan.annualSavingMzn ??
+    (plan.monthlyMzn != null ? Math.max(0, plan.monthlyMzn * 12 - annualAmount) : 0)
+
+  return {
+    from: variableStartingPrice,
+    price: formatLandingMzn(annualAmount, locale),
+    cadence: copy.labels.perYear,
+    note: copy.labels.equivalentMonthly(formatLandingMzn(annualAmount / 12, locale)),
+    savings: saving > 0 ? copy.labels.saveAnnually(formatLandingMzn(saving, locale)) : null,
+  }
+}
+
 function PricingCard({
   plan,
   content,
   copy,
   locale,
+  period,
   trialHref,
   activationHref,
   ctaLabel,
@@ -1109,60 +1475,69 @@ function PricingCard({
   content: PlanContent
   copy: LandingCopy
   locale: string
+  period: PricingPeriod
   trialHref: string
   activationHref: string
   ctaLabel: string
 }) {
-  const managed = plan.code === 'managed_business_plus'
-  const price = formatMzn(plan.startingAnnualMzn ?? plan.annualMzn, locale)
-  const billingRows = [
-    { label: copy.labels.monthly, value: formatMzn(plan.monthlyMzn, locale) },
-    { label: copy.labels.sixMonth, value: formatMzn(plan.sixMonthMzn, locale) },
-    { label: copy.labels.onboarding, value: formatMzn(plan.onboardingMzn, locale) },
-  ]
+  const pricing = pricingDisplayFor(plan, period, locale, copy)
+  const periodLabel = pricingPeriodLabel(copy, period)
+  const isPortuguese = locale.startsWith('pt')
+  const companyAccountLabel =
+    isPortuguese
+      ? (portuguesePlanCompanyLabels[plan.code] ?? plan.companyAccountLabel)
+      : plan.companyAccountLabel
+  const userLimitLabel =
+    isPortuguese
+      ? (portuguesePlanUserLabels[plan.code] ?? plan.userLimitLabel)
+      : plan.userLimitLabel
+  const onboardingPrice = plan.onboardingMzn != null ? formatLandingMzn(plan.onboardingMzn, locale) : null
 
   return (
     <Card
       className={cn(
-        'flex h-full flex-col border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-primary/35 hover:shadow-xl',
-        plan.highlight ? 'border-primary/35 ring-1 ring-primary/20' : '',
+        'landing-pricing-card group flex h-full flex-col border-border/70 bg-card shadow-sm',
+        plan.highlight ? 'border-primary/45 shadow-md ring-1 ring-primary/25' : '',
       )}
     >
       <CardContent className="flex h-full flex-col p-5">
         <div className="flex min-h-8 flex-wrap items-center gap-2">
           {plan.highlight ? <StatusPill tone="blue">{copy.labels.recommended}</StatusPill> : null}
-          {managed ? <StatusPill tone="slate">{copy.labels.from}</StatusPill> : null}
+          {pricing.from ? <StatusPill tone="slate">{copy.labels.from}</StatusPill> : null}
         </div>
 
         <div className="mt-4">
-          <h3 className="text-2xl font-semibold tracking-tight">{plan.name}</h3>
+          <h3 className="text-2xl font-semibold">{plan.name}</h3>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{content.headline}</p>
         </div>
 
-        <div className="mt-5 rounded-lg border border-border bg-background p-4">
-          <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.annual}</div>
-          <div className="mt-2 break-words text-3xl font-semibold tracking-tight">{price}</div>
+        <div className="landing-pricing-price mt-5 min-h-40 rounded-lg border border-border bg-background p-4">
+          <div className="flex min-h-6 flex-wrap items-center gap-2">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">{periodLabel}</div>
+            {pricing.savings ? <StatusPill tone="green">{pricing.savings}</StatusPill> : null}
+          </div>
+          <div className="mt-2 break-words text-3xl font-semibold">{pricing.price}</div>
+          {pricing.cadence ? <div className="mt-1 text-sm font-medium text-foreground">{pricing.cadence}</div> : null}
+          <div className="mt-2 text-sm leading-5 text-muted-foreground">{pricing.note}</div>
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <div className="rounded-lg border border-border bg-background p-3">
             <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.company}</div>
-            <div className="mt-1 text-sm font-medium">{plan.companyAccountLabel || '-'}</div>
+            <div className="mt-1 text-sm font-medium">{companyAccountLabel || '-'}</div>
           </div>
           <div className="rounded-lg border border-border bg-background p-3">
             <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.users}</div>
-            <div className="mt-1 text-sm font-medium">{plan.userLimitLabel || '-'}</div>
+            <div className="mt-1 text-sm font-medium">{userLimitLabel || '-'}</div>
           </div>
         </div>
 
-        {!managed ? (
+        {onboardingPrice ? (
           <div className="mt-3 grid gap-2">
-            {billingRows.map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2">
-                <span className="text-xs font-semibold uppercase text-muted-foreground">{row.label}</span>
-                <span className="text-sm font-semibold">{row.value}</span>
-              </div>
-            ))}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.onboarding}</span>
+              <span className="text-sm font-semibold">{onboardingPrice}</span>
+            </div>
           </div>
         ) : null}
 
@@ -1177,7 +1552,7 @@ function PricingCard({
             <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
               {content.included.map((item) => (
                 <li key={item} className="flex gap-2">
-                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />
+                  <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" weight="duotone" aria-hidden="true" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -1189,7 +1564,7 @@ function PricingCard({
             <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
               {content.support.map((item) => (
                 <li key={item} className="flex gap-2">
-                  <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-primary" weight="duotone" aria-hidden="true" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -1198,13 +1573,20 @@ function PricingCard({
         </div>
 
         <div className="mt-auto grid gap-3 pt-6">
-          <Button asChild>
+          <Button
+            asChild
+            className="landing-pricing-primary-cta"
+          >
             <Link to={trialHref}>
               {ctaLabel}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </Button>
-          <Button variant="outline" asChild>
+          <Button
+            variant="outline"
+            asChild
+            className="landing-pricing-secondary-cta"
+          >
             <a href={activationHref}>
               {copy.labels.requestActivation}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -1220,6 +1602,7 @@ export default function LandingPage() {
   const { user } = useAuth()
   const { lang } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [pricingPeriod, setPricingPeriod] = useState<PricingPeriod>(getStoredPricingPeriod)
 
   const copy = copyByLang[lang]
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
@@ -1229,6 +1612,13 @@ export default function LandingPage() {
   const signInLabel = user ? copy.openDashboard : copy.signIn
   const activationHref = useMemo(() => buildPublicMailto(copy.mailSubjects.activation), [copy.mailSubjects.activation])
   const contactHref = useMemo(() => buildPublicMailto(copy.mailSubjects.contact), [copy.mailSubjects.contact])
+
+  const selectPricingPeriod = (period: PricingPeriod) => {
+    setPricingPeriod(period)
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(PRICING_PERIOD_STORAGE_KEY, period)
+    }
+  }
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -1263,7 +1653,7 @@ export default function LandingPage() {
           }
         })
       },
-      { rootMargin: '0px 0px -10% 0px', threshold: 0.14 },
+      { rootMargin: '0px 0px 10% 0px', threshold: 0.02 },
     )
 
     targets.forEach((target) => observer.observe(target))
@@ -1276,6 +1666,7 @@ export default function LandingPage() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="min-h-screen bg-background text-foreground">
+        <StructuredData lang={lang} />
         <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <Link to="/" className="min-w-0" aria-label="StockWise home">
@@ -1300,7 +1691,7 @@ export default function LandingPage() {
                         href={item.href}
                         className="group/item flex gap-3 rounded-lg border border-transparent p-3 transition-colors hover:border-primary/25 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <SurfaceIcon name={item.icon} />
+                        <SurfaceIcon name={item.icon} size="compact" tone="neutral" />
                         <span className="min-w-0">
                           <span className="block text-sm font-semibold text-foreground">{item.title}</span>
                           <span className="mt-1 block text-sm leading-5 text-muted-foreground">{item.body}</span>
@@ -1404,18 +1795,36 @@ export default function LandingPage() {
         </header>
 
         <main className="overflow-hidden">
-          <section className="relative border-b border-border/70 bg-gradient-to-b from-background via-muted/35 to-background">
-            <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-14 pt-12 sm:px-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:px-8 lg:pb-20 lg:pt-20">
+          <section className="relative isolate overflow-hidden border-b border-slate-900/25 bg-slate-950 text-white">
+            <img
+              src="/landing/stockwise-records-desk.png"
+              alt=""
+              aria-hidden="true"
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              className="absolute inset-0 -z-20 h-full w-full object-cover object-center opacity-80"
+            />
+            <div className="absolute inset-0 -z-10 bg-slate-950/75" />
+
+            <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16 xl:py-20">
               <motion.div
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.55, ease: revealEase }}
                 className="max-w-3xl"
               >
-                <h1 className="text-[2.7rem] font-semibold leading-[1.03] tracking-tight text-foreground sm:text-5xl lg:text-[4.25rem]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase text-sky-100 backdrop-blur">
+                  <InlineSurfaceIcon name="company" dark className="h-3.5 w-3.5" />
+                  <span>
+                    {copy.labels.builtBy} {copy.labels.wiseCore}
+                  </span>
+                </div>
+
+                <h1 className="mt-5 text-5xl font-semibold leading-none text-white sm:text-6xl lg:text-7xl">
                   {copy.heroTitle}
                 </h1>
-                <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">{copy.heroBody}</p>
+                <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
 
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                   <Button size="lg" asChild>
@@ -1432,40 +1841,47 @@ export default function LandingPage() {
                   </Button>
                 </div>
 
-                <div className="mt-5 flex max-w-2xl gap-3 rounded-lg border border-border bg-card p-4 text-sm leading-6 text-muted-foreground shadow-sm">
-                  <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <div className="mt-5 flex max-w-2xl gap-3 text-sm leading-6 text-slate-200">
+                  <InlineSurfaceIcon name="activation" dark className="mt-0.5 h-4 w-4" />
                   <span>{copy.activationNote}</span>
                 </div>
 
-                <div className="mt-8 grid gap-3 sm:grid-cols-3" data-landing-stagger>
+                <div className="mt-8 grid grid-cols-3 gap-2 sm:gap-3" data-landing-stagger>
                   {[
-                    ['MZN', lang === 'pt' ? 'preços claros' : 'clear plan pricing'],
+                    ['4', lang === 'pt' ? 'planos publicados' : 'published plans'],
                     ['7', lang === 'pt' ? 'dias de teste' : 'trial days'],
                     ['PT/EN', lang === 'pt' ? 'operação bilingue' : 'bilingual workspace'],
                   ].map(([value, label]) => (
-                    <div key={value} className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                      <div className="text-2xl font-semibold text-foreground">{value}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{label}</div>
+                    <div key={value} className="rounded-lg border border-white/15 bg-white/10 p-3 backdrop-blur sm:p-4">
+                      <div className="text-xl font-semibold text-white sm:text-2xl">{value}</div>
+                      <div className="mt-1 text-xs leading-5 text-slate-200 sm:text-sm">{label}</div>
                     </div>
                   ))}
                 </div>
               </motion.div>
+            </div>
+          </section>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.985 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.65, delay: 0.08, ease: revealEase }}
-              >
-                <ProductPreview copy={copy} lang={lang} />
-              </motion.div>
+          <section id="operations" className="scroll-mt-24 border-b border-border/70 bg-background pb-14 pt-8 lg:py-20">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <SectionIntro title={copy.operationTitle} body={copy.operationBody} align="center" />
+              <div className="mt-9 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
+                {copy.operationFits.map((fit) => (
+                  <div key={fit.title} className="landing-hover-lift rounded-lg border border-border bg-card p-5 shadow-sm">
+                    <SurfaceIcon name={fit.icon} size="card" tone="info" />
+                    <h2 className="mt-4 text-lg font-semibold leading-tight">{fit.title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{fit.body}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
 
           <section className="border-b border-border/70 bg-card">
             <div className="mx-auto grid max-w-7xl gap-3 px-4 py-8 sm:px-6 md:grid-cols-2 lg:grid-cols-3 lg:px-8" data-landing-stagger>
               {copy.trustSignals.map((signal) => (
-                    <div key={signal.title} className="landing-hover-lift flex gap-3 rounded-lg border border-border bg-background p-4">
-                  <SurfaceIcon name={signal.icon} />
+                <div key={signal.title} className="landing-hover-lift flex gap-3 rounded-lg border border-border bg-background p-4">
+                  <InlineSurfaceIcon name={signal.icon} className="mt-0.5 h-5 w-5" />
                   <div>
                     <h2 className="text-sm font-semibold">{signal.title}</h2>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">{signal.body}</p>
@@ -1505,7 +1921,7 @@ export default function LandingPage() {
                 {copy.capabilities.map((capability) => (
                   <Card key={capability.title} className="group border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl">
                     <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
-                      <SurfaceIcon name={capability.icon} />
+                      <SurfaceIcon name={capability.icon} size="feature" tone="primary" />
                       <h3 className="mt-4 text-lg font-semibold leading-tight">{capability.title}</h3>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">{capability.body}</p>
                     </CardContent>
@@ -1516,20 +1932,31 @@ export default function LandingPage() {
           </section>
 
           <section id="showcase" className="scroll-mt-24 bg-slate-950 py-16 text-white lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:px-8">
-              <SectionIntro title={copy.showcaseTitle} body={copy.showcaseBody} inverse />
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1" data-landing-stagger>
-                {[
-                  { title: lang === 'pt' ? 'Sinais de atenção' : 'Attention signals', icon: 'reports' as const },
-                  { title: lang === 'pt' ? 'Registos ligados' : 'Connected records', icon: 'documents' as const },
-                  { title: lang === 'pt' ? 'Stock antes da venda' : 'Stock before selling', icon: 'stock' as const },
-                ].map((item) => (
-                  <div key={item.title} className="landing-hover-lift flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3">
-                    <SurfaceIcon name={item.icon} dark />
-                    <span className="text-sm font-semibold text-slate-100">{item.title}</span>
-                  </div>
-                ))}
+            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.82fr_1.18fr] lg:items-center lg:px-8">
+              <div>
+                <SectionIntro title={copy.showcaseTitle} body={copy.showcaseBody} inverse />
+                <div className="mt-8 grid gap-3 sm:grid-cols-3 lg:grid-cols-1" data-landing-stagger>
+                  {[
+                    { title: lang === 'pt' ? 'Sinais de atenção' : 'Attention signals', icon: 'attention' as const },
+                    { title: lang === 'pt' ? 'Registos ligados' : 'Connected records', icon: 'connected' as const },
+                    { title: lang === 'pt' ? 'Stock antes da venda' : 'Stock before selling', icon: 'stockReady' as const },
+                  ].map((item) => (
+                    <div key={item.title} className="landing-hover-lift flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3">
+                      <InlineSurfaceIcon name={item.icon} dark className="h-5 w-5" />
+                      <span className="text-sm font-semibold text-slate-100">{item.title}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.985 }}
+                whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                viewport={{ once: true, amount: 0.25 }}
+                transition={{ duration: 0.55, ease: revealEase }}
+              >
+                <ProductPreview copy={copy} lang={lang} />
+              </motion.div>
             </div>
           </section>
 
@@ -1542,7 +1969,7 @@ export default function LandingPage() {
                   <Card key={step.title} className="landing-hover-lift border-border/70 bg-card shadow-sm">
                     <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
                       <div className="flex items-center justify-between gap-3">
-                        <SurfaceIcon name={step.icon} />
+                        <InlineSurfaceIcon name={step.icon} className="h-6 w-6" />
                         <span className="font-mono text-sm font-semibold text-muted-foreground">
                           {String(index + 1).padStart(2, '0')}
                         </span>
@@ -1556,15 +1983,16 @@ export default function LandingPage() {
             </div>
           </section>
 
-          <section className="border-y border-border/70 bg-card py-16 lg:py-24">
+          <section id="use-cases" className="scroll-mt-24 border-y border-border/70 bg-card py-16 lg:py-24">
             <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
               <SectionIntro title={copy.useCasesTitle} body={copy.useCasesBody} />
               <div className="grid gap-4 sm:grid-cols-2" data-landing-stagger>
                 {copy.useCases.map((useCase) => (
-                  <div key={useCase.title} className="landing-hover-lift rounded-lg border border-border bg-background p-5 sm:p-6">
-                    <SurfaceIcon name={useCase.icon} />
-                    <h3 className="mt-4 text-lg font-semibold">{useCase.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{useCase.body}</p>
+                  <div key={useCase.title} className="landing-hover-lift rounded-lg border border-border bg-background p-5 shadow-sm sm:p-6">
+                    <div className="border-l-2 border-primary/35 pl-4">
+                      <h3 className="text-lg font-semibold">{useCase.title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{useCase.body}</p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1577,7 +2005,7 @@ export default function LandingPage() {
               <Card className="border-primary/20 bg-card shadow-sm">
                 <CardContent className="p-5 sm:p-6">
                   <div className="flex gap-3">
-                    <SurfaceIcon name="records" />
+                    <SurfaceIcon name="records" size="card" tone="info" />
                     <div>
                       <h3 className="text-lg font-semibold">
                         {lang === 'pt' ? 'Registos preparados para revisão' : 'Records prepared for review'}
@@ -1588,7 +2016,7 @@ export default function LandingPage() {
                   <ul className="mt-6 grid gap-3" data-landing-stagger>
                     {copy.compliancePoints.map((point) => (
                       <li key={point} className="flex gap-3 rounded-lg border border-border bg-background p-4 text-sm leading-6 text-muted-foreground">
-                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                        <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-primary" weight="duotone" aria-hidden="true" />
                         <span>{point}</span>
                       </li>
                     ))}
@@ -1607,6 +2035,34 @@ export default function LandingPage() {
                 </div>
               </div>
 
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div
+                  className="inline-flex w-full rounded-lg border border-border bg-card p-1 shadow-sm sm:w-auto"
+                  role="group"
+                  aria-label={copy.labels.pricingPeriod}
+                >
+                  {pricingPeriodOptions.map((period) => {
+                    const selected = pricingPeriod === period
+                    return (
+                      <button
+                        key={period}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => selectPricingPeriod(period)}
+                        className={cn(
+                          'min-h-10 flex-1 rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:min-w-28',
+                          selected
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        {pricingPeriodLabel(copy, period)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
                 {publicPricingPlans.map((plan) => (
                   <PricingCard
@@ -1615,6 +2071,7 @@ export default function LandingPage() {
                     content={copy.pricingContent[plan.code]}
                     copy={copy}
                     locale={locale}
+                    period={pricingPeriod}
                     trialHref={trialHref}
                     activationHref={activationHref}
                     ctaLabel={primaryCtaLabel}
@@ -1630,10 +2087,10 @@ export default function LandingPage() {
               <div className="grid gap-3 md:grid-cols-2" data-landing-stagger>
                 {copy.faqs.map((item) => (
                   <Card key={item.question} className="border-border/70 bg-card shadow-sm">
-                    <CardContent className="p-5">
-                      <div className="flex gap-3">
-                        <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-                        <div>
+                    <CardContent className="px-5 pb-5 pt-6 sm:p-6">
+                      <div className="flex gap-4">
+                        <InlineSurfaceIcon name="question" className="mt-0.5 h-5 w-5" />
+                        <div className="min-w-0">
                           <h3 className="font-semibold leading-tight">{item.question}</h3>
                           <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.answer}</p>
                         </div>
@@ -1645,27 +2102,71 @@ export default function LandingPage() {
             </div>
           </section>
 
-          <section className="border-t border-border/70 bg-card py-16 lg:py-24">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card p-6 shadow-xl shadow-slate-950/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-10">
-                <div className="max-w-2xl">
-                  <h2 className="text-3xl font-semibold leading-tight sm:text-4xl">{copy.finalTitle}</h2>
-                  <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">{copy.finalBody}</p>
+          <section id="team" className="scroll-mt-24 border-y border-border/70 bg-card py-16 lg:py-24">
+            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-start lg:px-8">
+              <div>
+                <SectionIntro title={copy.teamTitle} body={copy.teamBody} />
+                <div className="mt-6 rounded-lg border border-border bg-background p-4 shadow-sm sm:p-5">
+                  <div className="grid gap-4">
+                    <div className="flex h-28 w-full items-center justify-center rounded-lg border border-border bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-950 sm:h-32">
+                      <img
+                        src="/brand/wisecore-logo-light.png"
+                        alt="WiseCore Technologies, Lda."
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-contain dark:hidden"
+                      />
+                      <img
+                        src="/brand/wisecore-logo-dark.png"
+                        alt="WiseCore Technologies, Lda."
+                        loading="lazy"
+                        decoding="async"
+                        className="hidden h-full w-full object-contain dark:block"
+                      />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-primary">{copy.labels.builtBy}</div>
+                      <div className="mt-1 text-lg font-semibold">{copy.labels.wiseCore}</div>
+                      <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                        <InlineSurfaceIcon name="company" className="h-4 w-4" />
+                        <span>{copy.labels.office}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row lg:mt-0 lg:flex-col xl:flex-row">
-                  <Button size="lg" asChild>
-                    <Link to={trialHref}>
-                      {primaryCtaLabel}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </Link>
-                  </Button>
-                  <Button size="lg" variant="outline" asChild>
-                    <a href={contactHref}>
-                      {copy.finalSecondary}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </a>
-                  </Button>
-                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3" data-landing-stagger>
+                {copy.teamMembers.map((member) => (
+                  <div key={member.name} className="landing-hover-lift rounded-lg border border-border bg-background p-5 shadow-sm">
+                    <h3 className="text-xl font-semibold leading-tight">{member.name}</h3>
+                    <p className="mt-1 text-sm font-semibold text-primary">{member.role}</p>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{member.body}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="border-t border-slate-800 bg-slate-950 py-16 text-white lg:py-20">
+            <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+              <div className="max-w-2xl">
+                <h2 className="text-3xl font-semibold leading-tight sm:text-4xl">{copy.finalTitle}</h2>
+                <p className="mt-4 text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">{copy.finalBody}</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button size="lg" asChild>
+                  <Link to={trialHref}>
+                    {primaryCtaLabel}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white" asChild>
+                  <a href={contactHref}>
+                    {copy.finalSecondary}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </a>
+                </Button>
               </div>
             </div>
           </section>
@@ -1676,7 +2177,7 @@ export default function LandingPage() {
             <div className="max-w-md">
               <BrandLockup subtitle={copy.footerTagline} />
               <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                <Building2 className="h-4 w-4" aria-hidden="true" />
+                <InlineSurfaceIcon name="company" className="h-4 w-4" />
                 <span>{copy.labels.wiseCore}</span>
               </div>
             </div>

@@ -12,12 +12,12 @@ function getRouteMeta(pathname: string, lang: 'en' | 'pt'): RouteMeta {
   const t = {
     landingTitle:
       lang === 'pt'
-        ? 'StockWise - Stock, vendas, compras e pagamentos'
-        : 'StockWise - Stock, sales, purchases, and payments',
+        ? 'StockWise - Stock, vendas, lotes e registos do negócio'
+        : 'StockWise - Inventory, Sales, Growth Batches, and Business Records',
     landingDescription:
       lang === 'pt'
-        ? 'Ligue inventário, vendas, compras, faturas, vendor bills, liquidações e registos para decisões mais claras em empresas de Moçambique.'
-        : 'Connect inventory, sales, purchases, invoices, vendor bills, settlements, and Mozambique-ready records for clearer business decisions.',
+        ? 'Controle stock, compras, vendas, pagamentos, produção, Growth Batches e registos comerciais num workspace sério para empresas em Moçambique.'
+        : 'Control stock, purchases, sales, payments, production activity, Growth Batches, and business records in one serious workspace for Mozambican businesses.',
     appDescription:
       lang === 'pt'
         ? 'Workspace autenticado do StockWise para stock, encomendas, caixa, bancos e reporting.'

@@ -11,17 +11,28 @@
 
 Headline:
 
-> Run stock, sales, and business records with more control.
+> StockWise
 
 Subtitle:
 
-> StockWise helps shops, warehouses, and growing businesses replace scattered spreadsheets with a structured system for items, stock, POS, purchases, invoices, settlements, users, and reports.
+> Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.
 
 Primary CTA: `Start 7-day trial`.
 
 Secondary CTA: `View pricing`.
 
-Hero visual: realistic product preview showing stock, documents, settlements, and dashboard metrics. The preview is illustrative but must not imply features outside the current product.
+Hero visual: use the local `/landing/stockwise-records-desk.png` image as a full-bleed business-records background with the StockWise value proposition over it. Keep the hero brand-led and avoid a split text/mockup composition.
+
+## 2.1 Operation Fit
+
+Show who the product is for before listing modules:
+
+- buying and reselling;
+- production and transformation;
+- active Growth Batches;
+- counter sales and cash control.
+
+Growth Batches may mention active batches, measurements, direct costs, stock inputs, and event-specific reversals. Do not claim unverified Growth Batch lifecycle, costing, valuation, or finance-posting behavior as live.
 
 ## 3. Trust/Value Strip
 
@@ -31,7 +42,7 @@ Signals:
 - POS-ready
 - Finance documents
 - User roles
-- Reports
+- Growth Batches
 - Mozambique-ready records
 
 ## 4. Problem Section
@@ -59,6 +70,7 @@ Capabilities:
 - Items and stock levels
 - POS and sales
 - Purchases and vendor bills
+- Growth batches and inputs
 - Invoices, credit notes, and debit notes
 - Settlements, cash, and bank
 - Reports and dashboards
@@ -67,7 +79,7 @@ Capabilities:
 
 ## 6. Dashboard/Product Showcase
 
-Use only one realistic product preview on the page. The retained preview lives in the hero, remains illustrative, and must support both public light and dark modes.
+Use only one realistic product preview on the page. The retained preview lives in the dark showcase section, remains illustrative, and must support both public light and dark modes.
 
 The later showcase must not repeat the same dashboard preview. It should reinforce the problem-to-solution story with a distinct operating-control visual: records are captured, connected, and reviewed across items, movements, documents, settlements, and reports.
 
@@ -92,15 +104,17 @@ Steps:
 1. Create company workspace.
 2. Add/import items and opening stock.
 3. Record sales, purchases, POS, and movements.
-4. Issue/track documents and settlements.
-5. Review dashboard and reports.
+4. Control production and active batches.
+5. Issue documents and track settlements.
 
 ## 8. Use Cases
 
-- Retail shop
+- Bakery or small producer
+- Butchery or food retail
+- Agro, nursery, or biological growth
 - Warehouse/distributor
-- Service company with materials
-- Owner/operator team
+
+Use cases should read like business contexts, not generic module lists. Public copy should mention only live, verified workflows; do not market unverified lifecycle, costing, valuation, or finance-posting behavior as product capabilities.
 
 ## 9. Mozambique-Ready Records
 
@@ -112,10 +126,12 @@ Required caution:
 
 ## 10. Pricing/Trial
 
-- Show public MZN prices from the existing pricing source.
+- Show public prices from the existing pricing source; the price values retain their currency code.
+- Provide a visible pricing-period selector above the cards: Monthly, 6 months, Annual. Monthly is the default.
+- Use approved six-month and annual values from the pricing source. If a six-month value is missing, show monthly x 6 without claiming a discount.
 - Make the 7-day trial clear.
 - State that paid activation is handled manually.
-- Avoid instant-checkout language.
+- Avoid instant-checkout language and avoid extra marketing copy that explains the currency already shown in the price values.
 
 ## 11. FAQ
 
@@ -124,16 +140,29 @@ Questions:
 - Is the trial automatic?
 - What happens after the trial?
 - Can I import items and opening stock?
+- Can I track active Growth Batches?
 - Does it work on mobile?
 - Does it replace my accountant?
 - Does it support Mozambique records?
 - Can I invite users?
-- Can I use POS?
+- Does StockWise include a Point of Sale workspace?
 
-## 12. Final CTA
+## 12. Team And Proof
+
+Show WiseCore Technologies, Lda., Beira, Mozambique, and the founder roles currently supported by supplied assets:
+
+- Samuel Massinga, Founder and CEO;
+- Alda Jofrice, Co-Founder and Executive Manager;
+- Galileu Gonçalves, Co-founder and Chief Operating Officer.
+
+Use the cropped WiseCore logo assets from `/brand/wisecore-logo-light.png` and `/brand/wisecore-logo-dark.png` so the logo is visible in both public themes.
+
+Use company support/contact routes rather than exposing personal contact details on the landing page.
+
+## 13. Final CTA
 
 Short, confident prompt to start the trial or contact StockWise.
 
-## 13. Footer
+## 14. Footer
 
 Include StockWise, WiseCore Technologies, Lda., support email, and only real routes/anchors.

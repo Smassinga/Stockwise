@@ -397,6 +397,58 @@
     transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
   }
 
+  .landing-pricing-card,
+  .landing-pricing-price,
+  .landing-pricing-primary-cta,
+  .landing-pricing-secondary-cta {
+    transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 180ms ease;
+  }
+
+  .landing-pricing-card:focus-within {
+    border-color: hsl(var(--primary) / 0.6);
+    background: hsl(var(--primary) / 0.035);
+    box-shadow: 0 24px 54px -36px hsl(var(--primary) / 0.55);
+    outline: 2px solid hsl(var(--primary) / 0.2);
+    outline-offset: 2px;
+  }
+
+  .landing-pricing-card:focus-within .landing-pricing-price {
+    border-color: hsl(var(--primary) / 0.3);
+    background: hsl(var(--primary) / 0.025);
+  }
+
+  .landing-pricing-card:focus-within .landing-pricing-primary-cta {
+    box-shadow: 0 12px 28px -20px hsl(var(--primary) / 0.75);
+  }
+
+  .landing-pricing-card:focus-within .landing-pricing-secondary-cta {
+    border-color: hsl(var(--primary) / 0.5);
+    color: hsl(var(--primary));
+  }
+
+  @media (hover: hover) {
+    .landing-pricing-card:hover {
+      border-color: hsl(var(--primary) / 0.55);
+      background: hsl(var(--primary) / 0.035);
+      box-shadow: 0 24px 54px -36px hsl(var(--primary) / 0.55);
+    }
+
+    .landing-pricing-card:hover .landing-pricing-price {
+      border-color: hsl(var(--primary) / 0.3);
+      background: hsl(var(--primary) / 0.025);
+    }
+
+    .landing-pricing-card:hover .landing-pricing-primary-cta {
+      box-shadow: 0 12px 28px -20px hsl(var(--primary) / 0.75);
+    }
+
+    .landing-pricing-card:hover .landing-pricing-secondary-cta {
+      border-color: hsl(var(--primary) / 0.5);
+      color: hsl(var(--primary));
+    }
+
+  }
+
   @media (prefers-reduced-motion: no-preference) {
     .landing-scroll-reveal {
       opacity: 0;
@@ -416,11 +468,19 @@
     }
   }
 
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .landing-pricing-card:hover {
+      transform: translateY(-3px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .landing-scroll-reveal,
     .landing-scroll-reveal.is-visible,
     .landing-hover-lift,
-    .landing-hover-lift:hover {
+    .landing-hover-lift:hover,
+    .landing-pricing-card,
+    .landing-pricing-card:hover {
       opacity: 1;
       transform: none;
       transition: none;

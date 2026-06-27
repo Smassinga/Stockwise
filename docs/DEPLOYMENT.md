@@ -241,9 +241,11 @@ Supabase Auth email confirmation uses the Auth service SMTP configuration, also 
 
 Current support inbox:
 
-- `support@stockwiseapp.com`
+- `geral@stockwiseapp.com`
 
 This inbox is for inbound user contact. Outbound company-access emails go to the selected company's canonical recipient, not to support.
+
+Zoho hosts the public mailbox for receiving and replying to messages. Transactional delivery remains separate: Supabase Auth SMTP settings and Edge Function mail secrets must continue to be configured with the approved transactional mail provider and updated sender or reply-to identity externally where those values are not controlled by the repository.
 
 ## Tauri Release Position
 

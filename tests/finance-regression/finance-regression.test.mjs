@@ -4974,7 +4974,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(expiryPreview.error, null, expiryPreview.error?.message || 'Expected expiry preview to succeed')
     assert.equal(expiryPreview.data.preview.recipient_email, ownerUser.email.toLowerCase())
     assert.match(expiryPreview.data.preview.subject, /access expires/i)
-    assert.ok(expiryPreview.data.preview.text.includes('support@stockwiseapp.com'))
+    assert.ok(expiryPreview.data.preview.text.includes('geral@stockwiseapp.com'))
     assert.ok(expiryPreview.data.preview.text.includes(formatLongDate(detail.paid_until)))
 
     const activationPreview = await platformAdminClient.functions.invoke('mailer-company-access', {
@@ -5010,7 +5010,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(purgePreview.error, null, purgePreview.error?.message || 'Expected purge preview to succeed')
     assert.equal(purgePreview.data.preview.recipient_email, ownerUser.email.toLowerCase())
     assert.ok(purgePreview.data.preview.text.includes(formatLongDate(purgeAt)))
-    assert.ok(purgePreview.data.preview.text.includes('support@stockwiseapp.com'))
+    assert.ok(purgePreview.data.preview.text.includes('geral@stockwiseapp.com'))
   })
 
   await t.test('Public-facing abuse protection blocks repeated company bootstrap', async () => {

@@ -113,11 +113,11 @@ This recipient rule is for outbound company notices only.
 
 Inbound support and activation requests now route to:
 
-- `support@stockwiseapp.com`
+- `geral@stockwiseapp.com`
 
 This applies to public pricing/contact CTAs and the blocked-access `Request activation` path.
 
-Outbound company emails do not send to that inbox. They send to the canonical company recipient and include `support@stockwiseapp.com` as the StockWise contact/reply-to target.
+Outbound company emails do not send to that inbox. They send to the canonical company recipient and include `geral@stockwiseapp.com` as the StockWise contact/reply-to target.
 
 ## Company Access Emails
 

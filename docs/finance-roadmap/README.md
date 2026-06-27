@@ -45,7 +45,7 @@ Hardening and control-plane foundations now also exist:
 - platform control now shows created date, canonical owner, member counts, and the latest recorded sign-in signal for each company
 - platform admins can now run a guarded operational reset that preserves identity and control-plane records while clearing company business data
 - Platform Control now counts disabled companies correctly in the status summary instead of hiding them behind a suspended-only aggregation
-- inbound activation/support contact is now centralized on `support@stockwiseapp.com`
+- inbound activation/support contact is now centralized on `geral@stockwiseapp.com`
 - Platform Control now previews and sends professional company access emails using the canonical company recipient and a separate support inbox
 - Platform Control now includes an admin-only subscription analytics dashboard for plan distribution, expiry monitoring, and catalogue-based MRR/ARR indicators without implying real payment-gateway revenue
 - public pricing is now presented in MZN on the landing page

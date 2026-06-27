@@ -18,7 +18,7 @@ import { withTimeout } from '../lib/withTimeout'
 
 const MIN_UPDATE_PASSWORD_LENGTH = 8
 const AUTH_REQUEST_TIMEOUT_MS = 15000
-const SUPPORT_EMAIL = 'support@stockwiseapp.com'
+const SUPPORT_EMAIL = 'geral@stockwiseapp.com'
 
 type Copy = {
   subtitle: string

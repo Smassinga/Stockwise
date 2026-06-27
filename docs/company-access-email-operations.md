@@ -25,7 +25,7 @@ Inbound user contact:
 
 All inbound contact now routes to:
 
-- `support@stockwiseapp.com`
+- `geral@stockwiseapp.com`
 
 Outbound commercial/access notifications:
 
@@ -33,7 +33,7 @@ Outbound commercial/access notifications:
 - purge warning
 - paid activation confirmation
 
-These outbound emails go to the selected company's canonical recipient, not to `support@stockwiseapp.com`.
+These outbound emails go to the selected company's canonical recipient, not to `geral@stockwiseapp.com`.
 
 ## Canonical Company Recipient Rule
 
@@ -85,7 +85,7 @@ Logged context includes:
 
 ## Support Address In Outbound Emails
 
-Outbound emails include `support@stockwiseapp.com` as the StockWise support contact and reply-to target.
+Outbound emails include `geral@stockwiseapp.com` as the StockWise contact and reply-to target.
 
 This does not change the recipient rule. The company still receives the email at its canonical recipient address.
 

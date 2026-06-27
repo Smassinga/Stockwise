@@ -116,7 +116,7 @@ Use this file as the working status board for finance-document implementation an
 | Platform Control company metadata intelligence | Completed | Selected-company panel now shows created date, owner, member counts, plan state, purge dates, and latest recorded sign-in data |
 | Guarded operational reset in Platform Control | Completed | Platform admins can reset non-active-paid tenant data with UUID confirmation, reason capture, audit logging, and preserved identity/control-plane records |
 | Platform Control status summary counters | Completed | Trial, active paid, expired, suspended, and disabled now count from the same effective-status source as the register/detail view |
-| Support-contact routing split | Completed | Inbound activation/support flows now route to `support@stockwiseapp.com`; outbound company notices stay on the canonical company recipient rule |
+| Support-contact routing split | Completed | Inbound activation/support flows now route to `geral@stockwiseapp.com`; outbound company notices stay on the canonical company recipient rule |
 | Platform Control company-access emails | Completed | Manual preview/send for expiry warning, purge warning, and activation confirmation now runs through the shared mailer path with audit logging |
 | Platform Control in-app navigation and card containment | Completed | Admins can return to the app from `/platform-control`, and long company values now stay contained inside aligned metadata cards |
 | Platform Control subscription analytics dashboard | Completed | Admin-only plan/status monitoring now lives inside `/platform-control`, including expiring-company views, distribution summaries, and catalogue-based MRR/ARR indicators |

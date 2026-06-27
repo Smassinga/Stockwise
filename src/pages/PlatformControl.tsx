@@ -601,7 +601,7 @@ export default function PlatformControlPage() {
                   <li>
                     {tt(
                       'platform.supportRouting',
-                      'Inbound activation and support requests are routed to support@stockwiseapp.com.',
+                      'Inbound activation and support requests are routed to geral@stockwiseapp.com.',
                     )}
                   </li>
                 </ul>
@@ -820,7 +820,7 @@ export default function PlatformControlPage() {
                             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
                               {tt(
                                 'platform.notificationBody',
-                                'Outbound access emails always go to the selected company recipient. Inbound activation and support requests still route to support@stockwiseapp.com.',
+                                'Outbound access emails always go to the selected company recipient. Inbound activation and support requests still route to geral@stockwiseapp.com.',
                               )}
                             </p>
                           </div>
