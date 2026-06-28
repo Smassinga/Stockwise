@@ -67,6 +67,8 @@ type QuantityBasis = 'count' | 'weight' | 'area' | 'other'
 type BatchStatus = 'draft' | 'active' | 'completed' | 'cancelled'
 type MeasurementType = 'total_weight' | 'average_weight' | 'height' | 'area_observation' | 'temperature' | 'other'
 type DirectCostCategory = 'labour' | 'utilities' | 'veterinary' | 'transport' | 'land_preparation' | 'water' | 'rent' | 'other'
+type LossType = 'mortality' | 'shrinkage'
+type LossReasonCode = 'disease' | 'injury' | 'predator' | 'weather' | 'handling' | 'culling' | 'natural_loss' | 'drying' | 'spoilage' | 'quality_loss' | 'other'
 
 type UomRow = {
   id: string
@@ -150,6 +152,11 @@ type GrowthBatchCurrentState = GrowthBatchRegisterRow & {
   stock_input_event_count?: number
   stock_input_line_count?: number
   stock_input_material_cost?: number
+  loss_event_count?: number
+  mortality_event_count?: number
+  shrinkage_event_count?: number
+  unreversed_loss_event_count?: number
+  reversed_loss_event_count?: number
   created_by: string | null
   updated_by: string | null
   activated_by: string | null
@@ -175,7 +182,7 @@ type GrowthBatchEventRow = {
   id: string
   event_sequence: number
   event_reference: string
-  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal'
+  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal'
   event_at: string
   event_date: string
   actor_display_name: string | null
@@ -193,6 +200,44 @@ type GrowthBatchEventRow = {
   event_summary: string
   typed_detail_summary: Record<string, unknown> | null
   original_event_id?: string | null
+}
+
+type GrowthBatchLossRow = {
+  id: string
+  growth_batch_id: string
+  event_id: string
+  event_sequence: number
+  event_reference: string
+  event_effective_date: string
+  event_created_at: string
+  actor_display_name: string | null
+  loss_type: LossType
+  quantity_lost: number | null
+  quantity_uom_id: string | null
+  quantity_uom_code: string | null
+  weight_lost: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  reason_code: LossReasonCode
+  notes: string | null
+  quantity_before: number | null
+  quantity_after: number | null
+  total_weight_before: number | null
+  total_weight_after: number | null
+  reversal_status: 'not_reversed' | 'reversed'
+  reversal_event_id: string | null
+  reversal_event_reference: string | null
+  reversal_event_sequence: number | null
+  reversal_timestamp: string | null
+  reversal_effective_date: string | null
+  reversal_actor_display_name: string | null
+  reversal_reason: string | null
+  restored_quantity: number | null
+  restored_quantity_uom_id: string | null
+  restored_quantity_uom_code: string | null
+  restored_weight: number | null
+  restored_weight_uom_id: string | null
+  restored_weight_uom_code: string | null
 }
 
 type GrowthBatchMeasurementRow = {
@@ -323,6 +368,36 @@ type StockInputForm = {
   lines: StockInputLineForm[]
 }
 
+type LossForm = {
+  lossType: LossType
+  effectiveDate: string
+  quantityLost: string
+  weightLost: string
+  reasonCode: LossReasonCode | ''
+  notes: string
+}
+
+type LossPreview = {
+  ready: boolean
+  blocking_reasons: Array<{ code?: string; [key: string]: unknown }>
+  batch_id: string
+  reference_no: string
+  status: BatchStatus
+  loss_type: LossType
+  effective_date: string
+  reason_code: LossReasonCode
+  current_quantity: number
+  quantity_lost: number | null
+  resulting_quantity: number
+  quantity_uom_id: string | null
+  quantity_uom_code: string | null
+  current_total_weight: number | null
+  weight_lost: number | null
+  resulting_total_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+}
+
 type StockInputPreviewLine = {
   line_no: number
   item_id: string
@@ -365,10 +440,19 @@ type ReversalForm = {
   confirmation: string
 }
 
+type LossReversalForm = {
+  eventId: string
+  eventReference: string
+  lossType: LossType
+  reason: string
+}
+
 const batchFamilies: BatchFamily[] = ['poultry', 'livestock', 'fish', 'crop', 'nursery', 'other']
 const quantityBases: QuantityBasis[] = ['count', 'weight', 'area', 'other']
 const measurementTypes: MeasurementType[] = ['total_weight', 'average_weight', 'height', 'area_observation', 'temperature', 'other']
 const directCostCategories: DirectCostCategory[] = ['labour', 'utilities', 'veterinary', 'transport', 'land_preparation', 'water', 'rent', 'other']
+const mortalityReasons: LossReasonCode[] = ['disease', 'injury', 'predator', 'weather', 'handling', 'culling', 'other']
+const shrinkageReasons: LossReasonCode[] = ['weather', 'handling', 'natural_loss', 'drying', 'spoilage', 'quality_loss', 'other']
 
 const statusTone: Record<BatchStatus, PremiumTone> = {
   draft: 'info',
@@ -383,6 +467,10 @@ const eventTone: Record<GrowthBatchEventRow['event_type'], PremiumTone> = {
   direct_cost: 'warning',
   stock_input: 'positive',
   stock_input_reversal: 'warning',
+  mortality: 'warning',
+  shrinkage: 'warning',
+  mortality_reversal: 'info',
+  shrinkage_reversal: 'info',
   cancellation: 'neutral',
 }
 
@@ -519,6 +607,17 @@ function emptyStockInputForm(): StockInputForm {
   }
 }
 
+function emptyLossForm(): LossForm {
+  return {
+    lossType: 'mortality',
+    effectiveDate: today(),
+    quantityLost: '',
+    weightLost: '',
+    reasonCode: 'disease',
+    notes: '',
+  }
+}
+
 function emptyReversalForm(): ReversalForm {
   return {
     eventId: '',
@@ -526,6 +625,15 @@ function emptyReversalForm(): ReversalForm {
     effectiveDate: today(),
     reason: '',
     confirmation: '',
+  }
+}
+
+function emptyLossReversalForm(): LossReversalForm {
+  return {
+    eventId: '',
+    eventReference: '',
+    lossType: 'mortality',
+    reason: '',
   }
 }
 
@@ -555,10 +663,18 @@ function friendlyError(error: unknown) {
     [/growth_batch_input_item_not_stock_tracked/i, 'Select a stock-tracked inventory item.'],
     [/insufficient_stock/i, 'The selected source bin does not have enough stock.'],
     [/growth_batch_stock_input_already_reversed/i, 'This stock-input event has already been reversed.'],
+    [/growth_batch_loss_already_reversed/i, 'This loss event has already been reversed.'],
+    [/growth_batch_loss_reversal_dependency_exists/i, 'A later quantity or weight event depends on this loss. Reverse later dependent events first.'],
+    [/loss_quantity_exceeds_current_quantity/i, 'The loss quantity cannot exceed the current batch quantity.'],
+    [/loss_weight_exceeds_current_weight/i, 'The loss weight cannot exceed the current total weight.'],
+    [/loss_value_required/i, 'Enter a quantity loss, weight loss, or both.'],
+    [/loss_reason_invalid/i, 'Select a valid reason for this loss type.'],
+    [/loss_notes_required/i, 'Add notes when the reason is Other.'],
+    [/growth_batch_current_weight_required/i, 'Record or configure a current total weight before entering weight loss.'],
     [/reversal_reason_required/i, 'Enter a reversal reason.'],
-    [/manager_role_required/i, 'Only Manager, Admin, or Owner roles can reverse stock-input events.'],
+    [/manager_role_required/i, 'Only Manager, Admin, or Owner roles can reverse events.'],
     [/growth_batch_not_draft/i, 'Only draft Growth Batches can be changed or activated.'],
-    [/growth_batch_not_active/i, 'Measurements and direct costs can only be recorded on active Growth Batches.'],
+    [/growth_batch_not_active/i, 'This action can only be recorded on an active Growth Batch.'],
     [/growth_batch_cancelled/i, 'This Growth Batch has already been cancelled.'],
     [/idempotency_key_payload_mismatch/i, 'This retry key belongs to different inputs. Change nothing and retry, or submit the updated form again.'],
     [/request_in_progress/i, 'A matching request is already in progress. Wait a moment and refresh.'],
@@ -639,6 +755,7 @@ export default function GrowthBatches() {
   const [measurements, setMeasurements] = useState<GrowthBatchMeasurementRow[]>([])
   const [directCosts, setDirectCosts] = useState<GrowthBatchDirectCostRow[]>([])
   const [stockInputs, setStockInputs] = useState<GrowthBatchStockInputRow[]>([])
+  const [losses, setLosses] = useState<GrowthBatchLossRow[]>([])
   const [events, setEvents] = useState<GrowthBatchEventRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
@@ -661,7 +778,9 @@ export default function GrowthBatches() {
   const [measurementOpen, setMeasurementOpen] = useState(false)
   const [directCostOpen, setDirectCostOpen] = useState(false)
   const [stockInputOpen, setStockInputOpen] = useState(false)
+  const [lossOpen, setLossOpen] = useState(false)
   const [reversalOpen, setReversalOpen] = useState(false)
+  const [lossReversalOpen, setLossReversalOpen] = useState(false)
   const [draftForm, setDraftForm] = useState<DraftForm>(() => emptyDraftForm())
   const [editForm, setEditForm] = useState<DraftForm>(() => emptyDraftForm())
   const [measurementForm, setMeasurementForm] = useState<MeasurementForm>(() => emptyMeasurementForm())
@@ -669,7 +788,11 @@ export default function GrowthBatches() {
   const [stockInputForm, setStockInputForm] = useState<StockInputForm>(() => emptyStockInputForm())
   const [stockInputPreview, setStockInputPreview] = useState<StockInputPreview | null>(null)
   const [stockInputPreviewStale, setStockInputPreviewStale] = useState(false)
+  const [lossForm, setLossForm] = useState<LossForm>(() => emptyLossForm())
+  const [lossPreview, setLossPreview] = useState<LossPreview | null>(null)
+  const [lossPreviewStale, setLossPreviewStale] = useState(false)
   const [reversalForm, setReversalForm] = useState<ReversalForm>(() => emptyReversalForm())
+  const [lossReversalForm, setLossReversalForm] = useState<LossReversalForm>(() => emptyLossReversalForm())
   const [cancelReason, setCancelReason] = useState('')
 
   const createRequestRef = useRef<PostingRequestKeyRef>(null)
@@ -679,6 +802,8 @@ export default function GrowthBatches() {
   const directCostRequestRef = useRef<PostingRequestKeyRef>(null)
   const stockInputRequestRef = useRef<PostingRequestKeyRef>(null)
   const stockInputReversalRequestRef = useRef<PostingRequestKeyRef>(null)
+  const lossRequestRef = useRef<PostingRequestKeyRef>(null)
+  const lossReversalRequestRef = useRef<PostingRequestKeyRef>(null)
 
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
@@ -734,6 +859,7 @@ export default function GrowthBatches() {
   const weightUoms = useMemo(() => uoms.filter((uom) => uom.family === 'mass'), [uoms])
   const areaUoms = useMemo(() => uoms.filter((uom) => uom.family === 'area'), [uoms])
   const lengthUoms = useMemo(() => uoms.filter((uom) => uom.family === 'length'), [uoms])
+  const lossReasonOptions = useMemo(() => (lossForm.lossType === 'mortality' ? mortalityReasons : shrinkageReasons), [lossForm.lossType])
   const measurementUoms = useMemo(() => {
     if (measurementForm.measurementType === 'total_weight' || measurementForm.measurementType === 'average_weight') {
       const configured = detailBatch?.weight_uom_id ? uomById.get(detailBatch.weight_uom_id) : null
@@ -802,13 +928,14 @@ export default function GrowthBatches() {
       setMeasurements([])
       setDirectCosts([])
       setStockInputs([])
+      setLosses([])
       setEvents([])
       return
     }
 
     setDetailLoading(true)
     try {
-      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, eventRes] = await Promise.all([
+      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, eventRes] = await Promise.all([
         supabase.from('growth_batch_current_state').select('*').eq('id', batchId).maybeSingle(),
         supabase
           .from('growth_batches')
@@ -833,6 +960,11 @@ export default function GrowthBatches() {
           .order('event_sequence', { ascending: false })
           .order('line_no', { ascending: true }),
         supabase
+          .from('growth_batch_loss_history')
+          .select('*')
+          .eq('growth_batch_id', batchId)
+          .order('event_sequence', { ascending: false }),
+        supabase
           .from('growth_batch_event_timeline')
           .select('*')
           .eq('growth_batch_id', batchId)
@@ -843,12 +975,14 @@ export default function GrowthBatches() {
       if (measurementRes.error) throw measurementRes.error
       if (costRes.error) throw costRes.error
       if (stockInputRes.error) throw stockInputRes.error
+      if (lossRes.error) throw lossRes.error
       if (eventRes.error) throw eventRes.error
       setCurrentState((stateRes.data || null) as GrowthBatchCurrentState | null)
       setDetailRow((detailRes.data || null) as GrowthBatchDetailRow | null)
       setMeasurements((measurementRes.data || []) as GrowthBatchMeasurementRow[])
       setDirectCosts((costRes.data || []) as GrowthBatchDirectCostRow[])
       setStockInputs((stockInputRes.data || []) as GrowthBatchStockInputRow[])
+      setLosses((lossRes.data || []) as GrowthBatchLossRow[])
       setEvents((eventRes.data || []) as GrowthBatchEventRow[])
     } catch (error) {
       console.error(error)
@@ -1444,6 +1578,178 @@ export default function GrowthBatches() {
     }
   }
 
+  function markLossPreviewStale() {
+    setLossPreviewStale(true)
+  }
+
+  function setLossType(value: LossType) {
+    const nextReasons = value === 'mortality' ? mortalityReasons : shrinkageReasons
+    markLossPreviewStale()
+    setLossForm((current) => ({
+      ...current,
+      lossType: value,
+      reasonCode: nextReasons[0],
+    }))
+  }
+
+  function lossNumericValue(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : NaN
+  }
+
+  function validateLossForm() {
+    if (!detailBatch || detailBatch.status !== 'active') return 'Losses can only be recorded on active Growth Batches.'
+    if (!lossForm.effectiveDate) return 'Select an effective date.'
+    if (lossForm.effectiveDate < detailBatch.start_date) return 'Loss date must be on or after the batch start date.'
+    if (lossForm.effectiveDate > today()) return 'Loss date cannot be in the future.'
+    if (!lossForm.reasonCode) return 'Select a loss reason.'
+    if (!lossReasonOptions.includes(lossForm.reasonCode)) return 'Select a valid reason for this loss type.'
+    if (lossForm.reasonCode === 'other' && !lossForm.notes.trim()) return 'Add notes when the reason is Other.'
+
+    const quantityLost = lossNumericValue(lossForm.quantityLost)
+    const weightLost = lossNumericValue(lossForm.weightLost)
+    if (Number.isNaN(quantityLost) || Number.isNaN(weightLost)) return 'Enter valid loss numbers.'
+    if ((quantityLost ?? 0) < 0 || (weightLost ?? 0) < 0) return 'Loss values cannot be negative.'
+    if ((quantityLost ?? 0) <= 0 && (weightLost ?? 0) <= 0) return 'Enter a quantity loss, weight loss, or both.'
+    if (quantityLost != null && quantityLost > 0) {
+      const currentQuantity = num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)
+      if (detailBatch.primary_quantity_basis === 'count' && quantityLost !== Math.trunc(quantityLost)) return 'Count-basis losses must use whole-number quantities.'
+      if (quantityLost > currentQuantity) return 'The loss quantity cannot exceed the current batch quantity.'
+    }
+    if (weightLost != null && weightLost > 0) {
+      if (!detailBatch.weight_uom_id || detailBatch.latest_total_weight == null) return 'Record or configure a current total weight before entering weight loss.'
+      if (weightLost > num(detailBatch.latest_total_weight)) return 'The loss weight cannot exceed the current total weight.'
+    }
+    return null
+  }
+
+  function lossPayload() {
+    return {
+      p_growth_batch_id: detailBatch?.id,
+      p_loss_type: lossForm.lossType,
+      p_effective_date: lossForm.effectiveDate,
+      p_quantity_lost: lossNumericValue(lossForm.quantityLost),
+      p_weight_lost: lossNumericValue(lossForm.weightLost),
+      p_reason_code: lossForm.reasonCode,
+      p_notes: cleanText(lossForm.notes),
+    }
+  }
+
+  async function previewLoss() {
+    if (!detailBatch) return
+    const validation = validateLossForm()
+    if (validation) return toast.error(validation)
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.rpc('preview_growth_batch_loss', lossPayload())
+      if (error) throw error
+      const preview = data as LossPreview
+      setLossPreview(preview)
+      setLossPreviewStale(false)
+      if (preview.ready) {
+        toast.success('Loss preview is ready')
+      } else {
+        toast.error('Preview found blockers. Review the loss values before recording.')
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function recordLoss() {
+    if (!detailBatch) return
+    const validation = validateLossForm()
+    if (validation) return toast.error(validation)
+    if (!lossPreview || lossPreviewStale) return toast.error('Preview the current loss before recording.')
+    if (!lossPreview.ready) return toast.error('Resolve preview blockers before recording the loss.')
+    const payload = {
+      operation: lossForm.lossType === 'mortality' ? 'growth.batch.mortality' : 'growth.batch.shrinkage',
+      batchId: detailBatch.id,
+      effectiveDate: lossForm.effectiveDate,
+      lossType: lossForm.lossType,
+      quantityLost: lossNumericValue(lossForm.quantityLost),
+      weightLost: lossNumericValue(lossForm.weightLost),
+      reasonCode: lossForm.reasonCode,
+      notes: cleanText(lossForm.notes),
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(lossRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('record_growth_batch_loss', {
+        ...lossPayload(),
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(lossRequestRef)
+      toast.success(`${labelize(lossForm.lossType)} recorded`)
+      setLossOpen(false)
+      setLossForm(emptyLossForm())
+      setLossPreview(null)
+      setLossPreviewStale(false)
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openLossDialog() {
+    setLossForm(emptyLossForm())
+    setLossPreview(null)
+    setLossPreviewStale(false)
+    setLossOpen(true)
+  }
+
+  function openLossReversalDialog(row: GrowthBatchLossRow) {
+    setLossReversalForm({
+      eventId: row.event_id,
+      eventReference: row.event_reference,
+      lossType: row.loss_type,
+      reason: '',
+    })
+    setLossReversalOpen(true)
+  }
+
+  async function reverseLoss() {
+    if (!detailBatch) return
+    if (!lossReversalForm.eventId) return
+    if (!lossReversalForm.reason.trim()) return toast.error('Enter a reversal reason.')
+    const payload = {
+      operation: lossReversalForm.lossType === 'mortality' ? 'growth.batch.mortality.reverse' : 'growth.batch.shrinkage.reverse',
+      originalEventId: lossReversalForm.eventId,
+      reason: lossReversalForm.reason.trim(),
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(lossReversalRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('reverse_growth_batch_loss', {
+        p_event_id: lossReversalForm.eventId,
+        p_reason: lossReversalForm.reason.trim(),
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(lossReversalRequestRef)
+      toast.success(`${labelize(lossReversalForm.lossType)} reversed`)
+      setLossReversalOpen(false)
+      setLossReversalForm(emptyLossReversalForm())
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const columns = useMemo<PremiumDataTableColumn<GrowthBatchRegisterRow>[]>(() => [
     {
       id: 'reference',
@@ -1538,6 +1844,10 @@ export default function GrowthBatches() {
       <Button type="button" size="sm" onClick={openStockInputDialog} disabled={saving}>
         <PackageMinus className="mr-2 h-4 w-4" />
         Post stock input
+      </Button>
+      <Button type="button" variant="outline" size="sm" onClick={openLossDialog} disabled={saving}>
+        <AlertTriangle className="mr-2 h-4 w-4" />
+        Record loss
       </Button>
       <Button type="button" size="sm" onClick={() => setMeasurementOpen(true)} disabled={saving}>
         <LineChart className="mr-2 h-4 w-4" />
@@ -1745,9 +2055,9 @@ export default function GrowthBatches() {
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
       <PremiumRegisterHeader
-        eyebrow="G1-G3 governed lifecycle"
+        eyebrow="G1-G4.1 governed lifecycle"
         title="Growth Batches"
-        description="Manage live biological or agricultural batches at group level. G3 adds governed physical stock-input posting and material-cost rollups without harvests, COGS, supplier bills, or finance postings."
+        description="Manage live biological or agricultural batches at group level. G4.1 adds governed mortality and shrinkage events while preserving stock-input costing, append-only history, and finance isolation."
         badges={
           <>
             <PremiumStatusBadge tone="info">Append-only event ledger</PremiumStatusBadge>
@@ -1775,7 +2085,7 @@ export default function GrowthBatches() {
         }
         metrics={
           <>
-            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
+            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements, losses, and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
             <PremiumMetricCard label="Drafts" value={metricValues.draft} description="Prepared but not activated" icon={<ClipboardList />} tone="info" variant="panel" />
             <PremiumMetricCard label="Memo direct costs" value={money(metricValues.directCost, selectedCurrency)} description="Separate from stock-input material cost" icon={<Coins />} tone="warning" variant="panel" />
             <PremiumMetricCard label="Latest activity" value={compactDate(metricValues.latest)} description="Newest event or created batch in the register" icon={<Activity />} tone="neutral" variant="panel" />
@@ -1944,6 +2254,7 @@ export default function GrowthBatches() {
                   <TabsList className="w-full justify-start overflow-x-auto">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="stock">Stock inputs</TabsTrigger>
+                    <TabsTrigger value="losses">Losses</TabsTrigger>
                     <TabsTrigger value="measurements">Measurements</TabsTrigger>
                     <TabsTrigger value="costs">Direct costs</TabsTrigger>
                     <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -1972,7 +2283,7 @@ export default function GrowthBatches() {
                       description="These controls remain unavailable until later phases connect harvest, movement, and valuation policies end to end."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {['Mortality / shrinkage', 'Transfers', 'Harvest / split outputs', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
+                        {['Transfers', 'Harvest / split outputs', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
                           <div key={item} className="flex items-center gap-2 rounded-xl border border-card-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                             <AlertTriangle className="h-4 w-4 text-amber-600" />
                             <span>{item}</span>
@@ -2034,6 +2345,70 @@ export default function GrowthBatches() {
                                     <Button type="button" size="sm" variant="outline" onClick={() => openReversalDialog(line)} disabled={saving}>
                                       <RotateCcw className="mr-2 h-4 w-4" />
                                       Reverse event
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </DetailSection>
+                  </TabsContent>
+
+                  <TabsContent value="losses">
+                    <DetailSection
+                      title="Mortality and shrinkage"
+                      description="Loss events reduce the current batch quantity and/or latest total weight. They do not create stock movements, finance rows, or cost write-offs."
+                      action={detailBatch.status === 'active' && canOperate ? (
+                        <Button size="sm" onClick={openLossDialog}>
+                          <AlertTriangle className="mr-2 h-4 w-4" />
+                          Record loss
+                        </Button>
+                      ) : null}
+                    >
+                      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                        <SummaryItem label="Current quantity" value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                        <SummaryItem label="Latest weight" value={detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                        <SummaryItem label="Unreversed losses" value={detailBatch.unreversed_loss_event_count ?? 0} />
+                      </div>
+                      {losses.length === 0 ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title="No mortality or shrinkage yet" description="Record loss only for active batches when quantity or weight has actually reduced." compact />
+                      ) : (
+                        <div className="space-y-3">
+                          {losses.map((loss) => {
+                            const canReverseLoss = canManage && loss.reversal_status !== 'reversed'
+                            return (
+                              <div key={loss.id} className="rounded-xl border border-card-border bg-card p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <PremiumStatusBadge tone="warning">{labelize(loss.loss_type)}</PremiumStatusBadge>
+                                      {loss.reversal_status === 'reversed' ? <Badge variant="outline">Reversed</Badge> : null}
+                                    </div>
+                                    <div className="mt-2 font-medium">{labelize(loss.reason_code)}</div>
+                                    <div className="text-sm text-muted-foreground">{loss.event_reference} by {loss.actor_display_name || 'Team member'}</div>
+                                  </div>
+                                  <div className="text-right text-sm font-semibold">
+                                    {loss.quantity_lost != null ? <div>-{qtyWithUom(loss.quantity_lost, loss.quantity_uom_code || uomById.get(loss.quantity_uom_id || '')?.code)}</div> : null}
+                                    {loss.weight_lost != null ? <div>-{qtyWithUom(loss.weight_lost, loss.weight_uom_code || uomById.get(loss.weight_uom_id || '')?.code)}</div> : null}
+                                    <div className="text-xs font-normal text-muted-foreground">Seq {loss.event_sequence} / {compactDate(loss.event_effective_date)}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2">
+                                  <SummaryItem label="Quantity" value={`${qty(loss.quantity_before)} -> ${qty(loss.quantity_after)} ${loss.quantity_uom_code || detailBatch.primary_uom_code || ''}`.trim()} />
+                                  <SummaryItem label="Weight" value={loss.total_weight_before == null && loss.total_weight_after == null ? 'Not affected' : `${qty(loss.total_weight_before)} -> ${qty(loss.total_weight_after)} ${loss.weight_uom_code || detailBatch.weight_uom_code || ''}`.trim()} />
+                                </div>
+                                {loss.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{loss.notes}</p> : null}
+                                {loss.reversal_status === 'reversed' ? (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    Reversed by {loss.reversal_event_reference || 'reversal event'} on {compactDate(loss.reversal_effective_date)}. {loss.reversal_reason || 'Reason recorded.'}
+                                  </p>
+                                ) : canReverseLoss ? (
+                                  <div className="mt-3">
+                                    <Button type="button" size="sm" variant="outline" onClick={() => openLossReversalDialog(loss)} disabled={saving}>
+                                      <RotateCcw className="mr-2 h-4 w-4" />
+                                      Reverse loss
                                     </Button>
                                   </div>
                                 ) : null}
@@ -2484,6 +2859,157 @@ export default function GrowthBatches() {
             <Button type="button" onClick={postStockInput} disabled={saving || !stockInputPreview || stockInputPreviewStale || !stockInputPreview.ready}>
               <PackageMinus className="mr-2 h-4 w-4" />
               Post stock input
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={lossOpen} onOpenChange={setLossOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Record mortality or shrinkage</DialogTitle>
+            <DialogDescription>
+              This records operational biological loss only. It updates current batch quantity and/or weight without stock movements, finance rows, or cost write-off.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Loss type" htmlFor="growth-loss-type">
+                  <Select value={lossForm.lossType} onValueChange={(value) => setLossType(value as LossType)}>
+                    <SelectTrigger id="growth-loss-type" aria-label="Loss type"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mortality">Mortality</SelectItem>
+                      <SelectItem value="shrinkage">Shrinkage</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Effective date" htmlFor="growth-loss-date">
+                  <Input
+                    id="growth-loss-date"
+                    type="date"
+                    value={lossForm.effectiveDate}
+                    onChange={(event) => {
+                      markLossPreviewStale()
+                      setLossForm((current) => ({ ...current, effectiveDate: event.target.value }))
+                    }}
+                  />
+                </Field>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={`Quantity lost (${detailBatch?.primary_uom_code || 'unit'})`} htmlFor="growth-loss-quantity" hint={`Current: ${qtyWithUom(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty, detailBatch?.primary_uom_code)}`}>
+                  <Input
+                    id="growth-loss-quantity"
+                    type="number"
+                    min="0"
+                    step={detailBatch?.primary_quantity_basis === 'count' ? '1' : '0.000001'}
+                    value={lossForm.quantityLost}
+                    onChange={(event) => {
+                      markLossPreviewStale()
+                      setLossForm((current) => ({ ...current, quantityLost: event.target.value }))
+                    }}
+                  />
+                </Field>
+                {detailBatch?.weight_uom_id ? (
+                  <Field label={`Weight lost (${detailBatch.weight_uom_code || 'unit'})`} htmlFor="growth-loss-weight" hint={`Current: ${detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)}`}>
+                    <Input
+                      id="growth-loss-weight"
+                      type="number"
+                      min="0"
+                      step="0.000001"
+                      value={lossForm.weightLost}
+                      onChange={(event) => {
+                        markLossPreviewStale()
+                        setLossForm((current) => ({ ...current, weightLost: event.target.value }))
+                      }}
+                    />
+                  </Field>
+                ) : null}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Reason" htmlFor="growth-loss-reason">
+                  <Select
+                    value={lossForm.reasonCode || 'none'}
+                    onValueChange={(value) => {
+                      markLossPreviewStale()
+                      setLossForm((current) => ({ ...current, reasonCode: value === 'none' ? '' : value as LossReasonCode }))
+                    }}
+                  >
+                    <SelectTrigger id="growth-loss-reason" aria-label="Loss reason"><SelectValue placeholder="Select reason" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select reason</SelectItem>
+                      {lossReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{labelize(reason)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Notes" htmlFor="growth-loss-notes" hint={lossForm.reasonCode === 'other' ? 'Required for Other.' : 'Optional unless reason is Other.'}>
+                  <Input
+                    id="growth-loss-notes"
+                    value={lossForm.notes}
+                    onChange={(event) => {
+                      markLossPreviewStale()
+                      setLossForm((current) => ({ ...current, notes: event.target.value }))
+                    }}
+                  />
+                </Field>
+              </div>
+
+              {lossPreview ? (
+                <div className={cn('rounded-xl border p-4 text-sm', lossPreview.ready && !lossPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                  <div className="font-medium">{lossPreviewStale ? 'Preview is stale' : lossPreview.ready ? 'Preview ready' : 'Preview blockers'}</div>
+                  {lossPreview.blocking_reasons?.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                      {lossPreview.blocking_reasons.map((blocker, index) => (
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{labelize(String(blocker.code || 'blocker'))}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <SummaryItem label="Quantity" value={`${qty(lossPreview.current_quantity)} -> ${qty(lossPreview.resulting_quantity)} ${lossPreview.quantity_uom_code || detailBatch?.primary_uom_code || ''}`.trim()} />
+                    <SummaryItem label="Weight" value={lossPreview.current_total_weight == null && lossPreview.resulting_total_weight == null ? 'Not affected' : `${qty(lossPreview.current_total_weight)} -> ${qty(lossPreview.resulting_total_weight)} ${lossPreview.weight_uom_code || detailBatch?.weight_uom_code || ''}`.trim()} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setLossOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="outline" onClick={previewLoss} disabled={saving}>Preview</Button>
+            <Button type="button" onClick={recordLoss} disabled={saving || !lossPreview || lossPreviewStale || !lossPreview.ready}>
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              Record loss
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={lossReversalOpen} onOpenChange={setLossReversalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reverse loss event</DialogTitle>
+            <DialogDescription>
+              This creates a separate {labelize(lossReversalForm.lossType)} reversal event and restores the original frozen quantity and weight.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <SummaryItem label="Original event" value={lossReversalForm.eventReference || 'Not selected'} />
+              <Field label="Reason" htmlFor="growth-loss-reversal-reason">
+                <Textarea
+                  id="growth-loss-reversal-reason"
+                  value={lossReversalForm.reason}
+                  onChange={(event) => setLossReversalForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </Field>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setLossReversalOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="destructive" onClick={reverseLoss} disabled={saving || !canManage}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reverse loss
             </Button>
           </DialogFooter>
         </DialogContent>

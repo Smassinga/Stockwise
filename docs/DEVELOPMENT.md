@@ -20,7 +20,7 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production and `main` have 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`. Growth Batches G3 is live after the approved database-first rollout and controlled production smoke.
+Current release state: hosted production has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`. The current local repository has 32 active migrations after the G4.1 local implementation, with `20260627225400_add_growth_batch_losses.sql` and `20260627225414_add_growth_batch_loss_posting.sql` pending for a future controlled hosted rollout. Growth Batches G3 is live; G4.1 mortality/shrinkage is local-only until that rollout.
 
 The latest Growth Batches G3 rollout applied:
 
@@ -28,6 +28,8 @@ The latest Growth Batches G3 rollout applied:
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
 
 G3 validation passed before rollout: local replay reports 30 active migrations, Growth Batches regression `5/5`, complete finance regression `31/31`, independent inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, build, and GitHub Validation run `27930016751`. The hosted rollout ran in the authorised 2026-06-22 session with `npx supabase db push --linked` exit `0`; production smoke passed through the maintained UI.
+
+The local G4.1 package adds OPERATOR+ mortality/shrinkage preview and recording, MANAGER+ event-specific loss reversal, immutable loss/reversal detail tables, loss read models, request-key idempotency, and `/growth-batches` UI coverage. It intentionally excludes transfers, harvest/split outputs, completion, stock output receipts, FIFO, COGS, fair value, automatic finance posting, dashboards, and per-animal/per-plant records. Local implementation validation passed with 32-migration replay, targeted Growth Batches regression `6/6`, complete finance regression `32/32`, static checks, build, and authenticated visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode. G4.1 must still be reviewed before any hosted `db push`.
 
 Before changing the database:
 

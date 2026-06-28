@@ -27,9 +27,9 @@ What did not change:
 
 ## Explicit Future Scope
 
-Production Runs and Growth Batches G3 stock-input posting are live foundations. Remaining future Production & Costing work includes:
+Production Runs and Growth Batches G3 stock-input posting are live foundations. Growth Batches G4.1 mortality/shrinkage is implemented locally, but is not hosted/live until a future controlled rollout applies the two local migrations and completes production verification. Remaining future Production & Costing work includes:
 
-- mortality and shrinkage
+- hosted rollout of the local G4.1 mortality/shrinkage package
 - batch transfers
 - harvest and split or partial harvest
 - Growth Batch completion and whole-batch reversal
@@ -347,9 +347,27 @@ Validation and production smoke:
 - reversal used mandatory reason `Controlled G3 production smoke reversal`, created event `LEN-GB000000002-E000003`, detail `03b1dd13-cf49-4aa5-abab-6de06aa765a6`, receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f`, and succeeded request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`
 - source stock moved `48 -> 47 -> 48`, material cost moved `MZN 0.00 -> MZN 10.304233 -> MZN 0.00`, memo direct cost stayed `MZN 0.00`, negative stock and duplicate bucket checks stayed zero, finance rows stayed unchanged, and `items.unit_price` sum/hash stayed unchanged
 
+## Growth Batches G4.1 Local Loss Package
+
+Growth Batches G4.1 is implemented locally and is not hosted/live. Local migration history has 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`; hosted production remains at the G3 checkpoint of 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`.
+
+G4.1 adds mortality and shrinkage as operational loss events for active Growth Batches:
+
+- `growth_batch_losses` stores immutable mortality/shrinkage detail rows with before/after quantity and total-weight snapshots.
+- `growth_batch_loss_reversal_lines` stores immutable event-specific reversal evidence.
+- `growth_batch_loss_history` exposes loss and reversal status for the maintained `/growth-batches` UI.
+- `preview_growth_batch_loss`, `record_growth_batch_loss`, and `reverse_growth_batch_loss` keep mutation RPC-only, with OPERATOR+ recording and MANAGER+ reversal.
+- operation types are `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, and `growth.batch.shrinkage.reverse`.
+
+Costing boundary:
+
+- losses reduce only current batch quantity and/or latest total weight.
+- accumulated material and memo direct costs remain with the batch.
+- no mortality valuation, cost write-off, COGS, fair-value treatment, finance journal, vendor bill, settlement, invoice, stock movement, `stock_levels` update, or `items.unit_price` change is introduced.
+- reversal restores the original frozen quantity and/or weight by compensating event; original loss rows remain immutable.
+
 Still future:
 
-- mortality and shrinkage
 - transfers
 - harvest and split/partial harvest
 - completion

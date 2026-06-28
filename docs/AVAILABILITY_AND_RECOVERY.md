@@ -1,6 +1,6 @@
 # StockWise Availability and Recovery Runbook
 
-Status: 2026-06-22.
+Status: 2026-06-27.
 
 This runbook defines the current recovery posture for early commercial rollout. It is not a guarantee of service level and does not prove that a restore drill has been completed. Use it to drive incident response, monthly recovery tests, and future hardening work.
 
@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Local and hosted migration history is currently aligned through `20260620132656`.
+- Hosted migration history is currently aligned through `20260620132656`. Local migration history has advanced to 32 active migrations with the G4.1 mortality/shrinkage package; those two migrations are not hosted/live until a future controlled rollout.
 
 ## Backup Assumptions
 

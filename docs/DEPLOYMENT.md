@@ -66,6 +66,16 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-06-27 Growth Batches G4.1 local implementation note:
+
+- G4.1 is implemented in the repository only and is not hosted/live.
+- local migration history now has 32 active migrations, with `20260627225400_add_growth_batch_losses.sql` and `20260627225414_add_growth_batch_loss_posting.sql` after the live G3 migrations.
+- hosted production remains at the G3 checkpoint of 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`.
+- G4.1 adds mortality/shrinkage preview, OPERATOR+ recording, MANAGER+ event-specific reversal, immutable loss/reversal details, RLS/FORCE RLS, read models, request-key idempotency, responsive `/growth-batches` UI, and local regression coverage.
+- G4.1 does not create stock movements, update `stock_levels`, change Growth Batch material/direct/harvested/remaining costs, create finance rows, or change `items.unit_price`.
+- Local validation for this package passed: 32-migration replay, `npm run check:migrations`, `npm run lint:js`, `npm run check:css-vars`, `npm run check:css-classes`, `npm run build`, targeted Growth Batches regression `6/6`, complete finance regression `32/32`, and authenticated `/growth-batches` QA at `1440`, `1200`, `820`, and `390` in light and dark mode.
+- Do not describe G4.1 as production-live until a future authorised hosted rollout applies the two local migrations and completes controlled production verification.
+
 2026-06-22 Growth Batches G3 production rollout:
 
 - hosted Supabase is aligned through migration `20260620132656_add_growth_batch_stock_input_posting.sql` with 30 active migrations
@@ -89,7 +99,7 @@ For production-impacting releases, also review:
 - final counts were `growth_batches=2`, `growth_batch_events=6`, `growth_batch_measurements=1`, `growth_batch_direct_costs=1`, `growth_batch_stock_inputs=1`, `growth_batch_stock_input_reversal_lines=1`, `posting_requests=17`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, and `finance_document_events=45`
 - negative stock and duplicate stock bucket checks remained `0`; cash, bank, vendor bill, invoice, settlement, and finance-event rows were unchanged by G3; `items.unit_price` sum stayed `189778` and the preflight hash baseline was unchanged
 - Supabase API logs showed 200 responses for the maintained G3 preview/post/reversal/read-model path. Postgres logs showed no rollout/smoke failure; two inspection-only errors were caused by read-only verification attempts and did not affect the maintained UI path.
-- G4/G5 capabilities remain out of scope: mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records are not implemented by G3
+- G4/G5 capabilities remain out of scope for G3: mortality/shrinkage are implemented only in the local G4.1 package above and are not hosted/live; transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
 
 2026-06-20 Growth Batches G1-G2 rollout:
 
@@ -134,7 +144,7 @@ For production-impacting releases, also review:
 - G3 remains base-UOM-only for consumed item lines and does not add generic UOM conversion
 - G3 stock inputs create physical stock issue movements and material-cost rollups, but do not create cash, bank, vendor bill, settlement, invoice, supplier liability, finance journal/event, automatic COGS, or `items.unit_price` changes
 - authenticated local visual QA used isolated local company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, batch reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`; it verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, OPERATOR+ posting, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, original issue preservation, material-cost restoration from `MZN 12.50` to `MZN 0.00`, and stock restoration to `100 EA at MZN 2.50 WAC`
-- G4/G5 capabilities remain out of scope: mortality, shrinkage, transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records are not implemented by G3
+- G4/G5 capabilities remain out of scope for G3: mortality/shrinkage are implemented only in the local G4.1 package above and are not hosted/live; transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
 
 2026-06-18 Production Runs rollout:
 

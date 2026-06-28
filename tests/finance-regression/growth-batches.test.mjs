@@ -23,6 +23,9 @@ const MEASUREMENT_SIGNATURE = 'public.record_growth_batch_measurement(uuid,uuid,
 const PREVIEW_STOCK_INPUT_SIGNATURE = 'public.preview_growth_batch_stock_input(uuid,date,jsonb,text)'
 const POST_STOCK_INPUT_SIGNATURE = 'public.post_growth_batch_stock_input(uuid,date,jsonb,text,text)'
 const REVERSE_STOCK_INPUT_SIGNATURE = 'public.reverse_growth_batch_stock_input(uuid,date,text,text)'
+const PREVIEW_LOSS_SIGNATURE = 'public.preview_growth_batch_loss(uuid,text,date,numeric,numeric,text,text)'
+const RECORD_LOSS_SIGNATURE = 'public.record_growth_batch_loss(uuid,text,date,numeric,numeric,text,text,text)'
+const REVERSE_LOSS_SIGNATURE = 'public.reverse_growth_batch_loss(uuid,text,text)'
 
 function addDaysIso(days) {
   const date = new Date(`${todayIso()}T00:00:00.000Z`)
@@ -155,7 +158,7 @@ async function runLocalSql(sql) {
   const args = isWindows
     ? ['/d', '/s', '/c', 'npx.cmd supabase db query --local -o json']
     : ['supabase', 'db', 'query', '--local', '-o', 'json']
-  const timeoutMs = 30_000
+  const timeoutMs = 60_000
   const result = await new Promise((resolve, reject) => {
     let child
     const startError = (error) => new Error([
@@ -265,6 +268,8 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
 
   async function cleanupCompany(companyId) {
     if (!companyId) return
+    await admin.from('growth_batch_loss_reversal_lines').delete().eq('company_id', companyId)
+    await admin.from('growth_batch_losses').delete().eq('company_id', companyId)
     await admin.from('growth_batch_stock_input_reversal_lines').delete().eq('company_id', companyId)
     await admin.from('growth_batch_stock_inputs').delete().eq('company_id', companyId)
     await admin.from('growth_batch_direct_costs').delete().eq('company_id', companyId)
@@ -470,11 +475,13 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
         'growth_batch_measurements',
         'growth_batch_direct_costs',
         'growth_batch_stock_inputs',
-        'growth_batch_stock_input_reversal_lines'
+        'growth_batch_stock_input_reversal_lines',
+        'growth_batch_losses',
+        'growth_batch_loss_reversal_lines'
       )
       order by relname;
     `)
-    assert.equal(schemaRows.length, 7, 'Expected all Growth Batch tables to exist')
+    assert.equal(schemaRows.length, 9, 'Expected all Growth Batch tables to exist')
     assert.equal(schemaRows.every((row) => row.relrowsecurity === true), true, 'Expected Growth Batch RLS enabled')
     assert.equal(schemaRows.every((row) => row.relforcerowsecurity === true), true, 'Expected Growth Batch FORCE RLS enabled')
 
@@ -491,7 +498,13 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
         has_function_privilege('anon', '${POST_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as anon_stock_post,
         has_function_privilege('authenticated', '${POST_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as auth_stock_post,
         has_function_privilege('anon', '${REVERSE_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as anon_stock_reverse,
-        has_function_privilege('authenticated', '${REVERSE_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as auth_stock_reverse;
+        has_function_privilege('authenticated', '${REVERSE_STOCK_INPUT_SIGNATURE}', 'EXECUTE') as auth_stock_reverse,
+        has_function_privilege('anon', '${PREVIEW_LOSS_SIGNATURE}', 'EXECUTE') as anon_loss_preview,
+        has_function_privilege('authenticated', '${PREVIEW_LOSS_SIGNATURE}', 'EXECUTE') as auth_loss_preview,
+        has_function_privilege('anon', '${RECORD_LOSS_SIGNATURE}', 'EXECUTE') as anon_loss_record,
+        has_function_privilege('authenticated', '${RECORD_LOSS_SIGNATURE}', 'EXECUTE') as auth_loss_record,
+        has_function_privilege('anon', '${REVERSE_LOSS_SIGNATURE}', 'EXECUTE') as anon_loss_reverse,
+        has_function_privilege('authenticated', '${REVERSE_LOSS_SIGNATURE}', 'EXECUTE') as auth_loss_reverse;
     `)
     assert.equal(grantRows[0].anon_create, false, 'anon must not execute create_growth_batch_draft')
     assert.equal(grantRows[0].anon_activate, false, 'anon must not execute activate_growth_batch')
@@ -499,12 +512,18 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
     assert.equal(grantRows[0].anon_stock_preview, false, 'anon must not execute preview_growth_batch_stock_input')
     assert.equal(grantRows[0].anon_stock_post, false, 'anon must not execute post_growth_batch_stock_input')
     assert.equal(grantRows[0].anon_stock_reverse, false, 'anon must not execute reverse_growth_batch_stock_input')
+    assert.equal(grantRows[0].anon_loss_preview, false, 'anon must not execute preview_growth_batch_loss')
+    assert.equal(grantRows[0].anon_loss_record, false, 'anon must not execute record_growth_batch_loss')
+    assert.equal(grantRows[0].anon_loss_reverse, false, 'anon must not execute reverse_growth_batch_loss')
     assert.equal(grantRows[0].auth_create, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_activate, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_measurement, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_stock_preview, true, 'authenticated users execute governed Growth Batch stock preview')
     assert.equal(grantRows[0].auth_stock_post, true, 'authenticated users execute governed Growth Batch stock posting')
     assert.equal(grantRows[0].auth_stock_reverse, true, 'authenticated users execute governed Growth Batch stock reversal')
+    assert.equal(grantRows[0].auth_loss_preview, true, 'authenticated users execute governed Growth Batch loss preview')
+    assert.equal(grantRows[0].auth_loss_record, true, 'authenticated users execute governed Growth Batch loss recording')
+    assert.equal(grantRows[0].auth_loss_reverse, true, 'authenticated users execute governed Growth Batch loss reversal')
 
     await expectPostgrestError(
       anonClient.rpc('create_growth_batch_draft', {
@@ -581,11 +600,74 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
       }),
       'direct growth_batch_stock_input_reversal_lines insert',
     )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_losses').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        event_id: '00000000-0000-0000-0000-000000000000',
+        loss_type: 'mortality',
+        quantity_lost: 1,
+        quantity_uom_id: eachUomId,
+        reason_code: 'disease',
+        quantity_before: 10,
+        quantity_after: 9,
+      }),
+      'direct growth_batch_losses insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_loss_reversal_lines').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        reversal_event_id: '00000000-0000-0000-0000-000000000000',
+        original_event_id: '00000000-0000-0000-0000-000000000000',
+        original_loss_id: '00000000-0000-0000-0000-000000000000',
+        restored_quantity: 1,
+        restored_quantity_uom_id: eachUomId,
+        quantity_before: 9,
+        quantity_after: 10,
+        reason: 'Direct mutation blocked',
+      }),
+      'direct growth_batch_loss_reversal_lines insert',
+    )
   })
 
   let countBatch = null
   let weightBatch = null
   let areaBatch = null
+
+  async function createActiveGrowthBatch(label, options = {}) {
+    const {
+      family = 'poultry',
+      basis = 'count',
+      openingQty = 10,
+      primaryUomId = basis === 'weight' ? kgUomId : basis === 'area' ? areaUomId : eachUomId,
+      openingWeight = null,
+      weightUomId = openingWeight == null && basis !== 'weight' ? null : kgUomId,
+      warehouse = warehouseId,
+      bin = binId,
+    } = options
+    const draft = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('create_growth_batch_draft', {
+      p_company_id: companyId,
+      p_name: `${PREFIX} ${label}`,
+      p_batch_family: family,
+      p_primary_quantity_basis: basis,
+      p_opening_primary_qty: openingQty,
+      p_primary_uom_id: primaryUomId,
+      p_start_date: todayIso(),
+      p_opening_total_weight: openingWeight,
+      p_weight_uom_id: weightUomId,
+      p_warehouse_id: warehouse,
+      p_bin_id: bin,
+      p_request_key: `${PREFIX}-${label}-create`,
+      p_opening_total_weight_present: openingWeight != null,
+    }), `Expected ${label} draft to be created`))
+    unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('activate_growth_batch', {
+      p_company_id: companyId,
+      p_growth_batch_id: draft.batch_id,
+      p_request_key: `${PREFIX}-${label}-activate`,
+    }), `Expected ${label} activation to succeed`))
+    return draft
+  }
 
   await t.test('draft lifecycle, references, quantity basis rules, and cross-company checks', async () => {
     const draft = unwrapRpcSingle(
@@ -1341,6 +1423,588 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
 
     assert.deepEqual(await financeIsolationCounts(admin, companyId), financeBeforeActivation)
     assert.equal(await stockMovementCount(ownerClient, companyId), movementBeforeActivation)
+  })
+
+  await t.test('G4.1 mortality, shrinkage, loss reversals, and isolation', async () => {
+    const lossBatch = await createActiveGrowthBatch('Loss Batch', { openingQty: 20, openingWeight: 40 })
+    const financeBeforeLoss = await financeIsolationCounts(admin, companyId)
+    const stockBeforeLoss = await stockMovementCount(admin, companyId)
+    const stockLevelCountBeforeLoss = await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]])
+    const priceBeforeLoss = await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]])
+    const costBeforeLoss = await querySingle(ownerClient, 'growth_batches', 'accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,harvested_cost,remaining_cost,current_primary_qty,current_total_weight', [
+      ['eq', 'id', lossBatch.batch_id],
+    ])
+    const lossBatchPreviewSnapshotSelect = 'status,current_primary_qty,current_total_weight,latest_event_sequence,warehouse_id,bin_id,location_description,accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,harvested_cost,remaining_cost'
+
+    async function lossPreviewMutationSnapshot(batchId) {
+      const [
+        growthBatchCount,
+        eventCount,
+        lossCount,
+        reversalCount,
+        postingRequestCount,
+        movementCount,
+        stockLevelCount,
+        financeCounts,
+        batch,
+        itemPrice,
+      ] = await Promise.all([
+        countRows(ownerClient, 'growth_batches', [['eq', 'company_id', companyId]]),
+        countRows(ownerClient, 'growth_batch_events', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_losses', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_loss_reversal_lines', [['eq', 'growth_batch_id', batchId]]),
+        countRows(admin, 'posting_requests', [['eq', 'company_id', companyId]]),
+        stockMovementCount(admin, companyId),
+        countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]),
+        financeIsolationCounts(admin, companyId),
+        querySingle(ownerClient, 'growth_batches', lossBatchPreviewSnapshotSelect, [['eq', 'id', batchId]]),
+        querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]]),
+      ])
+
+      return {
+        growthBatchCount,
+        eventCount,
+        lossCount,
+        reversalCount,
+        postingRequestCount,
+        movementCount,
+        stockLevelCount,
+        financeCounts,
+        batch,
+        itemPrice,
+      }
+    }
+
+    async function assertLossPreviewNonMutation(batchId, before, label) {
+      assert.deepEqual(await lossPreviewMutationSnapshot(batchId), before, `${label} must not mutate database state`)
+    }
+
+    function previewBlockerCodes(preview) {
+      return (preview.blocking_reasons ?? []).map((reason) => reason.code)
+    }
+
+    async function expectPreviewBlocker(payload, expectedCode, label) {
+      const before = await lossPreviewMutationSnapshot(payload.p_growth_batch_id)
+      const preview = unwrapRpcSingle(expectNoSupabaseError(
+        await operatorClient.rpc('preview_growth_batch_loss', payload),
+        `Expected ${label} preview to return blockers`,
+      ))
+      assert.equal(preview.ready, false, `${label} preview must not be ready`)
+      assert.equal(previewBlockerCodes(preview).includes(expectedCode), true, `${label} preview must include ${expectedCode}`)
+      await assertLossPreviewNonMutation(payload.p_growth_batch_id, before, `${label} preview`)
+      return preview
+    }
+
+    async function expectPreviewError(payload, expectedMessage, label) {
+      const before = await lossPreviewMutationSnapshot(payload.p_growth_batch_id)
+      await expectPostgrestError(operatorClient.rpc('preview_growth_batch_loss', payload), expectedMessage)
+      await assertLossPreviewNonMutation(payload.p_growth_batch_id, before, `${label} preview`)
+    }
+
+    await expectPostgrestError(
+      viewerClient.rpc('preview_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 1,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+      }),
+      'operator_role_required',
+    )
+    await expectPostgrestError(
+      crossOwnerClient.rpc('preview_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 1,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+      }),
+      'growth_batch_not_found',
+    )
+
+    const mortalityLossPayload = {
+      p_growth_batch_id: lossBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 2,
+      p_weight_lost: null,
+      p_reason_code: 'disease',
+      p_notes: 'Controlled mortality test',
+    }
+    const mortalityPreviewBefore = await lossPreviewMutationSnapshot(lossBatch.batch_id)
+    const mortalityPreview = unwrapRpcSingle(expectNoSupabaseError(
+      await operatorClient.rpc('preview_growth_batch_loss', mortalityLossPayload),
+      'Expected mortality preview to succeed',
+    ))
+    assert.equal(mortalityPreview.ready, true)
+    assert.deepEqual(previewBlockerCodes(mortalityPreview), [])
+    assert.equal(mortalityPreview.loss_type, 'mortality')
+    assert.equal(mortalityPreview.reason_code, 'disease')
+    assert.equal(Number(mortalityPreview.current_quantity), 20)
+    assert.equal(Number(mortalityPreview.quantity_lost), 2)
+    assert.equal(Number(mortalityPreview.resulting_quantity), 18)
+    assert.equal(mortalityPreview.quantity_uom_id, eachUomId)
+    assert.equal(mortalityPreview.quantity_uom_code, 'EA')
+    assert.equal(Number(mortalityPreview.current_total_weight), 40)
+    assert.equal(mortalityPreview.weight_lost, null)
+    assert.equal(Number(mortalityPreview.resulting_total_weight), 40)
+    await assertLossPreviewNonMutation(lossBatch.batch_id, mortalityPreviewBefore, 'Mortality preview')
+
+    await expectPreviewBlocker({
+      ...mortalityLossPayload,
+      p_quantity_lost: null,
+      p_weight_lost: null,
+      p_notes: null,
+    }, 'loss_value_required', 'empty loss')
+    await expectPreviewBlocker({
+      ...mortalityLossPayload,
+      p_quantity_lost: 100,
+      p_notes: null,
+    }, 'loss_quantity_exceeds_current_quantity', 'excessive quantity')
+    await expectPreviewBlocker({
+      ...mortalityLossPayload,
+      p_loss_type: 'shrinkage',
+      p_quantity_lost: null,
+      p_weight_lost: 100,
+      p_reason_code: 'drying',
+      p_notes: null,
+    }, 'loss_weight_exceeds_current_weight', 'excessive weight')
+    await expectPreviewError({
+      ...mortalityLossPayload,
+      p_effective_date: addDaysIso(-1),
+      p_quantity_lost: 1,
+      p_notes: null,
+    }, 'growth_batch_event_before_start', 'before-start-date')
+    await expectPreviewError({
+      ...mortalityLossPayload,
+      p_effective_date: addDaysIso(7),
+      p_quantity_lost: 1,
+      p_notes: null,
+    }, 'growth_batch_event_future', 'future-date')
+    await expectPreviewBlocker({
+      ...mortalityLossPayload,
+      p_quantity_lost: 0.5,
+      p_notes: null,
+    }, 'fractional_count_not_allowed', 'fractional count quantity')
+    await expectPreviewError({
+      ...mortalityLossPayload,
+      p_quantity_lost: 1,
+      p_reason_code: 'drying',
+      p_notes: null,
+    }, 'loss_reason_invalid', 'invalid reason')
+    await expectPreviewError({
+      ...mortalityLossPayload,
+      p_loss_type: 'shrinkage',
+      p_quantity_lost: null,
+      p_weight_lost: 1,
+      p_reason_code: 'other',
+      p_notes: '',
+    }, 'loss_notes_required', 'other without notes')
+
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 1.5,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+        p_request_key: `${PREFIX}-fractional-mortality`,
+      }),
+      'fractional_count_not_allowed',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: addDaysIso(1),
+        p_quantity_lost: 1,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+        p_request_key: `${PREFIX}-future-mortality`,
+      }),
+      'growth_batch_event_future',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: addDaysIso(-1),
+        p_quantity_lost: 1,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+        p_request_key: `${PREFIX}-before-start-mortality`,
+      }),
+      'growth_batch_event_before_start',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 1,
+        p_weight_lost: null,
+        p_reason_code: 'drying',
+        p_notes: null,
+        p_request_key: `${PREFIX}-invalid-mortality-reason`,
+      }),
+      'loss_reason_invalid',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'shrinkage',
+        p_effective_date: todayIso(),
+        p_quantity_lost: null,
+        p_weight_lost: 1,
+        p_reason_code: 'other',
+        p_notes: '',
+        p_request_key: `${PREFIX}-other-no-notes`,
+      }),
+      'loss_notes_required',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 100,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+        p_request_key: `${PREFIX}-excessive-mortality`,
+      }),
+      'loss_quantity_exceeds_current_quantity',
+    )
+
+    const postedMortality = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      ...mortalityLossPayload,
+      p_request_key: `${PREFIX}-mortality-post`,
+    }), 'Expected mortality posting to succeed'))
+    assert.equal(postedMortality.event_type, 'mortality')
+    assert.equal(Number(postedMortality.quantity_before), Number(mortalityPreview.current_quantity))
+    assert.equal(Number(postedMortality.quantity_lost), Number(mortalityPreview.quantity_lost))
+    assert.equal(Number(postedMortality.quantity_after), 18)
+    assert.equal(Number(postedMortality.quantity_after), Number(mortalityPreview.resulting_quantity))
+    assert.equal(Number(postedMortality.weight_before), Number(mortalityPreview.current_total_weight))
+    assert.equal(postedMortality.weight_lost, mortalityPreview.weight_lost)
+    assert.equal(Number(postedMortality.weight_after), Number(mortalityPreview.resulting_total_weight))
+    const mortalityReplay = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: lossBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: '2.00',
+      p_weight_lost: null,
+      p_reason_code: 'disease',
+      p_notes: 'Controlled mortality test',
+      p_request_key: `${PREFIX}-mortality-post`,
+    }), 'Expected mortality replay to succeed'))
+    assert.equal(mortalityReplay.event_id, postedMortality.event_id)
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: lossBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 3,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: 'Controlled mortality test',
+        p_request_key: `${PREFIX}-mortality-post`,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    const shrinkageLossPayload = {
+      p_growth_batch_id: lossBatch.batch_id,
+      p_loss_type: 'shrinkage',
+      p_effective_date: todayIso(),
+      p_quantity_lost: null,
+      p_weight_lost: 5,
+      p_reason_code: 'drying',
+      p_notes: 'Controlled drying shrinkage',
+    }
+    const shrinkagePreviewBefore = await lossPreviewMutationSnapshot(lossBatch.batch_id)
+    const shrinkagePreview = unwrapRpcSingle(expectNoSupabaseError(
+      await operatorClient.rpc('preview_growth_batch_loss', shrinkageLossPayload),
+      'Expected shrinkage preview to succeed',
+    ))
+    assert.equal(shrinkagePreview.ready, true)
+    assert.deepEqual(previewBlockerCodes(shrinkagePreview), [])
+    assert.equal(shrinkagePreview.loss_type, 'shrinkage')
+    assert.equal(shrinkagePreview.reason_code, 'drying')
+    assert.equal(Number(shrinkagePreview.current_quantity), 18)
+    assert.equal(shrinkagePreview.quantity_lost, null)
+    assert.equal(Number(shrinkagePreview.resulting_quantity), 18)
+    assert.equal(Number(shrinkagePreview.current_total_weight), 40)
+    assert.equal(Number(shrinkagePreview.weight_lost), 5)
+    assert.equal(Number(shrinkagePreview.resulting_total_weight), 35)
+    assert.equal(shrinkagePreview.weight_uom_id, kgUomId)
+    assert.equal(shrinkagePreview.weight_uom_code, 'KG')
+    await assertLossPreviewNonMutation(lossBatch.batch_id, shrinkagePreviewBefore, 'Shrinkage preview')
+
+    const postedShrinkage = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      ...shrinkageLossPayload,
+      p_request_key: `${PREFIX}-shrinkage-post`,
+    }), 'Expected shrinkage posting to succeed'))
+    assert.equal(postedShrinkage.event_type, 'shrinkage')
+    assert.equal(Number(postedShrinkage.quantity_before), Number(shrinkagePreview.current_quantity))
+    assert.equal(postedShrinkage.quantity_lost, shrinkagePreview.quantity_lost)
+    assert.equal(Number(postedShrinkage.quantity_after), Number(shrinkagePreview.resulting_quantity))
+    assert.equal(Number(postedShrinkage.weight_before), Number(shrinkagePreview.current_total_weight))
+    assert.equal(Number(postedShrinkage.weight_lost), Number(shrinkagePreview.weight_lost))
+    assert.equal(Number(postedShrinkage.weight_after), 35)
+    assert.equal(Number(postedShrinkage.weight_after), Number(shrinkagePreview.resulting_total_weight))
+
+    const afterLoss = await querySingle(ownerClient, 'growth_batches', 'current_primary_qty,current_total_weight,accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,harvested_cost,remaining_cost', [
+      ['eq', 'id', lossBatch.batch_id],
+    ])
+    assert.equal(Number(afterLoss.current_primary_qty), 18)
+    assert.equal(Number(afterLoss.current_total_weight), 35)
+    assert.equal(Number(afterLoss.accumulated_material_cost), Number(costBeforeLoss.accumulated_material_cost))
+    assert.equal(Number(afterLoss.accumulated_direct_cost), Number(costBeforeLoss.accumulated_direct_cost))
+    assert.equal(Number(afterLoss.accumulated_total_cost), Number(costBeforeLoss.accumulated_total_cost))
+    assert.equal(Number(afterLoss.harvested_cost), Number(costBeforeLoss.harvested_cost))
+    assert.equal(Number(afterLoss.remaining_cost), Number(costBeforeLoss.remaining_cost))
+    assert.equal(await stockMovementCount(admin, companyId), stockBeforeLoss, 'Losses must not create stock movements')
+    assert.equal(await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]), stockLevelCountBeforeLoss, 'Losses must not create stock levels')
+    assert.deepEqual(await financeIsolationCounts(admin, companyId), financeBeforeLoss)
+    assert.deepEqual(await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]]), priceBeforeLoss)
+
+    const lossHistory = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_loss_history').select('*').eq('growth_batch_id', lossBatch.batch_id).order('event_sequence', { ascending: true }),
+      'Expected loss history to load',
+    )
+    assert.equal(lossHistory.length, 2)
+    assert.equal(lossHistory[0].loss_type, 'mortality')
+    assert.equal(lossHistory[1].loss_type, 'shrinkage')
+    const timelineLosses = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_event_timeline').select('event_type,typed_detail_summary').eq('growth_batch_id', lossBatch.batch_id).in('event_type', ['mortality', 'shrinkage']),
+      'Expected loss timeline rows to load',
+    )
+    assert.equal(timelineLosses.length, 2)
+    assert.equal(timelineLosses.every((row) => row.typed_detail_summary?.loss_type), true)
+
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_losses').update({ quantity_lost: 99 }).eq('id', lossHistory[0].id),
+      'direct growth_batch_losses update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_losses').delete().eq('id', lossHistory[0].id),
+      'direct growth_batch_losses delete',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('reverse_growth_batch_loss', {
+        p_event_id: postedMortality.event_id,
+        p_reason: 'Operator cannot reverse',
+        p_request_key: `${PREFIX}-operator-loss-reverse`,
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_loss', {
+        p_event_id: postedMortality.event_id,
+        p_reason: '',
+        p_request_key: `${PREFIX}-missing-loss-reverse-reason`,
+      }),
+      'reversal_reason_required',
+    )
+
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: lossBatch.batch_id,
+      p_category: 'labour',
+      p_description: 'Loss reversal dependency direct cost control',
+      p_amount: 1,
+      p_event_date: todayIso(),
+      p_notes: null,
+      p_request_key: `${PREFIX}-loss-direct-cost-does-not-block`,
+    }))
+    expectNoSupabaseError(await operatorClient.rpc('post_growth_batch_stock_input', {
+      p_batch_id: lossBatch.batch_id,
+      p_effective_date: todayIso(),
+      p_lines: [{
+        item_id: feedItemId,
+        uom_id: kgUomId,
+        quantity: 1,
+        source_warehouse_id: warehouseId,
+        source_bin_id: binId,
+        line_notes: null,
+      }],
+      p_notes: 'Loss reversal stock input control',
+      p_request_key: `${PREFIX}-loss-stock-input-does-not-block`,
+    }))
+
+    const originalLossBeforeReverse = await querySingle(ownerClient, 'growth_batch_losses', 'id,event_id,quantity_lost,weight_lost,quantity_before,quantity_after,total_weight_before,total_weight_after', [
+      ['eq', 'event_id', postedMortality.event_id],
+    ])
+    const reversedMortality = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('reverse_growth_batch_loss', {
+      p_event_id: postedMortality.event_id,
+      p_reason: 'Controlled mortality reversal',
+      p_request_key: `${PREFIX}-mortality-reverse`,
+    }), 'Expected mortality reversal to succeed despite later direct cost and stock input'))
+    assert.equal(reversedMortality.event_type, 'mortality_reversal')
+    assert.equal(Number(reversedMortality.quantity_after), 20)
+    const reversedMortalityReplay = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('reverse_growth_batch_loss', {
+      p_event_id: postedMortality.event_id,
+      p_reason: 'Controlled mortality reversal',
+      p_request_key: `${PREFIX}-mortality-reverse`,
+    }), 'Expected mortality reversal replay to succeed'))
+    assert.equal(reversedMortalityReplay.event_id, reversedMortality.event_id)
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_loss', {
+        p_event_id: postedMortality.event_id,
+        p_reason: 'Changed reason',
+        p_request_key: `${PREFIX}-mortality-reverse`,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_loss', {
+        p_event_id: postedMortality.event_id,
+        p_reason: 'Second reversal',
+        p_request_key: `${PREFIX}-mortality-reverse-second`,
+      }),
+      'growth_batch_loss_already_reversed',
+    )
+    assert.deepEqual(await querySingle(ownerClient, 'growth_batch_losses', 'id,event_id,quantity_lost,weight_lost,quantity_before,quantity_after,total_weight_before,total_weight_after', [
+      ['eq', 'event_id', postedMortality.event_id],
+    ]), originalLossBeforeReverse)
+    const reversalRows = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_loss_reversal_lines').select('*').eq('original_event_id', postedMortality.event_id),
+      'Expected loss reversal detail to load',
+    )
+    assert.equal(reversalRows.length, 1)
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_loss_reversal_lines').update({ restored_quantity: 99 }).eq('id', reversalRows[0].id),
+      'direct growth_batch_loss_reversal_lines update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_loss_reversal_lines').delete().eq('id', reversalRows[0].id),
+      'direct growth_batch_loss_reversal_lines delete',
+    )
+
+    const weightDependencyBatch = await createActiveGrowthBatch('Weight Dependency Loss Batch', { openingQty: 10, openingWeight: 50 })
+    const weightLoss = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: weightDependencyBatch.batch_id,
+      p_loss_type: 'shrinkage',
+      p_effective_date: todayIso(),
+      p_quantity_lost: null,
+      p_weight_lost: 4,
+      p_reason_code: 'drying',
+      p_notes: 'Dependency setup',
+      p_request_key: `${PREFIX}-weight-dependency-loss`,
+    })))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_measurement', {
+      p_company_id: companyId,
+      p_growth_batch_id: weightDependencyBatch.batch_id,
+      p_measurement_type: 'total_weight',
+      p_value: 45,
+      p_uom_id: kgUomId,
+      p_observed_at: new Date().toISOString(),
+      p_sample_size: null,
+      p_minimum: null,
+      p_maximum: null,
+      p_average: null,
+      p_description: null,
+      p_notes: null,
+      p_request_key: `${PREFIX}-weight-dependency-measurement`,
+      p_sample_size_present: false,
+      p_minimum_present: false,
+      p_maximum_present: false,
+      p_average_present: false,
+    }))
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_loss', {
+        p_event_id: weightLoss.event_id,
+        p_reason: 'Blocked by later total weight',
+        p_request_key: `${PREFIX}-weight-dependency-reverse`,
+      }),
+      'growth_batch_loss_reversal_dependency_exists',
+    )
+
+    const quantityDependencyBatch = await createActiveGrowthBatch('Quantity Dependency Loss Batch', { openingQty: 5, openingWeight: 10 })
+    const firstQuantityLoss = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: quantityDependencyBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 1,
+      p_weight_lost: null,
+      p_reason_code: 'disease',
+      p_notes: null,
+      p_request_key: `${PREFIX}-quantity-dependency-first`,
+    })))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: quantityDependencyBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 1,
+      p_weight_lost: null,
+      p_reason_code: 'injury',
+      p_notes: null,
+      p_request_key: `${PREFIX}-quantity-dependency-second`,
+    }))
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_loss', {
+        p_event_id: firstQuantityLoss.event_id,
+        p_reason: 'Blocked by later mortality',
+        p_request_key: `${PREFIX}-quantity-dependency-reverse`,
+      }),
+      'growth_batch_loss_reversal_dependency_exists',
+    )
+
+    const concurrentBatch = await createActiveGrowthBatch('Concurrent Loss Batch', { openingQty: 2, openingWeight: 10 })
+    const concurrentResults = await Promise.all([
+      operatorClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: concurrentBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 2,
+        p_weight_lost: null,
+        p_reason_code: 'disease',
+        p_notes: null,
+        p_request_key: `${PREFIX}-concurrent-loss-a`,
+      }),
+      ownerClient.rpc('record_growth_batch_loss', {
+        p_growth_batch_id: concurrentBatch.batch_id,
+        p_loss_type: 'mortality',
+        p_effective_date: todayIso(),
+        p_quantity_lost: 2,
+        p_weight_lost: null,
+        p_reason_code: 'injury',
+        p_notes: null,
+        p_request_key: `${PREFIX}-concurrent-loss-b`,
+      }),
+    ])
+    assert.equal(concurrentResults.filter((result) => !result.error).length, 1, 'Only one competing loss should succeed')
+    assert.equal(concurrentResults.filter((result) => result.error).length, 1, 'One competing loss should fail safely')
+    const concurrentState = await querySingle(ownerClient, 'growth_batches', 'current_primary_qty', [['eq', 'id', concurrentBatch.batch_id]])
+    assert.equal(Number(concurrentState.current_primary_qty) >= 0, true, 'Concurrent losses must not make quantity negative')
+
+    const duplicateBatch = await createActiveGrowthBatch('Duplicate Request Loss Batch', { openingQty: 4, openingWeight: 8 })
+    const duplicatePayload = {
+      p_growth_batch_id: duplicateBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 1,
+      p_weight_lost: null,
+      p_reason_code: 'disease',
+      p_notes: null,
+      p_request_key: `${PREFIX}-duplicate-loss-request`,
+    }
+    const duplicateResults = await Promise.all([
+      operatorClient.rpc('record_growth_batch_loss', duplicatePayload),
+      ownerClient.rpc('record_growth_batch_loss', duplicatePayload),
+    ])
+    assert.equal(duplicateResults.every((result) => !result.error), true, `Expected duplicate request replay to succeed: ${duplicateResults.map((result) => result.error?.message).filter(Boolean).join('; ')}`)
+    assert.equal(unwrapRpcSingle(duplicateResults[0].data).event_id, unwrapRpcSingle(duplicateResults[1].data).event_id)
+    assert.equal(await countRows(ownerClient, 'growth_batch_losses', [['eq', 'growth_batch_id', duplicateBatch.batch_id]]), 1)
   })
 
   await t.test('correction coverage for hashing, UOM boundaries, chronology, and concurrency', async () => {

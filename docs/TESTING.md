@@ -109,6 +109,7 @@ The suite currently protects:
 - PO receiving ledger integrity, including protection against app-side `stock_levels` double-counting
 - Growth Batches G1-G2 authority, RLS/FORCE RLS, RPC-only mutation, request-key idempotency, payload mismatch rejection, null/zero/omitted hash distinctions, numeric hash equivalence, UOM validation, chronology guards, event sequencing, direct-cost rollups, deterministic read-model ordering, and stock/finance/price isolation
 - Growth Batches G3 stock-input coverage, including preview/no-mutation behavior, base-UOM enforcement, insufficient-stock and duplicate-bucket blockers, physical issue movement references, frozen WAC material cost, rollups, replay/mismatch, MANAGER+ reversal, compensating receipt references, direct mutation rejection, and finance/price isolation
+- Growth Batches G4.1 local mortality/shrinkage coverage, including preview/no-mutation behavior, reason-code validation, count-integrality and excessive-loss blockers, current quantity/latest-weight rollups, replay/mismatch, OPERATOR+ recording, MANAGER+ event-specific reversal, dependency blocking, direct mutation rejection, concurrent loss safety, and stock/finance/cost/price isolation
 - trial and entitlement enforcement
 
 ## Test Architecture
@@ -117,6 +118,8 @@ Current implementation lives in:
 
 - `tests/finance-regression/helpers.mjs`
 - `tests/finance-regression/finance-regression.test.mjs`
+- `tests/finance-regression/growth-batches.test.mjs`
+- `tests/finance-regression/onboarding-invitations.test.mjs`
 
 The suite uses:
 
@@ -180,6 +183,8 @@ Growth Batches G3 is live and production-smoke validated as of 2026-06-22. Hoste
 G3 pre-rollout validation passed before Git finalisation: 30-migration replay passed, Growth Batches targeted regression passed `5/5`, complete finance regression passed `31/31`, independent implementation inspection passed, authenticated local visual QA passed at `1440`, `1200`, `820`, and `390` in light and dark mode, and static validation/build passed. Production smoke confirmed source stock `48 -> 47 -> 48`, material cost `0 -> 10.304233 -> 0`, memo direct cost unchanged, original issue immutability, no second reversal action after reversal, negative stock `0`, duplicate stock bucket groups `0`, no cash/bank/vendor bill/invoice/finance-event mutation, and unchanged `items.unit_price` sum/hash baseline.
 
 G3 production replay, payload-mismatch, concurrency, and failure tests must not be performed in production. They remain covered by the guarded local finance regression suite and controlled local visual QA.
+
+Growth Batches G4.1 is implemented locally and is not hosted/live. The local package adds mortality and shrinkage preview/recording/reversal coverage to `tests/finance-regression/growth-batches.test.mjs`: VIEWER/OPERATOR/MANAGER authority, cross-company rejection, direct table mutation blocking, valid mortality and shrinkage, invalid date/reason/empty/excessive loss paths, request-key replay and mismatch, current quantity/latest-weight restoration, later-loss and later-weight-measurement reversal blockers, concurrent competing loss safety, duplicate request replay, and isolation from stock movements, stock levels, Growth Batch costs, finance rows, and `items.unit_price`. Local validation passed with 32-migration replay, `check:migrations`, static checks, production build, targeted Growth Batches regression `6/6`, complete finance regression `32/32`, and authenticated `/growth-batches` visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode. The visual pass covered mortality preview/post, shrinkage preview/post, stale-preview blocking, event-specific reversal with required reason, original loss preservation, restored quantity/weight, hidden second-reversal controls, zero console errors, and no page-level horizontal overflow. Hosted production replay, mismatch, concurrency, and failure tests remain disallowed.
 
 ## Auth Production QA
 
