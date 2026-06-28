@@ -62,7 +62,7 @@ The maintained product surfaces are:
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
 - `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
-- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, `growth.batch.input.reverse`, and local G4.1 `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, and `growth.batch.shrinkage.reverse`
+- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, `growth.batch.input.reverse`, `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, and `growth.batch.shrinkage.reverse`
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
@@ -137,7 +137,7 @@ The G1-G2 boundary is intentionally narrow:
 
 - `/growth-batches` manages group-level biological or agricultural batches, not per-animal or per-plant stock.
 - supported lifecycle actions are draft creation/editing, draft cancellation, activation, measurements, and memo direct costs.
-- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is implemented locally in G4.1 but is not hosted/live; transfers, harvests/splits, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
+- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; transfers, harvests/splits, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
 - direct costs are Growth Batch memo rollups only. They do not create bank, cash, vendor bill, settlement, journal, invoice, stock movement, or `items.unit_price` changes.
 - primary quantities are base-UOM-style entries only for this phase. Count quantities must be whole numbers, weight measurements use the batch `weight_uom_id`, area observations use the batch `area_uom_id`, and generic Growth Batch UOM conversion is deferred.
 - the batch start date is the operational lifecycle boundary. Activation rejects future start dates; measurement and memo direct-cost effective dates must be on or after the start date and not in the future. Server-created timestamps remain separate from operator-entered effective dates.
@@ -173,7 +173,7 @@ Growth Batch operation types use `posting_requests` for create, activation, canc
 
 ## Growth Batches G3 Live Stock-Input Package
 
-Growth Batches G3 is live in production as of 2026-06-22. Hosted production has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`; the database-first rollout applied these migrations together:
+Growth Batches G3 is live in production as of 2026-06-22. At that rollout, hosted production reached 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`; the database-first rollout applied these migrations together:
 
 - `20260620132646_add_growth_batch_stock_inputs.sql`
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
@@ -193,13 +193,18 @@ Pre-rollout validation passed: local replay of 30 migrations, Growth Batches reg
 
 The 2026-06-22 production smoke used tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`) and new batch `LEN-GB000000002` (`QA G3 Stock Input Smoke - 2026-06-22`). It posted `1 EA` of `OV002 - Ovo` from `WH001 - Casa / CDC001 - Cozinha - Casa`, froze WAC `10.304233`, created input event `LEN-GB000000002-E000002`, issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa`, and request `e32dcf72-755d-4d1f-86c8-1e96e9fd761b`. Immediate reversal `LEN-GB000000002-E000003` created receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f` and request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`. Source stock moved `48 -> 47 -> 48`, material cost moved `0 -> 10.304233 -> 0`, memo direct cost stayed `0`, finance rows stayed unchanged, negative stock and duplicate buckets stayed zero, and `items.unit_price` stayed unchanged.
 
-G3 does not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion. Mortality and shrinkage are covered only by the local-only G4.1 package below until a future hosted rollout applies it.
+G3 does not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion. Mortality and shrinkage are live only through the G4.1 package below; later transfer, harvest, completion, valuation, and accounting scope remains separate.
 
-## Growth Batches G4.1 Local Mortality And Shrinkage Package
+## Growth Batches G4.1 Live Mortality And Shrinkage Package
 
-Growth Batches G4.1 is implemented locally but is not hosted or production-live. Local migration history now has 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`. Hosted production remains at the G3 checkpoint of 30 migrations through `20260620132656_add_growth_batch_stock_input_posting.sql` until an approved rollout applies the G4.1 migrations.
+Growth Batches G4.1 is live in production as of 2026-06-28. Local and hosted production migration history both have 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`. The database-first rollout applied these migrations together:
 
-The local G4.1 package adds:
+- `20260627225400_add_growth_batch_losses.sql`
+- `20260627225414_add_growth_batch_loss_posting.sql`
+
+The release commit is `5a24eb428499d126870883bb5841e3e451cdd178`, GitHub Validation run `28319500331` passed, and Vercel production deployment `dpl_FrC2WKJsF1DmosBSu68tahEBhmhU` served the matching frontend during rollout.
+
+The G4.1 package adds:
 
 - `mortality`, `shrinkage`, `mortality_reversal`, and `shrinkage_reversal` event types.
 - immutable `growth_batch_losses` and `growth_batch_loss_reversal_lines` tables with RLS, FORCE RLS, company-scoped SELECT, RPC-only mutation, and immutable-row triggers.
@@ -207,6 +212,12 @@ The local G4.1 package adds:
 - `preview_growth_batch_loss`, `record_growth_batch_loss`, and `reverse_growth_batch_loss` RPCs.
 - request-key idempotency for `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, and `growth.batch.shrinkage.reverse`.
 - OPERATOR+ preview/record authority and MANAGER+ reversal authority.
+
+The 2026-06-28 production smoke used tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`) and new batch `LEN-GB000000003` (`452ba7d8-87c2-46dd-b60a-fa95e0ac12b4`, `QA G4.1 Loss Smoke - 2026-06-28`) with `20 EA` opening/current quantity and `40 KG` opening/latest total weight. Batch creation request `ac481ab0-318e-491e-ba0c-065e2b216924` and activation request `e0f85361-d4f0-427b-bc6f-63f8f3ae071b` succeeded; activation event `LEN-GB000000003-E000001` (`19a6a67c-db38-457e-b287-af16fa8f5f18`) used sequence `1`.
+
+The smoke previewed and posted mortality `2 EA` for reason `disease`, creating event `LEN-GB000000003-E000002` (`32fa183e-6353-487d-9909-753a1b128553`), detail `27dd3a4b-728d-44fa-9612-842dce37dc10`, and succeeded request `a056575d-2c0e-4627-8a87-0ac9556f25e4`. Reversal with reason `Controlled G4.1 mortality smoke reversal` created event `LEN-GB000000003-E000003` (`8717f3b9-d5cd-46aa-bbe7-a9048e592375`), reversal detail `76227fa1-c56b-4c2a-9561-2a15384abbba`, and succeeded request `d7eff67d-3c22-4524-916b-c8d1fffa4b25`, restoring quantity `18 -> 20 EA`.
+
+The smoke then previewed and posted shrinkage `5 KG` for reason `drying`, creating event `LEN-GB000000003-E000004` (`fd05b909-b92b-45a3-843d-0d06d59f20ea`), detail `ae735f1e-b526-4c0e-b5a2-79c7254d896b`, and succeeded request `c4022789-545c-4816-9c75-56638cb4aa16`. Reversal with reason `Controlled G4.1 shrinkage smoke reversal` created event `LEN-GB000000003-E000005` (`7459f1d6-b911-4727-beac-3d9a4ce9124d`), reversal detail `f4b234c1-a8d9-4cfa-a0c5-7a6d601ac24f`, and succeeded request `cf4d8473-5784-46ae-a98a-90e07fc2b433`, restoring weight `35 -> 40 KG`. The UI showed both loss cards as reversed with no second reversal control.
 
 G4.1 loss events reduce only the active batch current quantity and/or latest total weight. They create no stock movements, do not update `stock_levels`, do not change material cost, memo direct cost, harvested cost, remaining cost, or `items.unit_price`, and create no cash, bank, vendor bill, invoice, settlement, journal, or finance-event rows. Accumulated cost remains with the batch; mortality valuation, write-off, FIFO, COGS, fair value, harvest, transfer, completion, child batches, dashboards, and accounting integration remain future G4.2-G5 scope.
 

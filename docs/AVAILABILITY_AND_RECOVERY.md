@@ -1,6 +1,6 @@
 # StockWise Availability and Recovery Runbook
 
-Status: 2026-06-27.
+Status: 2026-06-28.
 
 This runbook defines the current recovery posture for early commercial rollout. It is not a guarantee of service level and does not prove that a restore drill has been completed. Use it to drive incident response, monthly recovery tests, and future hardening work.
 
@@ -11,14 +11,14 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted migration history is currently aligned through `20260620132656`. Local migration history has advanced to 32 active migrations with the G4.1 mortality/shrinkage package; those two migrations are not hosted/live until a future controlled rollout.
+- Hosted and local migration history are currently aligned through `20260627225414` with 32 active migrations after the controlled Growth Batches G4.1 rollout.
 
 ## Backup Assumptions
 
 These assumptions must be verified in the Supabase dashboard before treating them as an SLA:
 
 - Supabase database backups and point-in-time recovery depend on the active Supabase project plan and configured retention.
-- The current documented production backup posture remains scheduled daily physical database backups available and PITR not enabled. No new restore drill was performed during the 2026-06-22 Growth Batches G3 rollout.
+- The current documented production backup posture remains scheduled daily physical database backups available and PITR not enabled. No new restore drill was performed during the 2026-06-28 Growth Batches G4.1 rollout.
 - No formal restore drill has yet been completed.
 - Supabase Auth user recovery is tied to the same project recovery posture and Auth logs/configuration.
 - Supabase Storage recovery depends on project backup support and any separate object backup/export process the operator maintains.

@@ -66,19 +66,34 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
-2026-06-27 Growth Batches G4.1 local implementation note:
+2026-06-28 Growth Batches G4.1 production rollout:
 
-- G4.1 is implemented in the repository only and is not hosted/live.
-- local migration history now has 32 active migrations, with `20260627225400_add_growth_batch_losses.sql` and `20260627225414_add_growth_batch_loss_posting.sql` after the live G3 migrations.
-- hosted production remains at the G3 checkpoint of 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`.
-- G4.1 adds mortality/shrinkage preview, OPERATOR+ recording, MANAGER+ event-specific reversal, immutable loss/reversal details, RLS/FORCE RLS, read models, request-key idempotency, responsive `/growth-batches` UI, and local regression coverage.
-- G4.1 does not create stock movements, update `stock_levels`, change Growth Batch material/direct/harvested/remaining costs, create finance rows, or change `items.unit_price`.
-- Local validation for this package passed: 32-migration replay, `npm run check:migrations`, `npm run lint:js`, `npm run check:css-vars`, `npm run check:css-classes`, `npm run build`, targeted Growth Batches regression `6/6`, complete finance regression `32/32`, and authenticated `/growth-batches` QA at `1440`, `1200`, `820`, and `390` in light and dark mode.
-- Do not describe G4.1 as production-live until a future authorised hosted rollout applies the two local migrations and completes controlled production verification.
+- hosted and local Supabase are aligned through migration `20260627225414_add_growth_batch_loss_posting.sql` with 32 active migrations
+- production frontend is aligned at Git commit `5a24eb428499d126870883bb5841e3e451cdd178`
+- Vercel production deployment `dpl_FrC2WKJsF1DmosBSu68tahEBhmhU` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- GitHub Actions `Validation` run `28319500331` passed before rollout
+- the database-first rollout ran from `2026-06-28T13:11:36.5943818+02:00` to `2026-06-28T13:11:52.8158591+02:00`; pre-rollout hosted history had 30 migrations through `20260620132656`, and post-rollout history had 32 migrations
+- `npx supabase db push --linked` exited `0` and applied exactly `20260627225400_add_growth_batch_losses.sql` then `20260627225414_add_growth_batch_loss_posting.sql`; the second dry run reported that the remote database was up to date
+- live G4.1 tables are `growth_batch_losses` and `growth_batch_loss_reversal_lines`; the live G4.1 read model is `growth_batch_loss_history`
+- live G4.1 RPCs are `preview_growth_batch_loss`, `record_growth_batch_loss`, and `reverse_growth_batch_loss`
+- RLS and FORCE RLS were verified on both new tables; authenticated company-scoped SELECT exists, authenticated direct INSERT/UPDATE/DELETE is blocked, mutation remains RPC-only, `anon`/`PUBLIC` cannot execute mutation RPCs, functions are `SECURITY DEFINER` with restricted `search_path`, OPERATOR+ is required for preview/recording, and MANAGER+ is required for reversal
+- migration-only invariant checks stayed unchanged before smoke: `growth_batches=2`, `growth_batch_events=6`, `growth_batch_measurements=1`, `growth_batch_direct_costs=1`, `growth_batch_stock_inputs=1`, `growth_batch_stock_input_reversal_lines=1`, `posting_requests=17`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, `sales_credit_notes=1`, `sales_debit_notes=0`, `finance_document_events=45`, negative stock `0`, duplicate stock bucket groups `0`, no G4.1 posting requests, and `items.unit_price` sum `189778`
+- the controlled production smoke used the maintained `/growth-batches` UI, tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`), batch `LEN-GB000000003` (`452ba7d8-87c2-46dd-b60a-fa95e0ac12b4`), family `Poultry`, location `Casa / QA-A2`, quantity UOM `EA - Each`, and weight UOM `KG - Kilogram`
+- batch creation request `ac481ab0-318e-491e-ba0c-065e2b216924` and activation request `e0f85361-d4f0-427b-bc6f-63f8f3ae071b` succeeded; activation event `LEN-GB000000003-E000001` (`19a6a67c-db38-457e-b287-af16fa8f5f18`) used sequence `1`
+- mortality preview showed quantity `20 -> 18 EA` and weight `40 -> 40 KG` without creating any event, detail, request, stock, finance, cost, or price mutation
+- mortality event `LEN-GB000000003-E000002` (`32fa183e-6353-487d-9909-753a1b128553`) used sequence `2`, immutable detail `27dd3a4b-728d-44fa-9612-842dce37dc10`, reason `disease`, quantity `20 -> 18 EA`, weight `40 -> 40 KG`, and succeeded request `a056575d-2c0e-4627-8a87-0ac9556f25e4`
+- mortality reversal event `LEN-GB000000003-E000003` (`8717f3b9-d5cd-46aa-bbe7-a9048e592375`) used sequence `3`, reversal detail `76227fa1-c56b-4c2a-9561-2a15384abbba`, reason `Controlled G4.1 mortality smoke reversal`, restored quantity `18 -> 20 EA`, and succeeded request `d7eff67d-3c22-4524-916b-c8d1fffa4b25`
+- shrinkage preview showed quantity `20 -> 20 EA` and weight `40 -> 35 KG` without creating any event, detail, request, stock, finance, cost, or price mutation
+- shrinkage event `LEN-GB000000003-E000004` (`fd05b909-b92b-45a3-843d-0d06d59f20ea`) used sequence `4`, immutable detail `ae735f1e-b526-4c0e-b5a2-79c7254d896b`, reason `drying`, quantity `20 -> 20 EA`, weight `40 -> 35 KG`, and succeeded request `c4022789-545c-4816-9c75-56638cb4aa16`
+- shrinkage reversal event `LEN-GB000000003-E000005` (`7459f1d6-b911-4727-beac-3d9a4ce9124d`) used sequence `5`, reversal detail `f4b234c1-a8d9-4cfa-a0c5-7a6d601ac24f`, reason `Controlled G4.1 shrinkage smoke reversal`, restored weight `35 -> 40 KG`, and succeeded request `cf4d8473-5784-46ae-a98a-90e07fc2b433`
+- final counts were `growth_batches=3`, `growth_batch_events=11`, `growth_batch_losses=2`, `growth_batch_loss_reversal_lines=2`, `posting_requests=23`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, `sales_credit_notes=1`, `sales_debit_notes=0`, and `finance_document_events=45`
+- final batch state restored to `20 EA` and `40 KG`; material cost, memo direct cost, total cost, harvested cost, and remaining cost stayed `MZN 0.00`; negative stock and duplicate stock bucket checks remained `0`; `items.unit_price` sum stayed `189778` and the stable rollout hash baseline remained unchanged
+- Supabase API/Postgres log inspection through available MCP tooling was permission-blocked for this session; maintained UI calls succeeded and read-only database evidence showed no smoke failure
+- G4.2-G5 capabilities remain out of scope: transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
 
 2026-06-22 Growth Batches G3 production rollout:
 
-- hosted Supabase is aligned through migration `20260620132656_add_growth_batch_stock_input_posting.sql` with 30 active migrations
+- at the G3 rollout, hosted Supabase aligned through migration `20260620132656_add_growth_batch_stock_input_posting.sql` with 30 active migrations
 - production frontend is aligned at Git commit `58e8a083c29d70d3b72aa755a80336393bcbb268`
 - Vercel production deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
 - GitHub Actions `Validation` run `27930016751` passed before rollout
@@ -99,7 +114,7 @@ For production-impacting releases, also review:
 - final counts were `growth_batches=2`, `growth_batch_events=6`, `growth_batch_measurements=1`, `growth_batch_direct_costs=1`, `growth_batch_stock_inputs=1`, `growth_batch_stock_input_reversal_lines=1`, `posting_requests=17`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, and `finance_document_events=45`
 - negative stock and duplicate stock bucket checks remained `0`; cash, bank, vendor bill, invoice, settlement, and finance-event rows were unchanged by G3; `items.unit_price` sum stayed `189778` and the preflight hash baseline was unchanged
 - Supabase API logs showed 200 responses for the maintained G3 preview/post/reversal/read-model path. Postgres logs showed no rollout/smoke failure; two inspection-only errors were caused by read-only verification attempts and did not affect the maintained UI path.
-- G4/G5 capabilities remain out of scope for G3: mortality/shrinkage are implemented only in the local G4.1 package above and are not hosted/live; transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
+- G4.2-G5 capabilities remain out of scope for G4.1: transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
 
 2026-06-20 Growth Batches G1-G2 rollout:
 
@@ -144,7 +159,7 @@ For production-impacting releases, also review:
 - G3 remains base-UOM-only for consumed item lines and does not add generic UOM conversion
 - G3 stock inputs create physical stock issue movements and material-cost rollups, but do not create cash, bank, vendor bill, settlement, invoice, supplier liability, finance journal/event, automatic COGS, or `items.unit_price` changes
 - authenticated local visual QA used isolated local company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, batch reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`; it verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, OPERATOR+ posting, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, original issue preservation, material-cost restoration from `MZN 12.50` to `MZN 0.00`, and stock restoration to `100 EA at MZN 2.50 WAC`
-- G4/G5 capabilities remain out of scope for G3: mortality/shrinkage are implemented only in the local G4.1 package above and are not hosted/live; transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
+- G4.2-G5 capabilities remain out of scope for G4.1: transfers, harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain future scope
 
 2026-06-18 Production Runs rollout:
 

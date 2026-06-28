@@ -20,16 +20,16 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`. The current local repository has 32 active migrations after the G4.1 local implementation, with `20260627225400_add_growth_batch_losses.sql` and `20260627225414_add_growth_batch_loss_posting.sql` pending for a future controlled hosted rollout. Growth Batches G3 is live; G4.1 mortality/shrinkage is local-only until that rollout.
+Current release state: hosted production and the local repository both have 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`. Growth Batches G4.1 mortality/shrinkage preview, recording, and event-specific reversal are live after the 2026-06-28 controlled hosted rollout.
 
-The latest Growth Batches G3 rollout applied:
+The latest Growth Batches G4.1 rollout applied:
 
-- `20260620132646_add_growth_batch_stock_inputs.sql`
-- `20260620132656_add_growth_batch_stock_input_posting.sql`
+- `20260627225400_add_growth_batch_losses.sql`
+- `20260627225414_add_growth_batch_loss_posting.sql`
 
-G3 validation passed before rollout: local replay reports 30 active migrations, Growth Batches regression `5/5`, complete finance regression `31/31`, independent inspection, authenticated local visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, build, and GitHub Validation run `27930016751`. The hosted rollout ran in the authorised 2026-06-22 session with `npx supabase db push --linked` exit `0`; production smoke passed through the maintained UI.
+G4.1 validation passed before rollout: local replay reports 32 active migrations, Growth Batches regression `6/6`, complete finance regression `32/32`, independent inspection, authenticated visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, build, and GitHub Validation run `28319500331`. The hosted rollout ran in the authorised 2026-06-28 session with `npx supabase db push --linked` exit `0`; production mortality/shrinkage smoke passed through the maintained UI.
 
-The local G4.1 package adds OPERATOR+ mortality/shrinkage preview and recording, MANAGER+ event-specific loss reversal, immutable loss/reversal detail tables, loss read models, request-key idempotency, and `/growth-batches` UI coverage. It intentionally excludes transfers, harvest/split outputs, completion, stock output receipts, FIFO, COGS, fair value, automatic finance posting, dashboards, and per-animal/per-plant records. Local implementation validation passed with 32-migration replay, targeted Growth Batches regression `6/6`, complete finance regression `32/32`, static checks, build, and authenticated visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode. G4.1 must still be reviewed before any hosted `db push`.
+G4.1 adds OPERATOR+ mortality/shrinkage preview and recording, MANAGER+ event-specific loss reversal, immutable loss/reversal detail tables, loss read models, request-key idempotency, and `/growth-batches` UI coverage. It intentionally excludes transfers, harvest/split outputs, completion, stock output receipts, FIFO, COGS, fair value, automatic finance posting, dashboards, and per-animal/per-plant records. Production smoke used `Leny Doçuras` batch `LEN-GB000000003`, restored quantity `20 -> 18 -> 20 EA`, restored weight `40 -> 35 -> 40 KG`, kept stock movement and finance counts unchanged, kept Growth Batch costs at zero, kept negative stock and duplicate buckets at zero, and did not change `items.unit_price`.
 
 Before changing the database:
 

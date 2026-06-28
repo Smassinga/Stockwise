@@ -191,17 +191,17 @@ Do not add a broad UI library for Production Runs. Keep the route on existing Ta
 
 ## Growth Batches Workspace Direction
 
-Growth Batches G3 is live and production-smoke validated at `/growth-batches`. The local G4.1 package extends the same workspace with mortality/shrinkage preview, recording, loss history, and MANAGER+ event-specific loss reversal, but it is not hosted/live until a future rollout applies the G4.1 migrations. The workspace uses the same premium register/detail approach:
+Growth Batches G3 and G4.1 are live and production-smoke validated at `/growth-batches`. G4.1 extends the same workspace with mortality/shrinkage preview, recording, loss history, and MANAGER+ event-specific loss reversal. The workspace uses the same premium register/detail approach:
 
 - `PremiumRegisterHeader`, metric cards, search/filter controls, desktop `PremiumDataTable`, and Android `PremiumMobileCardList`
-- detail tabs for overview, stock inputs, local G4.1 losses, measurements, memo direct costs, timeline, and audit
-- draft actions only while status is `draft`; measurement, memo direct-cost, G3 stock-input, and local G4.1 loss actions only while status is `active`
+- detail tabs for overview, stock inputs, G4.1 losses, measurements, memo direct costs, timeline, and audit
+- draft actions only while status is `draft`; measurement, memo direct-cost, G3 stock-input, and G4.1 loss actions only while status is `active`
 - G3 stock-input dialogs use explicit Preview and Post actions, mark previews stale after edits, keep duplicate/source blockers visible, and display item quantity/UOM, availability, WAC estimate, material cost, and movement references
 - stock-input reversal is event-specific, MANAGER+ only, requires date/reason/exact event confirmation, and must not be labelled as whole-batch reversal
-- local G4.1 loss reversal is event-specific, MANAGER+ only, requires a reason, restores the original frozen quantity/weight, and must not be labelled as whole-batch reversal
+- G4.1 loss reversal is event-specific, MANAGER+ only, requires a reason, restores the original frozen quantity/weight, and must not be labelled as whole-batch reversal
 - no enabled controls for transfers, harvests, completion, whole-batch reversal, fair value, FIFO, COGS, or finance posting
 
-Production UI smoke validated the G1-G2 register, detail overview, measurement history, direct-cost history, timeline, and audit surfaces with retained batch `LEN-GB000000001`. G3 production smoke then validated batch `LEN-GB000000002`: preview, single post, stock-input history, MANAGER+ event-specific reversal, restored material cost, restored source stock, no second reversal action, no finance mutation, and no selling-price mutation. Local G4.1 QA validated loss preview/post/reversal, stale-preview blocking, required reversal reason, restored quantity/weight, no second reversal action, and zero page-level overflow in light and dark mode before rollout review. Weight values displayed their UOM, memo/material costs displayed MZN, Android cards passed at `390`, and contained table scrolling at `1200` and `820` stayed inside the table surface without page/body overflow.
+Production UI smoke validated the G1-G2 register, detail overview, measurement history, direct-cost history, timeline, and audit surfaces with retained batch `LEN-GB000000001`. G3 production smoke then validated batch `LEN-GB000000002`: preview, single post, stock-input history, MANAGER+ event-specific reversal, restored material cost, restored source stock, no second reversal action, no finance mutation, and no selling-price mutation. G4.1 production smoke validated batch `LEN-GB000000003`: mortality and shrinkage preview/post/reversal, required reversal reason, restored quantity `20 -> 18 -> 20 EA`, restored weight `40 -> 35 -> 40 KG`, no second reversal action, no stock/finance/cost/price mutation, and zero negative stock or duplicate buckets. Weight values displayed their UOM, memo/material costs displayed MZN, Android cards passed at `390`, and contained table scrolling at `1200` and `820` stayed inside the table surface without page/body overflow.
 
 The visual reference standard is existing StockWise premium components. MVPBlocks or other galleries may be used only as inspiration; no MVPBlocks dependency or copied block is part of this package.
 

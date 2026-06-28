@@ -27,9 +27,8 @@ What did not change:
 
 ## Explicit Future Scope
 
-Production Runs and Growth Batches G3 stock-input posting are live foundations. Growth Batches G4.1 mortality/shrinkage is implemented locally, but is not hosted/live until a future controlled rollout applies the two local migrations and completes production verification. Remaining future Production & Costing work includes:
+Production Runs, Growth Batches G3 stock-input posting, and Growth Batches G4.1 mortality/shrinkage are live foundations. Remaining future Production & Costing work includes:
 
-- hosted rollout of the local G4.1 mortality/shrinkage package
 - batch transfers
 - harvest and split or partial harvest
 - Growth Batch completion and whole-batch reversal
@@ -249,7 +248,7 @@ Production smoke result:
 
 ## Growth Batches G1-G2 Live Package
 
-Growth Batches G1-G2 is live and production-smoke validated as of 20 June 2026. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted Supabase has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`.
+Growth Batches G1-G2 is live and production-smoke validated as of 20 June 2026. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; later G3 rollout evidence below records the 30-migration checkpoint through `20260620132656_add_growth_batch_stock_input_posting.sql`.
 
 Live migrations:
 
@@ -299,7 +298,7 @@ The BOM workflow-card spacing correction in this package is UI-only and does not
 
 ## Growth Batches G3 Live Stock-Input Package
 
-Growth Batches G3 is live and production-smoke validated as of 2026-06-22. Hosted production has 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`, and the production frontend is deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i` at commit `58e8a083c29d70d3b72aa755a80336393bcbb268`. The rollout applied:
+Growth Batches G3 is live and production-smoke validated as of 2026-06-22. At that rollout, hosted production reached 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`, and the production frontend was deployment `dpl_CPHfKuoWcZ1eEMLrFXjv3cSFCu3i` at commit `58e8a083c29d70d3b72aa755a80336393bcbb268`. The rollout applied:
 
 - `20260620132646_add_growth_batch_stock_inputs.sql`
 - `20260620132656_add_growth_batch_stock_input_posting.sql`
@@ -347,9 +346,9 @@ Validation and production smoke:
 - reversal used mandatory reason `Controlled G3 production smoke reversal`, created event `LEN-GB000000002-E000003`, detail `03b1dd13-cf49-4aa5-abab-6de06aa765a6`, receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f`, and succeeded request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`
 - source stock moved `48 -> 47 -> 48`, material cost moved `MZN 0.00 -> MZN 10.304233 -> MZN 0.00`, memo direct cost stayed `MZN 0.00`, negative stock and duplicate bucket checks stayed zero, finance rows stayed unchanged, and `items.unit_price` sum/hash stayed unchanged
 
-## Growth Batches G4.1 Local Loss Package
+## Growth Batches G4.1 Live Loss Package
 
-Growth Batches G4.1 is implemented locally and is not hosted/live. Local migration history has 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`; hosted production remains at the G3 checkpoint of 30 active migrations through `20260620132656_add_growth_batch_stock_input_posting.sql`.
+Growth Batches G4.1 is live in production as of 2026-06-28. Local and hosted production migration history both have 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`. The database-first rollout applied `20260627225400_add_growth_batch_losses.sql` and `20260627225414_add_growth_batch_loss_posting.sql`, release commit `5a24eb428499d126870883bb5841e3e451cdd178`, Vercel deployment `dpl_FrC2WKJsF1DmosBSu68tahEBhmhU`, and GitHub Validation run `28319500331`.
 
 G4.1 adds mortality and shrinkage as operational loss events for active Growth Batches:
 
@@ -365,6 +364,10 @@ Costing boundary:
 - accumulated material and memo direct costs remain with the batch.
 - no mortality valuation, cost write-off, COGS, fair-value treatment, finance journal, vendor bill, settlement, invoice, stock movement, `stock_levels` update, or `items.unit_price` change is introduced.
 - reversal restores the original frozen quantity and/or weight by compensating event; original loss rows remain immutable.
+
+Controlled production smoke used tenant `Leny Doçuras` and batch `LEN-GB000000003` (`452ba7d8-87c2-46dd-b60a-fa95e0ac12b4`) with `20 EA` and `40 KG`. Batch creation request `ac481ab0-318e-491e-ba0c-065e2b216924`, activation request `e0f85361-d4f0-427b-bc6f-63f8f3ae071b`, and activation event `LEN-GB000000003-E000001` succeeded. Mortality `2 EA` created event `LEN-GB000000003-E000002`, detail `27dd3a4b-728d-44fa-9612-842dce37dc10`, and request `a056575d-2c0e-4627-8a87-0ac9556f25e4`; mortality reversal created event `LEN-GB000000003-E000003`, reversal detail `76227fa1-c56b-4c2a-9561-2a15384abbba`, and request `d7eff67d-3c22-4524-916b-c8d1fffa4b25`, restoring quantity `18 -> 20 EA`.
+
+Shrinkage `5 KG` created event `LEN-GB000000003-E000004`, detail `ae735f1e-b526-4c0e-b5a2-79c7254d896b`, and request `c4022789-545c-4816-9c75-56638cb4aa16`; shrinkage reversal created event `LEN-GB000000003-E000005`, reversal detail `f4b234c1-a8d9-4cfa-a0c5-7a6d601ac24f`, and request `cf4d8473-5784-46ae-a98a-90e07fc2b433`, restoring weight `35 -> 40 KG`. Final batch cost rollups stayed `MZN 0.00`, stock movements and stock levels were unchanged, finance rows were unchanged, negative stock and duplicate bucket checks stayed `0`, and `items.unit_price` stayed unchanged.
 
 Still future:
 
