@@ -19,9 +19,9 @@ Design attributes:
 
 - The first viewport must show the StockWise brand, clear headline, CTA, login path, WiseCore proof, and product signal.
 - A hint of the next section should be visible on normal desktop viewports.
-- Sections should vary rhythm: image-backed hero, operation-fit register, trust strip, problem block, capabilities register, dark product showcase, process, use cases, compliance, pricing, FAQ, team proof, final CTA.
+- Sections should vary rhythm: image-backed hero, operation-fit bento, trust strip, problem block, capabilities bento, dark tabbed product showcase, process, use cases, compliance, pricing, FAQ accordion, team proof, final CTA.
 - Cards are used for repeated capabilities, pricing, FAQ, and product notes. Avoid nested cards and decorative section wrappers.
-- Product visuals must be realistic and must not fabricate impossible product features.
+- Product visuals must be realistic and must not fabricate impossible product features. The product showcase may use tabbed, illustrative operating surfaces for current areas only: dashboard review, stock and Point of Sale operations, documents, production, Growth Batches, and mobile responsiveness.
 - The hero uses `/landing/stockwise-records-desk.png` as a full-bleed business-records background, with the StockWise message over the image instead of a split text/mockup layout.
 - Keep only one dashboard-style product preview on the page. It belongs in the dark product showcase. If another section needs a visual, use a distinct problem-to-solution or operating-control treatment instead of repeating the same preview.
 - The retained product preview must support public light mode and dark mode.
@@ -44,9 +44,12 @@ Design attributes:
 - Product menu hover is acceptable on desktop only if mobile has a direct expanded alternative.
 - Pricing cards should have visibly stronger hover and focus-within states than normal cards, while keeping recommended-plan styling distinct from temporary inspection state.
 - Pricing-period controls must be keyboard accessible, visible in light and dark mode, and default to monthly.
-- Motion must respect reduced motion and stay subtle: section reveal, upward fade-in, card stagger, hover lift, and fast transitions are acceptable.
+- Motion must respect reduced motion and stay subtle: React/Framer section reveal, upward fade-in, card stagger, hover lift, pointer glow on fine pointers, product-tab panel transitions, slow hero-card drift, restrained atmospheric movement, and fast transitions are acceptable.
+- The capability rail is a product-capability rail, not customer proof. It may move with CSS transform, pause on hover/focus, and become static under reduced motion.
+- Bento pointer glow must use scoped landing CSS variables, not React state per pointer frame.
+- FAQ questions should use an accordion with adequate top padding, visible focus states, and no card text crowding on mobile or desktop.
 - Do not add heavy 3D, physics effects, shader backgrounds, or extra animation dependencies.
-- Do not use constant distracting object motion. The page should feel fluid while users scroll, not like an animation demo.
+- Do not use autoplaying product tabs, animated pricing numbers, fake business counters, customer/logo marquees, or constant distracting object motion. The page should feel fluid while users scroll, not like an animation demo.
 
 ## Growth And Costing Claims
 
@@ -77,6 +80,8 @@ The logo container should be compact, balanced, and high-contrast. Do not place 
 Public light mode is the primary design target. Dark mode must remain readable and deliberate when the user toggles the public theme.
 
 The public language toggle must keep English and Portuguese copy professional and UTF-8 clean.
+
+Mobile animation should be simplified: no strong atmospheric movement, no floating hero cards, no required hover state, and no content hidden when reduced motion is enabled.
 
 ## Dependency Position
 

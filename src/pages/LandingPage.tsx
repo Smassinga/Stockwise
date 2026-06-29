@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, MotionConfig } from 'framer-motion'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react/dist/lib/types'
@@ -6,9 +6,7 @@ import { BankIcon } from '@phosphor-icons/react/dist/csr/Bank'
 import { BarcodeIcon } from '@phosphor-icons/react/dist/csr/Barcode'
 import { BuildingsIcon } from '@phosphor-icons/react/dist/csr/Buildings'
 import { CashRegisterIcon } from '@phosphor-icons/react/dist/csr/CashRegister'
-import { ChartBarIcon } from '@phosphor-icons/react/dist/csr/ChartBar'
 import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
-import { CoinsIcon } from '@phosphor-icons/react/dist/csr/Coins'
 import { DeviceMobileIcon } from '@phosphor-icons/react/dist/csr/DeviceMobile'
 import { FactoryIcon } from '@phosphor-icons/react/dist/csr/Factory'
 import { FileArrowUpIcon } from '@phosphor-icons/react/dist/csr/FileArrowUp'
@@ -33,6 +31,8 @@ import {
   X,
 } from 'lucide-react'
 import BrandLockup from '../components/brand/BrandLockup'
+import { LandingFaq } from '../components/landing/LandingFaq'
+import { LandingProductTabs, type LandingProductSurface, type LandingProductTab } from '../components/landing/LandingProductTabs'
 import LocaleToggle from '../components/LocaleToggle'
 import ThemeToggle from '../components/ThemeToggle'
 import { IconBadge } from '../components/premium/IconBadge'
@@ -80,9 +80,12 @@ type LandingCopy = {
   productMenu: Array<{ title: string; body: string; href: string; icon: IconName }>
   heroTitle: string
   heroBody: string
+  heroSignals: Array<{ title: string; body: string; icon: IconName; tone: 'blue' | 'green' | 'amber' }>
   primaryCta: string
   secondaryCta: string
   activationNote: string
+  capabilityRailTitle: string
+  capabilityRailItems: string[]
   operationTitle: string
   operationBody: string
   operationFits: Array<{ title: string; body: string; icon: IconName }>
@@ -111,7 +114,7 @@ type LandingCopy = {
   pricingFootnote: string
   faqTitle: string
   faqBody: string
-  faqs: Array<{ question: string; answer: string }>
+  faqs: Array<{ id: string; question: string; answer: string }>
   teamTitle: string
   teamBody: string
   teamMembers: Array<{ name: string; role: string; body: string }>
@@ -206,7 +209,7 @@ const portuguesePlanUserLabels: Record<string, string> = {
   starter: 'Até 2 utilizadores',
   growth: 'Até 5 utilizadores',
   business: 'Até 10 utilizadores',
-  managed_business_plus: 'Âmbito de utilizadores por proposta',
+  managed_business_plus: 'Utilizadores por proposta',
 }
 
 const copyByLang: Record<Lang, LandingCopy> = {
@@ -248,10 +251,41 @@ const copyByLang: Record<Lang, LandingCopy> = {
     heroTitle: 'StockWise',
     heroBody:
       'Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.',
+    heroSignals: [
+      {
+        title: 'POS sale recorded',
+        body: 'Counter sale stays linked to stock.',
+        icon: 'checkout',
+        tone: 'green',
+      },
+      {
+        title: 'Production run posted',
+        body: 'Materials and output stay traceable.',
+        icon: 'production',
+        tone: 'blue',
+      },
+      {
+        title: 'Mortality reversal reviewed',
+        body: 'Growth Batch loss evidence remains clear.',
+        icon: 'growth',
+        tone: 'amber',
+      },
+    ],
     primaryCta: 'Start 7-day trial',
     secondaryCta: 'View pricing',
     activationNote:
       'Every new company starts with a 7-day trial. Paid activation is handled manually by the StockWise team.',
+    capabilityRailTitle: 'Connected tools for daily operations',
+    capabilityRailItems: [
+      'Stock control',
+      'Point of Sale',
+      'Purchases',
+      'Sales documents',
+      'Production Runs',
+      'Growth Batches',
+      'Settlements',
+      'Android access',
+    ],
     operationTitle: 'Built around how the business actually works.',
     operationBody:
       'StockWise is organised around operating flows first, then modules. That makes the product easier to understand for owners, managers, and teams moving away from spreadsheets.',
@@ -370,7 +404,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
       },
       {
         title: 'Reports and dashboards',
-        body: 'See operational revenue, COGS, gross margin, inventory value, and activity from the dashboard.',
+        body: 'See operational revenue, cost signals, inventory value, and activity from the dashboard.',
         icon: 'reports',
       },
       {
@@ -462,46 +496,55 @@ const copyByLang: Record<Lang, LandingCopy> = {
     faqBody: 'Straight answers about trial access, records, mobile use, and rollout.',
     faqs: [
       {
+        id: 'trial-automatic',
         question: 'Is the trial automatic?',
         answer:
           'A new company can start with a 7-day trial. Paid access is activated manually by the StockWise team after the trial or commercial review.',
       },
       {
+        id: 'after-trial',
         question: 'What happens after the trial?',
         answer:
           'StockWise can review the right plan with you and activate paid access once the commercial arrangement is confirmed.',
       },
       {
+        id: 'import-opening-stock',
         question: 'Can I import items and opening stock?',
         answer:
           'Yes. StockWise includes opening-data import workflows so a company can move from spreadsheets into a structured item and stock baseline.',
       },
       {
+        id: 'growth-batches',
         question: 'Can I track active Growth Batches?',
         answer:
           'Yes. StockWise supports active batch records, measurements, direct costs, stock inputs, and event-specific reversals.',
       },
       {
+        id: 'mobile',
         question: 'Does it work on mobile?',
         answer:
           'Yes. Core public and authenticated surfaces are responsive, and operational screens are being polished around mobile workflows.',
       },
       {
+        id: 'accountant',
         question: 'Does StockWise replace my accountant?',
         answer:
           'No. StockWise helps prepare cleaner records, but official submissions and fiscal decisions should be validated by your accountant or fiscal advisor.',
       },
       {
+        id: 'mozambique-records',
         question: 'Does it support Mozambique records?',
         answer:
           'StockWise supports Mozambique-relevant records such as NUIT, IVA/VAT context, MZN values, invoices, notes, settlements, and exportable fiscal document data.',
       },
       {
+        id: 'invite-users',
         question: 'Can I invite users?',
         answer:
           'Yes. Company workspaces support user invitations and roles so each person has access appropriate to their work.',
       },
       {
+        id: 'point-of-sale',
         question: 'Does StockWise include a Point of Sale workspace?',
         answer:
           'Yes. StockWise includes a Point of Sale workspace designed for fast counter sales. Each completed sale remains connected to the related stock movement and business records.',
@@ -678,10 +721,41 @@ const copyByLang: Record<Lang, LandingCopy> = {
     heroTitle: 'StockWise',
     heroBody:
       'Controle stock, compras, vendas, pagamentos, produção e lotes em crescimento num workspace sério, criado para operações reais em Moçambique.',
+    heroSignals: [
+      {
+        title: 'Venda no Ponto de Venda registada',
+        body: 'A venda ao balcão fica ligada ao stock.',
+        icon: 'checkout',
+        tone: 'green',
+      },
+      {
+        title: 'Ordem de Produção lançada',
+        body: 'Materiais e saída ficam rastreáveis.',
+        icon: 'production',
+        tone: 'blue',
+      },
+      {
+        title: 'Reversão de mortalidade revista',
+        body: 'A evidência do lote permanece clara.',
+        icon: 'growth',
+        tone: 'amber',
+      },
+    ],
     primaryCta: 'Iniciar teste de 7 dias',
     secondaryCta: 'Ver preços',
     activationNote:
       'Cada nova empresa começa com um teste de 7 dias. A ativação paga é tratada manualmente pela equipa StockWise.',
+    capabilityRailTitle: 'Ferramentas ligadas para a operação diária',
+    capabilityRailItems: [
+      'Controlo de stock',
+      'Ponto de Venda',
+      'Compras',
+      'Documentos de venda',
+      'Ordens de Produção',
+      'Lotes de Crescimento',
+      'Liquidações',
+      'Acesso Android',
+    ],
     operationTitle: 'Construído à volta da forma como o negócio trabalha.',
     operationBody:
       'O StockWise organiza primeiro os fluxos operacionais e só depois os módulos. Isso torna o produto mais claro para donos, gestores e equipas que estão a sair das folhas soltas.',
@@ -800,7 +874,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
       },
       {
         title: 'Relatórios e dashboards',
-        body: 'Veja receita operacional, COGS, margem bruta, valor de stock e atividade no dashboard.',
+        body: 'Veja receita operacional, sinais de custo, valor de stock e atividade no dashboard.',
         icon: 'reports',
       },
       {
@@ -892,46 +966,55 @@ const copyByLang: Record<Lang, LandingCopy> = {
     faqBody: 'Respostas diretas sobre teste, registos, mobile e implementação.',
     faqs: [
       {
+        id: 'trial-automatic',
         question: 'O teste é automático?',
         answer:
           'Uma nova empresa pode começar com um teste de 7 dias. O acesso pago é ativado manualmente pela equipa StockWise depois da revisão comercial.',
       },
       {
+        id: 'after-trial',
         question: 'O que acontece depois do teste?',
         answer:
           'A StockWise pode rever consigo o plano adequado e ativar o acesso pago quando o acordo comercial estiver confirmado.',
       },
       {
+        id: 'import-opening-stock',
         question: 'Posso importar itens e stock inicial?',
         answer:
           'Sim. O StockWise inclui fluxos de importação inicial para passar de folhas para uma base estruturada de itens e stock.',
       },
       {
+        id: 'growth-batches',
         question: 'Posso acompanhar Growth Batches ativos?',
         answer:
           'Sim. O StockWise suporta lotes ativos, medições, custos diretos, inputs de stock e reversões por evento.',
       },
       {
+        id: 'mobile',
         question: 'Funciona no telemóvel?',
         answer:
           'Sim. As áreas públicas e autenticadas são responsivas, e os ecrãs operacionais estão a ser polidos para fluxos mobile.',
       },
       {
+        id: 'accountant',
         question: 'Substitui o meu contabilista?',
         answer:
           'Não. O StockWise ajuda a preparar registos mais limpos, mas submissões oficiais e decisões fiscais devem ser validadas pelo contabilista ou consultor fiscal.',
       },
       {
+        id: 'mozambique-records',
         question: 'Suporta registos de Moçambique?',
         answer:
           'O StockWise suporta registos relevantes como NUIT, IVA, valores em MZN, faturas, notas, liquidações e dados fiscais exportáveis.',
       },
       {
+        id: 'invite-users',
         question: 'Posso convidar utilizadores?',
         answer:
           'Sim. Os workspaces de empresa suportam convites e funções para ajustar o acesso ao trabalho de cada pessoa.',
       },
       {
+        id: 'point-of-sale',
         question: 'O StockWise inclui um espaço de Ponto de Venda?',
         answer:
           'Sim. O StockWise inclui um espaço de Ponto de Venda concebido para registar vendas ao balcão com rapidez. Cada venda concluída permanece ligada ao respectivo movimento de stock e aos registos comerciais.',
@@ -1073,6 +1156,252 @@ const copyByLang: Record<Lang, LandingCopy> = {
   },
 }
 
+function landingProductTabsFor(lang: Lang): LandingProductTab[] {
+  if (lang === 'pt') {
+    return [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        eyebrow: 'Visibilidade do dono',
+        title: 'Veja sinais operacionais sem perseguir ficheiros.',
+        body: 'O StockWise junta valor de stock, receita, sinais de custo, estado documental e atenção necessária numa superfície de revisão.',
+        points: [
+          'Valor de stock e receita operacional ficam visíveis.',
+          'Sinais de baixo stock e documentos ficam ligados aos registos.',
+          'Os valores são ilustrativos e não substituem revisão contabilística formal.',
+        ],
+        surface: 'dashboard',
+      },
+      {
+        id: 'stock-pos',
+        label: 'Stock e Ponto de Venda',
+        eyebrow: 'Balcão e stock',
+        title: 'Venda num workspace que continua ligado ao stock.',
+        body: 'A atividade de balcão fica próxima de itens, movimento de stock, seguimento de encomendas e verificação da quantidade disponível.',
+        points: [
+          'A disponibilidade de stock é visível antes da venda.',
+          'Ponto de Venda significa venda operacional ao balcão, não processamento de pagamentos.',
+          'Itens e movimentos permanecem ligados.',
+        ],
+        surface: 'stock',
+      },
+      {
+        id: 'documents',
+        label: 'Documentos',
+        eyebrow: 'Registos comerciais',
+        title: 'Mantenha faturas, notas, bills e liquidações ligados.',
+        body: 'Os fluxos documentais mantêm clientes, fornecedores, NUIT, contexto de IVA, valores em MZN e seguimento de pagamentos no mesmo lugar.',
+        points: [
+          'Faturas, notas, vendor bills e liquidações ficam organizados.',
+          'Estados em aberto, parciais e pagos continuam revistos.',
+          'Registos exportáveis apoiam a preparação com o contabilista.',
+        ],
+        surface: 'documents',
+      },
+      {
+        id: 'production',
+        label: 'Produção',
+        eyebrow: 'Transformação operacional',
+        title: 'Acompanhe produção sem a separar do stock.',
+        body: 'Os registos de produção ajudam a equipa a manter materiais, outputs e contexto operacional próximos do mesmo workspace.',
+        points: [
+          'Materiais e outputs ficam no registo operacional.',
+          'O controlo diário continua claro para gestores.',
+          'Materiais, outputs e contexto operacional ficam no mesmo fluxo.',
+        ],
+        surface: 'production',
+      },
+      {
+        id: 'growth',
+        label: 'Growth Batches',
+        eyebrow: 'Registos de ciclo biológico',
+        title: 'Registe atividade de lotes ativos com evidência controlada.',
+        body: 'Growth Batches suportam medições, custos diretos, inputs de stock, mortalidade, quebra e evidência de reversão por evento.',
+        points: [
+          'Perdas e reversões são governadas por função e request key.',
+          'Custos continuam separados dos preços de venda.',
+          'Perdas, custos e evidência operacional continuam claros para revisão.',
+        ],
+        surface: 'growth',
+      },
+      {
+        id: 'mobile',
+        label: 'Mobile',
+        eyebrow: 'Operação responsiva',
+        title: 'Use as superfícies públicas e operacionais em vários ecrãs.',
+        body: 'O StockWise foi desenhado para manter rotas centrais usáveis em desktop, laptop, tablet e telefone.',
+        points: [
+          'Navegação e cartões adaptam-se a ecrãs compactos.',
+          'As páginas operacionais estão a ser polidas para fluxos mobile.',
+          'Nenhuma ação pública obrigatória depende de hover.',
+        ],
+        surface: 'mobile',
+      },
+    ]
+  }
+
+  return [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      eyebrow: 'Owner visibility',
+      title: 'See operating signals without chasing files.',
+      body: 'StockWise brings stock value, revenue, cost signals, document status, and required attention into one review surface.',
+      points: [
+        'Inventory value and operational revenue stay visible.',
+        'Low-stock and document signals are connected to records.',
+        'Figures are illustrative and do not replace formal accounting review.',
+      ],
+      surface: 'dashboard',
+    },
+    {
+      id: 'stock-pos',
+      label: 'Stock and Point of Sale',
+      eyebrow: 'Counter sales and stock',
+      title: 'Sell from a workspace that remains tied to stock.',
+      body: 'Counter-sale activity stays close to items, stock movement, order follow-up, and available quantity checks.',
+      points: [
+        'Stock availability is visible before sale.',
+        'Point of Sale means operational counter sales, not payment processing.',
+        'Item and movement records stay connected.',
+      ],
+      surface: 'stock',
+    },
+    {
+      id: 'documents',
+      label: 'Documents',
+      eyebrow: 'Commercial records',
+      title: 'Keep invoices, notes, bills, and settlements connected.',
+      body: 'Document workflows keep customers, suppliers, NUIT, IVA/VAT context, MZN values, and payment follow-up in one place.',
+      points: [
+        'Invoices, notes, vendor bills, and settlements are organised.',
+        'Open, partial, and paid states remain reviewable.',
+        'Exportable records support preparation with an accountant.',
+      ],
+      surface: 'documents',
+    },
+    {
+      id: 'production',
+      label: 'Production',
+      eyebrow: 'Operational transformation',
+      title: 'Track production activity without separating it from stock.',
+      body: 'Production records help teams keep materials, outputs, and operating context close to the same business workspace.',
+      points: [
+        'Materials and outputs stay in the operating record.',
+        'Daily control remains understandable for managers.',
+        'Materials, outputs, and operating context stay in the same flow.',
+      ],
+      surface: 'production',
+    },
+    {
+      id: 'growth',
+      label: 'Growth Batches',
+      eyebrow: 'Biological lifecycle records',
+      title: 'Record active batch activity with controlled evidence.',
+      body: 'Growth Batches support measurements, direct costs, stock inputs, mortality, shrinkage, and event-specific reversal evidence.',
+      points: [
+        'Losses and reversals are governed by role and request keys.',
+        'Costs stay separated from selling prices.',
+        'Losses, costs, and operating evidence stay clear for review.',
+      ],
+      surface: 'growth',
+    },
+    {
+      id: 'mobile',
+      label: 'Mobile',
+      eyebrow: 'Responsive operations',
+      title: 'Use the public and operational surfaces across screen sizes.',
+      body: 'StockWise is designed to keep core routes usable on desktop, laptop, tablet, and phone screens.',
+      points: [
+        'Navigation and cards adapt to compact screens.',
+        'Operational pages are being polished around mobile flows.',
+        'No required public action depends on hover.',
+      ],
+      surface: 'mobile',
+    },
+  ]
+}
+
+function landingProductSurfaceLabels(lang: Lang) {
+  if (lang === 'pt') {
+    return {
+      tabListLabel: 'Áreas do produto StockWise',
+      sampleOnly: 'Dados operacionais de exemplo',
+      preview: 'Pré-visualização do produto',
+      rows: {
+        dashboard: [
+          { label: 'Valor de stock', value: 'MZN 128K' },
+          { label: 'Receita operacional', value: 'MZN 42K' },
+          { label: 'Margem bruta', value: 'MZN 24K' },
+        ],
+        stock: [
+          { label: 'BK-001', value: 'Atual' },
+          { label: 'Ponto de Venda', value: 'Pronto' },
+          { label: 'Atenção', value: 'Requer atenção' },
+        ],
+        documents: [
+          { label: 'FAT-1042', value: 'Ligado' },
+          { label: 'LIQ-211', value: 'Revisão' },
+          { label: 'Nota de crédito', value: 'Atual' },
+        ],
+        production: [
+          { label: 'Materiais', value: 'Ligado' },
+          { label: 'Ordem', value: 'Atual' },
+          { label: 'Saída', value: 'Revisão' },
+        ],
+        growth: [
+          { label: 'Lote', value: 'Atual' },
+          { label: 'Perda', value: 'Ligado' },
+          { label: 'Reversão', value: 'Revisão' },
+        ],
+        mobile: [
+          { label: 'Balcão', value: 'Pronto' },
+          { label: 'Stock', value: 'Atual' },
+          { label: 'Revisão', value: 'Ligado' },
+        ],
+      } satisfies Record<LandingProductSurface, Array<{ label: string; value: string }>>,
+    }
+  }
+
+  return {
+    tabListLabel: 'StockWise product areas',
+    sampleOnly: 'Sample operating data',
+    preview: 'Product preview',
+    rows: {
+      dashboard: [
+        { label: 'Inventory value', value: 'MZN 128K' },
+        { label: 'Operational revenue', value: 'MZN 42K' },
+        { label: 'Gross margin', value: 'MZN 24K' },
+      ],
+      stock: [
+        { label: 'BK-001', value: 'Current' },
+        { label: 'Point of Sale', value: 'Ready' },
+        { label: 'Attention', value: 'Needs attention' },
+      ],
+      documents: [
+        { label: 'INV-1042', value: 'Linked' },
+        { label: 'SET-211', value: 'Review' },
+        { label: 'Credit note', value: 'Current' },
+      ],
+      production: [
+        { label: 'Materials', value: 'Linked' },
+        { label: 'Run', value: 'Current' },
+        { label: 'Output', value: 'Review' },
+      ],
+      growth: [
+        { label: 'Batch', value: 'Current' },
+        { label: 'Loss', value: 'Linked' },
+        { label: 'Reversal', value: 'Review' },
+      ],
+      mobile: [
+        { label: 'Counter', value: 'Ready' },
+        { label: 'Stock', value: 'Current' },
+        { label: 'Review', value: 'Linked' },
+      ],
+    } satisfies Record<LandingProductSurface, Array<{ label: string; value: string }>>,
+  }
+}
+
 function Icon({ name, className }: { name: IconName; className?: string }) {
   const Component = iconMap[name]
   return <Component className={className} weight="duotone" aria-hidden="true" />
@@ -1167,140 +1496,78 @@ function StatusPill({ children, tone = 'blue' }: { children: ReactNode; tone?: '
   )
 }
 
-function ProductPreview({ copy, lang }: { copy: LandingCopy; lang: Lang }) {
-  const labels =
-    lang === 'pt'
-      ? {
-          dashboard: 'Dashboard operacional',
-          today: 'Hoje',
-          inventory: 'Valor de stock',
-          revenue: 'Receita operacional',
-          cogs: 'COGS',
-          margin: 'Margem bruta',
-          action: 'Ação necessária',
-          lowStock: '3 itens abaixo do mínimo',
-          documents: 'Documentos',
-          issued: 'Emitida',
-          partial: 'Parcial',
-          received: 'Recebido',
-          stock: 'Stock',
-          payment: 'Liquidação',
-          register: 'Registo operacional',
-          warehouse: 'Armazém central',
-        }
-      : {
-          dashboard: 'Operating dashboard',
-          today: 'Today',
-          inventory: 'Inventory value',
-          revenue: 'Operational revenue',
-          cogs: 'COGS',
-          margin: 'Gross margin',
-          action: 'Action needed',
-          lowStock: '3 items below minimum',
-          documents: 'Documents',
-          issued: 'Issued',
-          partial: 'Partial',
-          received: 'Received',
-          stock: 'Stock',
-          payment: 'Settlement',
-          register: 'Operating register',
-          warehouse: 'Central warehouse',
-        }
+function HeroFloatingCards({ items }: { items: LandingCopy['heroSignals'] }) {
+  return (
+    <div className="landing-hero-floating-cards">
+      {items.map((item, index) => (
+        <div key={item.title} className={cn('landing-floating-card', `landing-floating-card--${index + 1}`)}>
+          <span className={cn('landing-status-dot', `landing-status-dot--${item.tone}`)} aria-hidden="true" />
+          <InlineSurfaceIcon name={item.icon} dark className="h-4 w-4" />
+          <div>
+            <div className="landing-floating-card__title">{item.title}</div>
+            <div className="landing-floating-card__body">{item.body}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
-  const metrics = [
-    { label: labels.inventory, value: 'MZN 128K', icon: StackIcon, tone: 'blue' as const },
-    { label: labels.revenue, value: 'MZN 42K', icon: CashRegisterIcon, tone: 'green' as const },
-    { label: labels.cogs, value: 'MZN 18K', icon: CoinsIcon, tone: 'amber' as const },
-    { label: labels.margin, value: 'MZN 24K', icon: ChartBarIcon, tone: 'green' as const },
-  ]
+function CapabilityRail({ title, items }: { title: string; items: string[] }) {
+  const renderTrack = (duplicate = false) => (
+    <ul className="landing-capability-track" aria-hidden={duplicate ? 'true' : undefined}>
+      {items.map((item) => (
+        <li key={`${duplicate ? 'duplicate' : 'primary'}-${item}`} className="landing-capability-pill">
+          <CheckCircleIcon className="h-4 w-4" weight="duotone" aria-hidden="true" />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
 
   return (
-    <div className="relative mx-auto w-full max-w-[680px]">
-      <div className="rounded-xl border border-border bg-card p-3 text-foreground shadow-2xl shadow-slate-950/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:shadow-slate-950/30">
-        <div className="rounded-lg border border-border bg-background/85 dark:border-white/10 dark:bg-slate-900/80">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 dark:border-white/10">
-            <div>
-              <div className="text-xs font-semibold uppercase text-primary dark:text-sky-200">{copy.labels.productPreview}</div>
-              <div className="mt-1 text-lg font-semibold">{labels.dashboard}</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusPill tone="slate">{labels.today}</StatusPill>
-              <StatusPill tone="blue">{labels.warehouse}</StatusPill>
-            </div>
-          </div>
-
-          <div className="grid gap-3 p-4 sm:grid-cols-2">
-            {metrics.map((metric) => {
-              const MetricIcon = metric.icon
-              return (
-                <div key={metric.label} className="rounded-lg border border-border bg-card p-3 dark:border-white/10 dark:bg-white/5">
-                  <div className="flex items-center justify-between gap-3 text-muted-foreground dark:text-slate-300">
-                    <span className="text-[0.72rem] font-semibold uppercase">{metric.label}</span>
-                    <MetricIcon
-                      className={cn(
-                        'h-4 w-4',
-                        metric.tone === 'green' ? 'text-emerald-600 dark:text-emerald-200' : '',
-                        metric.tone === 'amber' ? 'text-amber-600 dark:text-amber-200' : '',
-                        metric.tone === 'blue' ? 'text-primary dark:text-sky-200' : '',
-                      )}
-                      weight="duotone"
-                      aria-hidden="true"
-                    />
-                  </div>
-                  <div className="mt-2 text-xl font-semibold">{metric.value}</div>
-                </div>
-              )
-            })}
-          </div>
-
-          <div className="grid gap-3 border-t border-border p-4 dark:border-white/10 lg:grid-cols-[1.05fr_0.95fr]">
-            <div className="rounded-lg border border-border bg-background p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold">{labels.action}</div>
-                <StatusPill tone="amber">{labels.lowStock}</StatusPill>
-              </div>
-              <div className="mt-4 space-y-3">
-                {[
-                  ['BK-001', lang === 'pt' ? 'Body kit' : 'Body kit', '10', 'green' as const],
-                  ['OIL-005', lang === 'pt' ? 'Óleo 5L' : 'Oil 5L', '4', 'amber' as const],
-                  ['RIM-020', lang === 'pt' ? 'Jante 20' : 'Rim 20', '1', 'amber' as const],
-                ].map(([sku, item, qty, tone]) => (
-                  <div key={sku} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg bg-muted/50 px-3 py-2 dark:bg-white/5">
-                    <span className="font-mono text-xs text-muted-foreground dark:text-slate-400">{sku}</span>
-                    <span className="min-w-0 truncate text-sm font-medium">{item}</span>
-                    <StatusPill tone={tone}>{qty}</StatusPill>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border bg-background p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <div className="font-semibold">{labels.register}</div>
-              <div className="mt-4 space-y-3">
-                {[
-                  ['INV-1042', labels.documents, labels.issued, 'blue' as const],
-                  ['PO-318', labels.stock, labels.received, 'green' as const],
-                  ['SET-211', labels.payment, labels.partial, 'amber' as const],
-                ].map(([reference, label, status, tone]) => (
-                  <div key={reference} className="rounded-lg border border-border bg-muted/50 px-3 py-2 dark:border-white/10 dark:bg-white/5">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-sm">{reference}</span>
-                      <StatusPill tone={tone}>{status}</StatusPill>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground dark:text-slate-400">{label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground dark:border-white/10 dark:text-slate-400">
-            {copy.showcaseNote}
+    <section className="landing-capability-rail-section" aria-labelledby="landing-capability-rail-title">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <h2 id="landing-capability-rail-title" className="landing-capability-rail-title">
+          {title}
+        </h2>
+        <div className="landing-capability-rail">
+          <div className="landing-capability-marquee">
+            {renderTrack()}
+            {renderTrack(true)}
           </div>
         </div>
       </div>
-    </div>
+    </section>
   )
+}
+
+function Reveal({
+  children,
+  className,
+  delay = 0,
+}: {
+  children: ReactNode
+  className?: string
+  delay?: number
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.16 }}
+      transition={{ duration: 0.52, delay, ease: revealEase }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+function updateLandingPointer(event: PointerEvent<HTMLElement>) {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  event.currentTarget.style.setProperty('--landing-pointer-x', `${event.clientX - bounds.left}px`)
+  event.currentTarget.style.setProperty('--landing-pointer-y', `${event.clientY - bounds.top}px`)
 }
 
 function ProblemRecordsImage({ lang }: { lang: Lang }) {
@@ -1603,6 +1870,7 @@ export default function LandingPage() {
   const { lang } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const [pricingPeriod, setPricingPeriod] = useState<PricingPeriod>(getStoredPricingPeriod)
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const copy = copyByLang[lang]
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
@@ -1612,6 +1880,8 @@ export default function LandingPage() {
   const signInLabel = user ? copy.openDashboard : copy.signIn
   const activationHref = useMemo(() => buildPublicMailto(copy.mailSubjects.activation), [copy.mailSubjects.activation])
   const contactHref = useMemo(() => buildPublicMailto(copy.mailSubjects.contact), [copy.mailSubjects.contact])
+  const productTabs = useMemo(() => landingProductTabsFor(lang), [lang])
+  const productSurfaceLabels = useMemo(() => landingProductSurfaceLabels(lang), [lang])
 
   const selectPricingPeriod = (period: PricingPeriod) => {
     setPricingPeriod(period)
@@ -1620,54 +1890,26 @@ export default function LandingPage() {
     }
   }
 
+  const closeMenu = () => setMenuOpen(false)
+
   useEffect(() => {
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const targets = Array.from(document.querySelectorAll<HTMLElement>('main > section, [data-landing-stagger] > *'))
+    if (!menuOpen || typeof window === 'undefined') return undefined
 
-    targets.forEach((target) => {
-      const parent = target.parentElement
-      const delay = parent?.hasAttribute('data-landing-stagger')
-        ? Math.min(Array.from(parent.children).indexOf(target), 8) * 55
-        : 0
-
-      target.classList.add('landing-scroll-reveal')
-      target.style.setProperty('--landing-delay', `${delay}ms`)
-
-      if (prefersReducedMotion) {
-        target.classList.add('is-visible')
-      } else {
-        target.classList.remove('is-visible')
-      }
-    })
-
-    if (prefersReducedMotion) {
-      return undefined
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setMenuOpen(false)
+      window.requestAnimationFrame(() => menuButtonRef.current?.focus())
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('is-visible')
-            observer.unobserve(entry.target)
-          }
-        })
-      },
-      { rootMargin: '0px 0px 10% 0px', threshold: 0.02 },
-    )
-
-    targets.forEach((target) => observer.observe(target))
-
-    return () => observer.disconnect()
-  }, [])
-
-  const closeMenu = () => setMenuOpen(false)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [menuOpen])
 
   return (
     <MotionConfig reducedMotion="user">
       <div className="min-h-screen bg-background text-foreground">
         <StructuredData lang={lang} />
-        <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95 backdrop-blur">
+        <header className="landing-header sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur-xl">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <Link to="/" className="min-w-0" aria-label="StockWise home">
               <BrandLockup compact />
@@ -1728,6 +1970,7 @@ export default function LandingPage() {
               <LocaleToggle />
               <ThemeToggle compact />
               <Button
+                ref={menuButtonRef}
                 type="button"
                 variant="ghost"
                 size="icon"
@@ -1794,8 +2037,8 @@ export default function LandingPage() {
           ) : null}
         </header>
 
-        <main className="overflow-hidden">
-          <section className="relative isolate overflow-hidden border-b border-slate-900/25 bg-slate-950 text-white">
+        <main className="landing-page overflow-hidden">
+          <section className="landing-hero relative isolate overflow-hidden border-b border-slate-900/25 bg-slate-950 text-white">
             <img
               src="/landing/stockwise-records-desk.png"
               alt=""
@@ -1806,13 +2049,17 @@ export default function LandingPage() {
               className="absolute inset-0 -z-20 h-full w-full object-cover object-center opacity-80"
             />
             <div className="absolute inset-0 -z-10 bg-slate-950/75" />
+            <div className="landing-grid-field" aria-hidden="true" />
+            <div className="landing-orb landing-orb--teal landing-orb--hero-a" aria-hidden="true" />
+            <div className="landing-orb landing-orb--blue landing-orb--hero-b" aria-hidden="true" />
+            <HeroFloatingCards items={copy.heroSignals} />
 
             <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16 xl:py-20">
               <motion.div
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.55, ease: revealEase }}
-                className="max-w-3xl"
+                className="mx-auto max-w-4xl text-center"
               >
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase text-sky-100 backdrop-blur">
                   <InlineSurfaceIcon name="company" dark className="h-3.5 w-3.5" />
@@ -1824,9 +2071,9 @@ export default function LandingPage() {
                 <h1 className="mt-5 text-5xl font-semibold leading-none text-white sm:text-6xl lg:text-7xl">
                   {copy.heroTitle}
                 </h1>
-                <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
+                <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
 
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                   <Button size="lg" asChild>
                     <Link to={trialHref}>
                       {primaryCtaLabel}
@@ -1841,12 +2088,12 @@ export default function LandingPage() {
                   </Button>
                 </div>
 
-                <div className="mt-5 flex max-w-2xl gap-3 text-sm leading-6 text-slate-200">
+                <div className="mx-auto mt-5 flex max-w-2xl justify-center gap-3 text-sm leading-6 text-slate-200">
                   <InlineSurfaceIcon name="activation" dark className="mt-0.5 h-4 w-4" />
                   <span>{copy.activationNote}</span>
                 </div>
 
-                <div className="mt-8 grid grid-cols-3 gap-2 sm:gap-3" data-landing-stagger>
+                <div className="mx-auto mt-8 grid max-w-3xl grid-cols-3 gap-2 sm:gap-3" data-landing-stagger>
                   {[
                     ['4', lang === 'pt' ? 'planos publicados' : 'published plans'],
                     ['7', lang === 'pt' ? 'dias de teste' : 'trial days'],
@@ -1862,15 +2109,28 @@ export default function LandingPage() {
             </div>
           </section>
 
-          <section id="operations" className="scroll-mt-24 border-b border-border/70 bg-background pb-14 pt-8 lg:py-20">
+          <CapabilityRail title={copy.capabilityRailTitle} items={copy.capabilityRailItems} />
+
+          <section id="operations" className="landing-section-soft scroll-mt-24 border-b border-border/70 bg-background pb-14 pt-8 lg:py-20">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               <SectionIntro title={copy.operationTitle} body={copy.operationBody} align="center" />
-              <div className="mt-9 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
-                {copy.operationFits.map((fit) => (
-                  <div key={fit.title} className="landing-hover-lift rounded-lg border border-border bg-card p-5 shadow-sm">
+              <div className="landing-bento mt-9 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
+                {copy.operationFits.map((fit, index) => (
+                  <div
+                    key={fit.title}
+                    onPointerMove={updateLandingPointer}
+                    className={cn(
+                      'landing-bento-card landing-hover-lift rounded-lg border border-border bg-card p-5 shadow-sm',
+                      index === 0 ? 'xl:col-span-2 xl:row-span-2 xl:p-7' : '',
+                    )}
+                  >
                     <SurfaceIcon name={fit.icon} size="card" tone="info" />
-                    <h2 className="mt-4 text-lg font-semibold leading-tight">{fit.title}</h2>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{fit.body}</p>
+                    <h2 className={cn('mt-4 font-semibold leading-tight', index === 0 ? 'text-2xl' : 'text-lg')}>
+                      {fit.title}
+                    </h2>
+                    <p className={cn('mt-2 leading-6 text-muted-foreground', index === 0 ? 'text-base' : 'text-sm')}>
+                      {fit.body}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -1917,9 +2177,16 @@ export default function LandingPage() {
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               <SectionIntro title={copy.capabilitiesTitle} body={copy.capabilitiesBody} align="center" />
 
-              <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
-                {copy.capabilities.map((capability) => (
-                  <Card key={capability.title} className="group border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl">
+              <div className="landing-bento mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
+                {copy.capabilities.map((capability, index) => (
+                  <Card
+                    key={capability.title}
+                    onPointerMove={updateLandingPointer}
+                    className={cn(
+                      'landing-bento-card group border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl',
+                      index === 0 || index === 3 ? 'xl:col-span-2' : '',
+                    )}
+                  >
                     <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
                       <SurfaceIcon name={capability.icon} size="feature" tone="primary" />
                       <h3 className="mt-4 text-lg font-semibold leading-tight">{capability.title}</h3>
@@ -1931,32 +2198,16 @@ export default function LandingPage() {
             </div>
           </section>
 
-          <section id="showcase" className="scroll-mt-24 bg-slate-950 py-16 text-white lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.82fr_1.18fr] lg:items-center lg:px-8">
-              <div>
-                <SectionIntro title={copy.showcaseTitle} body={copy.showcaseBody} inverse />
-                <div className="mt-8 grid gap-3 sm:grid-cols-3 lg:grid-cols-1" data-landing-stagger>
-                  {[
-                    { title: lang === 'pt' ? 'Sinais de atenção' : 'Attention signals', icon: 'attention' as const },
-                    { title: lang === 'pt' ? 'Registos ligados' : 'Connected records', icon: 'connected' as const },
-                    { title: lang === 'pt' ? 'Stock antes da venda' : 'Stock before selling', icon: 'stockReady' as const },
-                  ].map((item) => (
-                    <div key={item.title} className="landing-hover-lift flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3">
-                      <InlineSurfaceIcon name={item.icon} dark className="h-5 w-5" />
-                      <span className="text-sm font-semibold text-slate-100">{item.title}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.985 }}
-                whileInView={{ opacity: 1, y: 0, scale: 1 }}
-                viewport={{ once: true, amount: 0.25 }}
-                transition={{ duration: 0.55, ease: revealEase }}
-              >
-                <ProductPreview copy={copy} lang={lang} />
-              </motion.div>
+          <section id="showcase" className="landing-dark-section scroll-mt-24 py-16 text-white lg:py-24">
+            <div className="landing-orb landing-orb--teal" aria-hidden="true" />
+            <div className="landing-orb landing-orb--blue" aria-hidden="true" />
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <Reveal>
+                <SectionIntro title={copy.showcaseTitle} body={copy.showcaseBody} inverse align="center" />
+              </Reveal>
+              <Reveal delay={0.08} className="mt-10">
+                <LandingProductTabs tabs={productTabs} copy={productSurfaceLabels} />
+              </Reveal>
             </div>
           </section>
 
@@ -2083,22 +2334,12 @@ export default function LandingPage() {
 
           <section id="faq" className="scroll-mt-24 bg-background py-16 lg:py-24">
             <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
-              <SectionIntro title={copy.faqTitle} body={copy.faqBody} />
-              <div className="grid gap-3 md:grid-cols-2" data-landing-stagger>
-                {copy.faqs.map((item) => (
-                  <Card key={item.question} className="border-border/70 bg-card shadow-sm">
-                    <CardContent className="px-5 pb-5 pt-6 sm:p-6">
-                      <div className="flex gap-4">
-                        <InlineSurfaceIcon name="question" className="mt-0.5 h-5 w-5" />
-                        <div className="min-w-0">
-                          <h3 className="font-semibold leading-tight">{item.question}</h3>
-                          <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.answer}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+              <Reveal>
+                <SectionIntro title={copy.faqTitle} body={copy.faqBody} />
+              </Reveal>
+              <Reveal delay={0.08}>
+                <LandingFaq items={copy.faqs} />
+              </Reveal>
             </div>
           </section>
 

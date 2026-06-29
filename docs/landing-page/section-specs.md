@@ -23,6 +23,23 @@ Secondary CTA: `View pricing`.
 
 Hero visual: use the local `/landing/stockwise-records-desk.png` image as a full-bleed business-records background with the StockWise value proposition over it. Keep the hero brand-led and avoid a split text/mockup composition.
 
+Large screens may add small floating operational cards around the hero to give the page motion and product signal. These cards must use truthful illustrative StockWise activities only, such as Point of Sale activity, production posting, or Growth Batch loss reversal. They are not testimonials, customer evidence, or live production data.
+
+## 2.0 Capability Rail
+
+Place a truthful capability rail near the top of the page. The rail lists current StockWise capabilities, not customers or social proof:
+
+- Stock control
+- Point of Sale
+- Purchases
+- Sales documents
+- Production Runs
+- Growth Batches
+- Settlements
+- Android access
+
+The visual track may move slowly, pause on hover/focus, and repeat only for seamless motion. Duplicate visual tracks must be hidden from assistive technology. Under reduced motion the rail becomes a static wrapped list.
+
 ## 2.1 Operation Fit
 
 Show who the product is for before listing modules:
@@ -81,7 +98,7 @@ Capabilities:
 
 Use only one realistic product preview on the page. The retained preview lives in the dark showcase section, remains illustrative, and must support both public light and dark modes.
 
-The later showcase must not repeat the same dashboard preview. It should reinforce the problem-to-solution story with a distinct operating-control visual: records are captured, connected, and reviewed across items, movements, documents, settlements, and reports.
+The showcase uses a tabbed operating-control visual rather than repeating a second dashboard preview. Tabs should cover current StockWise surfaces only: dashboard review, stock and Point of Sale operations, documents, production, Growth Batches, and mobile responsiveness.
 
 Avoid fake metrics that look like financial claims.
 
@@ -89,13 +106,19 @@ Avoid fake metrics that look like financial claims.
 
 Use page-level animation to make the ShadCN/Tailwind landing page feel more fluid and premium:
 
-- section reveal on scroll
+- React/Framer section reveal on scroll
 - subtle upward fade-in for text blocks and cards
 - gentle stagger for repeated capability, workflow, pricing, and FAQ cards
 - fast business-like hover lift on cards and buttons
+- restrained atmospheric background movement on larger screens
+- slow hero operational-card drift on large screens only
+- product-preview bar/chart animation when panels enter
+- fine-pointer bento pointer glow through scoped CSS custom properties
+- user-controlled product-tab panel transitions
+- truthful capability rail movement, never a fake customer marquee
 - full `prefers-reduced-motion` support
 
-Avoid constant distracting object motion, bouncing UI, shader backgrounds, GSAP, Unicorn Studio, heavy 3D, and cinematic effects unless explicitly approved.
+Avoid constant distracting object motion, bouncing UI, autoplaying tabs, fake counters, fake customer marquees, shader backgrounds, GSAP, Unicorn Studio, heavy 3D, and cinematic effects unless explicitly approved.
 
 ## 7. How StockWise Works
 
@@ -134,6 +157,8 @@ Required caution:
 - Avoid instant-checkout language and avoid extra marketing copy that explains the currency already shown in the price values.
 
 ## 11. FAQ
+
+Use a keyboard-accessible accordion. FAQ card text should have enough internal top padding that the question, answer, icon, and interactive control do not crowd the card edge at desktop, tablet, or mobile widths.
 
 Questions:
 
