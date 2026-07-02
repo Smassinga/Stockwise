@@ -1381,12 +1381,12 @@ function DetailSection({
 }) {
   return (
     <Card className="border-card-border bg-card">
-      <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+      <CardHeader className="gap-3 md:flex-row md:items-start md:justify-between md:space-y-0">
         <div className="min-w-0">
           <CardTitle>{title}</CardTitle>
           {description ? <CardDescription>{description}</CardDescription> : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? <div className="flex w-full min-w-0 flex-wrap gap-2 md:w-auto md:justify-end">{action}</div> : null}
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
@@ -2709,16 +2709,16 @@ export default function GrowthBatches() {
   const mobileRows = useMemo(() => getPremiumPageRows(sortedBatches, page, pageSize), [page, pageSize, sortedBatches])
 
   const draftActionButtons = detailBatch?.status === 'draft' && canOperate ? (
-    <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" size="sm" onClick={openEditDialog} disabled={saving}>
+    <div className="flex w-full min-w-0 flex-wrap gap-2 sm:justify-start">
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openEditDialog} disabled={saving}>
         <Pencil className="mr-2 h-4 w-4" />
         Edit draft
       </Button>
-      <Button type="button" size="sm" onClick={activateBatch} disabled={saving}>
+      <Button type="button" size="sm" className="w-full sm:w-auto" onClick={activateBatch} disabled={saving}>
         <CheckCircle2 className="mr-2 h-4 w-4" />
         Activate
       </Button>
-      <Button type="button" variant="outline" size="sm" onClick={() => setCancelOpen(true)} disabled={saving}>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setCancelOpen(true)} disabled={saving}>
         <Ban className="mr-2 h-4 w-4" />
         Cancel
       </Button>
@@ -2726,24 +2726,24 @@ export default function GrowthBatches() {
   ) : null
 
   const activeActionButtons = detailBatch?.status === 'active' && canOperate ? (
-    <div className="flex flex-wrap gap-2">
-      <Button type="button" size="sm" onClick={openStockInputDialog} disabled={saving}>
+    <div className="flex w-full min-w-0 flex-wrap gap-2 sm:justify-start">
+      <Button type="button" size="sm" className="w-full sm:w-auto" onClick={openStockInputDialog} disabled={saving}>
         <PackageMinus className="mr-2 h-4 w-4" />
         Post stock input
       </Button>
-      <Button type="button" variant="outline" size="sm" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
         <ArrowRightLeft className="mr-2 h-4 w-4" />
         {transferCopy.actions.transferBatch}
       </Button>
-      <Button type="button" variant="outline" size="sm" onClick={openLossDialog} disabled={saving}>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openLossDialog} disabled={saving}>
         <AlertTriangle className="mr-2 h-4 w-4" />
         Record loss
       </Button>
-      <Button type="button" size="sm" onClick={() => setMeasurementOpen(true)} disabled={saving}>
+      <Button type="button" size="sm" className="w-full sm:w-auto" onClick={() => setMeasurementOpen(true)} disabled={saving}>
         <LineChart className="mr-2 h-4 w-4" />
         Record measurement
       </Button>
-      <Button type="button" variant="outline" size="sm" onClick={() => setDirectCostOpen(true)} disabled={saving}>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setDirectCostOpen(true)} disabled={saving}>
         <WalletCards className="mr-2 h-4 w-4" />
         Add memo cost
       </Button>
@@ -3022,7 +3022,7 @@ export default function GrowthBatches() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.72fr)]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(42rem,1fr)_minmax(30rem,0.8fr)]">
         <Card className="min-w-0 border-card-border bg-card">
           <CardHeader>
             <CardTitle>Register</CardTitle>
@@ -3099,19 +3099,24 @@ export default function GrowthBatches() {
           ) : (
             <>
               <Card className="border-card-border bg-card">
-                <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+                <CardHeader className="gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <PremiumStatusBadge tone={statusTone[detailBatch.status]}>{labelize(detailBatch.status)}</PremiumStatusBadge>
                       <Badge variant="outline">{labelize(detailBatch.batch_family)}</Badge>
                       <Badge variant="outline">{labelize(detailBatch.primary_quantity_basis)}</Badge>
                     </div>
-                    <CardTitle className="mt-3 break-words">{detailBatch.reference_no} - {detailBatch.name}</CardTitle>
+                    <CardTitle className="mt-3 min-w-0 space-y-1">
+                      <span className="block truncate">{detailBatch.reference_no}</span>
+                      <span className="block whitespace-normal break-normal text-base font-semibold leading-snug text-card-foreground/90 sm:text-lg">
+                        {detailBatch.name}
+                      </span>
+                    </CardTitle>
                     <CardDescription>
                       {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory and memo direct costs stay non-financial; location transfers move the whole batch operationally; harvests, COGS, and valuation posting remain future phases.'}
                     </CardDescription>
                   </div>
-                  <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                  <div className="flex w-full min-w-0 flex-col gap-2">
                     {draftActionButtons}
                     {activeActionButtons}
                   </div>
@@ -3252,7 +3257,7 @@ export default function GrowthBatches() {
                       title={transferCopy.history.title}
                       description={transferCopy.history.description}
                       action={detailBatch.status === 'active' && canOperate ? (
-                        <Button size="sm" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
+                        <Button size="sm" className="w-full sm:w-auto" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
                           <ArrowRightLeft className="mr-2 h-4 w-4" />
                           {transferCopy.actions.transferBatch}
                         </Button>
@@ -3301,7 +3306,7 @@ export default function GrowthBatches() {
                                   </p>
                                 ) : canReverseTransfer ? (
                                   <div className="mt-3">
-                                    <Button type="button" size="sm" variant="outline" onClick={() => openTransferReversalDialog(transfer)} disabled={saving}>
+                                    <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => openTransferReversalDialog(transfer)} disabled={saving}>
                                       <RotateCcw className="mr-2 h-4 w-4" />
                                       {transferCopy.actions.reverseTransfer}
                                     </Button>
