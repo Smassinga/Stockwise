@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted and local migration history are currently aligned through `20260627225414` with 32 active migrations after the controlled Growth Batches G4.1 rollout.
+- Hosted production migration history is currently aligned through `20260627225414` with 32 active migrations after the controlled Growth Batches G4.1 rollout. The local Growth Batches G4.2 transfer package adds two pending local migrations, bringing local replay to 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql`; G4.2 is not hosted/live until an approved database rollout applies those migrations.
 
 ## Backup Assumptions
 

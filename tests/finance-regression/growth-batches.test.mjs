@@ -26,6 +26,11 @@ const REVERSE_STOCK_INPUT_SIGNATURE = 'public.reverse_growth_batch_stock_input(u
 const PREVIEW_LOSS_SIGNATURE = 'public.preview_growth_batch_loss(uuid,text,date,numeric,numeric,text,text)'
 const RECORD_LOSS_SIGNATURE = 'public.record_growth_batch_loss(uuid,text,date,numeric,numeric,text,text,text)'
 const REVERSE_LOSS_SIGNATURE = 'public.reverse_growth_batch_loss(uuid,text,text)'
+const PREVIEW_TRANSFER_SIGNATURE = 'public.preview_growth_batch_transfer(uuid,uuid,text,text,date,text,text)'
+const POST_TRANSFER_SIGNATURE = 'public.transfer_growth_batch(uuid,uuid,text,text,date,text,text,text,text)'
+const REVERSE_TRANSFER_SIGNATURE = 'public.reverse_growth_batch_transfer(uuid,uuid,date,text,text,text)'
+const NORMALIZE_LOCATION_SIGNATURE = 'public.growth_batch_normalize_location_description(text)'
+const LOCATION_FINGERPRINT_SIGNATURE = 'public.growth_batch_location_fingerprint(uuid,uuid,uuid,text,text)'
 
 function addDaysIso(days) {
   const date = new Date(`${todayIso()}T00:00:00.000Z`)
@@ -258,7 +263,7 @@ async function stockMovementCount(client, companyId) {
   return countRows(client, 'stock_movements', [['eq', 'company_id', companyId]])
 }
 
-test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and read models', async (t) => {
+test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, losses, transfers, and read models', async (t) => {
   const admin = createAdminClient()
   const created = {
     companyIds: new Set(),
@@ -268,6 +273,8 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
 
   async function cleanupCompany(companyId) {
     if (!companyId) return
+    await admin.from('growth_batch_transfer_reversal_lines').delete().eq('company_id', companyId)
+    await admin.from('growth_batch_transfers').delete().eq('company_id', companyId)
     await admin.from('growth_batch_loss_reversal_lines').delete().eq('company_id', companyId)
     await admin.from('growth_batch_losses').delete().eq('company_id', companyId)
     await admin.from('growth_batch_stock_input_reversal_lines').delete().eq('company_id', companyId)
@@ -298,12 +305,14 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
 
   const ownerUser = await createTempUser(admin, PREFIX, 'owner')
   const operatorUser = await createTempUser(admin, PREFIX, 'operator')
+  const managerUser = await createTempUser(admin, PREFIX, 'manager')
   const viewerUser = await createTempUser(admin, PREFIX, 'viewer')
   const crossOwnerUser = await createTempUser(admin, PREFIX, 'cross-owner')
-  for (const user of [ownerUser, operatorUser, viewerUser, crossOwnerUser]) created.userIds.add(user.userId)
+  for (const user of [ownerUser, operatorUser, managerUser, viewerUser, crossOwnerUser]) created.userIds.add(user.userId)
 
   const ownerClient = await signIn(ownerUser.email, ownerUser.password)
   const operatorClient = await signIn(operatorUser.email, operatorUser.password)
+  const managerClient = await signIn(managerUser.email, managerUser.password)
   const viewerClient = await signIn(viewerUser.email, viewerUser.password)
   const crossOwnerClient = await signIn(crossOwnerUser.email, crossOwnerUser.password)
   const anonClient = createAnonClient()
@@ -318,7 +327,7 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
   created.companyIds.add(companyId)
   await setActiveCompany(ownerClient, companyId)
 
-  for (const [user, role] of [[operatorUser, 'OPERATOR'], [viewerUser, 'VIEWER']]) {
+  for (const [user, role] of [[operatorUser, 'OPERATOR'], [managerUser, 'MANAGER'], [viewerUser, 'VIEWER']]) {
     const membership = await admin.from('company_members').insert({
       company_id: companyId,
       user_id: user.userId,
@@ -330,6 +339,7 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
     throwSupabaseError(membership.error, `Growth Batch ${role} membership setup failed`)
   }
   await setActiveCompany(operatorClient, companyId)
+  await setActiveCompany(managerClient, companyId)
   await setActiveCompany(viewerClient, companyId)
 
   const existingUoms = expectNoSupabaseError(
@@ -371,6 +381,28 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
     .single()
   throwSupabaseError(bin.error, 'Growth Batch bin setup failed')
   const binId = bin.data.id
+
+  const transferWarehouse = await ownerClient
+    .from('warehouses')
+    .insert({ company_id: companyId, code: `${PREFIX.toUpperCase()}-WH2`, name: `${PREFIX} Transfer House`, status: 'active' })
+    .select('id')
+    .single()
+  throwSupabaseError(transferWarehouse.error, 'Growth Batch transfer warehouse setup failed')
+  const transferWarehouseId = transferWarehouse.data.id
+  const transferBin = await ownerClient
+    .from('bins')
+    .insert({
+      id: `${PREFIX.toUpperCase()}-TBIN`,
+      company_id: companyId,
+      warehouseId: transferWarehouseId,
+      code: 'TGBIN',
+      name: 'Transfer bin',
+      status: 'active',
+    })
+    .select('id')
+    .single()
+  throwSupabaseError(transferBin.error, 'Growth Batch transfer bin setup failed')
+  const transferBinId = transferBin.data.id
 
   const priceItem = await ownerClient
     .from('items')
@@ -477,11 +509,13 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
         'growth_batch_stock_inputs',
         'growth_batch_stock_input_reversal_lines',
         'growth_batch_losses',
-        'growth_batch_loss_reversal_lines'
+        'growth_batch_loss_reversal_lines',
+        'growth_batch_transfers',
+        'growth_batch_transfer_reversal_lines'
       )
       order by relname;
     `)
-    assert.equal(schemaRows.length, 9, 'Expected all Growth Batch tables to exist')
+    assert.equal(schemaRows.length, 11, 'Expected all Growth Batch tables to exist')
     assert.equal(schemaRows.every((row) => row.relrowsecurity === true), true, 'Expected Growth Batch RLS enabled')
     assert.equal(schemaRows.every((row) => row.relforcerowsecurity === true), true, 'Expected Growth Batch FORCE RLS enabled')
 
@@ -504,7 +538,24 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
         has_function_privilege('anon', '${RECORD_LOSS_SIGNATURE}', 'EXECUTE') as anon_loss_record,
         has_function_privilege('authenticated', '${RECORD_LOSS_SIGNATURE}', 'EXECUTE') as auth_loss_record,
         has_function_privilege('anon', '${REVERSE_LOSS_SIGNATURE}', 'EXECUTE') as anon_loss_reverse,
-        has_function_privilege('authenticated', '${REVERSE_LOSS_SIGNATURE}', 'EXECUTE') as auth_loss_reverse;
+        has_function_privilege('authenticated', '${REVERSE_LOSS_SIGNATURE}', 'EXECUTE') as auth_loss_reverse,
+        has_function_privilege('public', '${NORMALIZE_LOCATION_SIGNATURE}', 'EXECUTE') as public_normalize_location,
+        has_function_privilege('anon', '${NORMALIZE_LOCATION_SIGNATURE}', 'EXECUTE') as anon_normalize_location,
+        has_function_privilege('authenticated', '${NORMALIZE_LOCATION_SIGNATURE}', 'EXECUTE') as auth_normalize_location,
+        has_function_privilege('postgres', '${NORMALIZE_LOCATION_SIGNATURE}', 'EXECUTE') as owner_normalize_location,
+        has_function_privilege('public', '${LOCATION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as public_location_fingerprint,
+        has_function_privilege('anon', '${LOCATION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as anon_location_fingerprint,
+        has_function_privilege('authenticated', '${LOCATION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as auth_location_fingerprint,
+        has_function_privilege('postgres', '${LOCATION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as owner_location_fingerprint,
+        has_function_privilege('public', '${PREVIEW_TRANSFER_SIGNATURE}', 'EXECUTE') as public_transfer_preview,
+        has_function_privilege('anon', '${PREVIEW_TRANSFER_SIGNATURE}', 'EXECUTE') as anon_transfer_preview,
+        has_function_privilege('authenticated', '${PREVIEW_TRANSFER_SIGNATURE}', 'EXECUTE') as auth_transfer_preview,
+        has_function_privilege('public', '${POST_TRANSFER_SIGNATURE}', 'EXECUTE') as public_transfer_post,
+        has_function_privilege('anon', '${POST_TRANSFER_SIGNATURE}', 'EXECUTE') as anon_transfer_post,
+        has_function_privilege('authenticated', '${POST_TRANSFER_SIGNATURE}', 'EXECUTE') as auth_transfer_post,
+        has_function_privilege('public', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as public_transfer_reverse,
+        has_function_privilege('anon', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as anon_transfer_reverse,
+        has_function_privilege('authenticated', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as auth_transfer_reverse;
     `)
     assert.equal(grantRows[0].anon_create, false, 'anon must not execute create_growth_batch_draft')
     assert.equal(grantRows[0].anon_activate, false, 'anon must not execute activate_growth_batch')
@@ -515,6 +566,20 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
     assert.equal(grantRows[0].anon_loss_preview, false, 'anon must not execute preview_growth_batch_loss')
     assert.equal(grantRows[0].anon_loss_record, false, 'anon must not execute record_growth_batch_loss')
     assert.equal(grantRows[0].anon_loss_reverse, false, 'anon must not execute reverse_growth_batch_loss')
+    assert.equal(grantRows[0].public_normalize_location, false, 'PUBLIC must not execute growth_batch_normalize_location_description')
+    assert.equal(grantRows[0].anon_normalize_location, false, 'anon must not execute growth_batch_normalize_location_description')
+    assert.equal(grantRows[0].auth_normalize_location, false, 'authenticated must not execute growth_batch_normalize_location_description')
+    assert.equal(grantRows[0].owner_normalize_location, true, 'function owner must retain growth_batch_normalize_location_description execution')
+    assert.equal(grantRows[0].public_location_fingerprint, false, 'PUBLIC must not execute growth_batch_location_fingerprint')
+    assert.equal(grantRows[0].anon_location_fingerprint, false, 'anon must not execute growth_batch_location_fingerprint')
+    assert.equal(grantRows[0].auth_location_fingerprint, false, 'authenticated must not execute growth_batch_location_fingerprint')
+    assert.equal(grantRows[0].owner_location_fingerprint, true, 'function owner must retain growth_batch_location_fingerprint execution')
+    assert.equal(grantRows[0].public_transfer_preview, false, 'PUBLIC must not execute preview_growth_batch_transfer')
+    assert.equal(grantRows[0].anon_transfer_preview, false, 'anon must not execute preview_growth_batch_transfer')
+    assert.equal(grantRows[0].public_transfer_post, false, 'PUBLIC must not execute transfer_growth_batch')
+    assert.equal(grantRows[0].anon_transfer_post, false, 'anon must not execute transfer_growth_batch')
+    assert.equal(grantRows[0].public_transfer_reverse, false, 'PUBLIC must not execute reverse_growth_batch_transfer')
+    assert.equal(grantRows[0].anon_transfer_reverse, false, 'anon must not execute reverse_growth_batch_transfer')
     assert.equal(grantRows[0].auth_create, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_activate, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_measurement, true, 'authenticated users execute governed Growth Batch RPCs')
@@ -524,6 +589,39 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
     assert.equal(grantRows[0].auth_loss_preview, true, 'authenticated users execute governed Growth Batch loss preview')
     assert.equal(grantRows[0].auth_loss_record, true, 'authenticated users execute governed Growth Batch loss recording')
     assert.equal(grantRows[0].auth_loss_reverse, true, 'authenticated users execute governed Growth Batch loss reversal')
+    assert.equal(grantRows[0].auth_transfer_preview, true, 'authenticated users execute governed Growth Batch transfer preview')
+    assert.equal(grantRows[0].auth_transfer_post, true, 'authenticated users execute governed Growth Batch transfer posting')
+    assert.equal(grantRows[0].auth_transfer_reverse, true, 'authenticated users execute governed Growth Batch transfer reversal')
+
+    const helperExecutionDenied = 'permission denied|could not find|not found|schema cache'
+    await expectPostgrestError(
+      operatorClient.rpc('growth_batch_normalize_location_description', { p_description: ' Direct helper call ' }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      anonClient.rpc('growth_batch_normalize_location_description', { p_description: ' Direct helper call ' }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('growth_batch_location_fingerprint', {
+        p_company_id: companyId,
+        p_growth_batch_id: companyId,
+        p_warehouse_id: null,
+        p_bin_id: null,
+        p_location_description: ' Direct helper call ',
+      }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      anonClient.rpc('growth_batch_location_fingerprint', {
+        p_company_id: companyId,
+        p_growth_batch_id: companyId,
+        p_warehouse_id: null,
+        p_bin_id: null,
+        p_location_description: ' Direct helper call ',
+      }),
+      helperExecutionDenied,
+    )
 
     await expectPostgrestError(
       anonClient.rpc('create_growth_batch_draft', {
@@ -628,6 +726,45 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
         reason: 'Direct mutation blocked',
       }),
       'direct growth_batch_loss_reversal_lines insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_transfers').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        event_id: '00000000-0000-0000-0000-000000000000',
+        source_warehouse_id: warehouseId,
+        destination_warehouse_id: transferWarehouseId,
+        primary_quantity_basis: 'count',
+        current_primary_qty: 1,
+        primary_uom_id: eachUomId,
+        accumulated_material_cost: 0,
+        accumulated_direct_cost: 0,
+        accumulated_total_cost: 0,
+        harvested_cost: 0,
+        remaining_cost: 0,
+        transfer_reason: 'operational_move',
+      }),
+      'direct growth_batch_transfers insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_transfer_reversal_lines').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        reversal_event_id: '00000000-0000-0000-0000-000000000000',
+        original_event_id: '00000000-0000-0000-0000-000000000000',
+        original_transfer_id: '00000000-0000-0000-0000-000000000000',
+        reversal_source_warehouse_id: transferWarehouseId,
+        reversal_destination_warehouse_id: warehouseId,
+        current_primary_qty: 1,
+        primary_uom_id: eachUomId,
+        accumulated_material_cost: 0,
+        accumulated_direct_cost: 0,
+        accumulated_total_cost: 0,
+        harvested_cost: 0,
+        remaining_cost: 0,
+        reason: 'Direct mutation blocked',
+      }),
+      'direct growth_batch_transfer_reversal_lines insert',
     )
   })
 
@@ -2005,6 +2142,626 @@ test('Growth Batches G1-G3 authority, lifecycle, idempotency, stock inputs, and 
     assert.equal(duplicateResults.every((result) => !result.error), true, `Expected duplicate request replay to succeed: ${duplicateResults.map((result) => result.error?.message).filter(Boolean).join('; ')}`)
     assert.equal(unwrapRpcSingle(duplicateResults[0].data).event_id, unwrapRpcSingle(duplicateResults[1].data).event_id)
     assert.equal(await countRows(ownerClient, 'growth_batch_losses', [['eq', 'growth_batch_id', duplicateBatch.batch_id]]), 1)
+  })
+
+  await t.test('G4.2 full-batch transfers, transfer reversals, and isolation', async () => {
+    const transferBatch = await createActiveGrowthBatch('Transfer Batch', { openingQty: 20, openingWeight: 40 })
+    const transferSnapshotSelect = 'status,warehouse_id,bin_id,location_description,current_primary_qty,current_total_weight,accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,harvested_cost,remaining_cost,latest_event_sequence'
+
+    async function transferMutationSnapshot(batchId) {
+      const [
+        growthBatchCount,
+        eventCount,
+        transferCount,
+        reversalCount,
+        postingRequestCount,
+        movementCount,
+        stockLevelCount,
+        financeCounts,
+        batch,
+        itemPrice,
+      ] = await Promise.all([
+        countRows(ownerClient, 'growth_batches', [['eq', 'company_id', companyId]]),
+        countRows(ownerClient, 'growth_batch_events', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_transfers', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_transfer_reversal_lines', [['eq', 'growth_batch_id', batchId]]),
+        countRows(admin, 'posting_requests', [['eq', 'company_id', companyId]]),
+        stockMovementCount(admin, companyId),
+        countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]),
+        financeIsolationCounts(admin, companyId),
+        querySingle(ownerClient, 'growth_batches', transferSnapshotSelect, [['eq', 'id', batchId]]),
+        querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]]),
+      ])
+      return {
+        growthBatchCount,
+        eventCount,
+        transferCount,
+        reversalCount,
+        postingRequestCount,
+        movementCount,
+        stockLevelCount,
+        financeCounts,
+        batch,
+        itemPrice,
+      }
+    }
+
+    function previewBlockerCodes(preview) {
+      return (preview.blocking_reasons ?? []).map((reason) => reason.code)
+    }
+
+    async function assertTransferPreviewNonMutation(batchId, before, label) {
+      assert.deepEqual(await transferMutationSnapshot(batchId), before, `${label} preview must not mutate database state`)
+    }
+
+    async function expectTransferPreviewBlocker(payload, expectedCode, label) {
+      const before = await transferMutationSnapshot(payload.p_growth_batch_id)
+      const preview = unwrapRpcSingle(expectNoSupabaseError(
+        await operatorClient.rpc('preview_growth_batch_transfer', payload),
+        `Expected ${label} transfer preview to return blockers`,
+      ))
+      assert.equal(preview.ready, false, `${label} preview must not be ready`)
+      assert.equal(previewBlockerCodes(preview).includes(expectedCode), true, `${label} preview must include ${expectedCode}`)
+      await assertTransferPreviewNonMutation(payload.p_growth_batch_id, before, `${label} transfer`)
+      return preview
+    }
+
+    const transferPayload = {
+      p_growth_batch_id: transferBatch.batch_id,
+      p_destination_warehouse_id: transferWarehouseId,
+      p_destination_bin_id: transferBinId,
+      p_location_description: 'Transfer pen B',
+      p_effective_date: todayIso(),
+      p_transfer_reason: 'operational_move',
+      p_notes: 'Controlled transfer test',
+    }
+
+    await expectPostgrestError(
+      viewerClient.rpc('preview_growth_batch_transfer', transferPayload),
+      'operator_role_required',
+    )
+    await expectPostgrestError(
+      crossOwnerClient.rpc('preview_growth_batch_transfer', transferPayload),
+      'growth_batch_not_found',
+    )
+
+    const previewBefore = await transferMutationSnapshot(transferBatch.batch_id)
+    const preview = unwrapRpcSingle(expectNoSupabaseError(
+      await operatorClient.rpc('preview_growth_batch_transfer', transferPayload),
+      'Expected transfer preview to succeed',
+    ))
+    assert.equal(preview.ready, true)
+    assert.deepEqual(previewBlockerCodes(preview), [])
+    assert.equal(preview.full_batch_transfer, true)
+    assert.equal(preview.source_location_fingerprint.length, 32)
+    assert.equal(preview.source_location.warehouse_id, warehouseId)
+    assert.equal(preview.source_location.bin_id, binId)
+    assert.equal(preview.destination_location.warehouse_id, transferWarehouseId)
+    assert.equal(preview.destination_location.bin_id, transferBinId)
+    assert.equal(Number(preview.current_quantity), 20)
+    assert.equal(Number(preview.current_total_weight), 40)
+    assert.equal(Number(preview.current_material_cost), 0)
+    assert.equal(Number(preview.current_direct_cost), 0)
+    assert.equal(Number(preview.projected_material_cost), 0)
+    assert.equal(Number(preview.projected_direct_cost), 0)
+    assert.equal(preview.stock_ledger_effect, 'not_affected')
+    assert.equal(preview.finance_effect, 'not_affected')
+    assert.equal(preview.cost_effect, 'unchanged')
+    await assertTransferPreviewNonMutation(transferBatch.batch_id, previewBefore, 'Valid transfer')
+
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_destination_warehouse_id: warehouseId,
+      p_destination_bin_id: binId,
+      p_location_description: null,
+    }, 'growth_batch_transfer_same_location', 'same destination')
+
+    const noSourceBatch = await createActiveGrowthBatch('Transfer No Source Batch', { openingQty: 5, openingWeight: 10, warehouse: null, bin: null })
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_growth_batch_id: noSourceBatch.batch_id,
+    }, 'source_location_not_canonical', 'missing source location')
+
+    const zeroQuantityBatch = await createActiveGrowthBatch('Transfer Zero Quantity Batch', { openingQty: 1, openingWeight: 2 })
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: zeroQuantityBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 1,
+      p_weight_lost: null,
+      p_reason_code: 'disease',
+      p_notes: null,
+      p_request_key: `${PREFIX}-transfer-zero-loss`,
+    }))
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_growth_batch_id: zeroQuantityBatch.batch_id,
+    }, 'growth_batch_transfer_empty_batch', 'zero current quantity')
+
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_effective_date: addDaysIso(-1),
+    }, 'growth_batch_transfer_date_before_start', 'before-start transfer date')
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_effective_date: addDaysIso(7),
+    }, 'growth_batch_transfer_date_in_future', 'future transfer date')
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_transfer_reason: 'unsupported_reason',
+    }, 'growth_batch_transfer_reason_invalid', 'invalid transfer purpose')
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_transfer_reason: 'other',
+      p_notes: '',
+    }, 'growth_batch_transfer_notes_required', 'other transfer without notes')
+
+    const inactiveWarehouse = await ownerClient
+      .from('warehouses')
+      .insert({ company_id: companyId, code: `${PREFIX.toUpperCase()}-INWH`, name: `${PREFIX} Inactive WH`, status: 'inactive' })
+      .select('id')
+      .single()
+    throwSupabaseError(inactiveWarehouse.error, 'inactive transfer warehouse setup failed')
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_destination_warehouse_id: inactiveWarehouse.data.id,
+      p_destination_bin_id: null,
+    }, 'destination_warehouse_inactive', 'inactive destination warehouse')
+
+    const inactiveBin = await ownerClient
+      .from('bins')
+      .insert({
+        id: `${PREFIX.toUpperCase()}-INBIN`,
+        company_id: companyId,
+        warehouseId: transferWarehouseId,
+        code: 'INBIN',
+        name: 'Inactive transfer bin',
+        status: 'inactive',
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(inactiveBin.error, 'inactive transfer bin setup failed')
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_destination_bin_id: inactiveBin.data.id,
+    }, 'destination_bin_inactive', 'inactive destination bin')
+
+    const transferCrossCompany = unwrapRpcSingle(expectNoSupabaseError(
+      await crossOwnerClient.rpc('create_company_and_bootstrap', { p_name: `${PREFIX} Transfer Cross Company` }),
+      'Expected transfer cross company bootstrap to succeed',
+    ))
+    created.companyIds.add(transferCrossCompany.out_company_id)
+    await setActiveCompany(crossOwnerClient, transferCrossCompany.out_company_id)
+    const crossWarehouse = await crossOwnerClient
+      .from('warehouses')
+      .insert({ company_id: transferCrossCompany.out_company_id, code: `${PREFIX.toUpperCase()}-TCWH`, name: 'Transfer cross warehouse', status: 'active' })
+      .select('id')
+      .single()
+    throwSupabaseError(crossWarehouse.error, 'transfer cross warehouse setup failed')
+    await setActiveCompany(crossOwnerClient, transferCrossCompany.out_company_id)
+    await expectTransferPreviewBlocker({
+      ...transferPayload,
+      p_destination_warehouse_id: crossWarehouse.data.id,
+      p_destination_bin_id: null,
+    }, 'destination_warehouse_invalid', 'cross-company destination warehouse')
+    await setActiveCompany(ownerClient, companyId)
+
+    await expectPostgrestError(
+      operatorClient.rpc('transfer_growth_batch', {
+        ...transferPayload,
+        p_expected_source_fingerprint: null,
+        p_request_key: `${PREFIX}-transfer-missing-fingerprint`,
+      }),
+      'growth_batch_transfer_source_fingerprint_required',
+    )
+
+    const transferBefore = await transferMutationSnapshot(transferBatch.batch_id)
+    const postedTransfer = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('transfer_growth_batch', {
+      ...transferPayload,
+      p_expected_source_fingerprint: preview.source_location_fingerprint,
+      p_request_key: `${PREFIX}-transfer-post`,
+    }), 'Expected transfer posting to succeed'))
+    assert.equal(postedTransfer.event_type, 'transfer')
+    assert.equal(postedTransfer.event_sequence, Number(transferBefore.batch.latest_event_sequence) + 1)
+    assert.equal(postedTransfer.transfer_detail_id.length, 36)
+    assert.equal(postedTransfer.request_status, 'succeeded')
+    assert.equal(Number(postedTransfer.current_quantity), 20)
+    assert.equal(Number(postedTransfer.current_total_weight), 40)
+
+    const afterTransfer = await querySingle(ownerClient, 'growth_batches', transferSnapshotSelect, [['eq', 'id', transferBatch.batch_id]])
+    assert.equal(afterTransfer.warehouse_id, transferWarehouseId)
+    assert.equal(afterTransfer.bin_id, transferBinId)
+    assert.equal(afterTransfer.location_description, 'Transfer pen B')
+    assert.equal(Number(afterTransfer.current_primary_qty), Number(transferBefore.batch.current_primary_qty))
+    assert.equal(Number(afterTransfer.current_total_weight), Number(transferBefore.batch.current_total_weight))
+    assert.equal(Number(afterTransfer.accumulated_material_cost), Number(transferBefore.batch.accumulated_material_cost))
+    assert.equal(Number(afterTransfer.accumulated_direct_cost), Number(transferBefore.batch.accumulated_direct_cost))
+    assert.equal(Number(afterTransfer.accumulated_total_cost), Number(transferBefore.batch.accumulated_total_cost))
+    assert.equal(Number(afterTransfer.harvested_cost), Number(transferBefore.batch.harvested_cost))
+    assert.equal(Number(afterTransfer.remaining_cost), Number(transferBefore.batch.remaining_cost))
+    assert.equal(await stockMovementCount(admin, companyId), transferBefore.movementCount, 'Transfer must not create stock movements')
+    assert.equal(await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]), transferBefore.stockLevelCount, 'Transfer must not change stock levels')
+    assert.deepEqual(await financeIsolationCounts(admin, companyId), transferBefore.financeCounts)
+    assert.deepEqual(await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]]), transferBefore.itemPrice)
+
+    const transferReplay = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('transfer_growth_batch', {
+      ...transferPayload,
+      p_expected_source_fingerprint: preview.source_location_fingerprint,
+      p_request_key: `${PREFIX}-transfer-post`,
+    }), 'Expected transfer replay to return original result'))
+    assert.equal(transferReplay.event_id, postedTransfer.event_id)
+    await expectPostgrestError(
+      operatorClient.rpc('transfer_growth_batch', {
+        ...transferPayload,
+        p_location_description: 'Changed location note',
+        p_expected_source_fingerprint: preview.source_location_fingerprint,
+        p_request_key: `${PREFIX}-transfer-post`,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('transfer_growth_batch', {
+        p_growth_batch_id: transferBatch.batch_id,
+        p_destination_warehouse_id: warehouseId,
+        p_destination_bin_id: binId,
+        p_location_description: null,
+        p_effective_date: todayIso(),
+        p_transfer_reason: 'operational_move',
+        p_notes: null,
+        p_expected_source_fingerprint: preview.source_location_fingerprint,
+        p_request_key: `${PREFIX}-transfer-stale-source`,
+      }),
+      'growth_batch_transfer_source_changed',
+    )
+
+    const transferRows = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_transfer_history').select('*').eq('growth_batch_id', transferBatch.batch_id).order('event_sequence', { ascending: true }),
+      'Expected transfer history to load',
+    )
+    assert.equal(transferRows.length, 1)
+    assert.equal(transferRows[0].event_id, postedTransfer.event_id)
+    assert.equal(transferRows[0].source_warehouse_id, warehouseId)
+    assert.equal(transferRows[0].destination_warehouse_id, transferWarehouseId)
+    assert.equal(transferRows[0].reversal_eligible, true)
+    const timelineTransfer = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_event_timeline').select('event_type,typed_detail_summary').eq('id', postedTransfer.event_id),
+      'Expected transfer timeline row to load',
+    )
+    assert.equal(timelineTransfer.length, 1)
+    assert.equal(timelineTransfer[0].event_type, 'transfer')
+    assert.equal(timelineTransfer[0].typed_detail_summary?.destination_warehouse_id, transferWarehouseId)
+
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_transfers').update({ transfer_reason: 'maintenance' }).eq('id', postedTransfer.transfer_detail_id),
+      'direct growth_batch_transfers update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_transfers').delete().eq('id', postedTransfer.transfer_detail_id),
+      'direct growth_batch_transfers delete',
+    )
+
+    await expectPostgrestError(
+      operatorClient.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: transferBatch.batch_id,
+        p_original_event_id: postedTransfer.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Operator cannot reverse transfer',
+        p_expected_current_location_fingerprint: transferRows[0].current_location_fingerprint,
+        p_request_key: `${PREFIX}-transfer-operator-reverse`,
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: transferBatch.batch_id,
+        p_original_event_id: postedTransfer.event_id,
+        p_effective_date: todayIso(),
+        p_reason: '',
+        p_expected_current_location_fingerprint: transferRows[0].current_location_fingerprint,
+        p_request_key: `${PREFIX}-transfer-reverse-missing-reason`,
+      }),
+      'reversal_reason_required',
+    )
+
+    const originalTransferBeforeReverse = await querySingle(ownerClient, 'growth_batch_transfers', '*', [['eq', 'event_id', postedTransfer.event_id]])
+    const reverseBefore = await transferMutationSnapshot(transferBatch.batch_id)
+    const reversedTransfer = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('reverse_growth_batch_transfer', {
+      p_growth_batch_id: transferBatch.batch_id,
+      p_original_event_id: postedTransfer.event_id,
+      p_effective_date: todayIso(),
+      p_reason: 'Controlled transfer reversal',
+      p_expected_current_location_fingerprint: transferRows[0].current_location_fingerprint,
+      p_request_key: `${PREFIX}-transfer-reverse`,
+    }), 'Expected transfer reversal to succeed'))
+    assert.equal(reversedTransfer.event_type, 'transfer_reversal')
+    assert.equal(reversedTransfer.original_event_id, postedTransfer.event_id)
+    assert.equal(reversedTransfer.request_status, 'succeeded')
+    const afterReverse = await querySingle(ownerClient, 'growth_batches', transferSnapshotSelect, [['eq', 'id', transferBatch.batch_id]])
+    assert.equal(afterReverse.warehouse_id, warehouseId)
+    assert.equal(afterReverse.bin_id, binId)
+    assert.equal(afterReverse.location_description, null)
+    assert.equal(Number(afterReverse.current_primary_qty), Number(reverseBefore.batch.current_primary_qty))
+    assert.equal(Number(afterReverse.current_total_weight), Number(reverseBefore.batch.current_total_weight))
+    assert.equal(Number(afterReverse.accumulated_material_cost), Number(reverseBefore.batch.accumulated_material_cost))
+    assert.equal(Number(afterReverse.accumulated_direct_cost), Number(reverseBefore.batch.accumulated_direct_cost))
+    assert.equal(Number(afterReverse.accumulated_total_cost), Number(reverseBefore.batch.accumulated_total_cost))
+    assert.equal(Number(afterReverse.harvested_cost), Number(reverseBefore.batch.harvested_cost))
+    assert.equal(Number(afterReverse.remaining_cost), Number(reverseBefore.batch.remaining_cost))
+    assert.equal(await stockMovementCount(admin, companyId), reverseBefore.movementCount, 'Transfer reversal must not create stock movements')
+    assert.equal(await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]), reverseBefore.stockLevelCount, 'Transfer reversal must not change stock levels')
+    assert.deepEqual(await financeIsolationCounts(admin, companyId), reverseBefore.financeCounts)
+    assert.deepEqual(await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]]), reverseBefore.itemPrice)
+    assert.deepEqual(await querySingle(ownerClient, 'growth_batch_transfers', '*', [['eq', 'event_id', postedTransfer.event_id]]), originalTransferBeforeReverse)
+
+    const reversedTransferReplay = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('reverse_growth_batch_transfer', {
+      p_growth_batch_id: transferBatch.batch_id,
+      p_original_event_id: postedTransfer.event_id,
+      p_effective_date: todayIso(),
+      p_reason: 'Controlled transfer reversal',
+      p_expected_current_location_fingerprint: transferRows[0].current_location_fingerprint,
+      p_request_key: `${PREFIX}-transfer-reverse`,
+    }), 'Expected transfer reversal replay to return original result'))
+    assert.equal(reversedTransferReplay.event_id, reversedTransfer.event_id)
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: transferBatch.batch_id,
+        p_original_event_id: postedTransfer.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Changed transfer reversal reason',
+        p_expected_current_location_fingerprint: transferRows[0].current_location_fingerprint,
+        p_request_key: `${PREFIX}-transfer-reverse`,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: transferBatch.batch_id,
+        p_original_event_id: postedTransfer.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Second transfer reversal',
+        p_expected_current_location_fingerprint: transferRows[0].current_location_fingerprint,
+        p_request_key: `${PREFIX}-transfer-reverse-second`,
+      }),
+      'growth_batch_transfer_already_reversed',
+    )
+    const transferReversalRows = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_transfer_reversal_lines').select('*').eq('original_event_id', postedTransfer.event_id),
+      'Expected transfer reversal detail to load',
+    )
+    assert.equal(transferReversalRows.length, 1)
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_transfer_reversal_lines').update({ reason: 'mutate' }).eq('id', transferReversalRows[0].id),
+      'direct growth_batch_transfer_reversal_lines update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_transfer_reversal_lines').delete().eq('id', transferReversalRows[0].id),
+      'direct growth_batch_transfer_reversal_lines delete',
+    )
+
+    const nonLocationDependencyBatch = await createActiveGrowthBatch('Transfer Non Location Dependency Batch', { openingQty: 10, openingWeight: 20 })
+    const nonLocationPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_transfer', {
+      ...transferPayload,
+      p_growth_batch_id: nonLocationDependencyBatch.batch_id,
+      p_notes: 'Non-location dependency transfer',
+    })))
+    const nonLocationTransfer = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('transfer_growth_batch', {
+      ...transferPayload,
+      p_growth_batch_id: nonLocationDependencyBatch.batch_id,
+      p_notes: 'Non-location dependency transfer',
+      p_expected_source_fingerprint: nonLocationPreview.source_location_fingerprint,
+      p_request_key: `${PREFIX}-transfer-non-location-post`,
+    })))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_measurement', {
+      p_company_id: companyId,
+      p_growth_batch_id: nonLocationDependencyBatch.batch_id,
+      p_measurement_type: 'total_weight',
+      p_value: 18,
+      p_uom_id: kgUomId,
+      p_observed_at: new Date().toISOString(),
+      p_sample_size: null,
+      p_minimum: null,
+      p_maximum: null,
+      p_average: null,
+      p_description: null,
+      p_notes: null,
+      p_request_key: `${PREFIX}-transfer-later-measurement`,
+      p_sample_size_present: false,
+      p_minimum_present: false,
+      p_maximum_present: false,
+      p_average_present: false,
+    }))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: nonLocationDependencyBatch.batch_id,
+      p_category: 'transport',
+      p_description: 'Transport expense remains direct cost',
+      p_amount: 2,
+      p_event_date: todayIso(),
+      p_notes: null,
+      p_request_key: `${PREFIX}-transfer-later-direct-cost`,
+    }))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: nonLocationDependencyBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 1,
+      p_weight_lost: null,
+      p_reason_code: 'handling',
+      p_notes: null,
+      p_request_key: `${PREFIX}-transfer-later-loss`,
+    }))
+    expectNoSupabaseError(await operatorClient.rpc('post_growth_batch_stock_input', {
+      p_batch_id: nonLocationDependencyBatch.batch_id,
+      p_effective_date: todayIso(),
+      p_lines: [{
+        item_id: feedItemId,
+        uom_id: kgUomId,
+        quantity: 1,
+        source_warehouse_id: warehouseId,
+        source_bin_id: binId,
+        line_notes: null,
+      }],
+      p_notes: 'Transfer reversal stock input dependency control',
+      p_request_key: `${PREFIX}-transfer-later-stock-input`,
+    }))
+    const nonLocationHistory = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_transfer_history').select('*').eq('event_id', nonLocationTransfer.event_id),
+      'Expected non-location transfer history to load',
+    )
+    assert.equal(nonLocationHistory.length, 1)
+    const nonLocationReverse = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('reverse_growth_batch_transfer', {
+      p_growth_batch_id: nonLocationDependencyBatch.batch_id,
+      p_original_event_id: nonLocationTransfer.event_id,
+      p_effective_date: todayIso(),
+      p_reason: 'Later non-location events do not block',
+      p_expected_current_location_fingerprint: nonLocationHistory[0].current_location_fingerprint,
+      p_request_key: `${PREFIX}-transfer-non-location-reverse`,
+    }), 'Expected later non-location events not to block transfer reversal'))
+    assert.equal(nonLocationReverse.event_type, 'transfer_reversal')
+    const nonLocationState = await querySingle(ownerClient, 'growth_batches', 'warehouse_id,bin_id,current_primary_qty,current_total_weight', [['eq', 'id', nonLocationDependencyBatch.batch_id]])
+    assert.equal(nonLocationState.warehouse_id, warehouseId)
+    assert.equal(nonLocationState.bin_id, binId)
+    assert.equal(Number(nonLocationState.current_primary_qty), 9)
+    assert.equal(Number(nonLocationState.current_total_weight), 18)
+
+    const olderTransferBatch = await createActiveGrowthBatch('Transfer Older Dependency Batch', { openingQty: 10, openingWeight: 12 })
+    const olderPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_transfer', {
+      ...transferPayload,
+      p_growth_batch_id: olderTransferBatch.batch_id,
+      p_notes: 'Older transfer dependency',
+    })))
+    const olderTransfer = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('transfer_growth_batch', {
+      ...transferPayload,
+      p_growth_batch_id: olderTransferBatch.batch_id,
+      p_notes: 'Older transfer dependency',
+      p_expected_source_fingerprint: olderPreview.source_location_fingerprint,
+      p_request_key: `${PREFIX}-older-transfer-first`,
+    })))
+    const secondPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_transfer', {
+      p_growth_batch_id: olderTransferBatch.batch_id,
+      p_destination_warehouse_id: warehouseId,
+      p_destination_bin_id: binId,
+      p_location_description: null,
+      p_effective_date: todayIso(),
+      p_transfer_reason: 'space_management',
+      p_notes: 'Later location transfer',
+    })))
+    expectNoSupabaseError(await operatorClient.rpc('transfer_growth_batch', {
+      p_growth_batch_id: olderTransferBatch.batch_id,
+      p_destination_warehouse_id: warehouseId,
+      p_destination_bin_id: binId,
+      p_location_description: null,
+      p_effective_date: todayIso(),
+      p_transfer_reason: 'space_management',
+      p_notes: 'Later location transfer',
+      p_expected_source_fingerprint: secondPreview.source_location_fingerprint,
+      p_request_key: `${PREFIX}-older-transfer-second`,
+    }))
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: olderTransferBatch.batch_id,
+        p_original_event_id: olderTransfer.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Older transfer blocked',
+        p_expected_current_location_fingerprint: secondPreview.source_location_fingerprint,
+        p_request_key: `${PREFIX}-older-transfer-reverse`,
+      }),
+      'growth_batch_transfer_reversal_dependency_exists',
+    )
+
+    const sourceInactiveWarehouse = await ownerClient
+      .from('warehouses')
+      .insert({ company_id: companyId, code: `${PREFIX.toUpperCase()}-SRCIN`, name: `${PREFIX} Source Inactive`, status: 'active' })
+      .select('id')
+      .single()
+    throwSupabaseError(sourceInactiveWarehouse.error, 'source inactive warehouse setup failed')
+    const sourceInactiveBin = await ownerClient
+      .from('bins')
+      .insert({
+        id: `${PREFIX.toUpperCase()}-SRCBIN`,
+        company_id: companyId,
+        warehouseId: sourceInactiveWarehouse.data.id,
+        code: 'SRCBIN',
+        name: 'Source inactive bin',
+        status: 'active',
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(sourceInactiveBin.error, 'source inactive bin setup failed')
+    const inactiveSourceBatch = await createActiveGrowthBatch('Transfer Inactive Source Batch', {
+      openingQty: 6,
+      openingWeight: 9,
+      warehouse: sourceInactiveWarehouse.data.id,
+      bin: sourceInactiveBin.data.id,
+    })
+    const inactiveSourcePreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_transfer', {
+      ...transferPayload,
+      p_growth_batch_id: inactiveSourceBatch.batch_id,
+      p_notes: 'Inactive original source setup',
+    })))
+    const inactiveSourceTransfer = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('transfer_growth_batch', {
+      ...transferPayload,
+      p_growth_batch_id: inactiveSourceBatch.batch_id,
+      p_notes: 'Inactive original source setup',
+      p_expected_source_fingerprint: inactiveSourcePreview.source_location_fingerprint,
+      p_request_key: `${PREFIX}-inactive-source-transfer`,
+    })))
+    const inactiveSourceHistory = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_transfer_history').select('*').eq('event_id', inactiveSourceTransfer.event_id),
+      'Expected inactive-source transfer history to load',
+    )
+    expectNoSupabaseError(await ownerClient.from('warehouses').update({ status: 'inactive' }).eq('id', sourceInactiveWarehouse.data.id))
+    await expectPostgrestError(
+      ownerClient.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: inactiveSourceBatch.batch_id,
+        p_original_event_id: inactiveSourceTransfer.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Original source inactive',
+        p_expected_current_location_fingerprint: inactiveSourceHistory[0].current_location_fingerprint,
+        p_request_key: `${PREFIX}-inactive-source-reverse`,
+      }),
+      'growth_batch_transfer_original_source_inactive',
+    )
+
+    const concurrentDestinationWarehouse = await ownerClient
+      .from('warehouses')
+      .insert({ company_id: companyId, code: `${PREFIX.toUpperCase()}-CWH`, name: `${PREFIX} Concurrent Transfer`, status: 'active' })
+      .select('id')
+      .single()
+    throwSupabaseError(concurrentDestinationWarehouse.error, 'concurrent transfer destination setup failed')
+    const concurrentTransferBatch = await createActiveGrowthBatch('Concurrent Transfer Batch', { openingQty: 5, openingWeight: 8 })
+    const concurrentPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_transfer', {
+      ...transferPayload,
+      p_growth_batch_id: concurrentTransferBatch.batch_id,
+      p_location_description: 'Concurrent A',
+    })))
+    const concurrentResults = await Promise.all([
+      operatorClient.rpc('transfer_growth_batch', {
+        ...transferPayload,
+        p_growth_batch_id: concurrentTransferBatch.batch_id,
+        p_location_description: 'Concurrent A',
+        p_expected_source_fingerprint: concurrentPreview.source_location_fingerprint,
+        p_request_key: `${PREFIX}-concurrent-transfer-a`,
+      }),
+      ownerClient.rpc('transfer_growth_batch', {
+        p_growth_batch_id: concurrentTransferBatch.batch_id,
+        p_destination_warehouse_id: concurrentDestinationWarehouse.data.id,
+        p_destination_bin_id: null,
+        p_location_description: 'Concurrent B',
+        p_effective_date: todayIso(),
+        p_transfer_reason: 'operational_move',
+        p_notes: 'Concurrent transfer B',
+        p_expected_source_fingerprint: concurrentPreview.source_location_fingerprint,
+        p_request_key: `${PREFIX}-concurrent-transfer-b`,
+      }),
+    ])
+    assert.equal(concurrentResults.filter((result) => !result.error).length, 1, 'Only one competing transfer should succeed')
+    assert.equal(concurrentResults.filter((result) => result.error).length, 1, 'One competing transfer should fail stale-source validation')
+    const concurrentEvents = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_events').select('event_sequence,event_type').eq('growth_batch_id', concurrentTransferBatch.batch_id),
+      'Expected concurrent transfer events to load',
+    )
+    assert.equal(new Set(concurrentEvents.map((event) => event.event_sequence)).size, concurrentEvents.length, 'Concurrent transfer events must not duplicate sequence numbers')
   })
 
   await t.test('correction coverage for hashing, UOM boundaries, chronology, and concurrency', async () => {

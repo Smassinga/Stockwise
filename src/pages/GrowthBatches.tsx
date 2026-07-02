@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   Activity,
   AlertTriangle,
+  ArrowRightLeft,
   Ban,
   CalendarDays,
   CheckCircle2,
@@ -24,6 +25,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useIsMobile } from '../hooks/use-mobile'
+import { useI18n, type Locale } from '../lib/i18n'
 import { hasRole } from '../lib/roles'
 import {
   clearPostingRequestKey,
@@ -69,6 +71,7 @@ type MeasurementType = 'total_weight' | 'average_weight' | 'height' | 'area_obse
 type DirectCostCategory = 'labour' | 'utilities' | 'veterinary' | 'transport' | 'land_preparation' | 'water' | 'rent' | 'other'
 type LossType = 'mortality' | 'shrinkage'
 type LossReasonCode = 'disease' | 'injury' | 'predator' | 'weather' | 'handling' | 'culling' | 'natural_loss' | 'drying' | 'spoilage' | 'quality_loss' | 'other'
+type TransferReasonCode = 'operational_move' | 'space_management' | 'biosecurity' | 'environment' | 'maintenance' | 'consolidation' | 'other'
 
 type UomRow = {
   id: string
@@ -81,6 +84,7 @@ type WarehouseRow = {
   id: string
   code: string | null
   name: string
+  status?: string | null
 }
 
 type BinRow = {
@@ -88,6 +92,7 @@ type BinRow = {
   code: string
   name: string
   warehouseId: string
+  status?: string | null
 }
 
 type ItemRow = {
@@ -119,11 +124,16 @@ type GrowthBatchRegisterRow = {
   area: number | null
   area_uom_id: string | null
   area_uom_code: string | null
-  accumulated_material_cost: number
-  accumulated_direct_cost: number
-  accumulated_total_cost: number
-  harvested_cost: number
-  remaining_cost: number
+  current_material_cost: number
+  current_direct_cost: number
+  current_total_cost: number
+  current_harvested_cost: number
+  current_remaining_cost: number
+  projected_material_cost: number
+  projected_direct_cost: number
+  projected_total_cost: number
+  projected_harvested_cost: number
+  projected_remaining_cost: number
   warehouse_id: string | null
   warehouse_name: string | null
   bin_id: string | null
@@ -182,7 +192,7 @@ type GrowthBatchEventRow = {
   id: string
   event_sequence: number
   event_reference: string
-  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal'
+  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal' | 'transfer' | 'transfer_reversal'
   event_at: string
   event_date: string
   actor_display_name: string | null
@@ -238,6 +248,63 @@ type GrowthBatchLossRow = {
   restored_weight: number | null
   restored_weight_uom_id: string | null
   restored_weight_uom_code: string | null
+}
+
+type GrowthBatchTransferRow = {
+  id: string
+  growth_batch_id: string
+  event_id: string
+  event_sequence: number
+  event_reference: string
+  event_effective_date: string
+  event_created_at: string
+  actor_display_name: string | null
+  source_warehouse_id: string | null
+  source_warehouse_code: string | null
+  source_warehouse_name: string | null
+  source_bin_id: string | null
+  source_bin_code: string | null
+  source_bin_name: string | null
+  source_location_description: string | null
+  destination_warehouse_id: string
+  destination_warehouse_code: string | null
+  destination_warehouse_name: string | null
+  destination_bin_id: string | null
+  destination_bin_code: string | null
+  destination_bin_name: string | null
+  destination_location_description: string | null
+  current_location_fingerprint: string | null
+  primary_quantity_basis: QuantityBasis
+  current_primary_qty: number
+  primary_uom_id: string
+  primary_uom_code: string | null
+  current_total_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  area: number | null
+  area_uom_id: string | null
+  area_uom_code: string | null
+  accumulated_material_cost: number
+  accumulated_direct_cost: number
+  accumulated_total_cost: number
+  harvested_cost: number
+  remaining_cost: number
+  transfer_reason: TransferReasonCode
+  notes: string | null
+  reversed: boolean
+  reversal_detail_id: string | null
+  reversal_event_id: string | null
+  reversal_event_reference: string | null
+  reversal_event_sequence: number | null
+  reversal_effective_date: string | null
+  reversal_timestamp: string | null
+  reversal_actor_display_name: string | null
+  reversal_reason: string | null
+  is_latest_location_event: boolean
+  current_location_matches_destination: boolean
+  source_warehouse_active: boolean
+  source_bin_active: boolean
+  reversal_eligible: boolean
 }
 
 type GrowthBatchMeasurementRow = {
@@ -398,6 +465,47 @@ type LossPreview = {
   weight_uom_code: string | null
 }
 
+type TransferLocationPreview = {
+  warehouse_id: string | null
+  warehouse_code?: string | null
+  warehouse_name?: string | null
+  bin_id: string | null
+  bin_code?: string | null
+  bin_name?: string | null
+  location_description?: string | null
+}
+
+type TransferPreview = {
+  ready: boolean
+  blocking_reasons: Array<{ code?: string; [key: string]: unknown }>
+  batch_id: string
+  reference_no: string
+  status: BatchStatus
+  effective_date: string
+  transfer_reason: TransferReasonCode | null
+  source_location_fingerprint: string | null
+  source_location: TransferLocationPreview
+  destination_location: TransferLocationPreview
+  current_quantity: number
+  quantity_uom_id: string | null
+  quantity_uom_code: string | null
+  current_total_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  area: number | null
+  area_uom_id: string | null
+  area_uom_code: string | null
+  accumulated_material_cost: number
+  accumulated_direct_cost: number
+  accumulated_total_cost: number
+  harvested_cost: number
+  remaining_cost: number
+  full_batch_transfer: boolean
+  stock_ledger_effect: string
+  finance_effect: string
+  cost_effect: string
+}
+
 type StockInputPreviewLine = {
   line_no: number
   item_id: string
@@ -447,12 +555,504 @@ type LossReversalForm = {
   reason: string
 }
 
+type TransferForm = {
+  destinationWarehouseId: string
+  destinationBinId: string
+  locationDescription: string
+  effectiveDate: string
+  reasonCode: TransferReasonCode | ''
+  notes: string
+}
+
+type TransferReversalForm = {
+  eventId: string
+  eventReference: string
+  effectiveDate: string
+  expectedCurrentLocationFingerprint: string
+  reason: string
+}
+
 const batchFamilies: BatchFamily[] = ['poultry', 'livestock', 'fish', 'crop', 'nursery', 'other']
 const quantityBases: QuantityBasis[] = ['count', 'weight', 'area', 'other']
 const measurementTypes: MeasurementType[] = ['total_weight', 'average_weight', 'height', 'area_observation', 'temperature', 'other']
 const directCostCategories: DirectCostCategory[] = ['labour', 'utilities', 'veterinary', 'transport', 'land_preparation', 'water', 'rent', 'other']
 const mortalityReasons: LossReasonCode[] = ['disease', 'injury', 'predator', 'weather', 'handling', 'culling', 'other']
 const shrinkageReasons: LossReasonCode[] = ['weather', 'handling', 'natural_loss', 'drying', 'spoilage', 'quality_loss', 'other']
+const transferReasons: TransferReasonCode[] = ['operational_move', 'space_management', 'biosecurity', 'environment', 'maintenance', 'consolidation', 'other']
+
+const transferBlockerCodes = [
+  'growth_batch_transfer_reason_invalid',
+  'growth_batch_transfer_notes_required',
+  'growth_batch_not_active',
+  'growth_batch_transfer_empty_batch',
+  'growth_batch_transfer_source_required',
+  'source_location_not_canonical',
+  'growth_batch_transfer_quantity_required',
+  'growth_batch_transfer_source_fingerprint_required',
+  'growth_batch_transfer_source_changed',
+  'growth_batch_transfer_destination_required',
+  'destination_warehouse_required',
+  'growth_batch_transfer_destination_inactive',
+  'destination_warehouse_inactive',
+  'destination_bin_inactive',
+  'destination_warehouse_invalid',
+  'destination_bin_invalid',
+  'growth_batch_transfer_same_location',
+  'growth_batch_transfer_stale_source',
+  'growth_batch_transfer_not_latest',
+  'growth_batch_transfer_reversal_dependency_exists',
+  'growth_batch_transfer_current_location_changed',
+  'growth_batch_transfer_current_location_mismatch',
+  'growth_batch_transfer_not_found',
+  'growth_batch_transfer_original_event_invalid',
+  'growth_batch_transfer_sequence_invalid',
+  'growth_batch_transfer_source_inactive',
+  'growth_batch_transfer_original_source_inactive',
+  'growth_batch_transfer_date_before_latest_location_event',
+  'growth_batch_transfer_reversal_date_before_original',
+  'growth_batch_transfer_date_before_start',
+  'growth_batch_transfer_date_in_future',
+  'growth_batch_transfer_already_reversed',
+] as const
+
+type GrowthBatchTransferBlockerCode = (typeof transferBlockerCodes)[number]
+
+type GrowthBatchTransferCopy = {
+  actions: {
+    transferBatch: string
+    reverseTransfer: string
+    preview: string
+    close: string
+  }
+  aria: {
+    destinationWarehouse: string
+    destinationBin: string
+    transferPurpose: string
+  }
+  labels: {
+    currentLocation: string
+    currentQuantity: string
+    latestWeight: string
+    latestTotalWeight: string
+    entireCurrentQuantity: string
+    entireQuantity: string
+    entireWeight: string
+    fullQuantityMoved: string
+    weightSnapshot: string
+    destinationWarehouse: string
+    destinationBin: string
+    effectiveDate: string
+    purpose: string
+    locationNote: string
+    notes: string
+    stockLedger: string
+    costs: string
+    costEffect: string
+    from: string
+    to: string
+    originalEvent: string
+    reason: string
+  }
+  fallback: {
+    notSet: string
+    notRecorded: string
+    notSelected: string
+    teamMember: string
+    reversalEvent: string
+    reasonRecorded: string
+    unchanged: string
+    notAffected: string
+  }
+  dialog: {
+    title: string
+    description: string
+    stockNote: string
+    binHint: string
+    warehousePlaceholder: string
+    binPlaceholder: string
+    noBin: string
+    purposePlaceholder: string
+    locationNoteHint: string
+    notesRequiredHint: string
+    notesOptionalHint: string
+    reversalTitle: string
+    reversalDescription: string
+  }
+  history: {
+    title: string
+    description: string
+    emptyTitle: string
+    emptyDescription: string
+    transferBadge: string
+    transferReversalBadge: string
+    reversedBadge: string
+    lockedBadge: string
+    by: string
+    sequencePrefix: string
+    reversedBy: string
+    onDate: string
+    lockedReason: string
+  }
+  preview: {
+    readyToast: string
+    blockersToast: string
+    stale: string
+    ready: string
+    blockers: string
+  }
+  success: {
+    transferred: string
+    reversed: string
+  }
+  errors: {
+    unavailableActive: string
+    sourceRequired: string
+    quantityRequired: string
+    destinationSetupRequired: string
+    selectBatch: string
+    effectiveDateRequired: string
+    dateBeforeStart: string
+    dateFuture: string
+    destinationRequired: string
+    destinationInactive: string
+    binInactive: string
+    purposeRequired: string
+    purposeInvalid: string
+    otherNotesRequired: string
+    sameLocation: string
+    previewRequired: string
+    previewBlockers: string
+    previewRefreshRequired: string
+    reversalReasonRequired: string
+    historyRefreshRequired: string
+    managerRequired: string
+    requestMismatch: string
+    requestInProgress: string
+    permissionDenied: string
+    actionFailed: string
+  }
+  reasonLabels: Record<TransferReasonCode, string>
+  blockerLabels: Record<GrowthBatchTransferBlockerCode, string>
+}
+
+const growthBatchTransferCopy: Record<Locale, GrowthBatchTransferCopy> = {
+  en: {
+    actions: {
+      transferBatch: 'Transfer batch',
+      reverseTransfer: 'Reverse transfer',
+      preview: 'Preview',
+      close: 'Close',
+    },
+    aria: {
+      destinationWarehouse: 'Destination warehouse',
+      destinationBin: 'Destination bin',
+      transferPurpose: 'Transfer purpose',
+    },
+    labels: {
+      currentLocation: 'Current location',
+      currentQuantity: 'Current quantity',
+      latestWeight: 'Latest weight',
+      latestTotalWeight: 'Latest total weight',
+      entireCurrentQuantity: 'Entire current quantity',
+      entireQuantity: 'Entire quantity',
+      entireWeight: 'Entire weight',
+      fullQuantityMoved: 'Full quantity moved',
+      weightSnapshot: 'Weight snapshot',
+      destinationWarehouse: 'Destination warehouse',
+      destinationBin: 'Destination bin',
+      effectiveDate: 'Effective date',
+      purpose: 'Purpose',
+      locationNote: 'Location note',
+      notes: 'Notes',
+      stockLedger: 'Stock ledger',
+      costs: 'Costs',
+      costEffect: 'Cost effect',
+      from: 'From',
+      to: 'To',
+      originalEvent: 'Original event',
+      reason: 'Reason',
+    },
+    fallback: {
+      notSet: 'Not set',
+      notRecorded: 'Not recorded',
+      notSelected: 'Not selected',
+      teamMember: 'Team member',
+      reversalEvent: 'reversal event',
+      reasonRecorded: 'Reason recorded.',
+      unchanged: 'Unchanged',
+      notAffected: 'Not affected',
+    },
+    dialog: {
+      title: 'Transfer Growth Batch location',
+      description: 'This moves the entire current batch to another operational location. Quantity, weight, stock ledger, costs, and finance rows remain unchanged.',
+      stockNote: 'This is not a stock transfer. Previously consumed inventory remains in the Growth Batch history.',
+      binHint: 'Optional. Bins are limited to the selected warehouse.',
+      warehousePlaceholder: 'Select warehouse',
+      binPlaceholder: 'No bin',
+      noBin: 'No bin',
+      purposePlaceholder: 'Select purpose',
+      locationNoteHint: 'Optional detail for the destination location.',
+      notesRequiredHint: 'Required for Other.',
+      notesOptionalHint: 'Optional unless purpose is Other.',
+      reversalTitle: 'Reverse location transfer',
+      reversalDescription: 'This creates a separate transfer-reversal event and moves the current whole batch back to the original source location. Quantity, weight, and costs stay unchanged.',
+    },
+    history: {
+      title: 'Location transfers',
+      description: 'Transfers move the entire current active batch between operational locations. They do not split quantity, move stock, write off cost, or post finance rows.',
+      emptyTitle: 'No location transfers yet',
+      emptyDescription: 'Transfer only when the whole active batch moves to another valid company location.',
+      transferBadge: 'Transfer',
+      transferReversalBadge: 'Transfer reversal',
+      reversedBadge: 'Reversed',
+      lockedBadge: 'Locked',
+      by: 'by',
+      sequencePrefix: 'Seq',
+      reversedBy: 'Reversed by',
+      onDate: 'on',
+      lockedReason: 'Only the latest unreversed transfer can be reversed, and the original source must remain active.',
+    },
+    preview: {
+      readyToast: 'Transfer preview is ready',
+      blockersToast: 'Preview found blockers. Review the destination before posting.',
+      stale: 'Preview is stale',
+      ready: 'Preview ready',
+      blockers: 'Preview blockers',
+    },
+    success: {
+      transferred: 'Growth Batch transferred',
+      reversed: 'Growth Batch transfer reversed',
+    },
+    errors: {
+      unavailableActive: 'Transfers are only available for active Growth Batches.',
+      sourceRequired: 'This batch needs a current warehouse before it can be transferred.',
+      quantityRequired: 'Only active batches with current quantity greater than zero can be transferred.',
+      destinationSetupRequired: 'Create or activate a destination warehouse before transferring a Growth Batch.',
+      selectBatch: 'Select a Growth Batch.',
+      effectiveDateRequired: 'Select an effective date.',
+      dateBeforeStart: 'Transfer date must be on or after the batch start date.',
+      dateFuture: 'Transfer date cannot be in the future.',
+      destinationRequired: 'Select a destination warehouse.',
+      destinationInactive: 'Select an active destination warehouse.',
+      binInactive: 'Select an active bin that belongs to the destination warehouse.',
+      purposeRequired: 'Select a transfer purpose.',
+      purposeInvalid: 'Select a valid transfer purpose.',
+      otherNotesRequired: 'Add notes when the transfer purpose is Other.',
+      sameLocation: 'Select a destination different from the current location.',
+      previewRequired: 'Preview the current transfer before posting.',
+      previewBlockers: 'Resolve preview blockers before posting the transfer.',
+      previewRefreshRequired: 'Refresh and preview again before posting.',
+      reversalReasonRequired: 'Enter a reversal reason.',
+      historyRefreshRequired: 'Refresh the transfer history before reversing.',
+      managerRequired: 'Only Manager, Admin, or Owner roles can reverse transfers.',
+      requestMismatch: 'This retry key belongs to different transfer inputs. Change nothing and retry, or submit the updated transfer again.',
+      requestInProgress: 'A matching transfer request is already in progress. Wait a moment and refresh.',
+      permissionDenied: 'Your role cannot perform this transfer action.',
+      actionFailed: 'The Growth Batch action failed.',
+    },
+    reasonLabels: {
+      operational_move: 'Operational move',
+      space_management: 'Space management',
+      biosecurity: 'Biosecurity',
+      environment: 'Environment',
+      maintenance: 'Maintenance',
+      consolidation: 'Consolidation',
+      other: 'Other',
+    },
+    blockerLabels: {
+      growth_batch_transfer_reason_invalid: 'Select a valid transfer purpose.',
+      growth_batch_transfer_notes_required: 'Add notes when the transfer purpose is Other.',
+      growth_batch_not_active: 'Transfers are only available for active Growth Batches.',
+      growth_batch_transfer_empty_batch: 'Only active batches with current quantity greater than zero can be transferred.',
+      growth_batch_transfer_source_required: 'This batch needs a current warehouse before it can be transferred.',
+      source_location_not_canonical: 'This batch needs a current warehouse before it can be transferred.',
+      growth_batch_transfer_quantity_required: 'Only active batches with current quantity greater than zero can be transferred.',
+      growth_batch_transfer_source_fingerprint_required: 'Refresh and preview again before posting.',
+      growth_batch_transfer_source_changed: 'The batch location changed after preview. Refresh and preview again.',
+      growth_batch_transfer_destination_required: 'Select a destination warehouse.',
+      destination_warehouse_required: 'Select a destination warehouse.',
+      growth_batch_transfer_destination_inactive: 'Select an active destination location.',
+      destination_warehouse_inactive: 'Select an active destination location.',
+      destination_bin_inactive: 'Select an active destination location.',
+      destination_warehouse_invalid: 'Select a valid destination location for this company.',
+      destination_bin_invalid: 'Select a valid destination location for this company.',
+      growth_batch_transfer_same_location: 'Select a destination different from the current location.',
+      growth_batch_transfer_stale_source: 'The batch location changed after preview. Refresh and preview again.',
+      growth_batch_transfer_not_latest: 'Only the latest unreversed location transfer can be reversed.',
+      growth_batch_transfer_reversal_dependency_exists: 'Only the latest unreversed location transfer can be reversed.',
+      growth_batch_transfer_current_location_changed: 'The batch is no longer at the destination recorded for this transfer.',
+      growth_batch_transfer_current_location_mismatch: 'The batch is no longer at the destination recorded for this transfer.',
+      growth_batch_transfer_not_found: 'Refresh the transfer history before reversing.',
+      growth_batch_transfer_original_event_invalid: 'Refresh the transfer history before reversing.',
+      growth_batch_transfer_sequence_invalid: 'The batch event sequence changed. Refresh and try again.',
+      growth_batch_transfer_source_inactive: 'The original source location is inactive. Make a new transfer to an active location instead.',
+      growth_batch_transfer_original_source_inactive: 'The original source location is inactive. Make a new transfer to an active location instead.',
+      growth_batch_transfer_date_before_latest_location_event: 'Transfer dates must not be earlier than the latest location-changing event.',
+      growth_batch_transfer_reversal_date_before_original: 'Reversal date must be on or after the original transfer date.',
+      growth_batch_transfer_date_before_start: 'Transfer dates must be on or after the batch start date.',
+      growth_batch_transfer_date_in_future: 'Transfer dates cannot be in the future.',
+      growth_batch_transfer_already_reversed: 'This transfer has already been reversed.',
+    },
+  },
+  pt: {
+    actions: {
+      transferBatch: 'Transferir lote',
+      reverseTransfer: 'Reverter transferência',
+      preview: 'Pré-visualizar',
+      close: 'Fechar',
+    },
+    aria: {
+      destinationWarehouse: 'Armazém de destino',
+      destinationBin: 'Localização de destino',
+      transferPurpose: 'Finalidade da transferência',
+    },
+    labels: {
+      currentLocation: 'Localização actual',
+      currentQuantity: 'Quantidade actual',
+      latestWeight: 'Peso mais recente',
+      latestTotalWeight: 'Peso total mais recente',
+      entireCurrentQuantity: 'Quantidade actual completa',
+      entireQuantity: 'Quantidade completa',
+      entireWeight: 'Peso completo',
+      fullQuantityMoved: 'Quantidade completa movida',
+      weightSnapshot: 'Registo do peso',
+      destinationWarehouse: 'Armazém de destino',
+      destinationBin: 'Localização de destino',
+      effectiveDate: 'Data efectiva',
+      purpose: 'Finalidade',
+      locationNote: 'Nota da localização',
+      notes: 'Notas',
+      stockLedger: 'Livro de stock',
+      costs: 'Custos',
+      costEffect: 'Efeito no custo',
+      from: 'Origem',
+      to: 'Destino',
+      originalEvent: 'Evento original',
+      reason: 'Motivo',
+    },
+    fallback: {
+      notSet: 'Não definido',
+      notRecorded: 'Não registado',
+      notSelected: 'Não seleccionado',
+      teamMember: 'Membro da equipa',
+      reversalEvent: 'evento de reversão',
+      reasonRecorded: 'Motivo registado.',
+      unchanged: 'Inalterado',
+      notAffected: 'Não afectado',
+    },
+    dialog: {
+      title: 'Transferir localização do Lote de Crescimento',
+      description: 'Esta operação move todo o lote actual para outra localização operacional. A quantidade, o peso, o livro de stock, os custos e as linhas financeiras permanecem inalterados.',
+      stockNote: 'Esta operação não é uma transferência de stock. O inventário consumido anteriormente permanece no histórico do Lote de Crescimento.',
+      binHint: 'Opcional. As localizações ficam limitadas ao armazém seleccionado.',
+      warehousePlaceholder: 'Seleccione o armazém',
+      binPlaceholder: 'Sem localização',
+      noBin: 'Sem localização',
+      purposePlaceholder: 'Seleccione a finalidade',
+      locationNoteHint: 'Detalhe opcional para a localização de destino.',
+      notesRequiredHint: 'Obrigatório para Outro.',
+      notesOptionalHint: 'Opcional, excepto quando a finalidade é Outro.',
+      reversalTitle: 'Reverter transferência de localização',
+      reversalDescription: 'Esta operação cria um evento separado de reversão de transferência e move o lote actual completo de volta para a localização de origem inicial. A quantidade, o peso e os custos permanecem inalterados.',
+    },
+    history: {
+      title: 'Transferências de localização',
+      description: 'As transferências movem todo o lote activo actual entre localizações operacionais. Não dividem quantidade, não movimentam stock, não abatem custos e não criam linhas financeiras.',
+      emptyTitle: 'Ainda não existem transferências de localização',
+      emptyDescription: 'Transfira apenas quando todo o lote activo se move para outra localização válida da empresa.',
+      transferBadge: 'Transferência',
+      transferReversalBadge: 'Reversão de transferência',
+      reversedBadge: 'Revertida',
+      lockedBadge: 'Bloqueada',
+      by: 'por',
+      sequencePrefix: 'Seq.',
+      reversedBy: 'Revertida por',
+      onDate: 'em',
+      lockedReason: 'Apenas a transferência não revertida mais recente pode ser revertida, e a origem inicial deve continuar activa.',
+    },
+    preview: {
+      readyToast: 'A pré-visualização da transferência está pronta',
+      blockersToast: 'A pré-visualização encontrou bloqueios. Reveja o destino antes de publicar.',
+      stale: 'A pré-visualização está desactualizada',
+      ready: 'Pré-visualização pronta',
+      blockers: 'Bloqueios da pré-visualização',
+    },
+    success: {
+      transferred: 'Lote de Crescimento transferido',
+      reversed: 'Transferência do Lote de Crescimento revertida',
+    },
+    errors: {
+      unavailableActive: 'As transferências só estão disponíveis para Lotes de Crescimento activos.',
+      sourceRequired: 'Este lote precisa de um armazém actual antes de poder ser transferido.',
+      quantityRequired: 'Apenas lotes activos com quantidade actual superior a zero podem ser transferidos.',
+      destinationSetupRequired: 'Crie ou active um armazém de destino antes de transferir um Lote de Crescimento.',
+      selectBatch: 'Seleccione um Lote de Crescimento.',
+      effectiveDateRequired: 'Seleccione uma data efectiva.',
+      dateBeforeStart: 'A data da transferência deve ser igual ou posterior à data de início do lote.',
+      dateFuture: 'A data da transferência não pode estar no futuro.',
+      destinationRequired: 'Seleccione um armazém de destino.',
+      destinationInactive: 'Seleccione um armazém de destino activo.',
+      binInactive: 'Seleccione uma localização activa que pertença ao armazém de destino.',
+      purposeRequired: 'Seleccione a finalidade da transferência.',
+      purposeInvalid: 'Seleccione uma finalidade de transferência válida.',
+      otherNotesRequired: 'Adicione notas quando a finalidade da transferência é Outro.',
+      sameLocation: 'Seleccione um destino diferente da localização actual.',
+      previewRequired: 'Pré-visualize a transferência actual antes de publicar.',
+      previewBlockers: 'Resolva os bloqueios da pré-visualização antes de publicar a transferência.',
+      previewRefreshRequired: 'Actualize e pré-visualize novamente antes de publicar.',
+      reversalReasonRequired: 'Introduza o motivo da reversão.',
+      historyRefreshRequired: 'Actualize o histórico de transferências antes de reverter.',
+      managerRequired: 'Apenas as funções Manager, Admin ou Owner podem reverter transferências.',
+      requestMismatch: 'Esta chave de repetição pertence a dados de transferência diferentes. Não altere nada e tente novamente, ou submeta a transferência actualizada.',
+      requestInProgress: 'Já existe um pedido de transferência correspondente em curso. Aguarde um momento e actualize.',
+      permissionDenied: 'A sua função não pode executar esta acção de transferência.',
+      actionFailed: 'A acção do Lote de Crescimento falhou.',
+    },
+    reasonLabels: {
+      operational_move: 'Movimento operacional',
+      space_management: 'Gestão de espaço',
+      biosecurity: 'Biossegurança',
+      environment: 'Ambiente',
+      maintenance: 'Manutenção',
+      consolidation: 'Consolidação',
+      other: 'Outro',
+    },
+    blockerLabels: {
+      growth_batch_transfer_reason_invalid: 'Seleccione uma finalidade de transferência válida.',
+      growth_batch_transfer_notes_required: 'Adicione notas quando a finalidade da transferência é Outro.',
+      growth_batch_not_active: 'As transferências só estão disponíveis para Lotes de Crescimento activos.',
+      growth_batch_transfer_empty_batch: 'Apenas lotes activos com quantidade actual superior a zero podem ser transferidos.',
+      growth_batch_transfer_source_required: 'Este lote precisa de um armazém actual antes de poder ser transferido.',
+      source_location_not_canonical: 'Este lote precisa de um armazém actual antes de poder ser transferido.',
+      growth_batch_transfer_quantity_required: 'Apenas lotes activos com quantidade actual superior a zero podem ser transferidos.',
+      growth_batch_transfer_source_fingerprint_required: 'Actualize e pré-visualize novamente antes de publicar.',
+      growth_batch_transfer_source_changed: 'A localização do lote mudou depois da pré-visualização. Actualize e pré-visualize novamente.',
+      growth_batch_transfer_destination_required: 'Seleccione um armazém de destino.',
+      destination_warehouse_required: 'Seleccione um armazém de destino.',
+      growth_batch_transfer_destination_inactive: 'Seleccione uma localização de destino activa.',
+      destination_warehouse_inactive: 'Seleccione uma localização de destino activa.',
+      destination_bin_inactive: 'Seleccione uma localização de destino activa.',
+      destination_warehouse_invalid: 'Seleccione uma localização de destino válida para esta empresa.',
+      destination_bin_invalid: 'Seleccione uma localização de destino válida para esta empresa.',
+      growth_batch_transfer_same_location: 'Seleccione um destino diferente da localização actual.',
+      growth_batch_transfer_stale_source: 'A localização do lote mudou depois da pré-visualização. Actualize e pré-visualize novamente.',
+      growth_batch_transfer_not_latest: 'Apenas a transferência de localização não revertida mais recente pode ser revertida.',
+      growth_batch_transfer_reversal_dependency_exists: 'Apenas a transferência de localização não revertida mais recente pode ser revertida.',
+      growth_batch_transfer_current_location_changed: 'O lote já não está no destino registado para esta transferência.',
+      growth_batch_transfer_current_location_mismatch: 'O lote já não está no destino registado para esta transferência.',
+      growth_batch_transfer_not_found: 'Actualize o histórico de transferências antes de reverter.',
+      growth_batch_transfer_original_event_invalid: 'Actualize o histórico de transferências antes de reverter.',
+      growth_batch_transfer_sequence_invalid: 'A sequência de eventos do lote mudou. Actualize e tente novamente.',
+      growth_batch_transfer_source_inactive: 'A localização de origem inicial está inactiva. Faça uma nova transferência para uma localização activa.',
+      growth_batch_transfer_original_source_inactive: 'A localização de origem inicial está inactiva. Faça uma nova transferência para uma localização activa.',
+      growth_batch_transfer_date_before_latest_location_event: 'As datas de transferência não podem ser anteriores ao evento de localização mais recente.',
+      growth_batch_transfer_reversal_date_before_original: 'A data de reversão deve ser igual ou posterior à data da transferência original.',
+      growth_batch_transfer_date_before_start: 'As datas de transferência devem ser iguais ou posteriores à data de início do lote.',
+      growth_batch_transfer_date_in_future: 'As datas de transferência não podem estar no futuro.',
+      growth_batch_transfer_already_reversed: 'Esta transferência já foi revertida.',
+    },
+  },
+}
 
 const statusTone: Record<BatchStatus, PremiumTone> = {
   draft: 'info',
@@ -471,6 +1071,8 @@ const eventTone: Record<GrowthBatchEventRow['event_type'], PremiumTone> = {
   shrinkage: 'warning',
   mortality_reversal: 'info',
   shrinkage_reversal: 'info',
+  transfer: 'info',
+  transfer_reversal: 'warning',
   cancellation: 'neutral',
 }
 
@@ -496,6 +1098,10 @@ function labelize(value: string) {
     .join(' ')
 }
 
+function isGrowthBatchTransferBlockerCode(code: string): code is GrowthBatchTransferBlockerCode {
+  return (transferBlockerCodes as readonly string[]).includes(code)
+}
+
 function num(value: unknown, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -507,6 +1113,11 @@ function qty(value: unknown, maximumFractionDigits = 4) {
 
 function qtyWithUom(value: unknown, uomCode?: string | null, maximumFractionDigits = 4) {
   return `${qty(value, maximumFractionDigits)} ${uomCode || 'unit not set'}`.trim()
+}
+
+function locationDisplay(parts: Array<string | null | undefined>) {
+  const value = parts.filter(Boolean).join(' / ')
+  return value || 'Not set'
 }
 
 function money(value: unknown, currency = 'MZN') {
@@ -637,7 +1248,28 @@ function emptyLossReversalForm(): LossReversalForm {
   }
 }
 
-function friendlyError(error: unknown) {
+function emptyTransferForm(): TransferForm {
+  return {
+    destinationWarehouseId: '',
+    destinationBinId: '',
+    locationDescription: '',
+    effectiveDate: today(),
+    reasonCode: 'operational_move',
+    notes: '',
+  }
+}
+
+function emptyTransferReversalForm(): TransferReversalForm {
+  return {
+    eventId: '',
+    eventReference: '',
+    effectiveDate: today(),
+    expectedCurrentLocationFingerprint: '',
+    reason: '',
+  }
+}
+
+function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy) {
   const raw = error && typeof error === 'object' && 'message' in error ? String((error as { message?: unknown }).message || '') : String(error || '')
   const rules: [RegExp, string][] = [
     [/fractional_count_not_allowed/i, 'Count batches must use whole-number quantities.'],
@@ -665,25 +1297,46 @@ function friendlyError(error: unknown) {
     [/growth_batch_stock_input_already_reversed/i, 'This stock-input event has already been reversed.'],
     [/growth_batch_loss_already_reversed/i, 'This loss event has already been reversed.'],
     [/growth_batch_loss_reversal_dependency_exists/i, 'A later quantity or weight event depends on this loss. Reverse later dependent events first.'],
+    [/growth_batch_transfer_reason_invalid/i, transferCopy?.errors.purposeInvalid || 'Select a valid transfer purpose.'],
+    [/growth_batch_transfer_notes_required/i, transferCopy?.errors.otherNotesRequired || 'Add notes when the transfer purpose is Other.'],
+    [/growth_batch_transfer_source_required|source_location_not_canonical/i, transferCopy?.errors.sourceRequired || 'This batch needs a current warehouse before it can be transferred.'],
+    [/growth_batch_transfer_quantity_required|growth_batch_transfer_empty_batch/i, transferCopy?.errors.quantityRequired || 'Only active batches with current quantity greater than zero can be transferred.'],
+    [/growth_batch_transfer_source_fingerprint_required/i, transferCopy?.errors.previewRefreshRequired || 'Refresh and preview again before posting.'],
+    [/growth_batch_transfer_source_changed/i, transferCopy?.blockerLabels.growth_batch_transfer_source_changed || 'The batch location changed after preview. Refresh and preview again.'],
+    [/growth_batch_transfer_destination_required|destination_warehouse_required/i, transferCopy?.errors.destinationRequired || 'Select a destination warehouse.'],
+    [/growth_batch_transfer_destination_inactive|destination_warehouse_inactive|destination_bin_inactive/i, transferCopy?.blockerLabels.growth_batch_transfer_destination_inactive || 'Select an active destination location.'],
+    [/destination_warehouse_invalid|destination_bin_invalid/i, transferCopy?.blockerLabels.destination_warehouse_invalid || 'Select a valid destination location for this company.'],
+    [/growth_batch_transfer_same_location/i, transferCopy?.errors.sameLocation || 'Select a destination different from the current location.'],
+    [/growth_batch_transfer_stale_source/i, transferCopy?.blockerLabels.growth_batch_transfer_stale_source || 'The batch location changed after preview. Refresh and preview again.'],
+    [/growth_batch_transfer_not_latest|growth_batch_transfer_reversal_dependency_exists/i, transferCopy?.blockerLabels.growth_batch_transfer_not_latest || 'Only the latest unreversed location transfer can be reversed.'],
+    [/growth_batch_transfer_current_location_changed|growth_batch_transfer_current_location_mismatch/i, transferCopy?.blockerLabels.growth_batch_transfer_current_location_changed || 'The batch is no longer at the destination recorded for this transfer.'],
+    [/growth_batch_transfer_not_found|growth_batch_transfer_original_event_invalid/i, transferCopy?.errors.historyRefreshRequired || 'Refresh the transfer history before reversing.'],
+    [/growth_batch_transfer_sequence_invalid/i, transferCopy?.blockerLabels.growth_batch_transfer_sequence_invalid || 'The batch event sequence changed. Refresh and try again.'],
+    [/growth_batch_transfer_source_inactive|growth_batch_transfer_original_source_inactive/i, transferCopy?.blockerLabels.growth_batch_transfer_source_inactive || 'The original source location is inactive. Make a new transfer to an active location instead.'],
+    [/growth_batch_transfer_date_before_latest_location_event/i, transferCopy?.blockerLabels.growth_batch_transfer_date_before_latest_location_event || 'Transfer dates must not be earlier than the latest location-changing event.'],
+    [/growth_batch_transfer_reversal_date_before_original/i, transferCopy?.blockerLabels.growth_batch_transfer_reversal_date_before_original || 'Reversal date must be on or after the original transfer date.'],
+    [/growth_batch_transfer_date_before_start/i, transferCopy?.errors.dateBeforeStart || 'Transfer dates must be on or after the batch start date.'],
+    [/growth_batch_transfer_date_in_future/i, transferCopy?.errors.dateFuture || 'Transfer dates cannot be in the future.'],
+    [/growth_batch_transfer_already_reversed/i, transferCopy?.blockerLabels.growth_batch_transfer_already_reversed || 'This transfer has already been reversed.'],
     [/loss_quantity_exceeds_current_quantity/i, 'The loss quantity cannot exceed the current batch quantity.'],
     [/loss_weight_exceeds_current_weight/i, 'The loss weight cannot exceed the current total weight.'],
     [/loss_value_required/i, 'Enter a quantity loss, weight loss, or both.'],
     [/loss_reason_invalid/i, 'Select a valid reason for this loss type.'],
     [/loss_notes_required/i, 'Add notes when the reason is Other.'],
     [/growth_batch_current_weight_required/i, 'Record or configure a current total weight before entering weight loss.'],
-    [/reversal_reason_required/i, 'Enter a reversal reason.'],
-    [/manager_role_required/i, 'Only Manager, Admin, or Owner roles can reverse events.'],
+    [/reversal_reason_required/i, transferCopy?.errors.reversalReasonRequired || 'Enter a reversal reason.'],
+    [/manager_role_required/i, transferCopy?.errors.managerRequired || 'Only Manager, Admin, or Owner roles can reverse events.'],
     [/growth_batch_not_draft/i, 'Only draft Growth Batches can be changed or activated.'],
-    [/growth_batch_not_active/i, 'This action can only be recorded on an active Growth Batch.'],
+    [/growth_batch_not_active/i, transferCopy?.errors.unavailableActive || 'This action can only be recorded on an active Growth Batch.'],
     [/growth_batch_cancelled/i, 'This Growth Batch has already been cancelled.'],
-    [/idempotency_key_payload_mismatch/i, 'This retry key belongs to different inputs. Change nothing and retry, or submit the updated form again.'],
-    [/request_in_progress/i, 'A matching request is already in progress. Wait a moment and refresh.'],
+    [/idempotency_key_payload_mismatch/i, transferCopy?.errors.requestMismatch || 'This retry key belongs to different inputs. Change nothing and retry, or submit the updated form again.'],
+    [/request_in_progress/i, transferCopy?.errors.requestInProgress || 'A matching request is already in progress. Wait a moment and refresh.'],
     [/cross_company_access_denied|company_access_denied/i, 'The selected company or location is not available to your account.'],
-    [/permission denied|not allowed|forbidden/i, 'Your role cannot perform this action.'],
+    [/permission denied|not allowed|forbidden/i, transferCopy?.errors.permissionDenied || 'Your role cannot perform this action.'],
     [/invalid_direct_cost/i, 'Enter a valid cost category, description, and amount greater than zero.'],
     [/invalid_measurement/i, 'Enter a valid measurement type, value, unit, and range.'],
   ]
-  return rules.find(([pattern]) => pattern.test(raw))?.[1] || raw || 'The Growth Batch action failed.'
+  return rules.find(([pattern]) => pattern.test(raw))?.[1] || raw || transferCopy?.errors.actionFailed || 'The Growth Batch action failed.'
 }
 
 function Field({
@@ -741,10 +1394,12 @@ function DetailSection({
 }
 
 export default function GrowthBatches() {
+  const { lang } = useI18n()
   const { companyId, myRole } = useOrg()
   const isMobile = useIsMobile()
   const canOperate = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'])
   const canManage = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER'])
+  const transferCopy = growthBatchTransferCopy[lang]
 
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -756,6 +1411,7 @@ export default function GrowthBatches() {
   const [directCosts, setDirectCosts] = useState<GrowthBatchDirectCostRow[]>([])
   const [stockInputs, setStockInputs] = useState<GrowthBatchStockInputRow[]>([])
   const [losses, setLosses] = useState<GrowthBatchLossRow[]>([])
+  const [transfers, setTransfers] = useState<GrowthBatchTransferRow[]>([])
   const [events, setEvents] = useState<GrowthBatchEventRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
@@ -779,8 +1435,10 @@ export default function GrowthBatches() {
   const [directCostOpen, setDirectCostOpen] = useState(false)
   const [stockInputOpen, setStockInputOpen] = useState(false)
   const [lossOpen, setLossOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
   const [reversalOpen, setReversalOpen] = useState(false)
   const [lossReversalOpen, setLossReversalOpen] = useState(false)
+  const [transferReversalOpen, setTransferReversalOpen] = useState(false)
   const [draftForm, setDraftForm] = useState<DraftForm>(() => emptyDraftForm())
   const [editForm, setEditForm] = useState<DraftForm>(() => emptyDraftForm())
   const [measurementForm, setMeasurementForm] = useState<MeasurementForm>(() => emptyMeasurementForm())
@@ -791,8 +1449,12 @@ export default function GrowthBatches() {
   const [lossForm, setLossForm] = useState<LossForm>(() => emptyLossForm())
   const [lossPreview, setLossPreview] = useState<LossPreview | null>(null)
   const [lossPreviewStale, setLossPreviewStale] = useState(false)
+  const [transferForm, setTransferForm] = useState<TransferForm>(() => emptyTransferForm())
+  const [transferPreview, setTransferPreview] = useState<TransferPreview | null>(null)
+  const [transferPreviewStale, setTransferPreviewStale] = useState(false)
   const [reversalForm, setReversalForm] = useState<ReversalForm>(() => emptyReversalForm())
   const [lossReversalForm, setLossReversalForm] = useState<LossReversalForm>(() => emptyLossReversalForm())
+  const [transferReversalForm, setTransferReversalForm] = useState<TransferReversalForm>(() => emptyTransferReversalForm())
   const [cancelReason, setCancelReason] = useState('')
 
   const createRequestRef = useRef<PostingRequestKeyRef>(null)
@@ -804,6 +1466,8 @@ export default function GrowthBatches() {
   const stockInputReversalRequestRef = useRef<PostingRequestKeyRef>(null)
   const lossRequestRef = useRef<PostingRequestKeyRef>(null)
   const lossReversalRequestRef = useRef<PostingRequestKeyRef>(null)
+  const transferRequestRef = useRef<PostingRequestKeyRef>(null)
+  const transferReversalRequestRef = useRef<PostingRequestKeyRef>(null)
 
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
@@ -860,6 +1524,11 @@ export default function GrowthBatches() {
   const areaUoms = useMemo(() => uoms.filter((uom) => uom.family === 'area'), [uoms])
   const lengthUoms = useMemo(() => uoms.filter((uom) => uom.family === 'length'), [uoms])
   const lossReasonOptions = useMemo(() => (lossForm.lossType === 'mortality' ? mortalityReasons : shrinkageReasons), [lossForm.lossType])
+  const activeWarehouses = useMemo(() => warehouses.filter((warehouse) => (warehouse.status || 'active') === 'active'), [warehouses])
+  const binsForTransfer = useMemo(
+    () => bins.filter((bin) => bin.warehouseId === transferForm.destinationWarehouseId && (bin.status || 'active') === 'active'),
+    [bins, transferForm.destinationWarehouseId],
+  )
   const measurementUoms = useMemo(() => {
     if (measurementForm.measurementType === 'total_weight' || measurementForm.measurementType === 'average_weight') {
       const configured = detailBatch?.weight_uom_id ? uomById.get(detailBatch.weight_uom_id) : null
@@ -891,8 +1560,8 @@ export default function GrowthBatches() {
         .eq('company_id', companyId)
         .eq('track_inventory', true)
         .order('name', { ascending: true }),
-      supabase.from('warehouses').select('id,code,name').eq('company_id', companyId).order('name', { ascending: true }),
-      supabase.from('bins').select('id,code,name,warehouseId').eq('company_id', companyId).order('code', { ascending: true }),
+      supabase.from('warehouses').select('id,code,name,status').eq('company_id', companyId).order('name', { ascending: true }),
+      supabase.from('bins').select('id,code,name,warehouseId,status').eq('company_id', companyId).order('code', { ascending: true }),
     ])
     if (uomRes.error) throw uomRes.error
     if (itemRes.error) throw itemRes.error
@@ -929,13 +1598,14 @@ export default function GrowthBatches() {
       setDirectCosts([])
       setStockInputs([])
       setLosses([])
+      setTransfers([])
       setEvents([])
       return
     }
 
     setDetailLoading(true)
     try {
-      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, eventRes] = await Promise.all([
+      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, transferRes, eventRes] = await Promise.all([
         supabase.from('growth_batch_current_state').select('*').eq('id', batchId).maybeSingle(),
         supabase
           .from('growth_batches')
@@ -965,6 +1635,11 @@ export default function GrowthBatches() {
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
+          .from('growth_batch_transfer_history')
+          .select('*')
+          .eq('growth_batch_id', batchId)
+          .order('event_sequence', { ascending: false }),
+        supabase
           .from('growth_batch_event_timeline')
           .select('*')
           .eq('growth_batch_id', batchId)
@@ -976,6 +1651,7 @@ export default function GrowthBatches() {
       if (costRes.error) throw costRes.error
       if (stockInputRes.error) throw stockInputRes.error
       if (lossRes.error) throw lossRes.error
+      if (transferRes.error) throw transferRes.error
       if (eventRes.error) throw eventRes.error
       setCurrentState((stateRes.data || null) as GrowthBatchCurrentState | null)
       setDetailRow((detailRes.data || null) as GrowthBatchDetailRow | null)
@@ -983,6 +1659,7 @@ export default function GrowthBatches() {
       setDirectCosts((costRes.data || []) as GrowthBatchDirectCostRow[])
       setStockInputs((stockInputRes.data || []) as GrowthBatchStockInputRow[])
       setLosses((lossRes.data || []) as GrowthBatchLossRow[])
+      setTransfers((transferRes.data || []) as GrowthBatchTransferRow[])
       setEvents((eventRes.data || []) as GrowthBatchEventRow[])
     } catch (error) {
       console.error(error)
@@ -1750,6 +2427,215 @@ export default function GrowthBatches() {
     }
   }
 
+  function markTransferPreviewStale() {
+    setTransferPreviewStale(true)
+  }
+
+  function setTransferWarehouse(value: string) {
+    markTransferPreviewStale()
+    setTransferForm((current) => ({
+      ...current,
+      destinationWarehouseId: value === 'none' ? '' : value,
+      destinationBinId: '',
+    }))
+  }
+
+  function transferSourceLocationLabel(batch = detailBatch) {
+    if (!batch) return transferCopy.fallback.notSet
+    return locationDisplay([batch.warehouse_name, batch.bin_code, batch.bin_name, batch.location_description])
+  }
+
+  function transferHistoryLocationLabel(row: GrowthBatchTransferRow, side: 'source' | 'destination') {
+    return side === 'source'
+      ? locationDisplay([row.source_warehouse_name, row.source_bin_code, row.source_bin_name, row.source_location_description])
+      : locationDisplay([row.destination_warehouse_name, row.destination_bin_code, row.destination_bin_name, row.destination_location_description])
+  }
+
+  function transferPreviewLocationLabel(location: TransferLocationPreview | null | undefined) {
+    if (!location) return transferCopy.fallback.notSet
+    return locationDisplay([location.warehouse_name, location.warehouse_code, location.bin_code, location.bin_name, location.location_description])
+  }
+
+  function transferReasonLabel(reason: TransferReasonCode | null | undefined) {
+    return reason ? transferCopy.reasonLabels[reason] : transferCopy.fallback.notSet
+  }
+
+  function transferBlockerLabel(code: string | null | undefined) {
+    if (!code) return transferCopy.preview.blockers
+    return isGrowthBatchTransferBlockerCode(code) ? transferCopy.blockerLabels[code] : labelize(code)
+  }
+
+  const growthBatchEventTypeLabel = useCallback((eventType: GrowthBatchEventRow['event_type'] | string | null | undefined) => {
+    if (eventType === 'transfer') return transferCopy.history.transferBadge
+    if (eventType === 'transfer_reversal') return transferCopy.history.transferReversalBadge
+    return eventType ? labelize(eventType) : 'Created'
+  }, [transferCopy])
+
+  function transferUnavailableReason() {
+    if (!detailBatch || detailBatch.status !== 'active') return transferCopy.errors.unavailableActive
+    if (!detailBatch.warehouse_id) return transferCopy.errors.sourceRequired
+    if (num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0) return transferCopy.errors.quantityRequired
+    if (!activeWarehouses.length) return transferCopy.errors.destinationSetupRequired
+    return null
+  }
+
+  function validateTransferForm() {
+    const unavailable = transferUnavailableReason()
+    if (unavailable) return unavailable
+    if (!detailBatch) return transferCopy.errors.selectBatch
+    if (!transferForm.effectiveDate) return transferCopy.errors.effectiveDateRequired
+    if (transferForm.effectiveDate < detailBatch.start_date) return transferCopy.errors.dateBeforeStart
+    if (transferForm.effectiveDate > today()) return transferCopy.errors.dateFuture
+    if (!transferForm.destinationWarehouseId) return transferCopy.errors.destinationRequired
+    if (!activeWarehouses.some((warehouse) => warehouse.id === transferForm.destinationWarehouseId)) return transferCopy.errors.destinationInactive
+    if (transferForm.destinationBinId && !binsForTransfer.some((bin) => bin.id === transferForm.destinationBinId)) return transferCopy.errors.binInactive
+    if (!transferForm.reasonCode) return transferCopy.errors.purposeRequired
+    if (!transferReasons.includes(transferForm.reasonCode)) return transferCopy.errors.purposeInvalid
+    if (transferForm.reasonCode === 'other' && !transferForm.notes.trim()) return transferCopy.errors.otherNotesRequired
+    const normalizedDescription = cleanText(transferForm.locationDescription)
+    const sameWarehouse = detailBatch.warehouse_id === transferForm.destinationWarehouseId
+    const sameBin = (detailBatch.bin_id || '') === (transferForm.destinationBinId || '')
+    const sameDescription = (detailBatch.location_description || '').trim() === (normalizedDescription || '')
+    if (sameWarehouse && sameBin && sameDescription) return transferCopy.errors.sameLocation
+    return null
+  }
+
+  function transferPayload() {
+    return {
+      p_growth_batch_id: detailBatch?.id,
+      p_destination_warehouse_id: transferForm.destinationWarehouseId || null,
+      p_destination_bin_id: transferForm.destinationBinId || null,
+      p_location_description: cleanText(transferForm.locationDescription),
+      p_effective_date: transferForm.effectiveDate,
+      p_transfer_reason: transferForm.reasonCode || null,
+      p_notes: cleanText(transferForm.notes),
+    }
+  }
+
+  async function previewTransfer() {
+    if (!detailBatch) return
+    const validation = validateTransferForm()
+    if (validation) return toast.error(validation)
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.rpc('preview_growth_batch_transfer', transferPayload())
+      if (error) throw error
+      const preview = data as TransferPreview
+      setTransferPreview(preview)
+      setTransferPreviewStale(false)
+      if (preview.ready) {
+        toast.success(transferCopy.preview.readyToast)
+      } else {
+        toast.error(transferCopy.preview.blockersToast)
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, transferCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function postTransfer() {
+    if (!detailBatch) return
+    const validation = validateTransferForm()
+    if (validation) return toast.error(validation)
+    if (!transferPreview || transferPreviewStale) return toast.error(transferCopy.errors.previewRequired)
+    if (!transferPreview.ready) return toast.error(transferCopy.errors.previewBlockers)
+    if (!transferPreview.source_location_fingerprint) return toast.error(transferCopy.errors.previewRefreshRequired)
+    const payload = {
+      operation: 'growth.batch.transfer',
+      batchId: detailBatch.id,
+      destinationWarehouseId: transferForm.destinationWarehouseId,
+      destinationBinId: transferForm.destinationBinId || null,
+      locationDescription: cleanText(transferForm.locationDescription),
+      effectiveDate: transferForm.effectiveDate,
+      reasonCode: transferForm.reasonCode,
+      notes: cleanText(transferForm.notes),
+      expectedSourceFingerprint: transferPreview.source_location_fingerprint,
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(transferRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('transfer_growth_batch', {
+        ...transferPayload(),
+        p_expected_source_fingerprint: transferPreview.source_location_fingerprint,
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(transferRequestRef)
+      toast.success(transferCopy.success.transferred)
+      setTransferOpen(false)
+      setTransferForm(emptyTransferForm())
+      setTransferPreview(null)
+      setTransferPreviewStale(false)
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, transferCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openTransferDialog() {
+    setTransferForm(emptyTransferForm())
+    setTransferPreview(null)
+    setTransferPreviewStale(false)
+    setTransferOpen(true)
+  }
+
+  function openTransferReversalDialog(row: GrowthBatchTransferRow) {
+    setTransferReversalForm({
+      eventId: row.event_id,
+      eventReference: row.event_reference,
+      effectiveDate: today(),
+      expectedCurrentLocationFingerprint: row.current_location_fingerprint || '',
+      reason: '',
+    })
+    setTransferReversalOpen(true)
+  }
+
+  async function reverseTransfer() {
+    if (!detailBatch) return
+    if (!transferReversalForm.eventId) return
+    if (!transferReversalForm.reason.trim()) return toast.error(transferCopy.errors.reversalReasonRequired)
+    if (!transferReversalForm.expectedCurrentLocationFingerprint) return toast.error(transferCopy.errors.historyRefreshRequired)
+    const payload = {
+      operation: 'growth.batch.transfer.reverse',
+      batchId: detailBatch.id,
+      originalEventId: transferReversalForm.eventId,
+      effectiveDate: transferReversalForm.effectiveDate,
+      reason: transferReversalForm.reason.trim(),
+      expectedCurrentLocationFingerprint: transferReversalForm.expectedCurrentLocationFingerprint,
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(transferReversalRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('reverse_growth_batch_transfer', {
+        p_growth_batch_id: detailBatch.id,
+        p_original_event_id: transferReversalForm.eventId,
+        p_effective_date: transferReversalForm.effectiveDate,
+        p_reason: transferReversalForm.reason.trim(),
+        p_expected_current_location_fingerprint: transferReversalForm.expectedCurrentLocationFingerprint,
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(transferReversalRequestRef)
+      toast.success(transferCopy.success.reversed)
+      setTransferReversalOpen(false)
+      setTransferReversalForm(emptyTransferReversalForm())
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, transferCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const columns = useMemo<PremiumDataTableColumn<GrowthBatchRegisterRow>[]>(() => [
     {
       id: 'reference',
@@ -1810,14 +2696,14 @@ export default function GrowthBatches() {
       header: 'Latest',
       cell: (batch) => (
         <span>
-          {batch.latest_event_type ? labelize(batch.latest_event_type) : 'Created'}
+          {growthBatchEventTypeLabel(batch.latest_event_type)}
           <span className="block text-xs text-muted-foreground">{compactDate(batch.latest_event_at || batch.created_at)}</span>
         </span>
       ),
       sortValue: (batch) => batch.latest_event_at || batch.created_at,
       minWidth: 150,
     },
-  ], [selectedCurrency])
+  ], [growthBatchEventTypeLabel, selectedCurrency])
 
   const sortedBatches = useMemo(() => sortPremiumRows(filteredBatches, columns, sort), [columns, filteredBatches, sort])
   const mobileRows = useMemo(() => getPremiumPageRows(sortedBatches, page, pageSize), [page, pageSize, sortedBatches])
@@ -1844,6 +2730,10 @@ export default function GrowthBatches() {
       <Button type="button" size="sm" onClick={openStockInputDialog} disabled={saving}>
         <PackageMinus className="mr-2 h-4 w-4" />
         Post stock input
+      </Button>
+      <Button type="button" variant="outline" size="sm" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
+        <ArrowRightLeft className="mr-2 h-4 w-4" />
+        {transferCopy.actions.transferBatch}
       </Button>
       <Button type="button" variant="outline" size="sm" onClick={openLossDialog} disabled={saving}>
         <AlertTriangle className="mr-2 h-4 w-4" />
@@ -2218,7 +3108,7 @@ export default function GrowthBatches() {
                     </div>
                     <CardTitle className="mt-3 break-words">{detailBatch.reference_no} - {detailBatch.name}</CardTitle>
                     <CardDescription>
-                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory and memo direct costs stay non-financial; harvests, transfers, COGS, and valuation posting remain future phases.'}
+                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory and memo direct costs stay non-financial; location transfers move the whole batch operationally; harvests, COGS, and valuation posting remain future phases.'}
                     </CardDescription>
                   </div>
                   <div className="flex shrink-0 flex-col gap-2 sm:items-end">
@@ -2254,6 +3144,7 @@ export default function GrowthBatches() {
                   <TabsList className="w-full justify-start overflow-x-auto">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="stock">Stock inputs</TabsTrigger>
+                    <TabsTrigger value="transfers">{transferCopy.history.title}</TabsTrigger>
                     <TabsTrigger value="losses">Losses</TabsTrigger>
                     <TabsTrigger value="measurements">Measurements</TabsTrigger>
                     <TabsTrigger value="costs">Direct costs</TabsTrigger>
@@ -2272,7 +3163,7 @@ export default function GrowthBatches() {
                         <SummaryItem label="Weight unit" value={detailBatch.weight_uom_code || 'Not set'} />
                         <SummaryItem label="Area" value={detailBatch.area == null ? 'Not set' : `${qty(detailBatch.area)} ${detailBatch.area_uom_code || ''}`.trim()} />
                         <SummaryItem label="Species / cultivar" value={detailRow?.species_text || 'Not set'} />
-                        <SummaryItem label="Latest event" value={detailBatch.latest_event_type ? labelize(detailBatch.latest_event_type) : 'Created'} />
+                        <SummaryItem label="Latest event" value={growthBatchEventTypeLabel(detailBatch.latest_event_type)} />
                         <SummaryItem label="Latest activity" value={compactDateTime(detailBatch.latest_event_at || detailBatch.created_at)} />
                       </div>
                       {detailRow?.notes ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{detailRow.notes}</p> : null}
@@ -2283,7 +3174,7 @@ export default function GrowthBatches() {
                       description="These controls remain unavailable until later phases connect harvest, movement, and valuation policies end to end."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {['Transfers', 'Harvest / split outputs', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
+                        {['Harvest / split outputs', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
                           <div key={item} className="flex items-center gap-2 rounded-xl border border-card-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                             <AlertTriangle className="h-4 w-4 text-amber-600" />
                             <span>{item}</span>
@@ -2348,6 +3239,78 @@ export default function GrowthBatches() {
                                     </Button>
                                   </div>
                                 ) : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </DetailSection>
+                  </TabsContent>
+
+                  <TabsContent value="transfers">
+                    <DetailSection
+                      title={transferCopy.history.title}
+                      description={transferCopy.history.description}
+                      action={detailBatch.status === 'active' && canOperate ? (
+                        <Button size="sm" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
+                          <ArrowRightLeft className="mr-2 h-4 w-4" />
+                          {transferCopy.actions.transferBatch}
+                        </Button>
+                      ) : null}
+                    >
+                      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                        <SummaryItem label={transferCopy.labels.currentLocation} value={transferSourceLocationLabel()} />
+                        <SummaryItem label={transferCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                        <SummaryItem label={transferCopy.labels.latestWeight} value={detailBatch.latest_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                      </div>
+                      {transfers.length === 0 ? (
+                        <PremiumEmptyState icon={<ArrowRightLeft />} title={transferCopy.history.emptyTitle} description={transferCopy.history.emptyDescription} compact />
+                      ) : (
+                        <div className="space-y-3">
+                          {transfers.map((transfer) => {
+                            const canReverseTransfer = canManage && transfer.reversal_eligible
+                            return (
+                              <div key={transfer.id} className="rounded-xl border border-card-border bg-card p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <PremiumStatusBadge tone="info">{transferCopy.history.transferBadge}</PremiumStatusBadge>
+                                      {transfer.reversed ? <Badge variant="outline">{transferCopy.history.reversedBadge}</Badge> : null}
+                                      {!transfer.reversed && !transfer.reversal_eligible ? <Badge variant="secondary">{transferCopy.history.lockedBadge}</Badge> : null}
+                                    </div>
+                                    <div className="mt-2 font-medium break-words">
+                                      {transferHistoryLocationLabel(transfer, 'source')} {' -> '} {transferHistoryLocationLabel(transfer, 'destination')}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{transfer.event_reference} {transferCopy.history.by} {transfer.actor_display_name || transferCopy.fallback.teamMember}</div>
+                                  </div>
+                                  <div className="text-right text-sm font-semibold">
+                                    <div>{qtyWithUom(transfer.current_primary_qty, transfer.primary_uom_code)}</div>
+                                    <div className="text-xs font-normal text-muted-foreground">{transferCopy.history.sequencePrefix} {transfer.event_sequence} / {compactDate(transfer.event_effective_date)}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                                  <SummaryItem label={transferCopy.labels.fullQuantityMoved} value={qtyWithUom(transfer.current_primary_qty, transfer.primary_uom_code)} />
+                                  <SummaryItem label={transferCopy.labels.weightSnapshot} value={transfer.current_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(transfer.current_total_weight, transfer.weight_uom_code)} />
+                                  <SummaryItem label={transferCopy.labels.purpose} value={transferReasonLabel(transfer.transfer_reason)} />
+                                  <SummaryItem label={transferCopy.labels.costEffect} value={transferCopy.fallback.unchanged} />
+                                </div>
+                                {transfer.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{transfer.notes}</p> : null}
+                                {transfer.reversed ? (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    {transferCopy.history.reversedBy} {transfer.reversal_event_reference || transferCopy.fallback.reversalEvent} {transferCopy.history.onDate} {compactDate(transfer.reversal_effective_date)}. {transfer.reversal_reason || transferCopy.fallback.reasonRecorded}
+                                  </p>
+                                ) : canReverseTransfer ? (
+                                  <div className="mt-3">
+                                    <Button type="button" size="sm" variant="outline" onClick={() => openTransferReversalDialog(transfer)} disabled={saving}>
+                                      <RotateCcw className="mr-2 h-4 w-4" />
+                                      {transferCopy.actions.reverseTransfer}
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    {transferCopy.history.lockedReason}
+                                  </p>
+                                )}
                               </div>
                             )
                           })}
@@ -2510,7 +3473,7 @@ export default function GrowthBatches() {
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
-                                    <PremiumStatusBadge tone={eventTone[event.event_type]}>{labelize(event.event_type)}</PremiumStatusBadge>
+                                    <PremiumStatusBadge tone={eventTone[event.event_type]}>{growthBatchEventTypeLabel(event.event_type)}</PremiumStatusBadge>
                                     <div className="mt-2 font-medium">{event.event_summary}</div>
                                     <div className="text-sm text-muted-foreground">{event.event_reference} / {compactDateTime(event.event_at)}</div>
                                   </div>
@@ -2859,6 +3822,187 @@ export default function GrowthBatches() {
             <Button type="button" onClick={postStockInput} disabled={saving || !stockInputPreview || stockInputPreviewStale || !stockInputPreview.ready}>
               <PackageMinus className="mr-2 h-4 w-4" />
               Post stock input
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{transferCopy.dialog.title}</DialogTitle>
+            <DialogDescription>
+              {transferCopy.dialog.description}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <div className="rounded-xl border border-card-border bg-muted/20 p-4 text-sm">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <SummaryItem label={transferCopy.labels.currentLocation} value={transferSourceLocationLabel()} />
+                  <SummaryItem label={transferCopy.labels.entireCurrentQuantity} value={`${qty(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty)} ${detailBatch?.primary_uom_code || ''}`.trim()} />
+                  <SummaryItem label={transferCopy.labels.latestTotalWeight} value={detailBatch?.latest_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                  <SummaryItem label={transferCopy.labels.costs} value={transferCopy.fallback.unchanged} />
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {transferCopy.dialog.stockNote}
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={transferCopy.labels.destinationWarehouse} htmlFor="growth-transfer-warehouse">
+                  <Select value={transferForm.destinationWarehouseId || 'none'} onValueChange={setTransferWarehouse}>
+                    <SelectTrigger id="growth-transfer-warehouse" aria-label={transferCopy.aria.destinationWarehouse}><SelectValue placeholder={transferCopy.dialog.warehousePlaceholder} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{transferCopy.dialog.warehousePlaceholder}</SelectItem>
+                      {activeWarehouses.map((warehouse) => (
+                        <SelectItem key={warehouse.id} value={warehouse.id}>
+                          {locationDisplay([warehouse.name, warehouse.code])}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label={transferCopy.labels.destinationBin} htmlFor="growth-transfer-bin" hint={transferCopy.dialog.binHint}>
+                  <Select
+                    value={transferForm.destinationBinId || 'none'}
+                    onValueChange={(value) => {
+                      markTransferPreviewStale()
+                      setTransferForm((current) => ({ ...current, destinationBinId: value === 'none' ? '' : value }))
+                    }}
+                    disabled={!transferForm.destinationWarehouseId}
+                  >
+                    <SelectTrigger id="growth-transfer-bin" aria-label={transferCopy.aria.destinationBin}><SelectValue placeholder={transferCopy.dialog.binPlaceholder} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{transferCopy.dialog.noBin}</SelectItem>
+                      {binsForTransfer.map((bin) => (
+                        <SelectItem key={bin.id} value={bin.id}>
+                          {locationDisplay([bin.code, bin.name])}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={transferCopy.labels.effectiveDate} htmlFor="growth-transfer-date">
+                  <Input
+                    id="growth-transfer-date"
+                    type="date"
+                    value={transferForm.effectiveDate}
+                    onChange={(event) => {
+                      markTransferPreviewStale()
+                      setTransferForm((current) => ({ ...current, effectiveDate: event.target.value }))
+                    }}
+                  />
+                </Field>
+                <Field label={transferCopy.labels.purpose} htmlFor="growth-transfer-reason">
+                  <Select
+                    value={transferForm.reasonCode || 'none'}
+                    onValueChange={(value) => {
+                      markTransferPreviewStale()
+                      setTransferForm((current) => ({ ...current, reasonCode: value === 'none' ? '' : value as TransferReasonCode }))
+                    }}
+                  >
+                    <SelectTrigger id="growth-transfer-reason" aria-label={transferCopy.aria.transferPurpose}><SelectValue placeholder={transferCopy.dialog.purposePlaceholder} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{transferCopy.dialog.purposePlaceholder}</SelectItem>
+                      {transferReasons.map((reason) => <SelectItem key={reason} value={reason}>{transferReasonLabel(reason)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={transferCopy.labels.locationNote} htmlFor="growth-transfer-location-note" hint={transferCopy.dialog.locationNoteHint}>
+                  <Input
+                    id="growth-transfer-location-note"
+                    value={transferForm.locationDescription}
+                    onChange={(event) => {
+                      markTransferPreviewStale()
+                      setTransferForm((current) => ({ ...current, locationDescription: event.target.value }))
+                    }}
+                  />
+                </Field>
+                <Field label={transferCopy.labels.notes} htmlFor="growth-transfer-notes" hint={transferForm.reasonCode === 'other' ? transferCopy.dialog.notesRequiredHint : transferCopy.dialog.notesOptionalHint}>
+                  <Input
+                    id="growth-transfer-notes"
+                    value={transferForm.notes}
+                    onChange={(event) => {
+                      markTransferPreviewStale()
+                      setTransferForm((current) => ({ ...current, notes: event.target.value }))
+                    }}
+                  />
+                </Field>
+              </div>
+
+              {transferPreview ? (
+                <div className={cn('rounded-xl border p-4 text-sm', transferPreview.ready && !transferPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                  <div className="font-medium">{transferPreviewStale ? transferCopy.preview.stale : transferPreview.ready ? transferCopy.preview.ready : transferCopy.preview.blockers}</div>
+                  {transferPreview.blocking_reasons?.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                      {transferPreview.blocking_reasons.map((blocker, index) => (
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{transferBlockerLabel(String(blocker.code || ''))}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <SummaryItem label={transferCopy.labels.from} value={transferPreviewLocationLabel(transferPreview.source_location)} />
+                    <SummaryItem label={transferCopy.labels.to} value={transferPreviewLocationLabel(transferPreview.destination_location)} />
+                    <SummaryItem label={transferCopy.labels.entireQuantity} value={qtyWithUom(transferPreview.current_quantity, transferPreview.quantity_uom_code || detailBatch?.primary_uom_code)} />
+                    <SummaryItem label={transferCopy.labels.entireWeight} value={transferPreview.current_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(transferPreview.current_total_weight, transferPreview.weight_uom_code || detailBatch?.weight_uom_code)} />
+                    <SummaryItem label={transferCopy.labels.stockLedger} value={transferCopy.fallback.notAffected} />
+                    <SummaryItem label={transferCopy.labels.costs} value={transferCopy.fallback.unchanged} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTransferOpen(false)} disabled={saving}>{transferCopy.actions.close}</Button>
+            <Button type="button" variant="outline" onClick={previewTransfer} disabled={saving}>{transferCopy.actions.preview}</Button>
+            <Button type="button" onClick={postTransfer} disabled={saving || !transferPreview || transferPreviewStale || !transferPreview.ready}>
+              <ArrowRightLeft className="mr-2 h-4 w-4" />
+              {transferCopy.actions.transferBatch}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferReversalOpen} onOpenChange={setTransferReversalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{transferCopy.dialog.reversalTitle}</DialogTitle>
+            <DialogDescription>
+              {transferCopy.dialog.reversalDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <SummaryItem label={transferCopy.labels.originalEvent} value={transferReversalForm.eventReference || transferCopy.fallback.notSelected} />
+              <Field label={transferCopy.labels.effectiveDate} htmlFor="growth-transfer-reversal-date">
+                <Input
+                  id="growth-transfer-reversal-date"
+                  type="date"
+                  value={transferReversalForm.effectiveDate}
+                  onChange={(event) => setTransferReversalForm((current) => ({ ...current, effectiveDate: event.target.value }))}
+                />
+              </Field>
+              <Field label={transferCopy.labels.reason} htmlFor="growth-transfer-reversal-reason">
+                <Textarea
+                  id="growth-transfer-reversal-reason"
+                  value={transferReversalForm.reason}
+                  onChange={(event) => setTransferReversalForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </Field>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTransferReversalOpen(false)} disabled={saving}>{transferCopy.actions.close}</Button>
+            <Button type="button" variant="destructive" onClick={reverseTransfer} disabled={saving || !canManage}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              {transferCopy.actions.reverseTransfer}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -14,13 +14,15 @@ npm run test:finance-regression
 
 `npm run dev` is maintained on `http://localhost:3000` through `vite.config.ts`; Tauri `devUrl` is aligned to the same port. Local Supabase development uses `http://127.0.0.1:54321`.
 
+`npm run test:finance-regression` is the canonical protected mutation gate. It runs test files serially because the finance, onboarding, and Growth Batch regression files share one local Supabase database and each performs broad temporary setup/cleanup. Keep real concurrency assertions inside the purpose-built tests; do not make operators remember a separate serial override for release validation.
+
 ## Supabase Workflow
 
 ### Current rule
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production and the local repository both have 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`. Growth Batches G4.1 mortality/shrinkage preview, recording, and event-specific reversal are live after the 2026-06-28 controlled hosted rollout.
+Current release state: hosted production has 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`. The local repository has 34 active migrations after the Growth Batches G4.2 full-batch transfer package, with latest local migration `20260630170735_add_growth_batch_transfer_posting.sql`. Growth Batches G4.1 mortality/shrinkage preview, recording, and event-specific reversal are live after the 2026-06-28 controlled hosted rollout; G4.2 transfers are local-only and not hosted/live.
 
 The latest Growth Batches G4.1 rollout applied:
 
@@ -30,6 +32,8 @@ The latest Growth Batches G4.1 rollout applied:
 G4.1 validation passed before rollout: local replay reports 32 active migrations, Growth Batches regression `6/6`, complete finance regression `32/32`, independent inspection, authenticated visual QA at `1440`, `1200`, `820`, and `390` in light and dark mode, static checks, build, and GitHub Validation run `28319500331`. The hosted rollout ran in the authorised 2026-06-28 session with `npx supabase db push --linked` exit `0`; production mortality/shrinkage smoke passed through the maintained UI.
 
 G4.1 adds OPERATOR+ mortality/shrinkage preview and recording, MANAGER+ event-specific loss reversal, immutable loss/reversal detail tables, loss read models, request-key idempotency, and `/growth-batches` UI coverage. It intentionally excludes transfers, harvest/split outputs, completion, stock output receipts, FIFO, COGS, fair value, automatic finance posting, dashboards, and per-animal/per-plant records. Production smoke used `Leny Doçuras` batch `LEN-GB000000003`, restored quantity `20 -> 18 -> 20 EA`, restored weight `40 -> 35 -> 40 KG`, kept stock movement and finance counts unchanged, kept Growth Batch costs at zero, kept negative stock and duplicate buckets at zero, and did not change `items.unit_price`.
+
+The local G4.2 package adds only governed full-batch operational location transfer and event-specific transfer reversal. It introduces `growth_batch_transfers`, `growth_batch_transfer_reversal_lines`, `growth_batch_transfer_history`, `preview_growth_batch_transfer`, `transfer_growth_batch`, and `reverse_growth_batch_transfer`, plus `/growth-batches` transfer UI and regression coverage. The package keeps transfers full-batch only: no partial split, child batch, harvest, completion, stock movement, stock-level change, cost write-off, finance posting, `items.unit_price` change, FIFO, COGS, fair value, profitability dashboard, or per-animal/per-plant identity. Local clean replay and targeted Growth Batch regression passed with 34 migrations before hosted rollout.
 
 Before changing the database:
 

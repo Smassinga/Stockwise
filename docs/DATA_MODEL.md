@@ -53,7 +53,7 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
 - stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
-- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/reversal workflows.
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/loss/transfer/reversal workflows.
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
@@ -120,7 +120,7 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
-- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/reversal operations
+- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/loss/transfer/reversal operations
 - item default sell price: `items.unit_price`
 
 ## Production Runs
@@ -211,7 +211,7 @@ Mutation rules:
 - measurement and memo direct-cost effective dates must be on or after the batch `start_date` and not later than the current date. `event_at`/`created_at` remain server-authoritative timestamps.
 - history views expose `event_sequence`, `event_effective_date`, `event_created_at`, and `event_id`; callers must request an explicit order.
 - direct costs update Growth Batch memo rollups only and do not create stock, COGS, AP, AR, cash, bank, settlement, journal, invoice, or `items.unit_price` changes.
-- G3 physical stock inputs and event-specific input reversal are live. G4.1 mortality/shrinkage preview, recording, and event-specific reversal are live. Transfers, harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future phases.
+- G3 physical stock inputs and event-specific input reversal are live. G4.1 mortality/shrinkage preview, recording, and event-specific reversal are live. G4.2 full-batch operational location transfer is implemented locally only and is not hosted/live. Harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future phases.
 
 Production smoke retained active batch `LEN-GB000000001` (`14490729-afa2-461a-a2f8-5f97afc745a5`) for `Leny Doçuras`. The smoke verified draft create/edit, activation, one total-weight measurement, one memo direct cost, event sequences `1` activation, `2` measurement, and `3` direct cost, and reconciled the register/current-state/timeline/measurement/direct-cost read models. It created no stock movement, no finance posting, no settlement, no invoice, and no `items.unit_price` change.
 
@@ -258,6 +258,23 @@ G4.1 RPCs:
 - `record_growth_batch_loss(uuid, text, date, numeric, numeric, text, text, text)` is OPERATOR+ and creates one mortality or shrinkage event, one immutable loss detail, a succeeded `growth.batch.mortality` or `growth.batch.shrinkage` posting request, and updates only current quantity/current total weight plus event-sequence state.
 - `reverse_growth_batch_loss(uuid, text, text)` is MANAGER+ and creates a matching mortality/shrinkage reversal event plus immutable reversal detail. It restores the original frozen quantity and/or weight, blocks second reversal, and blocks reversal where later dependent quantity/weight evidence exists.
 
-Cost and accounting boundary: G4.1 creates no `stock_movements`, does not update `stock_levels`, does not change material cost, memo direct cost, harvested cost, remaining cost, or `items.unit_price`, and creates no cash, bank, vendor bill, sales invoice, settlement, journal, or finance-event rows. Accumulated cost remains with the batch. Transfers, harvest/split outputs, completion, FIFO biological layers, COGS, fair value, automatic finance posting, dashboards, and per-animal/per-plant identity remain future scope.
+Cost and accounting boundary: G4.1 creates no `stock_movements`, does not update `stock_levels`, does not change material cost, memo direct cost, harvested cost, remaining cost, or `items.unit_price`, and creates no cash, bank, vendor bill, sales invoice, settlement, journal, or finance-event rows. Accumulated cost remains with the batch. Harvest/split outputs, completion, FIFO biological layers, COGS, fair value, automatic finance posting, dashboards, and per-animal/per-plant identity remain future scope.
 
 Production smoke retained active batch `LEN-GB000000003` (`452ba7d8-87c2-46dd-b60a-fa95e0ac12b4`) for `Leny Doçuras`. The smoke created and activated the batch with `20 EA` and `40 KG`, then posted and reversed mortality `2 EA` and shrinkage `5 KG` through the maintained UI. Mortality event `LEN-GB000000003-E000002` used detail `27dd3a4b-728d-44fa-9612-842dce37dc10` and request `a056575d-2c0e-4627-8a87-0ac9556f25e4`; mortality reversal `LEN-GB000000003-E000003` used detail `76227fa1-c56b-4c2a-9561-2a15384abbba` and request `d7eff67d-3c22-4524-916b-c8d1fffa4b25`. Shrinkage event `LEN-GB000000003-E000004` used detail `ae735f1e-b526-4c0e-b5a2-79c7254d896b` and request `c4022789-545c-4816-9c75-56638cb4aa16`; shrinkage reversal `LEN-GB000000003-E000005` used detail `f4b234c1-a8d9-4cfa-a0c5-7a6d601ac24f` and request `cf4d8473-5784-46ae-a98a-90e07fc2b433`. Final state restored to `20 EA` and `40 KG`, all Growth Batch cost rollups stayed `0`, stock movements/levels and finance rows were unchanged, negative stock and duplicate bucket checks were `0`, and `items.unit_price` sum stayed `189778` with the stable rollout hash unchanged.
+### Growth Batches G4.2 Local Transfer Package
+
+G4.2 is implemented locally and is not hosted/live. Local migration history has 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql`; hosted production remains at 32 active migrations through `20260627225414_add_growth_batch_loss_posting.sql`.
+
+G4.2 schema additions:
+
+- `growth_batch_transfers`: one immutable detail row per `transfer` event with source and destination warehouse/bin/description snapshots, current full-batch quantity/weight/area snapshots, and cost snapshots for audit only.
+- `growth_batch_transfer_reversal_lines`: one immutable reversal detail per original transfer, enforcing one reversal maximum and matching company/batch/original-event relationships.
+- `growth_batch_transfer_history`: read model exposing readable source-to-destination labels, event references/sequences, quantity/weight snapshots, reversal status, and reversal eligibility.
+
+G4.2 RPCs:
+
+- `preview_growth_batch_transfer`: OPERATOR+ non-mutating preview. It returns source-location fingerprint, source/destination labels, unchanged quantity/weight/cost snapshots, and blockers.
+- `transfer_growth_batch`: OPERATOR+ full-batch location transfer. It requires a request key and source-location fingerprint, creates one `transfer` event/detail, and updates only `warehouse_id`, `bin_id`, `location_description`, `latest_event_sequence`, `updated_by`, and `updated_at` on the batch.
+- `reverse_growth_batch_transfer`: MANAGER+ event-specific transfer reversal. It reverses only the latest unreversed transfer when the batch is still at that transfer destination and the original source remains active.
+
+Cost and accounting boundary: G4.2 creates no `stock_movements`, does not update `stock_levels`, does not change current quantity, latest total weight, material cost, memo direct cost, harvested cost, remaining cost, or `items.unit_price`, and creates no cash, bank, vendor bill, sales invoice, settlement, journal, or finance-event rows. Transport expense remains a separate memo direct-cost event through the existing direct-cost workflow.
