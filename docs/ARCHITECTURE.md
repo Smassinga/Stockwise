@@ -137,7 +137,7 @@ The G1-G2 boundary is intentionally narrow:
 
 - `/growth-batches` manages group-level biological or agricultural batches, not per-animal or per-plant stock.
 - supported lifecycle actions are draft creation/editing, draft cancellation, activation, measurements, and memo direct costs.
-- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; full-batch operational location transfer is implemented locally in G4.2 but not hosted/live; harvests/splits, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
+- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; full-batch operational location transfer is live in G4.2; harvests/splits, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
 - direct costs are Growth Batch memo rollups only. They do not create bank, cash, vendor bill, settlement, journal, invoice, stock movement, or `items.unit_price` changes.
 - primary quantities are base-UOM-style entries only for this phase. Count quantities must be whole numbers, weight measurements use the batch `weight_uom_id`, area observations use the batch `area_uom_id`, and generic Growth Batch UOM conversion is deferred.
 - the batch start date is the operational lifecycle boundary. Activation rejects future start dates; measurement and memo direct-cost effective dates must be on or after the start date and not in the future. Server-created timestamps remain separate from operator-entered effective dates.
@@ -221,11 +221,11 @@ The smoke then previewed and posted shrinkage `5 KG` for reason `drying`, creati
 
 G4.1 loss events reduce only the active batch current quantity and/or latest total weight. They create no stock movements, do not update `stock_levels`, do not change material cost, memo direct cost, harvested cost, remaining cost, or `items.unit_price`, and create no cash, bank, vendor bill, invoice, settlement, journal, or finance-event rows. Accumulated cost remains with the batch; mortality valuation, write-off, FIFO, COGS, fair value, harvest, completion, child batches, dashboards, and accounting integration remain future scope.
 
-## Growth Batches G4.2 Local Transfer Package
+## Growth Batches G4.2 Live Transfer Package
 
-Growth Batches G4.2 is implemented locally and is not hosted/live. Hosted production remains at 32 migrations through `20260627225414_add_growth_batch_loss_posting.sql`; local replay has 34 migrations through `20260630170735_add_growth_batch_transfer_posting.sql`.
+Growth Batches G4.2 is live and production-smoke validated as of 2026-07-02. Hosted and local Supabase are aligned with 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql`.
 
-The local package adds governed full-batch operational location transfer only:
+The package adds governed full-batch operational location transfer only:
 
 - new event types `transfer` and `transfer_reversal`
 - immutable `growth_batch_transfers` and `growth_batch_transfer_reversal_lines`
@@ -235,6 +235,8 @@ The local package adds governed full-batch operational location transfer only:
 - `/growth-batches` Transfers tab, preview-required transfer dialog, source-location fingerprint stale-preview protection, and event-specific reversal dialog
 
 G4.2 changes only the current batch location fields through guarded RPCs: `warehouse_id`, `bin_id`, `location_description`, `latest_event_sequence`, `updated_by`, and `updated_at`. It does not split the batch, create child batches, create stock movements, update `stock_levels`, change quantity/weight/cost rollups, change `items.unit_price`, post finance rows, create transport cost automatically, or introduce harvest/completion/FIFO/COGS/fair-value/accounting behavior. Transport expense remains a separate memo direct-cost event.
+
+The 2026-07-02 production rollout used release commit `6995c1c59e4399258ab663953b0a129f606b92b5`, GitHub Actions Validation run `28606395112`, and Vercel deployment `dpl_8Kv3c3bUnkgjsU9iaPNPVYF7MvEx` for the initial frontend. The database rollout had already aligned hosted Supabase to the two G4.2 migrations before a detail-card layout defect blocked the maintained-UI reversal path. The controlled batch `LEN-GB000000003` was restored through the approved authenticated public `reverse_growth_batch_transfer` RPC, then frontend commit `c84469100249188144cb6305a634e21fba77a653` (`fix(growth): improve batch detail action layout`) deployed as `dpl_ECTTdBiBpL6y4kkm39XmsqtpmY3p`. A fresh maintained-UI smoke then posted transfer `LEN-GB000000003-E000008` and reversed it with `LEN-GB000000003-E000009`, restoring `Casa / QA-A2`, preserving `20 EA`, `40 KG`, zero cost rollups, stock/finance counts, and `items.unit_price`.
 
 ## Notification Direction
 

@@ -27,7 +27,7 @@ What did not change:
 
 ## Explicit Future Scope
 
-Production Runs, Growth Batches G3 stock-input posting, and Growth Batches G4.1 mortality/shrinkage are live foundations. Growth Batches G4.2 full-batch operational location transfer is implemented locally but is not hosted/live. Remaining future Production & Costing work includes:
+Production Runs, Growth Batches G3 stock-input posting, Growth Batches G4.1 mortality/shrinkage, and Growth Batches G4.2 full-batch operational location transfer are live foundations. Remaining future Production & Costing work includes:
 
 - harvest and split or partial harvest
 - Growth Batch completion and whole-batch reversal
@@ -275,7 +275,7 @@ G1-G2 rules:
 - histories expose event sequence, effective date, server-created timestamp, and event id; callers order histories explicitly.
 - measurements do not alter population counts; total-weight measurements update latest total weight.
 - direct costs are memo rollups only and create no finance, settlement, bill, journal, invoice, stock, COGS, or `items.unit_price` changes.
-- physical stock inputs and event-specific stock-input reversal are live in G3. Mortality/shrinkage are live in G4.1. Full-batch operational location transfer is implemented locally in G4.2 but is not hosted/live. Harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future G4/G5 scope.
+- physical stock inputs and event-specific stock-input reversal are live in G3. Mortality/shrinkage are live in G4.1. Full-batch operational location transfer and event-specific transfer reversal are live in G4.2. Harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future G4/G5 scope.
 
 Production smoke result:
 
@@ -368,10 +368,11 @@ Controlled production smoke used tenant `Leny Doçuras` and batch `LEN-GB0000000
 
 Shrinkage `5 KG` created event `LEN-GB000000003-E000004`, detail `ae735f1e-b526-4c0e-b5a2-79c7254d896b`, and request `c4022789-545c-4816-9c75-56638cb4aa16`; shrinkage reversal created event `LEN-GB000000003-E000005`, reversal detail `f4b234c1-a8d9-4cfa-a0c5-7a6d601ac24f`, and request `cf4d8473-5784-46ae-a98a-90e07fc2b433`, restoring weight `35 -> 40 KG`. Final batch cost rollups stayed `MZN 0.00`, stock movements and stock levels were unchanged, finance rows were unchanged, negative stock and duplicate bucket checks stayed `0`, and `items.unit_price` stayed unchanged.
 
-G4.2 local-only:
+## Growth Batches G4.2 Live Transfer Package
 
-- full-batch operational location transfer and event-specific transfer reversal are implemented locally with no stock movements, stock-level changes, cost write-off, finance posting, or `items.unit_price` change
-- hosted production remains at G4.1 until the two G4.2 migrations are approved and applied
+Growth Batches G4.2 is live in production as of 2026-07-02. Hosted and local production migration history both have 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql`. The package adds full-batch operational location transfer and event-specific transfer reversal only, with no stock movements, stock-level changes, cost write-off, finance posting, or `items.unit_price` change.
+
+The controlled rollout used `Leny Doçuras` batch `LEN-GB000000003`. The initial maintained-UI transfer to `Casa / CDC001` succeeded, but a detail-card layout blocker prevented reliable UI reversal; the batch was restored through the approved authenticated public reversal RPC. After frontend fix commit `c84469100249188144cb6305a634e21fba77a653` deployed, a fresh maintained-UI transfer/reversal completed with events `LEN-GB000000003-E000008` and `LEN-GB000000003-E000009`, restored `Casa / QA-A2`, preserved `20 EA`, `40 KG`, active status, and zero cost rollups, and left stock, finance, negative/duplicate stock checks, and selling price unchanged. Production replay, payload-mismatch, authority-negative, and concurrency tests remain covered by local regression rather than production smoke.
 
 Still future:
 
