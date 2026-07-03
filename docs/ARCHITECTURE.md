@@ -52,7 +52,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
-- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/input/loss/transfer/reversal workflows.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/input/loss/transfer/harvest/reversal workflows.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -62,7 +62,7 @@ The maintained product surfaces are:
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
 - `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
-- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, `growth.batch.input.reverse`, `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, `growth.batch.shrinkage.reverse`, `growth.batch.transfer`, and `growth.batch.transfer.reverse`
+- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, `growth.batch.input.reverse`, `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, `growth.batch.shrinkage.reverse`, `growth.batch.transfer`, `growth.batch.transfer.reverse`, `growth.batch.harvest`, and `growth.batch.harvest.reverse`
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
@@ -83,7 +83,7 @@ The maintained product surfaces are:
 
 ## Production Runs Architecture
 
-The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted Supabase is now further aligned through the Growth Batches G3 migration `20260620132656_add_growth_batch_stock_input_posting.sql`.
+The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted Supabase now continues through Growth Batches G4.2 with 34 active migrations; the local repository adds the unhosted 36-migration G5.1 harvest package.
 
 Production Runs add a richer operational path beside quick assembly:
 
@@ -124,7 +124,7 @@ Production smoke validation used `Leny Doçuras` and Production Run `LEN-PR00000
 
 ## Growth Batches G1-G2 Architecture
 
-Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted Supabase is now aligned through the G3 migration `20260620132656_add_growth_batch_stock_input_posting.sql`. The production route is `/growth-batches`.
+Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted Supabase is now aligned through the G4.2 migration `20260630170735_add_growth_batch_transfer_posting.sql` with 34 active migrations, while the local G5.1 package adds the unhosted `20260702205827` and `20260702205834` migrations for a 36-migration local replay. The production route is `/growth-batches`.
 
 The rollout applied the two Growth Batch migrations:
 
@@ -137,7 +137,7 @@ The G1-G2 boundary is intentionally narrow:
 
 - `/growth-batches` manages group-level biological or agricultural batches, not per-animal or per-plant stock.
 - supported lifecycle actions are draft creation/editing, draft cancellation, activation, measurements, and memo direct costs.
-- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; full-batch operational location transfer is live in G4.2; harvests/splits, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
+- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; full-batch operational location transfer is live in G4.2; governed depleting harvest is local-only in G5.1; split/child batches, non-depleting recurring yield, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
 - direct costs are Growth Batch memo rollups only. They do not create bank, cash, vendor bill, settlement, journal, invoice, stock movement, or `items.unit_price` changes.
 - primary quantities are base-UOM-style entries only for this phase. Count quantities must be whole numbers, weight measurements use the batch `weight_uom_id`, area observations use the batch `area_uom_id`, and generic Growth Batch UOM conversion is deferred.
 - the batch start date is the operational lifecycle boundary. Activation rejects future start dates; measurement and memo direct-cost effective dates must be on or after the start date and not in the future. Server-created timestamps remain separate from operator-entered effective dates.
@@ -193,7 +193,7 @@ Pre-rollout validation passed: local replay of 30 migrations, Growth Batches reg
 
 The 2026-06-22 production smoke used tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`) and new batch `LEN-GB000000002` (`QA G3 Stock Input Smoke - 2026-06-22`). It posted `1 EA` of `OV002 - Ovo` from `WH001 - Casa / CDC001 - Cozinha - Casa`, froze WAC `10.304233`, created input event `LEN-GB000000002-E000002`, issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa`, and request `e32dcf72-755d-4d1f-86c8-1e96e9fd761b`. Immediate reversal `LEN-GB000000002-E000003` created receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f` and request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`. Source stock moved `48 -> 47 -> 48`, material cost moved `0 -> 10.304233 -> 0`, memo direct cost stayed `0`, finance rows stayed unchanged, negative stock and duplicate buckets stayed zero, and `items.unit_price` stayed unchanged.
 
-G3 does not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion. Mortality and shrinkage are live only through the G4.1 package below; later transfer, harvest, completion, valuation, and accounting scope remains separate.
+G3 itself did not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion. Mortality and shrinkage are live through G4.1, full-batch operational location transfer is live through G4.2, and governed depleting harvest remains local-only in G5.1; split outputs, completion, valuation, accounting, profitability, and per-animal/per-plant scope remain separate.
 
 ## Growth Batches G4.1 Live Mortality And Shrinkage Package
 
@@ -237,6 +237,23 @@ The package adds governed full-batch operational location transfer only:
 G4.2 changes only the current batch location fields through guarded RPCs: `warehouse_id`, `bin_id`, `location_description`, `latest_event_sequence`, `updated_by`, and `updated_at`. It does not split the batch, create child batches, create stock movements, update `stock_levels`, change quantity/weight/cost rollups, change `items.unit_price`, post finance rows, create transport cost automatically, or introduce harvest/completion/FIFO/COGS/fair-value/accounting behavior. Transport expense remains a separate memo direct-cost event.
 
 The 2026-07-02 production rollout used release commit `6995c1c59e4399258ab663953b0a129f606b92b5`, GitHub Actions Validation run `28606395112`, and Vercel deployment `dpl_8Kv3c3bUnkgjsU9iaPNPVYF7MvEx` for the initial frontend. The database rollout had already aligned hosted Supabase to the two G4.2 migrations before a detail-card layout defect blocked the maintained-UI reversal path. The controlled batch `LEN-GB000000003` was restored through the approved authenticated public `reverse_growth_batch_transfer` RPC, then frontend commit `c84469100249188144cb6305a634e21fba77a653` (`fix(growth): improve batch detail action layout`) deployed as `dpl_ECTTdBiBpL6y4kkm39XmsqtpmY3p`. A fresh maintained-UI smoke then posted transfer `LEN-GB000000003-E000008` and reversed it with `LEN-GB000000003-E000009`, restoring `Casa / QA-A2`, preserving `20 EA`, `40 KG`, zero cost rollups, stock/finance counts, and `items.unit_price`.
+
+## Growth Batches G5.1 Local Harvest Package
+
+Growth Batches G5.1 is a local-only package. Hosted production remains at 34 active migrations through G4.2 (`20260630170735_add_growth_batch_transfer_posting.sql`); local replay now has 36 active migrations through `20260702205834_add_growth_batch_harvest_posting.sql`.
+
+The package adds governed depleting harvest only:
+
+- new event types `harvest` and `harvest_reversal`
+- immutable `growth_batch_harvests` and `growth_batch_harvest_reversal_lines`
+- `growth_batch_harvest_history` for output, cost allocation, reversal state, and eligibility
+- OPERATOR+ `preview_growth_batch_harvest` and `post_growth_batch_harvest`
+- MANAGER+ `reverse_growth_batch_harvest`
+- `/growth-batches` Harvests tab, preview-required harvest dialog, stale-source fingerprint protection, and event-specific reversal dialog
+
+G5.1 reduces active batch primary quantity for partial or full depleting harvests and receives exactly one stock-tracked output item into inventory. Cost allocation moves existing `remaining_cost` into `harvested_cost`: partial harvests allocate `remaining_cost_before * harvested_primary_quantity / current_primary_quantity_before`, while full harvests transfer the exact remaining cost so no rounding residue remains. `accumulated_material_cost`, `accumulated_direct_cost`, and `accumulated_total_cost` stay cumulative. Full harvest leaves the batch `active` with zero current quantity and shows “fully harvested awaiting completion”; completion remains G5.2.
+
+G5.1 stock behavior is append-only: harvest posting creates one `stock_movements` receipt with `ref_type = 'GROWTH_BATCH_HARVEST'`, and reversal creates one compensating issue with `ref_type = 'GROWTH_BATCH_HARVEST_REVERSAL'`. `stock_levels` remains trigger-derived. The package does not create sales, invoices, COGS, fair-value entries, finance journals, AP/AR/cash/bank rows, automatic completion, split or child batches, multi-output/co-product allocation, non-depleting recurring yield, FIFO biological layers, profitability dashboards, individual animal/plant records, or `items.unit_price` changes.
 
 ## Notification Direction
 

@@ -31,6 +31,13 @@ const POST_TRANSFER_SIGNATURE = 'public.transfer_growth_batch(uuid,uuid,text,tex
 const REVERSE_TRANSFER_SIGNATURE = 'public.reverse_growth_batch_transfer(uuid,uuid,date,text,text,text)'
 const NORMALIZE_LOCATION_SIGNATURE = 'public.growth_batch_normalize_location_description(text)'
 const LOCATION_FINGERPRINT_SIGNATURE = 'public.growth_batch_location_fingerprint(uuid,uuid,uuid,text,text)'
+const PREVIEW_HARVEST_SIGNATURE = 'public.preview_growth_batch_harvest(uuid,date,numeric,numeric,uuid,numeric,uuid,text,text)'
+const POST_HARVEST_SIGNATURE = 'public.post_growth_batch_harvest(uuid,date,numeric,numeric,uuid,numeric,uuid,text,text,text,text)'
+const REVERSE_HARVEST_SIGNATURE = 'public.reverse_growth_batch_harvest(uuid,date,text,text,text)'
+const HARVEST_FINGERPRINT_SIGNATURE = 'public.growth_batch_harvest_state_fingerprint(uuid,uuid,text,uuid,text,text,numeric,numeric,numeric,numeric,numeric)'
+const APPLY_HARVEST_UPDATE_SIGNATURE = 'public.apply_growth_batch_harvest_update(uuid,uuid,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,uuid,integer)'
+const VALIDATE_HARVEST_ROW_SIGNATURE = 'public.validate_growth_batch_harvest_row()'
+const VALIDATE_HARVEST_REVERSAL_ROW_SIGNATURE = 'public.validate_growth_batch_harvest_reversal_row()'
 
 function addDaysIso(days) {
   const date = new Date(`${todayIso()}T00:00:00.000Z`)
@@ -263,7 +270,7 @@ async function stockMovementCount(client, companyId) {
   return countRows(client, 'stock_movements', [['eq', 'company_id', companyId]])
 }
 
-test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, losses, transfers, and read models', async (t) => {
+test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, losses, transfers, harvests, and read models', async (t) => {
   const admin = createAdminClient()
   const created = {
     companyIds: new Set(),
@@ -273,6 +280,8 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
 
   async function cleanupCompany(companyId) {
     if (!companyId) return
+    await admin.from('growth_batch_harvest_reversal_lines').delete().eq('company_id', companyId)
+    await admin.from('growth_batch_harvests').delete().eq('company_id', companyId)
     await admin.from('growth_batch_transfer_reversal_lines').delete().eq('company_id', companyId)
     await admin.from('growth_batch_transfers').delete().eq('company_id', companyId)
     await admin.from('growth_batch_loss_reversal_lines').delete().eq('company_id', companyId)
@@ -463,6 +472,26 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
   throwSupabaseError(supplementItem.error, 'Growth Batch supplement item setup failed')
   const supplementItemId = supplementItem.data.id
 
+  const harvestOutputItem = await ownerClient
+    .from('items')
+    .insert({
+      company_id: companyId,
+      sku: `${PREFIX.toUpperCase()}-HARVEST`,
+      name: `${PREFIX} Harvest Output`,
+      base_uom_id: kgUomId,
+      min_stock: 0,
+      unit_price: 88,
+      primary_role: 'finished_good',
+      track_inventory: true,
+      can_buy: false,
+      can_sell: true,
+      is_assembled: false,
+    })
+    .select('id, unit_price')
+    .single()
+  throwSupabaseError(harvestOutputItem.error, 'Growth Batch harvest output item setup failed')
+  const harvestOutputItemId = harvestOutputItem.data.id
+
   expectNoSupabaseError(
     await ownerClient.rpc('post_stock_receipt', {
       p_company_id: companyId,
@@ -511,11 +540,13 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
         'growth_batch_losses',
         'growth_batch_loss_reversal_lines',
         'growth_batch_transfers',
-        'growth_batch_transfer_reversal_lines'
+        'growth_batch_transfer_reversal_lines',
+        'growth_batch_harvests',
+        'growth_batch_harvest_reversal_lines'
       )
       order by relname;
     `)
-    assert.equal(schemaRows.length, 11, 'Expected all Growth Batch tables to exist')
+    assert.equal(schemaRows.length, 13, 'Expected all Growth Batch tables to exist')
     assert.equal(schemaRows.every((row) => row.relrowsecurity === true), true, 'Expected Growth Batch RLS enabled')
     assert.equal(schemaRows.every((row) => row.relforcerowsecurity === true), true, 'Expected Growth Batch FORCE RLS enabled')
 
@@ -555,7 +586,32 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
         has_function_privilege('authenticated', '${POST_TRANSFER_SIGNATURE}', 'EXECUTE') as auth_transfer_post,
         has_function_privilege('public', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as public_transfer_reverse,
         has_function_privilege('anon', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as anon_transfer_reverse,
-        has_function_privilege('authenticated', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as auth_transfer_reverse;
+        has_function_privilege('authenticated', '${REVERSE_TRANSFER_SIGNATURE}', 'EXECUTE') as auth_transfer_reverse,
+        has_function_privilege('public', '${HARVEST_FINGERPRINT_SIGNATURE}', 'EXECUTE') as public_harvest_fingerprint,
+        has_function_privilege('anon', '${HARVEST_FINGERPRINT_SIGNATURE}', 'EXECUTE') as anon_harvest_fingerprint,
+        has_function_privilege('authenticated', '${HARVEST_FINGERPRINT_SIGNATURE}', 'EXECUTE') as auth_harvest_fingerprint,
+        has_function_privilege('postgres', '${HARVEST_FINGERPRINT_SIGNATURE}', 'EXECUTE') as owner_harvest_fingerprint,
+        has_function_privilege('public', '${APPLY_HARVEST_UPDATE_SIGNATURE}', 'EXECUTE') as public_apply_harvest_update,
+        has_function_privilege('anon', '${APPLY_HARVEST_UPDATE_SIGNATURE}', 'EXECUTE') as anon_apply_harvest_update,
+        has_function_privilege('authenticated', '${APPLY_HARVEST_UPDATE_SIGNATURE}', 'EXECUTE') as auth_apply_harvest_update,
+        has_function_privilege('postgres', '${APPLY_HARVEST_UPDATE_SIGNATURE}', 'EXECUTE') as owner_apply_harvest_update,
+        has_function_privilege('public', '${VALIDATE_HARVEST_ROW_SIGNATURE}', 'EXECUTE') as public_validate_harvest_row,
+        has_function_privilege('anon', '${VALIDATE_HARVEST_ROW_SIGNATURE}', 'EXECUTE') as anon_validate_harvest_row,
+        has_function_privilege('authenticated', '${VALIDATE_HARVEST_ROW_SIGNATURE}', 'EXECUTE') as auth_validate_harvest_row,
+        has_function_privilege('postgres', '${VALIDATE_HARVEST_ROW_SIGNATURE}', 'EXECUTE') as owner_validate_harvest_row,
+        has_function_privilege('public', '${VALIDATE_HARVEST_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as public_validate_harvest_reversal_row,
+        has_function_privilege('anon', '${VALIDATE_HARVEST_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as anon_validate_harvest_reversal_row,
+        has_function_privilege('authenticated', '${VALIDATE_HARVEST_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as auth_validate_harvest_reversal_row,
+        has_function_privilege('postgres', '${VALIDATE_HARVEST_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as owner_validate_harvest_reversal_row,
+        has_function_privilege('public', '${PREVIEW_HARVEST_SIGNATURE}', 'EXECUTE') as public_harvest_preview,
+        has_function_privilege('anon', '${PREVIEW_HARVEST_SIGNATURE}', 'EXECUTE') as anon_harvest_preview,
+        has_function_privilege('authenticated', '${PREVIEW_HARVEST_SIGNATURE}', 'EXECUTE') as auth_harvest_preview,
+        has_function_privilege('public', '${POST_HARVEST_SIGNATURE}', 'EXECUTE') as public_harvest_post,
+        has_function_privilege('anon', '${POST_HARVEST_SIGNATURE}', 'EXECUTE') as anon_harvest_post,
+        has_function_privilege('authenticated', '${POST_HARVEST_SIGNATURE}', 'EXECUTE') as auth_harvest_post,
+        has_function_privilege('public', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as public_harvest_reverse,
+        has_function_privilege('anon', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as anon_harvest_reverse,
+        has_function_privilege('authenticated', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as auth_harvest_reverse;
     `)
     assert.equal(grantRows[0].anon_create, false, 'anon must not execute create_growth_batch_draft')
     assert.equal(grantRows[0].anon_activate, false, 'anon must not execute activate_growth_batch')
@@ -580,6 +636,28 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
     assert.equal(grantRows[0].anon_transfer_post, false, 'anon must not execute transfer_growth_batch')
     assert.equal(grantRows[0].public_transfer_reverse, false, 'PUBLIC must not execute reverse_growth_batch_transfer')
     assert.equal(grantRows[0].anon_transfer_reverse, false, 'anon must not execute reverse_growth_batch_transfer')
+    assert.equal(grantRows[0].public_harvest_fingerprint, false, 'PUBLIC must not execute growth_batch_harvest_state_fingerprint')
+    assert.equal(grantRows[0].anon_harvest_fingerprint, false, 'anon must not execute growth_batch_harvest_state_fingerprint')
+    assert.equal(grantRows[0].auth_harvest_fingerprint, false, 'authenticated must not execute growth_batch_harvest_state_fingerprint')
+    assert.equal(grantRows[0].owner_harvest_fingerprint, true, 'function owner must retain growth_batch_harvest_state_fingerprint execution')
+    assert.equal(grantRows[0].public_apply_harvest_update, false, 'PUBLIC must not execute apply_growth_batch_harvest_update')
+    assert.equal(grantRows[0].anon_apply_harvest_update, false, 'anon must not execute apply_growth_batch_harvest_update')
+    assert.equal(grantRows[0].auth_apply_harvest_update, false, 'authenticated must not execute apply_growth_batch_harvest_update')
+    assert.equal(grantRows[0].owner_apply_harvest_update, true, 'function owner must retain apply_growth_batch_harvest_update execution')
+    assert.equal(grantRows[0].public_validate_harvest_row, false, 'PUBLIC must not execute validate_growth_batch_harvest_row')
+    assert.equal(grantRows[0].anon_validate_harvest_row, false, 'anon must not execute validate_growth_batch_harvest_row')
+    assert.equal(grantRows[0].auth_validate_harvest_row, false, 'authenticated must not execute validate_growth_batch_harvest_row')
+    assert.equal(grantRows[0].owner_validate_harvest_row, true, 'function owner must retain validate_growth_batch_harvest_row execution')
+    assert.equal(grantRows[0].public_validate_harvest_reversal_row, false, 'PUBLIC must not execute validate_growth_batch_harvest_reversal_row')
+    assert.equal(grantRows[0].anon_validate_harvest_reversal_row, false, 'anon must not execute validate_growth_batch_harvest_reversal_row')
+    assert.equal(grantRows[0].auth_validate_harvest_reversal_row, false, 'authenticated must not execute validate_growth_batch_harvest_reversal_row')
+    assert.equal(grantRows[0].owner_validate_harvest_reversal_row, true, 'function owner must retain validate_growth_batch_harvest_reversal_row execution')
+    assert.equal(grantRows[0].public_harvest_preview, false, 'PUBLIC must not execute preview_growth_batch_harvest')
+    assert.equal(grantRows[0].anon_harvest_preview, false, 'anon must not execute preview_growth_batch_harvest')
+    assert.equal(grantRows[0].public_harvest_post, false, 'PUBLIC must not execute post_growth_batch_harvest')
+    assert.equal(grantRows[0].anon_harvest_post, false, 'anon must not execute post_growth_batch_harvest')
+    assert.equal(grantRows[0].public_harvest_reverse, false, 'PUBLIC must not execute reverse_growth_batch_harvest')
+    assert.equal(grantRows[0].anon_harvest_reverse, false, 'anon must not execute reverse_growth_batch_harvest')
     assert.equal(grantRows[0].auth_create, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_activate, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_measurement, true, 'authenticated users execute governed Growth Batch RPCs')
@@ -592,6 +670,9 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
     assert.equal(grantRows[0].auth_transfer_preview, true, 'authenticated users execute governed Growth Batch transfer preview')
     assert.equal(grantRows[0].auth_transfer_post, true, 'authenticated users execute governed Growth Batch transfer posting')
     assert.equal(grantRows[0].auth_transfer_reverse, true, 'authenticated users execute governed Growth Batch transfer reversal')
+    assert.equal(grantRows[0].auth_harvest_preview, true, 'authenticated users execute governed Growth Batch harvest preview')
+    assert.equal(grantRows[0].auth_harvest_post, true, 'authenticated users execute governed Growth Batch harvest posting')
+    assert.equal(grantRows[0].auth_harvest_reverse, true, 'authenticated users execute governed Growth Batch harvest reversal')
 
     const helperExecutionDenied = 'permission denied|could not find|not found|schema cache'
     await expectPostgrestError(
@@ -619,6 +700,38 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
         p_warehouse_id: null,
         p_bin_id: null,
         p_location_description: ' Direct helper call ',
+      }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('growth_batch_harvest_state_fingerprint', {
+        p_company_id: companyId,
+        p_growth_batch_id: companyId,
+        p_status: 'active',
+        p_warehouse_id: null,
+        p_bin_id: null,
+        p_location_description: ' Direct helper call ',
+        p_current_primary_qty: 1,
+        p_current_total_weight: null,
+        p_accumulated_total_cost: 0,
+        p_harvested_cost: 0,
+        p_remaining_cost: 0,
+      }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      anonClient.rpc('growth_batch_harvest_state_fingerprint', {
+        p_company_id: companyId,
+        p_growth_batch_id: companyId,
+        p_status: 'active',
+        p_warehouse_id: null,
+        p_bin_id: null,
+        p_location_description: ' Direct helper call ',
+        p_current_primary_qty: 1,
+        p_current_total_weight: null,
+        p_accumulated_total_cost: 0,
+        p_harvested_cost: 0,
+        p_remaining_cost: 0,
       }),
       helperExecutionDenied,
     )
@@ -765,6 +878,57 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
         reason: 'Direct mutation blocked',
       }),
       'direct growth_batch_transfer_reversal_lines insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_harvests').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        event_id: '00000000-0000-0000-0000-000000000000',
+        harvest_kind: 'partial',
+        harvested_primary_qty: 1,
+        primary_uom_id: eachUomId,
+        quantity_before: 2,
+        quantity_after: 1,
+        output_item_id: feedItemId,
+        output_uom_id: kgUomId,
+        output_quantity: 1,
+        destination_warehouse_id: warehouseId,
+        allocated_cost: 0,
+        output_unit_cost: 0,
+        accumulated_total_cost: 0,
+        harvested_cost_before: 0,
+        harvested_cost_after: 0,
+        remaining_cost_before: 0,
+        remaining_cost_after: 0,
+        stock_receipt_movement_id: '00000000-0000-0000-0000-000000000000',
+        source_state_fingerprint: 'blocked',
+      }),
+      'direct growth_batch_harvests insert',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_harvest_reversal_lines').insert({
+        company_id: companyId,
+        growth_batch_id: '00000000-0000-0000-0000-000000000000',
+        reversal_event_id: '00000000-0000-0000-0000-000000000000',
+        original_event_id: '00000000-0000-0000-0000-000000000000',
+        original_harvest_id: '00000000-0000-0000-0000-000000000000',
+        restored_primary_qty: 1,
+        primary_uom_id: eachUomId,
+        quantity_before: 1,
+        quantity_after: 2,
+        allocated_cost_restored: 0,
+        harvested_cost_before: 0,
+        harvested_cost_after: 0,
+        remaining_cost_before: 0,
+        remaining_cost_after: 0,
+        output_item_id: feedItemId,
+        output_uom_id: kgUomId,
+        output_quantity: 1,
+        destination_warehouse_id: warehouseId,
+        stock_issue_movement_id: '00000000-0000-0000-0000-000000000000',
+        reason: 'Direct mutation blocked',
+      }),
+      'direct growth_batch_harvest_reversal_lines insert',
     )
   })
 
@@ -1359,6 +1523,36 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
     assert.equal(Number(costRow.accumulated_total_cost), 25.5)
     assert.equal(Number(costRow.harvested_cost), 0)
     assert.equal(Number(costRow.remaining_cost), 25.5)
+    let harvestGuardError = null
+    try {
+      await runLocalSql(`
+        with guard_context as (
+          select set_config('stockwise.growth_batch_rpc', 'on', true) as enabled
+        )
+        update public.growth_batches
+           set harvested_cost = harvested_cost + 1,
+               remaining_cost = remaining_cost - 1
+          from guard_context
+         where id = '${countBatch.batch_id}'::uuid
+           and company_id = '${companyId}'::uuid
+           and guard_context.enabled = 'on'
+        returning public.growth_batches.id;
+      `)
+    } catch (error) {
+      harvestGuardError = error
+    }
+    assert.match(
+      harvestGuardError?.message || '',
+      /growth_batch_immutable/,
+      'general Growth Batch RPC context alone must not authorize harvest cost allocation changes',
+    )
+    const guardCostRow = await querySingle(ownerClient, 'growth_batches', 'accumulated_total_cost, harvested_cost, remaining_cost', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'id', countBatch.batch_id],
+    ])
+    assert.equal(Number(guardCostRow.accumulated_total_cost), 25.5)
+    assert.equal(Number(guardCostRow.harvested_cost), 0)
+    assert.equal(Number(guardCostRow.remaining_cost), 25.5)
     assert.deepEqual(await financeIsolationCounts(admin, companyId), financeBeforeCost)
     assert.equal(await stockMovementCount(ownerClient, companyId), stockBeforeCost)
     const unitPriceAfter = await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', priceItem.data.id]])
@@ -3689,5 +3883,418 @@ test('Growth Batches G1-G4.2 authority, lifecycle, idempotency, stock inputs, lo
     )
     assert.equal(g3RequestRows.every((row) => row.status === 'succeeded' && row.result_ref_id), true)
     assert.equal(new Set(g3RequestRows.map((row) => `${row.operation_type}:${row.request_key}`)).size, g3RequestRows.length)
+  })
+
+  await t.test('G5.1 depleting harvests, event-specific reversals, and isolation', async () => {
+    const harvestBatch = await createActiveGrowthBatch('Harvest Batch', { openingQty: 10, openingWeight: 20 })
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: harvestBatch.batch_id,
+      p_category: 'labour',
+      p_description: 'Harvest cost pool',
+      p_amount: 100,
+      p_event_date: todayIso(),
+      p_notes: null,
+      p_request_key: `${PREFIX}-harvest-cost-pool`,
+    }), 'Expected harvest cost-pool setup to succeed')
+
+    const harvestSnapshotSelect = 'status,warehouse_id,bin_id,location_description,current_primary_qty,current_total_weight,accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,harvested_cost,remaining_cost,latest_event_sequence'
+    async function harvestMutationSnapshot(batchId) {
+      const [
+        eventCount,
+        harvestCount,
+        reversalCount,
+        postingRequestCount,
+        movementCount,
+        stockLevelCount,
+        financeCounts,
+        batch,
+        outputPrice,
+      ] = await Promise.all([
+        countRows(ownerClient, 'growth_batch_events', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_harvests', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_harvest_reversal_lines', [['eq', 'growth_batch_id', batchId]]),
+        countRows(admin, 'posting_requests', [['eq', 'company_id', companyId]]),
+        stockMovementCount(admin, companyId),
+        countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]),
+        financeIsolationCounts(admin, companyId),
+        querySingle(ownerClient, 'growth_batches', harvestSnapshotSelect, [['eq', 'id', batchId]]),
+        querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', harvestOutputItemId]]),
+      ])
+      return { eventCount, harvestCount, reversalCount, postingRequestCount, movementCount, stockLevelCount, financeCounts, batch, outputPrice }
+    }
+
+    async function assertHarvestPreviewNonMutation(batchId, before, label) {
+      assert.deepEqual(await harvestMutationSnapshot(batchId), before, `${label} preview must not mutate database state`)
+    }
+
+    const harvestPayload = {
+      p_growth_batch_id: harvestBatch.batch_id,
+      p_effective_date: todayIso(),
+      p_harvested_primary_qty: 4,
+      p_harvested_total_weight: 8,
+      p_output_item_id: harvestOutputItemId,
+      p_output_quantity: 6,
+      p_destination_warehouse_id: transferWarehouseId,
+      p_destination_bin_id: transferBinId,
+      p_notes: 'Controlled partial harvest',
+    }
+
+    await expectPostgrestError(
+      viewerClient.rpc('preview_growth_batch_harvest', harvestPayload),
+      'operator_role_required',
+    )
+
+    const previewBefore = await harvestMutationSnapshot(harvestBatch.batch_id)
+    const harvestPreview = unwrapRpcSingle(expectNoSupabaseError(
+      await operatorClient.rpc('preview_growth_batch_harvest', harvestPayload),
+      'Expected harvest preview to succeed',
+    ))
+    assert.equal(harvestPreview.ready, true)
+    assert.deepEqual(harvestPreview.blocking_reasons, [])
+    assert.equal(harvestPreview.harvest_kind, 'partial')
+    assert.equal(Number(harvestPreview.current_quantity), 10)
+    assert.equal(Number(harvestPreview.harvested_primary_qty), 4)
+    assert.equal(Number(harvestPreview.resulting_quantity), 6)
+    assert.equal(Number(harvestPreview.current_total_weight), 20)
+    assert.equal(Number(harvestPreview.harvested_total_weight), 8)
+    assert.equal(Number(harvestPreview.resulting_total_weight), 12)
+    assert.equal(Number(harvestPreview.allocated_cost), 40)
+    assert.equal(Number(harvestPreview.harvested_cost_before), 0)
+    assert.equal(Number(harvestPreview.harvested_cost_after), 40)
+    assert.equal(Number(harvestPreview.remaining_cost_before), 100)
+    assert.equal(Number(harvestPreview.remaining_cost_after), 60)
+    assert.equal(Number(harvestPreview.output_unit_cost), 6.666667)
+    assert.equal(harvestPreview.output_item_id, harvestOutputItemId)
+    assert.equal(harvestPreview.output_uom_id, kgUomId)
+    assert.equal(harvestPreview.destination_location.warehouse_id, transferWarehouseId)
+    assert.equal(harvestPreview.destination_location.bin_id, transferBinId)
+    assert.equal(harvestPreview.finance_effect, 'not_affected')
+    assert.equal(harvestPreview.items_unit_price_effect, 'unchanged')
+    assert.ok(harvestPreview.source_fingerprint)
+    await assertHarvestPreviewNonMutation(harvestBatch.batch_id, previewBefore, 'Harvest')
+
+    const invalidHarvestPreview = unwrapRpcSingle(expectNoSupabaseError(
+      await operatorClient.rpc('preview_growth_batch_harvest', {
+        ...harvestPayload,
+        p_harvested_primary_qty: 11,
+      }),
+      'Expected excessive harvest preview to return blockers',
+    ))
+    assert.equal(invalidHarvestPreview.ready, false)
+    assert.equal(invalidHarvestPreview.blocking_reasons.some((reason) => reason.code === 'growth_batch_harvest_quantity_exceeds_current'), true)
+
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_harvest', {
+        ...harvestPayload,
+        p_expected_source_fingerprint: null,
+        p_request_key: `${PREFIX}-harvest-missing-fingerprint`,
+      }),
+      'growth_batch_harvest_source_fingerprint_required',
+    )
+
+    const staleBatch = await createActiveGrowthBatch('Harvest Stale Batch', { openingQty: 5, openingWeight: 10 })
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: staleBatch.batch_id,
+      p_category: 'labour',
+      p_description: 'Stale harvest cost pool',
+      p_amount: 50,
+      p_event_date: todayIso(),
+      p_request_key: `${PREFIX}-harvest-stale-cost`,
+    }))
+    const stalePreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_harvest', {
+      ...harvestPayload,
+      p_growth_batch_id: staleBatch.batch_id,
+      p_harvested_primary_qty: 2,
+      p_harvested_total_weight: 4,
+      p_output_quantity: 3,
+      p_notes: 'Stale harvest preview',
+    })))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_loss', {
+      p_growth_batch_id: staleBatch.batch_id,
+      p_loss_type: 'mortality',
+      p_effective_date: todayIso(),
+      p_quantity_lost: 1,
+      p_weight_lost: null,
+      p_reason_code: 'disease',
+      p_notes: null,
+      p_request_key: `${PREFIX}-harvest-stale-loss`,
+    }))
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_harvest', {
+        ...harvestPayload,
+        p_growth_batch_id: staleBatch.batch_id,
+        p_harvested_primary_qty: 2,
+        p_harvested_total_weight: 4,
+        p_output_quantity: 3,
+        p_notes: 'Stale harvest preview',
+        p_expected_source_fingerprint: stalePreview.source_fingerprint,
+        p_request_key: `${PREFIX}-harvest-stale-post`,
+      }),
+      'growth_batch_harvest_source_changed',
+    )
+
+    const harvestBefore = await harvestMutationSnapshot(harvestBatch.batch_id)
+    const postedHarvest = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('post_growth_batch_harvest', {
+      ...harvestPayload,
+      p_expected_source_fingerprint: harvestPreview.source_fingerprint,
+      p_request_key: `${PREFIX}-harvest-post`,
+    }), 'Expected harvest posting to succeed'))
+    assert.equal(postedHarvest.event_type, 'harvest')
+    assert.equal(postedHarvest.event_sequence, Number(harvestBefore.batch.latest_event_sequence) + 1)
+    assert.equal(postedHarvest.harvest_detail_id.length, 36)
+    assert.equal(postedHarvest.stock_receipt_movement_id.length, 36)
+    assert.equal(postedHarvest.request_status, 'succeeded')
+    const afterHarvest = await querySingle(ownerClient, 'growth_batches', harvestSnapshotSelect, [['eq', 'id', harvestBatch.batch_id]])
+    assert.equal(afterHarvest.status, 'active')
+    assert.equal(Number(afterHarvest.current_primary_qty), 6)
+    assert.equal(Number(afterHarvest.current_total_weight), 12)
+    assert.equal(Number(afterHarvest.accumulated_material_cost), Number(harvestBefore.batch.accumulated_material_cost))
+    assert.equal(Number(afterHarvest.accumulated_direct_cost), 100)
+    assert.equal(Number(afterHarvest.accumulated_total_cost), 100)
+    assert.equal(Number(afterHarvest.harvested_cost), 40)
+    assert.equal(Number(afterHarvest.remaining_cost), 60)
+    assert.equal(await stockMovementCount(admin, companyId), harvestBefore.movementCount + 1, 'Harvest must create one stock receipt')
+    assert.deepEqual(await financeIsolationCounts(admin, companyId), harvestBefore.financeCounts)
+    assert.deepEqual(await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', harvestOutputItemId]]), harvestBefore.outputPrice)
+    const outputBucket = await querySingle(ownerClient, 'stock_levels', 'qty,avg_cost', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', harvestOutputItemId],
+      ['eq', 'warehouse_id', transferWarehouseId],
+      ['eq', 'bin_id', transferBinId],
+    ])
+    assert.equal(Number(outputBucket.qty), 6)
+    assert.equal(Number(outputBucket.avg_cost).toFixed(6), '6.666667')
+
+    const harvestDetails = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_harvests').select('*').eq('event_id', postedHarvest.event_id),
+      'Expected harvest detail to load',
+    )
+    assert.equal(harvestDetails.length, 1)
+    assert.equal(Number(harvestDetails[0].allocated_cost), 40)
+    assert.equal(harvestDetails[0].stock_receipt_movement_id, postedHarvest.stock_receipt_movement_id)
+    const harvestReceipt = await querySingle(ownerClient, 'stock_movements', 'type,item_id,uom_id,qty_base,unit_cost,total_value,warehouse_to_id,bin_to_id,ref_type,ref_id,ref_line_id', [
+      ['eq', 'id', postedHarvest.stock_receipt_movement_id],
+    ])
+    assert.equal(harvestReceipt.type, 'receive')
+    assert.equal(harvestReceipt.ref_type, 'GROWTH_BATCH_HARVEST')
+    assert.equal(harvestReceipt.ref_id, postedHarvest.event_id)
+    assert.equal(harvestReceipt.ref_line_id, postedHarvest.harvest_detail_id)
+    assert.equal(Number(harvestReceipt.total_value), 40)
+
+    const harvestReplay = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('post_growth_batch_harvest', {
+      ...harvestPayload,
+      p_harvested_primary_qty: '4.00',
+      p_harvested_total_weight: '8.0',
+      p_output_quantity: '6.000',
+      p_expected_source_fingerprint: harvestPreview.source_fingerprint,
+      p_request_key: `${PREFIX}-harvest-post`,
+    }), 'Expected harvest replay to return original result'))
+    assert.equal(harvestReplay.event_id, postedHarvest.event_id)
+    await expectPostgrestError(
+      operatorClient.rpc('post_growth_batch_harvest', {
+        ...harvestPayload,
+        p_output_quantity: 7,
+        p_expected_source_fingerprint: harvestPreview.source_fingerprint,
+        p_request_key: `${PREFIX}-harvest-post`,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_harvests').update({ allocated_cost: 99 }).eq('id', postedHarvest.harvest_detail_id),
+      'direct growth_batch_harvests update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_harvests').delete().eq('id', postedHarvest.harvest_detail_id),
+      'direct growth_batch_harvests delete',
+    )
+
+    const harvestHistory = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_harvest_history').select('*').eq('growth_batch_id', harvestBatch.batch_id),
+      'Expected harvest history to load',
+    )
+    assert.equal(harvestHistory.length, 1)
+    assert.equal(harvestHistory[0].reversal_eligible, true)
+    assert.equal(harvestHistory[0].reversed, false)
+    const harvestTimeline = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_event_timeline').select('event_type,typed_detail_summary').eq('id', postedHarvest.event_id),
+      'Expected harvest timeline row to load',
+    )
+    assert.equal(harvestTimeline.length, 1)
+    assert.equal(harvestTimeline[0].event_type, 'harvest')
+    assert.equal(Number(harvestTimeline[0].typed_detail_summary?.allocated_cost), 40)
+
+    await expectPostgrestError(
+      operatorClient.rpc('reverse_growth_batch_harvest', {
+        p_original_event_id: postedHarvest.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Operator cannot reverse harvest',
+        p_expected_source_fingerprint: null,
+        p_request_key: `${PREFIX}-harvest-operator-reverse`,
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_harvest', {
+        p_original_event_id: postedHarvest.event_id,
+        p_effective_date: todayIso(),
+        p_reason: '',
+        p_expected_source_fingerprint: null,
+        p_request_key: `${PREFIX}-harvest-reverse-no-reason`,
+      }),
+      'reversal_reason_required',
+    )
+
+    const originalHarvestBeforeReverse = await querySingle(ownerClient, 'growth_batch_harvests', '*', [['eq', 'event_id', postedHarvest.event_id]])
+    const reverseBefore = await harvestMutationSnapshot(harvestBatch.batch_id)
+    const reversedHarvest = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('reverse_growth_batch_harvest', {
+      p_original_event_id: postedHarvest.event_id,
+      p_effective_date: todayIso(),
+      p_reason: 'Controlled harvest reversal',
+      p_expected_source_fingerprint: null,
+      p_request_key: `${PREFIX}-harvest-reverse`,
+    }), 'Expected harvest reversal to succeed'))
+    assert.equal(reversedHarvest.event_type, 'harvest_reversal')
+    assert.equal(reversedHarvest.original_event_id, postedHarvest.event_id)
+    assert.equal(reversedHarvest.reversal_detail_id.length, 36)
+    assert.equal(reversedHarvest.stock_issue_movement_id.length, 36)
+    const afterHarvestReverse = await querySingle(ownerClient, 'growth_batches', harvestSnapshotSelect, [['eq', 'id', harvestBatch.batch_id]])
+    assert.equal(Number(afterHarvestReverse.current_primary_qty), 10)
+    assert.equal(Number(afterHarvestReverse.current_total_weight), 20)
+    assert.equal(Number(afterHarvestReverse.accumulated_total_cost), 100)
+    assert.equal(Number(afterHarvestReverse.harvested_cost), 0)
+    assert.equal(Number(afterHarvestReverse.remaining_cost), 100)
+    assert.equal(await stockMovementCount(admin, companyId), reverseBefore.movementCount + 1, 'Harvest reversal must create one stock issue')
+    assert.deepEqual(await financeIsolationCounts(admin, companyId), reverseBefore.financeCounts)
+    assert.deepEqual(await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', harvestOutputItemId]]), reverseBefore.outputPrice)
+    const outputBucketAfterReverse = await querySingle(ownerClient, 'stock_levels', 'qty', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'item_id', harvestOutputItemId],
+      ['eq', 'warehouse_id', transferWarehouseId],
+      ['eq', 'bin_id', transferBinId],
+    ])
+    assert.equal(Number(outputBucketAfterReverse.qty), 0)
+    assert.deepEqual(await querySingle(ownerClient, 'growth_batch_harvests', '*', [['eq', 'event_id', postedHarvest.event_id]]), originalHarvestBeforeReverse)
+
+    const reversalDetails = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_harvest_reversal_lines').select('*').eq('original_event_id', postedHarvest.event_id),
+      'Expected harvest reversal detail to load',
+    )
+    assert.equal(reversalDetails.length, 1)
+    assert.equal(reversalDetails[0].stock_issue_movement_id, reversedHarvest.stock_issue_movement_id)
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_harvest_reversal_lines').update({ reason: 'mutate' }).eq('id', reversalDetails[0].id),
+      'direct growth_batch_harvest_reversal_lines update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_harvest_reversal_lines').delete().eq('id', reversalDetails[0].id),
+      'direct growth_batch_harvest_reversal_lines delete',
+    )
+    const harvestReverseReplay = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('reverse_growth_batch_harvest', {
+      p_original_event_id: postedHarvest.event_id,
+      p_effective_date: todayIso(),
+      p_reason: 'Controlled harvest reversal',
+      p_expected_source_fingerprint: null,
+      p_request_key: `${PREFIX}-harvest-reverse`,
+    }), 'Expected harvest reversal replay to return original result'))
+    assert.equal(harvestReverseReplay.event_id, reversedHarvest.event_id)
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_harvest', {
+        p_original_event_id: postedHarvest.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Second harvest reversal',
+        p_expected_source_fingerprint: null,
+        p_request_key: `${PREFIX}-harvest-reverse-second`,
+      }),
+      'growth_batch_harvest_already_reversed',
+    )
+
+    const fullHarvestBatch = await createActiveGrowthBatch('Full Harvest Batch', { openingQty: 3, openingWeight: 9 })
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: fullHarvestBatch.batch_id,
+      p_category: 'labour',
+      p_description: 'Full harvest cost pool',
+      p_amount: 33,
+      p_event_date: todayIso(),
+      p_request_key: `${PREFIX}-full-harvest-cost`,
+    }))
+    const fullPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_harvest', {
+      ...harvestPayload,
+      p_growth_batch_id: fullHarvestBatch.batch_id,
+      p_harvested_primary_qty: 3,
+      p_harvested_total_weight: 9,
+      p_output_quantity: 9,
+      p_notes: 'Full harvest',
+    })))
+    assert.equal(fullPreview.harvest_kind, 'full')
+    assert.equal(Number(fullPreview.allocated_cost), 33)
+    assert.equal(Number(fullPreview.remaining_cost_after), 0)
+    const fullHarvest = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('post_growth_batch_harvest', {
+      ...harvestPayload,
+      p_growth_batch_id: fullHarvestBatch.batch_id,
+      p_harvested_primary_qty: 3,
+      p_harvested_total_weight: 9,
+      p_output_quantity: 9,
+      p_notes: 'Full harvest',
+      p_expected_source_fingerprint: fullPreview.source_fingerprint,
+      p_request_key: `${PREFIX}-full-harvest-post`,
+    })))
+    assert.equal(fullHarvest.harvest_kind, 'full')
+    const afterFullHarvest = await querySingle(ownerClient, 'growth_batch_current_state', 'status,current_primary_qty,latest_total_weight,remaining_cost,fully_harvested_awaiting_completion', [['eq', 'id', fullHarvestBatch.batch_id]])
+    assert.equal(afterFullHarvest.status, 'active')
+    assert.equal(Number(afterFullHarvest.current_primary_qty), 0)
+    assert.equal(Number(afterFullHarvest.latest_total_weight), 0)
+    assert.equal(Number(afterFullHarvest.remaining_cost), 0)
+    assert.equal(afterFullHarvest.fully_harvested_awaiting_completion, true)
+
+    const concurrentHarvestBatch = await createActiveGrowthBatch('Concurrent Harvest Batch', { openingQty: 5, openingWeight: 10 })
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: concurrentHarvestBatch.batch_id,
+      p_category: 'labour',
+      p_description: 'Concurrent harvest cost pool',
+      p_amount: 50,
+      p_event_date: todayIso(),
+      p_request_key: `${PREFIX}-concurrent-harvest-cost`,
+    }))
+    const concurrentPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_harvest', {
+      ...harvestPayload,
+      p_growth_batch_id: concurrentHarvestBatch.batch_id,
+      p_harvested_primary_qty: 3,
+      p_harvested_total_weight: 6,
+      p_output_quantity: 3,
+      p_notes: 'Concurrent harvest preview',
+    })))
+    const concurrentHarvests = await Promise.all([
+      operatorClient.rpc('post_growth_batch_harvest', {
+        ...harvestPayload,
+        p_growth_batch_id: concurrentHarvestBatch.batch_id,
+        p_harvested_primary_qty: 3,
+        p_harvested_total_weight: 6,
+        p_output_quantity: 3,
+        p_notes: 'Concurrent harvest A',
+        p_expected_source_fingerprint: concurrentPreview.source_fingerprint,
+        p_request_key: `${PREFIX}-concurrent-harvest-a`,
+      }),
+      ownerClient.rpc('post_growth_batch_harvest', {
+        ...harvestPayload,
+        p_growth_batch_id: concurrentHarvestBatch.batch_id,
+        p_harvested_primary_qty: 2,
+        p_harvested_total_weight: 4,
+        p_output_quantity: 2,
+        p_notes: 'Concurrent harvest B',
+        p_expected_source_fingerprint: concurrentPreview.source_fingerprint,
+        p_request_key: `${PREFIX}-concurrent-harvest-b`,
+      }),
+    ])
+    assert.equal(concurrentHarvests.filter((result) => !result.error).length, 1, 'Only one competing harvest should succeed')
+    assert.equal(concurrentHarvests.filter((result) => result.error).length, 1, 'One competing harvest should fail stale-source validation')
+    const concurrentHarvestEvents = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_events').select('event_sequence,event_type').eq('growth_batch_id', concurrentHarvestBatch.batch_id),
+      'Expected concurrent harvest events to load',
+    )
+    assert.equal(new Set(concurrentHarvestEvents.map((event) => event.event_sequence)).size, concurrentHarvestEvents.length, 'Concurrent harvest events must not duplicate sequence numbers')
   })
 })

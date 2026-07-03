@@ -27,9 +27,9 @@ What did not change:
 
 ## Explicit Future Scope
 
-Production Runs, Growth Batches G3 stock-input posting, Growth Batches G4.1 mortality/shrinkage, and Growth Batches G4.2 full-batch operational location transfer are live foundations. Remaining future Production & Costing work includes:
+Production Runs, Growth Batches G3 stock-input posting, Growth Batches G4.1 mortality/shrinkage, and Growth Batches G4.2 full-batch operational location transfer are live foundations. Growth Batches G5.1 governed depleting harvest is implemented locally only and is not hosted/live. Remaining future Production & Costing work includes:
 
-- harvest and split or partial harvest
+- non-depleting biological yield, split or child batches, and multi-output harvest
 - Growth Batch completion and whole-batch reversal
 - FIFO biological layers, COGS, and fair-value accounting
 - automatic finance posting, vendor-bill allocation, cash/bank settlement, and advanced cost allocation
@@ -198,7 +198,7 @@ Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate c
 
 ## Production Runs Live Package
 
-The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Current hosted migration history now continues through the Growth Batches G3 migration `20260620132656_add_growth_batch_stock_input_posting.sql`.
+The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Current hosted migration history now continues through Growth Batches G4.2 with 34 active migrations; the local repository adds the unhosted 36-migration G5.1 harvest package.
 
 Live migrations:
 
@@ -275,7 +275,7 @@ G1-G2 rules:
 - histories expose event sequence, effective date, server-created timestamp, and event id; callers order histories explicitly.
 - measurements do not alter population counts; total-weight measurements update latest total weight.
 - direct costs are memo rollups only and create no finance, settlement, bill, journal, invoice, stock, COGS, or `items.unit_price` changes.
-- physical stock inputs and event-specific stock-input reversal are live in G3. Mortality/shrinkage are live in G4.1. Full-batch operational location transfer and event-specific transfer reversal are live in G4.2. Harvest/split outputs, completion, whole-batch reversal, fair value, FIFO, and COGS remain future G4/G5 scope.
+- physical stock inputs and event-specific stock-input reversal are live in G3. Mortality/shrinkage are live in G4.1. Full-batch operational location transfer and event-specific transfer reversal are live in G4.2. Governed depleting harvest is local-only in G5.1. Split/child batches, non-depleting yield, multi-output harvest, completion, whole-batch reversal, fair value, FIFO, and COGS remain future scope.
 
 Production smoke result:
 
@@ -376,7 +376,8 @@ The controlled rollout used `Leny Doçuras` batch `LEN-GB000000003`. The initial
 
 Still future:
 
-- harvest and split/partial harvest
+- hosted G5.1 rollout for governed depleting harvest
+- split/child batches, non-depleting yield, and multi-output harvest
 - completion
 - whole-batch reversal
 - FIFO biological layers
@@ -390,3 +391,25 @@ Still future:
 - per-animal or per-plant records
 
 Cost Analysis Dashboard, Advanced Allocation, recurring allocation, overhead pools, and Industry Templates remain future scope.
+
+## Growth Batches G5.1 Local Depleting Harvest Package
+
+Growth Batches G5.1 is local-only and not hosted/live. Hosted production remains at 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql`; local replay has 36 active migrations through `20260702205834_add_growth_batch_harvest_posting.sql`.
+
+G5.1 adds governed partial and full depleting harvest for active Growth Batches:
+
+- one immutable `growth_batch_harvests` detail per harvest event
+- one primary stock-tracked output item and one stock receipt movement per harvest
+- `growth.batch.harvest` idempotency for posting
+- proportional `remaining_cost` transfer into `harvested_cost` for partial harvests
+- exact remaining-cost transfer for full harvests so `remaining_cost` becomes zero
+- active zero-quantity "fully harvested awaiting completion" state; automatic completion remains future
+- MANAGER+ event-specific reversal through `growth.batch.harvest.reverse`, immutable `growth_batch_harvest_reversal_lines`, and one compensating stock issue movement
+
+G5.1 preserves the accounting boundary:
+
+- `accumulated_material_cost`, `accumulated_direct_cost`, and `accumulated_total_cost` remain cumulative historical totals
+- harvest changes only current quantity, current total weight where present, `harvested_cost`, `remaining_cost`, audit fields, and latest sequence
+- reversal restores only the original quantity, weight, harvested/remaining allocation, audit fields, and latest sequence
+- stock effects are append-only movement effects through the existing stock engine; `stock_levels` is not directly updated by Growth Batch code
+- no sale, invoice, COGS, FIFO layer, fair-value entry, finance journal, cash, bank, AP, AR, vendor-bill allocation, supplier liability, profitability dashboard, child batch, split batch, non-depleting recurring yield, multi-output/co-product allocation, or `items.unit_price` change is introduced

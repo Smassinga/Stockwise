@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted production and local migration history are currently aligned through `20260630170735_add_growth_batch_transfer_posting.sql` with 34 active migrations after the controlled Growth Batches G4.2 rollout. G4.2 full-batch operational location transfer and event-specific transfer reversal are live and production-smoke validated.
+- Hosted production remains aligned through `20260630170735_add_growth_batch_transfer_posting.sql` with 34 active migrations after the controlled Growth Batches G4.2 rollout. The local repository now has a 36-migration Growth Batches G5.1 package through `20260702205834_add_growth_batch_harvest_posting.sql`; G5.1 depleting harvest and event-specific harvest reversal are local-only and are not hosted/live.
 
 ## Backup Assumptions
 
@@ -19,6 +19,7 @@ These assumptions must be verified in the Supabase dashboard before treating the
 
 - Supabase database backups and point-in-time recovery depend on the active Supabase project plan and configured retention.
 - The current documented production backup posture remains scheduled daily physical database backups available and PITR not enabled. No new restore drill was performed during the 2026-06-28 Growth Batches G4.1 rollout.
+- G5.1 adds local-only append-only harvest receipt/reversal issue behavior. It must not be treated as recoverable production functionality until a future authorised hosted rollout applies the two G5.1 migrations and records a new production smoke.
 - No formal restore drill has yet been completed.
 - Supabase Auth user recovery is tied to the same project recovery posture and Auth logs/configuration.
 - Supabase Storage recovery depends on project backup support and any separate object backup/export process the operator maintains.

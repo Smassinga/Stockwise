@@ -68,6 +68,15 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
+2026-07-02 Growth Batches G5.1 local implementation note:
+
+- hosted production remains at 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql`; G5.1 is not hosted/live
+- local replay now has 36 active migrations through `20260702205834_add_growth_batch_harvest_posting.sql`
+- the local G5.1 package adds governed partial/full depleting harvest, one primary inventory output receipt per harvest, proportional remaining-cost transfer to harvested cost, exact full-harvest remaining-cost transfer, and MANAGER+ event-specific harvest reversal
+- full harvest leaves the Growth Batch `active` with zero current quantity and an awaiting-completion state; completion remains a separate future package
+- G5.1 creates append-only stock movements for harvest receipt and reversal issue only; it does not create sales, invoices, COGS, FIFO layers, fair-value entries, finance rows, cash/bank/AP/AR documents, automatic completion, split or child batches, multi-output/co-product allocation, non-depleting yield, profitability dashboards, individual animal/plant records, or `items.unit_price` changes
+- G5.1 must not be included in production release claims until a future authorised hosted database rollout applies `20260702205827_add_growth_batch_harvests.sql` and `20260702205834_add_growth_batch_harvest_posting.sql`
+
 2026-06-28 Growth Batches G4.1 production rollout:
 
 - hosted and local Supabase are aligned through migration `20260627225414_add_growth_batch_loss_posting.sql` with 32 active migrations
@@ -91,7 +100,7 @@ For production-impacting releases, also review:
 - final counts were `growth_batches=3`, `growth_batch_events=11`, `growth_batch_losses=2`, `growth_batch_loss_reversal_lines=2`, `posting_requests=23`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, `sales_credit_notes=1`, `sales_debit_notes=0`, and `finance_document_events=45`
 - final batch state restored to `20 EA` and `40 KG`; material cost, memo direct cost, total cost, harvested cost, and remaining cost stayed `MZN 0.00`; negative stock and duplicate stock bucket checks remained `0`; `items.unit_price` sum stayed `189778` and the stable rollout hash baseline remained unchanged
 - Supabase API/Postgres log inspection through available MCP tooling was permission-blocked for this session; maintained UI calls succeeded and read-only database evidence showed no smoke failure
-- At the G4.1 hosted rollout checkpoint, transfers and later harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remained outside hosted scope. G4.2 transfer scope became live in the 2026-07-02 rollout recorded below; harvest/split outputs, completion, whole-batch reversal, FIFO, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain outside hosted scope.
+- At the G4.1 hosted rollout checkpoint, transfers and later harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remained outside hosted scope. G4.2 transfer scope became live in the 2026-07-02 rollout recorded below. Depleting harvest is implemented only in the local G5.1 package; split/child batches, non-depleting yield, completion, whole-batch reversal, FIFO, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain outside hosted scope.
 
 2026-07-02 Growth Batches G4.2 production rollout:
 
@@ -133,11 +142,11 @@ For production-impacting releases, also review:
 - final counts were `growth_batches=2`, `growth_batch_events=6`, `growth_batch_measurements=1`, `growth_batch_direct_costs=1`, `growth_batch_stock_inputs=1`, `growth_batch_stock_input_reversal_lines=1`, `posting_requests=17`, `stock_movements=69`, `stock_levels=16`, `cash_transactions=11`, `bank_transactions=3`, `vendor_bills=3`, `sales_invoices=4`, and `finance_document_events=45`
 - negative stock and duplicate stock bucket checks remained `0`; cash, bank, vendor bill, invoice, settlement, and finance-event rows were unchanged by G3; `items.unit_price` sum stayed `189778` and the preflight hash baseline was unchanged
 - Supabase API logs showed 200 responses for the maintained G3 preview/post/reversal/read-model path. Postgres logs showed no rollout/smoke failure; two inspection-only errors were caused by read-only verification attempts and did not affect the maintained UI path.
-- At the G3 hosted rollout checkpoint, transfers and later harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remained outside hosted scope. G4.2 transfer scope is now live as recorded above; harvest/split outputs, completion, whole-batch reversal, FIFO, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain outside hosted scope.
+- At the G3 hosted rollout checkpoint, transfers and later harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remained outside hosted scope. G4.2 transfer scope is now live as recorded above. Depleting harvest exists only in the local G5.1 package; split/child batches, non-depleting yield, completion, whole-batch reversal, FIFO, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain outside hosted scope.
 
 2026-06-20 Growth Batches G1-G2 rollout:
 
-- the 2026-06-20 G1-G2 rollout aligned hosted Supabase through migration `20260619175129_add_growth_batch_lifecycle_events.sql`; the current hosted state is documented in the G3 note above
+- the 2026-06-20 G1-G2 rollout aligned hosted Supabase through migration `20260619175129_add_growth_batch_lifecycle_events.sql`; the current hosted and local Growth Batch state is documented in the later G4.2 and G5.1 notes above
 - production frontend is aligned at Git commit `c7b5e299c277c28faf78fc5f19e4fe43fbfb20d3 feat(growth): add governed growth batches foundation`
 - Vercel production deployment `dpl_3ouAxVTpzLpAek6GGSMjP6hQ5pbR` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
 - the database-first rollout ran from `2026-06-20T09:22:08+02:00` to `2026-06-20T09:42:06+02:00`; pre-rollout hosted history had 26 migrations through `20260615213640`, and post-rollout history had 28 migrations with `20260619175117` and `20260619175129` applied in order
@@ -178,7 +187,7 @@ For production-impacting releases, also review:
 - G3 remains base-UOM-only for consumed item lines and does not add generic UOM conversion
 - G3 stock inputs create physical stock issue movements and material-cost rollups, but do not create cash, bank, vendor bill, settlement, invoice, supplier liability, finance journal/event, automatic COGS, or `items.unit_price` changes
 - authenticated local visual QA used isolated local company `G3 Visual QA Local 20260621120349`, batch `G3 Visual Batch 20260621120349`, batch reference `GVI-GB000000001`, and stock-input event `GVI-GB000000001-E000002`; it verified valid preview, stale-preview protection, duplicate source-line rejection, insufficient-stock blocking, OPERATOR+ posting, MANAGER+ event-specific reversal with mandatory reason, compensating receipt, original issue preservation, material-cost restoration from `MZN 12.50` to `MZN 0.00`, and stock restoration to `100 EA at MZN 2.50 WAC`
-- At the G3 validation checkpoint, transfers and later harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remained outside hosted scope. G4.2 transfer scope is now live as recorded above; harvest/split outputs, completion, whole-batch reversal, FIFO, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain outside hosted scope.
+- At the G3 validation checkpoint, transfers and later harvest/split outputs, completion, whole-batch reversal, FIFO biological layers, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remained outside hosted scope. G4.2 transfer scope is now live as recorded above. Depleting harvest exists only in the local G5.1 package; split/child batches, non-depleting yield, completion, whole-batch reversal, FIFO, fair value, automatic finance posting, profitability dashboards, and per-animal/per-plant records remain outside hosted scope.
 
 2026-06-18 Production Runs rollout:
 

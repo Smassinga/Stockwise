@@ -72,6 +72,7 @@ type DirectCostCategory = 'labour' | 'utilities' | 'veterinary' | 'transport' | 
 type LossType = 'mortality' | 'shrinkage'
 type LossReasonCode = 'disease' | 'injury' | 'predator' | 'weather' | 'handling' | 'culling' | 'natural_loss' | 'drying' | 'spoilage' | 'quality_loss' | 'other'
 type TransferReasonCode = 'operational_move' | 'space_management' | 'biosecurity' | 'environment' | 'maintenance' | 'consolidation' | 'other'
+type HarvestKind = 'partial' | 'full'
 
 type UomRow = {
   id: string
@@ -129,6 +130,11 @@ type GrowthBatchRegisterRow = {
   current_total_cost: number
   current_harvested_cost: number
   current_remaining_cost: number
+  accumulated_material_cost: number
+  accumulated_direct_cost: number
+  accumulated_total_cost: number
+  harvested_cost: number
+  remaining_cost: number
   projected_material_cost: number
   projected_direct_cost: number
   projected_total_cost: number
@@ -144,6 +150,18 @@ type GrowthBatchRegisterRow = {
   latest_event_sequence: number
   latest_event_type: string | null
   latest_event_at: string | null
+  stock_input_event_count?: number
+  stock_input_line_count?: number
+  stock_input_material_cost?: number
+  loss_event_count?: number
+  mortality_event_count?: number
+  shrinkage_event_count?: number
+  unreversed_loss_event_count?: number
+  harvest_event_count?: number
+  unreversed_harvest_event_count?: number
+  reversed_harvest_event_count?: number
+  harvested_output_quantity?: number
+  fully_harvested_awaiting_completion?: boolean
   created_at: string
   activated_at: string | null
   cancelled_at: string | null
@@ -167,6 +185,11 @@ type GrowthBatchCurrentState = GrowthBatchRegisterRow & {
   shrinkage_event_count?: number
   unreversed_loss_event_count?: number
   reversed_loss_event_count?: number
+  harvest_event_count?: number
+  unreversed_harvest_event_count?: number
+  reversed_harvest_event_count?: number
+  harvested_output_quantity?: number
+  fully_harvested_awaiting_completion?: boolean
   created_by: string | null
   updated_by: string | null
   activated_by: string | null
@@ -192,7 +215,7 @@ type GrowthBatchEventRow = {
   id: string
   event_sequence: number
   event_reference: string
-  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal' | 'transfer' | 'transfer_reversal'
+  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal' | 'transfer' | 'transfer_reversal' | 'harvest' | 'harvest_reversal'
   event_at: string
   event_date: string
   actor_display_name: string | null
@@ -304,6 +327,69 @@ type GrowthBatchTransferRow = {
   current_location_matches_destination: boolean
   source_warehouse_active: boolean
   source_bin_active: boolean
+  reversal_eligible: boolean
+}
+
+type GrowthBatchHarvestRow = {
+  id: string
+  growth_batch_id: string
+  growth_batch_reference: string
+  event_id: string
+  event_reference: string
+  event_sequence: number
+  event_effective_date: string
+  event_created_at: string
+  actor_display_name: string | null
+  harvest_kind: HarvestKind
+  harvested_primary_qty: number
+  primary_uom_id: string
+  primary_uom_code: string | null
+  quantity_before: number
+  quantity_after: number
+  harvested_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  total_weight_before: number | null
+  total_weight_after: number | null
+  output_item_id: string
+  output_item_sku: string | null
+  output_item_name: string
+  output_uom_id: string
+  output_uom_code: string | null
+  output_quantity: number
+  destination_warehouse_id: string
+  destination_warehouse_code: string | null
+  destination_warehouse_name: string | null
+  destination_bin_id: string | null
+  destination_bin_code: string | null
+  destination_bin_name: string | null
+  allocated_cost: number
+  output_unit_cost: number
+  accumulated_total_cost: number
+  harvested_cost_before: number
+  harvested_cost_after: number
+  remaining_cost_before: number
+  remaining_cost_after: number
+  stock_receipt_movement_id: string
+  source_warehouse_id: string | null
+  source_warehouse_code: string | null
+  source_warehouse_name: string | null
+  source_bin_id: string | null
+  source_bin_code: string | null
+  source_bin_name: string | null
+  source_location_description: string | null
+  notes: string | null
+  reversed: boolean
+  reversal_detail_id: string | null
+  reversal_event_id: string | null
+  reversal_event_reference: string | null
+  reversal_event_sequence: number | null
+  reversal_effective_date: string | null
+  reversal_timestamp: string | null
+  reversal_actor_display_name: string | null
+  reversal_reason: string | null
+  reversal_stock_issue_movement_id: string | null
+  is_latest_cost_quantity_weight_event: boolean
   reversal_eligible: boolean
 }
 
@@ -506,6 +592,60 @@ type TransferPreview = {
   cost_effect: string
 }
 
+type HarvestLocationPreview = {
+  warehouse_id: string | null
+  warehouse_code?: string | null
+  warehouse_name?: string | null
+  bin_id: string | null
+  bin_code?: string | null
+  bin_name?: string | null
+  location_description?: string | null
+}
+
+type HarvestPreview = {
+  ready: boolean
+  blocking_reasons: Array<{ code?: string; [key: string]: unknown }>
+  batch_id: string
+  reference_no: string
+  name: string
+  batch_family: BatchFamily
+  status: BatchStatus
+  effective_date: string
+  harvest_kind: HarvestKind
+  current_quantity: number
+  harvested_primary_qty: number | null
+  resulting_quantity: number
+  primary_uom_id: string
+  primary_uom_code: string | null
+  current_total_weight: number | null
+  harvested_total_weight: number | null
+  resulting_total_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  accumulated_total_cost: number
+  harvested_cost_before: number
+  harvested_cost_after: number
+  remaining_cost_before: number
+  remaining_cost_after: number
+  allocated_cost: number
+  output_item_id: string | null
+  output_item_name: string | null
+  output_uom_id: string | null
+  output_uom_code: string | null
+  output_quantity: number | null
+  output_unit_cost: number
+  destination_location: HarvestLocationPreview | null
+  source_location: HarvestLocationPreview | null
+  source_fingerprint: string | null
+  stock_effect: string
+  stock_effect_note: string
+  finance_effect: string
+  cogs_effect: string
+  sale_effect: string
+  items_unit_price_effect: string
+  notes: string | null
+}
+
 type StockInputPreviewLine = {
   line_no: number
   item_id: string
@@ -572,6 +712,24 @@ type TransferReversalForm = {
   reason: string
 }
 
+type HarvestForm = {
+  effectiveDate: string
+  harvestedPrimaryQty: string
+  harvestedWeight: string
+  outputItemId: string
+  outputQuantity: string
+  destinationWarehouseId: string
+  destinationBinId: string
+  notes: string
+}
+
+type HarvestReversalForm = {
+  eventId: string
+  eventReference: string
+  effectiveDate: string
+  reason: string
+}
+
 const batchFamilies: BatchFamily[] = ['poultry', 'livestock', 'fish', 'crop', 'nursery', 'other']
 const quantityBases: QuantityBasis[] = ['count', 'weight', 'area', 'other']
 const measurementTypes: MeasurementType[] = ['total_weight', 'average_weight', 'height', 'area_observation', 'temperature', 'other']
@@ -579,6 +737,42 @@ const directCostCategories: DirectCostCategory[] = ['labour', 'utilities', 'vete
 const mortalityReasons: LossReasonCode[] = ['disease', 'injury', 'predator', 'weather', 'handling', 'culling', 'other']
 const shrinkageReasons: LossReasonCode[] = ['weather', 'handling', 'natural_loss', 'drying', 'spoilage', 'quality_loss', 'other']
 const transferReasons: TransferReasonCode[] = ['operational_move', 'space_management', 'biosecurity', 'environment', 'maintenance', 'consolidation', 'other']
+
+const harvestBlockerCodes = [
+  'growth_batch_not_active',
+  'growth_batch_harvest_empty_batch',
+  'growth_batch_harvest_date_before_start',
+  'growth_batch_harvest_date_in_future',
+  'growth_batch_harvest_date_before_latest_state_event',
+  'growth_batch_harvest_quantity_required',
+  'growth_batch_harvest_quantity_exceeds_current',
+  'fractional_count_not_allowed',
+  'growth_batch_harvest_weight_required',
+  'growth_batch_harvest_weight_invalid',
+  'growth_batch_harvest_weight_exceeds_current',
+  'growth_batch_harvest_weight_without_current_weight',
+  'growth_batch_harvest_full_weight_must_match_current',
+  'growth_batch_harvest_output_quantity_required',
+  'growth_batch_harvest_output_item_required',
+  'growth_batch_harvest_output_item_invalid',
+  'growth_batch_harvest_output_item_not_stock_tracked',
+  'growth_batch_harvest_output_item_base_uom_required',
+  'growth_batch_harvest_destination_required',
+  'growth_batch_harvest_destination_invalid',
+  'growth_batch_harvest_destination_inactive',
+  'growth_batch_harvest_destination_bin_invalid',
+  'growth_batch_harvest_source_fingerprint_required',
+  'growth_batch_harvest_source_changed',
+  'growth_batch_harvest_sequence_invalid',
+  'growth_batch_harvest_reversal_dependency_exists',
+  'growth_batch_harvest_current_state_mismatch',
+  'growth_batch_harvest_reversal_insufficient_output_stock',
+  'growth_batch_harvest_reversal_date_before_original',
+  'growth_batch_harvest_already_reversed',
+  'reversal_reason_required',
+] as const
+
+type GrowthBatchHarvestBlockerCode = (typeof harvestBlockerCodes)[number]
 
 const transferBlockerCodes = [
   'growth_batch_transfer_reason_invalid',
@@ -616,6 +810,130 @@ const transferBlockerCodes = [
 ] as const
 
 type GrowthBatchTransferBlockerCode = (typeof transferBlockerCodes)[number]
+
+type GrowthBatchHarvestCopy = {
+  actions: {
+    recordHarvest: string
+    reverseHarvest: string
+    preview: string
+    close: string
+    harvestAll: string
+  }
+  aria: {
+    outputItem: string
+    destinationWarehouse: string
+    destinationBin: string
+  }
+  labels: {
+    tab: string
+    currentQuantity: string
+    currentWeight: string
+    fullyHarvested: string
+    awaitingCompletion: string
+    harvestKind: string
+    harvestedQuantity: string
+    harvestedWeight: string
+    outputItem: string
+    outputBaseUom: string
+    outputQuantity: string
+    destinationWarehouse: string
+    destinationBin: string
+    effectiveDate: string
+    notes: string
+    before: string
+    after: string
+    allocatedCost: string
+    outputUnitCost: string
+    remainingCost: string
+    stockReceipt: string
+    finance: string
+    sale: string
+    cogs: string
+    sellingPrice: string
+    originalEvent: string
+    reason: string
+    sourceLocation: string
+    destinationLocation: string
+  }
+  fallback: {
+    notSet: string
+    notRecorded: string
+    notSelected: string
+    teamMember: string
+    reversed: string
+    locked: string
+    unchanged: string
+    notAffected: string
+    noBin: string
+  }
+  dialog: {
+    title: string
+    description: string
+    allHint: string
+    weightRequiredHint: string
+    outputHint: string
+    warehousePlaceholder: string
+    binPlaceholder: string
+    outputPlaceholder: string
+    notesHint: string
+    reversalTitle: string
+    reversalDescription: string
+  }
+  history: {
+    title: string
+    description: string
+    emptyTitle: string
+    emptyDescription: string
+    harvestBadge: string
+    harvestReversalBadge: string
+    partial: string
+    full: string
+    by: string
+    sequencePrefix: string
+    reversedBy: string
+    onDate: string
+    lockedReason: string
+  }
+  preview: {
+    readyToast: string
+    blockersToast: string
+    stale: string
+    ready: string
+    blockers: string
+    noSaleNoFinance: string
+  }
+  success: {
+    harvested: string
+    reversed: string
+  }
+  errors: {
+    unavailableActive: string
+    quantityRequired: string
+    destinationSetupRequired: string
+    outputSetupRequired: string
+    selectBatch: string
+    effectiveDateRequired: string
+    dateBeforeStart: string
+    dateFuture: string
+    outputItemRequired: string
+    outputQuantityRequired: string
+    destinationRequired: string
+    destinationInactive: string
+    binInactive: string
+    weightRequired: string
+    previewRequired: string
+    previewBlockers: string
+    previewRefreshRequired: string
+    reversalReasonRequired: string
+    historyRefreshRequired: string
+    managerRequired: string
+    requestMismatch: string
+    requestInProgress: string
+    permissionDenied: string
+    actionFailed: string
+  }
+  blockerLabels: Record<GrowthBatchHarvestBlockerCode, string>
+}
 
 type GrowthBatchTransferCopy = {
   actions: {
@@ -1054,6 +1372,319 @@ const growthBatchTransferCopy: Record<Locale, GrowthBatchTransferCopy> = {
   },
 }
 
+const growthBatchHarvestCopy: Record<Locale, GrowthBatchHarvestCopy> = {
+  en: {
+    actions: {
+      recordHarvest: 'Record harvest',
+      reverseHarvest: 'Reverse harvest',
+      preview: 'Preview',
+      close: 'Close',
+      harvestAll: 'Harvest all remaining',
+    },
+    aria: {
+      outputItem: 'Harvest output item',
+      destinationWarehouse: 'Harvest destination warehouse',
+      destinationBin: 'Harvest destination bin',
+    },
+    labels: {
+      tab: 'Harvests',
+      currentQuantity: 'Current quantity',
+      currentWeight: 'Current weight',
+      fullyHarvested: 'Fully harvested',
+      awaitingCompletion: 'Awaiting completion',
+      harvestKind: 'Harvest type',
+      harvestedQuantity: 'Harvested batch quantity',
+      harvestedWeight: 'Actual harvested weight',
+      outputItem: 'Output stock item',
+      outputBaseUom: 'Output base unit',
+      outputQuantity: 'Output stock quantity',
+      destinationWarehouse: 'Destination warehouse',
+      destinationBin: 'Destination bin',
+      effectiveDate: 'Effective date',
+      notes: 'Notes',
+      before: 'Before',
+      after: 'After',
+      allocatedCost: 'Allocated batch cost',
+      outputUnitCost: 'Output unit cost',
+      remainingCost: 'Remaining batch cost',
+      stockReceipt: 'Stock receipt',
+      finance: 'Finance',
+      sale: 'Sale',
+      cogs: 'COGS',
+      sellingPrice: 'Selling price',
+      originalEvent: 'Original event',
+      reason: 'Reason',
+      sourceLocation: 'Source location',
+      destinationLocation: 'Output destination',
+    },
+    fallback: {
+      notSet: 'Not set',
+      notRecorded: 'Not recorded',
+      notSelected: 'Not selected',
+      teamMember: 'Team member',
+      reversed: 'Reversed',
+      locked: 'Locked',
+      unchanged: 'Unchanged',
+      notAffected: 'Not affected',
+      noBin: 'No bin',
+    },
+    dialog: {
+      title: 'Record depleting harvest',
+      description: 'This reduces the Growth Batch quantity and receives one output item into stock at allocated batch cost. It does not sell, invoice, post COGS, or create finance rows.',
+      allHint: 'Uses the entire current quantity and, when recorded, the entire current total weight.',
+      weightRequiredHint: 'Required because this batch has a current total weight.',
+      outputHint: 'The selected stock-tracked item receives one inventory receipt using its base unit.',
+      warehousePlaceholder: 'Select warehouse',
+      binPlaceholder: 'No bin',
+      outputPlaceholder: 'Select output item',
+      notesHint: 'Optional controlled harvest note.',
+      reversalTitle: 'Reverse harvest',
+      reversalDescription: 'This creates a separate harvest-reversal event, restores the batch quantity, weight, and cost allocation, and posts one compensating stock issue from the original output bucket.',
+    },
+    history: {
+      title: 'Harvests',
+      description: 'Depleting harvests reduce batch quantity, receive one output item into stock, and move cost from remaining to harvested allocation only.',
+      emptyTitle: 'No harvests yet',
+      emptyDescription: 'Record a harvest when biological quantity leaves the Growth Batch and one stock output is received.',
+      harvestBadge: 'Harvest',
+      harvestReversalBadge: 'Harvest reversal',
+      partial: 'Partial',
+      full: 'Full',
+      by: 'by',
+      sequencePrefix: 'Seq',
+      reversedBy: 'Reversed by',
+      onDate: 'on',
+      lockedReason: 'Only the latest unreversed quantity, weight, or cost-affecting harvest can be reversed, and enough output stock must remain in the original bucket.',
+    },
+    preview: {
+      readyToast: 'Harvest preview is ready',
+      blockersToast: 'Preview found blockers. Review quantity, output, and destination before posting.',
+      stale: 'Preview is stale',
+      ready: 'Preview ready',
+      blockers: 'Preview blockers',
+      noSaleNoFinance: 'No sale, COGS, invoice, finance posting, or selling-price change is created.',
+    },
+    success: {
+      harvested: 'Growth Batch harvest posted',
+      reversed: 'Growth Batch harvest reversed',
+    },
+    errors: {
+      unavailableActive: 'Harvests are only available for active Growth Batches.',
+      quantityRequired: 'Only active batches with current quantity greater than zero can be harvested.',
+      destinationSetupRequired: 'Create or activate a destination warehouse before recording a harvest.',
+      outputSetupRequired: 'Create an active stock-tracked output item before recording a harvest.',
+      selectBatch: 'Select a Growth Batch.',
+      effectiveDateRequired: 'Select an effective date.',
+      dateBeforeStart: 'Harvest date must be on or after the batch start date.',
+      dateFuture: 'Harvest date cannot be in the future.',
+      outputItemRequired: 'Select the output stock item.',
+      outputQuantityRequired: 'Enter an output stock quantity greater than zero.',
+      destinationRequired: 'Select a destination warehouse.',
+      destinationInactive: 'Select an active destination warehouse.',
+      binInactive: 'Select an active bin that belongs to the destination warehouse.',
+      weightRequired: 'Enter the actual harvested weight for this batch.',
+      previewRequired: 'Preview the current harvest before posting.',
+      previewBlockers: 'Resolve preview blockers before posting the harvest.',
+      previewRefreshRequired: 'Refresh and preview again before posting.',
+      reversalReasonRequired: 'Enter a reversal reason.',
+      historyRefreshRequired: 'Refresh the harvest history before reversing.',
+      managerRequired: 'Only Manager, Admin, or Owner roles can reverse harvests.',
+      requestMismatch: 'This retry key belongs to different harvest inputs. Change nothing and retry, or submit the updated harvest again.',
+      requestInProgress: 'A matching harvest request is already in progress. Wait a moment and refresh.',
+      permissionDenied: 'Your role cannot perform this harvest action.',
+      actionFailed: 'The Growth Batch harvest action failed.',
+    },
+    blockerLabels: {
+      growth_batch_not_active: 'Harvests are only available for active Growth Batches.',
+      growth_batch_harvest_empty_batch: 'Only active batches with current quantity greater than zero can be harvested.',
+      growth_batch_harvest_date_before_start: 'Harvest date must be on or after the batch start date.',
+      growth_batch_harvest_date_in_future: 'Harvest date cannot be in the future.',
+      growth_batch_harvest_date_before_latest_state_event: 'Harvest date cannot be earlier than the latest quantity, weight, cost, or location state event.',
+      growth_batch_harvest_quantity_required: 'Enter a harvested batch quantity greater than zero.',
+      growth_batch_harvest_quantity_exceeds_current: 'Harvested quantity cannot exceed the current batch quantity.',
+      fractional_count_not_allowed: 'Count-basis harvests must use whole-number quantities.',
+      growth_batch_harvest_weight_required: 'Enter the actual harvested weight for this batch.',
+      growth_batch_harvest_weight_invalid: 'Harvested weight must be greater than zero.',
+      growth_batch_harvest_weight_exceeds_current: 'Harvested weight cannot exceed the current total weight.',
+      growth_batch_harvest_weight_without_current_weight: 'Do not enter harvested weight when the batch has no current total weight.',
+      growth_batch_harvest_full_weight_must_match_current: 'A full harvest must use the entire current total weight.',
+      growth_batch_harvest_output_quantity_required: 'Enter an output stock quantity greater than zero.',
+      growth_batch_harvest_output_item_required: 'Select the output stock item.',
+      growth_batch_harvest_output_item_invalid: 'Select a company-owned output stock item.',
+      growth_batch_harvest_output_item_not_stock_tracked: 'The output item must be stock-tracked.',
+      growth_batch_harvest_output_item_base_uom_required: 'The output item needs a base unit.',
+      growth_batch_harvest_destination_required: 'Select a destination warehouse.',
+      growth_batch_harvest_destination_invalid: 'Select a valid destination warehouse for this company.',
+      growth_batch_harvest_destination_inactive: 'Select an active destination warehouse or bin.',
+      growth_batch_harvest_destination_bin_invalid: 'Select a valid bin in the destination warehouse.',
+      growth_batch_harvest_source_fingerprint_required: 'Refresh and preview again before posting.',
+      growth_batch_harvest_source_changed: 'The batch quantity, weight, cost, status, or location changed after preview. Refresh and preview again.',
+      growth_batch_harvest_sequence_invalid: 'The batch event sequence changed. Refresh and try again.',
+      growth_batch_harvest_reversal_dependency_exists: 'A later quantity, weight, or cost-affecting event depends on this harvest. Reverse later dependent events first.',
+      growth_batch_harvest_current_state_mismatch: 'The batch no longer matches this harvest state. Refresh the history before reversing.',
+      growth_batch_harvest_reversal_insufficient_output_stock: 'The original output bucket does not have enough stock for reversal.',
+      growth_batch_harvest_reversal_date_before_original: 'Reversal date must be on or after the original harvest date.',
+      growth_batch_harvest_already_reversed: 'This harvest has already been reversed.',
+      reversal_reason_required: 'Enter a reversal reason.',
+    },
+  },
+  pt: {
+    actions: {
+      recordHarvest: 'Registar colheita',
+      reverseHarvest: 'Reverter colheita',
+      preview: 'Pré-visualizar',
+      close: 'Fechar',
+      harvestAll: 'Colher todo o restante',
+    },
+    aria: {
+      outputItem: 'Item de saída da colheita',
+      destinationWarehouse: 'Armazém de destino da colheita',
+      destinationBin: 'Localização de destino da colheita',
+    },
+    labels: {
+      tab: 'Colheitas',
+      currentQuantity: 'Quantidade actual',
+      currentWeight: 'Peso actual',
+      fullyHarvested: 'Totalmente colhido',
+      awaitingCompletion: 'A aguardar conclusão',
+      harvestKind: 'Tipo de colheita',
+      harvestedQuantity: 'Quantidade colhida do lote',
+      harvestedWeight: 'Peso real colhido',
+      outputItem: 'Item de stock produzido',
+      outputBaseUom: 'Unidade base do item',
+      outputQuantity: 'Quantidade de stock produzida',
+      destinationWarehouse: 'Armazém de destino',
+      destinationBin: 'Localização de destino',
+      effectiveDate: 'Data efectiva',
+      notes: 'Notas',
+      before: 'Antes',
+      after: 'Depois',
+      allocatedCost: 'Custo do lote alocado',
+      outputUnitCost: 'Custo unitário produzido',
+      remainingCost: 'Custo restante do lote',
+      stockReceipt: 'Recepção de stock',
+      finance: 'Finanças',
+      sale: 'Venda',
+      cogs: 'CMV',
+      sellingPrice: 'Preço de venda',
+      originalEvent: 'Evento original',
+      reason: 'Motivo',
+      sourceLocation: 'Localização de origem',
+      destinationLocation: 'Destino da produção',
+    },
+    fallback: {
+      notSet: 'Não definido',
+      notRecorded: 'Não registado',
+      notSelected: 'Não seleccionado',
+      teamMember: 'Membro da equipa',
+      reversed: 'Revertida',
+      locked: 'Bloqueada',
+      unchanged: 'Inalterado',
+      notAffected: 'Não afectado',
+      noBin: 'Sem localização',
+    },
+    dialog: {
+      title: 'Registar colheita depletiva',
+      description: 'Esta operação reduz a quantidade do Lote de Crescimento e recebe um item produzido em stock ao custo alocado do lote. Não vende, não factura, não regista CMV e não cria linhas financeiras.',
+      allHint: 'Usa toda a quantidade actual e, quando registado, todo o peso total actual.',
+      weightRequiredHint: 'Obrigatório porque este lote tem peso total actual.',
+      outputHint: 'O item rastreado em stock recebe uma recepção de inventário usando a sua unidade base.',
+      warehousePlaceholder: 'Seleccione o armazém',
+      binPlaceholder: 'Sem localização',
+      outputPlaceholder: 'Seleccione o item produzido',
+      notesHint: 'Nota controlada opcional da colheita.',
+      reversalTitle: 'Reverter colheita',
+      reversalDescription: 'Esta operação cria um evento separado de reversão da colheita, restaura a quantidade, o peso e a alocação de custo do lote, e publica uma saída compensatória do stock produzido original.',
+    },
+    history: {
+      title: 'Colheitas',
+      description: 'As colheitas depletivas reduzem a quantidade do lote, recebem um item produzido em stock e movem custo apenas de restante para colhido.',
+      emptyTitle: 'Ainda não existem colheitas',
+      emptyDescription: 'Registe uma colheita quando a quantidade biológica sai do Lote de Crescimento e uma produção de stock é recebida.',
+      harvestBadge: 'Colheita',
+      harvestReversalBadge: 'Reversão de colheita',
+      partial: 'Parcial',
+      full: 'Total',
+      by: 'por',
+      sequencePrefix: 'Seq.',
+      reversedBy: 'Revertida por',
+      onDate: 'em',
+      lockedReason: 'Apenas a colheita não revertida mais recente que afecta quantidade, peso ou custo pode ser revertida, e deve existir stock suficiente no local de saída original.',
+    },
+    preview: {
+      readyToast: 'A pré-visualização da colheita está pronta',
+      blockersToast: 'A pré-visualização encontrou bloqueios. Reveja a quantidade, a produção e o destino antes de publicar.',
+      stale: 'A pré-visualização está desactualizada',
+      ready: 'Pré-visualização pronta',
+      blockers: 'Bloqueios da pré-visualização',
+      noSaleNoFinance: 'Não cria venda, CMV, factura, lançamento financeiro nem alteração do preço de venda.',
+    },
+    success: {
+      harvested: 'Colheita do Lote de Crescimento publicada',
+      reversed: 'Colheita do Lote de Crescimento revertida',
+    },
+    errors: {
+      unavailableActive: 'As colheitas só estão disponíveis para Lotes de Crescimento activos.',
+      quantityRequired: 'Apenas lotes activos com quantidade actual superior a zero podem ser colhidos.',
+      destinationSetupRequired: 'Crie ou active um armazém de destino antes de registar uma colheita.',
+      outputSetupRequired: 'Crie um item produzido activo e rastreado em stock antes de registar uma colheita.',
+      selectBatch: 'Seleccione um Lote de Crescimento.',
+      effectiveDateRequired: 'Seleccione uma data efectiva.',
+      dateBeforeStart: 'A data da colheita deve ser igual ou posterior à data de início do lote.',
+      dateFuture: 'A data da colheita não pode estar no futuro.',
+      outputItemRequired: 'Seleccione o item de stock produzido.',
+      outputQuantityRequired: 'Introduza uma quantidade de stock produzido superior a zero.',
+      destinationRequired: 'Seleccione um armazém de destino.',
+      destinationInactive: 'Seleccione um armazém de destino activo.',
+      binInactive: 'Seleccione uma localização activa que pertença ao armazém de destino.',
+      weightRequired: 'Introduza o peso real colhido para este lote.',
+      previewRequired: 'Pré-visualize a colheita actual antes de publicar.',
+      previewBlockers: 'Resolva os bloqueios da pré-visualização antes de publicar a colheita.',
+      previewRefreshRequired: 'Actualize e pré-visualize novamente antes de publicar.',
+      reversalReasonRequired: 'Introduza o motivo da reversão.',
+      historyRefreshRequired: 'Actualize o histórico de colheitas antes de reverter.',
+      managerRequired: 'Apenas as funções Manager, Admin ou Owner podem reverter colheitas.',
+      requestMismatch: 'Esta chave de repetição pertence a dados de colheita diferentes. Não altere nada e tente novamente, ou submeta a colheita actualizada.',
+      requestInProgress: 'Já existe um pedido de colheita correspondente em curso. Aguarde um momento e actualize.',
+      permissionDenied: 'A sua função não pode executar esta acção de colheita.',
+      actionFailed: 'A acção de colheita do Lote de Crescimento falhou.',
+    },
+    blockerLabels: {
+      growth_batch_not_active: 'As colheitas só estão disponíveis para Lotes de Crescimento activos.',
+      growth_batch_harvest_empty_batch: 'Apenas lotes activos com quantidade actual superior a zero podem ser colhidos.',
+      growth_batch_harvest_date_before_start: 'A data da colheita deve ser igual ou posterior à data de início do lote.',
+      growth_batch_harvest_date_in_future: 'A data da colheita não pode estar no futuro.',
+      growth_batch_harvest_date_before_latest_state_event: 'A data da colheita não pode ser anterior ao evento de quantidade, peso, custo ou localização mais recente.',
+      growth_batch_harvest_quantity_required: 'Introduza uma quantidade colhida superior a zero.',
+      growth_batch_harvest_quantity_exceeds_current: 'A quantidade colhida não pode exceder a quantidade actual do lote.',
+      fractional_count_not_allowed: 'Colheitas baseadas em contagem devem usar quantidades inteiras.',
+      growth_batch_harvest_weight_required: 'Introduza o peso real colhido para este lote.',
+      growth_batch_harvest_weight_invalid: 'O peso colhido deve ser superior a zero.',
+      growth_batch_harvest_weight_exceeds_current: 'O peso colhido não pode exceder o peso total actual.',
+      growth_batch_harvest_weight_without_current_weight: 'Não introduza peso colhido quando o lote não tem peso total actual.',
+      growth_batch_harvest_full_weight_must_match_current: 'Uma colheita total deve usar todo o peso total actual.',
+      growth_batch_harvest_output_quantity_required: 'Introduza uma quantidade de stock produzido superior a zero.',
+      growth_batch_harvest_output_item_required: 'Seleccione o item de stock produzido.',
+      growth_batch_harvest_output_item_invalid: 'Seleccione um item produzido pertencente à empresa.',
+      growth_batch_harvest_output_item_not_stock_tracked: 'O item produzido deve ser rastreado em stock.',
+      growth_batch_harvest_output_item_base_uom_required: 'O item produzido precisa de unidade base.',
+      growth_batch_harvest_destination_required: 'Seleccione um armazém de destino.',
+      growth_batch_harvest_destination_invalid: 'Seleccione um armazém de destino válido para esta empresa.',
+      growth_batch_harvest_destination_inactive: 'Seleccione um armazém ou localização de destino activo.',
+      growth_batch_harvest_destination_bin_invalid: 'Seleccione uma localização válida no armazém de destino.',
+      growth_batch_harvest_source_fingerprint_required: 'Actualize e pré-visualize novamente antes de publicar.',
+      growth_batch_harvest_source_changed: 'A quantidade, o peso, o custo, o estado ou a localização do lote mudaram depois da pré-visualização. Actualize e pré-visualize novamente.',
+      growth_batch_harvest_sequence_invalid: 'A sequência de eventos do lote mudou. Actualize e tente novamente.',
+      growth_batch_harvest_reversal_dependency_exists: 'Um evento posterior de quantidade, peso ou custo depende desta colheita. Reverta primeiro os eventos dependentes posteriores.',
+      growth_batch_harvest_current_state_mismatch: 'O lote já não corresponde ao estado desta colheita. Actualize o histórico antes de reverter.',
+      growth_batch_harvest_reversal_insufficient_output_stock: 'O local de produção original não tem stock suficiente para reversão.',
+      growth_batch_harvest_reversal_date_before_original: 'A data de reversão deve ser igual ou posterior à data da colheita original.',
+      growth_batch_harvest_already_reversed: 'Esta colheita já foi revertida.',
+      reversal_reason_required: 'Introduza o motivo da reversão.',
+    },
+  },
+}
+
 const statusTone: Record<BatchStatus, PremiumTone> = {
   draft: 'info',
   active: 'positive',
@@ -1073,6 +1704,8 @@ const eventTone: Record<GrowthBatchEventRow['event_type'], PremiumTone> = {
   shrinkage_reversal: 'info',
   transfer: 'info',
   transfer_reversal: 'warning',
+  harvest: 'positive',
+  harvest_reversal: 'warning',
   cancellation: 'neutral',
 }
 
@@ -1100,6 +1733,10 @@ function labelize(value: string) {
 
 function isGrowthBatchTransferBlockerCode(code: string): code is GrowthBatchTransferBlockerCode {
   return (transferBlockerCodes as readonly string[]).includes(code)
+}
+
+function isGrowthBatchHarvestBlockerCode(code: string): code is GrowthBatchHarvestBlockerCode {
+  return (harvestBlockerCodes as readonly string[]).includes(code)
 }
 
 function num(value: unknown, fallback = 0) {
@@ -1269,10 +1906,32 @@ function emptyTransferReversalForm(): TransferReversalForm {
   }
 }
 
-function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy) {
+function emptyHarvestForm(): HarvestForm {
+  return {
+    effectiveDate: today(),
+    harvestedPrimaryQty: '',
+    harvestedWeight: '',
+    outputItemId: '',
+    outputQuantity: '',
+    destinationWarehouseId: '',
+    destinationBinId: '',
+    notes: '',
+  }
+}
+
+function emptyHarvestReversalForm(): HarvestReversalForm {
+  return {
+    eventId: '',
+    eventReference: '',
+    effectiveDate: today(),
+    reason: '',
+  }
+}
+
+function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy, harvestCopy?: GrowthBatchHarvestCopy) {
   const raw = error && typeof error === 'object' && 'message' in error ? String((error as { message?: unknown }).message || '') : String(error || '')
   const rules: [RegExp, string][] = [
-    [/fractional_count_not_allowed/i, 'Count batches must use whole-number quantities.'],
+    [/fractional_count_not_allowed/i, harvestCopy?.blockerLabels.fractional_count_not_allowed || 'Count batches must use whole-number quantities.'],
     [/growth_batch_name_required/i, 'Enter a batch name.'],
     [/invalid_growth_batch_quantity/i, 'Opening quantity must be greater than zero.'],
     [/uom_required/i, 'Select a unit for the primary quantity.'],
@@ -1318,6 +1977,23 @@ function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy) {
     [/growth_batch_transfer_date_before_start/i, transferCopy?.errors.dateBeforeStart || 'Transfer dates must be on or after the batch start date.'],
     [/growth_batch_transfer_date_in_future/i, transferCopy?.errors.dateFuture || 'Transfer dates cannot be in the future.'],
     [/growth_batch_transfer_already_reversed/i, transferCopy?.blockerLabels.growth_batch_transfer_already_reversed || 'This transfer has already been reversed.'],
+    [/growth_batch_harvest_source_fingerprint_required/i, harvestCopy?.errors.previewRefreshRequired || 'Refresh and preview again before posting.'],
+    [/growth_batch_harvest_source_changed/i, harvestCopy?.blockerLabels.growth_batch_harvest_source_changed || 'The batch changed after preview. Refresh and preview again.'],
+    [/growth_batch_harvest_quantity_required|growth_batch_harvest_empty_batch/i, harvestCopy?.blockerLabels.growth_batch_harvest_quantity_required || 'Enter a harvested batch quantity greater than zero.'],
+    [/growth_batch_harvest_quantity_exceeds_current/i, harvestCopy?.blockerLabels.growth_batch_harvest_quantity_exceeds_current || 'Harvested quantity cannot exceed the current batch quantity.'],
+    [/growth_batch_harvest_weight_required/i, harvestCopy?.blockerLabels.growth_batch_harvest_weight_required || 'Enter the actual harvested weight for this batch.'],
+    [/growth_batch_harvest_weight_invalid|growth_batch_harvest_weight_exceeds_current|growth_batch_harvest_full_weight_must_match_current|growth_batch_harvest_weight_without_current_weight/i, harvestCopy?.errors.weightRequired || 'Review harvested weight.'],
+    [/growth_batch_harvest_output_item_required|growth_batch_harvest_output_item_invalid|growth_batch_harvest_output_item_not_stock_tracked|growth_batch_harvest_output_item_base_uom_required/i, harvestCopy?.errors.outputItemRequired || 'Select a valid stock-tracked output item.'],
+    [/growth_batch_harvest_output_quantity_required/i, harvestCopy?.errors.outputQuantityRequired || 'Enter an output stock quantity greater than zero.'],
+    [/growth_batch_harvest_destination_required|growth_batch_harvest_destination_invalid|growth_batch_harvest_destination_inactive|growth_batch_harvest_destination_bin_invalid/i, harvestCopy?.errors.destinationRequired || 'Select a valid active destination.'],
+    [/growth_batch_harvest_date_before_latest_state_event/i, harvestCopy?.blockerLabels.growth_batch_harvest_date_before_latest_state_event || 'Harvest date cannot be earlier than the latest state event.'],
+    [/growth_batch_harvest_date_before_start/i, harvestCopy?.errors.dateBeforeStart || 'Harvest date must be on or after the batch start date.'],
+    [/growth_batch_harvest_date_in_future/i, harvestCopy?.errors.dateFuture || 'Harvest date cannot be in the future.'],
+    [/growth_batch_harvest_reversal_dependency_exists/i, harvestCopy?.blockerLabels.growth_batch_harvest_reversal_dependency_exists || 'A later event depends on this harvest.'],
+    [/growth_batch_harvest_current_state_mismatch/i, harvestCopy?.blockerLabels.growth_batch_harvest_current_state_mismatch || 'Refresh the harvest history before reversing.'],
+    [/growth_batch_harvest_reversal_insufficient_output_stock/i, harvestCopy?.blockerLabels.growth_batch_harvest_reversal_insufficient_output_stock || 'The original output bucket does not have enough stock for reversal.'],
+    [/growth_batch_harvest_reversal_date_before_original/i, harvestCopy?.blockerLabels.growth_batch_harvest_reversal_date_before_original || 'Reversal date must be on or after the original harvest date.'],
+    [/growth_batch_harvest_already_reversed/i, harvestCopy?.blockerLabels.growth_batch_harvest_already_reversed || 'This harvest has already been reversed.'],
     [/loss_quantity_exceeds_current_quantity/i, 'The loss quantity cannot exceed the current batch quantity.'],
     [/loss_weight_exceeds_current_weight/i, 'The loss weight cannot exceed the current total weight.'],
     [/loss_value_required/i, 'Enter a quantity loss, weight loss, or both.'],
@@ -1336,7 +2012,7 @@ function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy) {
     [/invalid_direct_cost/i, 'Enter a valid cost category, description, and amount greater than zero.'],
     [/invalid_measurement/i, 'Enter a valid measurement type, value, unit, and range.'],
   ]
-  return rules.find(([pattern]) => pattern.test(raw))?.[1] || raw || transferCopy?.errors.actionFailed || 'The Growth Batch action failed.'
+  return rules.find(([pattern]) => pattern.test(raw))?.[1] || raw || harvestCopy?.errors.actionFailed || transferCopy?.errors.actionFailed || 'The Growth Batch action failed.'
 }
 
 function Field({
@@ -1400,6 +2076,7 @@ export default function GrowthBatches() {
   const canOperate = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'])
   const canManage = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER'])
   const transferCopy = growthBatchTransferCopy[lang]
+  const harvestCopy = growthBatchHarvestCopy[lang]
 
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -1412,6 +2089,7 @@ export default function GrowthBatches() {
   const [stockInputs, setStockInputs] = useState<GrowthBatchStockInputRow[]>([])
   const [losses, setLosses] = useState<GrowthBatchLossRow[]>([])
   const [transfers, setTransfers] = useState<GrowthBatchTransferRow[]>([])
+  const [harvests, setHarvests] = useState<GrowthBatchHarvestRow[]>([])
   const [events, setEvents] = useState<GrowthBatchEventRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
@@ -1436,9 +2114,11 @@ export default function GrowthBatches() {
   const [stockInputOpen, setStockInputOpen] = useState(false)
   const [lossOpen, setLossOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
+  const [harvestOpen, setHarvestOpen] = useState(false)
   const [reversalOpen, setReversalOpen] = useState(false)
   const [lossReversalOpen, setLossReversalOpen] = useState(false)
   const [transferReversalOpen, setTransferReversalOpen] = useState(false)
+  const [harvestReversalOpen, setHarvestReversalOpen] = useState(false)
   const [draftForm, setDraftForm] = useState<DraftForm>(() => emptyDraftForm())
   const [editForm, setEditForm] = useState<DraftForm>(() => emptyDraftForm())
   const [measurementForm, setMeasurementForm] = useState<MeasurementForm>(() => emptyMeasurementForm())
@@ -1452,9 +2132,13 @@ export default function GrowthBatches() {
   const [transferForm, setTransferForm] = useState<TransferForm>(() => emptyTransferForm())
   const [transferPreview, setTransferPreview] = useState<TransferPreview | null>(null)
   const [transferPreviewStale, setTransferPreviewStale] = useState(false)
+  const [harvestForm, setHarvestForm] = useState<HarvestForm>(() => emptyHarvestForm())
+  const [harvestPreview, setHarvestPreview] = useState<HarvestPreview | null>(null)
+  const [harvestPreviewStale, setHarvestPreviewStale] = useState(false)
   const [reversalForm, setReversalForm] = useState<ReversalForm>(() => emptyReversalForm())
   const [lossReversalForm, setLossReversalForm] = useState<LossReversalForm>(() => emptyLossReversalForm())
   const [transferReversalForm, setTransferReversalForm] = useState<TransferReversalForm>(() => emptyTransferReversalForm())
+  const [harvestReversalForm, setHarvestReversalForm] = useState<HarvestReversalForm>(() => emptyHarvestReversalForm())
   const [cancelReason, setCancelReason] = useState('')
 
   const createRequestRef = useRef<PostingRequestKeyRef>(null)
@@ -1468,6 +2152,8 @@ export default function GrowthBatches() {
   const lossReversalRequestRef = useRef<PostingRequestKeyRef>(null)
   const transferRequestRef = useRef<PostingRequestKeyRef>(null)
   const transferReversalRequestRef = useRef<PostingRequestKeyRef>(null)
+  const harvestRequestRef = useRef<PostingRequestKeyRef>(null)
+  const harvestReversalRequestRef = useRef<PostingRequestKeyRef>(null)
 
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
@@ -1525,9 +2211,18 @@ export default function GrowthBatches() {
   const lengthUoms = useMemo(() => uoms.filter((uom) => uom.family === 'length'), [uoms])
   const lossReasonOptions = useMemo(() => (lossForm.lossType === 'mortality' ? mortalityReasons : shrinkageReasons), [lossForm.lossType])
   const activeWarehouses = useMemo(() => warehouses.filter((warehouse) => (warehouse.status || 'active') === 'active'), [warehouses])
+  const harvestOutputItems = useMemo(() => items.filter((item) => item.track_inventory && item.base_uom_id), [items])
+  const selectedHarvestOutputItem = useMemo(
+    () => harvestOutputItems.find((item) => item.id === harvestForm.outputItemId) || null,
+    [harvestForm.outputItemId, harvestOutputItems],
+  )
   const binsForTransfer = useMemo(
     () => bins.filter((bin) => bin.warehouseId === transferForm.destinationWarehouseId && (bin.status || 'active') === 'active'),
     [bins, transferForm.destinationWarehouseId],
+  )
+  const binsForHarvest = useMemo(
+    () => bins.filter((bin) => bin.warehouseId === harvestForm.destinationWarehouseId && (bin.status || 'active') === 'active'),
+    [bins, harvestForm.destinationWarehouseId],
   )
   const measurementUoms = useMemo(() => {
     if (measurementForm.measurementType === 'total_weight' || measurementForm.measurementType === 'average_weight') {
@@ -1599,13 +2294,14 @@ export default function GrowthBatches() {
       setStockInputs([])
       setLosses([])
       setTransfers([])
+      setHarvests([])
       setEvents([])
       return
     }
 
     setDetailLoading(true)
     try {
-      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, transferRes, eventRes] = await Promise.all([
+      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, transferRes, harvestRes, eventRes] = await Promise.all([
         supabase.from('growth_batch_current_state').select('*').eq('id', batchId).maybeSingle(),
         supabase
           .from('growth_batches')
@@ -1640,6 +2336,11 @@ export default function GrowthBatches() {
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
+          .from('growth_batch_harvest_history')
+          .select('*')
+          .eq('growth_batch_id', batchId)
+          .order('event_sequence', { ascending: false }),
+        supabase
           .from('growth_batch_event_timeline')
           .select('*')
           .eq('growth_batch_id', batchId)
@@ -1652,6 +2353,7 @@ export default function GrowthBatches() {
       if (stockInputRes.error) throw stockInputRes.error
       if (lossRes.error) throw lossRes.error
       if (transferRes.error) throw transferRes.error
+      if (harvestRes.error) throw harvestRes.error
       if (eventRes.error) throw eventRes.error
       setCurrentState((stateRes.data || null) as GrowthBatchCurrentState | null)
       setDetailRow((detailRes.data || null) as GrowthBatchDetailRow | null)
@@ -1660,6 +2362,7 @@ export default function GrowthBatches() {
       setStockInputs((stockInputRes.data || []) as GrowthBatchStockInputRow[])
       setLosses((lossRes.data || []) as GrowthBatchLossRow[])
       setTransfers((transferRes.data || []) as GrowthBatchTransferRow[])
+      setHarvests((harvestRes.data || []) as GrowthBatchHarvestRow[])
       setEvents((eventRes.data || []) as GrowthBatchEventRow[])
     } catch (error) {
       console.error(error)
@@ -2468,8 +3171,10 @@ export default function GrowthBatches() {
   const growthBatchEventTypeLabel = useCallback((eventType: GrowthBatchEventRow['event_type'] | string | null | undefined) => {
     if (eventType === 'transfer') return transferCopy.history.transferBadge
     if (eventType === 'transfer_reversal') return transferCopy.history.transferReversalBadge
+    if (eventType === 'harvest') return harvestCopy.history.harvestBadge
+    if (eventType === 'harvest_reversal') return harvestCopy.history.harvestReversalBadge
     return eventType ? labelize(eventType) : 'Created'
-  }, [transferCopy])
+  }, [harvestCopy, transferCopy])
 
   function transferUnavailableReason() {
     if (!detailBatch || detailBatch.status !== 'active') return transferCopy.errors.unavailableActive
@@ -2636,6 +3341,223 @@ export default function GrowthBatches() {
     }
   }
 
+  function markHarvestPreviewStale() {
+    setHarvestPreviewStale(true)
+  }
+
+  function setHarvestWarehouse(value: string) {
+    markHarvestPreviewStale()
+    setHarvestForm((current) => ({
+      ...current,
+      destinationWarehouseId: value === 'none' ? '' : value,
+      destinationBinId: '',
+    }))
+  }
+
+  function harvestLocationLabel(location: HarvestLocationPreview | null | undefined) {
+    if (!location) return harvestCopy.fallback.notSet
+    return locationDisplay([location.warehouse_name, location.warehouse_code, location.bin_code, location.bin_name, location.location_description])
+  }
+
+  function harvestHistoryLocationLabel(row: GrowthBatchHarvestRow, side: 'source' | 'destination') {
+    return side === 'source'
+      ? locationDisplay([row.source_warehouse_name, row.source_warehouse_code, row.source_bin_code, row.source_bin_name, row.source_location_description])
+      : locationDisplay([row.destination_warehouse_name, row.destination_warehouse_code, row.destination_bin_code, row.destination_bin_name])
+  }
+
+  function harvestKindLabel(kind: HarvestKind | string | null | undefined) {
+    if (kind === 'full') return harvestCopy.history.full
+    if (kind === 'partial') return harvestCopy.history.partial
+    return kind ? labelize(kind) : harvestCopy.fallback.notSet
+  }
+
+  function harvestBlockerLabel(code: string | null | undefined) {
+    if (!code) return harvestCopy.preview.blockers
+    return isGrowthBatchHarvestBlockerCode(code) ? harvestCopy.blockerLabels[code] : labelize(code)
+  }
+
+  function harvestUnavailableReason() {
+    if (!detailBatch || detailBatch.status !== 'active') return harvestCopy.errors.unavailableActive
+    if (num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0) return harvestCopy.errors.quantityRequired
+    if (!harvestOutputItems.length) return harvestCopy.errors.outputSetupRequired
+    if (!activeWarehouses.length) return harvestCopy.errors.destinationSetupRequired
+    return null
+  }
+
+  function validateHarvestForm() {
+    const unavailable = harvestUnavailableReason()
+    if (unavailable) return unavailable
+    if (!detailBatch) return harvestCopy.errors.selectBatch
+    if (!harvestForm.effectiveDate) return harvestCopy.errors.effectiveDateRequired
+    if (harvestForm.effectiveDate < detailBatch.start_date) return harvestCopy.errors.dateBeforeStart
+    if (harvestForm.effectiveDate > today()) return harvestCopy.errors.dateFuture
+    const harvestedQty = Number(harvestForm.harvestedPrimaryQty)
+    if (!Number.isFinite(harvestedQty) || harvestedQty <= 0) return harvestCopy.blockerLabels.growth_batch_harvest_quantity_required
+    if (harvestedQty > num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)) return harvestCopy.blockerLabels.growth_batch_harvest_quantity_exceeds_current
+    if (detailBatch.primary_quantity_basis === 'count' && harvestedQty !== Math.trunc(harvestedQty)) return harvestCopy.blockerLabels.fractional_count_not_allowed
+    if (detailBatch.latest_total_weight != null) {
+      const harvestedWeight = Number(harvestForm.harvestedWeight)
+      if (!Number.isFinite(harvestedWeight) || harvestedWeight <= 0) return harvestCopy.errors.weightRequired
+    }
+    if (!harvestForm.outputItemId || !selectedHarvestOutputItem) return harvestCopy.errors.outputItemRequired
+    const outputQty = Number(harvestForm.outputQuantity)
+    if (!Number.isFinite(outputQty) || outputQty <= 0) return harvestCopy.errors.outputQuantityRequired
+    if (!harvestForm.destinationWarehouseId) return harvestCopy.errors.destinationRequired
+    if (!activeWarehouses.some((warehouse) => warehouse.id === harvestForm.destinationWarehouseId)) return harvestCopy.errors.destinationInactive
+    if (harvestForm.destinationBinId && !binsForHarvest.some((bin) => bin.id === harvestForm.destinationBinId)) return harvestCopy.errors.binInactive
+    return null
+  }
+
+  function harvestPayload() {
+    const harvestedWeight = harvestForm.harvestedWeight.trim() ? Number(harvestForm.harvestedWeight) : null
+    return {
+      p_growth_batch_id: detailBatch?.id,
+      p_effective_date: harvestForm.effectiveDate,
+      p_harvested_primary_qty: harvestForm.harvestedPrimaryQty.trim() ? Number(harvestForm.harvestedPrimaryQty) : null,
+      p_harvested_total_weight: harvestedWeight,
+      p_output_item_id: harvestForm.outputItemId || null,
+      p_output_quantity: harvestForm.outputQuantity.trim() ? Number(harvestForm.outputQuantity) : null,
+      p_destination_warehouse_id: harvestForm.destinationWarehouseId || null,
+      p_destination_bin_id: harvestForm.destinationBinId || null,
+      p_notes: cleanText(harvestForm.notes),
+    }
+  }
+
+  async function previewHarvest() {
+    if (!detailBatch) return
+    const validation = validateHarvestForm()
+    if (validation) return toast.error(validation)
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.rpc('preview_growth_batch_harvest', harvestPayload())
+      if (error) throw error
+      const preview = data as HarvestPreview
+      setHarvestPreview(preview)
+      setHarvestPreviewStale(false)
+      if (preview.ready) {
+        toast.success(harvestCopy.preview.readyToast)
+      } else {
+        toast.error(harvestCopy.preview.blockersToast)
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, undefined, harvestCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function postHarvest() {
+    if (!detailBatch) return
+    const validation = validateHarvestForm()
+    if (validation) return toast.error(validation)
+    if (!harvestPreview || harvestPreviewStale) return toast.error(harvestCopy.errors.previewRequired)
+    if (!harvestPreview.ready) return toast.error(harvestCopy.errors.previewBlockers)
+    if (!harvestPreview.source_fingerprint) return toast.error(harvestCopy.errors.previewRefreshRequired)
+    const payload = {
+      operation: 'growth.batch.harvest',
+      batchId: detailBatch.id,
+      effectiveDate: harvestForm.effectiveDate,
+      harvestedPrimaryQty: Number(harvestForm.harvestedPrimaryQty),
+      harvestedWeight: harvestForm.harvestedWeight.trim() ? Number(harvestForm.harvestedWeight) : null,
+      outputItemId: harvestForm.outputItemId,
+      outputQuantity: Number(harvestForm.outputQuantity),
+      destinationWarehouseId: harvestForm.destinationWarehouseId,
+      destinationBinId: harvestForm.destinationBinId || null,
+      notes: cleanText(harvestForm.notes),
+      expectedSourceFingerprint: harvestPreview.source_fingerprint,
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(harvestRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('post_growth_batch_harvest', {
+        ...harvestPayload(),
+        p_expected_source_fingerprint: harvestPreview.source_fingerprint,
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(harvestRequestRef)
+      toast.success(harvestCopy.success.harvested)
+      setHarvestOpen(false)
+      setHarvestForm(emptyHarvestForm())
+      setHarvestPreview(null)
+      setHarvestPreviewStale(false)
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, undefined, harvestCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openHarvestDialog() {
+    const next = emptyHarvestForm()
+    next.outputItemId = harvestOutputItems[0]?.id || ''
+    next.destinationWarehouseId = activeWarehouses[0]?.id || ''
+    setHarvestForm(next)
+    setHarvestPreview(null)
+    setHarvestPreviewStale(false)
+    setHarvestOpen(true)
+  }
+
+  function fillHarvestAllRemaining() {
+    if (!detailBatch) return
+    markHarvestPreviewStale()
+    setHarvestForm((current) => ({
+      ...current,
+      harvestedPrimaryQty: String(num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)),
+      harvestedWeight: detailBatch.latest_total_weight == null ? '' : String(num(detailBatch.latest_total_weight)),
+    }))
+  }
+
+  function openHarvestReversalDialog(row: GrowthBatchHarvestRow) {
+    setHarvestReversalForm({
+      eventId: row.event_id,
+      eventReference: row.event_reference,
+      effectiveDate: today(),
+      reason: '',
+    })
+    setHarvestReversalOpen(true)
+  }
+
+  async function reverseHarvest() {
+    if (!detailBatch) return
+    if (!harvestReversalForm.eventId) return
+    if (!harvestReversalForm.reason.trim()) return toast.error(harvestCopy.errors.reversalReasonRequired)
+    const payload = {
+      operation: 'growth.batch.harvest.reverse',
+      batchId: detailBatch.id,
+      originalEventId: harvestReversalForm.eventId,
+      effectiveDate: harvestReversalForm.effectiveDate,
+      reason: harvestReversalForm.reason.trim(),
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(harvestReversalRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('reverse_growth_batch_harvest', {
+        p_original_event_id: harvestReversalForm.eventId,
+        p_effective_date: harvestReversalForm.effectiveDate,
+        p_reason: harvestReversalForm.reason.trim(),
+        p_expected_source_fingerprint: null,
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      clearPostingRequestKey(harvestReversalRequestRef)
+      toast.success(harvestCopy.success.reversed)
+      setHarvestReversalOpen(false)
+      setHarvestReversalForm(emptyHarvestReversalForm())
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, undefined, harvestCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const columns = useMemo<PremiumDataTableColumn<GrowthBatchRegisterRow>[]>(() => [
     {
       id: 'reference',
@@ -2735,7 +3657,11 @@ export default function GrowthBatches() {
         <ArrowRightLeft className="mr-2 h-4 w-4" />
         {transferCopy.actions.transferBatch}
       </Button>
-      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openLossDialog} disabled={saving}>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openHarvestDialog} disabled={saving || Boolean(harvestUnavailableReason())} title={harvestUnavailableReason() || undefined}>
+        <Sprout className="mr-2 h-4 w-4" />
+        {harvestCopy.actions.recordHarvest}
+      </Button>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openLossDialog} disabled={saving || num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0} title={num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0 ? harvestCopy.labels.awaitingCompletion : undefined}>
         <AlertTriangle className="mr-2 h-4 w-4" />
         Record loss
       </Button>
@@ -2945,9 +3871,9 @@ export default function GrowthBatches() {
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
       <PremiumRegisterHeader
-        eyebrow="G1-G4.1 governed lifecycle"
+        eyebrow="G1-G5.1 governed lifecycle"
         title="Growth Batches"
-        description="Manage live biological or agricultural batches at group level. G4.1 adds governed mortality and shrinkage events while preserving stock-input costing, append-only history, and finance isolation."
+        description="Manage live biological or agricultural batches at group level. G5.1 adds governed depleting harvests, one stock output receipt, event-specific harvest reversal, append-only history, and finance isolation."
         badges={
           <>
             <PremiumStatusBadge tone="info">Append-only event ledger</PremiumStatusBadge>
@@ -2975,7 +3901,7 @@ export default function GrowthBatches() {
         }
         metrics={
           <>
-            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements, losses, and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
+            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements, transfers, losses, harvests, and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
             <PremiumMetricCard label="Drafts" value={metricValues.draft} description="Prepared but not activated" icon={<ClipboardList />} tone="info" variant="panel" />
             <PremiumMetricCard label="Memo direct costs" value={money(metricValues.directCost, selectedCurrency)} description="Separate from stock-input material cost" icon={<Coins />} tone="warning" variant="panel" />
             <PremiumMetricCard label="Latest activity" value={compactDate(metricValues.latest)} description="Newest event or created batch in the register" icon={<Activity />} tone="neutral" variant="panel" />
@@ -3105,6 +4031,9 @@ export default function GrowthBatches() {
                       <PremiumStatusBadge tone={statusTone[detailBatch.status]}>{labelize(detailBatch.status)}</PremiumStatusBadge>
                       <Badge variant="outline">{labelize(detailBatch.batch_family)}</Badge>
                       <Badge variant="outline">{labelize(detailBatch.primary_quantity_basis)}</Badge>
+                      {detailBatch.fully_harvested_awaiting_completion ? (
+                        <Badge variant="secondary">{harvestCopy.labels.awaitingCompletion}</Badge>
+                      ) : null}
                     </div>
                     <CardTitle className="mt-3 min-w-0 space-y-1">
                       <span className="block truncate">{detailBatch.reference_no}</span>
@@ -3113,7 +4042,7 @@ export default function GrowthBatches() {
                       </span>
                     </CardTitle>
                     <CardDescription>
-                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory and memo direct costs stay non-financial; location transfers move the whole batch operationally; harvests, COGS, and valuation posting remain future phases.'}
+                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory, transfers move the whole batch operationally, harvests receive one output into stock, and COGS or valuation posting remains out of scope.'}
                     </CardDescription>
                   </div>
                   <div className="flex w-full min-w-0 flex-col gap-2">
@@ -3150,6 +4079,7 @@ export default function GrowthBatches() {
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="stock">Stock inputs</TabsTrigger>
                     <TabsTrigger value="transfers">{transferCopy.history.title}</TabsTrigger>
+                    <TabsTrigger value="harvests">{harvestCopy.labels.tab}</TabsTrigger>
                     <TabsTrigger value="losses">Losses</TabsTrigger>
                     <TabsTrigger value="measurements">Measurements</TabsTrigger>
                     <TabsTrigger value="costs">Direct costs</TabsTrigger>
@@ -3176,10 +4106,10 @@ export default function GrowthBatches() {
 
                     <DetailSection
                       title="Future scope guard"
-                      description="These controls remain unavailable until later phases connect harvest, movement, and valuation policies end to end."
+                      description="These controls remain unavailable until later phases add completion, splitting, biological valuation, and accounting policies."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {['Harvest / split outputs', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
+                        {['Split or child batches', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
                           <div key={item} className="flex items-center gap-2 rounded-xl border border-card-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                             <AlertTriangle className="h-4 w-4 text-amber-600" />
                             <span>{item}</span>
@@ -3324,12 +4254,102 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
+                  <TabsContent value="harvests">
+                    <DetailSection
+                      title={harvestCopy.history.title}
+                      description={harvestCopy.history.description}
+                      action={detailBatch.status === 'active' && canOperate && num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) > 0 ? (
+                        <Button size="sm" className="w-full sm:w-auto" onClick={openHarvestDialog} disabled={saving || Boolean(harvestUnavailableReason())} title={harvestUnavailableReason() || undefined}>
+                          <Sprout className="mr-2 h-4 w-4" />
+                          {harvestCopy.actions.recordHarvest}
+                        </Button>
+                      ) : null}
+                    >
+                      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <SummaryItem label={harvestCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                        <SummaryItem label={harvestCopy.labels.currentWeight} value={detailBatch.latest_total_weight == null ? harvestCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                        <SummaryItem label={harvestCopy.labels.remainingCost} value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                        <SummaryItem label={harvestCopy.labels.stockReceipt} value={harvestCopy.preview.noSaleNoFinance} />
+                      </div>
+                      {detailBatch.fully_harvested_awaiting_completion ? (
+                        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
+                          <div className="font-medium text-emerald-700 dark:text-emerald-300">{harvestCopy.labels.fullyHarvested}</div>
+                          <div className="mt-1 text-muted-foreground">{harvestCopy.labels.awaitingCompletion}</div>
+                        </div>
+                      ) : null}
+                      {harvests.length === 0 ? (
+                        <PremiumEmptyState icon={<Sprout />} title={harvestCopy.history.emptyTitle} description={harvestCopy.history.emptyDescription} compact />
+                      ) : (
+                        <div className="space-y-3">
+                          {harvests.map((harvest) => {
+                            const canReverseHarvest = canManage && harvest.reversal_eligible
+                            return (
+                              <div key={harvest.id} className="rounded-xl border border-card-border bg-card p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <PremiumStatusBadge tone="positive">{harvestCopy.history.harvestBadge}</PremiumStatusBadge>
+                                      <Badge variant="secondary">{harvestKindLabel(harvest.harvest_kind)}</Badge>
+                                      {harvest.reversed ? <Badge variant="outline">{harvestCopy.fallback.reversed}</Badge> : null}
+                                      {!harvest.reversed && !harvest.reversal_eligible ? <Badge variant="secondary">{harvestCopy.fallback.locked}</Badge> : null}
+                                    </div>
+                                    <div className="mt-2 font-medium break-words">
+                                      {harvest.output_item_name}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {[harvest.output_item_sku, harvest.event_reference, `${harvestCopy.history.sequencePrefix} ${harvest.event_sequence}`].filter(Boolean).join(' / ')}
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0 text-left text-sm font-semibold sm:text-right">
+                                    <div>{qtyWithUom(harvest.harvested_primary_qty, harvest.primary_uom_code)}</div>
+                                    <div className="text-xs font-normal text-muted-foreground">{compactDate(harvest.event_effective_date)}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                                  <SummaryItem label={harvestCopy.labels.before} value={qtyWithUom(harvest.quantity_before, harvest.primary_uom_code)} />
+                                  <SummaryItem label={harvestCopy.labels.after} value={qtyWithUom(harvest.quantity_after, harvest.primary_uom_code)} />
+                                  <SummaryItem label={harvestCopy.labels.harvestedWeight} value={harvest.harvested_weight == null ? harvestCopy.fallback.notRecorded : qtyWithUom(harvest.harvested_weight, harvest.weight_uom_code)} />
+                                  <SummaryItem label={harvestCopy.labels.outputQuantity} value={qtyWithUom(harvest.output_quantity, harvest.output_uom_code)} />
+                                  <SummaryItem label={harvestCopy.labels.destinationLocation} value={harvestHistoryLocationLabel(harvest, 'destination')} />
+                                  <SummaryItem label={harvestCopy.labels.allocatedCost} value={money(harvest.allocated_cost, selectedCurrency)} />
+                                  <SummaryItem label={harvestCopy.labels.outputUnitCost} value={money(harvest.output_unit_cost, selectedCurrency)} />
+                                  <SummaryItem label={harvestCopy.labels.remainingCost} value={money(harvest.remaining_cost_after, selectedCurrency)} />
+                                </div>
+                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2">
+                                  <SummaryItem label={harvestCopy.labels.sourceLocation} value={harvestHistoryLocationLabel(harvest, 'source')} />
+                                  <SummaryItem label={harvestCopy.labels.stockReceipt} value={harvestCopy.history.harvestBadge} />
+                                </div>
+                                {harvest.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{harvest.notes}</p> : null}
+                                {harvest.reversed ? (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    {harvestCopy.history.reversedBy} {harvest.reversal_event_reference || harvestCopy.history.harvestReversalBadge} {harvestCopy.history.onDate} {compactDate(harvest.reversal_effective_date)}. {harvest.reversal_reason || harvestCopy.fallback.notRecorded}
+                                  </p>
+                                ) : canReverseHarvest ? (
+                                  <div className="mt-3">
+                                    <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => openHarvestReversalDialog(harvest)} disabled={saving}>
+                                      <RotateCcw className="mr-2 h-4 w-4" />
+                                      {harvestCopy.actions.reverseHarvest}
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    {harvestCopy.history.lockedReason}
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </DetailSection>
+                  </TabsContent>
+
                   <TabsContent value="losses">
                     <DetailSection
                       title="Mortality and shrinkage"
                       description="Loss events reduce the current batch quantity and/or latest total weight. They do not create stock movements, finance rows, or cost write-offs."
-                      action={detailBatch.status === 'active' && canOperate ? (
-                        <Button size="sm" onClick={openLossDialog}>
+                      action={detailBatch.status === 'active' && canOperate && num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) > 0 ? (
+                        <Button size="sm" onClick={openLossDialog} disabled={saving}>
                           <AlertTriangle className="mr-2 h-4 w-4" />
                           Record loss
                         </Button>
@@ -4008,6 +5028,239 @@ export default function GrowthBatches() {
             <Button type="button" variant="destructive" onClick={reverseTransfer} disabled={saving || !canManage}>
               <RotateCcw className="mr-2 h-4 w-4" />
               {transferCopy.actions.reverseTransfer}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={harvestOpen} onOpenChange={setHarvestOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{harvestCopy.dialog.title}</DialogTitle>
+            <DialogDescription>
+              {harvestCopy.dialog.description}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <div className="rounded-xl border border-card-border bg-muted/20 p-4 text-sm">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryItem label={harvestCopy.labels.currentQuantity} value={`${qty(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty)} ${detailBatch?.primary_uom_code || ''}`.trim()} />
+                  <SummaryItem label={harvestCopy.labels.currentWeight} value={detailBatch?.latest_total_weight == null ? harvestCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                  <SummaryItem label={harvestCopy.labels.remainingCost} value={money(detailBatch?.remaining_cost, selectedCurrency)} />
+                  <SummaryItem label={harvestCopy.labels.sourceLocation} value={transferSourceLocationLabel()} />
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {harvestCopy.preview.noSaleNoFinance}
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={harvestCopy.labels.harvestedQuantity} htmlFor="growth-harvest-quantity" hint={`${harvestCopy.labels.currentQuantity}: ${qtyWithUom(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty, detailBatch?.primary_uom_code)}`}>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="growth-harvest-quantity"
+                      type="number"
+                      min="0"
+                      step={detailBatch?.primary_quantity_basis === 'count' ? '1' : '0.000001'}
+                      value={harvestForm.harvestedPrimaryQty}
+                      onChange={(event) => {
+                        markHarvestPreviewStale()
+                        setHarvestForm((current) => ({ ...current, harvestedPrimaryQty: event.target.value }))
+                      }}
+                    />
+                    <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={fillHarvestAllRemaining} disabled={saving}>
+                      {harvestCopy.actions.harvestAll}
+                    </Button>
+                  </div>
+                </Field>
+                <Field label={harvestCopy.labels.harvestedWeight} htmlFor="growth-harvest-weight" hint={detailBatch?.latest_total_weight == null ? harvestCopy.fallback.notRecorded : harvestCopy.dialog.weightRequiredHint}>
+                  <Input
+                    id="growth-harvest-weight"
+                    type="number"
+                    min="0"
+                    step="0.000001"
+                    value={harvestForm.harvestedWeight}
+                    onChange={(event) => {
+                      markHarvestPreviewStale()
+                      setHarvestForm((current) => ({ ...current, harvestedWeight: event.target.value }))
+                    }}
+                    disabled={detailBatch?.latest_total_weight == null}
+                  />
+                </Field>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={harvestCopy.labels.outputItem} htmlFor="growth-harvest-output-item" hint={harvestCopy.dialog.outputHint}>
+                  <Select
+                    value={harvestForm.outputItemId || 'none'}
+                    onValueChange={(value) => {
+                      markHarvestPreviewStale()
+                      setHarvestForm((current) => ({ ...current, outputItemId: value === 'none' ? '' : value }))
+                    }}
+                  >
+                    <SelectTrigger id="growth-harvest-output-item" aria-label={harvestCopy.aria.outputItem}><SelectValue placeholder={harvestCopy.dialog.outputPlaceholder} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{harvestCopy.dialog.outputPlaceholder}</SelectItem>
+                      {harvestOutputItems.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {[item.name, item.sku, uomById.get(item.base_uom_id || '')?.code].filter(Boolean).join(' / ')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label={harvestCopy.labels.outputQuantity} htmlFor="growth-harvest-output-quantity" hint={`${harvestCopy.labels.outputBaseUom}: ${uomById.get(selectedHarvestOutputItem?.base_uom_id || '')?.code || harvestCopy.fallback.notSelected}`}>
+                  <Input
+                    id="growth-harvest-output-quantity"
+                    type="number"
+                    min="0"
+                    step="0.000001"
+                    value={harvestForm.outputQuantity}
+                    onChange={(event) => {
+                      markHarvestPreviewStale()
+                      setHarvestForm((current) => ({ ...current, outputQuantity: event.target.value }))
+                    }}
+                  />
+                </Field>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={harvestCopy.labels.destinationWarehouse} htmlFor="growth-harvest-warehouse">
+                  <Select value={harvestForm.destinationWarehouseId || 'none'} onValueChange={setHarvestWarehouse}>
+                    <SelectTrigger id="growth-harvest-warehouse" aria-label={harvestCopy.aria.destinationWarehouse}><SelectValue placeholder={harvestCopy.dialog.warehousePlaceholder} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{harvestCopy.dialog.warehousePlaceholder}</SelectItem>
+                      {activeWarehouses.map((warehouse) => (
+                        <SelectItem key={warehouse.id} value={warehouse.id}>
+                          {locationDisplay([warehouse.name, warehouse.code])}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label={harvestCopy.labels.destinationBin} htmlFor="growth-harvest-bin">
+                  <Select
+                    value={harvestForm.destinationBinId || 'none'}
+                    onValueChange={(value) => {
+                      markHarvestPreviewStale()
+                      setHarvestForm((current) => ({ ...current, destinationBinId: value === 'none' ? '' : value }))
+                    }}
+                    disabled={!harvestForm.destinationWarehouseId}
+                  >
+                    <SelectTrigger id="growth-harvest-bin" aria-label={harvestCopy.aria.destinationBin}><SelectValue placeholder={harvestCopy.dialog.binPlaceholder} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{harvestCopy.fallback.noBin}</SelectItem>
+                      {binsForHarvest.map((bin) => (
+                        <SelectItem key={bin.id} value={bin.id}>
+                          {locationDisplay([bin.code, bin.name])}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={harvestCopy.labels.effectiveDate} htmlFor="growth-harvest-date">
+                  <Input
+                    id="growth-harvest-date"
+                    type="date"
+                    value={harvestForm.effectiveDate}
+                    onChange={(event) => {
+                      markHarvestPreviewStale()
+                      setHarvestForm((current) => ({ ...current, effectiveDate: event.target.value }))
+                    }}
+                  />
+                </Field>
+                <Field label={harvestCopy.labels.notes} htmlFor="growth-harvest-notes" hint={harvestCopy.dialog.notesHint}>
+                  <Input
+                    id="growth-harvest-notes"
+                    value={harvestForm.notes}
+                    onChange={(event) => {
+                      markHarvestPreviewStale()
+                      setHarvestForm((current) => ({ ...current, notes: event.target.value }))
+                    }}
+                  />
+                </Field>
+              </div>
+
+              {harvestPreview ? (
+                <div className={cn('rounded-xl border p-4 text-sm', harvestPreview.ready && !harvestPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                  <div className="font-medium">{harvestPreviewStale ? harvestCopy.preview.stale : harvestPreview.ready ? harvestCopy.preview.ready : harvestCopy.preview.blockers}</div>
+                  {harvestPreview.blocking_reasons?.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                      {harvestPreview.blocking_reasons.map((blocker, index) => (
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{harvestBlockerLabel(String(blocker.code || ''))}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <SummaryItem label={harvestCopy.labels.harvestKind} value={harvestKindLabel(harvestPreview.harvest_kind)} />
+                    <SummaryItem label={harvestCopy.labels.before} value={qtyWithUom(harvestPreview.current_quantity, harvestPreview.primary_uom_code || detailBatch?.primary_uom_code)} />
+                    <SummaryItem label={harvestCopy.labels.harvestedQuantity} value={qtyWithUom(harvestPreview.harvested_primary_qty, harvestPreview.primary_uom_code || detailBatch?.primary_uom_code)} />
+                    <SummaryItem label={harvestCopy.labels.after} value={qtyWithUom(harvestPreview.resulting_quantity, harvestPreview.primary_uom_code || detailBatch?.primary_uom_code)} />
+                    <SummaryItem label={harvestCopy.labels.harvestedWeight} value={harvestPreview.harvested_total_weight == null ? harvestCopy.fallback.notRecorded : qtyWithUom(harvestPreview.harvested_total_weight, harvestPreview.weight_uom_code || detailBatch?.weight_uom_code)} />
+                    <SummaryItem label={harvestCopy.labels.outputItem} value={harvestPreview.output_item_name || harvestCopy.fallback.notSelected} />
+                    <SummaryItem label={harvestCopy.labels.outputQuantity} value={qtyWithUom(harvestPreview.output_quantity, harvestPreview.output_uom_code)} />
+                    <SummaryItem label={harvestCopy.labels.destinationLocation} value={harvestLocationLabel(harvestPreview.destination_location)} />
+                    <SummaryItem label={harvestCopy.labels.allocatedCost} value={money(harvestPreview.allocated_cost, selectedCurrency)} />
+                    <SummaryItem label={harvestCopy.labels.outputUnitCost} value={money(harvestPreview.output_unit_cost, selectedCurrency)} />
+                    <SummaryItem label={harvestCopy.labels.remainingCost} value={money(harvestPreview.remaining_cost_after, selectedCurrency)} />
+                    <SummaryItem label={harvestCopy.labels.stockReceipt} value={harvestPreview.stock_effect_note || harvestCopy.fallback.notAffected} />
+                    <SummaryItem label={harvestCopy.labels.finance} value={harvestCopy.fallback.notAffected} />
+                    <SummaryItem label={harvestCopy.labels.sale} value={harvestCopy.fallback.notAffected} />
+                    <SummaryItem label={harvestCopy.labels.cogs} value={harvestCopy.fallback.notAffected} />
+                    <SummaryItem label={harvestCopy.labels.sellingPrice} value={harvestCopy.fallback.unchanged} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setHarvestOpen(false)} disabled={saving}>{harvestCopy.actions.close}</Button>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={previewHarvest} disabled={saving}>{harvestCopy.actions.preview}</Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={postHarvest} disabled={saving || !harvestPreview || harvestPreviewStale || !harvestPreview.ready}>
+              <Sprout className="mr-2 h-4 w-4" />
+              {harvestCopy.actions.recordHarvest}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={harvestReversalOpen} onOpenChange={setHarvestReversalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{harvestCopy.dialog.reversalTitle}</DialogTitle>
+            <DialogDescription>
+              {harvestCopy.dialog.reversalDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <SummaryItem label={harvestCopy.labels.originalEvent} value={harvestReversalForm.eventReference || harvestCopy.fallback.notSelected} />
+              <Field label={harvestCopy.labels.effectiveDate} htmlFor="growth-harvest-reversal-date">
+                <Input
+                  id="growth-harvest-reversal-date"
+                  type="date"
+                  value={harvestReversalForm.effectiveDate}
+                  onChange={(event) => setHarvestReversalForm((current) => ({ ...current, effectiveDate: event.target.value }))}
+                />
+              </Field>
+              <Field label={harvestCopy.labels.reason} htmlFor="growth-harvest-reversal-reason">
+                <Textarea
+                  id="growth-harvest-reversal-reason"
+                  value={harvestReversalForm.reason}
+                  onChange={(event) => setHarvestReversalForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </Field>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setHarvestReversalOpen(false)} disabled={saving}>{harvestCopy.actions.close}</Button>
+            <Button type="button" variant="destructive" className="w-full sm:w-auto" onClick={reverseHarvest} disabled={saving || !canManage}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              {harvestCopy.actions.reverseHarvest}
             </Button>
           </DialogFooter>
         </DialogContent>
