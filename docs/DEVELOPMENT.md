@@ -22,7 +22,7 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production has 34 active migrations through `20260630170735_add_growth_batch_transfer_posting.sql` and G4.2 is live. The local repository has 36 active migrations through `20260702205834_add_growth_batch_harvest_posting.sql`; Growth Batches G5.1 depleting harvest and event-specific harvest reversal are local-only and are not hosted/live.
+Current release state: hosted production and local replay have 36 active migrations through `20260702205834_add_growth_batch_harvest_posting.sql`; Growth Batches G5.1 depleting harvest and event-specific harvest reversal are live and production-smoke validated.
 
 The latest Growth Batches G4.1 rollout applied:
 
@@ -35,7 +35,7 @@ G4.1 adds OPERATOR+ mortality/shrinkage preview and recording, MANAGER+ event-sp
 
 G4.2 adds only governed full-batch operational location transfer and event-specific transfer reversal. It introduces `growth_batch_transfers`, `growth_batch_transfer_reversal_lines`, `growth_batch_transfer_history`, `preview_growth_batch_transfer`, `transfer_growth_batch`, and `reverse_growth_batch_transfer`, plus `/growth-batches` transfer UI and regression coverage. The package keeps transfers full-batch only: no partial split, child batch, harvest, completion, stock movement, stock-level change, cost write-off, finance posting, `items.unit_price` change, FIFO, COGS, fair value, profitability dashboard, or per-animal/per-plant identity. Local clean replay and targeted Growth Batch regression passed with 34 migrations before hosted rollout; production replay, mismatch, and concurrency mutation tests remain covered locally rather than in production.
 
-G5.1 adds a local-only governed depleting harvest package. It introduces `growth_batch_harvests`, `growth_batch_harvest_reversal_lines`, `growth_batch_harvest_history`, `preview_growth_batch_harvest`, `post_growth_batch_harvest`, and `reverse_growth_batch_harvest`, plus `/growth-batches` Harvests UI and regression coverage. The package supports partial/full depleting harvest, one primary stock output receipt per harvest, proportional remaining-cost transfer into harvested cost, exact full-harvest remaining-cost transfer, and event-specific harvest reversal. It intentionally excludes non-depleting milk/egg yield, split/child batches, multi-output/co-product allocation, sales, invoices, COGS, FIFO, fair value, finance posting, automatic completion, whole-batch reversal, profitability dashboards, individual animal/plant records, and `items.unit_price` changes.
+G5.1 adds a live governed depleting harvest package. It introduces `growth_batch_harvests`, `growth_batch_harvest_reversal_lines`, `growth_batch_harvest_history`, `preview_growth_batch_harvest`, `post_growth_batch_harvest`, and `reverse_growth_batch_harvest`, plus `/growth-batches` Harvests UI and regression coverage. The package supports partial/full depleting harvest, one primary stock output receipt per harvest, proportional remaining-cost transfer into harvested cost, exact full-harvest remaining-cost transfer, and event-specific harvest reversal. It intentionally excludes non-depleting milk/egg yield, split/child batches, multi-output/co-product allocation, sales, invoices, COGS, FIFO, fair value, finance posting, automatic completion, whole-batch reversal, profitability dashboards, individual animal/plant records, and `items.unit_price` changes.
 
 Before changing the database:
 
