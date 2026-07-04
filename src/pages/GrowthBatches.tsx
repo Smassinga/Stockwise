@@ -162,6 +162,10 @@ type GrowthBatchRegisterRow = {
   reversed_harvest_event_count?: number
   harvested_output_quantity?: number
   fully_harvested_awaiting_completion?: boolean
+  completion_event_count?: number
+  unreversed_completion_event_count?: number
+  reversed_completion_event_count?: number
+  completed_at?: string | null
   created_at: string
   activated_at: string | null
   cancelled_at: string | null
@@ -190,10 +194,15 @@ type GrowthBatchCurrentState = GrowthBatchRegisterRow & {
   reversed_harvest_event_count?: number
   harvested_output_quantity?: number
   fully_harvested_awaiting_completion?: boolean
+  completion_event_count?: number
+  unreversed_completion_event_count?: number
+  reversed_completion_event_count?: number
+  completed_at?: string | null
   created_by: string | null
   updated_by: string | null
   activated_by: string | null
   cancelled_by: string | null
+  completed_by?: string | null
 }
 
 type GrowthBatchDetailRow = {
@@ -207,6 +216,7 @@ type GrowthBatchDetailRow = {
   activated_by: string | null
   cancelled_by: string | null
   completed_by: string | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -215,7 +225,7 @@ type GrowthBatchEventRow = {
   id: string
   event_sequence: number
   event_reference: string
-  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal' | 'transfer' | 'transfer_reversal' | 'harvest' | 'harvest_reversal'
+  event_type: 'activation' | 'measurement' | 'direct_cost' | 'cancellation' | 'stock_input' | 'stock_input_reversal' | 'mortality' | 'shrinkage' | 'mortality_reversal' | 'shrinkage_reversal' | 'transfer' | 'transfer_reversal' | 'harvest' | 'harvest_reversal' | 'completion' | 'completion_reversal'
   event_at: string
   event_date: string
   actor_display_name: string | null
@@ -390,6 +400,46 @@ type GrowthBatchHarvestRow = {
   reversal_reason: string | null
   reversal_stock_issue_movement_id: string | null
   is_latest_cost_quantity_weight_event: boolean
+  reversal_eligible: boolean
+}
+
+type GrowthBatchCompletionRow = {
+  id: string
+  growth_batch_id: string
+  growth_batch_reference: string
+  growth_batch_name: string | null
+  event_id: string
+  event_reference: string
+  event_sequence: number
+  event_effective_date: string
+  event_created_at: string
+  actor_display_name: string | null
+  status_before: BatchStatus
+  status_after: BatchStatus
+  current_primary_qty: number
+  primary_uom_id: string
+  primary_uom_code: string | null
+  current_total_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  accumulated_material_cost: number
+  accumulated_direct_cost: number
+  accumulated_total_cost: number
+  harvested_cost: number
+  remaining_cost: number
+  completion_reason: string
+  notes: string | null
+  completed_by: string | null
+  completed_at: string | null
+  reversed: boolean
+  reversal_detail_id: string | null
+  reversal_event_id: string | null
+  reversal_event_reference: string | null
+  reversal_event_sequence: number | null
+  reversal_effective_date: string | null
+  reversal_timestamp: string | null
+  reversal_actor_display_name: string | null
+  reversal_reason: string | null
   reversal_eligible: boolean
 }
 
@@ -646,6 +696,36 @@ type HarvestPreview = {
   notes: string | null
 }
 
+type CompletionPreview = {
+  ready: boolean
+  blockers: Array<{ code?: string; [key: string]: unknown }>
+  batch_id: string
+  reference_no: string
+  name: string
+  batch_family: BatchFamily
+  status_before: BatchStatus
+  status_after: BatchStatus
+  effective_date: string
+  current_primary_qty: number
+  primary_uom_id: string
+  primary_uom_code: string | null
+  current_total_weight: number | null
+  weight_uom_id: string | null
+  weight_uom_code: string | null
+  accumulated_material_cost: number
+  accumulated_direct_cost: number
+  accumulated_total_cost: number
+  harvested_cost: number
+  remaining_cost: number
+  latest_event_sequence: number
+  source_fingerprint: string | null
+  stock_effect: string
+  finance_effect: string
+  sale_effect: string
+  cogs_effect: string
+  explanation: string
+}
+
 type StockInputPreviewLine = {
   line_no: number
   item_id: string
@@ -724,6 +804,19 @@ type HarvestForm = {
 }
 
 type HarvestReversalForm = {
+  eventId: string
+  eventReference: string
+  effectiveDate: string
+  reason: string
+}
+
+type CompletionForm = {
+  effectiveDate: string
+  reason: string
+  notes: string
+}
+
+type CompletionReversalForm = {
   eventId: string
   eventReference: string
   effectiveDate: string
@@ -810,6 +903,36 @@ const transferBlockerCodes = [
 ] as const
 
 type GrowthBatchTransferBlockerCode = (typeof transferBlockerCodes)[number]
+
+const completionBlockerCodes = [
+  'growth_batch_completion_manager_required',
+  'growth_batch_completion_status_invalid',
+  'growth_batch_completion_quantity_remaining',
+  'growth_batch_completion_weight_remaining',
+  'growth_batch_completion_cost_remaining',
+  'growth_batch_completion_date_before_start',
+  'growth_batch_completion_date_in_future',
+  'growth_batch_completion_chronology_invalid',
+  'growth_batch_completion_source_fingerprint_required',
+  'growth_batch_completion_stale_source',
+  'growth_batch_completion_reason_required',
+  'growth_batch_completion_state_changed',
+  'growth_batch_completion_reversal_status_invalid',
+  'growth_batch_completion_already_reversed',
+  'growth_batch_completion_reversal_dependency_exists',
+  'growth_batch_completion_current_state_mismatch',
+  'growth_batch_completion_original_event_invalid',
+  'growth_batch_completion_not_found',
+  'growth_batch_completion_reversal_date_before_original',
+  'request_key_required',
+  'idempotency_key_payload_mismatch',
+  'request_in_progress',
+  'reversal_reason_required',
+  'manager_role_required',
+  'growth_batch_not_active',
+] as const
+
+type GrowthBatchCompletionBlockerCode = (typeof completionBlockerCodes)[number]
 
 type GrowthBatchHarvestCopy = {
   actions: {
@@ -1051,6 +1174,100 @@ type GrowthBatchTransferCopy = {
   }
   reasonLabels: Record<TransferReasonCode, string>
   blockerLabels: Record<GrowthBatchTransferBlockerCode, string>
+}
+
+type GrowthBatchCompletionCopy = {
+  actions: {
+    completeBatch: string
+    reverseCompletion: string
+    preview: string
+    close: string
+  }
+  labels: {
+    tab: string
+    currentStatus: string
+    afterStatus: string
+    currentQuantity: string
+    currentWeight: string
+    accumulatedCost: string
+    harvestedCost: string
+    remainingCost: string
+    effectiveDate: string
+    reason: string
+    notes: string
+    originalEvent: string
+    stockLedger: string
+    finance: string
+    sale: string
+    cogs: string
+    sellingPrice: string
+    completedAt: string
+    lifecycle: string
+  }
+  fallback: {
+    notRecorded: string
+    notSelected: string
+    teamMember: string
+    reversed: string
+    locked: string
+    notAffected: string
+    unchanged: string
+  }
+  dialog: {
+    title: string
+    description: string
+    lifecycleNote: string
+    notesHint: string
+    reversalTitle: string
+    reversalDescription: string
+  }
+  history: {
+    title: string
+    description: string
+    emptyTitle: string
+    emptyDescription: string
+    completionBadge: string
+    reversalBadge: string
+    reversedBadge: string
+    lockedBadge: string
+    by: string
+    sequencePrefix: string
+    reversedBy: string
+    onDate: string
+    lockedReason: string
+  }
+  preview: {
+    readyToast: string
+    blockersToast: string
+    stale: string
+    ready: string
+    blockers: string
+    lifecycleOnly: string
+  }
+  success: {
+    completed: string
+    reversed: string
+  }
+  errors: {
+    selectBatch: string
+    unavailableActive: string
+    notReady: string
+    effectiveDateRequired: string
+    dateBeforeStart: string
+    dateFuture: string
+    reasonRequired: string
+    previewRequired: string
+    previewBlockers: string
+    previewRefreshRequired: string
+    managerRequired: string
+    reversalReasonRequired: string
+    historyRefreshRequired: string
+    requestMismatch: string
+    requestInProgress: string
+    permissionDenied: string
+    actionFailed: string
+  }
+  blockerLabels: Record<GrowthBatchCompletionBlockerCode, string>
 }
 
 const growthBatchTransferCopy: Record<Locale, GrowthBatchTransferCopy> = {
@@ -1685,6 +1902,247 @@ const growthBatchHarvestCopy: Record<Locale, GrowthBatchHarvestCopy> = {
   },
 }
 
+const growthBatchCompletionCopy: Record<Locale, GrowthBatchCompletionCopy> = {
+  en: {
+    actions: {
+      completeBatch: 'Complete batch',
+      reverseCompletion: 'Reverse completion',
+      preview: 'Preview',
+      close: 'Close',
+    },
+    labels: {
+      tab: 'Completion',
+      currentStatus: 'Current status',
+      afterStatus: 'After status',
+      currentQuantity: 'Current quantity',
+      currentWeight: 'Current weight',
+      accumulatedCost: 'Accumulated cost',
+      harvestedCost: 'Harvested cost',
+      remainingCost: 'Remaining cost',
+      effectiveDate: 'Effective date',
+      reason: 'Reason',
+      notes: 'Notes',
+      originalEvent: 'Original event',
+      stockLedger: 'Stock ledger',
+      finance: 'Finance',
+      sale: 'Sale',
+      cogs: 'COGS',
+      sellingPrice: 'Selling price',
+      completedAt: 'Completed at',
+      lifecycle: 'Lifecycle',
+    },
+    fallback: {
+      notRecorded: 'Not recorded',
+      notSelected: 'Not selected',
+      teamMember: 'Team member',
+      reversed: 'Reversed',
+      locked: 'Locked',
+      notAffected: 'Not affected',
+      unchanged: 'Unchanged',
+    },
+    dialog: {
+      title: 'Complete Growth Batch',
+      description: 'Completion closes the batch lifecycle after quantity, weight, and remaining cost have reached zero. It does not create stock, finance, sale, COGS, or price rows.',
+      lifecycleNote: 'Full harvest leaves the batch active at zero quantity until this controlled completion is posted.',
+      notesHint: 'Optional controlled completion note.',
+      reversalTitle: 'Reverse completion',
+      reversalDescription: 'This creates a separate completion-reversal event and restores the batch to active status without changing quantity, weight, cost, stock, finance, or prices.',
+    },
+    history: {
+      title: 'Completion history',
+      description: 'Completion is a lifecycle-only closeout for fully harvested zero-cost batches. Reversal is event-specific and append-only.',
+      emptyTitle: 'No completion yet',
+      emptyDescription: 'Complete the batch only after it is fully harvested, has no weight remaining, and has no remaining cost.',
+      completionBadge: 'Completion',
+      reversalBadge: 'Completion reversal',
+      reversedBadge: 'Reversed',
+      lockedBadge: 'Locked',
+      by: 'by',
+      sequencePrefix: 'Seq',
+      reversedBy: 'Reversed by',
+      onDate: 'on',
+      lockedReason: 'Only the latest unreversed completion can be reversed, and the batch state must still match the completion snapshot.',
+    },
+    preview: {
+      readyToast: 'Completion preview is ready',
+      blockersToast: 'Preview found blockers. Review quantity, weight, remaining cost, status, and date before completing.',
+      stale: 'Preview is stale',
+      ready: 'Preview ready',
+      blockers: 'Preview blockers',
+      lifecycleOnly: 'Lifecycle-only closeout: no stock ledger, finance posting, sale, COGS, or selling-price change is created.',
+    },
+    success: {
+      completed: 'Growth Batch completed',
+      reversed: 'Growth Batch completion reversed',
+    },
+    errors: {
+      selectBatch: 'Select a Growth Batch.',
+      unavailableActive: 'Completion is only available for active Growth Batches.',
+      notReady: 'Completion requires zero current quantity, zero current weight, and zero remaining cost.',
+      effectiveDateRequired: 'Select an effective date.',
+      dateBeforeStart: 'Completion date must be on or after the batch start date.',
+      dateFuture: 'Completion date cannot be in the future.',
+      reasonRequired: 'Enter a completion reason.',
+      previewRequired: 'Preview the current completion before posting.',
+      previewBlockers: 'Resolve preview blockers before completing the batch.',
+      previewRefreshRequired: 'Refresh and preview again before completing.',
+      managerRequired: 'Only Manager, Admin, or Owner roles can complete or reverse completion.',
+      reversalReasonRequired: 'Enter a reversal reason.',
+      historyRefreshRequired: 'Refresh the completion history before reversing.',
+      requestMismatch: 'This retry key belongs to different completion inputs. Change nothing and retry, or submit the updated completion.',
+      requestInProgress: 'A matching completion request is already in progress. Wait a moment and refresh.',
+      permissionDenied: 'Your role cannot perform this completion action.',
+      actionFailed: 'The Growth Batch completion action failed.',
+    },
+    blockerLabels: {
+      growth_batch_completion_manager_required: 'Only Manager, Admin, or Owner roles can complete or reverse completion.',
+      growth_batch_completion_status_invalid: 'Completion requires an active batch; reversal requires a completed batch.',
+      growth_batch_completion_quantity_remaining: 'Completion requires zero current quantity.',
+      growth_batch_completion_weight_remaining: 'Completion requires zero current weight.',
+      growth_batch_completion_cost_remaining: 'Completion requires zero remaining cost.',
+      growth_batch_completion_date_before_start: 'Completion date must be on or after the batch start date.',
+      growth_batch_completion_date_in_future: 'Completion date cannot be in the future.',
+      growth_batch_completion_chronology_invalid: 'Completion date cannot be earlier than the latest state-affecting event.',
+      growth_batch_completion_source_fingerprint_required: 'Refresh and preview again before completing.',
+      growth_batch_completion_stale_source: 'The batch status, quantity, weight, cost, or sequence changed after preview. Refresh and preview again.',
+      growth_batch_completion_reason_required: 'Enter a completion reason.',
+      growth_batch_completion_state_changed: 'The batch state changed while completion was being posted. Refresh and try again.',
+      growth_batch_completion_reversal_status_invalid: 'Completion reversal requires the batch to still be completed.',
+      growth_batch_completion_already_reversed: 'This completion has already been reversed.',
+      growth_batch_completion_reversal_dependency_exists: 'A later event depends on this completion. Reverse or resolve later dependent events first.',
+      growth_batch_completion_current_state_mismatch: 'The batch no longer matches the completion snapshot. Refresh the history before reversing.',
+      growth_batch_completion_original_event_invalid: 'Refresh the completion history before reversing.',
+      growth_batch_completion_not_found: 'Refresh the completion history before reversing.',
+      growth_batch_completion_reversal_date_before_original: 'Reversal date must be on or after the original completion date.',
+      request_key_required: 'Refresh and try again with a valid retry key.',
+      idempotency_key_payload_mismatch: 'This retry key belongs to different completion inputs. Change nothing and retry, or submit the updated completion.',
+      request_in_progress: 'A matching completion request is already in progress. Wait a moment and refresh.',
+      reversal_reason_required: 'Enter a reversal reason.',
+      manager_role_required: 'Only Manager, Admin, or Owner roles can complete or reverse completion.',
+      growth_batch_not_active: 'Completion is only available for active Growth Batches.',
+    },
+  },
+  pt: {
+    actions: {
+      completeBatch: 'Concluir lote',
+      reverseCompletion: 'Reverter conclusao',
+      preview: 'Pre-visualizar',
+      close: 'Fechar',
+    },
+    labels: {
+      tab: 'Conclusao',
+      currentStatus: 'Estado actual',
+      afterStatus: 'Estado depois',
+      currentQuantity: 'Quantidade actual',
+      currentWeight: 'Peso actual',
+      accumulatedCost: 'Custo acumulado',
+      harvestedCost: 'Custo colhido',
+      remainingCost: 'Custo restante',
+      effectiveDate: 'Data efectiva',
+      reason: 'Motivo',
+      notes: 'Notas',
+      originalEvent: 'Evento original',
+      stockLedger: 'Livro de stock',
+      finance: 'Financas',
+      sale: 'Venda',
+      cogs: 'CMV',
+      sellingPrice: 'Preco de venda',
+      completedAt: 'Concluido em',
+      lifecycle: 'Ciclo de vida',
+    },
+    fallback: {
+      notRecorded: 'Nao registado',
+      notSelected: 'Nao seleccionado',
+      teamMember: 'Membro da equipa',
+      reversed: 'Revertida',
+      locked: 'Bloqueada',
+      notAffected: 'Nao afectado',
+      unchanged: 'Inalterado',
+    },
+    dialog: {
+      title: 'Concluir Lote de Crescimento',
+      description: 'A conclusao fecha o ciclo de vida do lote depois de quantidade, peso e custo restante chegarem a zero. Nao cria stock, financas, venda, CMV nem alteracao de preco.',
+      lifecycleNote: 'A colheita total deixa o lote activo com quantidade zero ate esta conclusao controlada ser publicada.',
+      notesHint: 'Nota controlada opcional da conclusao.',
+      reversalTitle: 'Reverter conclusao',
+      reversalDescription: 'Esta operacao cria um evento separado de reversao da conclusao e restaura o lote para activo sem alterar quantidade, peso, custo, stock, financas ou precos.',
+    },
+    history: {
+      title: 'Historico de conclusao',
+      description: 'A conclusao e um encerramento apenas do ciclo de vida para lotes totalmente colhidos e sem custo restante. A reversao e especifica ao evento e acrescentada ao historico.',
+      emptyTitle: 'Ainda nao existe conclusao',
+      emptyDescription: 'Conclua o lote apenas depois de estar totalmente colhido, sem peso restante e sem custo restante.',
+      completionBadge: 'Conclusao',
+      reversalBadge: 'Reversao de conclusao',
+      reversedBadge: 'Revertida',
+      lockedBadge: 'Bloqueada',
+      by: 'por',
+      sequencePrefix: 'Seq.',
+      reversedBy: 'Revertida por',
+      onDate: 'em',
+      lockedReason: 'Apenas a conclusao nao revertida mais recente pode ser revertida, e o estado do lote deve continuar igual ao registo da conclusao.',
+    },
+    preview: {
+      readyToast: 'A pre-visualizacao da conclusao esta pronta',
+      blockersToast: 'A pre-visualizacao encontrou bloqueios. Reveja quantidade, peso, custo restante, estado e data antes de concluir.',
+      stale: 'A pre-visualizacao esta desactualizada',
+      ready: 'Pre-visualizacao pronta',
+      blockers: 'Bloqueios da pre-visualizacao',
+      lifecycleOnly: 'Encerramento apenas do ciclo de vida: nao cria livro de stock, lancamento financeiro, venda, CMV nem altera preco de venda.',
+    },
+    success: {
+      completed: 'Lote de Crescimento concluido',
+      reversed: 'Conclusao do Lote de Crescimento revertida',
+    },
+    errors: {
+      selectBatch: 'Seleccione um Lote de Crescimento.',
+      unavailableActive: 'A conclusao so esta disponivel para Lotes de Crescimento activos.',
+      notReady: 'A conclusao exige quantidade actual zero, peso actual zero e custo restante zero.',
+      effectiveDateRequired: 'Seleccione uma data efectiva.',
+      dateBeforeStart: 'A data da conclusao deve ser igual ou posterior a data de inicio do lote.',
+      dateFuture: 'A data da conclusao nao pode estar no futuro.',
+      reasonRequired: 'Introduza o motivo da conclusao.',
+      previewRequired: 'Pre-visualize a conclusao actual antes de publicar.',
+      previewBlockers: 'Resolva os bloqueios da pre-visualizacao antes de concluir o lote.',
+      previewRefreshRequired: 'Actualize e pre-visualize novamente antes de concluir.',
+      managerRequired: 'Apenas as funcoes Manager, Admin ou Owner podem concluir ou reverter a conclusao.',
+      reversalReasonRequired: 'Introduza o motivo da reversao.',
+      historyRefreshRequired: 'Actualize o historico de conclusao antes de reverter.',
+      requestMismatch: 'Esta chave de repeticao pertence a dados de conclusao diferentes. Nao altere nada e tente novamente, ou submeta a conclusao actualizada.',
+      requestInProgress: 'Ja existe um pedido de conclusao correspondente em curso. Aguarde um momento e actualize.',
+      permissionDenied: 'A sua funcao nao pode executar esta accao de conclusao.',
+      actionFailed: 'A accao de conclusao do Lote de Crescimento falhou.',
+    },
+    blockerLabels: {
+      growth_batch_completion_manager_required: 'Apenas as funcoes Manager, Admin ou Owner podem concluir ou reverter a conclusao.',
+      growth_batch_completion_status_invalid: 'A conclusao exige lote activo; a reversao exige lote concluido.',
+      growth_batch_completion_quantity_remaining: 'A conclusao exige quantidade actual zero.',
+      growth_batch_completion_weight_remaining: 'A conclusao exige peso actual zero.',
+      growth_batch_completion_cost_remaining: 'A conclusao exige custo restante zero.',
+      growth_batch_completion_date_before_start: 'A data da conclusao deve ser igual ou posterior a data de inicio do lote.',
+      growth_batch_completion_date_in_future: 'A data da conclusao nao pode estar no futuro.',
+      growth_batch_completion_chronology_invalid: 'A data da conclusao nao pode ser anterior ao evento mais recente que afecta o estado.',
+      growth_batch_completion_source_fingerprint_required: 'Actualize e pre-visualize novamente antes de concluir.',
+      growth_batch_completion_stale_source: 'O estado, quantidade, peso, custo ou sequencia do lote mudou depois da pre-visualizacao. Actualize e pre-visualize novamente.',
+      growth_batch_completion_reason_required: 'Introduza o motivo da conclusao.',
+      growth_batch_completion_state_changed: 'O estado do lote mudou enquanto a conclusao estava a ser publicada. Actualize e tente novamente.',
+      growth_batch_completion_reversal_status_invalid: 'A reversao da conclusao exige que o lote continue concluido.',
+      growth_batch_completion_already_reversed: 'Esta conclusao ja foi revertida.',
+      growth_batch_completion_reversal_dependency_exists: 'Um evento posterior depende desta conclusao. Reverta ou resolva primeiro os eventos dependentes posteriores.',
+      growth_batch_completion_current_state_mismatch: 'O lote ja nao corresponde ao registo desta conclusao. Actualize o historico antes de reverter.',
+      growth_batch_completion_original_event_invalid: 'Actualize o historico de conclusao antes de reverter.',
+      growth_batch_completion_not_found: 'Actualize o historico de conclusao antes de reverter.',
+      growth_batch_completion_reversal_date_before_original: 'A data de reversao deve ser igual ou posterior a data da conclusao original.',
+      request_key_required: 'Actualize e tente novamente com uma chave de repeticao valida.',
+      idempotency_key_payload_mismatch: 'Esta chave de repeticao pertence a dados de conclusao diferentes. Nao altere nada e tente novamente, ou submeta a conclusao actualizada.',
+      request_in_progress: 'Ja existe um pedido de conclusao correspondente em curso. Aguarde um momento e actualize.',
+      reversal_reason_required: 'Introduza o motivo da reversao.',
+      manager_role_required: 'Apenas as funcoes Manager, Admin ou Owner podem concluir ou reverter a conclusao.',
+      growth_batch_not_active: 'A conclusao so esta disponivel para Lotes de Crescimento activos.',
+    },
+  },
+}
+
 const statusTone: Record<BatchStatus, PremiumTone> = {
   draft: 'info',
   active: 'positive',
@@ -1706,6 +2164,8 @@ const eventTone: Record<GrowthBatchEventRow['event_type'], PremiumTone> = {
   transfer_reversal: 'warning',
   harvest: 'positive',
   harvest_reversal: 'warning',
+  completion: 'neutral',
+  completion_reversal: 'info',
   cancellation: 'neutral',
 }
 
@@ -1737,6 +2197,10 @@ function isGrowthBatchTransferBlockerCode(code: string): code is GrowthBatchTran
 
 function isGrowthBatchHarvestBlockerCode(code: string): code is GrowthBatchHarvestBlockerCode {
   return (harvestBlockerCodes as readonly string[]).includes(code)
+}
+
+function isGrowthBatchCompletionBlockerCode(code: string): code is GrowthBatchCompletionBlockerCode {
+  return (completionBlockerCodes as readonly string[]).includes(code)
 }
 
 function num(value: unknown, fallback = 0) {
@@ -1928,7 +2392,24 @@ function emptyHarvestReversalForm(): HarvestReversalForm {
   }
 }
 
-function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy, harvestCopy?: GrowthBatchHarvestCopy) {
+function emptyCompletionForm(): CompletionForm {
+  return {
+    effectiveDate: today(),
+    reason: '',
+    notes: '',
+  }
+}
+
+function emptyCompletionReversalForm(): CompletionReversalForm {
+  return {
+    eventId: '',
+    eventReference: '',
+    effectiveDate: today(),
+    reason: '',
+  }
+}
+
+function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy, harvestCopy?: GrowthBatchHarvestCopy, completionCopy?: GrowthBatchCompletionCopy) {
   const raw = error && typeof error === 'object' && 'message' in error ? String((error as { message?: unknown }).message || '') : String(error || '')
   const rules: [RegExp, string][] = [
     [/fractional_count_not_allowed/i, harvestCopy?.blockerLabels.fractional_count_not_allowed || 'Count batches must use whole-number quantities.'],
@@ -1994,25 +2475,41 @@ function friendlyError(error: unknown, transferCopy?: GrowthBatchTransferCopy, h
     [/growth_batch_harvest_reversal_insufficient_output_stock/i, harvestCopy?.blockerLabels.growth_batch_harvest_reversal_insufficient_output_stock || 'The original output bucket does not have enough stock for reversal.'],
     [/growth_batch_harvest_reversal_date_before_original/i, harvestCopy?.blockerLabels.growth_batch_harvest_reversal_date_before_original || 'Reversal date must be on or after the original harvest date.'],
     [/growth_batch_harvest_already_reversed/i, harvestCopy?.blockerLabels.growth_batch_harvest_already_reversed || 'This harvest has already been reversed.'],
+    [/growth_batch_completion_source_fingerprint_required/i, completionCopy?.errors.previewRefreshRequired || 'Refresh and preview again before completing.'],
+    [/growth_batch_completion_stale_source/i, completionCopy?.blockerLabels.growth_batch_completion_stale_source || 'The batch changed after preview. Refresh and preview again.'],
+    [/growth_batch_completion_quantity_remaining/i, completionCopy?.blockerLabels.growth_batch_completion_quantity_remaining || 'Completion requires zero current quantity.'],
+    [/growth_batch_completion_weight_remaining/i, completionCopy?.blockerLabels.growth_batch_completion_weight_remaining || 'Completion requires zero current weight.'],
+    [/growth_batch_completion_cost_remaining/i, completionCopy?.blockerLabels.growth_batch_completion_cost_remaining || 'Completion requires zero remaining cost.'],
+    [/growth_batch_completion_reason_required/i, completionCopy?.errors.reasonRequired || 'Enter a completion reason.'],
+    [/growth_batch_completion_status_invalid/i, completionCopy?.blockerLabels.growth_batch_completion_status_invalid || 'Completion requires the expected lifecycle status.'],
+    [/growth_batch_completion_chronology_invalid/i, completionCopy?.blockerLabels.growth_batch_completion_chronology_invalid || 'Completion date cannot be earlier than the latest state event.'],
+    [/growth_batch_completion_date_before_start/i, completionCopy?.errors.dateBeforeStart || 'Completion date must be on or after the batch start date.'],
+    [/growth_batch_completion_date_in_future/i, completionCopy?.errors.dateFuture || 'Completion date cannot be in the future.'],
+    [/growth_batch_completion_reversal_dependency_exists/i, completionCopy?.blockerLabels.growth_batch_completion_reversal_dependency_exists || 'A later event depends on this completion.'],
+    [/growth_batch_completion_current_state_mismatch|growth_batch_completion_state_changed/i, completionCopy?.blockerLabels.growth_batch_completion_current_state_mismatch || 'Refresh the completion history before reversing.'],
+    [/growth_batch_completion_reversal_status_invalid/i, completionCopy?.blockerLabels.growth_batch_completion_reversal_status_invalid || 'Completion reversal requires the batch to still be completed.'],
+    [/growth_batch_completion_not_found|growth_batch_completion_original_event_invalid/i, completionCopy?.errors.historyRefreshRequired || 'Refresh the completion history before reversing.'],
+    [/growth_batch_completion_reversal_date_before_original/i, completionCopy?.blockerLabels.growth_batch_completion_reversal_date_before_original || 'Reversal date must be on or after the original completion date.'],
+    [/growth_batch_completion_already_reversed/i, completionCopy?.blockerLabels.growth_batch_completion_already_reversed || 'This completion has already been reversed.'],
     [/loss_quantity_exceeds_current_quantity/i, 'The loss quantity cannot exceed the current batch quantity.'],
     [/loss_weight_exceeds_current_weight/i, 'The loss weight cannot exceed the current total weight.'],
     [/loss_value_required/i, 'Enter a quantity loss, weight loss, or both.'],
     [/loss_reason_invalid/i, 'Select a valid reason for this loss type.'],
     [/loss_notes_required/i, 'Add notes when the reason is Other.'],
     [/growth_batch_current_weight_required/i, 'Record or configure a current total weight before entering weight loss.'],
-    [/reversal_reason_required/i, transferCopy?.errors.reversalReasonRequired || 'Enter a reversal reason.'],
-    [/manager_role_required/i, transferCopy?.errors.managerRequired || 'Only Manager, Admin, or Owner roles can reverse events.'],
+    [/reversal_reason_required/i, completionCopy?.errors.reversalReasonRequired || harvestCopy?.errors.reversalReasonRequired || transferCopy?.errors.reversalReasonRequired || 'Enter a reversal reason.'],
+    [/manager_role_required/i, completionCopy?.errors.managerRequired || harvestCopy?.errors.managerRequired || transferCopy?.errors.managerRequired || 'Only Manager, Admin, or Owner roles can reverse events.'],
     [/growth_batch_not_draft/i, 'Only draft Growth Batches can be changed or activated.'],
-    [/growth_batch_not_active/i, transferCopy?.errors.unavailableActive || 'This action can only be recorded on an active Growth Batch.'],
+    [/growth_batch_not_active/i, completionCopy?.errors.unavailableActive || harvestCopy?.errors.unavailableActive || transferCopy?.errors.unavailableActive || 'This action can only be recorded on an active Growth Batch.'],
     [/growth_batch_cancelled/i, 'This Growth Batch has already been cancelled.'],
-    [/idempotency_key_payload_mismatch/i, transferCopy?.errors.requestMismatch || 'This retry key belongs to different inputs. Change nothing and retry, or submit the updated form again.'],
-    [/request_in_progress/i, transferCopy?.errors.requestInProgress || 'A matching request is already in progress. Wait a moment and refresh.'],
+    [/idempotency_key_payload_mismatch/i, completionCopy?.errors.requestMismatch || harvestCopy?.errors.requestMismatch || transferCopy?.errors.requestMismatch || 'This retry key belongs to different inputs. Change nothing and retry, or submit the updated form again.'],
+    [/request_in_progress/i, completionCopy?.errors.requestInProgress || harvestCopy?.errors.requestInProgress || transferCopy?.errors.requestInProgress || 'A matching request is already in progress. Wait a moment and refresh.'],
     [/cross_company_access_denied|company_access_denied/i, 'The selected company or location is not available to your account.'],
-    [/permission denied|not allowed|forbidden/i, transferCopy?.errors.permissionDenied || 'Your role cannot perform this action.'],
+    [/permission denied|not allowed|forbidden/i, completionCopy?.errors.permissionDenied || harvestCopy?.errors.permissionDenied || transferCopy?.errors.permissionDenied || 'Your role cannot perform this action.'],
     [/invalid_direct_cost/i, 'Enter a valid cost category, description, and amount greater than zero.'],
     [/invalid_measurement/i, 'Enter a valid measurement type, value, unit, and range.'],
   ]
-  return rules.find(([pattern]) => pattern.test(raw))?.[1] || raw || harvestCopy?.errors.actionFailed || transferCopy?.errors.actionFailed || 'The Growth Batch action failed.'
+  return rules.find(([pattern]) => pattern.test(raw))?.[1] || raw || completionCopy?.errors.actionFailed || harvestCopy?.errors.actionFailed || transferCopy?.errors.actionFailed || 'The Growth Batch action failed.'
 }
 
 function Field({
@@ -2077,6 +2574,7 @@ export default function GrowthBatches() {
   const canManage = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER'])
   const transferCopy = growthBatchTransferCopy[lang]
   const harvestCopy = growthBatchHarvestCopy[lang]
+  const completionCopy = growthBatchCompletionCopy[lang]
 
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -2090,6 +2588,7 @@ export default function GrowthBatches() {
   const [losses, setLosses] = useState<GrowthBatchLossRow[]>([])
   const [transfers, setTransfers] = useState<GrowthBatchTransferRow[]>([])
   const [harvests, setHarvests] = useState<GrowthBatchHarvestRow[]>([])
+  const [completions, setCompletions] = useState<GrowthBatchCompletionRow[]>([])
   const [events, setEvents] = useState<GrowthBatchEventRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
@@ -2115,10 +2614,12 @@ export default function GrowthBatches() {
   const [lossOpen, setLossOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [harvestOpen, setHarvestOpen] = useState(false)
+  const [completionOpen, setCompletionOpen] = useState(false)
   const [reversalOpen, setReversalOpen] = useState(false)
   const [lossReversalOpen, setLossReversalOpen] = useState(false)
   const [transferReversalOpen, setTransferReversalOpen] = useState(false)
   const [harvestReversalOpen, setHarvestReversalOpen] = useState(false)
+  const [completionReversalOpen, setCompletionReversalOpen] = useState(false)
   const [draftForm, setDraftForm] = useState<DraftForm>(() => emptyDraftForm())
   const [editForm, setEditForm] = useState<DraftForm>(() => emptyDraftForm())
   const [measurementForm, setMeasurementForm] = useState<MeasurementForm>(() => emptyMeasurementForm())
@@ -2135,10 +2636,14 @@ export default function GrowthBatches() {
   const [harvestForm, setHarvestForm] = useState<HarvestForm>(() => emptyHarvestForm())
   const [harvestPreview, setHarvestPreview] = useState<HarvestPreview | null>(null)
   const [harvestPreviewStale, setHarvestPreviewStale] = useState(false)
+  const [completionForm, setCompletionForm] = useState<CompletionForm>(() => emptyCompletionForm())
+  const [completionPreview, setCompletionPreview] = useState<CompletionPreview | null>(null)
+  const [completionPreviewStale, setCompletionPreviewStale] = useState(false)
   const [reversalForm, setReversalForm] = useState<ReversalForm>(() => emptyReversalForm())
   const [lossReversalForm, setLossReversalForm] = useState<LossReversalForm>(() => emptyLossReversalForm())
   const [transferReversalForm, setTransferReversalForm] = useState<TransferReversalForm>(() => emptyTransferReversalForm())
   const [harvestReversalForm, setHarvestReversalForm] = useState<HarvestReversalForm>(() => emptyHarvestReversalForm())
+  const [completionReversalForm, setCompletionReversalForm] = useState<CompletionReversalForm>(() => emptyCompletionReversalForm())
   const [cancelReason, setCancelReason] = useState('')
 
   const createRequestRef = useRef<PostingRequestKeyRef>(null)
@@ -2154,6 +2659,8 @@ export default function GrowthBatches() {
   const transferReversalRequestRef = useRef<PostingRequestKeyRef>(null)
   const harvestRequestRef = useRef<PostingRequestKeyRef>(null)
   const harvestReversalRequestRef = useRef<PostingRequestKeyRef>(null)
+  const completionRequestRef = useRef<PostingRequestKeyRef>(null)
+  const completionReversalRequestRef = useRef<PostingRequestKeyRef>(null)
 
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
@@ -2295,17 +2802,18 @@ export default function GrowthBatches() {
       setLosses([])
       setTransfers([])
       setHarvests([])
+      setCompletions([])
       setEvents([])
       return
     }
 
     setDetailLoading(true)
     try {
-      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, transferRes, harvestRes, eventRes] = await Promise.all([
+      const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, transferRes, harvestRes, completionRes, eventRes] = await Promise.all([
         supabase.from('growth_batch_current_state').select('*').eq('id', batchId).maybeSingle(),
         supabase
           .from('growth_batches')
-          .select('id,species_text,purpose,notes,cancellation_reason,created_by,updated_by,activated_by,cancelled_by,completed_by,created_at,updated_at')
+          .select('id,species_text,purpose,notes,cancellation_reason,created_by,updated_by,activated_by,cancelled_by,completed_by,completed_at,created_at,updated_at')
           .eq('company_id', companyId)
           .eq('id', batchId)
           .maybeSingle(),
@@ -2341,6 +2849,11 @@ export default function GrowthBatches() {
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
+          .from('growth_batch_completion_history')
+          .select('*')
+          .eq('growth_batch_id', batchId)
+          .order('event_sequence', { ascending: false }),
+        supabase
           .from('growth_batch_event_timeline')
           .select('*')
           .eq('growth_batch_id', batchId)
@@ -2354,6 +2867,7 @@ export default function GrowthBatches() {
       if (lossRes.error) throw lossRes.error
       if (transferRes.error) throw transferRes.error
       if (harvestRes.error) throw harvestRes.error
+      if (completionRes.error) throw completionRes.error
       if (eventRes.error) throw eventRes.error
       setCurrentState((stateRes.data || null) as GrowthBatchCurrentState | null)
       setDetailRow((detailRes.data || null) as GrowthBatchDetailRow | null)
@@ -2363,6 +2877,7 @@ export default function GrowthBatches() {
       setLosses((lossRes.data || []) as GrowthBatchLossRow[])
       setTransfers((transferRes.data || []) as GrowthBatchTransferRow[])
       setHarvests((harvestRes.data || []) as GrowthBatchHarvestRow[])
+      setCompletions((completionRes.data || []) as GrowthBatchCompletionRow[])
       setEvents((eventRes.data || []) as GrowthBatchEventRow[])
     } catch (error) {
       console.error(error)
@@ -3173,8 +3688,10 @@ export default function GrowthBatches() {
     if (eventType === 'transfer_reversal') return transferCopy.history.transferReversalBadge
     if (eventType === 'harvest') return harvestCopy.history.harvestBadge
     if (eventType === 'harvest_reversal') return harvestCopy.history.harvestReversalBadge
+    if (eventType === 'completion') return completionCopy.history.completionBadge
+    if (eventType === 'completion_reversal') return completionCopy.history.reversalBadge
     return eventType ? labelize(eventType) : 'Created'
-  }, [harvestCopy, transferCopy])
+  }, [completionCopy, harvestCopy, transferCopy])
 
   function transferUnavailableReason() {
     if (!detailBatch || detailBatch.status !== 'active') return transferCopy.errors.unavailableActive
@@ -3376,6 +3893,11 @@ export default function GrowthBatches() {
     return isGrowthBatchHarvestBlockerCode(code) ? harvestCopy.blockerLabels[code] : labelize(code)
   }
 
+  function completionBlockerLabel(code: string | null | undefined) {
+    if (!code) return completionCopy.preview.blockers
+    return isGrowthBatchCompletionBlockerCode(code) ? completionCopy.blockerLabels[code] : labelize(code)
+  }
+
   function harvestUnavailableReason() {
     if (!detailBatch || detailBatch.status !== 'active') return harvestCopy.errors.unavailableActive
     if (num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0) return harvestCopy.errors.quantityRequired
@@ -3558,6 +4080,158 @@ export default function GrowthBatches() {
     }
   }
 
+  function markCompletionPreviewStale() {
+    setCompletionPreviewStale(true)
+  }
+
+  function completionUnavailableReason() {
+    if (!detailBatch) return completionCopy.errors.selectBatch
+    if (!canManage) return completionCopy.errors.managerRequired
+    if (detailBatch.status !== 'active') return completionCopy.errors.unavailableActive
+    if (num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) !== 0) return completionCopy.errors.notReady
+    if (detailBatch.latest_total_weight != null && num(detailBatch.latest_total_weight) !== 0) return completionCopy.errors.notReady
+    if (num(detailBatch.remaining_cost) !== 0) return completionCopy.errors.notReady
+    return null
+  }
+
+  function validateCompletionForm() {
+    const unavailable = completionUnavailableReason()
+    if (unavailable) return unavailable
+    if (!detailBatch) return completionCopy.errors.selectBatch
+    if (!completionForm.effectiveDate) return completionCopy.errors.effectiveDateRequired
+    if (completionForm.effectiveDate < detailBatch.start_date) return completionCopy.errors.dateBeforeStart
+    if (completionForm.effectiveDate > today()) return completionCopy.errors.dateFuture
+    if (!completionForm.reason.trim()) return completionCopy.errors.reasonRequired
+    return null
+  }
+
+  function completionPayload() {
+    return {
+      p_growth_batch_id: detailBatch?.id,
+      p_effective_date: completionForm.effectiveDate,
+    }
+  }
+
+  async function previewCompletion() {
+    if (!detailBatch) return
+    const validation = validateCompletionForm()
+    if (validation) return toast.error(validation)
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.rpc('preview_growth_batch_completion', completionPayload())
+      if (error) throw error
+      const preview = data as CompletionPreview
+      setCompletionPreview(preview)
+      setCompletionPreviewStale(false)
+      if (preview.ready) {
+        toast.success(completionCopy.preview.readyToast)
+      } else {
+        toast.error(completionCopy.preview.blockersToast)
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, undefined, undefined, completionCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function completeBatch() {
+    if (!detailBatch) return
+    const validation = validateCompletionForm()
+    if (validation) return toast.error(validation)
+    if (!completionPreview || completionPreviewStale) return toast.error(completionCopy.errors.previewRequired)
+    if (!completionPreview.ready) return toast.error(completionCopy.errors.previewBlockers)
+    if (!completionPreview.source_fingerprint) return toast.error(completionCopy.errors.previewRefreshRequired)
+    const payload = {
+      operation: 'growth.batch.complete',
+      batchId: detailBatch.id,
+      effectiveDate: completionForm.effectiveDate,
+      reason: completionForm.reason.trim(),
+      notes: cleanText(completionForm.notes),
+      previewFingerprint: completionPreview.source_fingerprint,
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(completionRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('complete_growth_batch', {
+        p_growth_batch_id: detailBatch.id,
+        p_request_key: requestKey,
+        p_preview_fingerprint: completionPreview.source_fingerprint,
+        p_effective_date: completionForm.effectiveDate,
+        p_completion_reason: completionForm.reason.trim(),
+        p_notes: cleanText(completionForm.notes),
+      })
+      if (error) throw error
+      clearPostingRequestKey(completionRequestRef)
+      toast.success(completionCopy.success.completed)
+      setCompletionOpen(false)
+      setCompletionForm(emptyCompletionForm())
+      setCompletionPreview(null)
+      setCompletionPreviewStale(false)
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, undefined, undefined, completionCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openCompletionDialog() {
+    setCompletionForm(emptyCompletionForm())
+    setCompletionPreview(null)
+    setCompletionPreviewStale(false)
+    setCompletionOpen(true)
+  }
+
+  function openCompletionReversalDialog(row: GrowthBatchCompletionRow) {
+    setCompletionReversalForm({
+      eventId: row.event_id,
+      eventReference: row.event_reference,
+      effectiveDate: today(),
+      reason: '',
+    })
+    setCompletionReversalOpen(true)
+  }
+
+  async function reverseCompletion() {
+    if (!detailBatch) return
+    if (!canManage) return toast.error(completionCopy.errors.managerRequired)
+    if (!completionReversalForm.eventId) return toast.error(completionCopy.errors.historyRefreshRequired)
+    if (!completionReversalForm.reason.trim()) return toast.error(completionCopy.errors.reversalReasonRequired)
+    const payload = {
+      operation: 'growth.batch.complete.reverse',
+      batchId: detailBatch.id,
+      originalEventId: completionReversalForm.eventId,
+      effectiveDate: completionReversalForm.effectiveDate,
+      reason: completionReversalForm.reason.trim(),
+    }
+    const requestKey = getPostingRequestKeyForFingerprint(completionReversalRequestRef, stablePostingFingerprint(payload))
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('reverse_growth_batch_completion', {
+        p_original_event_id: completionReversalForm.eventId,
+        p_request_key: requestKey,
+        p_reason: completionReversalForm.reason.trim(),
+        p_effective_date: completionReversalForm.effectiveDate,
+      })
+      if (error) throw error
+      clearPostingRequestKey(completionReversalRequestRef)
+      toast.success(completionCopy.success.reversed)
+      setCompletionReversalOpen(false)
+      setCompletionReversalForm(emptyCompletionReversalForm())
+      await loadBatches()
+      await loadDetail(detailBatch.id)
+    } catch (error) {
+      console.error(error)
+      toast.error(friendlyError(error, undefined, undefined, completionCopy))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const columns = useMemo<PremiumDataTableColumn<GrowthBatchRegisterRow>[]>(() => [
     {
       id: 'reference',
@@ -3661,6 +4335,12 @@ export default function GrowthBatches() {
         <Sprout className="mr-2 h-4 w-4" />
         {harvestCopy.actions.recordHarvest}
       </Button>
+      {canManage ? (
+        <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openCompletionDialog} disabled={saving || Boolean(completionUnavailableReason())} title={completionUnavailableReason() || undefined}>
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          {completionCopy.actions.completeBatch}
+        </Button>
+      ) : null}
       <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openLossDialog} disabled={saving || num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0} title={num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0 ? harvestCopy.labels.awaitingCompletion : undefined}>
         <AlertTriangle className="mr-2 h-4 w-4" />
         Record loss
@@ -3873,7 +4553,7 @@ export default function GrowthBatches() {
       <PremiumRegisterHeader
         eyebrow="G1-G5.1 governed lifecycle"
         title="Growth Batches"
-        description="Manage live biological or agricultural batches at group level. G5.1 adds governed depleting harvests, one stock output receipt, event-specific harvest reversal, append-only history, and finance isolation."
+        description="Manage live biological or agricultural batches at group level. G5.2 adds governed lifecycle completion after full harvest, event-specific completion reversal, append-only history, and finance isolation."
         badges={
           <>
             <PremiumStatusBadge tone="info">Append-only event ledger</PremiumStatusBadge>
@@ -3901,7 +4581,7 @@ export default function GrowthBatches() {
         }
         metrics={
           <>
-            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements, transfers, losses, harvests, and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
+            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements, transfers, losses, harvests, completion, and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
             <PremiumMetricCard label="Drafts" value={metricValues.draft} description="Prepared but not activated" icon={<ClipboardList />} tone="info" variant="panel" />
             <PremiumMetricCard label="Memo direct costs" value={money(metricValues.directCost, selectedCurrency)} description="Separate from stock-input material cost" icon={<Coins />} tone="warning" variant="panel" />
             <PremiumMetricCard label="Latest activity" value={compactDate(metricValues.latest)} description="Newest event or created batch in the register" icon={<Activity />} tone="neutral" variant="panel" />
@@ -4034,6 +4714,9 @@ export default function GrowthBatches() {
                       {detailBatch.fully_harvested_awaiting_completion ? (
                         <Badge variant="secondary">{harvestCopy.labels.awaitingCompletion}</Badge>
                       ) : null}
+                      {detailBatch.status === 'completed' ? (
+                        <Badge variant="secondary">{completionCopy.history.completionBadge}</Badge>
+                      ) : null}
                     </div>
                     <CardTitle className="mt-3 min-w-0 space-y-1">
                       <span className="block truncate">{detailBatch.reference_no}</span>
@@ -4042,7 +4725,7 @@ export default function GrowthBatches() {
                       </span>
                     </CardTitle>
                     <CardDescription>
-                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory, transfers move the whole batch operationally, harvests receive one output into stock, and COGS or valuation posting remains out of scope.'}
+                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory, transfers move the whole batch operationally, harvests receive one output into stock, completion closes only the lifecycle, and COGS or valuation posting remains out of scope.'}
                     </CardDescription>
                   </div>
                   <div className="flex w-full min-w-0 flex-col gap-2">
@@ -4055,6 +4738,7 @@ export default function GrowthBatches() {
                     <SummaryItem label="Current quantity" value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
                     <SummaryItem label="Latest weight" value={detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
                     <SummaryItem label="Remaining cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                    <SummaryItem label={completionCopy.labels.completedAt} value={detailBatch.completed_at ? compactDateTime(detailBatch.completed_at) : completionCopy.fallback.notRecorded} />
                     <SummaryItem label="Start date" value={compactDate(detailBatch.start_date)} />
                     <SummaryItem label="Expected end" value={compactDate(detailBatch.expected_end_date)} />
                     <SummaryItem
@@ -4080,6 +4764,7 @@ export default function GrowthBatches() {
                     <TabsTrigger value="stock">Stock inputs</TabsTrigger>
                     <TabsTrigger value="transfers">{transferCopy.history.title}</TabsTrigger>
                     <TabsTrigger value="harvests">{harvestCopy.labels.tab}</TabsTrigger>
+                    <TabsTrigger value="completion">{completionCopy.labels.tab}</TabsTrigger>
                     <TabsTrigger value="losses">Losses</TabsTrigger>
                     <TabsTrigger value="measurements">Measurements</TabsTrigger>
                     <TabsTrigger value="costs">Direct costs</TabsTrigger>
@@ -4106,10 +4791,10 @@ export default function GrowthBatches() {
 
                     <DetailSection
                       title="Future scope guard"
-                      description="These controls remain unavailable until later phases add completion, splitting, biological valuation, and accounting policies."
+                      description="These controls remain unavailable until later phases add splitting, biological valuation, and accounting policies."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {['Split or child batches', 'Completion', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
+                        {['Split or child batches', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
                           <div key={item} className="flex items-center gap-2 rounded-xl border border-card-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
                             <AlertTriangle className="h-4 w-4 text-amber-600" />
                             <span>{item}</span>
@@ -4334,6 +5019,106 @@ export default function GrowthBatches() {
                                 ) : (
                                   <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
                                     {harvestCopy.history.lockedReason}
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </DetailSection>
+                  </TabsContent>
+
+                  <TabsContent value="completion">
+                    <DetailSection
+                      title={completionCopy.history.title}
+                      description={completionCopy.history.description}
+                      action={detailBatch.status === 'active' && canManage ? (
+                        <Button size="sm" className="w-full sm:w-auto" onClick={openCompletionDialog} disabled={saving || Boolean(completionUnavailableReason())} title={completionUnavailableReason() || undefined}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          {completionCopy.actions.completeBatch}
+                        </Button>
+                      ) : null}
+                    >
+                      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <SummaryItem label={completionCopy.labels.currentStatus} value={labelize(detailBatch.status)} />
+                        <SummaryItem label={completionCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                        <SummaryItem label={completionCopy.labels.currentWeight} value={detailBatch.latest_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                        <SummaryItem label={completionCopy.labels.remainingCost} value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                        <SummaryItem label={completionCopy.labels.accumulatedCost} value={money(detailBatch.accumulated_total_cost, selectedCurrency)} />
+                        <SummaryItem label={completionCopy.labels.harvestedCost} value={money(detailBatch.harvested_cost, selectedCurrency)} />
+                        <SummaryItem label={completionCopy.labels.stockLedger} value={completionCopy.fallback.notAffected} />
+                        <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
+                      </div>
+                      {detailBatch.fully_harvested_awaiting_completion ? (
+                        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
+                          <div className="font-medium text-emerald-700 dark:text-emerald-300">{harvestCopy.labels.fullyHarvested}</div>
+                          <div className="mt-1 text-muted-foreground">{completionCopy.dialog.lifecycleNote}</div>
+                        </div>
+                      ) : null}
+                      {detailBatch.status === 'completed' ? (
+                        <div className="mb-4 rounded-xl border border-card-border bg-muted/20 p-4 text-sm">
+                          <div className="font-medium">{completionCopy.history.completionBadge}</div>
+                          <div className="mt-1 text-muted-foreground">
+                            {completionCopy.labels.completedAt}: {detailBatch.completed_at ? compactDateTime(detailBatch.completed_at) : completionCopy.fallback.notRecorded}
+                          </div>
+                        </div>
+                      ) : null}
+                      {completions.length === 0 ? (
+                        <PremiumEmptyState icon={<CheckCircle2 />} title={completionCopy.history.emptyTitle} description={completionCopy.history.emptyDescription} compact />
+                      ) : (
+                        <div className="space-y-3">
+                          {completions.map((completion) => {
+                            const canReverseCompletion = canManage && completion.reversal_eligible
+                            return (
+                              <div key={completion.id} className="rounded-xl border border-card-border bg-card p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <PremiumStatusBadge tone="neutral">{completionCopy.history.completionBadge}</PremiumStatusBadge>
+                                      {completion.reversed ? <Badge variant="outline">{completionCopy.history.reversedBadge}</Badge> : null}
+                                      {!completion.reversed && !completion.reversal_eligible ? <Badge variant="secondary">{completionCopy.history.lockedBadge}</Badge> : null}
+                                    </div>
+                                    <div className="mt-2 font-medium break-words">
+                                      {completion.event_reference} {completionCopy.history.by} {completion.actor_display_name || completionCopy.fallback.teamMember}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {completionCopy.history.sequencePrefix} {completion.event_sequence} / {compactDate(completion.event_effective_date)}
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0 text-left text-sm font-semibold sm:text-right">
+                                    <div>{labelize(completion.status_before)} {' -> '} {labelize(completion.status_after)}</div>
+                                    <div className="text-xs font-normal text-muted-foreground">{completion.completed_at ? compactDateTime(completion.completed_at) : completionCopy.fallback.notRecorded}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                                  <SummaryItem label={completionCopy.labels.currentQuantity} value={qtyWithUom(completion.current_primary_qty, completion.primary_uom_code)} />
+                                  <SummaryItem label={completionCopy.labels.currentWeight} value={completion.current_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(completion.current_total_weight, completion.weight_uom_code)} />
+                                  <SummaryItem label={completionCopy.labels.accumulatedCost} value={money(completion.accumulated_total_cost, selectedCurrency)} />
+                                  <SummaryItem label={completionCopy.labels.harvestedCost} value={money(completion.harvested_cost, selectedCurrency)} />
+                                  <SummaryItem label={completionCopy.labels.remainingCost} value={money(completion.remaining_cost, selectedCurrency)} />
+                                  <SummaryItem label={completionCopy.labels.stockLedger} value={completionCopy.fallback.notAffected} />
+                                  <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
+                                  <SummaryItem label={completionCopy.labels.sellingPrice} value={completionCopy.fallback.unchanged} />
+                                </div>
+                                <div className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm">
+                                  <SummaryItem label={completionCopy.labels.reason} value={completion.completion_reason || completionCopy.fallback.notRecorded} />
+                                  {completion.notes ? <p className="mt-2 leading-6 text-muted-foreground">{completion.notes}</p> : null}
+                                </div>
+                                {completion.reversed ? (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    {completionCopy.history.reversedBy} {completion.reversal_event_reference || completionCopy.history.reversalBadge} {completionCopy.history.onDate} {compactDate(completion.reversal_effective_date)}. {completion.reversal_reason || completionCopy.fallback.notRecorded}
+                                  </p>
+                                ) : canReverseCompletion ? (
+                                  <div className="mt-3">
+                                    <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => openCompletionReversalDialog(completion)} disabled={saving}>
+                                      <RotateCcw className="mr-2 h-4 w-4" />
+                                      {completionCopy.actions.reverseCompletion}
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                    {completionCopy.history.lockedReason}
                                   </p>
                                 )}
                               </div>
@@ -5261,6 +6046,144 @@ export default function GrowthBatches() {
             <Button type="button" variant="destructive" className="w-full sm:w-auto" onClick={reverseHarvest} disabled={saving || !canManage}>
               <RotateCcw className="mr-2 h-4 w-4" />
               {harvestCopy.actions.reverseHarvest}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={completionOpen} onOpenChange={setCompletionOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{completionCopy.dialog.title}</DialogTitle>
+            <DialogDescription>
+              {completionCopy.dialog.description}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <div className="rounded-xl border border-card-border bg-muted/20 p-4 text-sm">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryItem label={completionCopy.labels.currentStatus} value={labelize(detailBatch?.status || 'active')} />
+                  <SummaryItem label={completionCopy.labels.afterStatus} value={labelize('completed')} />
+                  <SummaryItem label={completionCopy.labels.currentQuantity} value={qtyWithUom(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty, detailBatch?.primary_uom_code)} />
+                  <SummaryItem label={completionCopy.labels.currentWeight} value={detailBatch?.latest_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                  <SummaryItem label={completionCopy.labels.remainingCost} value={money(detailBatch?.remaining_cost, selectedCurrency)} />
+                  <SummaryItem label={completionCopy.labels.stockLedger} value={completionCopy.fallback.notAffected} />
+                  <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
+                  <SummaryItem label={completionCopy.labels.sellingPrice} value={completionCopy.fallback.unchanged} />
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {completionCopy.preview.lifecycleOnly}
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={completionCopy.labels.effectiveDate} htmlFor="growth-completion-date">
+                  <Input
+                    id="growth-completion-date"
+                    type="date"
+                    value={completionForm.effectiveDate}
+                    onChange={(event) => {
+                      markCompletionPreviewStale()
+                      setCompletionForm((current) => ({ ...current, effectiveDate: event.target.value }))
+                    }}
+                  />
+                </Field>
+                <Field label={completionCopy.labels.reason} htmlFor="growth-completion-reason">
+                  <Input
+                    id="growth-completion-reason"
+                    value={completionForm.reason}
+                    onChange={(event) => {
+                      markCompletionPreviewStale()
+                      setCompletionForm((current) => ({ ...current, reason: event.target.value }))
+                    }}
+                  />
+                </Field>
+              </div>
+
+              <Field label={completionCopy.labels.notes} htmlFor="growth-completion-notes" hint={completionCopy.dialog.notesHint}>
+                <Textarea
+                  id="growth-completion-notes"
+                  value={completionForm.notes}
+                  onChange={(event) => {
+                    markCompletionPreviewStale()
+                    setCompletionForm((current) => ({ ...current, notes: event.target.value }))
+                  }}
+                />
+              </Field>
+
+              {completionPreview ? (
+                <div className={cn('rounded-xl border p-4 text-sm', completionPreview.ready && !completionPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                  <div className="font-medium">{completionPreviewStale ? completionCopy.preview.stale : completionPreview.ready ? completionCopy.preview.ready : completionCopy.preview.blockers}</div>
+                  {completionPreview.blockers?.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                      {completionPreview.blockers.map((blocker, index) => (
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{completionBlockerLabel(String(blocker.code || ''))}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <SummaryItem label={completionCopy.labels.currentStatus} value={labelize(completionPreview.status_before)} />
+                    <SummaryItem label={completionCopy.labels.afterStatus} value={labelize(completionPreview.status_after)} />
+                    <SummaryItem label={completionCopy.labels.currentQuantity} value={qtyWithUom(completionPreview.current_primary_qty, completionPreview.primary_uom_code || detailBatch?.primary_uom_code)} />
+                    <SummaryItem label={completionCopy.labels.currentWeight} value={completionPreview.current_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(completionPreview.current_total_weight, completionPreview.weight_uom_code || detailBatch?.weight_uom_code)} />
+                    <SummaryItem label={completionCopy.labels.accumulatedCost} value={money(completionPreview.accumulated_total_cost, selectedCurrency)} />
+                    <SummaryItem label={completionCopy.labels.harvestedCost} value={money(completionPreview.harvested_cost, selectedCurrency)} />
+                    <SummaryItem label={completionCopy.labels.remainingCost} value={money(completionPreview.remaining_cost, selectedCurrency)} />
+                    <SummaryItem label={completionCopy.labels.stockLedger} value={completionCopy.fallback.notAffected} />
+                    <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
+                    <SummaryItem label={completionCopy.labels.sale} value={completionCopy.fallback.notAffected} />
+                    <SummaryItem label={completionCopy.labels.cogs} value={completionCopy.fallback.notAffected} />
+                    <SummaryItem label={completionCopy.labels.sellingPrice} value={completionCopy.fallback.unchanged} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setCompletionOpen(false)} disabled={saving}>{completionCopy.actions.close}</Button>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={previewCompletion} disabled={saving}>{completionCopy.actions.preview}</Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={completeBatch} disabled={saving || !completionPreview || completionPreviewStale || !completionPreview.ready}>
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              {completionCopy.actions.completeBatch}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={completionReversalOpen} onOpenChange={setCompletionReversalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{completionCopy.dialog.reversalTitle}</DialogTitle>
+            <DialogDescription>
+              {completionCopy.dialog.reversalDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <div className="grid gap-4">
+              <SummaryItem label={completionCopy.labels.originalEvent} value={completionReversalForm.eventReference || completionCopy.fallback.notSelected} />
+              <Field label={completionCopy.labels.effectiveDate} htmlFor="growth-completion-reversal-date">
+                <Input
+                  id="growth-completion-reversal-date"
+                  type="date"
+                  value={completionReversalForm.effectiveDate}
+                  onChange={(event) => setCompletionReversalForm((current) => ({ ...current, effectiveDate: event.target.value }))}
+                />
+              </Field>
+              <Field label={completionCopy.labels.reason} htmlFor="growth-completion-reversal-reason">
+                <Textarea
+                  id="growth-completion-reversal-reason"
+                  value={completionReversalForm.reason}
+                  onChange={(event) => setCompletionReversalForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </Field>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setCompletionReversalOpen(false)} disabled={saving}>{completionCopy.actions.close}</Button>
+            <Button type="button" variant="destructive" className="w-full sm:w-auto" onClick={reverseCompletion} disabled={saving || !canManage}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              {completionCopy.actions.reverseCompletion}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -38,6 +38,13 @@ const HARVEST_FINGERPRINT_SIGNATURE = 'public.growth_batch_harvest_state_fingerp
 const APPLY_HARVEST_UPDATE_SIGNATURE = 'public.apply_growth_batch_harvest_update(uuid,uuid,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,uuid,integer)'
 const VALIDATE_HARVEST_ROW_SIGNATURE = 'public.validate_growth_batch_harvest_row()'
 const VALIDATE_HARVEST_REVERSAL_ROW_SIGNATURE = 'public.validate_growth_batch_harvest_reversal_row()'
+const PREVIEW_COMPLETION_SIGNATURE = 'public.preview_growth_batch_completion(uuid,date)'
+const COMPLETE_GROWTH_BATCH_SIGNATURE = 'public.complete_growth_batch(uuid,text,text,date,text,text)'
+const REVERSE_COMPLETION_SIGNATURE = 'public.reverse_growth_batch_completion(uuid,text,text,date)'
+const COMPLETION_FINGERPRINT_SIGNATURE = 'public.growth_batch_completion_state_fingerprint(uuid,uuid,text,numeric,numeric,numeric,numeric,numeric,integer)'
+const APPLY_COMPLETION_UPDATE_SIGNATURE = 'public.apply_growth_batch_completion_update(uuid,uuid,text,integer,text,integer,uuid,timestamp with time zone)'
+const VALIDATE_COMPLETION_ROW_SIGNATURE = 'public.validate_growth_batch_completion_row()'
+const VALIDATE_COMPLETION_REVERSAL_ROW_SIGNATURE = 'public.validate_growth_batch_completion_reversal_row()'
 
 function addDaysIso(days) {
   const date = new Date(`${todayIso()}T00:00:00.000Z`)
@@ -270,7 +277,7 @@ async function stockMovementCount(client, companyId) {
   return countRows(client, 'stock_movements', [['eq', 'company_id', companyId]])
 }
 
-test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, losses, transfers, harvests, and read models', async (t) => {
+test('Growth Batches G1-G5.2 authority, lifecycle, idempotency, stock inputs, losses, transfers, harvests, completion, and read models', async (t) => {
   const admin = createAdminClient()
   const created = {
     companyIds: new Set(),
@@ -542,11 +549,13 @@ test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, lo
         'growth_batch_transfers',
         'growth_batch_transfer_reversal_lines',
         'growth_batch_harvests',
-        'growth_batch_harvest_reversal_lines'
+        'growth_batch_harvest_reversal_lines',
+        'growth_batch_completions',
+        'growth_batch_completion_reversal_lines'
       )
       order by relname;
     `)
-    assert.equal(schemaRows.length, 13, 'Expected all Growth Batch tables to exist')
+    assert.equal(schemaRows.length, 15, 'Expected all Growth Batch tables to exist')
     assert.equal(schemaRows.every((row) => row.relrowsecurity === true), true, 'Expected Growth Batch RLS enabled')
     assert.equal(schemaRows.every((row) => row.relforcerowsecurity === true), true, 'Expected Growth Batch FORCE RLS enabled')
 
@@ -611,7 +620,32 @@ test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, lo
         has_function_privilege('authenticated', '${POST_HARVEST_SIGNATURE}', 'EXECUTE') as auth_harvest_post,
         has_function_privilege('public', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as public_harvest_reverse,
         has_function_privilege('anon', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as anon_harvest_reverse,
-        has_function_privilege('authenticated', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as auth_harvest_reverse;
+        has_function_privilege('authenticated', '${REVERSE_HARVEST_SIGNATURE}', 'EXECUTE') as auth_harvest_reverse,
+        has_function_privilege('public', '${COMPLETION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as public_completion_fingerprint,
+        has_function_privilege('anon', '${COMPLETION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as anon_completion_fingerprint,
+        has_function_privilege('authenticated', '${COMPLETION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as auth_completion_fingerprint,
+        has_function_privilege('postgres', '${COMPLETION_FINGERPRINT_SIGNATURE}', 'EXECUTE') as owner_completion_fingerprint,
+        has_function_privilege('public', '${APPLY_COMPLETION_UPDATE_SIGNATURE}', 'EXECUTE') as public_apply_completion_update,
+        has_function_privilege('anon', '${APPLY_COMPLETION_UPDATE_SIGNATURE}', 'EXECUTE') as anon_apply_completion_update,
+        has_function_privilege('authenticated', '${APPLY_COMPLETION_UPDATE_SIGNATURE}', 'EXECUTE') as auth_apply_completion_update,
+        has_function_privilege('postgres', '${APPLY_COMPLETION_UPDATE_SIGNATURE}', 'EXECUTE') as owner_apply_completion_update,
+        has_function_privilege('public', '${VALIDATE_COMPLETION_ROW_SIGNATURE}', 'EXECUTE') as public_validate_completion_row,
+        has_function_privilege('anon', '${VALIDATE_COMPLETION_ROW_SIGNATURE}', 'EXECUTE') as anon_validate_completion_row,
+        has_function_privilege('authenticated', '${VALIDATE_COMPLETION_ROW_SIGNATURE}', 'EXECUTE') as auth_validate_completion_row,
+        has_function_privilege('postgres', '${VALIDATE_COMPLETION_ROW_SIGNATURE}', 'EXECUTE') as owner_validate_completion_row,
+        has_function_privilege('public', '${VALIDATE_COMPLETION_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as public_validate_completion_reversal_row,
+        has_function_privilege('anon', '${VALIDATE_COMPLETION_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as anon_validate_completion_reversal_row,
+        has_function_privilege('authenticated', '${VALIDATE_COMPLETION_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as auth_validate_completion_reversal_row,
+        has_function_privilege('postgres', '${VALIDATE_COMPLETION_REVERSAL_ROW_SIGNATURE}', 'EXECUTE') as owner_validate_completion_reversal_row,
+        has_function_privilege('public', '${PREVIEW_COMPLETION_SIGNATURE}', 'EXECUTE') as public_completion_preview,
+        has_function_privilege('anon', '${PREVIEW_COMPLETION_SIGNATURE}', 'EXECUTE') as anon_completion_preview,
+        has_function_privilege('authenticated', '${PREVIEW_COMPLETION_SIGNATURE}', 'EXECUTE') as auth_completion_preview,
+        has_function_privilege('public', '${COMPLETE_GROWTH_BATCH_SIGNATURE}', 'EXECUTE') as public_completion_post,
+        has_function_privilege('anon', '${COMPLETE_GROWTH_BATCH_SIGNATURE}', 'EXECUTE') as anon_completion_post,
+        has_function_privilege('authenticated', '${COMPLETE_GROWTH_BATCH_SIGNATURE}', 'EXECUTE') as auth_completion_post,
+        has_function_privilege('public', '${REVERSE_COMPLETION_SIGNATURE}', 'EXECUTE') as public_completion_reverse,
+        has_function_privilege('anon', '${REVERSE_COMPLETION_SIGNATURE}', 'EXECUTE') as anon_completion_reverse,
+        has_function_privilege('authenticated', '${REVERSE_COMPLETION_SIGNATURE}', 'EXECUTE') as auth_completion_reverse;
     `)
     assert.equal(grantRows[0].anon_create, false, 'anon must not execute create_growth_batch_draft')
     assert.equal(grantRows[0].anon_activate, false, 'anon must not execute activate_growth_batch')
@@ -658,6 +692,28 @@ test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, lo
     assert.equal(grantRows[0].anon_harvest_post, false, 'anon must not execute post_growth_batch_harvest')
     assert.equal(grantRows[0].public_harvest_reverse, false, 'PUBLIC must not execute reverse_growth_batch_harvest')
     assert.equal(grantRows[0].anon_harvest_reverse, false, 'anon must not execute reverse_growth_batch_harvest')
+    assert.equal(grantRows[0].public_completion_fingerprint, false, 'PUBLIC must not execute growth_batch_completion_state_fingerprint')
+    assert.equal(grantRows[0].anon_completion_fingerprint, false, 'anon must not execute growth_batch_completion_state_fingerprint')
+    assert.equal(grantRows[0].auth_completion_fingerprint, false, 'authenticated must not execute growth_batch_completion_state_fingerprint')
+    assert.equal(grantRows[0].owner_completion_fingerprint, true, 'function owner must retain growth_batch_completion_state_fingerprint execution')
+    assert.equal(grantRows[0].public_apply_completion_update, false, 'PUBLIC must not execute apply_growth_batch_completion_update')
+    assert.equal(grantRows[0].anon_apply_completion_update, false, 'anon must not execute apply_growth_batch_completion_update')
+    assert.equal(grantRows[0].auth_apply_completion_update, false, 'authenticated must not execute apply_growth_batch_completion_update')
+    assert.equal(grantRows[0].owner_apply_completion_update, true, 'function owner must retain apply_growth_batch_completion_update execution')
+    assert.equal(grantRows[0].public_validate_completion_row, false, 'PUBLIC must not execute validate_growth_batch_completion_row')
+    assert.equal(grantRows[0].anon_validate_completion_row, false, 'anon must not execute validate_growth_batch_completion_row')
+    assert.equal(grantRows[0].auth_validate_completion_row, false, 'authenticated must not execute validate_growth_batch_completion_row')
+    assert.equal(grantRows[0].owner_validate_completion_row, true, 'function owner must retain validate_growth_batch_completion_row execution')
+    assert.equal(grantRows[0].public_validate_completion_reversal_row, false, 'PUBLIC must not execute validate_growth_batch_completion_reversal_row')
+    assert.equal(grantRows[0].anon_validate_completion_reversal_row, false, 'anon must not execute validate_growth_batch_completion_reversal_row')
+    assert.equal(grantRows[0].auth_validate_completion_reversal_row, false, 'authenticated must not execute validate_growth_batch_completion_reversal_row')
+    assert.equal(grantRows[0].owner_validate_completion_reversal_row, true, 'function owner must retain validate_growth_batch_completion_reversal_row execution')
+    assert.equal(grantRows[0].public_completion_preview, false, 'PUBLIC must not execute preview_growth_batch_completion')
+    assert.equal(grantRows[0].anon_completion_preview, false, 'anon must not execute preview_growth_batch_completion')
+    assert.equal(grantRows[0].public_completion_post, false, 'PUBLIC must not execute complete_growth_batch')
+    assert.equal(grantRows[0].anon_completion_post, false, 'anon must not execute complete_growth_batch')
+    assert.equal(grantRows[0].public_completion_reverse, false, 'PUBLIC must not execute reverse_growth_batch_completion')
+    assert.equal(grantRows[0].anon_completion_reverse, false, 'anon must not execute reverse_growth_batch_completion')
     assert.equal(grantRows[0].auth_create, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_activate, true, 'authenticated users execute governed Growth Batch RPCs')
     assert.equal(grantRows[0].auth_measurement, true, 'authenticated users execute governed Growth Batch RPCs')
@@ -673,6 +729,9 @@ test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, lo
     assert.equal(grantRows[0].auth_harvest_preview, true, 'authenticated users execute governed Growth Batch harvest preview')
     assert.equal(grantRows[0].auth_harvest_post, true, 'authenticated users execute governed Growth Batch harvest posting')
     assert.equal(grantRows[0].auth_harvest_reverse, true, 'authenticated users execute governed Growth Batch harvest reversal')
+    assert.equal(grantRows[0].auth_completion_preview, true, 'authenticated users execute governed Growth Batch completion preview')
+    assert.equal(grantRows[0].auth_completion_post, true, 'authenticated users execute governed Growth Batch completion posting')
+    assert.equal(grantRows[0].auth_completion_reverse, true, 'authenticated users execute governed Growth Batch completion reversal')
 
     const helperExecutionDenied = 'permission denied|could not find|not found|schema cache'
     await expectPostgrestError(
@@ -732,6 +791,34 @@ test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, lo
         p_accumulated_total_cost: 0,
         p_harvested_cost: 0,
         p_remaining_cost: 0,
+      }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('growth_batch_completion_state_fingerprint', {
+        p_company_id: companyId,
+        p_growth_batch_id: companyId,
+        p_status: 'active',
+        p_current_primary_qty: 0,
+        p_current_total_weight: 0,
+        p_accumulated_total_cost: 0,
+        p_harvested_cost: 0,
+        p_remaining_cost: 0,
+        p_latest_event_sequence: 1,
+      }),
+      helperExecutionDenied,
+    )
+    await expectPostgrestError(
+      anonClient.rpc('growth_batch_completion_state_fingerprint', {
+        p_company_id: companyId,
+        p_growth_batch_id: companyId,
+        p_status: 'active',
+        p_current_primary_qty: 0,
+        p_current_total_weight: 0,
+        p_accumulated_total_cost: 0,
+        p_harvested_cost: 0,
+        p_remaining_cost: 0,
+        p_latest_event_sequence: 1,
       }),
       helperExecutionDenied,
     )
@@ -4296,5 +4383,452 @@ test('Growth Batches G1-G5.1 authority, lifecycle, idempotency, stock inputs, lo
       'Expected concurrent harvest events to load',
     )
     assert.equal(new Set(concurrentHarvestEvents.map((event) => event.event_sequence)).size, concurrentHarvestEvents.length, 'Concurrent harvest events must not duplicate sequence numbers')
+  })
+
+  await t.test('G5.2 completion, event-specific reversal, completed-state blocking, and isolation', async () => {
+    const completionSnapshotSelect = 'status,current_primary_qty,current_total_weight,accumulated_material_cost,accumulated_direct_cost,accumulated_total_cost,harvested_cost,remaining_cost,latest_event_sequence,completed_by,completed_at'
+
+    async function completionMutationSnapshot(batchId) {
+      const [
+        eventCount,
+        completionCount,
+        reversalCount,
+        completionRequestCount,
+        movementCount,
+        stockLevelCount,
+        financeCounts,
+        batch,
+        outputPrice,
+      ] = await Promise.all([
+        countRows(ownerClient, 'growth_batch_events', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_completions', [['eq', 'growth_batch_id', batchId]]),
+        countRows(ownerClient, 'growth_batch_completion_reversal_lines', [['eq', 'growth_batch_id', batchId]]),
+        countRows(admin, 'posting_requests', [['eq', 'company_id', companyId], ['in', 'operation_type', ['growth.batch.complete', 'growth.batch.complete.reverse']]]),
+        stockMovementCount(admin, companyId),
+        countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]),
+        financeIsolationCounts(admin, companyId),
+        querySingle(ownerClient, 'growth_batches', completionSnapshotSelect, [['eq', 'id', batchId]]),
+        querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', harvestOutputItemId]]),
+      ])
+      return { eventCount, completionCount, reversalCount, completionRequestCount, movementCount, stockLevelCount, financeCounts, batch, outputPrice }
+    }
+
+    async function createFullyHarvestedBatch(label, options = {}) {
+      const batch = await createActiveGrowthBatch(label, {
+        openingQty: options.openingQty ?? 4,
+        openingWeight: options.openingWeight ?? 8,
+      })
+      expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+        p_company_id: companyId,
+        p_growth_batch_id: batch.batch_id,
+        p_category: 'labour',
+        p_description: `${label} completion cost pool`,
+        p_amount: options.cost ?? 44,
+        p_event_date: todayIso(),
+        p_request_key: `${PREFIX}-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-cost`,
+      }))
+      const preview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_harvest', {
+        p_growth_batch_id: batch.batch_id,
+        p_effective_date: todayIso(),
+        p_harvested_primary_qty: options.openingQty ?? 4,
+        p_harvested_total_weight: options.openingWeight ?? 8,
+        p_output_item_id: harvestOutputItemId,
+        p_output_quantity: options.openingWeight ?? 8,
+        p_destination_warehouse_id: transferWarehouseId,
+        p_destination_bin_id: transferBinId,
+        p_notes: `${label} full harvest setup`,
+      })))
+      const harvest = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('post_growth_batch_harvest', {
+        p_growth_batch_id: batch.batch_id,
+        p_effective_date: todayIso(),
+        p_harvested_primary_qty: options.openingQty ?? 4,
+        p_harvested_total_weight: options.openingWeight ?? 8,
+        p_output_item_id: harvestOutputItemId,
+        p_output_quantity: options.openingWeight ?? 8,
+        p_destination_warehouse_id: transferWarehouseId,
+        p_destination_bin_id: transferBinId,
+        p_notes: `${label} full harvest setup`,
+        p_expected_source_fingerprint: preview.source_fingerprint,
+        p_request_key: `${PREFIX}-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-full-harvest`,
+      })))
+      return { ...batch, harvest }
+    }
+
+    const completionBatch = await createFullyHarvestedBatch('Completion Batch', { openingQty: 4, openingWeight: 8, cost: 44 })
+    const afterFullHarvest = await querySingle(ownerClient, 'growth_batch_current_state', 'status,current_primary_qty,latest_total_weight,remaining_cost,fully_harvested_awaiting_completion', [['eq', 'id', completionBatch.batch_id]])
+    assert.equal(afterFullHarvest.status, 'active')
+    assert.equal(Number(afterFullHarvest.current_primary_qty), 0)
+    assert.equal(Number(afterFullHarvest.latest_total_weight), 0)
+    assert.equal(Number(afterFullHarvest.remaining_cost), 0)
+    assert.equal(afterFullHarvest.fully_harvested_awaiting_completion, true)
+
+    await expectPostgrestError(
+      viewerClient.rpc('preview_growth_batch_completion', {
+        p_growth_batch_id: completionBatch.batch_id,
+        p_effective_date: todayIso(),
+      }),
+      'operator_role_required',
+    )
+    const operatorCompletionPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_completion', {
+      p_growth_batch_id: completionBatch.batch_id,
+      p_effective_date: todayIso(),
+    })))
+    assert.equal(operatorCompletionPreview.ready, false)
+    assert.equal(operatorCompletionPreview.blockers.some((reason) => reason.code === 'growth_batch_completion_manager_required'), true)
+
+    const previewBefore = await completionMutationSnapshot(completionBatch.batch_id)
+    const completionPreview = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('preview_growth_batch_completion', {
+      p_growth_batch_id: completionBatch.batch_id,
+      p_effective_date: todayIso(),
+    })))
+    assert.equal(completionPreview.ready, true)
+    assert.deepEqual(completionPreview.blockers, [])
+    assert.equal(completionPreview.status_before, 'active')
+    assert.equal(completionPreview.status_after, 'completed')
+    assert.equal(Number(completionPreview.current_primary_qty), 0)
+    assert.equal(Number(completionPreview.current_total_weight), 0)
+    assert.equal(Number(completionPreview.remaining_cost), 0)
+    assert.equal(completionPreview.stock_effect, 'none')
+    assert.equal(completionPreview.finance_effect, 'none')
+    assert.ok(completionPreview.source_fingerprint)
+    assert.deepEqual(await completionMutationSnapshot(completionBatch.batch_id), previewBefore, 'Completion preview must not mutate database state')
+
+    await expectPostgrestError(
+      operatorClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: completionBatch.batch_id,
+        p_request_key: `${PREFIX}-completion-operator-post`,
+        p_preview_fingerprint: completionPreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: 'Operator cannot complete',
+        p_notes: null,
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: completionBatch.batch_id,
+        p_request_key: null,
+        p_preview_fingerprint: completionPreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: 'Missing request key',
+        p_notes: null,
+      }),
+      'request_key_required',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: completionBatch.batch_id,
+        p_request_key: `${PREFIX}-completion-no-reason`,
+        p_preview_fingerprint: completionPreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: '',
+        p_notes: null,
+      }),
+      'growth_batch_completion_reason_required',
+    )
+
+    const staleCompletionBatch = await createFullyHarvestedBatch('Completion Stale Batch', { openingQty: 2, openingWeight: 4, cost: 20 })
+    const stalePreview = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('preview_growth_batch_completion', {
+      p_growth_batch_id: staleCompletionBatch.batch_id,
+      p_effective_date: todayIso(),
+    })))
+    expectNoSupabaseError(await operatorClient.rpc('record_growth_batch_direct_cost', {
+      p_company_id: companyId,
+      p_growth_batch_id: staleCompletionBatch.batch_id,
+      p_category: 'labour',
+      p_description: 'Stale completion cost change',
+      p_amount: 1,
+      p_event_date: todayIso(),
+      p_request_key: `${PREFIX}-completion-stale-cost-change`,
+    }))
+    await expectPostgrestError(
+      managerClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: staleCompletionBatch.batch_id,
+        p_request_key: `${PREFIX}-completion-stale-post`,
+        p_preview_fingerprint: stalePreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: 'Stale completion preview',
+        p_notes: null,
+      }),
+      'growth_batch_completion_stale_source',
+    )
+
+    let completionGuardError = null
+    try {
+      await runLocalSql(`
+        with guard_context as (
+          select set_config('stockwise.growth_batch_rpc', 'on', true) as enabled
+        )
+        update public.growth_batches
+           set status = 'completed'
+          from guard_context
+         where id = '${completionBatch.batch_id}'::uuid
+           and company_id = '${companyId}'::uuid
+           and guard_context.enabled = 'on'
+        returning public.growth_batches.id;
+      `)
+    } catch (error) {
+      completionGuardError = error
+    }
+    assert.match(
+      completionGuardError?.message || '',
+      /growth_batch_immutable/,
+      'general Growth Batch RPC context alone must not authorize completion status changes',
+    )
+
+    const completionBefore = await completionMutationSnapshot(completionBatch.batch_id)
+    const completed = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('complete_growth_batch', {
+      p_growth_batch_id: completionBatch.batch_id,
+      p_request_key: `${PREFIX}-completion-post`,
+      p_preview_fingerprint: completionPreview.source_fingerprint,
+      p_effective_date: todayIso(),
+      p_completion_reason: 'Controlled lifecycle completion',
+      p_notes: 'Completion regression',
+    }), 'Expected completion posting to succeed'))
+    assert.equal(completed.event_type, 'completion')
+    assert.equal(completed.event_sequence, Number(completionBefore.batch.latest_event_sequence) + 1)
+    assert.equal(completed.status_before, 'active')
+    assert.equal(completed.status_after, 'completed')
+    assert.ok(completed.completion_detail_id)
+    assert.equal(completed.request_status, 'succeeded')
+
+    const afterCompletion = await completionMutationSnapshot(completionBatch.batch_id)
+    assert.equal(afterCompletion.eventCount, completionBefore.eventCount + 1)
+    assert.equal(afterCompletion.completionCount, completionBefore.completionCount + 1)
+    assert.equal(afterCompletion.reversalCount, completionBefore.reversalCount)
+    assert.equal(afterCompletion.completionRequestCount, completionBefore.completionRequestCount + 1)
+    assert.equal(afterCompletion.movementCount, completionBefore.movementCount, 'Completion must not create stock movements')
+    assert.equal(afterCompletion.stockLevelCount, completionBefore.stockLevelCount, 'Completion must not create stock levels')
+    assert.deepEqual(afterCompletion.financeCounts, completionBefore.financeCounts)
+    assert.deepEqual(afterCompletion.outputPrice, completionBefore.outputPrice)
+    assert.equal(afterCompletion.batch.status, 'completed')
+    assert.equal(Number(afterCompletion.batch.current_primary_qty), Number(completionBefore.batch.current_primary_qty))
+    assert.equal(Number(afterCompletion.batch.current_total_weight), Number(completionBefore.batch.current_total_weight))
+    assert.equal(Number(afterCompletion.batch.accumulated_material_cost), Number(completionBefore.batch.accumulated_material_cost))
+    assert.equal(Number(afterCompletion.batch.accumulated_direct_cost), Number(completionBefore.batch.accumulated_direct_cost))
+    assert.equal(Number(afterCompletion.batch.accumulated_total_cost), Number(completionBefore.batch.accumulated_total_cost))
+    assert.equal(Number(afterCompletion.batch.harvested_cost), Number(completionBefore.batch.harvested_cost))
+    assert.equal(Number(afterCompletion.batch.remaining_cost), Number(completionBefore.batch.remaining_cost))
+    assert.ok(afterCompletion.batch.completed_by)
+    assert.ok(afterCompletion.batch.completed_at)
+
+    const completionDetail = await querySingle(ownerClient, 'growth_batch_completions', '*', [['eq', 'event_id', completed.event_id]])
+    assert.equal(completionDetail.id, completed.completion_detail_id)
+    assert.equal(completionDetail.status_before, 'active')
+    assert.equal(completionDetail.status_after, 'completed')
+    assert.equal(Number(completionDetail.current_primary_qty), 0)
+    assert.equal(Number(completionDetail.current_total_weight), 0)
+    assert.equal(Number(completionDetail.remaining_cost), 0)
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_completions').update({ notes: 'mutate' }).eq('id', completed.completion_detail_id),
+      'direct growth_batch_completions update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_completions').delete().eq('id', completed.completion_detail_id),
+      'direct growth_batch_completions delete',
+    )
+
+    const completionReplay = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('complete_growth_batch', {
+      p_growth_batch_id: completionBatch.batch_id,
+      p_request_key: `${PREFIX}-completion-post`,
+      p_preview_fingerprint: completionPreview.source_fingerprint,
+      p_effective_date: todayIso(),
+      p_completion_reason: 'Controlled lifecycle completion',
+      p_notes: 'Completion regression',
+    }), 'Expected completion replay to return original result'))
+    assert.equal(completionReplay.event_id, completed.event_id)
+    await expectPostgrestError(
+      managerClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: completionBatch.batch_id,
+        p_request_key: `${PREFIX}-completion-post`,
+        p_preview_fingerprint: completionPreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: 'Changed completion reason',
+        p_notes: 'Completion regression',
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_measurement', {
+        p_company_id: companyId,
+        p_growth_batch_id: completionBatch.batch_id,
+        p_measurement_type: 'total_weight',
+        p_value: 1,
+        p_uom_id: kgUomId,
+        p_observed_at: new Date().toISOString(),
+        p_sample_size: null,
+        p_minimum: null,
+        p_maximum: null,
+        p_average: null,
+        p_description: null,
+        p_notes: 'Completed batch measurement blocked',
+        p_request_key: `${PREFIX}-completed-measurement-blocked`,
+        p_sample_size_present: false,
+        p_minimum_present: false,
+        p_maximum_present: false,
+        p_average_present: false,
+      }),
+      'growth_batch_not_active',
+    )
+    await expectPostgrestError(
+      operatorClient.rpc('record_growth_batch_direct_cost', {
+        p_company_id: companyId,
+        p_growth_batch_id: completionBatch.batch_id,
+        p_category: 'labour',
+        p_description: 'Completed batch cost blocked',
+        p_amount: 1,
+        p_event_date: todayIso(),
+        p_request_key: `${PREFIX}-completed-direct-cost-blocked`,
+      }),
+      'growth_batch_not_active',
+    )
+    const completedHarvestPreview = unwrapRpcSingle(expectNoSupabaseError(await operatorClient.rpc('preview_growth_batch_harvest', {
+      p_growth_batch_id: completionBatch.batch_id,
+      p_effective_date: todayIso(),
+      p_harvested_primary_qty: 1,
+      p_harvested_total_weight: 1,
+      p_output_item_id: harvestOutputItemId,
+      p_output_quantity: 1,
+      p_destination_warehouse_id: transferWarehouseId,
+      p_destination_bin_id: transferBinId,
+      p_notes: 'Completed harvest blocked',
+    })))
+    assert.equal(completedHarvestPreview.ready, false)
+    assert.equal(completedHarvestPreview.blocking_reasons.some((reason) => reason.code === 'growth_batch_not_active'), true)
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_harvest', {
+        p_original_event_id: completionBatch.harvest.event_id,
+        p_effective_date: todayIso(),
+        p_reason: 'Harvest reversal blocked while completed',
+        p_expected_source_fingerprint: null,
+        p_request_key: `${PREFIX}-completed-harvest-reverse-blocked`,
+      }),
+      'growth_batch_not_active',
+    )
+
+    const completionHistoryBeforeReverse = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_completion_history').select('*').eq('growth_batch_id', completionBatch.batch_id),
+      'Expected completion history to load',
+    )
+    assert.equal(completionHistoryBeforeReverse.length, 1)
+    assert.equal(completionHistoryBeforeReverse[0].reversal_eligible, true)
+    assert.equal(completionHistoryBeforeReverse[0].reversed, false)
+    const completionTimeline = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_event_timeline').select('event_type').eq('id', completed.event_id),
+      'Expected completion timeline row to load',
+    )
+    assert.equal(completionTimeline.length, 1)
+    assert.equal(completionTimeline[0].event_type, 'completion')
+
+    await expectPostgrestError(
+      operatorClient.rpc('reverse_growth_batch_completion', {
+        p_original_event_id: completed.event_id,
+        p_request_key: `${PREFIX}-completion-reverse-operator`,
+        p_reason: 'Operator cannot reverse completion',
+        p_effective_date: todayIso(),
+      }),
+      'manager_role_required',
+    )
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_completion', {
+        p_original_event_id: completed.event_id,
+        p_request_key: `${PREFIX}-completion-reverse-no-reason`,
+        p_reason: '',
+        p_effective_date: todayIso(),
+      }),
+      'reversal_reason_required',
+    )
+
+    const originalCompletionBeforeReverse = await querySingle(ownerClient, 'growth_batch_completions', '*', [['eq', 'event_id', completed.event_id]])
+    const reverseBefore = await completionMutationSnapshot(completionBatch.batch_id)
+    const reversedCompletion = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('reverse_growth_batch_completion', {
+      p_original_event_id: completed.event_id,
+      p_request_key: `${PREFIX}-completion-reverse`,
+      p_reason: 'Controlled completion reversal',
+      p_effective_date: todayIso(),
+    }), 'Expected completion reversal to succeed'))
+    assert.equal(reversedCompletion.event_type, 'completion_reversal')
+    assert.equal(reversedCompletion.original_event_id, completed.event_id)
+    assert.equal(reversedCompletion.status_before, 'completed')
+    assert.equal(reversedCompletion.status_after, 'active')
+    assert.ok(reversedCompletion.reversal_detail_id)
+    const afterCompletionReverse = await completionMutationSnapshot(completionBatch.batch_id)
+    assert.equal(afterCompletionReverse.eventCount, reverseBefore.eventCount + 1)
+    assert.equal(afterCompletionReverse.completionCount, reverseBefore.completionCount)
+    assert.equal(afterCompletionReverse.reversalCount, reverseBefore.reversalCount + 1)
+    assert.equal(afterCompletionReverse.completionRequestCount, reverseBefore.completionRequestCount + 1)
+    assert.equal(afterCompletionReverse.movementCount, reverseBefore.movementCount, 'Completion reversal must not create stock movements')
+    assert.equal(afterCompletionReverse.stockLevelCount, reverseBefore.stockLevelCount, 'Completion reversal must not create stock levels')
+    assert.deepEqual(afterCompletionReverse.financeCounts, reverseBefore.financeCounts)
+    assert.deepEqual(afterCompletionReverse.outputPrice, reverseBefore.outputPrice)
+    assert.equal(afterCompletionReverse.batch.status, 'active')
+    assert.equal(afterCompletionReverse.batch.completed_by, null)
+    assert.equal(afterCompletionReverse.batch.completed_at, null)
+    assert.equal(Number(afterCompletionReverse.batch.current_primary_qty), Number(reverseBefore.batch.current_primary_qty))
+    assert.equal(Number(afterCompletionReverse.batch.current_total_weight), Number(reverseBefore.batch.current_total_weight))
+    assert.equal(Number(afterCompletionReverse.batch.accumulated_total_cost), Number(reverseBefore.batch.accumulated_total_cost))
+    assert.equal(Number(afterCompletionReverse.batch.harvested_cost), Number(reverseBefore.batch.harvested_cost))
+    assert.equal(Number(afterCompletionReverse.batch.remaining_cost), Number(reverseBefore.batch.remaining_cost))
+    assert.deepEqual(await querySingle(ownerClient, 'growth_batch_completions', '*', [['eq', 'event_id', completed.event_id]]), originalCompletionBeforeReverse)
+
+    const completionReversalDetail = await querySingle(ownerClient, 'growth_batch_completion_reversal_lines', '*', [['eq', 'reversal_event_id', reversedCompletion.event_id]])
+    assert.equal(completionReversalDetail.id, reversedCompletion.reversal_detail_id)
+    assert.equal(completionReversalDetail.original_completion_id, completed.completion_detail_id)
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_completion_reversal_lines').update({ reversal_reason: 'mutate' }).eq('id', completionReversalDetail.id),
+      'direct growth_batch_completion_reversal_lines update',
+    )
+    await expectDirectMutationBlocked(
+      operatorClient.from('growth_batch_completion_reversal_lines').delete().eq('id', completionReversalDetail.id),
+      'direct growth_batch_completion_reversal_lines delete',
+    )
+    const completionReverseReplay = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('reverse_growth_batch_completion', {
+      p_original_event_id: completed.event_id,
+      p_request_key: `${PREFIX}-completion-reverse`,
+      p_reason: 'Controlled completion reversal',
+      p_effective_date: todayIso(),
+    }), 'Expected completion reversal replay to return original result'))
+    assert.equal(completionReverseReplay.event_id, reversedCompletion.event_id)
+    await expectPostgrestError(
+      managerClient.rpc('reverse_growth_batch_completion', {
+        p_original_event_id: completed.event_id,
+        p_request_key: `${PREFIX}-completion-reverse-second`,
+        p_reason: 'Second completion reversal',
+        p_effective_date: todayIso(),
+      }),
+      'growth_batch_completion_reversal_status_invalid|growth_batch_completion_already_reversed',
+    )
+
+    const concurrentCompletionBatch = await createFullyHarvestedBatch('Concurrent Completion Batch', { openingQty: 3, openingWeight: 6, cost: 12 })
+    const concurrentCompletionPreview = unwrapRpcSingle(expectNoSupabaseError(await managerClient.rpc('preview_growth_batch_completion', {
+      p_growth_batch_id: concurrentCompletionBatch.batch_id,
+      p_effective_date: todayIso(),
+    })))
+    const concurrentCompletions = await Promise.all([
+      managerClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: concurrentCompletionBatch.batch_id,
+        p_request_key: `${PREFIX}-concurrent-completion`,
+        p_preview_fingerprint: concurrentCompletionPreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: 'Concurrent completion',
+        p_notes: null,
+      }),
+      ownerClient.rpc('complete_growth_batch', {
+        p_growth_batch_id: concurrentCompletionBatch.batch_id,
+        p_request_key: `${PREFIX}-concurrent-completion`,
+        p_preview_fingerprint: concurrentCompletionPreview.source_fingerprint,
+        p_effective_date: todayIso(),
+        p_completion_reason: 'Concurrent completion',
+        p_notes: null,
+      }),
+    ])
+    assert.equal(concurrentCompletions.filter((result) => !result.error).length >= 1, true, 'At least one same-key completion request should succeed or replay')
+    const concurrentCompletionEvents = expectNoSupabaseError(
+      await ownerClient.from('growth_batch_events').select('event_sequence,event_type').eq('growth_batch_id', concurrentCompletionBatch.batch_id),
+      'Expected concurrent completion events to load',
+    )
+    assert.equal(concurrentCompletionEvents.filter((event) => event.event_type === 'completion').length, 1, 'Concurrent same-key completion must not duplicate events')
+    assert.equal(new Set(concurrentCompletionEvents.map((event) => event.event_sequence)).size, concurrentCompletionEvents.length, 'Concurrent completion events must not duplicate sequence numbers')
   })
 })

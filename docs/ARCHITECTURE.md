@@ -83,7 +83,7 @@ The maintained product surfaces are:
 
 ## Production Runs Architecture
 
-The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted and local Supabase now continue through Growth Batches G5.1 with 36 active migrations, latest `20260702205834_add_growth_batch_harvest_posting.sql`.
+The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted Supabase now continues through Growth Batches G5.1 with 36 active migrations, latest hosted migration `20260702205834_add_growth_batch_harvest_posting.sql`; local replay continues through G5.2 with 38 active migrations, latest local migration `20260704041943_add_growth_batch_completion_posting.sql`.
 
 Production Runs add a richer operational path beside quick assembly:
 
@@ -124,7 +124,7 @@ Production smoke validation used `Leny Doçuras` and Production Run `LEN-PR00000
 
 ## Growth Batches G1-G2 Architecture
 
-Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted and local Supabase are now aligned through the G5.1 migration `20260702205834_add_growth_batch_harvest_posting.sql` with 36 active migrations. The production route is `/growth-batches`.
+Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted Supabase is aligned through the G5.1 migration `20260702205834_add_growth_batch_harvest_posting.sql` with 36 active migrations, while local replay is at 38 migrations through G5.2. The production route is `/growth-batches`.
 
 The rollout applied the two Growth Batch migrations:
 
@@ -137,7 +137,7 @@ The G1-G2 boundary is intentionally narrow:
 
 - `/growth-batches` manages group-level biological or agricultural batches, not per-animal or per-plant stock.
 - supported lifecycle actions are draft creation/editing, draft cancellation, activation, measurements, and memo direct costs.
-- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; full-batch operational location transfer is live in G4.2; governed depleting harvest is live in G5.1; split/child batches, non-depleting recurring yield, completion, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
+- unsupported actions at the G1-G2 boundary remain disabled/future scope unless covered by later Growth Batch packages below: stock-input consumption is live in G3; mortality/shrinkage is live in G4.1; full-batch operational location transfer is live in G4.2; governed depleting harvest is live in G5.1; lifecycle completion is local-only in G5.2 and not hosted/live; split/child batches, non-depleting recurring yield, whole-batch reversal, fair-value adjustments, FIFO, COGS, and finance posting remain future scope.
 - direct costs are Growth Batch memo rollups only. They do not create bank, cash, vendor bill, settlement, journal, invoice, stock movement, or `items.unit_price` changes.
 - primary quantities are base-UOM-style entries only for this phase. Count quantities must be whole numbers, weight measurements use the batch `weight_uom_id`, area observations use the batch `area_uom_id`, and generic Growth Batch UOM conversion is deferred.
 - the batch start date is the operational lifecycle boundary. Activation rejects future start dates; measurement and memo direct-cost effective dates must be on or after the start date and not in the future. Server-created timestamps remain separate from operator-entered effective dates.
@@ -193,7 +193,7 @@ Pre-rollout validation passed: local replay of 30 migrations, Growth Batches reg
 
 The 2026-06-22 production smoke used tenant `Leny Doçuras` (`b49089cc-af95-44a6-bdff-45faec9d7bc5`) and new batch `LEN-GB000000002` (`QA G3 Stock Input Smoke - 2026-06-22`). It posted `1 EA` of `OV002 - Ovo` from `WH001 - Casa / CDC001 - Cozinha - Casa`, froze WAC `10.304233`, created input event `LEN-GB000000002-E000002`, issue movement `3fe172dd-adc5-44e5-8ec6-7587420078fa`, and request `e32dcf72-755d-4d1f-86c8-1e96e9fd761b`. Immediate reversal `LEN-GB000000002-E000003` created receipt movement `48ce328c-fdc9-4383-a0d5-11164fb0da7f` and request `efd1c065-3d29-4185-8b1d-a216e0e7d80e`. Source stock moved `48 -> 47 -> 48`, material cost moved `0 -> 10.304233 -> 0`, memo direct cost stayed `0`, finance rows stayed unchanged, negative stock and duplicate buckets stayed zero, and `items.unit_price` stayed unchanged.
 
-G3 itself did not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion. Mortality and shrinkage are live through G4.1, full-batch operational location transfer is live through G4.2, and governed depleting harvest is live through G5.1; split outputs, completion, valuation, accounting, profitability, and per-animal/per-plant scope remain separate.
+G3 itself did not add mortality, shrinkage, transfers, harvests/splits, completion, whole-batch reversal, FIFO biological layers, COGS, fair-value accounting, automatic finance posting, vendor-bill allocation, supplier liabilities, cash/bank settlement, profitability dashboards, per-animal/per-plant records, or generic UOM conversion. Mortality and shrinkage are live through G4.1, full-batch operational location transfer is live through G4.2, governed depleting harvest is live through G5.1, and lifecycle completion is local-only through G5.2; split outputs, hosted completion rollout, valuation, accounting, profitability, and per-animal/per-plant scope remain separate.
 
 ## Growth Batches G4.1 Live Mortality And Shrinkage Package
 
@@ -251,11 +251,26 @@ The package adds governed depleting harvest only:
 - MANAGER+ `reverse_growth_batch_harvest`
 - `/growth-batches` Harvests tab, preview-required harvest dialog, stale-source fingerprint protection, and event-specific reversal dialog
 
-G5.1 reduces active batch primary quantity for partial or full depleting harvests and receives exactly one stock-tracked output item into inventory. Cost allocation moves existing `remaining_cost` into `harvested_cost`: partial harvests allocate `remaining_cost_before * harvested_primary_quantity / current_primary_quantity_before`, while full harvests transfer the exact remaining cost so no rounding residue remains. `accumulated_material_cost`, `accumulated_direct_cost`, and `accumulated_total_cost` stay cumulative. Full harvest leaves the batch `active` with zero current quantity and shows “fully harvested awaiting completion”; completion remains G5.2.
+G5.1 reduces active batch primary quantity for partial or full depleting harvests and receives exactly one stock-tracked output item into inventory. Cost allocation moves existing `remaining_cost` into `harvested_cost`: partial harvests allocate `remaining_cost_before * harvested_primary_quantity / current_primary_quantity_before`, while full harvests transfer the exact remaining cost so no rounding residue remains. `accumulated_material_cost`, `accumulated_direct_cost`, and `accumulated_total_cost` stay cumulative. Full harvest leaves the batch `active` with zero current quantity and shows “fully harvested awaiting completion”; G5.2 implements local-only lifecycle completion after that state and is not hosted/live.
 
 G5.1 stock behavior is append-only: harvest posting creates one `stock_movements` receipt with `ref_type = 'GROWTH_BATCH_HARVEST'`, and reversal creates one compensating issue with `ref_type = 'GROWTH_BATCH_HARVEST_REVERSAL'`. `stock_levels` remains trigger-derived. The package does not create sales, invoices, COGS, fair-value entries, finance journals, AP/AR/cash/bank rows, automatic completion, split or child batches, multi-output/co-product allocation, non-depleting recurring yield, FIFO biological layers, profitability dashboards, individual animal/plant records, or `items.unit_price` changes.
 
 The 2026-07-03 production rollout used release commit `6f050745a9e1e5f9a56bfee7f30bca2b7ff55e10`, GitHub Actions Validation run `28657058435`, Vercel deployment `dpl_4sYA2iZ1r61iB1mdZTgZxY7DPPaH`, and database push window `2026-07-03T14:53:26+02:00` to `2026-07-03T14:53:42+02:00`. It applied `20260702205827_add_growth_batch_harvests.sql` and `20260702205834_add_growth_batch_harvest_posting.sql`. The controlled production smoke used tenant `Leny Docuras`, batch `LEN-GB000000003`, and QA item `QA-G51-POULTRY-KG` (`4cb6e677-c44f-4de9-952e-9a8506e5ea73`, base UOM KG, stock-tracked, finished good, not buyable/sellable, no selling price). Partial harvest event `LEN-GB000000003-E000010` (`e004b401-915e-4997-93a8-0423e850b5ba`) used detail `b8ff30af-7b59-47e1-b96f-7abb0215c47a`, request `b74066ca-3bde-48d5-8d01-d5d9b73b7c11`, and receipt movement `4e072c72-fbea-4a5d-ae56-4c25bc72029a`; reversal `LEN-GB000000003-E000011` (`7389ea83-e2d6-4d4a-ad10-ccd5e980c4a7`) used detail `7ea857ba-069e-40a8-8b56-9482f3f92f54`, request `e4727f36-8440-4d62-bea6-8116bfe33b2e`, and issue movement `516d37ab-dff7-4872-8036-a34d7138db26`. Full harvest event `LEN-GB000000003-E000012` (`efb9872c-7ddd-4b59-bb56-5aae8c47077f`) used detail `946f88c2-c147-4c96-9db8-7723fdfb5f0e`, request `91329bc4-47e3-4f88-9864-f8b0411f0652`, and receipt movement `5654dc72-c4b6-4fbc-bc6d-5646641ad877`; reversal `LEN-GB000000003-E000013` (`cc7e6223-4f07-4243-a6ad-4bf46d0b53da`) used detail `af0e9137-aa90-4df7-8108-0b0bf9db0b29`, request `7973209f-a77a-439f-ad11-870ea74f49ae`, and issue movement `c5908639-1c1e-46b4-a75c-9e4d0b4fdf68`. The zero-cost smoke restored `20 EA`, `40 KG`, active status, `Casa / QA-A2`, zero harvested/remaining cost, and a zero QA stock bucket; nonzero proportional allocation remains covered by local regression.
+
+## Growth Batches G5.2 Local Completion Package
+
+Growth Batches G5.2 is local-only and not hosted/live. Hosted production remains at 36 migrations through G5.1, while local replay has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`.
+
+The package adds governed lifecycle completion only:
+
+- new event types `completion` and `completion_reversal`
+- immutable `growth_batch_completions` and `growth_batch_completion_reversal_lines`
+- `growth_batch_completion_history` for completion snapshots, reversal state, and eligibility
+- OPERATOR+ `preview_growth_batch_completion`, with MANAGER+ completion and reversal authority enforced by the public RPCs
+- MANAGER+ `complete_growth_batch` and `reverse_growth_batch_completion`
+- `/growth-batches` Completion tab, preview-required completion dialog, stale-state fingerprint protection, and event-specific reversal dialog
+
+G5.2 changes only lifecycle status/audit/latest sequence through a narrow transaction-local completion guard: `status`, `latest_event_sequence`, `completed_by`, `completed_at`, `updated_by`, and `updated_at`. Completion requires an active batch with zero current quantity, zero current weight where weight exists, and zero remaining cost. Reversal restores only the corresponding active/completed lifecycle fields. The package creates no stock movements, does not update `stock_levels`, does not change quantity, weight, harvested cost, remaining cost, accumulated costs, or `items.unit_price`, and creates no sales, invoices, COGS, FIFO layers, fair-value entries, cash, bank, AP, AR, finance-document rows, split/child batches, whole-batch reversal, profitability dashboards, or individual animal/plant records.
 
 ## Notification Direction
 

@@ -1,6 +1,6 @@
 # StockWise Availability and Recovery Runbook
 
-Status: 2026-07-02.
+Status: 2026-07-04.
 
 This runbook defines the current recovery posture for early commercial rollout. It is not a guarantee of service level and does not prove that a restore drill has been completed. Use it to drive incident response, monthly recovery tests, and future hardening work.
 
@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted production and local replay are aligned through `20260702205834_add_growth_batch_harvest_posting.sql` with 36 active migrations after the controlled Growth Batches G5.1 rollout. G5.1 depleting harvest and event-specific harvest reversal are live and production-smoke validated.
+- Hosted production is aligned through `20260702205834_add_growth_batch_harvest_posting.sql` with 36 active migrations after the controlled Growth Batches G5.1 rollout. Local replay is aligned through `20260704041943_add_growth_batch_completion_posting.sql` with 38 active migrations for G5.2. G5.1 depleting harvest and event-specific harvest reversal are live and production-smoke validated; G5.2 completion and event-specific completion reversal are local-only and not hosted/live.
 
 ## Backup Assumptions
 
@@ -19,7 +19,7 @@ These assumptions must be verified in the Supabase dashboard before treating the
 
 - Supabase database backups and point-in-time recovery depend on the active Supabase project plan and configured retention.
 - The current documented production backup posture remains scheduled daily physical database backups available and PITR not enabled. No new restore drill was performed during the 2026-06-28 Growth Batches G4.1 rollout.
-- G5.1 adds live append-only harvest receipt/reversal issue behavior. Recovery remains event-specific: original harvests stay immutable, reversal creates a separate `harvest_reversal` event and one compensating stock issue, and production operators must not use direct table mutation to repair harvest state.
+- G5.1 adds live append-only harvest receipt/reversal issue behavior. Recovery remains event-specific: original harvests stay immutable, reversal creates a separate `harvest_reversal` event and one compensating stock issue, and production operators must not use direct table mutation to repair harvest state. G5.2 adds local-only lifecycle completion/reversal; if rolled out later, completion recovery must use the approved `completion_reversal` event path rather than direct status edits.
 - No formal restore drill has yet been completed.
 - Supabase Auth user recovery is tied to the same project recovery posture and Auth logs/configuration.
 - Supabase Storage recovery depends on project backup support and any separate object backup/export process the operator maintains.
