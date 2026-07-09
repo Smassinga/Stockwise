@@ -1177,6 +1177,12 @@ type GrowthBatchTransferCopy = {
 }
 
 type GrowthBatchCompletionCopy = {
+  page: {
+    eyebrow: string
+    description: string
+    appendOnlyLedger: string
+    noFifoOrCogs: string
+  }
   actions: {
     completeBatch: string
     reverseCompletion: string
@@ -1203,6 +1209,10 @@ type GrowthBatchCompletionCopy = {
     sellingPrice: string
     completedAt: string
     lifecycle: string
+  }
+  statuses: {
+    active: string
+    completed: string
   }
   fallback: {
     notRecorded: string
@@ -1904,6 +1914,12 @@ const growthBatchHarvestCopy: Record<Locale, GrowthBatchHarvestCopy> = {
 
 const growthBatchCompletionCopy: Record<Locale, GrowthBatchCompletionCopy> = {
   en: {
+    page: {
+      eyebrow: 'G1-G5.2 governed lifecycle',
+      description: 'Manage live biological or agricultural batches at group level. G5.2 adds governed lifecycle completion after full harvest, event-specific completion reversal, append-only history, and finance isolation.',
+      appendOnlyLedger: 'Append-only event ledger',
+      noFifoOrCogs: 'No FIFO or COGS claim',
+    },
     actions: {
       completeBatch: 'Complete batch',
       reverseCompletion: 'Reverse completion',
@@ -1930,6 +1946,10 @@ const growthBatchCompletionCopy: Record<Locale, GrowthBatchCompletionCopy> = {
       sellingPrice: 'Selling price',
       completedAt: 'Completed at',
       lifecycle: 'Lifecycle',
+    },
+    statuses: {
+      active: 'Active',
+      completed: 'Completed',
     },
     fallback: {
       notRecorded: 'Not recorded',
@@ -2023,14 +2043,20 @@ const growthBatchCompletionCopy: Record<Locale, GrowthBatchCompletionCopy> = {
     },
   },
   pt: {
+    page: {
+      eyebrow: 'Ciclo de vida governado G1-G5.2',
+      description: 'Gerir lotes biológicos ou agrícolas ativos ao nível do grupo. A G5.2 acrescenta a conclusão governada do ciclo de vida após a colheita total, a reversão de conclusão específica do evento, histórico acrescentável e isolamento financeiro.',
+      appendOnlyLedger: 'Livro de eventos acrescentável',
+      noFifoOrCogs: 'Sem alegação de FIFO ou CMV',
+    },
     actions: {
       completeBatch: 'Concluir lote',
-      reverseCompletion: 'Reverter conclusao',
+      reverseCompletion: 'Reverter conclusão',
       preview: 'Pre-visualizar',
       close: 'Fechar',
     },
     labels: {
-      tab: 'Conclusao',
+      tab: 'Conclusão',
       currentStatus: 'Estado actual',
       afterStatus: 'Estado depois',
       currentQuantity: 'Quantidade actual',
@@ -2043,102 +2069,106 @@ const growthBatchCompletionCopy: Record<Locale, GrowthBatchCompletionCopy> = {
       notes: 'Notas',
       originalEvent: 'Evento original',
       stockLedger: 'Livro de stock',
-      finance: 'Financas',
+      finance: 'Finanças',
       sale: 'Venda',
       cogs: 'CMV',
-      sellingPrice: 'Preco de venda',
-      completedAt: 'Concluido em',
+      sellingPrice: 'Preço de venda',
+      completedAt: 'Concluído em',
       lifecycle: 'Ciclo de vida',
     },
+    statuses: {
+      active: 'Ativo',
+      completed: 'Concluído',
+    },
     fallback: {
-      notRecorded: 'Nao registado',
-      notSelected: 'Nao seleccionado',
+      notRecorded: 'Não registado',
+      notSelected: 'Não seleccionado',
       teamMember: 'Membro da equipa',
       reversed: 'Revertida',
       locked: 'Bloqueada',
-      notAffected: 'Nao afectado',
+      notAffected: 'Não afectado',
       unchanged: 'Inalterado',
     },
     dialog: {
       title: 'Concluir Lote de Crescimento',
-      description: 'A conclusao fecha o ciclo de vida do lote depois de quantidade, peso e custo restante chegarem a zero. Nao cria stock, financas, venda, CMV nem alteracao de preco.',
-      lifecycleNote: 'A colheita total deixa o lote activo com quantidade zero ate esta conclusao controlada ser publicada.',
-      notesHint: 'Nota controlada opcional da conclusao.',
-      reversalTitle: 'Reverter conclusao',
-      reversalDescription: 'Esta operacao cria um evento separado de reversao da conclusao e restaura o lote para activo sem alterar quantidade, peso, custo, stock, financas ou precos.',
+      description: 'A conclusão fecha o ciclo de vida do lote depois de quantidade, peso e custo restante chegarem a zero. Não cria stock, finanças, venda, CMV nem alteração de preço.',
+      lifecycleNote: 'A colheita total deixa o lote ativo com quantidade zero até esta conclusão controlada ser publicada.',
+      notesHint: 'Nota controlada opcional da conclusão.',
+      reversalTitle: 'Reverter conclusão',
+      reversalDescription: 'Esta operação cria um evento separado de reversão da conclusão e restaura o lote para ativo sem alterar quantidade, peso, custo, stock, finanças ou preços.',
     },
     history: {
-      title: 'Historico de conclusao',
-      description: 'A conclusao e um encerramento apenas do ciclo de vida para lotes totalmente colhidos e sem custo restante. A reversao e especifica ao evento e acrescentada ao historico.',
-      emptyTitle: 'Ainda nao existe conclusao',
+      title: 'Histórico de conclusão',
+      description: 'A conclusão é um encerramento apenas do ciclo de vida para lotes totalmente colhidos e sem custo restante. A reversão é específica ao evento e acrescentada ao histórico.',
+      emptyTitle: 'Ainda não existe conclusão',
       emptyDescription: 'Conclua o lote apenas depois de estar totalmente colhido, sem peso restante e sem custo restante.',
-      completionBadge: 'Conclusao',
-      reversalBadge: 'Reversao de conclusao',
+      completionBadge: 'Conclusão',
+      reversalBadge: 'Reversão da conclusão',
       reversedBadge: 'Revertida',
       lockedBadge: 'Bloqueada',
       by: 'por',
       sequencePrefix: 'Seq.',
       reversedBy: 'Revertida por',
       onDate: 'em',
-      lockedReason: 'Apenas a conclusao nao revertida mais recente pode ser revertida, e o estado do lote deve continuar igual ao registo da conclusao.',
+      lockedReason: 'Apenas a conclusão não revertida mais recente pode ser revertida, e o estado do lote deve continuar igual ao registo da conclusão.',
     },
     preview: {
-      readyToast: 'A pre-visualizacao da conclusao esta pronta',
-      blockersToast: 'A pre-visualizacao encontrou bloqueios. Reveja quantidade, peso, custo restante, estado e data antes de concluir.',
-      stale: 'A pre-visualizacao esta desactualizada',
-      ready: 'Pre-visualizacao pronta',
-      blockers: 'Bloqueios da pre-visualizacao',
-      lifecycleOnly: 'Encerramento apenas do ciclo de vida: nao cria livro de stock, lancamento financeiro, venda, CMV nem altera preco de venda.',
+      readyToast: 'A pré-visualização da conclusão está pronta',
+      blockersToast: 'A pré-visualização encontrou bloqueios. Reveja quantidade, peso, custo restante, estado e data antes de concluir.',
+      stale: 'A pré-visualização está desatualizada',
+      ready: 'Pré-visualização pronta',
+      blockers: 'Bloqueios da pré-visualização',
+      lifecycleOnly: 'Encerramento apenas do ciclo de vida: não cria livro de stock, lançamento financeiro, venda, CMV nem altera o preço de venda.',
     },
     success: {
-      completed: 'Lote de Crescimento concluido',
-      reversed: 'Conclusao do Lote de Crescimento revertida',
+      completed: 'Lote de Crescimento concluído',
+      reversed: 'Conclusão do Lote de Crescimento revertida',
     },
     errors: {
       selectBatch: 'Seleccione um Lote de Crescimento.',
-      unavailableActive: 'A conclusao so esta disponivel para Lotes de Crescimento activos.',
-      notReady: 'A conclusao exige quantidade actual zero, peso actual zero e custo restante zero.',
+      unavailableActive: 'A conclusão só está disponível para Lotes de Crescimento ativos.',
+      notReady: 'A conclusão exige quantidade actual zero, peso actual zero e custo restante zero.',
       effectiveDateRequired: 'Seleccione uma data efectiva.',
-      dateBeforeStart: 'A data da conclusao deve ser igual ou posterior a data de inicio do lote.',
-      dateFuture: 'A data da conclusao nao pode estar no futuro.',
-      reasonRequired: 'Introduza o motivo da conclusao.',
-      previewRequired: 'Pre-visualize a conclusao actual antes de publicar.',
-      previewBlockers: 'Resolva os bloqueios da pre-visualizacao antes de concluir o lote.',
-      previewRefreshRequired: 'Actualize e pre-visualize novamente antes de concluir.',
-      managerRequired: 'Apenas as funcoes Manager, Admin ou Owner podem concluir ou reverter a conclusao.',
-      reversalReasonRequired: 'Introduza o motivo da reversao.',
-      historyRefreshRequired: 'Actualize o historico de conclusao antes de reverter.',
-      requestMismatch: 'Esta chave de repeticao pertence a dados de conclusao diferentes. Nao altere nada e tente novamente, ou submeta a conclusao actualizada.',
-      requestInProgress: 'Ja existe um pedido de conclusao correspondente em curso. Aguarde um momento e actualize.',
-      permissionDenied: 'A sua funcao nao pode executar esta accao de conclusao.',
-      actionFailed: 'A accao de conclusao do Lote de Crescimento falhou.',
+      dateBeforeStart: 'A data da conclusão deve ser igual ou posterior à data de início do lote.',
+      dateFuture: 'A data da conclusão não pode estar no futuro.',
+      reasonRequired: 'Introduza o motivo da conclusão.',
+      previewRequired: 'Pré-visualize a conclusão actual antes de publicar.',
+      previewBlockers: 'Resolva os bloqueios da pré-visualização antes de concluir o lote.',
+      previewRefreshRequired: 'Actualize e pré-visualize novamente antes de concluir.',
+      managerRequired: 'Apenas as funções Manager, Admin ou Owner podem concluir ou reverter a conclusão.',
+      reversalReasonRequired: 'Introduza o motivo da reversão.',
+      historyRefreshRequired: 'Actualize o histórico de conclusão antes de reverter.',
+      requestMismatch: 'Esta chave de repetição pertence a dados de conclusão diferentes. Não altere nada e tente novamente, ou submeta a conclusão atualizada.',
+      requestInProgress: 'Já existe um pedido de conclusão correspondente em curso. Aguarde um momento e actualize.',
+      permissionDenied: 'A sua função não pode executar esta ação de conclusão.',
+      actionFailed: 'A ação de conclusão do Lote de Crescimento falhou.',
     },
     blockerLabels: {
-      growth_batch_completion_manager_required: 'Apenas as funcoes Manager, Admin ou Owner podem concluir ou reverter a conclusao.',
-      growth_batch_completion_status_invalid: 'A conclusao exige lote activo; a reversao exige lote concluido.',
-      growth_batch_completion_quantity_remaining: 'A conclusao exige quantidade actual zero.',
-      growth_batch_completion_weight_remaining: 'A conclusao exige peso actual zero.',
-      growth_batch_completion_cost_remaining: 'A conclusao exige custo restante zero.',
-      growth_batch_completion_date_before_start: 'A data da conclusao deve ser igual ou posterior a data de inicio do lote.',
-      growth_batch_completion_date_in_future: 'A data da conclusao nao pode estar no futuro.',
-      growth_batch_completion_chronology_invalid: 'A data da conclusao nao pode ser anterior ao evento mais recente que afecta o estado.',
-      growth_batch_completion_source_fingerprint_required: 'Actualize e pre-visualize novamente antes de concluir.',
-      growth_batch_completion_stale_source: 'O estado, quantidade, peso, custo ou sequencia do lote mudou depois da pre-visualizacao. Actualize e pre-visualize novamente.',
-      growth_batch_completion_reason_required: 'Introduza o motivo da conclusao.',
-      growth_batch_completion_state_changed: 'O estado do lote mudou enquanto a conclusao estava a ser publicada. Actualize e tente novamente.',
-      growth_batch_completion_reversal_status_invalid: 'A reversao da conclusao exige que o lote continue concluido.',
-      growth_batch_completion_already_reversed: 'Esta conclusao ja foi revertida.',
-      growth_batch_completion_reversal_dependency_exists: 'Um evento posterior depende desta conclusao. Reverta ou resolva primeiro os eventos dependentes posteriores.',
-      growth_batch_completion_current_state_mismatch: 'O lote ja nao corresponde ao registo desta conclusao. Actualize o historico antes de reverter.',
-      growth_batch_completion_original_event_invalid: 'Actualize o historico de conclusao antes de reverter.',
-      growth_batch_completion_not_found: 'Actualize o historico de conclusao antes de reverter.',
-      growth_batch_completion_reversal_date_before_original: 'A data de reversao deve ser igual ou posterior a data da conclusao original.',
-      request_key_required: 'Actualize e tente novamente com uma chave de repeticao valida.',
-      idempotency_key_payload_mismatch: 'Esta chave de repeticao pertence a dados de conclusao diferentes. Nao altere nada e tente novamente, ou submeta a conclusao actualizada.',
-      request_in_progress: 'Ja existe um pedido de conclusao correspondente em curso. Aguarde um momento e actualize.',
-      reversal_reason_required: 'Introduza o motivo da reversao.',
-      manager_role_required: 'Apenas as funcoes Manager, Admin ou Owner podem concluir ou reverter a conclusao.',
-      growth_batch_not_active: 'A conclusao so esta disponivel para Lotes de Crescimento activos.',
+      growth_batch_completion_manager_required: 'Apenas as funções Manager, Admin ou Owner podem concluir ou reverter a conclusão.',
+      growth_batch_completion_status_invalid: 'A conclusão exige lote ativo; a reversão exige lote concluído.',
+      growth_batch_completion_quantity_remaining: 'A conclusão exige quantidade actual zero.',
+      growth_batch_completion_weight_remaining: 'A conclusão exige peso actual zero.',
+      growth_batch_completion_cost_remaining: 'A conclusão exige custo restante zero.',
+      growth_batch_completion_date_before_start: 'A data da conclusão deve ser igual ou posterior à data de início do lote.',
+      growth_batch_completion_date_in_future: 'A data da conclusão não pode estar no futuro.',
+      growth_batch_completion_chronology_invalid: 'A data da conclusão não pode ser anterior ao evento mais recente que afeta o estado.',
+      growth_batch_completion_source_fingerprint_required: 'Actualize e pré-visualize novamente antes de concluir.',
+      growth_batch_completion_stale_source: 'O estado, quantidade, peso, custo ou sequência do lote mudou depois da pré-visualização. Actualize e pré-visualize novamente.',
+      growth_batch_completion_reason_required: 'Introduza o motivo da conclusão.',
+      growth_batch_completion_state_changed: 'O estado do lote mudou enquanto a conclusão estava a ser publicada. Actualize e tente novamente.',
+      growth_batch_completion_reversal_status_invalid: 'A reversão da conclusão exige que o lote continue concluído.',
+      growth_batch_completion_already_reversed: 'Esta conclusão já foi revertida.',
+      growth_batch_completion_reversal_dependency_exists: 'Um evento posterior depende desta conclusão. Reverta ou resolva primeiro os eventos dependentes posteriores.',
+      growth_batch_completion_current_state_mismatch: 'O lote já não corresponde ao registo desta conclusão. Actualize o histórico antes de reverter.',
+      growth_batch_completion_original_event_invalid: 'Actualize o histórico de conclusão antes de reverter.',
+      growth_batch_completion_not_found: 'Actualize o histórico de conclusão antes de reverter.',
+      growth_batch_completion_reversal_date_before_original: 'A data de reversão deve ser igual ou posterior à data da conclusão original.',
+      request_key_required: 'Actualize e tente novamente com uma chave de repetição válida.',
+      idempotency_key_payload_mismatch: 'Esta chave de repetição pertence a dados de conclusão diferentes. Não altere nada e tente novamente, ou submeta a conclusão atualizada.',
+      request_in_progress: 'Já existe um pedido de conclusão correspondente em curso. Aguarde um momento e actualize.',
+      reversal_reason_required: 'Introduza o motivo da reversão.',
+      manager_role_required: 'Apenas as funções Manager, Admin ou Owner podem concluir ou reverter a conclusão.',
+      growth_batch_not_active: 'A conclusão só está disponível para Lotes de Crescimento ativos.',
     },
   },
 }
@@ -2575,6 +2605,11 @@ export default function GrowthBatches() {
   const transferCopy = growthBatchTransferCopy[lang]
   const harvestCopy = growthBatchHarvestCopy[lang]
   const completionCopy = growthBatchCompletionCopy[lang]
+  const completionStatusLabel = (status: string) => (
+    status === 'active' || status === 'completed'
+      ? completionCopy.statuses[status]
+      : labelize(status)
+  )
 
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -4551,13 +4586,13 @@ export default function GrowthBatches() {
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
       <PremiumRegisterHeader
-        eyebrow="G1-G5.1 governed lifecycle"
+        eyebrow={completionCopy.page.eyebrow}
         title="Growth Batches"
-        description="Manage live biological or agricultural batches at group level. G5.2 adds governed lifecycle completion after full harvest, event-specific completion reversal, append-only history, and finance isolation."
+        description={completionCopy.page.description}
         badges={
           <>
-            <PremiumStatusBadge tone="info">Append-only event ledger</PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral">No FIFO or COGS claim</PremiumStatusBadge>
+            <PremiumStatusBadge tone="info">{completionCopy.page.appendOnlyLedger}</PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral">{completionCopy.page.noFifoOrCogs}</PremiumStatusBadge>
           </>
         }
         actions={
@@ -5041,7 +5076,7 @@ export default function GrowthBatches() {
                       ) : null}
                     >
                       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <SummaryItem label={completionCopy.labels.currentStatus} value={labelize(detailBatch.status)} />
+                        <SummaryItem label={completionCopy.labels.currentStatus} value={completionStatusLabel(detailBatch.status)} />
                         <SummaryItem label={completionCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
                         <SummaryItem label={completionCopy.labels.currentWeight} value={detailBatch.latest_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
                         <SummaryItem label={completionCopy.labels.remainingCost} value={money(detailBatch.remaining_cost, selectedCurrency)} />
@@ -5087,7 +5122,7 @@ export default function GrowthBatches() {
                                     </div>
                                   </div>
                                   <div className="min-w-0 text-left text-sm font-semibold sm:text-right">
-                                    <div>{labelize(completion.status_before)} {' -> '} {labelize(completion.status_after)}</div>
+                                    <div>{completionStatusLabel(completion.status_before)} {' -> '} {completionStatusLabel(completion.status_after)}</div>
                                     <div className="text-xs font-normal text-muted-foreground">{completion.completed_at ? compactDateTime(completion.completed_at) : completionCopy.fallback.notRecorded}</div>
                                   </div>
                                 </div>
@@ -6063,8 +6098,8 @@ export default function GrowthBatches() {
             <div className="grid gap-4">
               <div className="rounded-xl border border-card-border bg-muted/20 p-4 text-sm">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <SummaryItem label={completionCopy.labels.currentStatus} value={labelize(detailBatch?.status || 'active')} />
-                  <SummaryItem label={completionCopy.labels.afterStatus} value={labelize('completed')} />
+                  <SummaryItem label={completionCopy.labels.currentStatus} value={completionStatusLabel(detailBatch?.status || 'active')} />
+                  <SummaryItem label={completionCopy.labels.afterStatus} value={completionStatusLabel('completed')} />
                   <SummaryItem label={completionCopy.labels.currentQuantity} value={qtyWithUom(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty, detailBatch?.primary_uom_code)} />
                   <SummaryItem label={completionCopy.labels.currentWeight} value={detailBatch?.latest_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
                   <SummaryItem label={completionCopy.labels.remainingCost} value={money(detailBatch?.remaining_cost, selectedCurrency)} />
@@ -6123,8 +6158,8 @@ export default function GrowthBatches() {
                     </ul>
                   ) : null}
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <SummaryItem label={completionCopy.labels.currentStatus} value={labelize(completionPreview.status_before)} />
-                    <SummaryItem label={completionCopy.labels.afterStatus} value={labelize(completionPreview.status_after)} />
+                    <SummaryItem label={completionCopy.labels.currentStatus} value={completionStatusLabel(completionPreview.status_before)} />
+                    <SummaryItem label={completionCopy.labels.afterStatus} value={completionStatusLabel(completionPreview.status_after)} />
                     <SummaryItem label={completionCopy.labels.currentQuantity} value={qtyWithUom(completionPreview.current_primary_qty, completionPreview.primary_uom_code || detailBatch?.primary_uom_code)} />
                     <SummaryItem label={completionCopy.labels.currentWeight} value={completionPreview.current_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(completionPreview.current_total_weight, completionPreview.weight_uom_code || detailBatch?.weight_uom_code)} />
                     <SummaryItem label={completionCopy.labels.accumulatedCost} value={money(completionPreview.accumulated_total_cost, selectedCurrency)} />
