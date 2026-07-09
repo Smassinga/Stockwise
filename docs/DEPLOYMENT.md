@@ -68,14 +68,15 @@ For production-impacting releases, also review:
 
 ## Current Production Release Notes
 
-2026-07-04 Growth Batches G5.2 local package checkpoint:
+2026-07-04/2026-07-09 Growth Batches G5.2 production rollout:
 
-- hosted production remains at 36 active migrations through `20260702205834_add_growth_batch_harvest_posting.sql`; G5.2 is not hosted/live
-- local replay has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`
+- hosted production and local replay have 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`
+- `20260704041936_add_growth_batch_completion.sql` and `20260704041943_add_growth_batch_completion_posting.sql` applied together from `2026-07-04T15:11:31.7589419+02:00` to `2026-07-04T15:11:48.7774298+02:00` with exit zero; the second dry run reported the remote database up to date
+- feature release `6fa6bdb1303c9457f0b26fa6934a3d096cdad38b` passed Validation run `28706577810`; the G5.2 Portuguese lifecycle-copy correction `bc22eb3facd166dbcd59fb7d5bedb21bb51d20b9` passed Validation run `29051595028` and deployed as `dpl_BRA6QUesB64T8LwF3rUAF7dYFKfv`
 - the local package adds governed lifecycle completion and event-specific completion reversal only, with `growth_batch_completions`, `growth_batch_completion_reversal_lines`, `growth_batch_completion_history`, `preview_growth_batch_completion`, `complete_growth_batch`, and `reverse_growth_batch_completion`
 - completion requires an active Growth Batch with zero current primary quantity, zero current total weight where weight exists, and zero remaining cost; full harvest remains the G5.1 operation that produces the awaiting-completion state
 - G5.2 changes only lifecycle status, completion actor/timestamp, audit fields, and latest event sequence. It creates no stock movement, stock-level update, quantity/weight/cost mutation, sale, invoice, COGS, FIFO layer, fair-value entry, finance row, automatic stock output, split/child batch, whole-batch reversal, profitability dashboard, individual animal/plant record, or `items.unit_price` change
-- production rollout, production smoke, replay, mismatch, concurrency, insufficient-state, and authority-negative tests remain outside production until a separately authorised G5.2 hosted rollout
+- controlled production smoke completed full harvest, completion, completion reversal, and full-harvest reversal through the maintained UI; replay, mismatch, concurrency, insufficient-state, and authority-negative tests remain local-only
 
 2026-07-03 Growth Batches G5.1 production rollout:
 
