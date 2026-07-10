@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
@@ -7,6 +7,12 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 import { financeCan } from '../lib/permissions'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../lib/postingRequestKeys'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -48,6 +54,13 @@ const monthStartISO = () => {
   return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10)
 }
 
+const normalizeMoneyValue = (value: number) => {
+  if (!Number.isFinite(value)) return Number.NaN
+  const sign = value < 0 ? -1 : 1
+  const normalized = sign * (Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100)
+  return Object.is(normalized, -0) ? 0 : normalized
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const cashTone = (type: CashTx['type']) => {
@@ -78,6 +91,7 @@ export default function CashPage() {
   const [openAdd, setOpenAdd] = useState(false)
   const [savingBeg, setSavingBeg] = useState(false)
   const [savingTx, setSavingTx] = useState(false)
+  const cashPostingRequestRef = useRef<PostingRequestKeyRef>(null)
   const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
 
   const [addForm, setAddForm] = useState<{
@@ -246,7 +260,7 @@ export default function CashPage() {
 
   async function addTransaction() {
     if (!companyId) return
-    const amount = Number(addForm.amount)
+    const amount = normalizeMoneyValue(Number(addForm.amount))
     if (!Number.isFinite(amount) || amount === 0) {
       toast.error(tf('cash.toast.amountNonZero', 'Amount must be non-zero'))
       return
@@ -277,33 +291,85 @@ export default function CashPage() {
       toast.error(tf('cash.toast.adjustmentNoRef', 'Adjustments (ADJ) must not carry a reference ID.'))
       return
     }
-    if (!canManageSettlement && (needsRef || addForm.type !== 'adjustment')) {
+    if (!canManageSettlement) {
       toast.error(tf('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.'))
       return
     }
 
-    const payload = {
-      company_id: companyId,
-      happened_at: addForm.date,
-      type: addForm.type,
-      ref_type: addForm.refType === 'none' ? null : addForm.refType,
-      ref_id: needsRef ? addForm.refId : null,
-      memo: addForm.memo || null,
-      amount_base: amount,
+    const isSettlement = addForm.type === 'sale_receipt' || addForm.type === 'purchase_payment'
+    if (isSettlement && !needsRef) {
+      toast.error(tf('cash.toast.settlementAnchorRequired', 'Choose a settlement anchor before posting a receipt or payment.'))
+      return
     }
+
+    const normalizedAmount = needsRef ? Math.abs(amount) : amount
+    const requestFingerprint = stablePostingFingerprint({
+      amountBase: normalizedAmount,
+      companyId,
+      happenedAt: addForm.date,
+      memo: addForm.memo.trim() || null,
+      refId: needsRef ? addForm.refId : null,
+      refType: needsRef ? addForm.refType : 'ADJ',
+      transactionType: needsRef ? 'settlement.cash.post' : 'cash.adjustment.post',
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(cashPostingRequestRef, requestFingerprint)
 
     setSavingTx(true)
     try {
-      const { error } = await supabase.from('cash_transactions').insert(payload)
+      const posted = needsRef
+        ? await supabase.rpc('post_cash_settlement', {
+          p_company_id: companyId,
+          p_ref_type: addForm.refType,
+          p_ref_id: addForm.refId,
+          p_happened_at: addForm.date,
+          p_amount_base: normalizedAmount,
+          p_memo: addForm.memo.trim() || null,
+          p_request_key: requestKey,
+        })
+        : await supabase.rpc('post_cash_adjustment', {
+          p_company_id: companyId,
+          p_happened_at: addForm.date,
+          p_amount_base: normalizedAmount,
+          p_memo: addForm.memo.trim() || null,
+          p_request_key: requestKey,
+        })
+      const { data, error } = posted
       if (error) throw error
 
-      toast.success(tf('cash.toast.added', 'Transaction added'))
+      const result = Array.isArray(data) ? data[0] : data
+      toast.success(result?.replayed
+        ? tf('cash.toast.replayRestored', 'The earlier transaction was already posted. Its original result has been restored.')
+        : tf('cash.toast.added', 'Transaction added'))
       setOpenAdd(false)
       setAddForm({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
+      clearPostingRequestKey(cashPostingRequestRef)
       await loadData()
-    } catch (error) {
+    } catch (error: any) {
       console.error(error)
-      toast.error(tf('cash.toast.addFailed', 'Could not add transaction'))
+      const message = String(error?.message || '').toLowerCase()
+      if (message.includes('request_key_required')) {
+        toast.error(tf('cash.toast.requestKeyRequired', 'Refresh and try again with a valid posting key.'))
+      } else if (message.includes('idempotency_key_payload_mismatch')) {
+        toast.error(tf('cash.toast.payloadMismatch', 'This retry key belongs to different transaction inputs. Review the form and submit again.'))
+      } else if (message.includes('request_in_progress')) {
+        toast.error(tf('cash.toast.requestInProgress', 'This transaction is already being posted. Wait a moment and refresh.'))
+      } else if (message.includes('settlement_amount_exceeds_outstanding')) {
+        toast.error(tf('cash.toast.amountTooHigh', 'The settlement amount exceeds the current outstanding balance.'))
+      } else if (message.includes('settlement_already_resolved')) {
+        toast.error(tf('cash.toast.alreadyResolved', 'This settlement anchor is already fully resolved. Refresh before posting.'))
+      } else if (message.includes('finance_document_became_active_anchor')) {
+        toast.error(tf('cash.toast.financeAnchorChanged', 'A finance document is now the active settlement anchor. Refresh before posting.'))
+      } else if (message.includes('settlement_anchor_not_ready') || message.includes('settlement_anchor_not_found')) {
+        toast.error(tf('cash.toast.anchorStale', 'This settlement anchor is no longer ready. Refresh before posting.'))
+      } else if (message.includes('insufficient_company_role')) {
+        toast.error(tf('cash.toast.permissionDenied', 'You do not have permission to post cash transactions for this company.'))
+      } else if (message.includes('company_access_disabled')) {
+        toast.error(tf('cash.toast.companyAccessDisabled', 'Company access is disabled, so cash posting is unavailable.'))
+      } else if (message.includes('cross_company')) {
+        toast.error(tf('cash.toast.companyAccessDenied', 'Switch to the correct company before posting this transaction.'))
+      } else {
+        toast.error(error?.message || tf('cash.toast.addFailed', 'Could not add transaction'))
+      }
     } finally {
       setSavingTx(false)
     }
@@ -399,7 +465,7 @@ export default function CashPage() {
                               <SelectContent>
                                 <SelectItem value="sale_receipt" disabled={!canManageSettlement}>{tf('cash.saleReceipt', 'Sale receipt (in)')}</SelectItem>
                                 <SelectItem value="purchase_payment" disabled={!canManageSettlement}>{tf('cash.purchasePayment', 'Purchase payment (out)')}</SelectItem>
-                                <SelectItem value="adjustment">{tf('cash.adjustment', 'Adjustment')}</SelectItem>
+                                <SelectItem value="adjustment" disabled={!canManageSettlement}>{tf('cash.adjustment', 'Adjustment')}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -459,13 +525,13 @@ export default function CashPage() {
                       </Card>
 
                       {!canManageSettlement ? (
-                        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
-                          {tf('cash.financeAuthorityNotice', 'Only finance-authority users can post settlement-linked cash receipts and payments.')}
+                        <div className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                          {tf('cash.financeAuthorityNotice', 'Only finance-authority users can post cash transactions.')}
                         </div>
                       ) : null}
 
                       <div className="flex justify-end">
-                        <Button disabled={savingTx} onClick={addTransaction}>
+                        <Button disabled={!canManageSettlement || savingTx} onClick={addTransaction}>
                           {savingTx ? tf('actions.saving', 'Saving...') : tf('cash.add', 'Add')}
                         </Button>
                       </div>

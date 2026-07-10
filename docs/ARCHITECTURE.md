@@ -52,7 +52,7 @@ The maintained product surfaces are:
 
 - Supabase RPCs, policies, and views are the authority for stock posting, finance posting, reconciliation, entitlement state, and access restriction.
 - Frontend pages are responsible for workflow clarity, guided inputs, and operator/admin usability.
-- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/input/loss/transfer/harvest/reversal workflows.
+- `posting_requests` is the shared backend idempotency ledger. It governs assembly posting, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, governed cash/bank settlement and ledger posting, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/input/loss/transfer/harvest/completion/reversal workflows.
 - Tauri packages the current frontend. It does not introduce a separate desktop-only or Android-only business logic layer.
 - The maintained enforcement, rate-limiting, monitoring, and scaling baseline is documented in [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md); recovery and rollback procedures are documented in [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md).
 
@@ -62,7 +62,7 @@ The maintained product surfaces are:
 - `stock_movements` is the stock ledger
 - `stock_levels` is the derived availability and weighted-average rollup
 - `posting_requests` is the company-scoped idempotency ledger for governed posting workflows
-- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, `growth.batch.input.reverse`, `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, `growth.batch.shrinkage.reverse`, `growth.batch.transfer`, `growth.batch.transfer.reverse`, `growth.batch.harvest`, and `growth.batch.harvest.reverse`
+- governed operation types are domain-specific: `assembly.build`, `assembly.build_sources`, `operator.sale`, `purchase.receive`, `sales.ship`, `opening_stock.import`, `stock.receipt`, `stock.issue`, `stock.transfer`, `stock.adjustment`, `settlement.cash.post`, `settlement.bank.post`, `cash.adjustment.post`, `bank.ledger.post`, `production.run.post`, `production.run.reverse`, `growth.batch.create`, `growth.batch.activate`, `growth.batch.cancel`, `growth.batch.measurement`, `growth.batch.cost`, `growth.batch.input`, `growth.batch.input.reverse`, `growth.batch.mortality`, `growth.batch.shrinkage`, `growth.batch.mortality.reverse`, `growth.batch.shrinkage.reverse`, `growth.batch.transfer`, `growth.batch.transfer.reverse`, `growth.batch.harvest`, `growth.batch.harvest.reverse`, `growth.batch.complete`, and `growth.batch.complete.reverse`
 - `company_members` + `member_role` is the company membership and authority model
 - `profiles` + `user_active_company` is the active signed-in user context
 - `company_subscription_state` + `platform_admins` is the tenant entitlement and control-plane model
@@ -83,7 +83,7 @@ The maintained product surfaces are:
 
 ## Production Runs Architecture
 
-The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted and local Supabase now continue through Growth Batches G5.2 with 38 active migrations, latest migration `20260704041943_add_growth_batch_completion_posting.sql`.
+The first Production Runs package is live as of 2026-06-18. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted production continues through Growth Batches G5.2 with 38 active migrations, latest hosted migration `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has an unlaunched 39th migration for governed settlement posting.
 
 Production Runs add a richer operational path beside quick assembly:
 
@@ -124,7 +124,7 @@ Production smoke validation used `Leny Doçuras` and Production Run `LEN-PR00000
 
 ## Growth Batches G1-G2 Architecture
 
-Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; current hosted and local Supabase are aligned through the G5.2 migration `20260704041943_add_growth_batch_completion_posting.sql` with 38 active migrations. The production route is `/growth-batches`.
+Growth Batches G1-G2 is live in production as of 2026-06-20. Its rollout aligned hosted Supabase through `20260619175129_add_growth_batch_lifecycle_events.sql`; hosted production remains at the G5.2 migration `20260704041943_add_growth_batch_completion_posting.sql` with 38 active migrations, while local has the unlaunched settlement-posting migration 39. The production route is `/growth-batches`.
 
 The rollout applied the two Growth Batch migrations:
 
@@ -259,7 +259,7 @@ The 2026-07-03 production rollout used release commit `6f050745a9e1e5f9a56bfee7f
 
 ## Growth Batches G5.2 Live Completion Package
 
-Growth Batches G5.2 is live and production-smoke validated. Hosted and local Supabase have 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`.
+Growth Batches G5.2 is live and production-smoke validated. Hosted production has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout adds an unlaunched 39th settlement-posting migration.
 
 The package adds governed lifecycle completion only:
 
@@ -273,6 +273,14 @@ The package adds governed lifecycle completion only:
 G5.2 changes only lifecycle status/audit/latest sequence through a narrow transaction-local completion guard: `status`, `latest_event_sequence`, `completed_by`, `completed_at`, `updated_by`, and `updated_at`. Completion requires an active batch with zero current quantity, zero current weight where weight exists, and zero remaining cost. Reversal restores only the corresponding active/completed lifecycle fields. The package creates no stock movements, does not update `stock_levels`, does not change quantity, weight, harvested cost, remaining cost, accumulated costs, or `items.unit_price`, and creates no sales, invoices, COGS, FIFO layers, fair-value entries, cash, bank, AP, AR, finance-document rows, split/child batches, whole-batch reversal, profitability dashboards, or individual animal/plant records.
 
 The authorised rollout applied `20260704041936_add_growth_batch_completion.sql` and `20260704041943_add_growth_batch_completion_posting.sql` from `2026-07-04T15:11:31.7589419+02:00` to `2026-07-04T15:11:48.7774298+02:00` with exit zero. Feature commit `6fa6bdb1303c9457f0b26fa6934a3d096cdad38b` passed Validation run `28706577810`. The controlled 2026-07-09 maintained-UI smoke used Leny Doçuras batch `LEN-GB000000003`, QA output `QA-G51-POULTRY-KG`, and `Casa / QA-A2`: full harvest `LEN-GB000000003-E000014` (`182ede2f-c875-4e42-890c-edbcc54c3fee`, request `4566b056-7444-407a-9612-55ca17d58b00`, detail `cd6b89eb-aba9-448e-8121-84401554feb9`, receipt `60199b6b-c0b6-4a7b-86a1-d7b0765a53d3`) established active zero quantity/weight and awaiting completion; completion `E000015` (`5c8c0905-3940-4cce-93cc-63e65d2ea331`, request `26810b9f-f7b6-4195-9c0c-496f877e5c0c`, detail `c8b1cb3c-cf86-41a0-b295-bb9c0ff185f0`) and reversal `E000016` (`91babf8f-19e2-4332-982e-349edf34020e`, request `e920e389-9e68-4b6d-93c9-8b738c8047c3`, detail `95f42e77-7cae-4feb-8b2b-dee49b6b4d49`) changed only `active -> completed -> active`; harvest reversal `E000017` (`d5f6c677-5cc1-4d6a-9f72-d2162ebecdf5`, request `33b53dbe-a2bf-44d9-90e2-63511226b4db`, detail `17f46a2e-4067-4981-989c-629e1b245cc6`, issue `e68cff91-cd72-43e5-8df1-c3eabf08b31a`) restored `20 EA`, `40 KG`, zero harvested/remaining cost, and the QA output bucket to `0 KG`. The cycle created no completion stock movement, finance/sales row, or selling-price change; negative and duplicate stock checks remained zero. The final UI localization correction `bc22eb3facd166dbcd59fb7d5bedb21bb51d20b9` passed Validation run `29051595028` and deployed as `dpl_BRA6QUesB64T8LwF3rUAF7dYFKfv`.
+
+## Governed Settlement Posting (Local Prelaunch)
+
+Hosted production remains at the approved G5.2 checkpoint of 38 migrations through `20260704041943_add_growth_batch_completion_posting.sql`. The local-only forward migration `20260709222842_governed_settlement_posting.sql` is migration 39 and is not hosted, deployed, or production-validated.
+
+The local package keeps the existing forward finance-anchor model: approved operational `SO`/`PO` anchors are valid only until an issued `SI`/posted `VB` becomes the finance anchor. It adds request-key idempotency and post-lock outstanding recalculation for `post_cash_settlement` and `post_bank_settlement`, plus governed manual-ledger RPCs for Cash and Bank Detail. Settlement amounts and outstanding balances are normalized with PostgreSQL `numeric` to the existing two-decimal base-currency contract; normalized zero amounts reject, a normalized zero outstanding balance rejects every positive amount, and no additive epsilon is used. Same-key replay returns the original row, changed payloads reject, stale order anchors reject after transition, and over-settlement rejects before a ledger row is created.
+
+The maintained settlement, cash, and bank posting paths no longer insert `cash_transactions` or `bank_transactions` directly. `post_bank_ledger_import` accepts the complete normalized CSV batch in one RPC, caps it at 500 rows and 512 KiB, uses a canonical SHA-256 payload plus deterministic browser request key, preserves repeated identical-looking rows, ignores row order for identity, and commits all rows or none. An identical file safely replays across reloads; a changed payload or any row failure creates no partial bank or settlement effect. The RPCs use existing ADMIN+ settlement authority, company-access checks, restricted `SECURITY DEFINER` search paths, and `posting_requests`; they do not alter issued legal documents, stock movements, stock levels, item selling prices, FIFO, COGS, fair value, finance journals, payment automation, or entitlement/member-role design.
 
 ## Notification Direction
 

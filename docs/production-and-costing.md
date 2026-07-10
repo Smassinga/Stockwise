@@ -32,7 +32,7 @@ Production Runs, Growth Batches G3 stock-input posting, Growth Batches G4.1 mort
 - non-depleting biological yield, split or child batches, and multi-output harvest
 - whole-batch reversal
 - FIFO biological layers, COGS, and fair-value accounting
-- automatic finance posting, vendor-bill allocation, cash/bank settlement, and advanced cost allocation
+- automatic finance posting from production, vendor-bill allocation, and advanced cost allocation. Governed manual settlement/cash/bank posting is a separate local-only prelaunch package at migration 39; it does not make production costs post automatically.
 - labour, utilities, overhead, recurring costs, and allocation rules beyond the current Production Run memo-cost snapshots
 - production variance, margin, break-even, yield, waste, mortality, profitability, and batch comparison dashboards
 
@@ -198,7 +198,7 @@ Production Runs are no longer blocked by A2.4/A2.5. A2.4a.2 remains a separate c
 
 ## Production Runs Live Package
 
-The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Current hosted migration history and local replay now continue through Growth Batches G5.2 with 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`.
+The first complete Production Runs package is live and production-smoke validated as of 18 June 2026. Its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`, and the production frontend was commit `4f82c5a feat(production): add governed production runs`. Hosted migration history continues through Growth Batches G5.2 with 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has an unlaunched 39th settlement-posting migration.
 
 Live migrations:
 
@@ -416,7 +416,7 @@ The 2026-07-03 production rollout applied the two G5.1 migrations, verified the 
 
 ## Growth Batches G5.2 Live Completion Package
 
-Growth Batches G5.2 is live and production-smoke validated. Hosted production and local replay have 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`.
+Growth Batches G5.2 is live and production-smoke validated. Hosted production has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has the unlaunched 39th settlement-posting migration.
 
 G5.2 adds governed lifecycle completion after full harvest:
 

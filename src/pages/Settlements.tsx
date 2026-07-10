@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
@@ -27,6 +27,12 @@ import {
 } from '../lib/orderFinance'
 import { buildSettlementMemo } from '../lib/orderRefs'
 import { financeCan } from '../lib/permissions'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../lib/postingRequestKeys'
 import {
   salesInvoiceWorkflowLabelKey,
   vendorBillWorkflowLabelKey,
@@ -141,12 +147,19 @@ const n = (value: unknown, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const normalizeMoneyValue = (value: number) => {
+  if (!Number.isFinite(value)) return Number.NaN
+  const sign = value < 0 ? -1 : 1
+  const normalized = sign * (Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100)
+  return Object.is(normalized, -0) ? 0 : normalized
+}
+
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const emptyRows = { receive: [] as SettlementRow[], pay: [] as SettlementRow[] }
 const isCancelled = (status?: string | null) => ['cancelled', 'canceled'].includes(String(status || '').toLowerCase())
 
 const statusTone = (row: SettlementRow) => {
-  if (row.outstandingBase <= 0.005) return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+  if (normalizeMoneyValue(row.outstandingBase) <= 0) return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
   if (row.agingDays > 0) return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
   if (row.settledBase > 0) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
   return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
@@ -274,6 +287,7 @@ export default function SettlementsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const settlementPostingRequestRef = useRef<PostingRequestKeyRef>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [baseCode, setBaseCode] = useState('MZN')
   const [rows, setRows] = useState(emptyRows)
@@ -515,7 +529,7 @@ export default function SettlementsPage() {
               sourceLabel: rowSourceLabel('SO'),
             }
           })
-          .filter(row => row.outstandingBase > 0.005)
+          .filter(row => normalizeMoneyValue(row.outstandingBase) > 0)
           .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
           ...((siRes.data || []) as SalesInvoiceStateRow[])
           .filter(invoice => invoice.document_workflow_status === 'issued')
@@ -552,7 +566,7 @@ export default function SettlementsPage() {
               sourceLabel: rowSourceLabel('SI'),
             }
           })
-          .filter(row => row.outstandingBase > 0.005)
+          .filter(row => normalizeMoneyValue(row.outstandingBase) > 0)
           .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
         ]
 
@@ -591,7 +605,7 @@ export default function SettlementsPage() {
               sourceLabel: rowSourceLabel('PO'),
             }
           })
-          .filter(row => row.outstandingBase > 0.005)
+          .filter(row => normalizeMoneyValue(row.outstandingBase) > 0)
           .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
           ...((vbRes.data || []) as VendorBillStateRow[])
           .filter(bill => bill.document_workflow_status === 'posted')
@@ -628,7 +642,7 @@ export default function SettlementsPage() {
               sourceLabel: rowSourceLabel('VB'),
             }
           })
-          .filter(row => row.outstandingBase > 0.005)
+          .filter(row => normalizeMoneyValue(row.outstandingBase) > 0)
           .sort((a, b) => (b.agingDays - a.agingDays) || String(a.documentDate || '').localeCompare(String(b.documentDate || ''))),
         ]
 
@@ -883,45 +897,58 @@ export default function SettlementsPage() {
       return
     }
 
-    const amount = n(settleAmount, Number.NaN)
+    const amount = normalizeMoneyValue(n(settleAmount, Number.NaN))
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error(tt('settlements.amountInvalid', 'Enter a settlement amount greater than zero'))
       return
     }
-    if (amount > activeRow.outstandingBase + 0.005) {
+    if (amount > normalizeMoneyValue(activeRow.outstandingBase)) {
       toast.error(tt('settlements.amountTooHigh', 'Settlement amount cannot exceed the outstanding balance'))
       return
     }
 
-    const signedAmount = activeRow.kind === 'SO' || activeRow.kind === 'SI' ? amount : amount * -1
+    const requestFingerprint = stablePostingFingerprint({
+      anchorId: activeRow.id,
+      anchorType: activeRow.kind,
+      amountBase: amount,
+      bankId: settleMethod === 'bank' ? settleBankId : null,
+      happenedAt: settleDate,
+      memo: settleMemo.trim() || null,
+      method: settleMethod,
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(settlementPostingRequestRef, requestFingerprint)
     setSaving(true)
 
     try {
       if (settleMethod === 'cash') {
-        const { error } = await supabase.from('cash_transactions').insert({
-          company_id: companyId,
-          happened_at: settleDate,
-          type: activeRow.kind === 'SO' || activeRow.kind === 'SI' ? 'sale_receipt' : 'purchase_payment',
-          ref_type: activeRow.kind,
-          ref_id: activeRow.id,
-          memo: settleMemo || null,
-          amount_base: signedAmount,
+        const { data, error } = await supabase.rpc('post_cash_settlement', {
+          p_company_id: companyId,
+          p_ref_type: activeRow.kind,
+          p_ref_id: activeRow.id,
+          p_happened_at: settleDate,
+          p_amount_base: amount,
+          p_memo: settleMemo.trim() || null,
+          p_request_key: requestKey,
         })
         if (error) throw error
+        if ((Array.isArray(data) ? data[0] : data)?.replayed) {
+          toast.success(tt('settlements.replaySaved', 'The earlier settlement was already posted. Its original result has been restored.'))
+        }
       } else {
         if (!settleBankId) {
           toast.error(tt('settlements.bankRequired', 'Choose a bank account before posting a bank settlement'))
           return
         }
 
-        const { error } = await supabase.from('bank_transactions').insert({
-          bank_id: settleBankId,
-          happened_at: settleDate,
-          memo: settleMemo || null,
-          amount_base: signedAmount,
-          reconciled: false,
-          ref_type: activeRow.kind,
-          ref_id: activeRow.id,
+        const { data, error } = await supabase.rpc('post_bank_settlement', {
+          p_company_id: companyId,
+          p_bank_id: settleBankId,
+          p_ref_type: activeRow.kind,
+          p_ref_id: activeRow.id,
+          p_happened_at: settleDate,
+          p_amount_base: amount,
+          p_memo: settleMemo.trim() || null,
+          p_request_key: requestKey,
         })
 
         if (error) {
@@ -938,6 +965,9 @@ export default function SettlementsPage() {
 
         setBankTransactionRefSupport(true)
         setBankRefsSupported(true)
+        if ((Array.isArray(data) ? data[0] : data)?.replayed) {
+          toast.success(tt('settlements.replaySaved', 'The earlier settlement was already posted. Its original result has been restored.'))
+        }
       }
 
       toast.success(activeRow.kind === 'SO' || activeRow.kind === 'SI'
@@ -948,10 +978,34 @@ export default function SettlementsPage() {
       setSettleAmount('')
       setSettleMemo('')
       setSettleDate(todayISO())
+      clearPostingRequestKey(settlementPostingRequestRef)
       setRefreshKey(key => key + 1)
     } catch (error: any) {
       console.error(error)
-      toast.error(error?.message || tt('settlements.saveFailed', 'Failed to save settlement'))
+      const message = String(error?.message || '').toLowerCase()
+      if (message.includes('request_key_required')) {
+        toast.error(tt('settlements.requestKeyRequired', 'Refresh the settlement and try again with a valid posting key.'))
+      } else if (message.includes('idempotency_key_payload_mismatch')) {
+        toast.error(tt('settlements.payloadMismatch', 'This retry key belongs to different settlement inputs. Review the form and submit again.'))
+      } else if (message.includes('request_in_progress')) {
+        toast.error(tt('settlements.requestInProgress', 'This settlement is already being posted. Wait a moment and refresh.'))
+      } else if (message.includes('settlement_amount_exceeds_outstanding')) {
+        toast.error(tt('settlements.amountTooHigh', 'Settlement amount cannot exceed the outstanding balance'))
+      } else if (message.includes('settlement_already_resolved')) {
+        toast.error(tt('settlements.alreadyResolved', 'This settlement anchor is already fully resolved. Refresh the settlement workspace.'))
+      } else if (message.includes('finance_document_became_active_anchor')) {
+        toast.error(tt('settlements.financeAnchorChanged', 'A finance document is now the active settlement anchor. Refresh and post against that document.'))
+      } else if (message.includes('settlement_anchor_not_ready') || message.includes('settlement_anchor_not_found')) {
+        toast.error(tt('settlements.anchorStale', 'This settlement anchor is no longer ready. Refresh the settlement workspace.'))
+      } else if (message.includes('insufficient_company_role')) {
+        toast.error(tt('settlements.permissionDenied', 'You do not have permission to post settlements for this company.'))
+      } else if (message.includes('company_access_disabled')) {
+        toast.error(tt('settlements.companyAccessDisabled', 'Company access is disabled, so settlement posting is unavailable.'))
+      } else if (message.includes('cross_company')) {
+        toast.error(tt('settlements.companyAccessDenied', 'Switch to the correct company before posting this settlement.'))
+      } else {
+        toast.error(error?.message || tt('settlements.saveFailed', 'Failed to save settlement'))
+      }
     } finally {
       setSaving(false)
     }

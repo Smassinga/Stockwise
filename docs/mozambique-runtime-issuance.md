@@ -329,9 +329,9 @@ Transitional / deprecated paths:
 - The invoice register is active.
 - The compliance page is active but visibility-only for SAF-T and artifact history.
 
-## K. Forward-State Settlement And Output Package Status
+## K. Historical Forward-State Settlement And Output Package Status
 
-This section records the current implementation state so a later session can continue without relying on thread history.
+The material below is a historical implementation snapshot. It must not be read as current hosted-deployment evidence: the named standalone `20260401120000_finance_document_settlement_anchor_transition.sql` file exists in old Git history but is not in the current forward migration chain. Its re-anchor views, triggers, and helpers were absorbed into the canonical baseline.
 
 Package intent:
 
@@ -418,3 +418,11 @@ Non-goals preserved for this package:
 - no rollback to order-centric fiscal truth
 - no mutation of issued invoice output from live company/customer rows
 - no heavy legacy-compatibility layer beyond what was needed to transition anchors cleanly
+
+### Current Verification And Local Prelaunch Status (2026-07-10)
+
+Current local evidence confirms that the issued-invoice output, SI/VB settlement visibility, and forward anchor code remain on `main`, but local evidence alone cannot prove the historical package's standalone rollout state. The correct classification is **cannot be verified from local evidence**, not "unlaunched" and not "live and verified".
+
+The current hosted checkpoint remains G5.2 at 38 migrations through `20260704041943_add_growth_batch_completion_posting.sql`. Local-only migration `20260709222842_governed_settlement_posting.sql` adds the next settlement hardening layer: idempotent cash and bank settlement RPCs, governed Cash/Bank Detail manual posting RPCs, exact two-decimal post-lock active-anchor/outstanding validation without additive tolerance, direct normal-client ledger-insert revocation, atomic `post_bank_ledger_import`, and maintained frontend cutover away from raw ledger inserts and per-row CSV commits. The import uses one canonical SHA-256 batch request, commits all rows or none, and safely replays the same logical file across reloads.
+
+This prelaunch package has no hosted migration, frontend deployment, or production smoke claim. Its replay, payload-mismatch, repeated-`0.005`, exact minor-unit, stale-anchor, over-settlement, atomic import rollback/replay, cross-company, role/access, concurrency, stock-isolation, and price-isolation coverage is local regression-only until a separate rollout is authorised. The older Forward-State Settlement and Output package remains historically unprovable from current local deployment evidence.

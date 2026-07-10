@@ -69,10 +69,10 @@ Current protected workflows:
 1. Sales Order -> Sales Invoice draft -> approval -> issue readiness -> issue
 2. Purchase Order -> Vendor Bill draft -> approval -> post
 3. Settlements, including:
-   - bank receive
-   - bank pay
-   - cash posting
-   - settlement anchoring
+   - governed cash and bank settlement RPCs
+   - same-key replay and changed-payload rejection
+   - SO/PO to SI/VB anchor transition and stale-anchor blocking
+   - over-settlement, cross-company, role, disabled-company, direct-write, and anon-execution guards
 4. AR and AP bridge / reconciliation calculations
 5. item and UOM dependencies that affect inventory and finance correctness
 6. BOM / assembly gating and successful build posting
@@ -97,6 +97,11 @@ The suite currently protects:
 - document relationship integrity
 - settlement anchor continuity
 - bank and cash posting continuity
+- governed settlement idempotency across cash and bank, including exact two-decimal normalization, the reported repeated-`0.005` boundary, zero-outstanding rejection, exact minor-unit residual settlement, `posting_requests` result persistence, duplicate-row prevention, and competing full-settlement contention
+- active-anchor transfer from `SO` to `SI` and `PO` to `VB`, including zero legacy-order exposure after the finance document is active
+- atomic `post_bank_ledger_import` behavior: two-row/multi-row success, deterministic reorder/reload replay, repeated identical-looking rows, changed-payload rejection, later-row rollback, corrected retry, row/size limits, row-specific errors, ADMIN+ authority, cross-company denial, stale-anchor and direction blocking, and zero partial ledger/settlement effects after failure
+- settlement/import isolation from `stock_movements`, `stock_levels`, and `items.unit_price`, plus static proof that maintained settlement, Cash, and Bank Detail posting flows contain no raw ledger inserts or per-row CSV posting loop
+- the governed settlement/import block contains 113 unique named state checks inside the maintained 36/36 finance regression run; production-target detection still aborts before mutation
 - current-legal-value bridge math
 - item / UOM integrity assumptions used by inventory and finance paths
 - assembly build gating under sufficient and insufficient stock
@@ -116,6 +121,8 @@ The suite currently protects:
 - Growth Batches G5.1 local depleting-harvest coverage, including preview/no-mutation behavior, partial and full harvest allocation, exact full-cost transfer, stock receipt references, output-stock bucket effects through the stock engine, OPERATOR+ posting, MANAGER+ event-specific reversal, stale fingerprint rejection, direct mutation rejection, helper privilege denial, concurrent harvest/reversal safety, insufficient-output-stock reversal blocking, fully harvested awaiting-completion state, and finance/selling-price isolation
 - Growth Batches G5.2 local completion coverage, including preview/no-mutation behavior, MANAGER+ lifecycle completion, event-specific completion reversal, completed-state blocking for measurement/direct-cost/harvest/reversal dependencies, stale fingerprint rejection, direct mutation rejection, helper privilege denial, same-key replay, changed-payload rejection, same-key contention, lifecycle-only status/audit/latest-sequence updates, and stock/finance/cost/quantity/weight/selling-price isolation
 - trial and entitlement enforcement
+
+The current checkout has 39 local migrations: hosted production remains at the confirmed G5.2 38-migration checkpoint, while `20260709222842_governed_settlement_posting.sql` is local-only and must be validated only against local or explicitly isolated non-production Supabase before a separate rollout authorisation.
 
 ## Test Architecture
 
@@ -195,7 +202,7 @@ Growth Batches G4.2 is live and production-smoke validated as of 2026-07-02. Hos
 
 Growth Batches G5.1 is live and production-smoke validated as of 2026-07-03. Hosted and local Supabase are aligned through `20260702205834_add_growth_batch_harvest_posting.sql` with 36 active migrations. The maintained Growth Batch regression adds governed partial/full depleting harvest coverage: OPERATOR+ preview/post, VIEWER posting block, MANAGER+ event-specific reversal, OPERATOR reversal block, internal helper privilege denial, direct table mutation blocking, stale fingerprint rejection after state changes, request-key replay and mismatch, partial proportional cost allocation, full-harvest exact remaining-cost transfer, zero-remaining-quantity active/awaiting-completion state, one harvest receipt movement, one compensating reversal issue movement, no finance rows, unchanged `items.unit_price`, negative/duplicate stock-bucket checks, and concurrency safety. Production smoke used Leny Docuras batch `LEN-GB000000003` and QA item `QA-G51-POULTRY-KG`: partial harvest `LEN-GB000000003-E000010` was reversed by `LEN-GB000000003-E000011`, full harvest `LEN-GB000000003-E000012` was reversed by `LEN-GB000000003-E000013`, the QA output bucket returned to zero, and final batch state restored `20 EA`, `40 KG`, active status, and zero costs. Production replay, payload-mismatch, authority-negative, insufficient-stock, nonzero-cost allocation, and concurrency tests remain local-only. G5.1 intentionally excludes non-depleting yield, split/child batches, multi-output/co-product allocation, sale/invoice creation, COGS, FIFO, fair value, finance posting, automatic completion, whole-batch reversal, profitability dashboards, and individual animal/plant tracking.
 
-Growth Batches G5.2 is live and production-smoke validated. Hosted production and local replay have 38 migrations through `20260704041943_add_growth_batch_completion_posting.sql`. The maintained Growth Batch regression adds governed lifecycle-completion coverage: OPERATOR preview with manager-required blocker, MANAGER+ completion/reversal, source-state fingerprinting, stale-preview rejection after state changes, idempotent replay and mismatch rejection, direct table mutation blocking, internal helper privilege denial, completed-state blocking for measurement/direct-cost/harvest and harvest reversal, one completion detail per event, one reversal maximum, event-specific reversal back to active, no stock movements, no stock-level changes, unchanged quantity/weight/cost rollups, unchanged finance rows, unchanged `items.unit_price`, and concurrent same-key completion safety. The authorised maintained-UI smoke posted full harvest `E000014`, completion `E000015`, completion reversal `E000016`, and harvest reversal `E000017` for `LEN-GB000000003`, restoring `20 EA`, `40 KG`, active status, zero costs, and the zero QA output bucket. Production replay, mismatch, authority-negative, and concurrency tests remain deliberately local-only.
+Growth Batches G5.2 is live and production-smoke validated. Hosted production has 38 migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the current local checkout has unlaunched settlement-posting migration 39. The maintained Growth Batch regression adds governed lifecycle-completion coverage: OPERATOR preview with manager-required blocker, MANAGER+ completion/reversal, source-state fingerprinting, stale-preview rejection after state changes, idempotent replay and mismatch rejection, direct table mutation blocking, internal helper privilege denial, completed-state blocking for measurement/direct-cost/harvest and harvest reversal, one completion detail per event, one reversal maximum, event-specific reversal back to active, no stock movements, no stock-level changes, unchanged quantity/weight/cost rollups, unchanged finance rows, unchanged `items.unit_price`, and concurrent same-key completion safety. The authorised maintained-UI smoke posted full harvest `E000014`, completion `E000015`, completion reversal `E000016`, and harvest reversal `E000017` for `LEN-GB000000003`, restoring `20 EA`, `40 KG`, active status, zero costs, and the zero QA output bucket. Production replay, mismatch, authority-negative, and concurrency tests remain deliberately local-only.
 
 ## Auth Production QA
 

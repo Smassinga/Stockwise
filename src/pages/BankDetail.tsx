@@ -19,6 +19,13 @@ import { hasRole, CanManageUsers } from '../lib/roles'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
+import { financeCan } from '../lib/permissions'
+import {
+  clearPostingRequestKey,
+  getPostingRequestKeyForFingerprint,
+  stablePostingFingerprint,
+  type PostingRequestKeyRef,
+} from '../lib/postingRequestKeys'
 
 type Bank = {
   id: string
@@ -52,6 +59,17 @@ type Statement = {
   file_path: string | null
   reconciled: boolean
   created_at: string
+}
+
+type BankImportRow = {
+  row_number: number
+  happened_at: string
+  memo: string | null
+  amount_base: string
+  currency_code: string | null
+  direction: 'ledger'
+  ref_type: null
+  ref_id: null
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
@@ -135,6 +153,51 @@ function parseAmount(raw: string): number | null {
   const n = Number(s)
   return Number.isFinite(n) ? n : null
 }
+
+function normalizeMoneyValue(value: number): number {
+  if (!Number.isFinite(value)) return Number.NaN
+  const sign = value < 0 ? -1 : 1
+  const normalized = sign * (Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100)
+  return Object.is(normalized, -0) ? 0 : normalized
+}
+
+function normalizedMoneyToken(value: number): string | null {
+  const normalized = normalizeMoneyValue(value)
+  return Number.isFinite(normalized) && normalized !== 0 ? normalized.toFixed(2) : null
+}
+
+async function sha256Hex(value: string) {
+  if (!globalThis.crypto?.subtle) throw new Error('bank_import_digest_unavailable')
+  const bytes = new TextEncoder().encode(value)
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function durableBankImportRequestKey(
+  companyId: string,
+  bankId: string,
+  rows: BankImportRow[],
+) {
+  const canonicalRows = rows
+    .map(({ row_number: _rowNumber, ...row }) => row)
+    .sort((left, right) => stablePostingFingerprint(left).localeCompare(stablePostingFingerprint(right)))
+  const canonicalPayload = stablePostingFingerprint({ bankId, companyId, rows: canonicalRows })
+  return `bank-import:${await sha256Hex(canonicalPayload)}`
+}
+
+function bankImportErrorDetail(error: any) {
+  const inlineRow = Number(error?.rowNumber)
+  const inlineCode = String(error?.code || error?.message || '')
+  try {
+    const parsed = JSON.parse(String(error?.details || ''))
+    return {
+      code: String(parsed?.code || inlineCode),
+      rowNumber: Number(parsed?.row_number || inlineRow) || null,
+    }
+  } catch {
+    return { code: inlineCode, rowNumber: inlineRow || null }
+  }
+}
 // ---------------------------------------------------
 
 export default function BankDetail() {
@@ -145,6 +208,7 @@ export default function BankDetail() {
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const canEditBank = hasRole(myRole, CanManageUsers)
+  const canManageSettlement = financeCan.settlementSensitive(myRole)
 
   const [bank, setBank] = useState<Bank | null>(null)
   const [from, setFrom] = useState<string>(monthStartISO())
@@ -155,6 +219,7 @@ export default function BankDetail() {
   const [statements, setStatements] = useState<Statement[]>([])
   const [bookBalance, setBookBalance] = useState<number>(0)
   const [savingTx, setSavingTx] = useState<string | null>(null)
+  const bankManualPostingRequestRef = useRef<PostingRequestKeyRef>(null)
 
   const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
 
@@ -442,48 +507,138 @@ export default function BankDetail() {
     }
   }
 
+  function showBankPostingError(error: any, context: 'import' | 'manual') {
+    const message = String(error?.message || '').toLowerCase()
+    const detail = bankImportErrorDetail(error)
+    const code = `${message} ${detail.code}`.toLowerCase()
+    let localized: string | null = null
+
+    if (code.includes('request_key_required') || code.includes('bank_import_digest_unavailable')) {
+      localized = tf('bank.toast.requestKeyRequired', 'Refresh and try again with a valid posting key.')
+    } else if (code.includes('idempotency_key_payload_mismatch')) {
+      localized = tf('bank.toast.payloadMismatch', 'This retry key belongs to different transaction inputs. Review the form and submit again.')
+    } else if (code.includes('request_in_progress')) {
+      localized = tf('bank.toast.requestInProgress', 'This transaction is already being posted. Wait a moment and refresh.')
+    } else if (code.includes('bank_import_empty') || code.includes('bank_import_rows_required')) {
+      localized = tf('bank.toast.csvNoRows', 'No valid rows to import')
+    } else if (code.includes('bank_import_row_limit_exceeded')) {
+      localized = tf('bank.toast.csvTooManyRows', 'This import exceeds the 500-row limit. Split it into smaller files.')
+    } else if (code.includes('bank_import_request_too_large')) {
+      localized = tf('bank.toast.csvTooLarge', 'This import is too large. Reduce the file size and try again.')
+    } else if (code.includes('bank_import_date_')) {
+      localized = tf('bank.toast.csvDateInvalid', 'The row has an invalid transaction date.')
+    } else if (code.includes('bank_import_amount_') || code.includes('ledger_amount_must_be_nonzero') || code.includes('settlement_amount_must_be_positive')) {
+      localized = tf('bank.toast.csvAmountInvalid', 'The row has an invalid amount at the supported two-decimal precision.')
+    } else if (code.includes('bank_import_direction_')) {
+      localized = tf('bank.toast.csvDirectionInvalid', 'The row direction does not match its settlement anchor.')
+    } else if (code.includes('bank_import_currency_mismatch')) {
+      localized = tf('bank.toast.csvCurrencyMismatch', 'The row currency does not match the selected bank account.')
+    } else if (code.includes('bank_import_reference_invalid') || code.includes('settlement_anchor_required')) {
+      localized = tf('bank.toast.csvReferenceInvalid', 'The row has an invalid settlement reference.')
+    } else if (code.includes('settlement_already_resolved')) {
+      localized = tf('bank.toast.alreadyResolved', 'This settlement anchor is already fully resolved. Refresh before posting.')
+    } else if (code.includes('settlement_amount_exceeds_outstanding')) {
+      localized = tf('bank.toast.amountTooHigh', 'The settlement amount exceeds the current outstanding balance.')
+    } else if (code.includes('finance_document_became_active_anchor')) {
+      localized = tf('bank.toast.financeAnchorChanged', 'A finance document is now the active settlement anchor. Refresh before posting.')
+    } else if (code.includes('settlement_anchor_not_ready') || code.includes('settlement_anchor_not_found')) {
+      localized = tf('bank.toast.anchorStale', 'This settlement anchor is no longer ready. Refresh before posting.')
+    } else if (code.includes('insufficient_company_role')) {
+      localized = tf('bank.toast.permissionDenied', 'You do not have permission to post bank transactions for this company.')
+    } else if (code.includes('company_access_disabled')) {
+      localized = tf('bank.toast.companyAccessDisabled', 'Company access is disabled, so bank posting is unavailable.')
+    } else if (code.includes('cross_company')) {
+      localized = tf('bank.toast.companyAccessDenied', 'Switch to the correct company before posting this transaction.')
+    } else if (code.includes('bank_account_not_found')) {
+      localized = tf('bank.toast.bankUnavailable', 'The selected bank account is no longer available. Refresh before posting.')
+    }
+
+    if (context === 'import' && detail.rowNumber && localized) {
+      toast.error(tf('bank.toast.csvRowFailed', 'CSV row {row}: {reason}', {
+        row: detail.rowNumber,
+        reason: localized,
+      }))
+      return
+    }
+
+    toast.error(localized || (context === 'import'
+      ? tf('bank.toast.csvImportFailed', 'The import could not be posted. No rows were committed.')
+      : tf('bank.toast.txAddFailed', 'Failed to add transaction')))
+  }
+
   // ----- CSV import (DD/MM/YYYY) -----
   async function importCsv() {
-    if (!scopedBankId || !csvFile) { toast.error(tf('bank.toast.csvChoose', 'Choose a CSV file first')); return }
+    if (!canManageSettlement) {
+      toast.error(tf('bank.toast.permissionDenied', 'You do not have permission to post bank transactions for this company.'))
+      return
+    }
+    if (!companyId || !scopedBankId || !csvFile) { toast.error(tf('bank.toast.csvChoose', 'Choose a CSV file first')); return }
     setImporting(true)
     try {
       const text = await csvFile.text()
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      const lines = text
+        .split(/\r?\n/)
+        .map((line, index) => ({ line: line.trim(), rowNumber: index + 1 }))
+        .filter(({ line }) => Boolean(line))
       if (lines.length === 0) { toast.error(tf('bank.toast.csvEmpty', 'Empty CSV')); return }
 
-      const delim = detectDelimiter(lines[0])
+      const delim = detectDelimiter(lines[0].line)
       let start = 0
-      const header = lines[0].toLowerCase()
+      const header = lines[0].line.toLowerCase()
       if (/(date|data)/.test(header) && /(amount|valor)/.test(header)) start = 1
 
-      const payload: any[] = []
+      const payload: BankImportRow[] = []
       for (let i = start; i < lines.length; i++) {
-        const cols = splitCSVLine(lines[i], delim)
+        const { line, rowNumber } = lines[i]
+        const cols = splitCSVLine(line, delim)
         const isoDate = normalizeDateDDMMYYYY(cols[0] ?? '')
         const amt = parseAmount(cols[2] ?? '')
-        if (!isoDate || amt === null || amt === 0) continue
+        if (!isoDate) {
+          throw Object.assign(new Error('bank_import_date_invalid'), {
+            code: 'bank_import_date_invalid',
+            rowNumber,
+          })
+        }
+        const amountToken = amt === null ? null : normalizedMoneyToken(amt)
+        if (!amountToken) {
+          throw Object.assign(new Error('bank_import_amount_invalid'), {
+            code: 'bank_import_amount_invalid',
+            rowNumber,
+          })
+        }
         payload.push({
-          bank_id: scopedBankId,
+          row_number: rowNumber,
           happened_at: isoDate,
           memo: (cols[1] ?? '') || null,
-          amount_base: amt,
-          reconciled: false,
+          amount_base: amountToken,
+          currency_code: currency || null,
+          direction: 'ledger',
+          ref_type: null,
+          ref_id: null,
         })
       }
       if (!payload.length) { toast.error(tf('bank.toast.csvNoRows', 'No valid rows to import')); return }
 
-      const { error } = await supabase.from('bank_transactions').insert(payload)
-      if (error) {
-        throw new Error(getBankTransactionWriteMessage(error, tf) || error.message)
-      }
+      const requestKey = await durableBankImportRequestKey(companyId, scopedBankId, payload)
+      const { data, error } = await supabase.rpc('post_bank_ledger_import', {
+        p_company_id: companyId,
+        p_bank_id: scopedBankId,
+        p_rows: payload,
+        p_request_key: requestKey,
+      })
+      if (error) throw error
 
-      toast.success(tf('bank.toast.csvImported', 'Imported {count} rows', { count: payload.length }))
+      const result = Array.isArray(data) ? data[0] : data
+      const importedCount = Number(result?.row_count || payload.length)
+      toast.success(result?.replayed
+        ? tf('bank.toast.csvReplayRestored', 'This import was already posted. No duplicate bank rows were created.')
+        : tf('bank.toast.csvImported', 'Imported {count} rows', { count: importedCount }))
       setCsvFile(null)
       await loadTx()
       await loadBookBalance()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tf('bank.toast.csvImportFailed', 'Import failed'))
+      showBankPostingError(e, 'import')
     } finally {
       setImporting(false)
     }
@@ -491,28 +646,44 @@ export default function BankDetail() {
 
   // Manual transaction add
   async function addTx() {
+    if (!canManageSettlement) {
+      toast.error(tf('bank.toast.permissionDenied', 'You do not have permission to post bank transactions for this company.'))
+      return
+    }
     if (!scopedBankId) return
-    const amt = Number(txAmt)
-    if (Number.isNaN(amt) || amt === 0) { toast.error(tf('bank.toast.amountNonZero', 'Amount must be a non-zero number')); return }
+    const amt = normalizeMoneyValue(Number(txAmt))
+    if (!Number.isFinite(amt) || amt === 0) { toast.error(tf('bank.toast.amountNonZero', 'Amount must be a non-zero number')); return }
     setAddingTx(true)
     try {
-      const { error } = await supabase.from('bank_transactions').insert({
-        bank_id: scopedBankId,
-        happened_at: txDate,
-        memo: txMemo || null,
-        amount_base: amt,
-        reconciled: false,
+      const requestFingerprint = stablePostingFingerprint({
+        amountBase: amt,
+        bankId: scopedBankId,
+        companyId,
+        happenedAt: txDate,
+        memo: txMemo.trim() || null,
+      })
+      const requestKey = getPostingRequestKeyForFingerprint(bankManualPostingRequestRef, requestFingerprint)
+      const { data, error } = await supabase.rpc('post_bank_ledger_transaction', {
+        p_company_id: companyId,
+        p_bank_id: scopedBankId,
+        p_happened_at: txDate,
+        p_amount_base: amt,
+        p_memo: txMemo.trim() || null,
+        p_request_key: requestKey,
       })
       if (error) {
-        throw new Error(getBankTransactionWriteMessage(error, tf) || error.message)
+        throw error
       }
       setTxMemo(''); setTxAmt('0'); setTxDate(todayISO())
+      clearPostingRequestKey(bankManualPostingRequestRef)
       await loadTx()
       await loadBookBalance()
-      toast.success(tf('bank.toast.txAdded', 'Transaction added'))
+      toast.success((Array.isArray(data) ? data[0] : data)?.replayed
+        ? tf('bank.toast.replayRestored', 'The earlier transaction was already posted. Its original result has been restored.')
+        : tf('bank.toast.txAdded', 'Transaction added'))
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tf('bank.toast.txAddFailed', 'Failed to add transaction'))
+      showBankPostingError(e, 'manual')
     } finally {
       setAddingTx(false)
     }
@@ -678,7 +849,7 @@ export default function BankDetail() {
                 <Label>{t('bank.amount', { code: currency })}</Label>
                 <Input inputMode="decimal" value={txAmt} onChange={e => setTxAmt(e.target.value)} placeholder={tf('bank.placeholder.amount', '-120.00')} />
               </div>
-              <Button className="w-full sm:w-auto" onClick={addTx} disabled={addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
+              <Button className="w-full sm:w-auto" onClick={addTx} disabled={!canManageSettlement || addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
             </div>
 
             {/* CSV import */}
@@ -687,7 +858,7 @@ export default function BankDetail() {
                 <Label className="block">{t('bank.csv.fileLabel')}</Label>
                 <Input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files?.[0] ?? null)} />
               </div>
-              <Button className="w-full sm:w-auto" onClick={importCsv} disabled={importing || !csvFile}>
+              <Button className="w-full sm:w-auto" onClick={importCsv} disabled={!canManageSettlement || importing || !csvFile}>
                 {importing ? t('bank.csv.importing') : t('bank.csv.import')}
               </Button>
             </div>
@@ -695,6 +866,11 @@ export default function BankDetail() {
         </CardHeader>
 
         <CardContent className="overflow-x-auto">
+          {!canManageSettlement ? (
+            <div className="mb-4 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+              {tf('bank.financeAuthorityNotice', 'Only finance-authority users can post bank ledger transactions or import statement rows.')}
+            </div>
+          ) : null}
           {/* Guidance */}
           <div className="mb-2 hidden text-xs text-muted-foreground sm:block">{t('bank.csv.header')}</div>
           <table className="mb-4 hidden w-full rounded border text-xs sm:table">

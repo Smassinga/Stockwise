@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 
 import {
   createAdminClient,
+  createAnonClient,
   createTempUser,
   deleteAuthUser,
   expectPostgrestError,
@@ -173,6 +175,87 @@ async function assertPurchaseReceivingUsesStockMovementLedgerOnly() {
     /\.from\(\s*['"]stock_levels['"]\s*\)[\s\S]{0,300}\.(?:insert|upsert|update|delete)\s*\(/,
     'PO receipt posting must not mutate stock_levels directly; stock_movements triggers own the rollup',
   )
+}
+
+async function assertGovernedSettlementUiCutover() {
+  const [settlements, cash, bank] = await Promise.all([
+    readFile('src/pages/Settlements.tsx', 'utf8'),
+    readFile('src/pages/Cash.tsx', 'utf8'),
+    readFile('src/pages/BankDetail.tsx', 'utf8'),
+  ])
+
+  assert.match(
+    settlements,
+    /\.rpc\(\s*['"]post_cash_settlement['"]\s*,/,
+    'Settlements must post cash through the governed settlement RPC',
+  )
+  assert.match(
+    settlements,
+    /\.rpc\(\s*['"]post_bank_settlement['"]\s*,/,
+    'Settlements must post bank transactions through the governed settlement RPC',
+  )
+  assert.match(
+    cash,
+    /\.rpc\(\s*['"]post_cash_settlement['"]\s*,/,
+    'Cash settlement posting must use the governed settlement RPC',
+  )
+  assert.match(
+    cash,
+    /\.rpc\(\s*['"]post_cash_adjustment['"]\s*,/,
+    'Cash adjustments must use the governed ledger RPC',
+  )
+  assert.match(
+    bank,
+    /\.rpc\(\s*['"]post_bank_ledger_transaction['"]\s*,/,
+    'Bank manual posting must use the governed single-entry ledger RPC',
+  )
+  assert.match(
+    bank,
+    /\.rpc\(\s*['"]post_bank_ledger_import['"]\s*,/,
+    'Bank CSV import must use the governed atomic import RPC',
+  )
+  assert.equal(
+    (bank.match(/\.rpc\(\s*['"]post_bank_ledger_import['"]\s*,/g) || []).length,
+    1,
+    'Bank CSV import must submit one batch RPC call',
+  )
+  assert.match(
+    bank,
+    /crypto\.subtle\.digest\(\s*['"]SHA-256['"]/,
+    'Bank CSV import must derive a durable SHA-256 request identity',
+  )
+  assert.doesNotMatch(
+    bank,
+    /for\s*\([^)]*(?:payload|rows)[^)]*\)[\s\S]{0,800}post_bank_ledger_transaction/,
+    'Bank CSV import must not retain a per-row posting loop',
+  )
+  assert.match(
+    cash,
+    /settlement_anchor_not_ready[\s\S]{0,200}settlement_anchor_not_found/,
+    'Cash must map both stale settlement-anchor error codes',
+  )
+  assert.match(
+    bank,
+    /settlement_anchor_not_ready[\s\S]{0,200}settlement_anchor_not_found/,
+    'Bank import must map both stale settlement-anchor error codes',
+  )
+
+  for (const [label, source] of [
+    ['Settlements', settlements],
+    ['Cash', cash],
+    ['BankDetail', bank],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /\.from\(\s*['"]cash_transactions['"]\s*\)\s*\.insert\s*\(/,
+      `${label} must not retain a raw cash_transactions insert fallback`,
+    )
+    assert.doesNotMatch(
+      source,
+      /\.from\(\s*['"]bank_transactions['"]\s*\)\s*\.insert\s*\(/,
+      `${label} must not retain a raw bank_transactions insert fallback`,
+    )
+  }
 }
 
 async function openOrCreateSalesInvoiceDraftFromOrder(client, companyId, salesOrderId) {
@@ -1328,78 +1411,75 @@ test('Phase 4/5 finance hardening suite', async (t) => {
   })
 
   await t.test('Settlements, bank/cash continuity, and reconciliation bridges', async () => {
-    const bankReceipt = await ownerClient
-      .from('bank_transactions')
-      .insert({
-        bank_id: bankAccountId,
-        happened_at: todayIso(),
-        memo: `${PREFIX} AR bank receipt`,
-        amount_base: 40,
-        reconciled: false,
-        ref_type: 'SI',
-        ref_id: salesInvoiceId,
-      })
-      .select('id')
-      .single()
-    if (bankReceipt.error) throw bankReceipt.error
+    const bankReceipt = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SI',
+        p_ref_id: salesInvoiceId,
+        p_happened_at: todayIso(),
+        p_amount_base: 40,
+        p_memo: `${PREFIX} AR bank receipt`,
+        p_request_key: `${PREFIX}-bridge-bank-receipt`,
+      }),
+      'Expected governed bank receipt to succeed',
+    ))
+    assert.ok(bankReceipt?.transaction_id)
 
-    const cashReceipt = await ownerClient
-      .from('cash_transactions')
-      .insert({
-        company_id: companyId,
-        happened_at: todayIso(),
-        type: 'sale_receipt',
-        ref_type: 'SI',
-        ref_id: salesInvoiceId,
-        memo: `${PREFIX} AR cash receipt`,
-        amount_base: 30,
-      })
-      .select('id')
-      .single()
-    if (cashReceipt.error) throw cashReceipt.error
+    const cashReceipt = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SI',
+        p_ref_id: salesInvoiceId,
+        p_happened_at: todayIso(),
+        p_amount_base: 30,
+        p_memo: `${PREFIX} AR cash receipt`,
+        p_request_key: `${PREFIX}-bridge-cash-receipt`,
+      }),
+      'Expected governed cash receipt to succeed',
+    ))
+    assert.ok(cashReceipt?.transaction_id)
 
-    const bankPayment = await ownerClient
-      .from('bank_transactions')
-      .insert({
-        bank_id: bankAccountId,
-        happened_at: todayIso(),
-        memo: `${PREFIX} AP bank payment`,
-        amount_base: -50,
-        reconciled: false,
-        ref_type: 'VB',
-        ref_id: vendorBillId,
-      })
-      .select('id')
-      .single()
-    if (bankPayment.error) throw bankPayment.error
+    const bankPayment = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'VB',
+        p_ref_id: vendorBillId,
+        p_happened_at: todayIso(),
+        p_amount_base: 50,
+        p_memo: `${PREFIX} AP bank payment`,
+        p_request_key: `${PREFIX}-bridge-bank-payment`,
+      }),
+      'Expected governed bank payment to succeed',
+    ))
+    assert.ok(bankPayment?.transaction_id)
 
-    const cashPayment = await ownerClient
-      .from('cash_transactions')
-      .insert({
-        company_id: companyId,
-        happened_at: todayIso(),
-        type: 'purchase_payment',
-        ref_type: 'VB',
-        ref_id: vendorBillId,
-        memo: `${PREFIX} AP cash payment`,
-        amount_base: -20,
-      })
-      .select('id')
-      .single()
-    if (cashPayment.error) throw cashPayment.error
+    const cashPayment = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'VB',
+        p_ref_id: vendorBillId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} AP cash payment`,
+        p_request_key: `${PREFIX}-bridge-cash-payment`,
+      }),
+      'Expected governed cash payment to succeed',
+    ))
+    assert.ok(cashPayment?.transaction_id)
 
-    const cashAdjustment = await ownerClient
-      .from('cash_transactions')
-      .insert({
-        company_id: companyId,
-        happened_at: todayIso(),
-        type: 'adjustment',
-        memo: `${PREFIX} cash adjustment`,
-        amount_base: 12,
-      })
-      .select('id')
-      .single()
-    if (cashAdjustment.error) throw cashAdjustment.error
+    const cashAdjustment = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_adjustment', {
+        p_company_id: companyId,
+        p_happened_at: todayIso(),
+        p_amount_base: 12,
+        p_memo: `${PREFIX} cash adjustment`,
+        p_request_key: `${PREFIX}-bridge-cash-adjustment`,
+      }),
+      'Expected governed cash adjustment to succeed',
+    ))
+    assert.ok(cashAdjustment?.transaction_id)
 
     const arBridge = await querySingle(
       ownerClient,
@@ -1430,6 +1510,1709 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       .ilike('memo', `${PREFIX}%`)
     if (cashRowsError) throw cashRowsError
     assert.equal(cashRows.length, 3)
+  })
+
+  await t.test('Governed settlement posting enforces idempotency, anchors, authority, and ledger isolation', async () => {
+    const checks = new Set()
+    const check = (name, condition, message = name) => {
+      assert.ok(condition, message)
+      checks.add(name)
+    }
+    const key = (suffix) => `${PREFIX}-settlement-${suffix}`
+    const importKey = (suffix) => `${PREFIX}-bank-import-${suffix}`
+
+    const bankImportRow = (rowNumber, amount, memo, overrides = {}) => ({
+      row_number: rowNumber,
+      happened_at: todayIso(),
+      memo,
+      amount_base: Number(amount).toFixed(2),
+      currency_code: 'MZN',
+      direction: 'ledger',
+      ref_type: null,
+      ref_id: null,
+      ...overrides,
+    })
+
+    async function postBankImport(
+      rows,
+      requestKey,
+      client = ownerClient,
+      targetBankId = bankAccountId,
+      targetCompanyId = companyId,
+    ) {
+      return client.rpc('post_bank_ledger_import', {
+        p_company_id: targetCompanyId,
+        p_bank_id: targetBankId,
+        p_rows: rows,
+        p_request_key: requestKey,
+      })
+    }
+
+    async function createSettlementSalesOrder(label, total, withShippedLine = false) {
+      const taxTotal = withShippedLine ? round2(total * 0.16) : 0
+      const grossTotal = round2(total + taxTotal)
+      const order = await ownerClient
+        .from('sales_orders')
+        .insert({
+          company_id: companyId,
+          customer_id: customerId,
+          order_date: todayIso(),
+          due_date: plusDaysIso(7),
+          currency_code: 'MZN',
+          status: 'shipped',
+          subtotal: total,
+          tax_total: taxTotal,
+          total: grossTotal,
+          total_amount: grossTotal,
+          fx_to_base: 1,
+          customer: `${PREFIX} ${label} customer`,
+          bill_to_name: `${PREFIX} ${label} customer`,
+          bill_to_tax_id: '900123456',
+          bill_to_billing_address: 'Rua da Beira 10',
+          created_by: ownerUser.userId,
+        })
+        .select('id')
+        .single()
+      throwSupabaseError(order.error, `${label}: sales-order setup failed`)
+
+      if (withShippedLine) {
+        const line = await ownerClient.from('sales_order_lines').insert({
+          so_id: order.data.id,
+          company_id: companyId,
+          line_no: 1,
+          item_id: resaleItemId,
+          uom_id: eachUomId,
+          qty: 1,
+          unit_price: total,
+          line_total: total,
+          description: `${PREFIX} ${label} line`,
+          shipped_qty: 1,
+          is_shipped: true,
+          shipped_at: isoDateAtNoon(todayIso()),
+        })
+        throwSupabaseError(line.error, `${label}: sales-order line setup failed`)
+      }
+
+      return order.data.id
+    }
+
+    async function createSettlementPurchaseOrder(label, total, withLine = false) {
+      const order = await ownerClient
+        .from('purchase_orders')
+        .insert({
+          company_id: companyId,
+          supplier_id: supplierId,
+          order_date: todayIso(),
+          due_date: plusDaysIso(14),
+          currency_code: 'MZN',
+          status: 'approved',
+          subtotal: total,
+          tax_total: 0,
+          total,
+          fx_to_base: 1,
+          created_by: ownerUser.userId,
+        })
+        .select('id')
+        .single()
+      throwSupabaseError(order.error, `${label}: purchase-order setup failed`)
+
+      if (withLine) {
+        const line = await ownerClient.from('purchase_order_lines').insert({
+          po_id: order.data.id,
+          company_id: companyId,
+          line_no: 1,
+          item_id: componentItemId,
+          uom_id: eachUomId,
+          qty: 1,
+          unit_price: total,
+          line_total: total,
+          description: `${PREFIX} ${label} line`,
+        })
+        throwSupabaseError(line.error, `${label}: purchase-order line setup failed`)
+      }
+
+      return order.data.id
+    }
+
+    async function issueSettlementSalesInvoice(salesOrderId) {
+      const draft = await openOrCreateSalesInvoiceDraftFromOrder(ownerClient, companyId, salesOrderId)
+      throwSupabaseError(
+        (await managerClient.rpc('request_sales_invoice_approval_mz', { p_invoice_id: draft.invoiceId })).error,
+        'Settlement invoice approval request failed',
+      )
+      throwSupabaseError(
+        (await ownerClient.rpc('approve_sales_invoice_mz', { p_invoice_id: draft.invoiceId })).error,
+        'Settlement invoice approval failed',
+      )
+      throwSupabaseError(
+        (await ownerClient.rpc('prepare_sales_invoice_for_issue_mz', {
+          p_invoice_id: draft.invoiceId,
+          p_vat_exemption_reason_text: null,
+        })).error,
+        'Settlement invoice issue preparation failed',
+      )
+      throwSupabaseError(
+        (await ownerClient.rpc('issue_sales_invoice_mz', { p_invoice_id: draft.invoiceId })).error,
+        'Settlement invoice issue failed',
+      )
+      return draft.invoiceId
+    }
+
+    async function postSettlementVendorBill(purchaseOrderId, label) {
+      const draft = unwrapRpcSingle(expectNoSupabaseError(
+        await ownerClient.rpc('create_vendor_bill_draft_from_purchase_order', {
+          p_company_id: companyId,
+          p_purchase_order_id: purchaseOrderId,
+          p_supplier_invoice_reference: `${PREFIX.toUpperCase()}-${label.toUpperCase()}-SUP-INV`,
+          p_supplier_invoice_date: todayIso(),
+          p_bill_date: todayIso(),
+          p_due_date: plusDaysIso(14),
+          p_currency_code: 'MZN',
+          p_fx_to_base: 1,
+          p_lines: [],
+        }),
+        `${label}: vendor-bill draft creation failed`,
+      ))
+      throwSupabaseError(
+        (await managerClient.rpc('request_vendor_bill_approval_mz', { p_bill_id: draft.id })).error,
+        `${label}: vendor-bill approval request failed`,
+      )
+      throwSupabaseError(
+        (await ownerClient.rpc('approve_vendor_bill_mz', { p_bill_id: draft.id })).error,
+        `${label}: vendor-bill approval failed`,
+      )
+      throwSupabaseError(
+        (await ownerClient.rpc('post_vendor_bill_mz', { p_bill_id: draft.id })).error,
+        `${label}: vendor-bill posting failed`,
+      )
+      return draft.id
+    }
+
+    const stockMovementsBefore = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    const stockLevelsBefore = await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]])
+    const priceBaseline = expectNoSupabaseError(
+      await ownerClient
+        .from('items')
+        .select('id, unit_price')
+        .eq('company_id', companyId)
+        .order('id', { ascending: true }),
+      'Expected settlement price-isolation baseline to load',
+    )
+
+    await assertGovernedSettlementUiCutover()
+    check('frontend-maintained-paths-have-zero-raw-settlement-inserts', true)
+    const [cashSource, bankSource, enLocaleSource, ptLocaleSource, settlementMigrationSource] = await Promise.all([
+      readFile('src/pages/Cash.tsx', 'utf8'),
+      readFile('src/pages/BankDetail.tsx', 'utf8'),
+      readFile('src/locales/en.json', 'utf8'),
+      readFile('src/locales/pt.json', 'utf8'),
+      readFile('supabase/migrations/20260709222842_governed_settlement_posting.sql', 'utf8'),
+    ])
+    check('cash-maps-settlement-anchor-not-ready', cashSource.includes('settlement_anchor_not_ready'))
+    check('cash-maps-settlement-anchor-not-found', cashSource.includes('settlement_anchor_not_found'))
+    check('bank-maps-general-stale-anchor-errors', bankSource.includes('settlement_anchor_not_ready') && bankSource.includes('settlement_anchor_not_found'))
+    check('english-stale-anchor-translations-exist', enLocaleSource.includes('cash.toast.anchorStale') && enLocaleSource.includes('bank.toast.anchorStale'))
+    check('portuguese-stale-anchor-translations-exist', ptLocaleSource.includes('cash.toast.anchorStale') && ptLocaleSource.includes('bank.toast.anchorStale'))
+    check(
+      'known-stale-anchor-codes-are-not-used-as-user-facing-fallbacks',
+      !enLocaleSource.includes('"settlement_anchor_not_ready"') && !ptLocaleSource.includes('"settlement_anchor_not_found"'),
+    )
+    check(
+      'bank-import-rpc-revokes-public-and-anon-execution',
+      /REVOKE ALL ON FUNCTION public\.post_bank_ledger_import\(uuid, uuid, jsonb, text\) FROM PUBLIC, anon;/.test(settlementMigrationSource),
+    )
+    check(
+      'money-normalization-helper-revokes-all-client-execution',
+      /REVOKE ALL ON FUNCTION public\.stockwise_normalize_settlement_amount\(numeric\) FROM PUBLIC, anon, authenticated;/.test(settlementMigrationSource),
+    )
+
+    const settlementSoId = await createSettlementSalesOrder('cash-bank-so', 100)
+    const cashSoKey = key('cash-so')
+    const cashSoBefore = await countRows(ownerClient, 'cash_transactions', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+      ['eq', 'ref_id', settlementSoId],
+    ])
+    const cashSo = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 30,
+        p_memo: `${PREFIX} cash SO receipt`,
+        p_request_key: cashSoKey,
+      }),
+      'Expected cash SO receipt to succeed',
+    ))
+    check('cash-receipt-success-against-so', Boolean(cashSo?.transaction_id))
+
+    const cashSoReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 30,
+        p_memo: `${PREFIX} cash SO receipt`,
+        p_request_key: cashSoKey,
+      }),
+      'Expected cash SO replay to succeed',
+    ))
+    check('cash-receipt-replay-against-so', cashSoReplay.transaction_id === cashSo.transaction_id && cashSoReplay.replayed === true)
+    check(
+      'cash-transaction-count-stable-on-replay',
+      await countRows(ownerClient, 'cash_transactions', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', settlementSoId],
+      ]) === cashSoBefore + 1,
+    )
+
+    const cashSoCountBeforeMismatch = await countRows(ownerClient, 'cash_transactions', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+      ['eq', 'ref_id', settlementSoId],
+    ])
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 31,
+        p_memo: `${PREFIX} cash SO receipt`,
+        p_request_key: cashSoKey,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    check('cash-receipt-payload-mismatch-against-so', true)
+    check(
+      'cash-mismatch-does-not-create-business-row',
+      await countRows(ownerClient, 'cash_transactions', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', settlementSoId],
+      ]) === cashSoCountBeforeMismatch,
+    )
+
+    const bankSoKey = key('bank-so')
+    const bankSoBefore = await countRows(ownerClient, 'bank_transactions', [
+      ['eq', 'bank_id', bankAccountId],
+      ['eq', 'ref_type', 'SO'],
+      ['eq', 'ref_id', settlementSoId],
+    ])
+    const bankSo = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} bank SO receipt`,
+        p_request_key: bankSoKey,
+      }),
+      'Expected bank SO receipt to succeed',
+    ))
+    check('bank-receipt-success-against-so', Boolean(bankSo?.transaction_id))
+    const bankSoReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} bank SO receipt`,
+        p_request_key: bankSoKey,
+      }),
+      'Expected bank SO replay to succeed',
+    ))
+    check('bank-receipt-replay-against-so', bankSoReplay.transaction_id === bankSo.transaction_id && bankSoReplay.replayed === true)
+    check(
+      'bank-transaction-count-stable-on-replay',
+      await countRows(ownerClient, 'bank_transactions', [
+        ['eq', 'bank_id', bankAccountId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', settlementSoId],
+      ]) === bankSoBefore + 1,
+    )
+    const bankSoCountBeforeMismatch = await countRows(ownerClient, 'bank_transactions', [
+      ['eq', 'bank_id', bankAccountId],
+      ['eq', 'ref_type', 'SO'],
+      ['eq', 'ref_id', settlementSoId],
+    ])
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 21,
+        p_memo: `${PREFIX} bank SO receipt`,
+        p_request_key: bankSoKey,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    check('bank-receipt-payload-mismatch-against-so', true)
+    check(
+      'bank-mismatch-does-not-create-business-row',
+      await countRows(ownerClient, 'bank_transactions', [
+        ['eq', 'bank_id', bankAccountId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', settlementSoId],
+      ]) === bankSoCountBeforeMismatch,
+    )
+
+    const partialSoState = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base, settlement_status',
+      [['eq', 'id', settlementSoId]],
+    )
+    check(
+      'reconciliation-outstanding-updates-after-partial-settlement',
+      round2(partialSoState.legacy_outstanding_base) === 50 && partialSoState.settlement_status === 'partially_settled',
+    )
+    unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: settlementSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 50,
+        p_memo: `${PREFIX} cash SO full receipt`,
+        p_request_key: key('cash-so-full'),
+      }),
+      'Expected final cash SO receipt to succeed',
+    ))
+    const fullSoState = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base, settlement_status',
+      [['eq', 'id', settlementSoId]],
+    )
+    check(
+      'reconciliation-outstanding-updates-after-full-settlement',
+      round2(fullSoState.legacy_outstanding_base) === 0 && fullSoState.settlement_status === 'settled',
+    )
+
+    const settlementPoId = await createSettlementPurchaseOrder('cash-bank-po', 100)
+    const cashPoKey = key('cash-po')
+    const cashPo = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'PO',
+        p_ref_id: settlementPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 30,
+        p_memo: `${PREFIX} cash PO payment`,
+        p_request_key: cashPoKey,
+      }),
+      'Expected cash PO payment to succeed',
+    ))
+    check('cash-payment-success-against-po', Boolean(cashPo?.transaction_id) && round2(cashPo.signed_amount_base) === -30)
+    const cashPoReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'PO',
+        p_ref_id: settlementPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 30,
+        p_memo: `${PREFIX} cash PO payment`,
+        p_request_key: cashPoKey,
+      }),
+      'Expected cash PO replay to succeed',
+    ))
+    check('cash-payment-replay-against-po', cashPoReplay.transaction_id === cashPo.transaction_id && cashPoReplay.replayed === true)
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'PO',
+        p_ref_id: settlementPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 31,
+        p_memo: `${PREFIX} cash PO payment`,
+        p_request_key: cashPoKey,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    check('cash-payment-payload-mismatch-against-po', true)
+
+    const bankPoKey = key('bank-po')
+    const bankPo = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: settlementPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} bank PO payment`,
+        p_request_key: bankPoKey,
+      }),
+      'Expected bank PO payment to succeed',
+    ))
+    check('bank-payment-success-against-po', Boolean(bankPo?.transaction_id) && round2(bankPo.signed_amount_base) === -20)
+    const bankPoReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: settlementPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} bank PO payment`,
+        p_request_key: bankPoKey,
+      }),
+      'Expected bank PO replay to succeed',
+    ))
+    check('bank-payment-replay-against-po', bankPoReplay.transaction_id === bankPo.transaction_id && bankPoReplay.replayed === true)
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: settlementPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 21,
+        p_memo: `${PREFIX} bank PO payment`,
+        p_request_key: bankPoKey,
+      }),
+      'idempotency_key_payload_mismatch',
+    )
+    check('bank-payment-payload-mismatch-against-po', true)
+
+    const transitionSoId = await createSettlementSalesOrder('transition-so', 80, true)
+    const transitionSoCash = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: transitionSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} transition SO prepayment`,
+        p_request_key: key('transition-so-prepayment'),
+      }),
+      'Expected pre-invoice SO settlement to succeed',
+    ))
+    const transitionSiId = await issueSettlementSalesInvoice(transitionSoId)
+    const transitionedSoCash = await querySingle(
+      ownerClient,
+      'cash_transactions',
+      'id, ref_type, ref_id',
+      [['eq', 'id', transitionSoCash.transaction_id]],
+    )
+    const transitionedSoState = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'financial_anchor, legacy_outstanding_base',
+      [['eq', 'id', transitionSoId]],
+    )
+    check(
+      'so-to-si-anchor-transition-after-invoice-issue',
+      transitionedSoCash.ref_type === 'SI' && transitionedSoCash.ref_id === transitionSiId,
+    )
+    check(
+      'no-duplicate-so-exposure-after-si-exists',
+      transitionedSoState.financial_anchor === 'sales_invoice' && round2(transitionedSoState.legacy_outstanding_base) === 0,
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: transitionSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} stale SO settlement`,
+        p_request_key: key('transition-so-stale'),
+      }),
+      'finance_document_became_active_anchor',
+    )
+    check('stale-so-settlement-blocked-once-si-exists', true)
+    const siKey = key('si-receipt')
+    const siReceipt = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SI',
+        p_ref_id: transitionSiId,
+        p_happened_at: todayIso(),
+        p_amount_base: 5,
+        p_memo: `${PREFIX} SI bank receipt`,
+        p_request_key: siKey,
+      }),
+      'Expected SI settlement to succeed',
+    ))
+    check('si-anchor-receipt-success', Boolean(siReceipt?.transaction_id))
+    const siReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SI',
+        p_ref_id: transitionSiId,
+        p_happened_at: todayIso(),
+        p_amount_base: 5,
+        p_memo: `${PREFIX} SI bank receipt`,
+        p_request_key: siKey,
+      }),
+      'Expected SI settlement replay to succeed',
+    ))
+    check('si-anchor-receipt-replay', siReplay.transaction_id === siReceipt.transaction_id && siReplay.replayed === true)
+
+    const transitionPoId = await createSettlementPurchaseOrder('transition-po', 80, true)
+    const transitionPoCash = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'PO',
+        p_ref_id: transitionPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 20,
+        p_memo: `${PREFIX} transition PO prepayment`,
+        p_request_key: key('transition-po-prepayment'),
+      }),
+      'Expected pre-bill PO settlement to succeed',
+    ))
+    const transitionVbId = await postSettlementVendorBill(transitionPoId, 'transition-po')
+    const transitionedPoCash = await querySingle(
+      ownerClient,
+      'cash_transactions',
+      'id, ref_type, ref_id',
+      [['eq', 'id', transitionPoCash.transaction_id]],
+    )
+    const transitionedPoState = await querySingle(
+      ownerClient,
+      'v_purchase_order_state',
+      'financial_anchor, legacy_outstanding_base',
+      [['eq', 'id', transitionPoId]],
+    )
+    check(
+      'po-to-vb-anchor-transition-after-vendor-bill-booking',
+      transitionedPoCash.ref_type === 'VB' && transitionedPoCash.ref_id === transitionVbId,
+    )
+    check(
+      'no-duplicate-po-exposure-after-vb-exists',
+      transitionedPoState.financial_anchor === 'vendor_bill' && round2(transitionedPoState.legacy_outstanding_base) === 0,
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: transitionPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} stale PO settlement`,
+        p_request_key: key('transition-po-stale'),
+      }),
+      'finance_document_became_active_anchor',
+    )
+    check('stale-po-settlement-blocked-once-vb-exists', true)
+    const vbKey = key('vb-payment')
+    const vbPayment = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'VB',
+        p_ref_id: transitionVbId,
+        p_happened_at: todayIso(),
+        p_amount_base: 5,
+        p_memo: `${PREFIX} VB cash payment`,
+        p_request_key: vbKey,
+      }),
+      'Expected VB settlement to succeed',
+    ))
+    check('vb-anchor-payment-success', Boolean(vbPayment?.transaction_id))
+    const vbReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'VB',
+        p_ref_id: transitionVbId,
+        p_happened_at: todayIso(),
+        p_amount_base: 5,
+        p_memo: `${PREFIX} VB cash payment`,
+        p_request_key: vbKey,
+      }),
+      'Expected VB settlement replay to succeed',
+    ))
+    check('vb-anchor-payment-replay', vbReplay.transaction_id === vbPayment.transaction_id && vbReplay.replayed === true)
+
+    const overSoId = await createSettlementSalesOrder('over-cash', 10)
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: overSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 11,
+        p_memo: `${PREFIX} cash over-settlement`,
+        p_request_key: key('over-cash'),
+      }),
+      'settlement_amount_exceeds_outstanding',
+    )
+    check('over-settlement-blocked-for-cash', true)
+    const overPoId = await createSettlementPurchaseOrder('over-bank', 10)
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: overPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 11,
+        p_memo: `${PREFIX} bank over-settlement`,
+        p_request_key: key('over-bank'),
+      }),
+      'settlement_amount_exceeds_outstanding',
+    )
+    check('over-settlement-blocked-for-bank', true)
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: overSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0,
+        p_memo: `${PREFIX} zero settlement`,
+        p_request_key: key('zero'),
+      }),
+      'settlement_amount_must_be_positive',
+    )
+    check('zero-settlement-amount-rejected', true)
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: overPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: -1,
+        p_memo: `${PREFIX} negative settlement`,
+        p_request_key: key('negative'),
+      }),
+      'settlement_amount_must_be_positive',
+    )
+    check('negative-settlement-amount-rejected', true)
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: overSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} no request key`,
+        p_request_key: '   ',
+      }),
+      'request_key_required',
+    )
+    check('missing-request-key-rejected', true)
+
+    const boundarySoId = await createSettlementSalesOrder('boundary-so', 1)
+    const boundarySoFull = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: boundarySoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} exact full settlement`,
+        p_request_key: key('boundary-so-full'),
+      }),
+      'Expected exact normalized full settlement to succeed',
+    ))
+    check('exact-normalized-full-outstanding-succeeds', round2(boundarySoFull.amount_base) === 1)
+
+    const boundarySoRowsAfterFull = await countRows(ownerClient, 'cash_transactions', [
+      ['eq', 'company_id', companyId],
+      ['eq', 'ref_type', 'SO'],
+      ['eq', 'ref_id', boundarySoId],
+    ])
+    for (const suffix of ['boundary-exploit-005-a', 'boundary-exploit-005-b']) {
+      await expectPostgrestError(
+        ownerClient.rpc('post_cash_settlement', {
+          p_company_id: companyId,
+          p_ref_type: 'SO',
+          p_ref_id: boundarySoId,
+          p_happened_at: todayIso(),
+          p_amount_base: 0.005,
+          p_memo: `${PREFIX} settled 0.005 exploit`,
+          p_request_key: key(suffix),
+        }),
+        'settlement_already_resolved',
+      )
+    }
+    check('settled-anchor-rejects-005-with-new-request-key', true)
+    check(
+      'repeated-005-different-keys-create-zero-additional-ledger-rows',
+      await countRows(ownerClient, 'cash_transactions', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', boundarySoId],
+      ]) === boundarySoRowsAfterFull,
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: boundarySoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0.01,
+        p_memo: `${PREFIX} settled 0.01 attempt`,
+        p_request_key: key('boundary-exploit-01'),
+      }),
+      'settlement_already_resolved',
+    )
+    check('settled-anchor-rejects-one-minor-unit', true)
+
+    const normalizedZeroSoId = await createSettlementSalesOrder('boundary-normalized-zero', 1)
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: normalizedZeroSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0.004,
+        p_memo: `${PREFIX} normalized zero attempt`,
+        p_request_key: key('boundary-normalized-zero'),
+      }),
+      'settlement_amount_must_be_positive',
+    )
+    check('amount-normalizing-to-zero-is-rejected', true)
+
+    const minorUnitAboveSoId = await createSettlementSalesOrder('boundary-minor-above', 1)
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: minorUnitAboveSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1.01,
+        p_memo: `${PREFIX} one minor unit above`,
+        p_request_key: key('boundary-minor-above'),
+      }),
+      'settlement_amount_exceeds_outstanding',
+    )
+    check('one-supported-minor-unit-above-outstanding-fails', true)
+
+    const residualSoId = await createSettlementSalesOrder('boundary-residual', 1.01)
+    expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: residualSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} residual first settlement`,
+        p_request_key: key('boundary-residual-first'),
+      }),
+      'Expected partial settlement before minor-unit residual to succeed',
+    )
+    const residualResult = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: residualSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0.01,
+        p_memo: `${PREFIX} exact minor-unit residual`,
+        p_request_key: key('boundary-residual-final'),
+      }),
+      'Expected exact one-minor-unit residual settlement to succeed',
+    ))
+    check('valid-small-residual-at-supported-precision-succeeds', round2(residualResult.amount_base) === 0.01)
+
+    const boundaryPoId = await createSettlementPurchaseOrder('boundary-po', 1)
+    expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: boundaryPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} boundary PO full`,
+        p_request_key: key('boundary-po-full'),
+      }),
+      'Expected exact PO bank settlement to succeed',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'PO',
+        p_ref_id: boundaryPoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0.005,
+        p_memo: `${PREFIX} boundary PO settled attempt`,
+        p_request_key: key('boundary-po-zero'),
+      }),
+      'settlement_already_resolved',
+    )
+    check('po-respects-corrected-zero-outstanding-rule', true)
+    check('cash-and-bank-share-normalized-comparison-rule', true)
+
+    const boundarySiOrderId = await createSettlementSalesOrder('boundary-si', 1, true)
+    const boundarySiId = await issueSettlementSalesInvoice(boundarySiOrderId)
+    const boundarySiState = await querySingle(ownerClient, 'v_sales_invoice_state', 'outstanding_base', [['eq', 'id', boundarySiId]])
+    expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SI',
+        p_ref_id: boundarySiId,
+        p_happened_at: todayIso(),
+        p_amount_base: round2(boundarySiState.outstanding_base),
+        p_memo: `${PREFIX} boundary SI full`,
+        p_request_key: key('boundary-si-full'),
+      }),
+      'Expected exact SI settlement to succeed',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SI',
+        p_ref_id: boundarySiId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0.01,
+        p_memo: `${PREFIX} boundary SI settled attempt`,
+        p_request_key: key('boundary-si-zero'),
+      }),
+      'settlement_already_resolved',
+    )
+    check('si-respects-corrected-zero-outstanding-rule', true)
+
+    const boundaryVbOrderId = await createSettlementPurchaseOrder('boundary-vb', 1, true)
+    const boundaryVbId = await postSettlementVendorBill(boundaryVbOrderId, 'boundary-vb')
+    const boundaryVbState = await querySingle(ownerClient, 'v_vendor_bill_state', 'outstanding_base', [['eq', 'id', boundaryVbId]])
+    expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'VB',
+        p_ref_id: boundaryVbId,
+        p_happened_at: todayIso(),
+        p_amount_base: round2(boundaryVbState.outstanding_base),
+        p_memo: `${PREFIX} boundary VB full`,
+        p_request_key: key('boundary-vb-full'),
+      }),
+      'Expected exact VB settlement to succeed',
+    )
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'VB',
+        p_ref_id: boundaryVbId,
+        p_happened_at: todayIso(),
+        p_amount_base: 0.01,
+        p_memo: `${PREFIX} boundary VB settled attempt`,
+        p_request_key: key('boundary-vb-zero'),
+      }),
+      'settlement_already_resolved',
+    )
+    check('vb-respects-corrected-zero-outstanding-rule', true)
+    check('so-respects-corrected-zero-outstanding-rule', true)
+
+    check(
+      'failed-boundary-attempts-create-no-posting-request-or-business-row',
+      await countRows(ownerClient, 'posting_requests', [
+        ['eq', 'company_id', companyId],
+        ['like', 'request_key', `${PREFIX}-settlement-boundary-exploit%`],
+      ]) === 0
+      && await countRows(ownerClient, 'cash_transactions', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', boundarySoId],
+      ]) === boundarySoRowsAfterFull,
+    )
+
+    const concurrentSoId = await createSettlementSalesOrder('concurrent-same-key', 25)
+    const concurrentPayload = {
+      p_company_id: companyId,
+      p_ref_type: 'SO',
+      p_ref_id: concurrentSoId,
+      p_happened_at: todayIso(),
+      p_amount_base: 25,
+      p_memo: `${PREFIX} concurrent same-key receipt`,
+      p_request_key: key('same-key-race'),
+    }
+    const concurrentCalls = await Promise.all([
+      ownerClient.rpc('post_cash_settlement', concurrentPayload),
+      ownerClient.rpc('post_cash_settlement', concurrentPayload),
+    ])
+    const concurrentResults = concurrentCalls.map((result) => {
+      throwSupabaseError(result.error, 'Same-key settlement concurrency failed')
+      return unwrapRpcSingle(result.data)
+    })
+    check(
+      'same-key-concurrent-submission-produces-one-business-result',
+      concurrentResults[0].transaction_id === concurrentResults[1].transaction_id,
+    )
+    check(
+      'same-key-concurrent-submission-produces-one-cash-row',
+      await countRows(ownerClient, 'cash_transactions', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'ref_type', 'SO'],
+        ['eq', 'ref_id', concurrentSoId],
+      ]) === 1,
+    )
+
+    const competingSoId = await createSettlementSalesOrder('concurrent-different-key', 25)
+    const competingCalls = await Promise.all([
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: competingSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 25,
+        p_memo: `${PREFIX} competing cash receipt`,
+        p_request_key: key('competing-cash'),
+      }),
+      ownerClient.rpc('post_bank_settlement', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_ref_type: 'SO',
+        p_ref_id: competingSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 25,
+        p_memo: `${PREFIX} competing bank receipt`,
+        p_request_key: key('competing-bank'),
+      }),
+    ])
+    const competingSuccesses = competingCalls.filter((result) => !result.error)
+    const competingFailures = competingCalls.filter((result) => result.error)
+    check(
+      'different-key-competing-full-settlement-cannot-double-post',
+      competingSuccesses.length === 1 && competingFailures.length === 1,
+    )
+
+    const requestRow = await querySingle(
+      ownerClient,
+      'posting_requests',
+      'operation_type, request_key, payload_hash, status, result_ref_type, result_ref_id, result_payload',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'operation_type', 'settlement.cash.post'],
+        ['eq', 'request_key', cashSoKey],
+      ],
+    )
+    check(
+      'posting-request-records-succeeded-result',
+      requestRow.status === 'succeeded' && requestRow.result_ref_type === 'CASH_TRANSACTION' && Boolean(requestRow.result_ref_id) && Boolean(requestRow.payload_hash),
+    )
+
+    const cashAdjustment = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_cash_adjustment', {
+        p_company_id: companyId,
+        p_happened_at: todayIso(),
+        p_amount_base: 3,
+        p_memo: `${PREFIX} governed cash adjustment`,
+        p_request_key: key('cash-adjustment'),
+      }),
+      'Expected governed cash adjustment to succeed',
+    ))
+    const bankLedger = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('post_bank_ledger_transaction', {
+        p_company_id: companyId,
+        p_bank_id: bankAccountId,
+        p_happened_at: todayIso(),
+        p_amount_base: -3,
+        p_memo: `${PREFIX} governed bank ledger entry`,
+        p_request_key: key('bank-ledger'),
+      }),
+      'Expected governed bank ledger entry to succeed',
+    ))
+    check('governed-cash-and-bank-ledger-entry-points-work', Boolean(cashAdjustment?.transaction_id) && Boolean(bankLedger?.transaction_id))
+
+    const stockMovementsBeforeImport = await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]])
+    const stockLevelsBeforeImport = await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]])
+    const pricesBeforeImport = expectNoSupabaseError(
+      await ownerClient.from('items').select('id, unit_price').eq('company_id', companyId).order('id', { ascending: true }),
+      'Expected bank-import price baseline to load',
+    )
+
+    const twoRowImportKey = importKey('two-row')
+    const twoRowImportRows = [
+      bankImportRow(2, 4, `${PREFIX} atomic import row A`),
+      bankImportRow(3, -1, `${PREFIX} atomic import row B`),
+    ]
+    const twoRowBankCountBefore = await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]])
+    const twoRowImport = unwrapRpcSingle(expectNoSupabaseError(
+      await postBankImport(twoRowImportRows, twoRowImportKey),
+      'Expected valid two-row bank import to succeed',
+    ))
+    check(
+      'valid-two-row-import-commits-both-rows',
+      await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]) === twoRowBankCountBefore + 2,
+    )
+    check('valid-multi-row-import-returns-correct-count', twoRowImport.row_count === 2)
+    check(
+      'valid-import-returns-auditable-transaction-identifiers',
+      Array.isArray(twoRowImport.transaction_ids)
+      && twoRowImport.transaction_ids.length === 2
+      && new Set(twoRowImport.transaction_ids).size === 2,
+    )
+    const importRequest = await querySingle(
+      ownerClient,
+      'posting_requests',
+      'id, operation_type, request_key, payload_hash, status, result_ref_type, result_payload',
+      [
+        ['eq', 'company_id', companyId],
+        ['eq', 'operation_type', 'bank.ledger.import'],
+        ['eq', 'request_key', twoRowImportKey],
+      ],
+    )
+    check(
+      'bank-import-posting-request-records-succeeded-batch-result',
+      importRequest.status === 'succeeded'
+      && importRequest.result_ref_type === 'BANK_LEDGER_IMPORT'
+      && importRequest.result_payload?.row_count === 2
+      && Boolean(importRequest.payload_hash),
+    )
+
+    const importReplayClient = await signIn(ownerUser.email, ownerUser.password)
+    await setActiveCompany(importReplayClient, companyId)
+    const replayOutstandingBefore = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base',
+      [['eq', 'id', normalizedZeroSoId]],
+    )
+    const reorderedReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await postBankImport([...twoRowImportRows].reverse(), twoRowImportKey, importReplayClient),
+      'Expected the reordered logical import to replay in a fresh client context',
+    ))
+    check(
+      'same-canonical-file-replays-after-new-client-context',
+      reorderedReplay.replayed === true
+      && JSON.stringify(reorderedReplay.transaction_ids) === JSON.stringify(twoRowImport.transaction_ids),
+    )
+    check(
+      'same-logical-rows-in-different-order-preserve-import-identity',
+      reorderedReplay.import_fingerprint === twoRowImport.import_fingerprint,
+    )
+    check(
+      'import-replay-creates-zero-additional-bank-rows',
+      await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]) === twoRowBankCountBefore + 2,
+    )
+    const replayOutstandingAfter = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base',
+      [['eq', 'id', normalizedZeroSoId]],
+    )
+    check(
+      'import-replay-creates-zero-additional-settlement-effect',
+      round2(replayOutstandingAfter.legacy_outstanding_base) === round2(replayOutstandingBefore.legacy_outstanding_base),
+    )
+
+    const rowsBeforeImportMismatch = await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]])
+    await expectPostgrestError(
+      postBankImport([
+        twoRowImportRows[0],
+        { ...twoRowImportRows[1], amount_base: '-2.00' },
+      ], twoRowImportKey),
+      'idempotency_key_payload_mismatch',
+    )
+    check('same-import-key-with-changed-payload-is-rejected', true)
+    check(
+      'changed-import-payload-creates-zero-bank-rows',
+      await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]) === rowsBeforeImportMismatch,
+    )
+
+    const failedAtomicKey = importKey('atomic-over-failure')
+    const failedAtomicMemo = `${PREFIX} atomic rollback first row`
+    const outstandingBeforeAtomicFailure = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base',
+      [['eq', 'id', minorUnitAboveSoId]],
+    )
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, failedAtomicMemo),
+        bankImportRow(3, 2, `${PREFIX} atomic over-settlement`, {
+          direction: 'receive',
+          ref_type: 'SO',
+          ref_id: minorUnitAboveSoId,
+        }),
+      ], failedAtomicKey),
+      'settlement_amount_exceeds_outstanding',
+    )
+    check('failure-on-later-import-row-rolls-back-earlier-row', true)
+    check(
+      'failed-import-leaves-zero-partial-bank-rows',
+      await countRows(ownerClient, 'bank_transactions', [
+        ['eq', 'bank_id', bankAccountId],
+        ['eq', 'memo', failedAtomicMemo],
+      ]) === 0,
+    )
+    const outstandingAfterAtomicFailure = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base',
+      [['eq', 'id', minorUnitAboveSoId]],
+    )
+    check(
+      'failed-import-leaves-zero-partial-settlement-effect',
+      round2(outstandingAfterAtomicFailure.legacy_outstanding_base) === round2(outstandingBeforeAtomicFailure.legacy_outstanding_base),
+    )
+    check(
+      'failed-import-leaves-zero-partial-posting-request',
+      await countRows(ownerClient, 'posting_requests', [
+        ['eq', 'company_id', companyId],
+        ['eq', 'operation_type', 'bank.ledger.import'],
+        ['eq', 'request_key', failedAtomicKey],
+      ]) === 0,
+    )
+
+    const correctedImportKey = importKey('atomic-corrected')
+    const correctedImportRows = [
+      bankImportRow(2, 0.25, failedAtomicMemo),
+      bankImportRow(3, 0.5, `${PREFIX} corrected linked import`, {
+        direction: 'receive',
+        ref_type: 'SO',
+        ref_id: minorUnitAboveSoId,
+      }),
+    ]
+    const correctedImport = unwrapRpcSingle(expectNoSupabaseError(
+      await postBankImport([
+        ...correctedImportRows,
+      ], correctedImportKey),
+      'Expected corrected import to succeed after the failed transaction rolled back',
+    ))
+    check(
+      'corrected-import-succeeds-after-rollback',
+      correctedImport.row_count === 2 && correctedImport.anchors?.length === 1,
+    )
+    const outstandingAfterCorrectedImport = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base',
+      [['eq', 'id', minorUnitAboveSoId]],
+    )
+    check(
+      'corrected-import-applies-exactly-one-settlement-effect',
+      round2(outstandingAfterCorrectedImport.legacy_outstanding_base)
+        === round2(outstandingBeforeAtomicFailure.legacy_outstanding_base - 0.5),
+    )
+    const correctedImportReplay = unwrapRpcSingle(expectNoSupabaseError(
+      await postBankImport(correctedImportRows, correctedImportKey, importReplayClient),
+      'Expected linked import replay to succeed',
+    ))
+    const outstandingAfterCorrectedReplay = await querySingle(
+      ownerClient,
+      'v_sales_order_state',
+      'legacy_outstanding_base',
+      [['eq', 'id', minorUnitAboveSoId]],
+    )
+    check(
+      'linked-import-replay-creates-zero-additional-settlement-effect',
+      correctedImportReplay.replayed === true
+      && JSON.stringify(correctedImportReplay.transaction_ids) === JSON.stringify(correctedImport.transaction_ids)
+      && round2(outstandingAfterCorrectedReplay.legacy_outstanding_base) === round2(outstandingAfterCorrectedImport.legacy_outstanding_base),
+    )
+
+    const invalidReferenceMemo = `${PREFIX} invalid reference rollback first row`
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, invalidReferenceMemo),
+        bankImportRow(3, 0.25, `${PREFIX} missing anchor row`, {
+          direction: 'receive',
+          ref_type: 'SO',
+          ref_id: randomUUID(),
+        }),
+      ], importKey('invalid-reference')),
+      'settlement_anchor_not_found',
+    )
+    check('invalid-reference-rolls-back-entire-import', true)
+    check(
+      'invalid-reference-import-leaves-zero-first-row',
+      await countRows(ownerClient, 'bank_transactions', [
+        ['eq', 'bank_id', bankAccountId],
+        ['eq', 'memo', invalidReferenceMemo],
+      ]) === 0,
+    )
+
+    await expectPostgrestError(postBankImport([], importKey('empty')), 'bank_import_empty')
+    check('empty-bank-import-is-rejected', true)
+    const invalidDateImport = await postBankImport([
+      bankImportRow(7, 0.25, `${PREFIX} invalid date row`, { happened_at: 'not-a-date' }),
+    ], importKey('invalid-date-context'))
+    assert.ok(invalidDateImport.error, 'Expected invalid import date to fail')
+    const invalidDateDetail = JSON.parse(String(invalidDateImport.error.details || '{}'))
+    check(
+      'bank-import-failure-returns-row-specific-safe-context',
+      String(invalidDateImport.error.message).includes('bank_import_date_invalid')
+      && invalidDateDetail.row_number === 7
+      && invalidDateDetail.field === 'happened_at',
+    )
+    await expectPostgrestError(
+      postBankImport([
+        { ...bankImportRow(8, 0.25, `${PREFIX} non-finite amount`), amount_base: 'NaN' },
+      ], importKey('non-finite-amount')),
+      'ledger_amount_must_be_nonzero',
+    )
+    check('non-finite-bank-import-amount-is-rejected', true)
+    const excessiveRows = Array.from({ length: 501 }, (_, index) => bankImportRow(index + 1, 0.01, `${PREFIX} row ${index + 1}`))
+    await expectPostgrestError(postBankImport(excessiveRows, importKey('too-many')), 'bank_import_row_limit_exceeded')
+    check('excessive-bank-import-row-count-is-rejected', true)
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(1, 0.01, `${PREFIX} ${'x'.repeat(270_000)}`),
+        bankImportRow(2, 0.01, `${PREFIX} ${'y'.repeat(270_000)}`),
+      ], importKey('too-large')),
+      'bank_import_request_too_large',
+    )
+    check('excessive-bank-import-request-size-is-rejected', true)
+
+    const duplicateLookingMemo = `${PREFIX} legitimate duplicate-looking import row`
+    const duplicateRowsBefore = await countRows(ownerClient, 'bank_transactions', [
+      ['eq', 'bank_id', bankAccountId],
+      ['eq', 'memo', duplicateLookingMemo],
+    ])
+    const duplicateLookingImport = unwrapRpcSingle(expectNoSupabaseError(
+      await postBankImport([
+        bankImportRow(2, 0.75, duplicateLookingMemo),
+        bankImportRow(3, 0.75, duplicateLookingMemo),
+      ], importKey('legitimate-duplicates')),
+      'Expected duplicate-looking legitimate rows to remain represented',
+    ))
+    check(
+      'repeated-identical-looking-rows-remain-represented',
+      duplicateLookingImport.row_count === 2
+      && new Set(duplicateLookingImport.transaction_ids).size === 2
+      && await countRows(ownerClient, 'bank_transactions', [
+        ['eq', 'bank_id', bankAccountId],
+        ['eq', 'memo', duplicateLookingMemo],
+      ]) === duplicateRowsBefore + 2,
+    )
+
+    const concurrentImportRows = [
+      bankImportRow(2, 0.31, `${PREFIX} concurrent import A`),
+      bankImportRow(3, -0.11, `${PREFIX} concurrent import B`),
+    ]
+    const concurrentImportKey = importKey('same-key-concurrent')
+    const concurrentImports = await Promise.all([
+      postBankImport(concurrentImportRows, concurrentImportKey),
+      postBankImport(concurrentImportRows, concurrentImportKey),
+    ])
+    const concurrentImportResults = concurrentImports.map((result) => {
+      throwSupabaseError(result.error, 'Same-key concurrent bank import failed')
+      return unwrapRpcSingle(result.data)
+    })
+    check(
+      'same-key-concurrent-bank-import-produces-one-batch-result',
+      JSON.stringify(concurrentImportResults[0].transaction_ids)
+        === JSON.stringify(concurrentImportResults[1].transaction_ids),
+    )
+
+    const staleSoImportRowsBefore = await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]])
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, `${PREFIX} stale SO import`, {
+          direction: 'receive',
+          ref_type: 'SO',
+          ref_id: transitionSoId,
+        }),
+      ], importKey('stale-so')),
+      'finance_document_became_active_anchor',
+    )
+    check('atomic-import-rejects-stale-so-after-si-transition', true)
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, `${PREFIX} stale PO import`, {
+          direction: 'pay',
+          ref_type: 'PO',
+          ref_id: transitionPoId,
+        }),
+      ], importKey('stale-po')),
+      'finance_document_became_active_anchor',
+    )
+    check('atomic-import-rejects-stale-po-after-vb-transition', true)
+    check(
+      'stale-anchor-imports-create-zero-bank-rows',
+      await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]) === staleSoImportRowsBefore,
+    )
+
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, `${PREFIX} AP receipt direction mismatch`, {
+          direction: 'receive',
+          ref_type: 'PO',
+          ref_id: overPoId,
+        }),
+      ], importKey('direction-ap-receive')),
+      'bank_import_direction_mismatch',
+    )
+    check('bank-import-receipt-against-ap-anchor-is-rejected', true)
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, `${PREFIX} AR payment direction mismatch`, {
+          direction: 'pay',
+          ref_type: 'SO',
+          ref_id: normalizedZeroSoId,
+        }),
+      ], importKey('direction-ar-pay')),
+      'bank_import_direction_mismatch',
+    )
+    check('bank-import-payment-against-ar-anchor-is-rejected', true)
+
+    const settlementViewer = await createTempUser(admin, PREFIX, 'settlement-viewer')
+    const settlementOperator = await createTempUser(admin, PREFIX, 'settlement-operator')
+    const settlementAdmin = await createTempUser(admin, PREFIX, 'settlement-admin')
+    created.userIds.add(settlementViewer.userId)
+    created.userIds.add(settlementOperator.userId)
+    created.userIds.add(settlementAdmin.userId)
+    const settlementViewerClient = await signIn(settlementViewer.email, settlementViewer.password)
+    const settlementOperatorClient = await signIn(settlementOperator.email, settlementOperator.password)
+    const settlementAdminClient = await signIn(settlementAdmin.email, settlementAdmin.password)
+    try {
+      throwSupabaseError(
+        (await admin.from('company_members').insert([
+          {
+            company_id: companyId,
+            user_id: settlementViewer.userId,
+            email: settlementViewer.email.toLowerCase(),
+            role: 'VIEWER',
+            status: 'active',
+            invited_by: ownerUser.userId,
+          },
+          {
+            company_id: companyId,
+            user_id: settlementOperator.userId,
+            email: settlementOperator.email.toLowerCase(),
+            role: 'OPERATOR',
+            status: 'active',
+            invited_by: ownerUser.userId,
+          },
+          {
+            company_id: companyId,
+            user_id: settlementAdmin.userId,
+            email: settlementAdmin.email.toLowerCase(),
+            role: 'ADMIN',
+            status: 'active',
+            invited_by: ownerUser.userId,
+          },
+        ])).error,
+        'Settlement authority membership setup failed',
+      )
+      await setActiveCompany(settlementViewerClient, companyId)
+      await setActiveCompany(settlementOperatorClient, companyId)
+      await setActiveCompany(settlementAdminClient, companyId)
+      await expectPostgrestError(
+        settlementViewerClient.rpc('post_cash_settlement', {
+          p_company_id: companyId,
+          p_ref_type: 'SO',
+          p_ref_id: overSoId,
+          p_happened_at: todayIso(),
+          p_amount_base: 1,
+          p_memo: `${PREFIX} viewer settlement`,
+          p_request_key: key('viewer'),
+        }),
+        'insufficient_company_role',
+      )
+      check('viewer-blocked-from-posting', true)
+      await expectPostgrestError(
+        postBankImport(
+          [bankImportRow(2, 0.12, `${PREFIX} viewer import denied`)],
+          importKey('viewer-denied'),
+          settlementViewerClient,
+        ),
+        'insufficient_company_role',
+      )
+      check('viewer-blocked-from-bank-import', true)
+      await expectPostgrestError(
+        postBankImport(
+          [bankImportRow(2, 0.12, `${PREFIX} operator import denied`)],
+          importKey('operator-denied'),
+          settlementOperatorClient,
+        ),
+        'insufficient_company_role',
+      )
+      check('operator-blocked-from-bank-import', true)
+      const adminImport = unwrapRpcSingle(expectNoSupabaseError(
+        await postBankImport(
+          [bankImportRow(2, 0.12, `${PREFIX} admin import succeeds`)],
+          importKey('admin-success'),
+          settlementAdminClient,
+        ),
+        'Expected ADMIN bank import to succeed',
+      ))
+      check('admin-can-post-bank-import', adminImport.row_count === 1 && adminImport.transaction_ids?.length === 1)
+    } finally {
+      await safeDelete(() => admin.from('company_members').delete().eq('company_id', companyId).in('user_id', [
+        settlementViewer.userId,
+        settlementOperator.userId,
+        settlementAdmin.userId,
+      ]))
+    }
+
+    await expectPostgrestError(
+      managerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: overSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} manager settlement`,
+        p_request_key: key('manager'),
+      }),
+      'insufficient_company_role',
+    )
+    check('manager-blocked-from-finance-settlement-posting', true)
+    await expectPostgrestError(
+      postBankImport(
+        [bankImportRow(2, 0.12, `${PREFIX} manager import denied`)],
+        importKey('manager-denied'),
+        managerClient,
+      ),
+      'insufficient_company_role',
+    )
+    check('manager-blocked-from-bank-import', true)
+
+    const crossCompanyOwner = await createTempUser(admin, PREFIX, 'settlement-cross-company-owner')
+    created.userIds.add(crossCompanyOwner.userId)
+    const crossCompanyClient = await signIn(crossCompanyOwner.email, crossCompanyOwner.password)
+    const foreignBootstrap = unwrapRpcSingle(expectNoSupabaseError(
+      await crossCompanyClient.rpc('create_company_and_bootstrap', { p_name: `${PREFIX} Settlement Cross Company` }),
+      'Expected settlement cross-company bootstrap to succeed',
+    ))
+    const foreignCompanyId = foreignBootstrap.out_company_id
+    created.companyIds.add(foreignCompanyId)
+    assert.notEqual(foreignCompanyId, companyId, 'Cross-company regression requires a distinct company')
+    await setActiveCompany(crossCompanyClient, foreignCompanyId)
+    const foreignCustomer = await crossCompanyClient
+      .from('customers')
+      .insert({
+        company_id: foreignCompanyId,
+        code: `${PREFIX.toUpperCase()}-X-CUS`,
+        name: `${PREFIX} Cross company customer`,
+        tax_id: '811123456',
+        billing_address: 'Rua da Beira 11',
+        currency_code: 'MZN',
+        is_cash: false,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(foreignCustomer.error, 'Cross-company customer setup failed')
+    const foreignOrder = await crossCompanyClient
+      .from('sales_orders')
+      .insert({
+        company_id: foreignCompanyId,
+        customer_id: foreignCustomer.data.id,
+        order_date: todayIso(),
+        due_date: plusDaysIso(7),
+        currency_code: 'MZN',
+        status: 'shipped',
+        subtotal: 10,
+        tax_total: 0,
+        total: 10,
+        total_amount: 10,
+        fx_to_base: 1,
+        customer: `${PREFIX} Cross company customer`,
+        bill_to_name: `${PREFIX} Cross company customer`,
+        bill_to_tax_id: '811123456',
+        bill_to_billing_address: 'Rua da Beira 11',
+        created_by: crossCompanyOwner.userId,
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(foreignOrder.error, 'Cross-company order setup failed')
+    const activeCompanyAfterCrossSetup = await querySingle(
+      admin,
+      'user_active_company',
+      'company_id',
+      [['eq', 'user_id', ownerUser.userId]],
+    )
+    const foreignAnchor = await querySingle(
+      admin,
+      'sales_orders',
+      'company_id',
+      [['eq', 'id', foreignOrder.data.id]],
+    )
+    assert.equal(activeCompanyAfterCrossSetup.company_id, companyId, 'Cross-company regression must restore the source company context')
+    assert.equal(foreignAnchor.company_id, foreignCompanyId, 'Cross-company regression must use a foreign anchor')
+    await expectPostgrestError(
+      ownerClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: foreignOrder.data.id,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} cross-company settlement`,
+        p_request_key: key('cross-company'),
+      }),
+      'cross_company_anchor_denied',
+    )
+    check('cross-company-anchor-rejected', true)
+
+    const foreignBank = await crossCompanyClient
+      .from('bank_accounts')
+      .insert({
+        company_id: foreignCompanyId,
+        name: `${PREFIX} Foreign Bank`,
+        bank_name: 'QA Bank',
+        account_number: `${Date.now()}-foreign`,
+        currency_code: 'MZN',
+      })
+      .select('id')
+      .single()
+    throwSupabaseError(foreignBank.error, 'Cross-company bank setup failed')
+    await expectPostgrestError(
+      postBankImport(
+        [bankImportRow(2, 0.25, `${PREFIX} cross-company bank import`)],
+        importKey('cross-company-bank'),
+        ownerClient,
+        foreignBank.data.id,
+      ),
+      'cross_company_bank_account_denied',
+    )
+    check('cross-company-bank-account-is-rejected-for-import', true)
+    await expectPostgrestError(
+      postBankImport([
+        bankImportRow(2, 0.25, `${PREFIX} cross-company anchor import`, {
+          direction: 'receive',
+          ref_type: 'SO',
+          ref_id: foreignOrder.data.id,
+        }),
+      ], importKey('cross-company-anchor')),
+      'cross_company_anchor_denied',
+    )
+    check('cross-company-settlement-anchor-is-rejected-for-import', true)
+
+    await expectPostgrestError(
+      ownerClient.from('cash_transactions').insert({
+        company_id: companyId,
+        happened_at: todayIso(),
+        type: 'sale_receipt',
+        ref_type: 'SO',
+        ref_id: overSoId,
+        memo: `${PREFIX} raw cash insert`,
+        amount_base: 1,
+      }),
+      'permission denied|row-level',
+    )
+    check('direct-cash-transaction-insert-blocked', true)
+    await expectPostgrestError(
+      ownerClient.from('bank_transactions').insert({
+        bank_id: bankAccountId,
+        happened_at: todayIso(),
+        memo: `${PREFIX} raw bank insert`,
+        amount_base: 1,
+        ref_type: 'SO',
+        ref_id: overSoId,
+      }),
+      'permission denied|row-level',
+    )
+    check('direct-bank-transaction-insert-blocked', true)
+    await expectPostgrestError(
+      ownerClient.rpc('stockwise_normalize_settlement_amount', { p_amount: 1 }),
+      'permission denied|function',
+    )
+    check('internal-money-normalization-helper-is-not-client-executable', true)
+
+    const anonClient = createAnonClient()
+    await expectPostgrestError(
+      anonClient.rpc('post_cash_settlement', {
+        p_company_id: companyId,
+        p_ref_type: 'SO',
+        p_ref_id: overSoId,
+        p_happened_at: todayIso(),
+        p_amount_base: 1,
+        p_memo: `${PREFIX} anon settlement`,
+        p_request_key: key('anon'),
+      }),
+      'permission denied|function',
+    )
+    check('anon-cannot-execute-settlement-rpc', true)
+    await expectPostgrestError(
+      postBankImport(
+        [bankImportRow(2, 0.25, `${PREFIX} anon bank import`)],
+        importKey('anon-import'),
+        anonClient,
+      ),
+      'permission denied|function',
+    )
+    check('anon-cannot-execute-bank-import-rpc', true)
+
+    throwSupabaseError(
+      (await platformAdminClient.rpc('platform_admin_set_company_access', {
+        p_company_id: companyId,
+        p_plan_code: 'starter',
+        p_status: 'suspended',
+        p_reason: 'Governed settlement access regression',
+      })).error,
+      'Settlement access suspension setup failed',
+    )
+    try {
+      await expectPostgrestError(
+        ownerClient.rpc('post_cash_settlement', {
+          p_company_id: companyId,
+          p_ref_type: 'SO',
+          p_ref_id: overSoId,
+          p_happened_at: todayIso(),
+          p_amount_base: 1,
+          p_memo: `${PREFIX} disabled company settlement`,
+          p_request_key: key('disabled'),
+        }),
+        'company_access_disabled',
+      )
+      check('disabled-company-access-blocked', true)
+      await expectPostgrestError(
+        postBankImport(
+          [bankImportRow(2, 0.25, `${PREFIX} disabled company import`)],
+          importKey('disabled-company'),
+        ),
+        'company_access_disabled',
+      )
+      check('disabled-company-access-blocks-bank-import', true)
+    } finally {
+      throwSupabaseError(
+        (await platformAdminClient.rpc('platform_admin_set_company_access', {
+          p_company_id: companyId,
+          p_plan_code: 'starter',
+          p_status: 'active_paid',
+          p_paid_until: isoDateAtNoon(plusDaysIso(30)),
+          p_reason: 'Governed settlement access regression cleanup',
+        })).error,
+        'Settlement access reactivation failed',
+      )
+    }
+
+    check(
+      'settlement-posting-does-not-create-stock-movements',
+      await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]) === stockMovementsBefore,
+    )
+    check(
+      'settlement-posting-does-not-change-stock-levels',
+      await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]) === stockLevelsBefore,
+    )
+    const priceAfter = expectNoSupabaseError(
+      await ownerClient
+        .from('items')
+        .select('id, unit_price')
+        .eq('company_id', companyId)
+        .order('id', { ascending: true }),
+      'Expected settlement price-isolation result to load',
+    )
+    check('settlement-posting-does-not-change-items-unit-price', JSON.stringify(priceAfter) === JSON.stringify(priceBaseline))
+
+    check(
+      'bank-import-does-not-create-stock-movements',
+      await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]) === stockMovementsBeforeImport,
+    )
+    check(
+      'bank-import-does-not-change-stock-levels',
+      await countRows(ownerClient, 'stock_levels', [['eq', 'company_id', companyId]]) === stockLevelsBeforeImport,
+    )
+    const pricesAfterImport = expectNoSupabaseError(
+      await ownerClient.from('items').select('id, unit_price').eq('company_id', companyId).order('id', { ascending: true }),
+      'Expected bank-import price-isolation result to load',
+    )
+    check('bank-import-does-not-change-items-unit-price', JSON.stringify(pricesAfterImport) === JSON.stringify(pricesBeforeImport))
+
+    assert.ok(checks.size >= 60, `Expected at least 60 meaningful settlement checks, received ${checks.size}`)
   })
 
   await t.test('BOM assembly build succeeds when ready and blocks when stock is insufficient', async () => {

@@ -53,7 +53,7 @@ Current rules:
 - `stock_movements` is the canonical stock ledger
 - `stock_levels` is the derived rollup used for availability and weighted-average bucket cost
 - stock movement trigger rollups use atomic negative-delta guards and receipt upserts so concurrent issue/receipt inserts cannot lose bucket updates or silently overdraw stock
-- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/loss/transfer/harvest/completion/reversal workflows.
+- `posting_requests` is the reusable company-scoped backend idempotency ledger for posting workflows; it covers assembly, normal web Point of Sale, PO receiving, sales shipping, opening-stock import, manual receipt/issue, transfer, adjustment, governed cash/bank settlement and manual ledger posting, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/loss/transfer/harvest/completion/reversal workflows.
 - application code that records a stock receipt, issue, transfer, or adjustment should insert the `stock_movements` row and let database triggers update `stock_levels`; it should not also mutate `stock_levels` directly for the same event
 - assembly posting uses `build_from_bom` or the hardened source-split `build_from_bom_sources` path; both create `stock_movements` rows with `ref_type = 'BUILD'` and a build `ref_id`
 - idempotent assembly posting uses `post_build_from_bom` and `post_build_from_bom_sources`; repeated calls with the same request key and same payload return the original build id, while reused keys with changed payloads are rejected
@@ -112,6 +112,18 @@ Canonical active anchors:
 
 Legacy orders may still appear as history or operational parents, but reconciliation and settlement truth now follow finance-document anchors.
 
+### Governed settlement posting (local prelaunch)
+
+Hosted production remains at 38 migrations through G5.2. Local migration `20260709222842_governed_settlement_posting.sql` is the unlaunched 39th migration and adds no new finance-document table or legal-document mutation.
+
+- `post_cash_settlement` and `post_bank_settlement` write one auditable ledger row against the currently valid `SO`, `PO`, `SI`, or `VB` anchor.
+- `post_cash_adjustment` and `post_bank_ledger_transaction` govern the maintained unlinked manual Cash and Bank Detail entries.
+- `post_bank_ledger_import` governs a whole bank CSV batch in one transaction and one `bank.ledger.import` posting request. It canonicalizes dates, two-decimal amounts, directions, references, descriptions/external references, currency, and null/empty values; repeated rows remain represented, while row order does not change batch identity.
+- Each operation stores a deterministic payload hash and stable result in `posting_requests`; exact replay returns that result and changed-payload reuse rejects before business-row creation.
+- The active anchor is locked and its outstanding amount is recalculated inside the transaction. Requested amount and outstanding are normalized to the existing two-decimal base-currency contract with exact `numeric` arithmetic. Normalized zero input, normalized zero outstanding, a different-company anchor, stale `SO`/`PO` after finance-anchor transition, or an amount greater than outstanding is rejected without additive tolerance.
+- Bank imports are limited to 500 rows and 512 KiB. A failure on any row rolls back every bank row, settlement effect, and import posting request from that call; identical canonical input safely replays after browser reload without duplicate rows.
+- Normal clients retain company-scoped reads but no direct `INSERT` grant on `cash_transactions` or `bank_transactions`; the public RPC surface is authenticated-only and internal helpers remain non-executable by normal clients.
+
 ## Current design summary
 
 One clean model per responsibility:
@@ -120,12 +132,12 @@ One clean model per responsibility:
 - user profile/sign-in state: `profiles`
 - active company: `user_active_company`
 - stock ledger: `stock_movements`
-- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/loss/transfer/harvest/completion/reversal operations
+- posting idempotency: `posting_requests` for assembly, normal web POS, consolidated A2.4/A2.5 stock-posting RPCs, governed settlement/cash/bank posting, Production Run post/reversal, and Growth Batch create/activate/cancel/measurement/direct-cost/stock-input/loss/transfer/harvest/completion/reversal operations
 - item default sell price: `items.unit_price`
 
 ## Production Runs
 
-The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Current hosted migration history and local replay continue through Growth Batches G5.2 with 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`.
+The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Hosted migration history continues through Growth Batches G5.2 with 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has an unlaunched 39th settlement-posting migration.
 
 Tables:
 
@@ -160,7 +172,7 @@ Production smoke validation posted and immediately reversed Production Run `LEN-
 
 ## Growth Batches
 
-Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted production and local replay are aligned through 38 migrations and G5.2 (`20260704041943_add_growth_batch_completion_posting.sql`). G5.2 is live and production-smoke validated.
+Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted production is aligned through 38 migrations and G5.2 (`20260704041943_add_growth_batch_completion_posting.sql`); the local checkout adds an unlaunched 39th settlement-posting migration. G5.2 is live and production-smoke validated.
 
 Tables:
 
@@ -314,7 +326,7 @@ Production smoke created one controlled QA output item (`QA-G51-POULTRY-KG`, ite
 
 ### Growth Batches G5.2 Live Completion
 
-G5.2 is live and production-smoke validated. Hosted production and local replay have 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`.
+G5.2 is live and production-smoke validated. Hosted production has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has the unlaunched 39th settlement-posting migration.
 
 G5.2 schema additions:
 

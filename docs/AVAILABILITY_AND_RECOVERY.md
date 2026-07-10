@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted production and local replay are aligned through `20260704041943_add_growth_batch_completion_posting.sql` with 38 active migrations. G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal are live and production-smoke validated.
+- Hosted production is aligned through `20260704041943_add_growth_batch_completion_posting.sql` with 38 active migrations. The local checkout has an unlaunched 39th settlement-posting migration. That local package makes bank CSV import atomic and reload-safe: a row failure commits zero imported rows, while an identical canonical file replays its original batch result. G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal are live and production-smoke validated.
 
 ## Backup Assumptions
 

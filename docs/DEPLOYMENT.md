@@ -66,11 +66,17 @@ For production-impacting releases, also review:
 - [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for current enforcement, monitoring, rate-limiting, and scaling assumptions
 - [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for rollback, restore, Edge Function, Auth/email, and emergency platform-admin checklists
 
+## Local-Only Prelaunch Work
+
+Hosted production remains at 38 migrations through G5.2. The local checkout includes unlaunched migration `20260709222842_governed_settlement_posting.sql` as migration 39.
+
+This forward-only package governs cash settlement, bank settlement, manual cash adjustment, manual bank-ledger posting, and atomic bank CSV import with `posting_requests` idempotency. Settlement eligibility uses exact two-decimal `numeric` normalization with no additive epsilon; fully resolved anchors reject every positive normalized amount. `post_bank_ledger_import` commits a complete canonical batch or nothing, uses one `bank.ledger.import` request, and replays identical logical files across reloads without duplicate rows. It is not a hosted rollout claim: no deployment, hosted migration, or production smoke is recorded for it here. Before any authorised launch, run the local regression suite against a local or isolated non-production target, review the exact pending migration set, then obtain separate database and frontend rollout authority.
+
 ## Current Production Release Notes
 
 2026-07-04/2026-07-09 Growth Batches G5.2 production rollout:
 
-- hosted production and local replay have 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`
+- at the G5.2 rollout, hosted production and local replay were aligned at 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the current local checkout has unlaunched settlement-posting migration 39
 - `20260704041936_add_growth_batch_completion.sql` and `20260704041943_add_growth_batch_completion_posting.sql` applied together from `2026-07-04T15:11:31.7589419+02:00` to `2026-07-04T15:11:48.7774298+02:00` with exit zero; the second dry run reported the remote database up to date
 - feature release `6fa6bdb1303c9457f0b26fa6934a3d096cdad38b` passed Validation run `28706577810`; the G5.2 Portuguese lifecycle-copy correction `bc22eb3facd166dbcd59fb7d5bedb21bb51d20b9` passed Validation run `29051595028` and deployed as `dpl_BRA6QUesB64T8LwF3rUAF7dYFKfv`
 - the local package adds governed lifecycle completion and event-specific completion reversal only, with `growth_batch_completions`, `growth_batch_completion_reversal_lines`, `growth_batch_completion_history`, `preview_growth_batch_completion`, `complete_growth_batch`, and `reverse_growth_batch_completion`
