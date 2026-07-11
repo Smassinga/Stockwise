@@ -9,7 +9,6 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { getMyCompanyAccessState, getPlatformAdminStatus, type CompanyAccessState } from '../lib/companyAccess'
 import { useI18n, withI18nFallback } from '../lib/i18n'
-import { buildPublicMailto } from '../lib/publicContact'
 
 function formatDate(value: string | null, locale: string) {
   if (!value) return '-'
@@ -24,9 +23,6 @@ export default function CompanyAccessStatusPage() {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
-  const activationHref = buildPublicMailto(
-    lang === 'pt' ? 'Pedido de ativação StockWise' : 'StockWise activation request',
-  )
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -205,7 +201,7 @@ export default function CompanyAccessStatusPage() {
                     {refreshing ? tt('common.loading', 'Loading...') : tt('access.refreshStatus', 'Refresh status')}
                   </Button>
                   <Button asChild>
-                    <a href={activationHref}>{tt('access.requestActivation', 'Request activation')}</a>
+                    <Link to="/activation">{tt('access.requestActivation', 'Request activation')}</Link>
                   </Button>
                   <Button variant="outline" asChild>
                     <Link to="/#pricing">{tt('access.openPricing', 'Open pricing')}</Link>
@@ -239,7 +235,7 @@ export default function CompanyAccessStatusPage() {
                 <p>
                   {tt(
                     'access.retainedManual',
-                    'Automatic payment collection is intentionally deferred. Manual activation remains the current commercial model.',
+                    'Proof submission remains subject to platform-admin verification. Uploading a file never activates access by itself.',
                   )}
                 </p>
               </CardContent>

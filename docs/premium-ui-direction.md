@@ -225,3 +225,5 @@ Avoid:
 - desktop tables as the primary Android review surface
 - finance metrics that look like placeholders
 - component-library churn that adds paid or proprietary dependencies
+
+The local activation workspace uses the existing card, badge, form, dialog, and responsive table primitives. It avoids checkout language, visually separates authoritative amount from declared amount, keeps the proof-not-verification warning persistent, and makes review actions explicit rather than hover-only.

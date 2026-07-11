@@ -370,3 +370,7 @@ This document does not try to be:
 - a historical release log
 
 If a release topic is not current and specific to StockWise, it should live elsewhere or not be tracked.
+
+## Pending payment activation rollout
+
+Hosted production remains at 39 migrations through `20260709222842_governed_settlement_posting.sql`. Local replay has 41 migrations, with `20260711091717_add_payment_activation_requests.sql` and `20260711091724_add_payment_activation_workflow.sql` pending. Do not expose `/activation` or the Platform Control payment queue as live until CI passes, the linked project dry run proposes exactly those two files, the hosted RLS/grant/storage matrix is verified, and controlled proof-review approval smoke succeeds.

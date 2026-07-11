@@ -280,3 +280,7 @@ Recommended review cadence:
 - Do not commit raw secrets, generated `*_remote_schema.sql` artifacts, or unreviewed schema pulls.
 - Do not install heavy monitoring or rate-limiting systems without an approved operational owner.
 - Keep this document current when release state, enforcement layer, or operational assumptions change.
+
+## Payment activation security boundary (local only)
+
+New request, event, counter, channel, and channel-event tables use RLS and FORCE RLS. Normal clients receive SELECT only; OWNER/ADMIN mutations and all review transitions are RPC-only. `PUBLIC` and `anon` cannot execute public mutation RPCs, internal helpers are not client-executable, SECURITY DEFINER functions use restricted search paths, and proof objects remain private with 5 MiB JPEG/PNG/PDF limits. Platform approval requires locked request/subscription rows and `posting_requests` idempotency before reusing the established entitlement mutation/audit path.

@@ -289,3 +289,7 @@ Recommended next steps:
 - wire the finance regression suite into CI only after a dedicated non-production Supabase project and guarded environment rules exist
 - add smaller targeted unit tests around shared helper math and access-state formatting
 - add browser-level route verification only for high-value public/commercial and blocked-access flows
+
+## Payment activation regression (local only)
+
+`payment-activation.test.mjs` adds 123 named checks against local Supabase. It covers channel authority/audit, OWNER/ADMIN versus lower-role boundaries, plan-price authority, one-open-request/idempotency behavior, private storage MIME/size/cross-company controls, proof validation, submission/correction/resubmission, platform review/approval, same-key and competing-key approval behavior, provider-reference uniqueness across same-category channels, entitlement and event audits, restricted grants/search paths, signed URL bounds, and cash/bank/stock/price/Growth Batch/Production Run isolation. The test uses the existing production-target hard block and must never run against hosted production.

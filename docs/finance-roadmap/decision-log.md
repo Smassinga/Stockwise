@@ -107,3 +107,5 @@ Record durable implementation decisions here so future sessions do not re-argue 
 - If a prior decision is superseded, add a new row that explicitly replaces it and reference the older decision in the description.
 - Keep this log focused on architecture and behavior decisions, not generic activity summaries.
 
+| 2026-07-11 | Payment proof upload is evidence intake, not payment verification or entitlement authority. | Screenshots and PDFs cannot establish settlement truth without provider verification. The first release therefore uses private proof, immutable request history, platform-admin review, and atomic reuse of the existing access control plane. | Keep the package local-only until authorised rollout. Do not activate on upload, auto-send confirmation email, create finance ledger rows, or store provider secrets. Actual provider webhooks and automatic reconciliation remain future scope. |
+

@@ -53,6 +53,7 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 import { internalPlanOptions } from '../lib/pricingPlans'
 import { PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
 import SubscriptionAnalyticsDashboard from '../components/platform/SubscriptionAnalyticsDashboard'
+import PaymentActivationAdmin from '../components/platform/PaymentActivationAdmin'
 
 function asDateInput(value: string | null | undefined) {
   return value ? value.slice(0, 10) : ''
@@ -563,6 +564,12 @@ export default function PlatformControlPage() {
             selectedCompanyId={selectedCompanyId}
             onRefresh={() => loadCompanies(selectedCompanyId)}
             onSelectCompany={handleSelectCompany}
+            tt={tt}
+          />
+
+          <PaymentActivationAdmin
+            locale={locale}
+            onOpenCompany={handleSelectCompany}
             tt={tt}
           />
 

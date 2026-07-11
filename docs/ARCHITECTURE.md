@@ -298,3 +298,7 @@ The authorised rollout applied migration 39 from `2026-07-10T23:46:23.8149856Z` 
 - do not use inventory cost as a default selling price
 - validate finance and operational continuity with `npm run test:finance-regression`
 - keep UI polish inside the existing Tailwind/shadcn-style system unless a new dependency is explicitly justified
+
+## Payment activation request package (local only)
+
+Local replay has 41 migrations through `20260711091724_add_payment_activation_workflow.sql`; hosted production remains at 39 through governed settlement. The package adds a private `payment-proofs` bucket, platform payment channels, company payment requests and immutable events, company OWNER/ADMIN submission RPCs, and platform-admin review/approval RPCs. Proof upload is evidence intake only. Approval atomically reuses `platform_admin_set_company_access`; provider webhooks remain future scope and the existing access-confirmation email remains an explicit separate action.

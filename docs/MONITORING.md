@@ -74,3 +74,7 @@ Before calling a change release-ready:
 StockWise has operational logging and regression coverage, but it does not yet have a dedicated third-party observability stack committed in-repo. That is acceptable as long as release validation stays disciplined and the existing Supabase/Vercel signals are actually reviewed.
 
 See [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for the current monitoring, rate-limiting, CI/CD, and scaling gap list. See [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for incident, rollback, restore, and monthly recovery-test checklists.
+
+## Payment activation signals (local-only package)
+
+On rollout, monitor submitted/under-review/needs-correction queue age, approval failures, provider-reference uniqueness conflicts, proof authorization rate limits, missing proof objects, and access-audit/request-event reconciliation. Do not treat catalogue recurring value or submitted evidence as collected revenue. Provider webhook and automatic reconciliation observability remain future scope.

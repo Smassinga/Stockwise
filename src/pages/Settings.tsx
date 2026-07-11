@@ -710,6 +710,19 @@ function Settings() {
         },
       ];
 
+      if (canEditAll) {
+        cards.push({
+          key: "payment-activation",
+          title: tt("activation.title", "Activation and renewal"),
+          description: tt("activation.settingsDescription", "Submit private payment proof for platform-admin verification and track the request status."),
+          status: copy.statusCurrent,
+          actionLabel: copy.open,
+          href: "/activation",
+          tone: "info",
+          icon: <KeyIcon weight="duotone" />,
+        });
+      }
+
       if (isPlatformAdmin) {
         cards.push({
           key: "subscription-access",
@@ -728,6 +741,7 @@ function Settings() {
     [
       canEditOps,
       canEditDueReminders,
+      canEditAll,
       copy,
       data.notifications.dailyDigest,
       fiscalReady,

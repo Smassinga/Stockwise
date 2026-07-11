@@ -94,3 +94,7 @@ Current Android shell/runtime rules:
 - dashboard-linked operator workflows should stay one tap away where practical
 
 If Android packaging is prepared from stale metadata or stale copy, the packaged app will immediately feel older than the web product even if the core frontend is current.
+
+## Activation workspace
+
+The local `/activation` workspace stacks the plan, channel, payer, proof, submit, and status-history tasks on narrow screens. File requirements and the verification boundary remain visible at 390 px, long destination/reference text wraps, and Platform Control review dialogs retain scrollable bodies with reachable footer actions. No horizontal page scrolling is part of the approved contract.

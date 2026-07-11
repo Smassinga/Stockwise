@@ -178,3 +178,7 @@ Current model:
 - payment checkout is intentionally deferred
 
 Future payment automation should reuse the existing control plane rather than bypass it.
+
+## Payment request review (local only)
+
+Platform Control now has a local-only queue and channel editor. Reviewers compare current access, requested plan/period, authoritative and declared amounts, method, normalized provider identity, payer, timestamp, and private proof. Start review before deciding. Use correction for repairable evidence, reject with a reason, or explicitly confirm approval. Approval updates request, immutable events, access audit, control action, and entitlement in one transaction. The existing paid-activation email preview/send remains a separate manual step.

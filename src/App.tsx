@@ -44,6 +44,7 @@ const BankDetail = lazy(() => import('./pages/BankDetail'))
 const Profile = lazy(() => import('./pages/Profile'))
 const SearchResults = lazy(() => import('./pages/SearchResults'))
 const CompanyAccessStatus = lazy(() => import('./pages/CompanyAccessStatus'))
+const PaymentActivation = lazy(() => import('./pages/PaymentActivation'))
 const PlatformControl = lazy(() => import('./pages/PlatformControl'))
 const OpeningImport = lazy(() => import('./pages/OpeningImport'))
 
@@ -241,6 +242,7 @@ export default function App() {
 
           <Route element={<ProtectedOrgArea />}>
             <Route path="/company-access" element={<Suspense fallback={<LoadingSplash />}><CompanyAccessStatus /></Suspense>} />
+            <Route path="/activation" element={<Suspense fallback={<LoadingSplash />}><PaymentActivation /></Suspense>} />
 
             <Route element={<RequireCompanyAccess />}>
               <Route element={<AppShellRoute />}>

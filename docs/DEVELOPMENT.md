@@ -92,3 +92,7 @@ After database changes:
 - verify `npx supabase db pull` replays cleanly
 - verify `npm run check:migrations`
 - verify `npx supabase db push` if the change is meant to go live
+
+## Local payment activation development
+
+The assisted activation package is local-only at 41 migrations. Use local Supabase for request, proof, review, correction, approval, replay, authority, and storage isolation tests. The production project reference remains mutation-blocked by the finance regression helper. Do not seed real payment destinations, provider credentials, or real customer payment evidence.
