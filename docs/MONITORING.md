@@ -75,6 +75,6 @@ StockWise has operational logging and regression coverage, but it does not yet h
 
 See [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for the current monitoring, rate-limiting, CI/CD, and scaling gap list. See [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for incident, rollback, restore, and monthly recovery-test checklists.
 
-## Payment activation signals (local-only package)
+## Payment activation signals (live package)
 
-On rollout, monitor submitted/under-review/needs-correction queue age, approval failures, provider-reference uniqueness conflicts, proof authorization rate limits, missing proof objects, and access-audit/request-event reconciliation. Do not treat catalogue recurring value or submitted evidence as collected revenue. Provider webhook and automatic reconciliation observability remain future scope.
+Monitor submitted/under-review/needs-correction queue age, approval failures, provider-reference uniqueness conflicts, proof authorization rate limits, missing proof objects, and access-audit/request-event reconciliation. The rollout baseline ended with no stuck workflow posting requests and no approved request missing its access audit. Do not treat catalogue recurring value or submitted evidence as collected revenue. Provider webhook and automatic reconciliation observability remain future scope.

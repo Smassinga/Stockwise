@@ -226,4 +226,4 @@ Avoid:
 - finance metrics that look like placeholders
 - component-library churn that adds paid or proprietary dependencies
 
-The local activation workspace uses the existing card, badge, form, dialog, and responsive table primitives. It avoids checkout language, visually separates authoritative amount from declared amount, keeps the proof-not-verification warning persistent, and makes review actions explicit rather than hover-only.
+The live activation workspace uses the existing card, badge, form, dialog, and responsive table primitives. It avoids checkout language, visually separates authoritative amount from declared amount, keeps the proof-not-verification warning persistent, and makes review actions explicit rather than hover-only. Production QA confirmed English/Portuguese lifecycle labels, light/dark readability, and zero page overflow at `1440`, `1200`, `820`, and `390`; the targeted localization follow-up did not introduce a broader visual redesign.

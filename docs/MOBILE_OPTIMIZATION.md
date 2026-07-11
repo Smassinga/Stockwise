@@ -97,4 +97,4 @@ If Android packaging is prepared from stale metadata or stale copy, the packaged
 
 ## Activation workspace
 
-The local `/activation` workspace stacks the plan, channel, payer, proof, submit, and status-history tasks on narrow screens. File requirements and the verification boundary remain visible at 390 px, long destination/reference text wraps, and Platform Control review dialogs retain scrollable bodies with reachable footer actions. No horizontal page scrolling is part of the approved contract.
+The live `/activation` workspace stacks the plan, channel, payer, proof, submit, and status-history tasks on narrow screens. File requirements and the verification boundary remain visible at 390 px, long destination/reference text wraps, and Platform Control review dialogs retain scrollable bodies with reachable footer actions. Production checks at `1440`, `1200`, `820`, and `390` confirmed no page overflow or action escape. Lifecycle, status, period, and provider labels render in English and Portuguese rather than exposing raw codes.

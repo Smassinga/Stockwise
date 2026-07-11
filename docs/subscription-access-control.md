@@ -287,6 +287,6 @@ Later payment automation can attach to this control plane without redesigning te
 
 That future layer should reuse the current plan catalog and entitlement state instead of replacing them.
 
-## Assisted verified activation (local only)
+## Assisted verified activation (live)
 
-The next layer now exists locally as an assisted request workflow. Trial, expired, and active-paid companies may submit; suspended/disabled companies receive support-only handling. OWNER/ADMIN chooses an exact priced period from `plan_catalog`, uploads private evidence, and submits. Only a platform admin can approve, and approval extends future paid access or starts from server approval time before calling the existing entitlement control plane atomically. Upload alone never changes access.
+The assisted request workflow is live at migration 41. Trial, expired, and active-paid companies may submit; suspended/disabled companies receive support-only handling. OWNER/ADMIN chooses an exact priced period from `plan_catalog`, uploads private evidence, and submits. Only a platform admin can approve, and approval extends future paid access or starts from server approval time before calling the existing entitlement control plane atomically. Upload alone never changes access. Controlled production smoke used synthetic evidence only; provider webhooks, automatic verification/reconciliation, and automatic confirmation email remain future scope.

@@ -187,6 +187,8 @@ During a production incident, record:
 
 Do not expose secrets in logs, screenshots, commits, or issue reports.
 
-## Payment proof recovery boundary (local only)
+## Payment proof recovery boundary (live)
 
 Payment proofs are private objects addressed by company and request IDs. Request and event rows are durable audit evidence and must be restored with their matching storage objects. A missing proof blocks submission and approval; recovery must never infer payment verification from a filename or public URL. Draft/needs-correction orphan cleanup is deferred and must remain bounded to objects with no terminal audit dependency.
+
+Production is aligned at 41 migrations. The controlled rollout retained one private synthetic proof for approved request `PAY-B49089-000001`; it contains no real payment evidence. Recovery monitoring must reconcile approved requests with access-audit rows and preserve the immutable event sequence. The temporary QA channel is inactive.

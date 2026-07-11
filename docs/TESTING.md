@@ -290,6 +290,8 @@ Recommended next steps:
 - add smaller targeted unit tests around shared helper math and access-state formatting
 - add browser-level route verification only for high-value public/commercial and blocked-access flows
 
-## Payment activation regression (local only)
+## Payment activation regression and rollout
 
 `payment-activation.test.mjs` adds 124 named checks against local Supabase. It covers channel authority/audit, OWNER/ADMIN versus lower-role boundaries, plan-price authority, one-open-request/idempotency behavior, private storage MIME/size/cross-company controls, proof validation, submission/correction/resubmission, platform review/approval, same-key and competing-key approval behavior, provider-reference uniqueness across same-category channels, entitlement and event audits, restricted grants/search paths, signed URL bounds, localized lifecycle/status/provider labels in English and Portuguese, and cash/bank/stock/price/Growth Batch/Production Run isolation. The test uses the existing production-target hard block and must never run against hosted production.
+
+Before rollout, the complete local finance suite passed `160/160`; the focused payment-activation suite passed `125/125` Node tests representing 124 named checks after the localization correction. Controlled production smoke covered only the valid create/proof/submit/review/correction/resubmit/approve path with synthetic evidence. Replay, mismatch, role-negative, cross-company, provider-reference collision, and concurrency mutation tests remained local-only. Production invariants retained stock movements `75`, stock levels `17`, cash `12`, bank `6`, sales invoices `4`, vendor bills `3`, Growth Batches `3`, Production Runs `1`, zero negative stock, and zero duplicate buckets; no item row changed during the smoke.

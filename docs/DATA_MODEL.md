@@ -344,6 +344,8 @@ G5.2 RPCs:
 
 Completion rules: completion can be posted only for an active batch with zero current primary quantity, zero current total weight where weight exists, and zero remaining cost. Posting changes only lifecycle status, `latest_event_sequence`, completion actor/timestamp, and audit fields. Reversal is event-specific and restores only the corresponding active/completed lifecycle fields. G5.2 creates no stock movements, does not update `stock_levels`, does not change quantity, weight, accumulated costs, harvested cost, remaining cost, or `items.unit_price`, and creates no sale, invoice, COGS, FIFO, fair value, finance row, split/child batch, whole-batch reversal, profitability dashboard, or individual animal/plant record.
 
-## Payment activation requests (local only)
+## Payment activation requests (live)
 
 `platform_payment_channels` stores non-secret commercial instructions; `platform_payment_channel_events` preserves channel audit. `company_payment_requests` freezes plan, period, exact catalogue amount, currency, channel, destination, and instructions. `company_payment_request_events` is append-only with per-request sequence. One open request is allowed per company, and normalized SHA-256 provider-reference fingerprints cannot be reused across open/approved requests on the same channel. Payment requests are entitlement evidence, not cash, bank, settlement, invoice, or stock rows.
+
+Hosted production and local replay contain 41 migrations through `20260711091724_add_payment_activation_workflow.sql`. The controlled live request `PAY-B49089-000001` ended approved at sequence 10 with a matching access audit; its one private proof object remains in `payment-proofs` for audit evidence.

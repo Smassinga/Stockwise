@@ -371,6 +371,8 @@ This document does not try to be:
 
 If a release topic is not current and specific to StockWise, it should live elsewhere or not be tracked.
 
-## Pending payment activation rollout
+## Payment activation rollout (live)
 
-Hosted production remains at 39 migrations through `20260709222842_governed_settlement_posting.sql`. Local replay has 41 migrations, with `20260711091717_add_payment_activation_requests.sql` and `20260711091724_add_payment_activation_workflow.sql` pending. Do not expose `/activation` or the Platform Control payment queue as live until CI passes, the linked project dry run proposes exactly those two files, the hosted RLS/grant/storage matrix is verified, and controlled proof-review approval smoke succeeds.
+Hosted production and local replay are aligned at 41 migrations through `20260711091724_add_payment_activation_workflow.sql`. Release `48b5b1217a1971aada6949cbbc4689a4e6b6cd3b` passed Validation `29155359288`; the linked push ran from `2026-07-11T16:04:56.1021933+02:00` to `2026-07-11T16:05:16.0576542+02:00`, exited zero, and applied exactly the two payment-activation migrations. Hosted RLS, FORCE RLS, grants, restricted search paths, private storage controls, and authenticated-only workflow RPCs were verified before mutation smoke.
+
+Vercel release deployment `dpl_GDpEFb5Q3HyTHhPUvXdy8ei6CuXc` served both production aliases. Controlled Leny Doçuras smoke used a clearly synthetic proof and temporary non-secret QA channel, produced request `PAY-B49089-000001`, exercised correction/resubmission and approval, then restored the company to trial and deactivated the channel. The entitlement helper recalculated the restored trial expiry to `2026-07-18` and purge date to `2026-08-01`; the original later dates could not be restored through the governed UI and were not forced by direct mutation. Localization correction `db6083c8e495e9118dcde6c8ed00220f7e152c73` passed Validation `29164872936` and deployed as `dpl_GzpTNoVezPEZybGCvGw3v1SVHnDE`.
