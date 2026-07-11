@@ -1,6 +1,6 @@
 # StockWise Availability and Recovery Runbook
 
-Status: 2026-07-04.
+Status: 2026-07-11.
 
 This runbook defines the current recovery posture for early commercial rollout. It is not a guarantee of service level and does not prove that a restore drill has been completed. Use it to drive incident response, monthly recovery tests, and future hardening work.
 
@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted production is aligned through `20260704041943_add_growth_batch_completion_posting.sql` with 38 active migrations. The local checkout has an unlaunched 39th settlement-posting migration. That local package makes bank CSV import atomic and reload-safe: a row failure commits zero imported rows, while an identical canonical file replays its original batch result. G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal are live and production-smoke validated.
+- Hosted production and local replay are aligned through `20260709222842_governed_settlement_posting.sql` with 39 active migrations. Governed settlement posting is live: cash/bank mutations use authenticated ADMIN+ RPCs and `posting_requests`, and bank CSV import is atomic and reload-safe. A row failure commits zero imported rows by database transaction design and local regression; controlled production smoke proved identical canonical import replay with no duplicate rows. G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
 
 ## Backup Assumptions
 

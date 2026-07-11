@@ -112,9 +112,9 @@ Canonical active anchors:
 
 Legacy orders may still appear as history or operational parents, but reconciliation and settlement truth now follow finance-document anchors.
 
-### Governed settlement posting (local prelaunch)
+### Governed settlement posting (live)
 
-Hosted production remains at 38 migrations through G5.2. Local migration `20260709222842_governed_settlement_posting.sql` is the unlaunched 39th migration and adds no new finance-document table or legal-document mutation.
+Hosted production and local replay are aligned at 39 migrations through `20260709222842_governed_settlement_posting.sql`. The migration adds no new finance-document table and does not mutate issued legal-document content.
 
 - `post_cash_settlement` and `post_bank_settlement` write one auditable ledger row against the currently valid `SO`, `PO`, `SI`, or `VB` anchor.
 - `post_cash_adjustment` and `post_bank_ledger_transaction` govern the maintained unlinked manual Cash and Bank Detail entries.
@@ -123,6 +123,8 @@ Hosted production remains at 38 migrations through G5.2. Local migration `202607
 - The active anchor is locked and its outstanding amount is recalculated inside the transaction. Requested amount and outstanding are normalized to the existing two-decimal base-currency contract with exact `numeric` arithmetic. Normalized zero input, normalized zero outstanding, a different-company anchor, stale `SO`/`PO` after finance-anchor transition, or an amount greater than outstanding is rejected without additive tolerance.
 - Bank imports are limited to 500 rows and 512 KiB. A failure on any row rolls back every bank row, settlement effect, and import posting request from that call; identical canonical input safely replays after browser reload without duplicate rows.
 - Normal clients retain company-scoped reads but no direct `INSERT` grant on `cash_transactions` or `bank_transactions`; the public RPC surface is authenticated-only and internal helpers remain non-executable by normal clients.
+
+The 2026-07-10/11 production rollout applied migration 39 with exit zero. Controlled smoke created one cash settlement, one manual bank row, and one two-row atomic import request; the identical logical import replayed after reload without another bank row or settlement effect. Stock, stock levels, item prices, Growth Batches, Production Runs, and finance-document counts stayed stable outside the explicitly controlled cash/bank/posting rows.
 
 ## Current design summary
 
@@ -137,7 +139,7 @@ One clean model per responsibility:
 
 ## Production Runs
 
-The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Hosted migration history continues through Growth Batches G5.2 with 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has an unlaunched 39th settlement-posting migration.
+The Production Runs package adds a planned-versus-actual production model. It is live as of 2026-06-18; its rollout aligned hosted Supabase through `20260615213640_add_production_run_posting.sql`. Hosted production and local replay now contain 39 active migrations through `20260709222842_governed_settlement_posting.sql`.
 
 Tables:
 
@@ -172,7 +174,7 @@ Production smoke validation posted and immediately reversed Production Run `LEN-
 
 ## Growth Batches
 
-Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted production is aligned through 38 migrations and G5.2 (`20260704041943_add_growth_batch_completion_posting.sql`); the local checkout adds an unlaunched 39th settlement-posting migration. G5.2 is live and production-smoke validated.
+Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted production and local replay now contain 39 migrations through the later governed-settlement migration; G5.2 remains live and production-smoke validated at `20260704041943_add_growth_batch_completion_posting.sql`.
 
 Tables:
 
@@ -326,7 +328,7 @@ Production smoke created one controlled QA output item (`QA-G51-POULTRY-KG`, ite
 
 ### Growth Batches G5.2 Live Completion
 
-G5.2 is live and production-smoke validated. Hosted production has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has the unlaunched 39th settlement-posting migration.
+G5.2 is live and production-smoke validated. Hosted production and local replay now contain 39 active migrations through `20260709222842_governed_settlement_posting.sql`; G5.2 itself remains migration 38 at `20260704041943_add_growth_batch_completion_posting.sql`.
 
 G5.2 schema additions:
 

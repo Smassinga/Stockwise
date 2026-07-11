@@ -22,7 +22,7 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production has 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the local checkout has an unlaunched 39th settlement-posting migration. The local settlement boundary normalizes exact two-decimal money values without epsilon, hard-blocks normalized zero outstanding, and submits bank CSV imports through one deterministic SHA-256, all-or-nothing `bank.ledger.import` request. Growth Batches G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal are live and production-smoke validated.
+Current release state: hosted production and local replay have 39 active migrations through `20260709222842_governed_settlement_posting.sql`. The live settlement boundary normalizes exact two-decimal money values without epsilon, hard-blocks normalized zero outstanding, and submits bank CSV imports through one deterministic SHA-256, all-or-nothing `bank.ledger.import` request. Growth Batches G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
 
 The latest Growth Batches G4.1 rollout applied:
 

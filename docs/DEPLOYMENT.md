@@ -66,17 +66,29 @@ For production-impacting releases, also review:
 - [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for current enforcement, monitoring, rate-limiting, and scaling assumptions
 - [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for rollback, restore, Edge Function, Auth/email, and emergency platform-admin checklists
 
-## Local-Only Prelaunch Work
+## Governed Settlement Posting Live
 
-Hosted production remains at 38 migrations through G5.2. The local checkout includes unlaunched migration `20260709222842_governed_settlement_posting.sql` as migration 39.
+Hosted production and local replay are aligned at 39 migrations through `20260709222842_governed_settlement_posting.sql`.
 
-This forward-only package governs cash settlement, bank settlement, manual cash adjustment, manual bank-ledger posting, and atomic bank CSV import with `posting_requests` idempotency. Settlement eligibility uses exact two-decimal `numeric` normalization with no additive epsilon; fully resolved anchors reject every positive normalized amount. `post_bank_ledger_import` commits a complete canonical batch or nothing, uses one `bank.ledger.import` request, and replays identical logical files across reloads without duplicate rows. It is not a hosted rollout claim: no deployment, hosted migration, or production smoke is recorded for it here. Before any authorised launch, run the local regression suite against a local or isolated non-production target, review the exact pending migration set, then obtain separate database and frontend rollout authority.
+This forward-only package governs cash settlement, bank settlement, manual cash adjustment, manual bank-ledger posting, and atomic bank CSV import with `posting_requests` idempotency. Settlement eligibility uses exact two-decimal `numeric` normalization with no additive epsilon; fully resolved anchors reject every positive normalized amount. `post_bank_ledger_import` commits a complete canonical batch or nothing, uses one `bank.ledger.import` request, and replays identical logical files across reloads without duplicate rows.
 
 ## Current Production Release Notes
 
+2026-07-10/11 governed Settlement, Cash, and Bank production rollout:
+
+- release commit `5e47a9d279e4db7c4f588d420bd9439b751d260d` passed GitHub Actions Validation run `29130740318`; Vercel deployment `dpl_7rPAojKUq7sSeqkZ49WE2cZH65Wh` serves `https://stockwiseapp.com` and `https://www.stockwiseapp.com`
+- linked production project `ogzhwoqqumkuqhbvuzzp` moved from 38 to 39 migrations by applying only `20260709222842_governed_settlement_posting.sql` from `2026-07-10T23:46:23.8149856Z` to `2026-07-10T23:46:51.9198735Z`; the push exited zero and the second dry run reported the remote database up to date
+- live authenticated ADMIN+ RPCs are `post_cash_settlement`, `post_bank_settlement`, `post_cash_adjustment`, `post_bank_ledger_transaction`, and `post_bank_ledger_import`; PUBLIC/anon execution and normal-client direct cash/bank inserts remain denied, while internal helpers remain client-inaccessible with restricted search paths
+- controlled Leny Docuras cash smoke settled MZN 1.00 on `LEN-SO000000002`, changing outstanding MZN 1,500.00 to MZN 1,499.00; cash row `be35dfce-1979-4b67-8a2f-8f42aa87460e` and request `e86f0b6b-f0ee-449d-96dc-e561df969d33` succeeded
+- controlled bank smoke used QA account `86c7ed62-ac7f-4c57-9c58-6804c464d171`; manual MZN 0.01 row `dc237d39-d764-417b-b531-f24acde9444c` used request `e886bd29-1837-4a28-8671-a2b4c1b96a9a`
+- atomic CSV request `a9c85b6c-9566-4e60-841d-f94fef15948e` created MZN 0.02 row `4b943e8c-7c44-49c5-881c-f9d13de504d9` and MZN -0.02 row `640e01bf-c68a-4d92-8451-9242a747a506`; identical logical replay after reload created zero additional bank rows and zero additional settlement effect
+- final QA bank balance was MZN 0.01; stock movements `75`, stock levels `17`, item-price hash `307b4335cad1eaba498c35b707ac2efb`, finance-document events `45`, Growth Batches `3`, and Production Runs `1` remained stable. Negative stock buckets, duplicate stock-bucket groups, stale SO/SI rows, stale PO/VB rows, and orphaned succeeded governed requests were all zero
+- responsive production checks passed at `1440`, `1200`, `820`, and `390` with no page overflow, raw package backend code, browser console warning/error, or CSP error. Existing incomplete Portuguese coverage outside the new package remains separate legacy debt
+- local finance regression passed `36/36` with 113 named governed settlement/import state checks. Repeated-`0.005`, over-settlement, payload-mismatch, stale-anchor, failed-import rollback, cross-company, authority-negative, and concurrency mutation tests were deliberately not run in production
+
 2026-07-04/2026-07-09 Growth Batches G5.2 production rollout:
 
-- at the G5.2 rollout, hosted production and local replay were aligned at 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; the current local checkout has unlaunched settlement-posting migration 39
+- at the G5.2 rollout, hosted production and local replay were aligned at 38 active migrations through `20260704041943_add_growth_batch_completion_posting.sql`; migration history now continues through governed-settlement migration 39
 - `20260704041936_add_growth_batch_completion.sql` and `20260704041943_add_growth_batch_completion_posting.sql` applied together from `2026-07-04T15:11:31.7589419+02:00` to `2026-07-04T15:11:48.7774298+02:00` with exit zero; the second dry run reported the remote database up to date
 - feature release `6fa6bdb1303c9457f0b26fa6934a3d096cdad38b` passed Validation run `28706577810`; the G5.2 Portuguese lifecycle-copy correction `bc22eb3facd166dbcd59fb7d5bedb21bb51d20b9` passed Validation run `29051595028` and deployed as `dpl_BRA6QUesB64T8LwF3rUAF7dYFKfv`
 - the local package adds governed lifecycle completion and event-specific completion reversal only, with `growth_batch_completions`, `growth_batch_completion_reversal_lines`, `growth_batch_completion_history`, `preview_growth_batch_completion`, `complete_growth_batch`, and `reverse_growth_batch_completion`
