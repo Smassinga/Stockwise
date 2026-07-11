@@ -14,6 +14,8 @@ const SOURCE = {
   activation: readFileSync(new URL('../../src/pages/PaymentActivation.tsx', import.meta.url), 'utf8'),
   platform: readFileSync(new URL('../../src/components/platform/PaymentActivationAdmin.tsx', import.meta.url), 'utf8'),
   client: readFileSync(new URL('../../src/lib/paymentActivation.ts', import.meta.url), 'utf8'),
+  en: JSON.parse(readFileSync(new URL('../../src/locales/en.json', import.meta.url), 'utf8')),
+  pt: JSON.parse(readFileSync(new URL('../../src/locales/pt.json', import.meta.url), 'utf8')),
   migration1: readFileSync(new URL('../../supabase/migrations/20260711091717_add_payment_activation_requests.sql', import.meta.url), 'utf8'),
   migration2: readFileSync(new URL('../../supabase/migrations/20260711091724_add_payment_activation_workflow.sql', import.meta.url), 'utf8'),
 }
@@ -291,6 +293,32 @@ test('payment activation request and verified proof workflow', async (t) => {
   await check('118 channels are protected by FORCE RLS', async () => { assert.match(SOURCE.migration1,/alter table public\.platform_payment_channels force row level security/) })
   await check('119 normal members can track status but not mutate rows', async () => { assert.match(SOURCE.migration1,/grant select on public\.company_payment_requests to authenticated/);assert.doesNotMatch(SOURCE.migration1,/grant (insert|update|delete).*company_payment_requests to authenticated/) })
   await check('120 package keeps activation email as separate manual control', async () => { assert.doesNotMatch(SOURCE.platform,/sendCompanyAccessEmail/);assert.match(readFileSync(new URL('../../src/pages/PlatformControl.tsx',import.meta.url),'utf8'),/sendCompanyAccessEmail/) })
+  await check('121 lifecycle status event period and provider codes are localized in company and platform UI', async () => {
+    assert.match(SOURCE.activation,/paymentActivation\.status\./)
+    assert.match(SOURCE.activation,/paymentActivation\.event\./)
+    assert.match(SOURCE.platform,/paymentActivation\.status\./)
+    assert.match(SOURCE.platform,/paymentActivation\.event\./)
+    assert.match(SOURCE.platform,/paymentActivation\.provider\./)
+    const keys = [
+      'paymentActivation.requestCount',
+      'paymentActivation.status.approved',
+      'paymentActivation.status.needs_correction',
+      'paymentActivation.event.created',
+      'paymentActivation.event.proof_attached',
+      'paymentActivation.event.submitted',
+      'paymentActivation.event.review_started',
+      'paymentActivation.event.correction_requested',
+      'paymentActivation.event.resubmitted',
+      'paymentActivation.event.approved',
+      'paymentActivation.event.access_activated',
+      'paymentActivation.period.monthly',
+      'paymentActivation.period.annual',
+      'paymentActivation.provider.other',
+    ]
+    for (const locale of [SOURCE.en, SOURCE.pt]) {
+      for (const key of keys) assert.equal(typeof locale[key] === 'string' && locale[key].trim().length > 0, true, key)
+    }
+  })
 
   assert.ok(eventCountBeforeSubmit >= 2)
   assert.ok(requestReference)
