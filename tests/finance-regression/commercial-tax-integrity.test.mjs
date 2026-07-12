@@ -20,6 +20,7 @@ const PREFIX = 'TAXINT'
 const SOURCE = {
   migration: readFileSync(new URL('../../supabase/migrations/20260712052825_add_commercial_tax_integrity.sql', import.meta.url), 'utf8'),
   itemMigration: readFileSync(new URL('../../supabase/migrations/20260712052833_add_item_profile_trust.sql', import.meta.url), 'utf8'),
+  financeStateMigration: readFileSync(new URL('../../supabase/migrations/20260712230118_fix_canonical_sales_order_finance_state.sql', import.meta.url), 'utf8'),
   salesOrders: readFileSync(new URL('../../src/pages/Orders/SalesOrders.tsx', import.meta.url), 'utf8'),
   purchaseOrders: readFileSync(new URL('../../src/pages/Orders/PurchaseOrders.tsx', import.meta.url), 'utf8'),
   items: readFileSync(new URL('../../src/pages/Items.tsx', import.meta.url), 'utf8'),
@@ -771,5 +772,27 @@ test('commercial tax integrity and item profile trust', async (t) => {
   await check(122, 'order status transitions refresh authoritative finance-anchor state', async () => {
     assert.match(SOURCE.salesOrders, /salesOrderState\.refresh\(\)/)
     assert.match(SOURCE.purchaseOrders, /purchaseOrderState\.refresh\(\)/)
+  })
+  await check(123, 'canonical Sales Order finance state uses the stored grand total once', async () => {
+    const state = ok(await ownerClient
+      .from('v_sales_order_state')
+      .select('subtotal_amount_ccy,tax_amount_ccy,total_amount_ccy,total_amount_base')
+      .eq('id', canonicalSalesOrderId)
+      .single())
+    assert.equal(round2(state.subtotal_amount_ccy), 46.05)
+    assert.equal(round2(state.tax_amount_ccy), 0.73)
+    assert.equal(round2(state.total_amount_ccy), 46.78)
+    assert.equal(round2(state.total_amount_base), 46.78)
+  })
+  await check(124, 'canonical Sales Order outstanding excludes double-counted line tax', async () => {
+    const state = ok(await ownerClient
+      .from('v_sales_order_state')
+      .select('total_amount_base,legacy_settled_base,legacy_outstanding_base')
+      .eq('id', canonicalSalesOrderId)
+      .single())
+    assert.equal(round2(state.legacy_settled_base), 0)
+    assert.equal(round2(state.legacy_outstanding_base), 46.78)
+    assert.match(SOURCE.financeStateMigration, /tax_calculation_mode\s*=\s*'line'/)
+    assert.doesNotMatch(SOURCE.financeStateMigration, /finance_total_amount_ccy\s*\+\s*so\.finance_tax_amount_ccy/)
   })
 })
