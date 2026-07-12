@@ -259,7 +259,7 @@ The 2026-07-03 production rollout used release commit `6f050745a9e1e5f9a56bfee7f
 
 ## Growth Batches G5.2 Live Completion Package
 
-Growth Batches G5.2 is live and production-smoke validated. Hosted production and local replay now contain 39 active migrations through the later governed-settlement migration `20260709222842_governed_settlement_posting.sql`; G5.2 itself remains anchored at `20260704041943_add_growth_batch_completion_posting.sql`.
+Growth Batches G5.2 is live and production-smoke validated. Hosted production and local replay now contain 44 active migrations through the later commercial-tax correction `20260712230118_fix_canonical_sales_order_finance_state.sql`; G5.2 itself remains anchored at `20260704041943_add_growth_batch_completion_posting.sql`.
 
 The package adds governed lifecycle completion only:
 
@@ -305,10 +305,12 @@ Hosted production and local replay contain 41 migrations through `20260711091724
 
 Release `48b5b1217a1971aada6949cbbc4689a4e6b6cd3b` passed Validation `29155359288`; the hosted push applied only `20260711091717_add_payment_activation_requests.sql` and `20260711091724_add_payment_activation_workflow.sql` from `2026-07-11T16:04:56.1021933+02:00` to `2026-07-11T16:05:16.0576542+02:00` with exit zero. Vercel deployment `dpl_GDpEFb5Q3HyTHhPUvXdy8ei6CuXc` served the release. Controlled Leny Doçuras request `PAY-B49089-000001` (`9b006062-4749-476f-84cb-7be633ed874e`) exercised create, private proof, submit, review, correction, resubmit, approval, and access activation through 10 immutable events. A production-found raw lifecycle-code localization defect was corrected by `db6083c8e495e9118dcde6c8ed00220f7e152c73`, Validation `29164872936`, and deployment `dpl_GzpTNoVezPEZybGCvGw3v1SVHnDE`.
 
-## Commercial tax integrity and item profile trust (local-only)
+## Commercial tax integrity and item profile trust (live)
 
-Hosted production remains at 41 migrations through `20260711091724_add_payment_activation_workflow.sql`. Local replay has 43 migrations through `20260712052833_add_item_profile_trust.sql`; `20260712052825_add_commercial_tax_integrity.sql` and `20260712052833_add_item_profile_trust.sql` are not hosted or live at this checkpoint.
+Hosted production and local replay contain 44 migrations through `20260712230118_fix_canonical_sales_order_finance_state.sql`. The rollout applied `20260712052825_add_commercial_tax_integrity.sql` and `20260712052833_add_item_profile_trust.sql`, then the forward-only finance-state correction after production smoke exposed double-counted Sales Order tax in the canonical outstanding read model.
 
 New Sales Orders and Purchase Orders use canonical line-level tax. Company-configured options provide auditable standard, explicit-zero, and exempt treatments; StockWise seeds no legal rate and treats a missing default as unconfigured, not `0%`. Triggers calculate rounded discounted line bases and tax, derive header totals, lock commercial snapshots after confirmation/approval, and copy exact line snapshots into canonical Sales Invoice and Vendor Bill drafts. Existing documents are tagged `legacy_header` without rewrite and retain deterministic proportional allocation only in their legacy conversion path. Maintained POS uses the configured sales default and the same canonical rollup.
 
 Maintained item creation uses `create_item_with_profile` and verifies the authoritative persisted row before success. If protected profile fields are unavailable, role and inventory controls fail closed; basic-only creation requires explicit acknowledgement. The package adds no tax filing, SAF-T submission, seeded statutory rate, FIFO, COGS, fair value, stock posting, settlement, or finance-journal behavior.
+
+Controlled Leny Doçuras production smoke used synthetic non-statutory options, canonical mixed-rate SO/PO lines, draft-only SI/VB propagation, and QA item `QA-TAX-20260712`. Sales and purchase defaults were restored to null and both QA options were deactivated. No legal invoice was issued and no Vendor Bill was posted.

@@ -174,7 +174,7 @@ Production smoke validation posted and immediately reversed Production Run `LEN-
 
 ## Growth Batches
 
-Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted production and local replay now contain 39 migrations through the later governed-settlement migration; G5.2 remains live and production-smoke validated at `20260704041943_add_growth_batch_completion_posting.sql`.
+Growth Batches add a live group-level batch lifecycle for biological and agricultural work. Hosted production and local replay now contain 44 migrations through the later commercial-tax finance-state correction; G5.2 remains live and production-smoke validated at `20260704041943_add_growth_batch_completion_posting.sql`.
 
 Tables:
 
@@ -328,7 +328,7 @@ Production smoke created one controlled QA output item (`QA-G51-POULTRY-KG`, ite
 
 ### Growth Batches G5.2 Live Completion
 
-G5.2 is live and production-smoke validated. Hosted production and local replay now contain 39 active migrations through `20260709222842_governed_settlement_posting.sql`; G5.2 itself remains migration 38 at `20260704041943_add_growth_batch_completion_posting.sql`.
+G5.2 is live and production-smoke validated. Hosted production and local replay now contain 44 active migrations through `20260712230118_fix_canonical_sales_order_finance_state.sql`; G5.2 itself remains migration 38 at `20260704041943_add_growth_batch_completion_posting.sql`.
 
 G5.2 schema additions:
 
@@ -350,9 +350,9 @@ Completion rules: completion can be posted only for an active batch with zero cu
 
 Hosted production and local replay contain 41 migrations through `20260711091724_add_payment_activation_workflow.sql`. The controlled live request `PAY-B49089-000001` ended approved at sequence 10 with a matching access audit; its one private proof object remains in `payment-proofs` for audit evidence.
 
-## Commercial tax configuration and document snapshots (local-only)
+## Commercial tax configuration and document snapshots (live)
 
-Hosted production remains at 41 migrations. Local replay has 43 through `20260712052833_add_item_profile_trust.sql`; the two 2026-07-12 migrations are not hosted at this checkpoint.
+Hosted production and local replay contain 44 migrations through `20260712230118_fix_canonical_sales_order_finance_state.sql`. The commercial-tax and item-profile migrations are live; the later correction changes only canonical Sales Order finance-state derivation so tax is represented once.
 
 - `company_tax_options` stores company-owned treatment code, display label, treatment type, rate, exemption-reason requirement, active state, and effective dates. No legal rate is seeded.
 - `company_tax_settings` stores independent sales and purchase defaults; null means visibly unconfigured.

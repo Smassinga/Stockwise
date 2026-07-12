@@ -22,7 +22,7 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production and local replay have 39 active migrations through `20260709222842_governed_settlement_posting.sql`. The live settlement boundary normalizes exact two-decimal money values without epsilon, hard-blocks normalized zero outstanding, and submits bank CSV imports through one deterministic SHA-256, all-or-nothing `bank.ledger.import` request. Growth Batches G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
+Current release state: hosted production and local replay have 44 active migrations through `20260712230118_fix_canonical_sales_order_finance_state.sql`. The live settlement boundary normalizes exact two-decimal money values without epsilon, and the live commercial-tax boundary derives canonical headers and finance-state totals from line snapshots. Growth Batches G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
 
 The latest Growth Batches G4.1 rollout applied:
 
@@ -99,6 +99,6 @@ The assisted activation package is live with hosted and local history aligned at
 
 ## Commercial tax and item profile development
 
-The local-only package adds migrations 42-43. Never seed a statutory rate from memory: create company-labelled options explicitly and keep sales and purchase defaults nullable. New order code must persist a `tax_option_id` per line and let database triggers calculate tax and header totals; do not reintroduce a freeform canonical header rate. Historical fixtures must explicitly use `legacy_header` rather than inheriting the new default.
+Migrations 42-44 are live. Never seed a statutory rate from memory: create company-labelled options explicitly and keep sales and purchase defaults nullable. New order code must persist a `tax_option_id` per line and let database triggers calculate tax and header totals; do not reintroduce a freeform canonical header rate. Historical fixtures must explicitly use `legacy_header` rather than inheriting the new default. Canonical Sales Order finance-state derivation must not add line tax to a total that already includes tax.
 
-Item create flows must either call `create_item_with_profile` and round-trip verify all protected fields, or visibly disable those controls and require basic-only acknowledgement. Do not show success before the authoritative reload. Run a local reset and the complete finance regression after changing tax, order conversion, POS, finance-document, or item-profile behavior.
+Item create flows must either call `create_item_with_profile` and round-trip verify all protected fields, or visibly disable those controls and require basic-only acknowledgement. Do not show success before the authoritative reload. Production smoke verified the full QA profile and a `min_stock`-only edit without changing selling price, stock, BOMs, or Production Runs. Run a local reset and the complete finance regression after changing tax, order conversion, POS, finance-document, or item-profile behavior.

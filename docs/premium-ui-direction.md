@@ -191,7 +191,7 @@ Do not add a broad UI library for Production Runs. Keep the route on existing Ta
 
 ## Growth Batches Workspace Direction
 
-Growth Batches G3, G4.1, G4.2, G5.1, and G5.2 are live and production-smoke validated at `/growth-batches`. G4.1 extends the same workspace with mortality/shrinkage preview, recording, loss history, and MANAGER+ event-specific loss reversal; G4.2 adds a transfer preview/post/reversal surface; G5.1 adds a Harvests tab for governed depleting harvest preview/posting and MANAGER+ event-specific harvest reversal; G5.2 adds a Completion tab for lifecycle completion and MANAGER+ event-specific completion reversal. Hosted production and local replay now contain 39 migrations through `20260709222842_governed_settlement_posting.sql`. The workspace uses the same premium register/detail approach:
+Growth Batches G3, G4.1, G4.2, G5.1, and G5.2 are live and production-smoke validated at `/growth-batches`. G4.1 extends the same workspace with mortality/shrinkage preview, recording, loss history, and MANAGER+ event-specific loss reversal; G4.2 adds a transfer preview/post/reversal surface; G5.1 adds a Harvests tab for governed depleting harvest preview/posting and MANAGER+ event-specific harvest reversal; G5.2 adds a Completion tab for lifecycle completion and MANAGER+ event-specific completion reversal. Hosted production and local replay now contain 44 migrations through `20260712230118_fix_canonical_sales_order_finance_state.sql`. The workspace uses the same premium register/detail approach:
 
 - `PremiumRegisterHeader`, metric cards, search/filter controls, desktop `PremiumDataTable`, and Android `PremiumMobileCardList`
 - detail tabs for overview, stock inputs, G4.2 transfers, G5.1 harvests, G5.2 completion, G4.1 losses, measurements, memo direct costs, timeline, and audit
@@ -228,8 +228,8 @@ Avoid:
 
 The live activation workspace uses the existing card, badge, form, dialog, and responsive table primitives. It avoids checkout language, visually separates authoritative amount from declared amount, keeps the proof-not-verification warning persistent, and makes review actions explicit rather than hover-only. Production QA confirmed English/Portuguese lifecycle labels, light/dark readability, and zero page overflow at `1440`, `1200`, `820`, and `390`; the targeted localization follow-up did not introduce a broader visual redesign.
 
-## Commercial tax and item-profile UI (local-only)
+## Commercial tax and item-profile UI (live)
 
 Settings uses the existing card/form system for auditable options and separate sales/purchase defaults. SO/PO create surfaces use mobile line cards below `md`, contained desktop tables above `md`, per-line treatment selectors, a deliberate bulk-apply control, explicit unconfigured messaging, and derived gross/discount/subtotal/tax/total summaries. SI/VB detail surfaces show copied labels and amounts rather than raw codes.
 
-Items disables protected profile controls when capability detection fails, shows a persistent compatibility warning, hides the misleading profile preview, and requires explicit basic-only acknowledgement. This is a contained trust correction, not a dashboard, brand, or component-library redesign. Hosted production does not serve this package yet.
+Items disables protected profile controls when capability detection fails, shows a persistent compatibility warning, hides the misleading profile preview, and requires explicit basic-only acknowledgement. This is a contained trust correction, not a dashboard, brand, or component-library redesign. Production QA verified contained layouts at `1440`, `1200`, `820`, and `390`, English/Portuguese, light/dark, zero page-level overflow, zero raw package codes, and no console or CSP error.

@@ -429,8 +429,10 @@ Release commit `5e47a9d279e4db7c4f588d420bd9439b751d260d` passed Validation run 
 
 Production smoke did not exercise payload mismatch, repeated-`0.005`, over-settlement, stale-anchor rejection, failed-import rollback, cross-company access, role-negative behavior, or concurrency; those remain local-regression evidence. The production smoke did prove unchanged stock movements, stock levels, item selling prices, Growth Batches, Production Runs, and finance-document counts, plus zero stale SO/SI or PO/VB rows, negative stock buckets, duplicate stock buckets, and orphaned succeeded requests. The older Forward-State Settlement and Output package remains historically unprovable as a standalone rollout from current local deployment evidence.
 
-### Commercial Tax Integrity Status (2026-07-12, local-only)
+### Commercial Tax Integrity Status (2026-07-12, live)
 
-Hosted production remains at 41 migrations while local replay has 43. New local SO/PO drafts use explicit company-configured line tax, with no seeded legal rate and no implicit `0%`. Canonical SI/VB drafts copy line tax snapshots directly; only documents explicitly tagged `legacy_header` use the historical proportional fallback. Issued Sales Invoices and posted Vendor Bills remain immutable.
+Hosted production and local replay contain 44 migrations through `20260712230118_fix_canonical_sales_order_finance_state.sql`. New SO/PO drafts use explicit company-configured line tax, with no seeded legal rate and no implicit `0%`. Canonical SI/VB drafts copy line tax snapshots directly; only documents explicitly tagged `legacy_header` use the historical proportional fallback. Issued Sales Invoices and posted Vendor Bills remain immutable.
+
+Controlled production smoke created mixed-rate SO `LEN-SO000000003` and PO `LEN-PO000000006`, then draft-only SI `LEN-INV2026-00001` and VB `LEN-VB00002`. No legal invoice was issued and no Vendor Bill was posted. A no-default line remained visibly unconfigured, confirmation was blocked, and draft `LEN-SO000000004` was cancelled. The temporary non-statutory options were deactivated and defaults restored to null. QA item `QA-TAX-20260712` retained its full profile and `123.45 MZN` price while `min_stock` alone moved to `1`.
 
 This package does not generate or submit SAF-T, file tax returns, scrape rates, infer jurisdiction, post a general-ledger tax journal, or issue a production legal document. Those remain separate scope. The older Forward-State Settlement and Output package remains historically unprovable as a standalone rollout from local evidence.

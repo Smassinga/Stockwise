@@ -11,7 +11,7 @@ This runbook defines the current recovery posture for early commercial rollout. 
 - Supabase Auth transactional email uses Brevo SMTP.
 - Edge Function mailers also require Brevo SMTP secrets plus service-role access where applicable.
 - Tauri desktop and Android builds package the same frontend, but are direct-distribution builds and do not currently have a committed updater or code-signing path.
-- Hosted production and local replay are aligned through `20260709222842_governed_settlement_posting.sql` with 39 active migrations. Governed settlement posting is live: cash/bank mutations use authenticated ADMIN+ RPCs and `posting_requests`, and bank CSV import is atomic and reload-safe. A row failure commits zero imported rows by database transaction design and local regression; controlled production smoke proved identical canonical import replay with no duplicate rows. G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
+- Hosted production and local replay are aligned through `20260712230118_fix_canonical_sales_order_finance_state.sql` with 44 active migrations. Governed settlement posting and commercial line-tax integrity are live. Cash/bank mutations use authenticated ADMIN+ RPCs and `posting_requests`; bank CSV import remains atomic and reload-safe. G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
 
 ## Backup Assumptions
 
@@ -193,8 +193,8 @@ Payment proofs are private objects addressed by company and request IDs. Request
 
 Production is aligned at 41 migrations. The controlled rollout retained one private synthetic proof for approved request `PAY-B49089-000001`; it contains no real payment evidence. Recovery monitoring must reconcile approved requests with access-audit rows and preserve the immutable event sequence. The temporary QA channel is inactive.
 
-## Commercial tax recovery boundary (local-only)
+## Commercial tax recovery boundary (live)
 
-Hosted production remains at 41 migrations; local replay has 43. Before rollout, recovery evidence must distinguish the two pending migrations from hosted truth. Back up tax option/settings/audit rows and preserve SO/PO and SI/VB tax snapshots together. Never reconstruct an issued or posted document from current defaults: historical snapshots and `legacy_header` mode are the authority.
+Hosted production and local replay contain 44 migrations. Back up tax option/settings/audit rows and preserve SO/PO and SI/VB tax snapshots together. Never reconstruct an issued or posted document from current defaults: historical snapshots and `legacy_header` mode are the authority. The production smoke restored nullable defaults and deactivated both temporary QA options while retaining immutable configuration events and document snapshots.
 
-After restoration, verify configuration-table RLS/FORCE RLS, default-option foreign keys, line/header reconciliation, canonical conversion, legacy fallback, and internal-helper privilege revocation. A missing default must recover as unconfigured, not as implicit zero. No production recovery claim exists for this package yet.
+After restoration, verify configuration-table RLS/FORCE RLS, default-option foreign keys, line/header reconciliation, canonical conversion, legacy fallback, internal-helper privilege revocation, and the corrected canonical Sales Order finance-state total. A missing default must recover as unconfigured, not as implicit zero.
