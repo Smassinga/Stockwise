@@ -11,6 +11,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
 import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
+import { Trash2 } from 'lucide-react'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import { addDaysIso, deriveDueDate, discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
@@ -1971,7 +1972,7 @@ export default function PurchaseOrders() {
                         <SelectTrigger><SelectValue placeholder={tt('orders.selectSupplier', 'Select supplier')} /></SelectTrigger>
                         <SelectContent className="max-h-64 overflow-auto">
                           {suppliers.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>{(s.code ? s.code + ' ? ' : '') + s.name}</SelectItem>
+                            <SelectItem key={s.id} value={s.id}>{(s.code ? `${s.code} - ` : '') + s.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -2228,7 +2229,14 @@ export default function PurchaseOrders() {
                                 <td className="py-2 px-3 text-right">{lineTax == null ? tt('commercialTax.unconfiguredShort', 'Unconfigured') : fmtAcct(lineTax)}</td>
                                 <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
                                 <td className="py-2 px-3 text-right">
-                                  <Button size="icon" variant="ghost" onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}>?</Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    aria-label={tt('orders.removeLine', 'Remove line')}
+                                    onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
                                 </td>
                               </tr>
                             )

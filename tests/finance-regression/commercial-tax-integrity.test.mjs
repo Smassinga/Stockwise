@@ -799,4 +799,10 @@ test('commercial tax integrity and item profile trust', async (t) => {
     assert.match(SOURCE.salesOrders, /linkedFiscalInvoice\?\.outstanding_base,\s*salesState\(selectedSO\)\?\.legacy_outstanding_base/)
     assert.doesNotMatch(SOURCE.salesOrders, /salesState\(selectedSO\)\?\.outstanding_base/)
   })
+  await check(126, 'Purchase Order line controls use readable labels and icons', async () => {
+    assert.doesNotMatch(SOURCE.purchaseOrders, /s\.code \+ ' \? '/)
+    assert.doesNotMatch(SOURCE.purchaseOrders, />\?<\/Button>/)
+    assert.match(SOURCE.purchaseOrders, /aria-label=\{tt\('orders\.removeLine', 'Remove line'\)\}/)
+    assert.match(SOURCE.purchaseOrders, /<Trash2 className="h-4 w-4" \/>/)
+  })
 })
