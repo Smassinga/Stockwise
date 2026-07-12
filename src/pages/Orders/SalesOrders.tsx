@@ -2759,7 +2759,7 @@ export default function SalesOrders() {
                   </div>
                   <div>
                     <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
-                    <div>{formatMoneyBase(n(salesState(selectedSO)?.outstanding_base), baseCode)}</div>
+                    <div>{formatMoneyBase(n(linkedFiscalInvoice?.outstanding_base, salesState(selectedSO)?.legacy_outstanding_base), baseCode)}</div>
                   </div>
                 </div>
                 {linkedFiscalInvoice ? (
