@@ -113,6 +113,10 @@ export type SalesInvoiceLineRow = {
   tax_amount: number
   line_total: number
   sort_order: number
+  tax_option_code_snapshot?: string | null
+  tax_treatment_snapshot?: string | null
+  tax_label_snapshot?: string | null
+  tax_requires_exemption_reason?: boolean | null
 }
 
 export type VendorBillLineRow = {

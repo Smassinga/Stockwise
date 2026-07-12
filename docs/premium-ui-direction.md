@@ -227,3 +227,9 @@ Avoid:
 - component-library churn that adds paid or proprietary dependencies
 
 The live activation workspace uses the existing card, badge, form, dialog, and responsive table primitives. It avoids checkout language, visually separates authoritative amount from declared amount, keeps the proof-not-verification warning persistent, and makes review actions explicit rather than hover-only. Production QA confirmed English/Portuguese lifecycle labels, light/dark readability, and zero page overflow at `1440`, `1200`, `820`, and `390`; the targeted localization follow-up did not introduce a broader visual redesign.
+
+## Commercial tax and item-profile UI (local-only)
+
+Settings uses the existing card/form system for auditable options and separate sales/purchase defaults. SO/PO create surfaces use mobile line cards below `md`, contained desktop tables above `md`, per-line treatment selectors, a deliberate bulk-apply control, explicit unconfigured messaging, and derived gross/discount/subtotal/tax/total summaries. SI/VB detail surfaces show copied labels and amounts rather than raw codes.
+
+Items disables protected profile controls when capability detection fails, shows a persistent compatibility warning, hides the misleading profile preview, and requires explicit basic-only acknowledgement. This is a contained trust correction, not a dashboard, brand, or component-library redesign. Hosted production does not serve this package yet.

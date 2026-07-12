@@ -192,3 +192,9 @@ Do not expose secrets in logs, screenshots, commits, or issue reports.
 Payment proofs are private objects addressed by company and request IDs. Request and event rows are durable audit evidence and must be restored with their matching storage objects. A missing proof blocks submission and approval; recovery must never infer payment verification from a filename or public URL. Draft/needs-correction orphan cleanup is deferred and must remain bounded to objects with no terminal audit dependency.
 
 Production is aligned at 41 migrations. The controlled rollout retained one private synthetic proof for approved request `PAY-B49089-000001`; it contains no real payment evidence. Recovery monitoring must reconcile approved requests with access-audit rows and preserve the immutable event sequence. The temporary QA channel is inactive.
+
+## Commercial tax recovery boundary (local-only)
+
+Hosted production remains at 41 migrations; local replay has 43. Before rollout, recovery evidence must distinguish the two pending migrations from hosted truth. Back up tax option/settings/audit rows and preserve SO/PO and SI/VB tax snapshots together. Never reconstruct an issued or posted document from current defaults: historical snapshots and `legacy_header` mode are the authority.
+
+After restoration, verify configuration-table RLS/FORCE RLS, default-option foreign keys, line/header reconciliation, canonical conversion, legacy fallback, and internal-helper privilege revocation. A missing default must recover as unconfigured, not as implicit zero. No production recovery claim exists for this package yet.

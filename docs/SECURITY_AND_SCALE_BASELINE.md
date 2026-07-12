@@ -286,3 +286,9 @@ Recommended review cadence:
 New request, event, counter, channel, and channel-event tables use RLS and FORCE RLS. Normal clients receive SELECT only; OWNER/ADMIN mutations and all review transitions are RPC-only. `PUBLIC` and `anon` cannot execute public mutation RPCs, internal helpers are not client-executable, SECURITY DEFINER functions use restricted search paths, and proof objects remain private with 5 MiB JPEG/PNG/PDF limits. Platform approval requires locked request/subscription rows and `posting_requests` idempotency before reusing the established entitlement mutation/audit path.
 
 These controls were re-verified in the hosted catalog after migration 41. Controlled production smoke used no real destination credentials, left one private synthetic proof object for audit, deactivated its QA channel, and produced no cash, bank, stock, invoice, vendor-bill, Growth Batch, Production Run, or item-price mutation.
+
+## Commercial tax security boundary (local-only)
+
+The three tax configuration tables use RLS and FORCE RLS. Authenticated company members receive scoped SELECT only; ADMIN+ configuration changes are RPC-only and audited. `PUBLIC` and `anon` cannot execute tax or item-profile mutation RPCs, and normal clients cannot execute internal validators, rollups, snapshot triggers, or total calculators. Every new `SECURITY DEFINER` function has a restricted `pg_catalog, public` search path.
+
+The database, not the client, chooses configured option snapshots, rounds line tax, derives header totals, blocks inactive/cross-company options, enforces exemption reasons, and locks line totals and tax snapshots after confirmation/approval. Canonical PO conversion cannot enter the legacy proportional allocator. Configuration updates lock defaults/options consistently so an inactive option cannot become or remain a default through a race. The package is not hosted at this checkpoint.

@@ -111,6 +111,15 @@ function warningVariant(code: ItemProfileWarningCode): 'destructive' | 'secondar
   }
 }
 
+function itemProfileErrorCode(error: unknown) {
+  const candidate = error as { message?: string; details?: string; hint?: string }
+  return [candidate?.message, candidate?.details, candidate?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .match(/item_profile_[a-z0-9_]+/)?.[0] || null
+}
+
 export default function ItemsPage() {
   const { t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
@@ -124,6 +133,7 @@ export default function ItemsPage() {
   const [uoms, setUoms] = useState<Uom[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
   const [profileFieldsSupported, setProfileFieldsSupported] = useState(false)
+  const [basicOnlyAcknowledged, setBasicOnlyAcknowledged] = useState(false)
   const [baseCurrencyCode, setBaseCurrencyCode] = useState('MZN')
 
   const [name, setName] = useState('')
@@ -359,6 +369,7 @@ export default function ItemsPage() {
     const extendedRes = await supabase.from('items_view').select(extendedFields).order('name', { ascending: true })
     if (!extendedRes.error) {
       setProfileFieldsSupported(true)
+      setBasicOnlyAcknowledged(false)
       setItems(sortByName((extendedRes.data || []).map((row) => normalizeItem(row))))
       return
     }
@@ -370,6 +381,7 @@ export default function ItemsPage() {
     if (basicRes.error) throw basicRes.error
 
     setProfileFieldsSupported(false)
+    setBasicOnlyAcknowledged(false)
     setItems(sortByName((basicRes.data || []).map((row) => normalizeItem(row, true))))
   }
 
@@ -392,6 +404,9 @@ export default function ItemsPage() {
     }
     if (!name.trim() || !sku.trim() || !baseUomId) {
       return toast.error(tt('items.toast.required', 'Name, SKU, and base unit are required'))
+    }
+    if (!profileFieldsSupported && !basicOnlyAcknowledged) {
+      return toast.error(tt('items.profileCompatibility.ackRequired', 'Confirm basic-only compatibility mode before saving. Profile controls are unavailable and will not be inferred.'))
     }
 
     const nextMinStock = minStock.trim() ? Number(minStock.trim()) : 0
@@ -435,15 +450,21 @@ export default function ItemsPage() {
         unit_price: draftProfile.canSell ? nextUnitPrice : null,
       }
 
-      if (profileFieldsSupported) {
-        payload.primary_role = draftProfile.primaryRole
-        payload.track_inventory = draftProfile.trackInventory
-        payload.can_buy = draftProfile.canBuy
-        payload.can_sell = draftProfile.canSell
-        payload.is_assembled = draftProfile.isAssembled
-      }
-
-      const insert = await supabase.from('items').insert(payload).select('id').single()
+      const insert = profileFieldsSupported
+        ? await supabase.rpc('create_item_with_profile', {
+            p_company_id: companyId,
+            p_sku: payload.sku,
+            p_name: payload.name,
+            p_base_uom_id: payload.base_uom_id,
+            p_min_stock: payload.min_stock,
+            p_unit_price: payload.unit_price,
+            p_primary_role: draftProfile.primaryRole,
+            p_track_inventory: draftProfile.trackInventory,
+            p_can_buy: draftProfile.canBuy,
+            p_can_sell: draftProfile.canSell,
+            p_is_assembled: draftProfile.isAssembled,
+          })
+        : await supabase.from('items').insert(payload).select('id').single()
       if (insert.error) {
         const msg = String(insert.error.message || '')
         const code = String((insert.error as any).code || '')
@@ -453,17 +474,52 @@ export default function ItemsPage() {
         throw insert.error
       }
 
-      toast.success(tt('items.toast.created', 'Item created'))
+      const insertedRow = Array.isArray(insert.data) ? insert.data[0] : insert.data
+      const insertedId = String((insertedRow as any)?.id || '')
+      if (!insertedId) throw new Error('item_profile_roundtrip_missing_id')
+
+      if (profileFieldsSupported) {
+        const { data: verified, error: verifyError } = await supabase
+          .from('items')
+          .select('id,primary_role,track_inventory,can_buy,can_sell,is_assembled,unit_price,min_stock')
+          .eq('company_id', companyId)
+          .eq('id', insertedId)
+          .single()
+        if (verifyError) throw verifyError
+
+        const roundTripMatches = verified.primary_role === draftProfile.primaryRole
+          && Boolean(verified.track_inventory) === draftProfile.trackInventory
+          && Boolean(verified.can_buy) === draftProfile.canBuy
+          && Boolean(verified.can_sell) === draftProfile.canSell
+          && Boolean(verified.is_assembled) === draftProfile.isAssembled
+          && Number(verified.min_stock ?? 0) === nextMinStock
+          && (draftProfile.canSell
+            ? Number(verified.unit_price ?? 0) === Number(nextUnitPrice ?? 0)
+            : verified.unit_price == null)
+        if (!roundTripMatches) throw new Error('item_profile_roundtrip_mismatch')
+      }
+
+      await reloadItems()
+      const reloaded = profileFieldsSupported
+        ? await supabase.from('items').select('id').eq('company_id', companyId).eq('id', insertedId).maybeSingle()
+        : { data: { id: insertedId }, error: null }
+      if (reloaded.error || !reloaded.data) throw reloaded.error || new Error('item_profile_roundtrip_reload_failed')
+
+      toast.success(profileFieldsSupported
+        ? tt('items.toast.createdVerified', 'Item created and profile verified')
+        : tt('items.toast.createdBasicOnly', 'Basic item created in acknowledged compatibility mode'))
       setName('')
       setSku('')
       setBaseUomId('')
       setMinStock('')
       setUnitPrice('')
       setDraftProfile(EMPTY_PROFILE)
-      await reloadItems()
+      setBasicOnlyAcknowledged(false)
     } catch (error: any) {
       console.error(error)
-      toast.error(error?.message || tt('items.toast.createFailed', 'Failed to create item'))
+      toast.error(itemProfileErrorCode(error)
+        ? tt('items.toast.profileCreateRejected', 'The item profile could not be saved. Review the fields and try again.')
+        : (error?.message || tt('items.toast.createFailed', 'Failed to create item')))
     } finally {
       setSaving(false)
     }
@@ -807,6 +863,23 @@ export default function ItemsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 p-4 pt-3 sm:space-y-6 sm:p-6">
+            {!profileFieldsSupported && (
+              <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-sm">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+                  <div className="space-y-3">
+                    <div>
+                      <div className="font-medium">{tt('items.profileCompatibility.title', 'Item profile fields are unavailable')}</div>
+                      <p className="mt-1 text-muted-foreground">{tt('items.profileCompatibility.help', 'Role and inventory controls are disabled so selections cannot be silently discarded. You may create only the basic item fields after explicit acknowledgement.')}</p>
+                    </div>
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input type="checkbox" className="mt-1 h-4 w-4" checked={basicOnlyAcknowledged} onChange={(event) => setBasicOnlyAcknowledged(event.target.checked)} />
+                      <span>{tt('items.profileCompatibility.ack', 'I understand this save contains only basic fields and no custom profile selections.')}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-3">
               {roleOptions.map((option) => {
                 const active = draftProfile.primaryRole === option.role
@@ -820,6 +893,7 @@ export default function ItemsPage() {
                         : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/40'
                     }`}
                     onClick={() => handleRolePreset(option.role)}
+                    disabled={!profileFieldsSupported}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="font-medium">{option.title}</div>
@@ -903,6 +977,7 @@ export default function ItemsPage() {
                         <Switch
                           checked={draftProfile.trackInventory}
                           onCheckedChange={(checked) => setDraftProfile((prev) => ({ ...prev, trackInventory: checked }))}
+                          disabled={!profileFieldsSupported}
                         />
                       </div>
                       <div className="flex items-center justify-between gap-4">
@@ -913,6 +988,7 @@ export default function ItemsPage() {
                         <Switch
                           checked={draftProfile.canBuy}
                           onCheckedChange={(checked) => setDraftProfile((prev) => ({ ...prev, canBuy: checked }))}
+                          disabled={!profileFieldsSupported}
                         />
                       </div>
                       <div className="flex items-center justify-between gap-4">
@@ -923,6 +999,7 @@ export default function ItemsPage() {
                         <Switch
                           checked={draftProfile.canSell}
                           onCheckedChange={(checked) => setDraftProfile((prev) => ({ ...prev, canSell: checked }))}
+                          disabled={!profileFieldsSupported}
                         />
                       </div>
                       <div className="flex items-center justify-between gap-4">
@@ -933,12 +1010,13 @@ export default function ItemsPage() {
                         <Switch
                           checked={draftProfile.isAssembled}
                           onCheckedChange={(checked) => setDraftProfile((prev) => ({ ...prev, isAssembled: checked }))}
+                          disabled={!profileFieldsSupported}
                         />
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-4 rounded-2xl border border-border/60 bg-background/80 p-4">
+                  {profileFieldsSupported ? <div className="space-y-4 rounded-2xl border border-border/60 bg-background/80 p-4">
                     <div className="space-y-2">
                       <div className="text-sm font-medium">{tt('items.previewTitle', 'Profile preview')}</div>
                       <div className="flex flex-wrap gap-2">
@@ -974,7 +1052,11 @@ export default function ItemsPage() {
                         <p className="text-sm text-muted-foreground">{tt('items.preview.warningNone', 'No role contradictions detected for this setup.')}</p>
                       )}
                     </div>
-                  </div>
+                  </div> : (
+                    <div className="rounded-2xl border border-dashed border-amber-500/50 bg-background/80 p-4 text-sm text-muted-foreground">
+                      {tt('items.profileCompatibility.previewHidden', 'Profile preview is hidden in compatibility mode because no profile selection will be persisted.')}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -990,7 +1072,7 @@ export default function ItemsPage() {
                 <div className="hidden text-sm text-muted-foreground sm:block">
                   {tt('items.createFooter', 'Create items with the right role and default sell price up front so Assembly, stock review, purchasing, and Point of Sale all start from clean master data.')}
                 </div>
-                <Button type="submit" disabled={saving}>
+                <Button type="submit" disabled={saving || (!profileFieldsSupported && !basicOnlyAcknowledged)}>
                   {saving ? tt('actions.saving', 'Saving...') : tt('items.createAction', 'Create item')}
                 </Button>
               </div>

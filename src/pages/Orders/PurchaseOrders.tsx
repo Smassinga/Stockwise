@@ -36,6 +36,14 @@ import {
   stablePostingFingerprint,
   type PostingRequestKeyRef,
 } from '../../lib/postingRequestKeys'
+import {
+  commercialTaxErrorCode,
+  commercialTaxLinePreview,
+  commercialTaxOptionLabel,
+  getCommercialTaxOrderReadiness,
+  loadCommercialTaxConfiguration,
+  type CommercialTaxConfiguration,
+} from '../../lib/commercialTax'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -129,6 +137,9 @@ type PO = {
   created_by?: string | null
   updated_at?: string|null
   created_at?: string|null
+  tax_calculation_mode?: 'line' | 'legacy_header'
+  tax_configuration_version?: number | null
+  tax_exemption_reason_text?: string | null
 }
 
 type POL = {
@@ -142,6 +153,13 @@ type POL = {
   unit_price: number
   discount_pct?: number|null
   line_total: number
+  tax_option_id?: string | null
+  tax_option_code_snapshot?: string | null
+  tax_treatment_snapshot?: string | null
+  tax_label_snapshot?: string | null
+  tax_rate?: number | null
+  tax_amount?: number | null
+  tax_requires_exemption_reason?: boolean | null
 }
 
 type PurchaseOrderVendorBillSummary = {
@@ -189,6 +207,7 @@ type PurchaseLineDraft = {
   qty: string
   unitPrice: string
   discountPct: string
+  taxOptionId: string
 }
 
 type PoMetaDraft = {
@@ -217,7 +236,8 @@ type PurchaseOrderAudit = {
 
 const todayYmd = () => new Date().toISOString().slice(0, 10)
 const NO_ORDER_PAYMENT_TERMS = '__none__'
-const blankPurchaseLine = (): PurchaseLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0' })
+const NO_TAX_OPTION = '__tax_unconfigured__'
+const blankPurchaseLine = (taxOptionId = ''): PurchaseLineDraft => ({ itemId: '', uomId: '', description: '', qty: '', unitPrice: '', discountPct: '0', taxOptionId })
 const emptyPoMetaDraft = (): PoMetaDraft => ({
   orderDate: todayYmd(),
   expectedDate: todayYmd(),
@@ -335,7 +355,10 @@ export default function PurchaseOrders() {
   const [poOrderDate, setPoOrderDate] = useState<string>(() => todayYmd())
   const [poDate, setPoDate] = useState<string>(() => todayYmd())
   const [poDueDate, setPoDueDate] = useState<string>(() => todayYmd())
-  const [poTaxPct, setPoTaxPct] = useState<string>('0')
+  const [taxConfiguration, setTaxConfiguration] = useState<CommercialTaxConfiguration | null>(null)
+  const [taxConfigurationError, setTaxConfigurationError] = useState<string | null>(null)
+  const [poBulkTaxOptionId, setPoBulkTaxOptionId] = useState('')
+  const [poTaxExemptionReason, setPoTaxExemptionReason] = useState('')
   const [poPaymentTermsId, setPoPaymentTermsId] = useState('')
   const [poPaymentTerms, setPoPaymentTerms] = useState('')
   const [poDeliveryTerms, setPoDeliveryTerms] = useState('')
@@ -586,6 +609,18 @@ export default function PurchaseOrders() {
         setCurrencies((curRes.data || []) as Currency[])
         setBaseCode(await getBaseCurrencyCode(companyId))
 
+        try {
+          const nextTaxConfiguration = await loadCommercialTaxConfiguration(companyId)
+          setTaxConfiguration(nextTaxConfiguration)
+          setTaxConfigurationError(null)
+          const purchaseDefaultId = nextTaxConfiguration.purchaseDefault?.id || ''
+          setPoBulkTaxOptionId(purchaseDefaultId)
+          setPoLinesForm((previous) => previous.map((line) => line.taxOptionId ? line : { ...line, taxOptionId: purchaseDefaultId }))
+        } catch (taxError: any) {
+          setTaxConfiguration(null)
+          setTaxConfigurationError(String(taxError?.message || taxError || 'commercial_tax_configuration_unavailable'))
+        }
+
         const { data: convRows, error: convErr } = await supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor')
         setConvGraph(convErr ? null : buildConvGraph((convRows || []) as ConvRow[]))
 
@@ -616,10 +651,10 @@ export default function PurchaseOrders() {
         // POs + lines for this company
         const [poRes, polRes, vendorBillRes] = await Promise.all([
           supabase.from('purchase_orders')
-            .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
+            .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,tax_calculation_mode,tax_configuration_version,tax_exemption_reason_text,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
             .eq('company_id', companyId),
           supabase.from('purchase_order_lines')
-            .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
+            .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total,tax_option_id,tax_option_code_snapshot,tax_treatment_snapshot,tax_label_snapshot,tax_rate,tax_amount,tax_requires_exemption_reason')
             .eq('company_id', companyId),
           supabase.from('v_vendor_bill_state')
             .select('id,purchase_order_id,internal_reference,primary_reference,supplier_invoice_reference,document_workflow_status,bill_date,current_legal_total_base,settled_base,outstanding_base,credited_total_base,debited_total_base,credit_note_count,debit_note_count,resolution_status')
@@ -763,10 +798,6 @@ export default function PurchaseOrders() {
       const matchedPaymentTermsId = poPaymentTermsId || matchPaymentTermId(supp?.payment_terms_id, supp?.payment_terms)
       const resolvedPaymentTerms = paymentTermLabel(matchedPaymentTermsId, poPaymentTerms || supp?.payment_terms || '')
 
-      const subtotal = cleanLines.reduce((s, l) => s + discountedLineTotal(l.qty, l.unitPrice, l.discountPct), 0)
-      const tax_total = subtotal * (n(poTaxPct, 0) / 100)
-      const total = subtotal + tax_total
-
       const { data: insPO, error: poErr } = await supabase.from('purchase_orders').insert({
         company_id: companyId,
         supplier_id: poSupplierId,
@@ -790,47 +821,72 @@ export default function PurchaseOrders() {
         supplier_email: supp?.email ?? null,
         supplier_phone: supp?.phone ?? null,
         supplier_tax_id: supp?.tax_id ?? null,
-        subtotal, tax_total, total,
+        subtotal: 0,
+        tax_total: 0,
+        total: 0,
+        total_amount: 0,
+        tax_calculation_mode: 'line',
+        tax_configuration_version: 1,
+        tax_exemption_reason_text: poTaxExemptionReason.trim() || null,
       } as any).select('id').single()
       if (poErr) throw poErr
       const poId = insPO!.id as string
 
-      for (let i = 0; i < cleanLines.length; i++) {
-        const l = cleanLines[i]
-        const lineTotal = discountedLineTotal(l.qty, l.unitPrice, l.discountPct)
-        const { error: lineErr } = await supabase.from('purchase_order_lines').insert({
+      const linePayload = cleanLines.map((line, index) => ({
           company_id: companyId,
-          po_id: poId, item_id: l.itemId, uom_id: l.uomId, description: l.description || null, line_no: i + 1,
-          qty: l.qty, unit_price: l.unitPrice, discount_pct: l.discountPct, line_total: lineTotal
-        } as any)
-        if (lineErr) throw lineErr
-      }
+          po_id: poId,
+          item_id: line.itemId,
+          uom_id: line.uomId,
+          description: line.description || null,
+          line_no: index + 1,
+          qty: line.qty,
+          unit_price: line.unitPrice,
+          discount_pct: line.discountPct,
+          tax_option_id: line.taxOptionId || null,
+        }))
+      const { error: lineErr } = await supabase.from('purchase_order_lines').insert(linePayload)
+      if (lineErr) throw lineErr
 
       toast.success(tt('orders.poCreated', 'Purchase Order created'))
-      setPoSupplierId(''); setPoCurrency(baseCode); setPoFx('1'); setPoTaxPct('0')
+      setPoSupplierId(''); setPoCurrency(baseCode); setPoFx('1'); setPoTaxExemptionReason('')
       setPoOrderDate(() => todayYmd()); setPoDate(() => todayYmd()); setPoDueDate(() => todayYmd())
       setPoPaymentTermsId(''); setPoPaymentTerms(''); setPoDeliveryTerms(''); setPoReferenceNo(''); setPoNotes(''); setPoInternalNotes('')
       setPoPreparedBy(user?.name || ''); setPoApprovedBy(''); setPoReceivedBy('')
-      setPoLinesForm([blankPurchaseLine()])
+      setPoLinesForm([blankPurchaseLine(taxConfiguration?.purchaseDefault?.id || '')])
       setPoOpen(false)
 
       await refreshPOData()
-    } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCreateFailed', 'Failed to create PO')) }
+    } catch (err: any) {
+      console.error(err)
+      const code = commercialTaxErrorCode(err)
+      toast.error(code ? commercialTaxBlockerLabel(code) : (err?.message || tt('orders.poCreateFailed', 'Failed to create PO')))
+    }
   }
 
   async function approvePO(poId: string) {
     try {
+      const readiness = await getCommercialTaxOrderReadiness('purchase_order', poId)
+      if (!readiness.ready) {
+        const blocker = readiness.blockers[0] || 'commercial_tax_not_ready'
+        return toast.error(commercialTaxBlockerLabel(blocker))
+      }
       const updated = await tryUpdateStatus(poId, ['approved', 'open', 'authorised', 'authorized'])
       if (user?.name) await supabase.from('purchase_orders').update({ approved_by: user.name }).eq('id', poId).eq('company_id', companyId!)
       if (updated) setPOs(prev => prev.map(p => (p.id === poId ? { ...p, status: updated, approved_by: user?.name || p.approved_by } : p)))
+      purchaseOrderState.refresh()
       toast.success(tt('orders.poApproved', 'PO approved'))
-    } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poApproveFailed', 'Failed to approve PO')) }
+    } catch (err: any) {
+      console.error(err)
+      const code = commercialTaxErrorCode(err)
+      toast.error(code ? commercialTaxBlockerLabel(code) : (err?.message || tt('orders.poApproveFailed', 'Failed to approve PO')))
+    }
   }
 
   async function cancelPO(poId: string) {
     try {
       const updated = await tryUpdateStatus(poId, ['cancelled', 'canceled'])
       if (updated) setPOs(prev => prev.map(p => (p.id === poId ? { ...p, status: updated } : p)))
+      purchaseOrderState.refresh()
       toast.success(tt('orders.poCancelled', 'PO cancelled'))
     } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCancelFailed', 'Failed to cancel PO')) }
   }
@@ -871,11 +927,11 @@ export default function PurchaseOrders() {
     const [poRes, polRes, vendorBillRes] = await Promise.all([
       supabase
         .from('purchase_orders')
-        .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
+        .select('id,status,order_date,currency_code,fx_to_base,total,subtotal,tax_total,tax_calculation_mode,tax_configuration_version,tax_exemption_reason_text,due_date,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,received_by,updated_at,created_at,order_no,public_id,created_by,supplier_id,supplier,supplier_name,supplier_email,supplier_phone,supplier_tax_id,payment_terms_id,payment_terms,expected_date')
         .eq('company_id', companyId),
       supabase
         .from('purchase_order_lines')
-        .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total')
+        .select('id,po_id,item_id,uom_id,description,line_no,qty,unit_price,discount_pct,line_total,tax_option_id,tax_option_code_snapshot,tax_treatment_snapshot,tax_label_snapshot,tax_rate,tax_amount,tax_requires_exemption_reason')
         .eq('company_id', companyId),
       supabase
         .from('v_vendor_bill_state')
@@ -1077,8 +1133,30 @@ export default function PurchaseOrders() {
     }),
     [pos, purchaseStateById]
   )
-  const poSubtotal = poLinesForm.reduce((s, r) => s + n(r.qty) * n(r.unitPrice) * (1 - n(r.discountPct,0)/100), 0)
-  const poTax = poSubtotal * (n(poTaxPct, 0) / 100)
+  const activeTaxOptions = taxConfiguration?.activeOptions || []
+  const taxOptionById = useMemo(() => new Map((taxConfiguration?.options || []).map((option) => [option.id, option])), [taxConfiguration?.options])
+  const canConfigureTax = ['OWNER', 'ADMIN'].includes(String(myRole || '').toUpperCase())
+  const poGross = poLinesForm.reduce((sum, line) => sum + n(line.qty) * n(line.unitPrice), 0)
+  const poSubtotal = poLinesForm.reduce((sum, line) => sum + discountedLineTotal(n(line.qty), n(line.unitPrice), n(line.discountPct)), 0)
+  const poDiscount = poGross - poSubtotal
+  const poTax = poLinesForm.reduce((sum, line) => {
+    const option = taxOptionById.get(line.taxOptionId)
+    return sum + (commercialTaxLinePreview(discountedLineTotal(n(line.qty), n(line.unitPrice), n(line.discountPct)), option) || 0)
+  }, 0)
+  const poHasUnconfiguredTax = poLinesForm.some((line) => !line.taxOptionId)
+  const poRequiresExemptionReason = poLinesForm.some((line) => taxOptionById.get(line.taxOptionId)?.requires_exemption_reason)
+  const commercialTaxBlockerLabel = (code: string) => {
+    const labels: Record<string, string> = {
+      commercial_tax_lines_required: tt('commercialTax.errors.linesRequired', 'Add at least one line before continuing.'),
+      commercial_tax_lines_unconfigured: tt('commercialTax.errors.linesUnconfigured', 'Select a tax treatment for every line.'),
+      commercial_tax_lines_inactive: tt('commercialTax.errors.linesInactive', 'One or more selected tax options are no longer active.'),
+      commercial_tax_exemption_reason_required: tt('commercialTax.errors.exemptionReasonRequired', 'Enter the required document-level exemption reason.'),
+      commercial_tax_totals_out_of_sync: tt('commercialTax.errors.totalsOutOfSync', 'Tax totals changed. Reload the order and try again.'),
+      commercial_tax_option_inactive: tt('commercialTax.errors.optionInactive', 'The selected tax option is inactive.'),
+      commercial_tax_option_cross_company_or_missing: tt('commercialTax.errors.optionUnavailable', 'The selected tax option is not available for this company.'),
+    }
+    return labels[code] || tt('commercialTax.errors.notReady', 'Tax configuration is not ready for this action.')
+  }
   const openPurchaseBase = useMemo(() => poOutstanding.reduce((sum, po) => sum + amountPO(po).totalBase, 0), [poOutstanding, polines])
   const draftPurchaseCount = useMemo(
     () => poOutstanding.filter((po) => (purchaseStateById.get(po.id)?.workflow_status ?? legacyPurchaseWorkflowStatus(po.status)) === 'draft').length,
@@ -1732,7 +1810,7 @@ export default function PurchaseOrders() {
       <div class="card" style="margin-top:8px">
         <h4>${tt('orders.supplier', 'Supplier')}</h4>
         <div><b>${supp.name}</b></div>
-        <div class="muted">${tt('orders.email', 'Email')}: ${supp.email} Â· ${tt('orders.phone', 'Phone')}: ${supp.phone} Â· ${tt('orders.taxId', 'Tax ID')}: ${supp.tax_id}</div>
+        <div class="muted">${tt('orders.email', 'Email')}: ${supp.email} | ${tt('orders.phone', 'Phone')}: ${supp.phone} | ${tt('orders.taxId', 'Tax ID')}: ${supp.tax_id}</div>
         <div class="kv" style="margin-top:6px">
           <div class="k">${tt('orders.paymentTerms', 'Payment Terms')}</div><div>${supp.terms}</div>
         </div>
@@ -2026,8 +2104,68 @@ export default function PurchaseOrders() {
                       <Label>{tt('orders.lines', 'Lines')}</Label>
                       <p className="text-xs text-muted-foreground">{tt('orders.linesHelp', 'Use the description field for service scope, project detail, or product specifics. Quantity and UoM still support stock and non-stock work.')}</p>
                     </div>
-                    <div className="mt-2 border rounded-lg overflow-x-auto w-full">
-                      <table className="w-full text-sm">
+                    <div className="mt-3 flex flex-col gap-3 rounded-lg border bg-muted/15 p-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{tt('commercialTax.order.title', 'Line tax')}</div>
+                        <p className="text-xs text-muted-foreground">
+                          {taxConfigurationError
+                            ? tt('commercialTax.errors.load', 'Tax configuration could not be loaded')
+                            : poHasUnconfiguredTax
+                              ? tt('commercialTax.order.unconfiguredPurchaseHelp', 'Unconfigured lines may stay in draft, but approval is blocked until each line has an explicit treatment.')
+                              : tt('commercialTax.order.configuredHelp', 'Header tax is derived from the rounded tax amount on each line.')}
+                        </p>
+                      </div>
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                        <Select value={poBulkTaxOptionId || NO_TAX_OPTION} onValueChange={(value) => setPoBulkTaxOptionId(value === NO_TAX_OPTION ? '' : value)}>
+                          <SelectTrigger className="w-full sm:w-64"><SelectValue placeholder={tt('commercialTax.bulk.select', 'Select treatment')} /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_TAX_OPTION}>{tt('commercialTax.notConfigured', 'Tax not configured')}</SelectItem>
+                            {activeTaxOptions.map((option) => <SelectItem key={option.id} value={option.id}>{commercialTaxOptionLabel(option)}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Button type="button" variant="outline" onClick={() => setPoLinesForm((previous) => previous.map((line) => ({ ...line, taxOptionId: poBulkTaxOptionId })))}>
+                          {tt('commercialTax.bulk.apply', 'Apply to all lines')}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {poHasUnconfiguredTax && canConfigureTax && (
+                      <Button type="button" variant="link" className="mt-1 h-auto px-0" onClick={() => navigate('/settings')}>
+                        {tt('commercialTax.settingsLink', 'Open Commercial Tax Settings')}
+                      </Button>
+                    )}
+
+                    <div className="mt-3 grid gap-3 md:hidden">
+                      {poLinesForm.map((line, index) => {
+                        const option = taxOptionById.get(line.taxOptionId)
+                        const taxableBase = discountedLineTotal(n(line.qty), n(line.unitPrice), n(line.discountPct))
+                        const taxAmount = commercialTaxLinePreview(taxableBase, option)
+                        return (
+                          <div key={`mobile-po-line-${index}`} className="space-y-3 rounded-lg border bg-background p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-medium">{tt('orders.lineNumber', 'Line {count}', { count: index + 1 })}</span>
+                              <Button type="button" size="sm" variant="ghost" onClick={() => setPoLinesForm((previous) => previous.filter((_, rowIndex) => rowIndex !== index))}>{tt('actions.remove', 'Remove')}</Button>
+                            </div>
+                            <Select value={line.itemId} onValueChange={(value) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, itemId: value, uomId: itemById.get(value)?.baseUomId || row.uomId } : row))}>
+                              <SelectTrigger><SelectValue placeholder={tt('orders.itemOrService', 'Item / Service')} /></SelectTrigger>
+                              <SelectContent>{items.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.sku})</SelectItem>)}</SelectContent>
+                            </Select>
+                            <Textarea value={line.description} onChange={(event) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, description: event.target.value } : row))} placeholder={tt('orders.lineDescriptionPlaceholder', 'Optional line description for service scope, specifications, or deliverables')} />
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1"><Label>{tt('orders.qty', 'Qty')}</Label><Input type="number" min="0" step="0.0001" value={line.qty} onChange={(event) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, qty: event.target.value } : row))} /></div>
+                              <div className="space-y-1"><Label>{tt('orders.uom', 'UoM')}</Label><Select value={line.uomId} onValueChange={(value) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, uomId: value } : row))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{uoms.map((uom) => <SelectItem key={uom.id} value={uom.id}>{uom.code}</SelectItem>)}</SelectContent></Select></div>
+                              <div className="space-y-1"><Label>{tt('orders.unitPrice', 'Unit Price')}</Label><Input type="number" min="0" step="0.0001" value={line.unitPrice} onChange={(event) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, unitPrice: event.target.value } : row))} /></div>
+                              <div className="space-y-1"><Label>{tt('orders.discountPct', 'Disc %')}</Label><Input type="number" min="0" max="100" step="0.01" value={line.discountPct} onChange={(event) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, discountPct: event.target.value } : row))} /></div>
+                            </div>
+                            <div className="space-y-1"><Label>{tt('commercialTax.fields.treatment', 'Treatment')}</Label><Select value={line.taxOptionId || NO_TAX_OPTION} onValueChange={(value) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, taxOptionId: value === NO_TAX_OPTION ? '' : value } : row))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={NO_TAX_OPTION}>{tt('commercialTax.notConfigured', 'Tax not configured')}</SelectItem>{activeTaxOptions.map((row) => <SelectItem key={row.id} value={row.id}>{commercialTaxOptionLabel(row)}</SelectItem>)}</SelectContent></Select></div>
+                            <div className="grid grid-cols-2 gap-3 rounded-md bg-muted/30 p-3 text-sm"><div><div className="text-muted-foreground">{tt('commercialTax.taxableBase', 'Taxable base')}</div><div>{fmtAcct(taxableBase)}</div></div><div className="text-right"><div className="text-muted-foreground">{tt('commercialTax.taxAmount', 'Tax amount')}</div><div>{taxAmount == null ? tt('commercialTax.notConfigured', 'Tax not configured') : fmtAcct(taxAmount)}</div></div></div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="mt-2 hidden overflow-x-auto rounded-lg border md:block">
+                      <table className="w-full min-w-[1080px] text-sm">
                         <thead className="bg-muted/50">
                           <tr className="text-left">
                             <th className="py-2 px-3">{tt('orders.itemOrService', 'Item / Service')}</th>
@@ -2035,6 +2173,8 @@ export default function PurchaseOrders() {
                             <th className="py-2 px-3 w-28">{tt('orders.qty', 'Qty')}</th>
                             <th className="py-2 px-3 w-40">{tt('orders.unitPrice', 'Unit Price')}</th>
                             <th className="py-2 px-3 w-28">{tt('orders.discountPct', 'Disc %')}</th>
+                            <th className="py-2 px-3 w-64">{tt('commercialTax.fields.treatment', 'Treatment')}</th>
+                            <th className="py-2 px-3 w-32 text-right">{tt('commercialTax.taxAmount', 'Tax amount')}</th>
                             <th className="py-2 px-3 w-36 text-right">{tt('orders.lineTotal', 'Line Total')}</th>
                             <th className="py-2 px-3 w-10"></th>
                           </tr>
@@ -2042,6 +2182,8 @@ export default function PurchaseOrders() {
                         <tbody>
                           {poLinesForm.map((ln, idx) => {
                             const lineTotal = n(ln.qty) * n(ln.unitPrice) * (1 - n(ln.discountPct,0)/100)
+                            const taxOption = taxOptionById.get(ln.taxOptionId)
+                            const lineTax = commercialTaxLinePreview(lineTotal, taxOption)
                             return (
                               <tr key={idx} className="border-t align-top">
                                 <td className="py-2 px-3">
@@ -2082,6 +2224,8 @@ export default function PurchaseOrders() {
                                 <td className="py-2 px-3">
                                   <Input type="number" min="0" max="100" step="0.01" value={ln.discountPct} onChange={e => setPoLinesForm(prev => prev.map((x, i) => i === idx ? { ...x, discountPct: e.target.value } : x))} />
                                 </td>
+                                <td className="py-2 px-3"><Select value={ln.taxOptionId || NO_TAX_OPTION} onValueChange={(value) => setPoLinesForm((previous) => previous.map((row, rowIndex) => rowIndex === idx ? { ...row, taxOptionId: value === NO_TAX_OPTION ? '' : value } : row))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={NO_TAX_OPTION}>{tt('commercialTax.notConfigured', 'Tax not configured')}</SelectItem>{activeTaxOptions.map((option) => <SelectItem key={option.id} value={option.id}>{commercialTaxOptionLabel(option)}</SelectItem>)}</SelectContent></Select></td>
+                                <td className="py-2 px-3 text-right">{lineTax == null ? tt('commercialTax.unconfiguredShort', 'Unconfigured') : fmtAcct(lineTax)}</td>
                                 <td className="py-2 px-3 text-right">{fmtAcct(lineTotal)}</td>
                                 <td className="py-2 px-3 text-right">
                                   <Button size="icon" variant="ghost" onClick={() => setPoLinesForm(prev => prev.filter((_, i) => i !== idx))}>?</Button>
@@ -2091,23 +2235,24 @@ export default function PurchaseOrders() {
                           })}
                         </tbody>
                       </table>
-                      <div className="p-2">
+                    </div>
+                      <div className="p-2 pl-0">
                         <MobileAddLineButton
-                          onAdd={() => setPoLinesForm(prev => [...prev, blankPurchaseLine()])}
+                          onAdd={() => setPoLinesForm(prev => [...prev, blankPurchaseLine(taxConfiguration?.purchaseDefault?.id || '')])}
                           label={tt('orders.addLine', 'Add Line')}
                         />
                       </div>
-                    </div>
 
                     {/* Totals - Responsive layout */}
                     <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t mt-4">
                       <div className="p-4 grid grid-cols-1 gap-3 items-center">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <Label className="whitespace-nowrap">{tt('orders.taxPct', 'Tax %')}</Label>
-                          <Input className="w-28" type="number" min="0" step="0.01" value={poTaxPct} onChange={e => setPoTaxPct(e.target.value)} />
-                        </div>
+                        {poRequiresExemptionReason && <div className="space-y-2"><Label>{tt('commercialTax.exemptionReason', 'Document exemption reason')}</Label><Textarea value={poTaxExemptionReason} onChange={(event) => setPoTaxExemptionReason(event.target.value)} placeholder={tt('commercialTax.exemptionReasonHelp', 'Enter the approved reason that applies to the document.')} /></div>}
                         <div className="flex flex-col items-end text-sm">
                           <div className="w-full grid grid-cols-2 gap-1">
+                            <div className="text-muted-foreground">{tt('commercialTax.gross', 'Gross before discount')}</div>
+                            <div className="text-right">{fmtAcct(poGross)}</div>
+                            <div className="text-muted-foreground">{tt('commercialTax.discount', 'Discount')}</div>
+                            <div className="text-right">{fmtAcct(poDiscount)}</div>
                             <div className="text-muted-foreground">{tt('orders.subtotal', 'Subtotal')} ({poCurrency})</div>
                             <div className="text-right">{fmtAcct(poSubtotal)}</div>
                             <div className="text-muted-foreground">{tt('orders.tax', 'Tax')}</div>
@@ -2116,7 +2261,7 @@ export default function PurchaseOrders() {
                             <div className="text-right font-medium">{fmtAcct(poSubtotal + poTax)}</div>
                           </div>
                           <div className="mt-3">
-                            <Button onClick={createPO}>{tt('orders.createPO', 'Create PO')}</Button>
+                            <Button onClick={createPO} disabled={!!taxConfigurationError}>{tt('orders.createPO', 'Create PO')}</Button>
                           </div>
                         </div>
                       </div>
@@ -2303,6 +2448,7 @@ export default function PurchaseOrders() {
                 <div><Label>{tt('orders.legacyOutstanding', 'Legacy outstanding')}</Label><div>{formatMoneyBase(n(purchaseState(selectedPO)?.legacy_outstanding_base), baseCode)}</div></div>
                 <div><Label>{tt('orders.orderDate', 'Order Date')}</Label><div>{(selectedPO as any).order_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.currency', 'Currency')}</Label><div>{curPO(selectedPO)}</div></div>
+                <div><Label>{tt('commercialTax.mode.label', 'Tax source')}</Label><div>{selectedPO.tax_calculation_mode === 'line' ? tt('commercialTax.mode.line', 'Canonical line tax') : tt('commercialTax.mode.legacy', 'Legacy header tax')}</div></div>
                 <div><Label>{tt('orders.fxToBaseShort', 'FX to Base')}</Label><div>{fmtAcct(fxPO(selectedPO))}</div></div>
                 <div><Label>{tt('orders.expectedDate', 'Expected Date')}</Label><div>{(selectedPO as any).expected_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedPO as any).due_date || tt('none', '(none)')}</div></div>
@@ -2417,7 +2563,7 @@ export default function PurchaseOrders() {
                         <Label>{tt('financeDocs.audit.adjustments', 'Adjustments')}</Label>
                         <div>{selectedPOVendorBill.credit_note_count + selectedPOVendorBill.debit_note_count}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {tt('financeDocs.audit.adjustmentsBreakdown', 'Credits {credits} Â· Debits {debits}', {
+                          {tt('financeDocs.audit.adjustmentsBreakdown', 'Credits {credits} | Debits {debits}', {
                             credits: selectedPOVendorBill.credit_note_count,
                             debits: selectedPOVendorBill.debit_note_count,
                           })}
@@ -2637,6 +2783,11 @@ export default function PurchaseOrders() {
                           <td className="py-2 px-3">
                             <div className="font-medium">{it?.name || l.item_id}</div>
                             {!!l.description && <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{l.description}</div>}
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {l.tax_label_snapshot
+                                ? `${l.tax_label_snapshot} (${n(l.tax_rate).toLocaleString()}%) | ${tt('commercialTax.taxAmount', 'Tax amount')}: ${fmtAcct(n(l.tax_amount))}`
+                                : tt('commercialTax.mode.legacy', 'Legacy header tax')}
+                            </div>
                           </td>
                           <td className="py-2 px-3">{it?.sku || '?'}</td>
                           <td className="py-2 px-3">{fmtAcct(ordered)} {uomCode}</td>

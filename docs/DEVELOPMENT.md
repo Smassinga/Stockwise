@@ -96,3 +96,9 @@ After database changes:
 ## Payment activation development
 
 The assisted activation package is live with hosted and local history aligned at 41 migrations. Continue to use local Supabase for replay, mismatch, authority-negative, storage-isolation, provider-reference collision, and concurrency tests; the production project reference remains mutation-blocked by the finance regression helper. Production rollout used only a synthetic proof and non-secret controlled channel. Do not seed provider credentials or real customer payment evidence in regression data.
+
+## Commercial tax and item profile development
+
+The local-only package adds migrations 42-43. Never seed a statutory rate from memory: create company-labelled options explicitly and keep sales and purchase defaults nullable. New order code must persist a `tax_option_id` per line and let database triggers calculate tax and header totals; do not reintroduce a freeform canonical header rate. Historical fixtures must explicitly use `legacy_header` rather than inheriting the new default.
+
+Item create flows must either call `create_item_with_profile` and round-trip verify all protected fields, or visibly disable those controls and require basic-only acknowledgement. Do not show success before the authoritative reload. Run a local reset and the complete finance regression after changing tax, order conversion, POS, finance-document, or item-profile behavior.

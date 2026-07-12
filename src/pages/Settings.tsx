@@ -47,6 +47,7 @@ import { WarehouseIcon } from "@phosphor-icons/react/dist/csr/Warehouse";
 
 // Existing uploader (fast preview / storage)
 import LogoUploader from "../components/settings/LogoUploader";
+import { CommercialTaxSettings } from "../components/settings/CommercialTaxSettings";
 
 import {
   Bell,
@@ -149,6 +150,7 @@ type SettingsGuideCard = {
 
 type SettingsSectionKey =
   | "company-profile"
+  | "commercial-tax"
   | "localization"
   | "operations"
   | "inventory"
@@ -585,6 +587,16 @@ function Settings() {
           href: "/compliance/mz",
           tone: fiscalReady ? "positive" : "warning",
           icon: <ClipboardTextIcon weight="duotone" />,
+        },
+        {
+          key: "commercial-tax",
+          title: tt("commercialTax.settingsCard.title", "Commercial tax"),
+          description: tt("commercialTax.settingsCard.description", "Configure allowed line-level tax treatments and separate Sales Order and Purchase Order defaults."),
+          status: canEditAll ? copy.statusBacked : tt("settings.readOnlyShort", "Read-only"),
+          actionLabel: copy.review,
+          section: "commercial-tax",
+          tone: canEditAll ? "info" : "neutral",
+          icon: <CoinsIcon weight="duotone" />,
         },
         {
           key: "users-roles",
@@ -1101,7 +1113,7 @@ function Settings() {
           </>
         }
         actions={
-          activeSection && activeSection !== "inventory" ? (
+          activeSection && activeSection !== "inventory" && activeSection !== "commercial-tax" ? (
             <div className="mobile-primary-actions">
               {activeSection === "company-profile" ? (
                 <Button
@@ -1659,6 +1671,10 @@ function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      <div id="settings-commercial-tax" className={activeSection === "commercial-tax" ? "scroll-mt-24" : "hidden"}>
+        <CommercialTaxSettings companyId={companyId} canEdit={canEditAll} />
+      </div>
 
       {/* Localization & UI */}
       <Card id="settings-localization" className={activeSection === "localization" ? "scroll-mt-24" : "hidden"}>

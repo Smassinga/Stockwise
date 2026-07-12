@@ -98,3 +98,7 @@ If Android packaging is prepared from stale metadata or stale copy, the packaged
 ## Activation workspace
 
 The live `/activation` workspace stacks the plan, channel, payer, proof, submit, and status-history tasks on narrow screens. File requirements and the verification boundary remain visible at 390 px, long destination/reference text wraps, and Platform Control review dialogs retain scrollable bodies with reachable footer actions. Production checks at `1440`, `1200`, `820`, and `390` confirmed no page overflow or action escape. Lifecycle, status, period, and provider labels render in English and Portuguese rather than exposing raw codes.
+
+## Commercial tax package (local-only)
+
+SO/PO line entry now uses stacked cards on narrow screens and a contained horizontally scrollable table only on larger screens. Tax treatment, taxable base, and tax amount stay adjacent to each line; bulk apply and totals wrap without escaping the sheet. Settings options and Items compatibility controls stack at 390 px. Required local QA widths are `1440`, `1200`, `820`, and `390` in English/Portuguese and light/dark where practical. No production responsive claim exists until rollout smoke completes.

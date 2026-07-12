@@ -133,6 +133,10 @@ export type SalesInvoiceDocumentLineRow = {
   product_code_snapshot: string | null
   unit_of_measure_snapshot: string | null
   tax_category_code: string | null
+  tax_option_code_snapshot: string | null
+  tax_treatment_snapshot: string | null
+  tax_label_snapshot: string | null
+  tax_requires_exemption_reason: boolean | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -524,6 +528,8 @@ type SalesOrderDraftSource = {
   order_date: string | null
   due_date: string | null
   tax_total: number | null
+  tax_calculation_mode: 'line' | 'legacy_header' | null
+  tax_exemption_reason_text: string | null
 }
 
 type SalesOrderLineDraftSource = {
@@ -536,6 +542,13 @@ type SalesOrderLineDraftSource = {
   unit_price: number | null
   discount_pct: number | null
   line_total: number | null
+  tax_option_id: string | null
+  tax_option_code_snapshot: string | null
+  tax_treatment_snapshot: string | null
+  tax_label_snapshot: string | null
+  tax_rate: number | null
+  tax_amount: number | null
+  tax_requires_exemption_reason: boolean | null
 }
 
 type PurchaseOrderDraftSource = {
@@ -549,6 +562,8 @@ type PurchaseOrderDraftSource = {
   order_date: string | null
   due_date: string | null
   tax_total: number | null
+  tax_calculation_mode: 'line' | 'legacy_header' | null
+  tax_exemption_reason_text: string | null
 }
 
 type ItemDisplaySource = {
@@ -1686,7 +1701,7 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
 
   const { data: order, error: orderError } = await supabase
     .from('sales_orders')
-    .select('id,company_id,customer_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total')
+    .select('id,company_id,customer_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total,tax_calculation_mode,tax_exemption_reason_text')
     .eq('company_id', companyId)
     .eq('id', salesOrderId)
     .maybeSingle<SalesOrderDraftSource>()
@@ -1706,7 +1721,7 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
   // Keep fiscal draft preparation deterministic with line_no then id.
   const { data: lines, error: linesError } = await supabase
     .from('sales_order_lines')
-    .select('id,so_id,item_id,description,line_no,qty,unit_price,discount_pct,line_total')
+    .select('id,so_id,item_id,description,line_no,qty,unit_price,discount_pct,line_total,tax_option_id,tax_option_code_snapshot,tax_treatment_snapshot,tax_label_snapshot,tax_rate,tax_amount,tax_requires_exemption_reason')
     .eq('so_id', salesOrderId)
     .order('line_no', { ascending: true })
     .order('id', { ascending: true })
@@ -1750,7 +1765,16 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
 
   const { invoiceDate, dueDate } = normalizeDueDate(order)
   const subtotal = roundMoney(sourceLines.reduce((sum, line) => sum + toNumber(line.line_total), 0))
-  const headerTaxTotal = roundMoney(toNumber(order.tax_total))
+  const canonicalLineTax = order.tax_calculation_mode === 'line'
+  if (canonicalLineTax && sourceLines.some((line) => !line.tax_option_id || line.tax_amount == null || line.tax_rate == null)) {
+    throw new Error('Every canonical Sales Order line must have an explicit tax treatment before fiscal draft creation.')
+  }
+  const headerTaxTotal = canonicalLineTax
+    ? roundMoney(sourceLines.reduce((sum, line) => sum + toNumber(line.tax_amount), 0))
+    : roundMoney(toNumber(order.tax_total))
+  if (canonicalLineTax && headerTaxTotal !== roundMoney(toNumber(order.tax_total))) {
+    throw new Error('The canonical Sales Order tax total does not reconcile with its line tax snapshots.')
+  }
   if (headerTaxTotal > 0 && subtotal <= 0) {
     throw new Error('The selected sales order has tax recorded but no positive subtotal to fiscalize.')
   }
@@ -1758,10 +1782,12 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
   const taxRate = subtotal > 0 && headerTaxTotal > 0
     ? Math.round(((headerTaxTotal / subtotal) * 100) * 10000) / 10000
     : 0
-  const lineTaxAmounts = allocateHeaderTaxAmounts(
-    sourceLines.map((line) => toNumber(line.line_total)),
-    headerTaxTotal,
-  )
+  const lineTaxAmounts = canonicalLineTax
+    ? sourceLines.map((line) => roundMoney(toNumber(line.tax_amount)))
+    : allocateHeaderTaxAmounts(
+        sourceLines.map((line) => toNumber(line.line_total)),
+        headerTaxTotal,
+      )
 
   const { data: invoice, error: invoiceError } = await supabase
     .from('sales_invoices')
@@ -1778,6 +1804,8 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
       total_amount: totalAmount,
       source_origin: 'native',
       document_workflow_status: 'draft',
+      tax_calculation_mode: canonicalLineTax ? 'line' : 'legacy_header',
+      vat_exemption_reason_text: order.tax_exemption_reason_text || null,
     })
     .select('id,internal_reference')
     .single<{ id: string; internal_reference: string }>()
@@ -1800,10 +1828,17 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
     ),
     qty: toNumber(line.qty),
     unit_price: toNumber(line.unit_price),
-    tax_rate: taxRate > 0 ? taxRate : 0,
+    tax_rate: canonicalLineTax ? toNumber(line.tax_rate) : (taxRate > 0 ? taxRate : 0),
     tax_amount: lineTaxAmounts[index] || 0,
     line_total: toNumber(line.line_total),
     sort_order: line.line_no ?? index,
+    ...(canonicalLineTax ? {
+      tax_option_code_snapshot: line.tax_option_code_snapshot,
+      tax_treatment_snapshot: line.tax_treatment_snapshot,
+      tax_label_snapshot: line.tax_label_snapshot,
+      tax_requires_exemption_reason: Boolean(line.tax_requires_exemption_reason),
+      tax_category_code: line.tax_option_code_snapshot,
+    } : {}),
   }))
 
   const { error: insertLineError } = await supabase
@@ -1880,7 +1915,7 @@ export async function createDraftVendorBillFromPurchaseOrder(
 
   const { data: order, error: orderError } = await supabase
     .from('purchase_orders')
-    .select('id,company_id,supplier_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total')
+    .select('id,company_id,supplier_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total,tax_calculation_mode,tax_exemption_reason_text')
     .eq('company_id', companyId)
     .eq('id', purchaseOrderId)
     .maybeSingle<PurchaseOrderDraftSource>()
@@ -1900,7 +1935,11 @@ export async function createDraftVendorBillFromPurchaseOrder(
   const dueDateCandidate = normalizeText(input.dueDate) || normalizeText(order.due_date) || billDate
   const dueDate = dueDateCandidate >= billDate ? dueDateCandidate : billDate
 
-  const { data: bill, error: billError } = await supabase.rpc('create_vendor_bill_draft_from_purchase_order', {
+  const canonicalLineTax = order.tax_calculation_mode === 'line'
+  const rpcName = canonicalLineTax
+    ? 'create_canonical_vendor_bill_draft_from_purchase_order'
+    : 'create_vendor_bill_draft_from_purchase_order'
+  const rpcArgs: Record<string, unknown> = {
     p_company_id: companyId,
     p_purchase_order_id: purchaseOrderId,
     p_supplier_invoice_reference: normalizeText(input.supplierInvoiceReference) || null,
@@ -1909,11 +1948,12 @@ export async function createDraftVendorBillFromPurchaseOrder(
     p_due_date: dueDate,
     p_currency_code: normalizeText(order.currency_code) || null,
     p_fx_to_base: toNumber(order.fx_to_base, 1) > 0 ? toNumber(order.fx_to_base, 1) : 1,
-    p_lines: [],
-  })
+  }
+  if (!canonicalLineTax) rpcArgs.p_lines = []
+  const { data: bill, error: billError } = await supabase.rpc(rpcName, rpcArgs)
 
   if (billError) {
-    throw new Error(humanizeRuntimeError(billError, 'Failed to create the vendor bill draft', 'rpc.create_vendor_bill_draft_from_purchase_order'))
+    throw new Error(humanizeRuntimeError(billError, 'Failed to create the vendor bill draft', `rpc.${rpcName}`))
   }
 
   const createdBill = Array.isArray(bill) ? bill[0] : bill

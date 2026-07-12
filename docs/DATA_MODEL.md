@@ -349,3 +349,17 @@ Completion rules: completion can be posted only for an active batch with zero cu
 `platform_payment_channels` stores non-secret commercial instructions; `platform_payment_channel_events` preserves channel audit. `company_payment_requests` freezes plan, period, exact catalogue amount, currency, channel, destination, and instructions. `company_payment_request_events` is append-only with per-request sequence. One open request is allowed per company, and normalized SHA-256 provider-reference fingerprints cannot be reused across open/approved requests on the same channel. Payment requests are entitlement evidence, not cash, bank, settlement, invoice, or stock rows.
 
 Hosted production and local replay contain 41 migrations through `20260711091724_add_payment_activation_workflow.sql`. The controlled live request `PAY-B49089-000001` ended approved at sequence 10 with a matching access audit; its one private proof object remains in `payment-proofs` for audit evidence.
+
+## Commercial tax configuration and document snapshots (local-only)
+
+Hosted production remains at 41 migrations. Local replay has 43 through `20260712052833_add_item_profile_trust.sql`; the two 2026-07-12 migrations are not hosted at this checkpoint.
+
+- `company_tax_options` stores company-owned treatment code, display label, treatment type, rate, exemption-reason requirement, active state, and effective dates. No legal rate is seeded.
+- `company_tax_settings` stores independent sales and purchase defaults; null means visibly unconfigured.
+- `company_tax_configuration_events` is append-only audit evidence for option and default changes.
+- New SO/PO headers use `tax_calculation_mode = 'line'` and configuration version 1. Existing rows are backfilled once to `legacy_header` and version 0 without recalculation.
+- SO/PO lines store the option reference plus immutable code, treatment, label, rate, amount, and exemption-reason snapshots. Header subtotal, tax, and total are derived from rounded lines.
+- Canonical SI/VB lines copy source snapshots exactly. Legacy SO/PO conversion retains deterministic proportional header-tax allocation and never rewrites the source.
+- `create_item_with_profile` creates all protected item profile fields atomically and returns the authoritative item row for round-trip verification.
+
+Tax configuration and item-profile creation create no cash, bank, settlement, stock movement, stock-level, BOM, Production Run, Growth Batch, FIFO, COGS, fair-value, or journal rows and do not change an existing `items.unit_price`.

@@ -11,8 +11,11 @@ type LineLike = {
 }
 
 type SalesOrderLike = {
+  subtotal?: number | null
   total_amount?: number | null
+  total?: number | null
   tax_total?: number | null
+  tax_calculation_mode?: 'legacy_header' | 'line' | string | null
   fx_to_base?: number | null
   fxToBase?: number | null
 }
@@ -102,10 +105,12 @@ export function lineTotal(line: LineLike) {
 
 export function salesOrderAmounts(order: SalesOrderLike, lines: LineLike[] = []) {
   const subtotalFromLines = lines.reduce((sum, line) => sum + lineTotal(line), 0)
-  const headerSubtotal = n(order.total_amount, Number.NaN)
+  const isCanonicalLineTax = order.tax_calculation_mode === 'line'
+  const headerSubtotal = n(isCanonicalLineTax ? order.subtotal : order.total_amount, Number.NaN)
   const subtotal = Number.isFinite(headerSubtotal) ? headerSubtotal : subtotalFromLines
   const tax = n(order.tax_total, 0)
-  const total = subtotal + tax
+  const headerTotal = n(isCanonicalLineTax ? (order.total ?? order.total_amount) : null, Number.NaN)
+  const total = Number.isFinite(headerTotal) ? headerTotal : subtotal + tax
   const fx = n(order.fx_to_base ?? order.fxToBase, 1) || 1
 
   return {

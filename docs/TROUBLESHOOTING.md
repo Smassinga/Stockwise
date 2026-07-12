@@ -202,3 +202,14 @@ Check:
 ## When to Escalate
 
 Escalate only after you have the concrete failing command, route, RPC, or log line. StockWise is now past the stage where "it seems broken" is a useful diagnosis.
+
+## Commercial tax and item profile diagnostics (local-only)
+
+- `commercial_tax_lines_unconfigured`: select an explicit configured treatment on every line; do not substitute `0%`.
+- `commercial_tax_lines_inactive`: reload company tax configuration and replace the inactive option.
+- `commercial_tax_exemption_reason_required`: provide the approved document-level reason before confirmation or approval.
+- `commercial_tax_totals_out_of_sync`: reload the order; header totals are database-derived and must not be patched directly.
+- `commercial_tax_canonical_vendor_bill_rpc_required`: canonical POs must use the direct-copy Vendor Bill RPC, never the legacy proportional allocator.
+- item profile capability warning: protected controls must stay disabled. Use acknowledged basic-only creation or deploy the matching schema/RPC; never infer a successful profile save.
+
+For local regression timeouts in Growth Batch CLI metadata checks, confirm local Supabase health and rerun that file in isolation to diagnose container/CLI contention. Release sign-off still requires the maintained complete finance command to pass.

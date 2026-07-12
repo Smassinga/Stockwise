@@ -315,7 +315,7 @@ export default function VendorBillDetailPage() {
       const [lineRes, eventRes, rawBillRes, nextCompanyProfile, supplierRes, nextCreditNotes, nextDebitNotes] = await Promise.all([
         supabase
           .from('vendor_bill_lines')
-          .select('id,vendor_bill_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order')
+          .select('id,vendor_bill_id,description,qty,unit_cost,tax_rate,tax_amount,line_total,sort_order,tax_option_code_snapshot,tax_treatment_snapshot,tax_label_snapshot,tax_requires_exemption_reason')
           .eq('company_id', companyId)
           .eq('vendor_bill_id', billId)
           .order('sort_order', { ascending: true })
@@ -2043,7 +2043,10 @@ export default function VendorBillDetailPage() {
                   <TableBody>
                     {lines.map((line) => (
                       <TableRow key={line.id}>
-                        <TableCell>{line.description || tt('common.dash', '-')}</TableCell>
+                        <TableCell>
+                          <div>{line.description || tt('common.dash', '-')}</div>
+                          {line.tax_label_snapshot && <div className="mt-1 text-xs text-muted-foreground">{line.tax_label_snapshot} ({Number(line.tax_rate || 0).toLocaleString()}%)</div>}
+                        </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.unit_cost, row.currency_code)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.tax_amount, row.currency_code)}</TableCell>

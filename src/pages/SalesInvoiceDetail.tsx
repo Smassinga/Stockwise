@@ -2347,6 +2347,9 @@ export default function SalesInvoiceDetailPage() {
                           <div className="mt-1 text-xs text-muted-foreground">
                             {[
                               line.product_code_snapshot ? line.product_code_snapshot : null,
+                              line.tax_label_snapshot
+                                ? `${line.tax_label_snapshot} (${Number(line.tax_rate || 0).toLocaleString()}%)`
+                                : null,
                               `${documentCopy.totals.subtotal}: ${money(line.line_total, invoice.currency_code)}`,
                               `${documentCopy.table.vat}: ${money(line.tax_amount, invoice.currency_code)}`,
                             ].filter(Boolean).join(' · ')}

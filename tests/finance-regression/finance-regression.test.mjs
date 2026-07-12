@@ -506,6 +506,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
   let bomId = null
   let eachUomId = null
   let boxUomId = null
+  let regressionZeroTaxOptionId = null
 
   await t.test('Trial bootstrap, access foundation, and shared finance setup', async () => {
     const bootstrap = expectNoSupabaseError(
@@ -520,6 +521,27 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     created.companyIds.add(companyId)
 
     await setActiveCompany(ownerClient, companyId)
+
+    const regressionZeroTaxOption = unwrapRpcSingle(expectNoSupabaseError(
+      await ownerClient.rpc('upsert_company_tax_option', {
+        p_company_id: companyId,
+        p_code: `${PREFIX.toUpperCase()}-ZERO`,
+        p_display_name: `${PREFIX} explicit zero tax`,
+        p_treatment_type: 'zero',
+        p_rate: 0,
+        p_requires_exemption_reason: false,
+        p_effective_from: todayIso(),
+        p_effective_until: null,
+        p_option_id: null,
+      }),
+      'Expected the regression company tax option to be configured',
+    ))
+    regressionZeroTaxOptionId = regressionZeroTaxOption.id
+    expectNoSupabaseError(await ownerClient.rpc('set_company_tax_defaults', {
+      p_company_id: companyId,
+      p_default_sales_tax_option_id: regressionZeroTaxOption.id,
+      p_default_purchase_tax_option_id: regressionZeroTaxOption.id,
+    }), 'Expected the regression company tax defaults to be configured')
 
     const accessState = unwrapRpcSingle(
       expectNoSupabaseError(
@@ -808,8 +830,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         subtotal: 100,
         tax_total: 16,
         total: 116,
-        total_amount: 116,
-        fx_to_base: 1,
+          total_amount: 116,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         customer: `${PREFIX} Customer`,
         bill_to_name: `${PREFIX} Customer`,
         bill_to_tax_id: '900123456',
@@ -848,8 +872,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         status: 'approved',
         subtotal: 232,
         tax_total: 0,
-        total: 232,
-        fx_to_base: 1,
+          total: 232,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         created_by: ownerUser.userId,
       })
       .select('id')
@@ -905,8 +931,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         status: 'approved',
         subtotal: 1350,
         tax_total: 0,
-        total: 1350,
-        fx_to_base: 1,
+          total: 1350,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         created_by: ownerUser.userId,
       })
       .select('id')
@@ -1146,8 +1174,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         subtotal: 88,
         tax_total: 0,
         total: 88,
-        total_amount: 88,
-        fx_to_base: 1,
+          total_amount: 88,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         customer: `${PREFIX} Customer`,
         bill_to_name: `${PREFIX} Customer`,
         created_by: ownerUser.userId,
@@ -1564,6 +1594,8 @@ test('Phase 4/5 finance hardening suite', async (t) => {
           tax_total: taxTotal,
           total: grossTotal,
           total_amount: grossTotal,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
           fx_to_base: 1,
           customer: `${PREFIX} ${label} customer`,
           bill_to_name: `${PREFIX} ${label} customer`,
@@ -1609,6 +1641,8 @@ test('Phase 4/5 finance hardening suite', async (t) => {
           subtotal: total,
           tax_total: 0,
           total,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
           fx_to_base: 1,
           created_by: ownerUser.userId,
         })
@@ -3008,8 +3042,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         subtotal: 10,
         tax_total: 0,
         total: 10,
-        total_amount: 10,
-        fx_to_base: 1,
+          total_amount: 10,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         customer: `${PREFIX} Cross company customer`,
         bill_to_name: `${PREFIX} Cross company customer`,
         bill_to_tax_id: '811123456',
@@ -3948,8 +3984,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         subtotal: 69,
         tax_total: 0,
         total: 69,
-        total_amount: 69,
-        fx_to_base: 1,
+          total_amount: 69,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         customer: `${PREFIX} Customer`,
         bill_to_name: `${PREFIX} Customer`,
         created_by: ownerUser.userId,
@@ -4027,8 +4065,10 @@ test('Phase 4/5 finance hardening suite', async (t) => {
         status: 'approved',
         subtotal: 0,
         tax_total: 0,
-        total: 0,
-        fx_to_base: 1,
+          total: 0,
+          tax_calculation_mode: 'legacy_header',
+          tax_configuration_version: 0,
+          fx_to_base: 1,
         created_by: ownerUser.userId,
       })
       .select('id')
@@ -4279,11 +4319,14 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     const operatorOrder = await querySingle(
       ownerClient,
       'sales_orders',
-      'id, status, customer_id, total_amount',
+      'id, status, customer_id, subtotal, tax_total, total_amount, tax_calculation_mode, tax_configuration_version',
       [['eq', 'id', operatorSale.sales_order_id]],
     )
     assert.equal(operatorOrder.status, 'shipped')
     assert.equal(round2(operatorOrder.total_amount), 328)
+    assert.equal(operatorOrder.tax_calculation_mode, 'line')
+    assert.equal(operatorOrder.tax_configuration_version, 1)
+    assert.equal(round2(operatorOrder.tax_total), 0)
 
     const cashCustomer = await querySingle(
       ownerClient,
@@ -4296,7 +4339,7 @@ test('Phase 4/5 finance hardening suite', async (t) => {
 
     const { data: operatorLines, error: operatorLinesError } = await ownerClient
       .from('sales_order_lines')
-      .select('id, item_id, qty, shipped_qty, is_shipped, unit_price, line_total')
+      .select('id, item_id, qty, shipped_qty, is_shipped, unit_price, line_total, tax_option_id, tax_treatment_snapshot, tax_rate, tax_amount')
       .eq('company_id', companyId)
       .eq('so_id', operatorSale.sales_order_id)
       .order('line_no', { ascending: true })
@@ -4310,6 +4353,9 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(operatorLines[1].is_shipped, true)
     assert.equal(round2(operatorLines[1].unit_price), 32)
     assert.equal(round2(operatorLines[1].line_total), 96)
+    assert.ok(operatorLines.every((line) => line.tax_option_id === regressionZeroTaxOptionId))
+    assert.ok(operatorLines.every((line) => line.tax_treatment_snapshot === 'zero'))
+    assert.ok(operatorLines.every((line) => round2(line.tax_amount) === 0))
 
     const { data: saleMoves, error: saleMovesError } = await ownerClient
       .from('stock_movements')
