@@ -403,3 +403,11 @@ Release `b5cf3463b07ba0b512150694216cf8b406a836bf` passed Validation `2920765922
 Controlled Leny Doçuras smoke used synthetic non-statutory `QA_STD_725` and `QA_EXEMPT_0` options. Canonical SO `LEN-SO000000003` (`QA-TAX-SO-20260712`) totalled `364.80` from `346.90` subtotal and `17.90` line tax; draft SI `LEN-INV2026-00001` copied both line snapshots exactly and was not issued. Canonical PO `LEN-PO000000006` (`QA-TAX-PO-20260712`) totalled `354.15` from `346.90` subtotal and `7.25` line tax; draft VB `LEN-VB00002` copied both line snapshots exactly and was not posted. QA item `QA-TAX-20260712` round-tripped its resale/stock/buy/sell profile and `123.45` price; only `min_stock` changed from `0` to `1` through the maintained UI.
 
 Defaults were restored to null, both synthetic options were deactivated, and a deliberate no-default draft remained visibly unconfigured, failed confirmation, and was cancelled. Production attack, concurrency, cross-company, immutable-document, and rounding-abuse tests remained local-only. Final local validation passed clean replay `44/44`, finance regression `288/288`, and 126 independently named package checks.
+
+## WiseCore palette production rollout (2026-07-16)
+
+Implementation commit `f53bb2500dd336eb4967e90d35dd6a6d6ae8b9b6` passed Validation run `29455999390`, job `87489184718`. Manual Finance Regression (Isolated) run `29456064325`, job `87489388349`, replayed all 44 migrations locally, passed `288/288` against loopback Supabase, and completed ephemeral-stack cleanup without a success artifact.
+
+Vercel production deployment `dpl_BG7cpLzLPYyp53Ys6Fngf5LE9gk4` reached Ready and served `stockwiseapp.com` and `www.stockwiseapp.com`. Production visual QA covered the approved public and authenticated routes at `1440`, `1200`, `820`, and `390` in light and dark mode, with representative English and Portuguese checks. The WiseCore teal interactive system, neutral revenue, green gross margin, red COGS, and distinct warning/error semantics rendered without page overflow, console errors, or CSP errors.
+
+This was a frontend visual-token rollout only. StockWise remains the product; WiseCore Technologies, Lda. remains the owner and promoter. No migration, schema, hosted database mutation, business-logic change, Vercel environment change, or Sentry configuration change occurred.

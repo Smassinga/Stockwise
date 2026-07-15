@@ -102,3 +102,9 @@ The live `/activation` workspace stacks the plan, channel, payer, proof, submit,
 ## Commercial tax package (live)
 
 SO/PO line entry uses stacked cards on narrow screens and a contained horizontally scrollable table only on larger screens. Tax treatment, taxable base, and tax amount stay adjacent to each line; bulk apply and totals wrap without escaping the sheet. Settings options and Items compatibility controls stack at 390 px. Production QA covered `1440` light English Items, `1200` dark English Sales Order, `820` light Portuguese Purchase Order, and `390` dark Portuguese Vendor Bill. Page-level overflow and raw package codes were zero; the browser console and CSP error counts were zero.
+
+## WiseCore palette responsive validation (2026-07-16)
+
+The live palette alignment was checked at `1440`, `1200`, `820`, and `390` in light and dark mode. Public checks covered landing, login, signup, password recovery, and password update. Authenticated checks covered Dashboard, Items, Sales Orders, Purchase Orders, Sales Invoice and Vendor Bill registers/details, Settlements, Cash, Banks and Bank Detail, Settings, Platform Control, Production Runs, and Growth Batches. Representative Portuguese checks covered Dashboard, Items, Settlements, and Growth Batches.
+
+No page-level horizontal overflow, escaped action, fallback, raw package backend code, console error, or CSP error was found. Existing contained horizontal scrollers remained confined to their intended data surfaces. Touch targets and Android-first layouts were unchanged, StockWise remained the visible product identity, and WiseCore attribution remained owner/promoter context.
