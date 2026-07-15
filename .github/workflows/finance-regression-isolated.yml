@@ -1,0 +1,127 @@
+name: Finance Regression (Isolated)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finance-regression-isolated
+  cancel-in-progress: false
+
+jobs:
+  finance-regression:
+    name: Ephemeral local Supabase regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.109.1
+      - name: Start ephemeral Supabase stack
+        run: supabase start
+      - name: Export ephemeral local configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(supabase status -o env)"
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          {
+            printf 'VITE_SUPABASE_URL=%s\n' "$API_URL"
+            printf 'SUPABASE_URL=%s\n' "$API_URL"
+            printf 'VITE_SUPABASE_ANON_KEY=%s\n' "$ANON_KEY"
+            printf 'SUPABASE_ANON_KEY=%s\n' "$ANON_KEY"
+            printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SERVICE_ROLE_KEY"
+            printf 'SERVICE_ROLE_KEY=%s\n' "$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+      - name: Verify isolated target and services
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$VITE_SUPABASE_URL" = 'http://127.0.0.1:54321'
+          test "$SUPABASE_URL" = 'http://127.0.0.1:54321'
+          for value in "$VITE_SUPABASE_URL" "$SUPABASE_URL"; do
+            if [[ "$value" == *ogzhwoqqumkuqhbvuzzp* || "$value" == *.supabase.co* ]]; then
+              echo 'Remote or production Supabase target rejected.' >&2
+              exit 1
+            fi
+          done
+          test -z "${ALLOW_REMOTE_FINANCE_REGRESSION:-}"
+          test -z "${FINANCE_REGRESSION_TARGET:-}"
+          status_json="$(supabase status --output json)"
+          jq -e '.API_URL == "http://127.0.0.1:54321"' <<<"$status_json" >/dev/null
+          jq -e '.DB_URL | startswith("postgresql://postgres:postgres@127.0.0.1:54322/")' <<<"$status_json" >/dev/null
+          migration_json="$(supabase db query --local --output-format json "select count(*) as migration_count, max(version) as latest_version from supabase_migrations.schema_migrations;")"
+          jq -e '.rows[0].migration_count == 44 and .rows[0].latest_version == "20260712230118"' <<<"$migration_json" >/dev/null
+          edge_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$SUPABASE_URL/functions/v1/mailer-company-access")"
+          test "$edge_status" = '401' || test "$edge_status" = '405' || test "$edge_status" = '200'
+          echo 'Target: ephemeral local Supabase (127.0.0.1)'
+          echo 'Services: database, Auth, PostgREST, Storage, Realtime, Mailpit, and Edge Runtime healthy'
+          echo 'Migrations: 44 through 20260712230118'
+      - name: Run complete finance regression
+        shell: bash
+        run: |
+          set -o pipefail
+          started_at="$(date +%s)"
+          set +e
+          npm run test:finance-regression:ci 2>&1 | tee finance-regression.log
+          test_exit="${PIPESTATUS[0]}"
+          set -e
+          duration="$(($(date +%s) - started_at))"
+          tests="$(sed -nE 's/^.* tests ([0-9]+)$/\1/p' finance-regression.log | tail -1)"
+          passed="$(sed -nE 's/^.* pass ([0-9]+)$/\1/p' finance-regression.log | tail -1)"
+          failed="$(sed -nE 's/^.* fail ([0-9]+)$/\1/p' finance-regression.log | tail -1)"
+          {
+            echo '### Isolated finance regression'
+            echo '- Target: ephemeral local Supabase'
+            echo "- Tests: ${tests:-unknown}"
+            echo "- Passed: ${passed:-unknown}"
+            echo "- Failed: ${failed:-unknown}"
+            echo "- Duration: ${duration}s"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$test_exit"
+      - name: Prepare safe failure evidence
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p finance-regression-diagnostics
+          cp finance-regression.log finance-regression-diagnostics/ 2>/dev/null || true
+          supabase status -o env | sed -E 's/=.*/=[REDACTED]/' > finance-regression-diagnostics/supabase-status.txt
+          docker ps --format '{{.Names}}\t{{.Status}}' | grep '^supabase_' > finance-regression-diagnostics/container-health.txt || true
+          supabase db query --local --output-format json "select count(*) as migration_count, max(version) as latest_version from supabase_migrations.schema_migrations;" > finance-regression-diagnostics/migrations.json
+          edge_container="$(docker ps --format '{{.Names}}' | grep '^supabase_edge_runtime_' | head -1)"
+          if [ -n "$edge_container" ]; then
+            docker logs "$edge_container" 2>&1 | grep -Ei 'error|fail|panic|exception' \
+              | sed -E -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[EMAIL]/g' \
+                -e 's/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[UUID]/g' \
+                -e 's/(Bearer )[A-Za-z0-9._-]+/\1[TOKEN]/g' \
+              > finance-regression-diagnostics/edge-runtime-errors.txt || true
+          fi
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-regression-isolated-failure
+          path: finance-regression-diagnostics/
+          retention-days: 3
+          if-no-files-found: error
+      - name: Stop ephemeral Supabase stack
+        if: always()
+        run: |
+          supabase stop --no-backup
+          echo 'Ephemeral Supabase cleanup complete.'

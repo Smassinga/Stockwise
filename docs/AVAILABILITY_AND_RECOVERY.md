@@ -204,3 +204,9 @@ Production is aligned at 41 migrations. The controlled rollout retained one priv
 Hosted production and local replay contain 44 migrations. Back up tax option/settings/audit rows and preserve SO/PO and SI/VB tax snapshots together. Never reconstruct an issued or posted document from current defaults: historical snapshots and `legacy_header` mode are the authority. The production smoke restored nullable defaults and deactivated both temporary QA options while retaining immutable configuration events and document snapshots.
 
 After restoration, verify configuration-table RLS/FORCE RLS, default-option foreign keys, line/header reconciliation, canonical conversion, legacy fallback, internal-helper privilege revocation, and the corrected canonical Sales Order finance-state total. A missing default must recover as unconfigured, not as implicit zero.
+
+## 2026-07-15 Recovery Verification And Cost Deferral
+
+Scheduled daily physical backups were verified and eight restore points from 8-15 July 2026 were inspected. The latest inspected point was `15 Jul 2026 19:24:01 UTC`. PITR remains disabled. Restore to a new project is available, and the read-only pre-clone inventory found no cron jobs, database webhooks, or queued `pg_net` requests. Explicit `pg_net` and worker wrappers remain a mandatory clone-quarantine item, and Storage binary objects remain outside the database backup.
+
+The restore confirmation showed additional monthly cost of `USD 9.68` compute plus `USD 0.50` disk, totaling `USD 10.18`. The operator cancelled before project creation because that recurring cost is not approved. No restore, hosted mutation, or recovery-project creation occurred. The formal restore drill is **partially complete / cost-deferred**: RTO remains unmeasured, effective scheduled-backup RPO remains up to approximately 24 hours, and Storage, Auth, and Edge recovery remain unvalidated. Revisit the restore drill when temporary recovery-project budget is approved.

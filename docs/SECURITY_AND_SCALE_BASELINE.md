@@ -271,7 +271,7 @@ Recommended review cadence:
 ## Recommended Next Hardening Priorities
 
 1. Require the non-mutating validation workflow as a protected branch check.
-2. Add finance regression to CI only after a dedicated non-production Supabase project and guarded GitHub Actions environment exist.
+2. Validate the manual isolated finance workflow against its ephemeral local Supabase stack, then decide whether a protected merge or schedule trigger is operationally affordable.
 3. Run Supabase advisor and source review focused on RLS, security-definer functions, exposed views, and missing indexes for high-traffic pages.
 4. Assign Sentry alert ownership and retention after the validated 2026-07-15 production error-path smoke; uptime monitoring remains separate.
 5. Run and record a monthly recovery drill using `docs/AVAILABILITY_AND_RECOVERY.md`.
