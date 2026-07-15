@@ -316,7 +316,7 @@ export default function Banks() {
       </div>
 
       {!canManageBanks ? (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+        <div className="rounded-2xl border border-informational/25 bg-informational/8 px-4 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
           {tf('banks.readOnly', 'Read-only: only users with bank-account management authority can add or update company bank accounts.')}
         </div>
       ) : null}

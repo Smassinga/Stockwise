@@ -1943,7 +1943,7 @@ function Settings() {
             )}
           </div>
           {!canEditDueReminders ? (
-            <div className="md:col-span-2 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+            <div className="md:col-span-2 rounded-xl border border-informational/25 bg-informational/8 px-3 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
               {tt(
                 "settings.dueReminders.restricted",
                 "Only finance-authority users can change due-reminder settings because reminder policy follows the active legal receivable anchor."

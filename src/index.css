@@ -1,6 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('./tokens.css');
-
 /* Tailwind CSS directives */
 @tailwind base;
 @tailwind components;
@@ -14,8 +12,8 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 218 86% 45%;
-    --primary-foreground: 210 20% 98%;
+    --primary: 192 98% 17%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 214 32% 93%;
     --secondary-foreground: 222 47% 11%;
     --muted: 214 32% 94%;
@@ -26,7 +24,7 @@
     --destructive-foreground: 210 20% 98%;
     --border: 216 24% 88%;
     --input: 216 24% 88%;
-    --ring: 218 86% 45%;
+    --ring: 168 100% 29%;
     --app-background: 214 31% 97%;
     --surface-elevated: 0 0% 100%;
     --surface-muted: 214 30% 94%;
@@ -37,35 +35,36 @@
     --financial-warning: 38 92% 46%;
     --financial-critical: 0 76% 52%;
     --financial-neutral: 216 15% 43%;
-    --chart-1: 218 86% 45%;
+    --informational: 216 15% 38%;
+    --chart-1: 192 98% 17%;
     --chart-2: 38 92% 48%;
     --chart-3: 160 84% 35%;
     --chart-4: 0 76% 52%;
     --chart-5: 248 53% 54%;
-    --chart-revenue-line: 218 86% 45%;
+    --chart-revenue-line: 222 35% 20%;
     --chart-cogs-line: 0 76% 52%;
     --chart-margin-line: 158 64% 34%;
     --chart-bar-primary: 221 39% 11%;
     --chart-grid-border: 216 24% 88%;
     --chart-marker-border: 216 24% 88%;
-    --chart-revenue: 218 86% 45%;
+    --chart-revenue: 222 35% 20%;
     --chart-cogs: 0 76% 52%;
     --chart-margin: 158 64% 34%;
     --chart-inventory: 199 89% 40%;
     --chart-receivables: 252 54% 54%;
-    --focus-ring: 218 86% 45%;
+    --focus-ring: 168 100% 29%;
     --premium-dashboard-panel: 220 43% 12%;
     --premium-dashboard-panel-foreground: 210 29% 97%;
     --premium-dashboard-panel-muted: 215 18% 73%;
     --premium-dashboard-panel-border: 217 31% 22%;
     --sidebar: 0 0% 100%;
     --sidebar-foreground: 222 47% 11%;
-    --sidebar-primary: 218 86% 45%;
-    --sidebar-primary-foreground: 210 20% 98%;
-    --sidebar-accent: 38 92% 48%;
-    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-primary: 192 98% 17%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 163 46% 92%;
+    --sidebar-accent-foreground: 192 98% 17%;
     --sidebar-border: 216 24% 88%;
-    --sidebar-ring: 218 86% 45%;
+    --sidebar-ring: 168 100% 29%;
     --sidebar-background: 0 0% 100%;
     --radius: 0.65rem;
     --app-safe-top: env(safe-area-inset-top);
@@ -83,8 +82,8 @@
     --card-foreground: 210 29% 96%;
     --popover: 220 30% 12%;
     --popover-foreground: 210 29% 96%;
-    --primary: 214 88% 60%;
-    --primary-foreground: 210 20% 98%;
+    --primary: 163 100% 39%;
+    --primary-foreground: 192 98% 17%;
     --secondary: 219 25% 18%;
     --secondary-foreground: 210 29% 96%;
     --muted: 219 25% 18%;
@@ -95,7 +94,7 @@
     --destructive-foreground: 210 20% 98%;
     --border: 218 22% 23%;
     --input: 218 22% 23%;
-    --ring: 214 88% 60%;
+    --ring: 163 100% 39%;
     --app-background: 222 36% 8%;
     --surface-elevated: 220 30% 12%;
     --surface-muted: 219 25% 16%;
@@ -106,35 +105,36 @@
     --financial-warning: 39 95% 58%;
     --financial-critical: 0 74% 58%;
     --financial-neutral: 215 16% 70%;
-    --chart-1: 214 88% 60%;
+    --informational: 215 16% 74%;
+    --chart-1: 163 100% 39%;
     --chart-2: 39 95% 58%;
     --chart-3: 157 72% 44%;
     --chart-4: 351 83% 66%;
     --chart-5: 252 78% 72%;
-    --chart-revenue-line: 214 88% 60%;
+    --chart-revenue-line: 210 20% 88%;
     --chart-cogs-line: 351 83% 66%;
     --chart-margin-line: 157 72% 44%;
     --chart-bar-primary: 210 29% 97%;
     --chart-grid-border: 218 22% 23%;
     --chart-marker-border: 218 22% 23%;
-    --chart-revenue: 214 88% 60%;
+    --chart-revenue: 210 20% 88%;
     --chart-cogs: 351 83% 66%;
     --chart-margin: 157 72% 44%;
     --chart-inventory: 199 95% 58%;
     --chart-receivables: 252 78% 72%;
-    --focus-ring: 214 88% 60%;
+    --focus-ring: 163 100% 39%;
     --premium-dashboard-panel: 222 45% 8%;
     --premium-dashboard-panel-foreground: 210 29% 97%;
     --premium-dashboard-panel-muted: 215 18% 72%;
     --premium-dashboard-panel-border: 216 30% 21%;
     --sidebar: 220 30% 12%;
     --sidebar-foreground: 210 29% 96%;
-    --sidebar-primary: 214 88% 60%;
-    --sidebar-primary-foreground: 210 20% 98%;
-    --sidebar-accent: 38 92% 55%;
-    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-primary: 163 100% 39%;
+    --sidebar-primary-foreground: 192 98% 17%;
+    --sidebar-accent: 192 58% 17%;
+    --sidebar-accent-foreground: 210 29% 96%;
     --sidebar-border: 218 22% 23%;
-    --sidebar-ring: 214 88% 60%;
+    --sidebar-ring: 163 100% 39%;
     --sidebar-background: 220 30% 12%;
   }
 }
@@ -400,7 +400,7 @@
   .landing-page {
     background:
       radial-gradient(circle at 10% 8%, hsl(var(--primary) / 0.08), transparent 30rem),
-      radial-gradient(circle at 90% 20%, hsl(168 88% 45% / 0.08), transparent 28rem),
+      radial-gradient(circle at 90% 20%, hsl(163 100% 39% / 0.08), transparent 28rem),
       hsl(var(--background));
   }
 
@@ -475,9 +475,9 @@
     height: 0.55rem;
     margin-top: 0.3rem;
     border-radius: 9999px;
-    background: hsl(199 89% 68%);
-    color: hsl(199 89% 68% / 0.34);
-    box-shadow: 0 0 0 0 hsl(199 89% 68% / 0.34);
+    background: hsl(163 100% 39%);
+    color: hsl(163 100% 39% / 0.34);
+    box-shadow: 0 0 0 0 hsl(163 100% 39% / 0.34);
   }
 
   .landing-status-dot--green {
@@ -548,11 +548,11 @@
   }
 
   .landing-orb--teal {
-    background: hsl(168 88% 45% / 0.9);
+    background: hsl(163 100% 39% / 0.78);
   }
 
-  .landing-orb--blue {
-    background: hsl(var(--primary) / 0.9);
+  .landing-orb--deep {
+    background: hsl(192 98% 17% / 0.82);
   }
 
   .landing-orb--hero-a {
@@ -577,7 +577,7 @@
     pointer-events: none;
     background:
       radial-gradient(circle at 10% 15%, hsl(var(--primary) / 0.08), transparent 26rem),
-      radial-gradient(circle at 90% 70%, hsl(168 88% 45% / 0.08), transparent 28rem);
+      radial-gradient(circle at 90% 70%, hsl(163 100% 39% / 0.08), transparent 28rem);
   }
 
   .landing-bento > * {
@@ -618,7 +618,7 @@
     isolation: isolate;
     overflow: hidden;
     background:
-      radial-gradient(circle at 12% 12%, hsl(168 88% 45% / 0.18), transparent 30rem),
+      radial-gradient(circle at 12% 12%, hsl(163 100% 39% / 0.18), transparent 30rem),
       radial-gradient(circle at 90% 18%, hsl(var(--primary) / 0.18), transparent 28rem),
       hsl(222 47% 8%);
   }
@@ -696,7 +696,7 @@
 
   .landing-tabs__eyebrow,
   .landing-product-surface__eyebrow {
-    color: hsl(199 89% 80%);
+    color: hsl(163 100% 39%);
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0;
@@ -735,7 +735,7 @@
     border: 1px solid hsl(0 0% 100% / 0.14);
     border-radius: 0.7rem;
     background: hsl(0 0% 100% / 0.08);
-    color: hsl(199 89% 80%);
+    color: hsl(163 100% 39%);
   }
 
   .landing-product-surface__body {
@@ -789,7 +789,7 @@
     width: var(--landing-preview-level, 50%);
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, hsl(168 88% 54%), hsl(var(--primary)));
+    background: linear-gradient(90deg, hsl(163 100% 39%), hsl(168 100% 29%));
     transform-origin: left center;
   }
 
@@ -1041,7 +1041,7 @@
     }
 
     .landing-orb--hero-b,
-    .landing-dark-section .landing-orb--blue {
+    .landing-dark-section .landing-orb--deep {
       animation: landing-orb-drift-b 28s ease-in-out infinite;
     }
   }

@@ -15,7 +15,7 @@ const toneClasses: Record<PremiumTone, string> = {
   critical:
     'border-rose-200 bg-rose-50 text-financial-critical dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-200',
   info:
-    'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/30 dark:bg-sky-300/10 dark:text-sky-200',
+    'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10 dark:text-informational',
 }
 
 export function premiumToneClass(tone: PremiumTone) {

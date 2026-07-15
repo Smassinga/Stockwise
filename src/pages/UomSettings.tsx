@@ -303,7 +303,7 @@ export default function UomSettings() {
       </div>
 
       {!canEdit ? (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+        <div className="rounded-2xl border border-informational/25 bg-informational/8 px-4 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
           {tt('uom.readOnly', 'Read-only: only operational roles can add units or maintain company conversion rules.')}
         </div>
       ) : null}

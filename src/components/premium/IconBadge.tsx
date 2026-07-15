@@ -11,9 +11,9 @@ const toneClass: Record<IconBadgeTone, string> = {
   negative: 'border-rose-200 bg-rose-50 text-financial-negative dark:border-rose-300/25 dark:bg-rose-300/10 dark:text-rose-200',
   warning: 'border-amber-200 bg-amber-50 text-financial-warning dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-200',
   critical: 'border-rose-200 bg-rose-50 text-financial-critical dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-200',
-  info: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/25 dark:bg-sky-300/10 dark:text-sky-200',
-  primary: 'border-primary/18 bg-primary/10 text-primary dark:border-primary/30 dark:bg-primary/15 dark:text-sky-200',
-  inverse: 'border-sky-300/25 bg-sky-300/10 text-sky-100',
+  info: 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10 dark:text-informational',
+  primary: 'border-primary/20 bg-primary/10 text-primary dark:border-primary/30 dark:bg-primary/15 dark:text-primary',
+  inverse: 'border-white/20 bg-white/10 text-white',
 }
 
 const sizeClass: Record<IconBadgeSize, string> = {

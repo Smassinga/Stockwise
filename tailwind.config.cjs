@@ -65,6 +65,7 @@ module.exports = {
           critical: 'hsl(var(--financial-critical))',
           neutral: 'hsl(var(--financial-neutral))',
         },
+        informational: 'hsl(var(--informational))',
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',

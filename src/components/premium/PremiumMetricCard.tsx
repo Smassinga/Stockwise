@@ -9,7 +9,7 @@ const toneText: Record<PremiumTone, string> = {
   negative: 'text-financial-negative dark:text-rose-200',
   warning: 'text-financial-warning dark:text-amber-200',
   critical: 'text-financial-critical dark:text-rose-200',
-  info: 'text-sky-700 dark:text-sky-200',
+  info: 'text-informational',
 }
 
 export function PremiumMetricCard({

@@ -15,6 +15,22 @@ The UI foundation now favors:
 - chart colors that communicate finance meaning without weak opacity
 - Android/mobile layouts that prioritize operator workflows
 
+## StockWise And WiseCore Brand Alignment
+
+StockWise remains the product name, product mark, workspace identity, route language, and public domain. WiseCore Technologies, Lda. remains the company, promoter, and product owner. Product surfaces must not replace the StockWise identity with the WiseCore corporate identity; WiseCore attribution belongs in company, legal, institutional, and approved builder/owner contexts.
+
+The maintained product palette is derived from the WiseCore corporate mark:
+
+- bright teal-green `#00C98F`
+- mid teal-green `#009679`
+- dark teal `#014558`
+- black `#000000`
+- white `#FFFFFF`
+
+The interactive system consumes this palette through semantic tokens rather than page-specific raw utilities. `--primary`, `--ring`, and their sidebar equivalents carry product actions, focus, selected navigation, and active tabs. Light mode uses dark teal primary surfaces with white text and a mid-teal focus ring. Dark mode uses moderated bright teal with dark-teal text and avoids neon decorative treatment. Neutral informational states use `--informational`; they must not be presented as success merely to make them green.
+
+The only maintained hardcoded palette exception is generated Sales Order and Purchase Order print HTML. Those self-contained documents cannot consume the application CSS custom properties, so their section headers use the approved dark-teal and pale-teal values directly. This is presentation-only and does not alter legal wording or fiscal output semantics.
+
 ## Light And Dark Mode
 
 Light mode uses white and near-white operational surfaces, controlled borders, restrained shadows, and high-readability text.
@@ -46,7 +62,8 @@ Rules:
 
 - Revenue, COGS, margin, inventory, and receivables use named chart tokens.
 - Revenue and COGS must be readable in both light and dark mode.
-- Daily finance trend charts use semantic operating colors: Revenue is blue through `--chart-revenue-line`, COGS is red through `--chart-cogs-line`, and Gross Margin is green through `--chart-margin-line`.
+- Daily finance trend charts use semantic operating colors: Revenue is neutral charcoal in light mode and a readable light neutral in dark mode through `--chart-revenue-line`, COGS is red through `--chart-cogs-line`, and Gross Margin is green through `--chart-margin-line`.
+- Inventory retains the named cyan `--chart-inventory` data-series token so it remains distinguishable from WiseCore teal actions, positive green, neutral Revenue, and negative red. It is a chart-only semantic exception, not product-brand or interaction styling.
 - Daily line-chart markers are visible circles: normal dots are 8x8 px (`r=4`), active/hover dots are 10x10 px (`r=5`), and both use `--chart-grid-border` with `strokeWidth=1`.
 - `--chart-grid-border` controls grid lines, marker strokes, and tooltip marker borders so chart furniture stays consistent in light and dark mode.
 - Daily Revenue vs COGS is rendered as a timeline line chart with visible circular markers for each point; chart styling changed without changing the dashboard data-source logic.

@@ -80,7 +80,7 @@ type LandingCopy = {
   productMenu: Array<{ title: string; body: string; href: string; icon: IconName }>
   heroTitle: string
   heroBody: string
-  heroSignals: Array<{ title: string; body: string; icon: IconName; tone: 'blue' | 'green' | 'amber' }>
+  heroSignals: Array<{ title: string; body: string; icon: IconName; tone: 'teal' | 'green' | 'amber' }>
   primaryCta: string
   secondaryCta: string
   activationNote: string
@@ -262,7 +262,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
         title: 'Production run posted',
         body: 'Materials and output stay traceable.',
         icon: 'production',
-        tone: 'blue',
+        tone: 'teal',
       },
       {
         title: 'Mortality reversal reviewed',
@@ -732,7 +732,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
         title: 'Ordem de Produção lançada',
         body: 'Materiais e saída ficam rastreáveis.',
         icon: 'production',
-        tone: 'blue',
+        tone: 'teal',
       },
       {
         title: 'Reversão de mortalidade revista',
@@ -1475,17 +1475,17 @@ function InlineSurfaceIcon({
   return (
     <Icon
       name={name}
-      className={cn('h-5 w-5 shrink-0', dark ? 'text-sky-200' : 'text-primary', className)}
+      className={cn('h-5 w-5 shrink-0 text-primary', className)}
     />
   )
 }
 
-function StatusPill({ children, tone = 'blue' }: { children: ReactNode; tone?: 'blue' | 'green' | 'amber' | 'slate' }) {
+function StatusPill({ children, tone = 'teal' }: { children: ReactNode; tone?: 'teal' | 'green' | 'amber' | 'slate' }) {
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold leading-none',
-        tone === 'blue' ? 'border-sky-300/40 bg-sky-300/10 text-sky-700 dark:text-sky-100' : '',
+        tone === 'teal' ? 'border-primary/30 bg-primary/10 text-primary dark:border-primary/35 dark:bg-primary/15 dark:text-primary' : '',
         tone === 'green' ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-700 dark:text-emerald-100' : '',
         tone === 'amber' ? 'border-amber-300/50 bg-amber-300/10 text-amber-800 dark:text-amber-100' : '',
         tone === 'slate' ? 'border-slate-300/50 bg-slate-100 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-100' : '',
@@ -1769,7 +1769,7 @@ function PricingCard({
     >
       <CardContent className="flex h-full flex-col p-5">
         <div className="flex min-h-8 flex-wrap items-center gap-2">
-          {plan.highlight ? <StatusPill tone="blue">{copy.labels.recommended}</StatusPill> : null}
+          {plan.highlight ? <StatusPill tone="teal">{copy.labels.recommended}</StatusPill> : null}
           {pricing.from ? <StatusPill tone="slate">{copy.labels.from}</StatusPill> : null}
         </div>
 
@@ -2051,7 +2051,7 @@ export default function LandingPage() {
             <div className="absolute inset-0 -z-10 bg-slate-950/75" />
             <div className="landing-grid-field" aria-hidden="true" />
             <div className="landing-orb landing-orb--teal landing-orb--hero-a" aria-hidden="true" />
-            <div className="landing-orb landing-orb--blue landing-orb--hero-b" aria-hidden="true" />
+            <div className="landing-orb landing-orb--deep landing-orb--hero-b" aria-hidden="true" />
             <HeroFloatingCards items={copy.heroSignals} />
 
             <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16 xl:py-20">
@@ -2061,7 +2061,7 @@ export default function LandingPage() {
                 transition={{ duration: 0.55, ease: revealEase }}
                 className="mx-auto max-w-4xl text-center"
               >
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase text-sky-100 backdrop-blur">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase text-white backdrop-blur">
                   <InlineSurfaceIcon name="company" dark className="h-3.5 w-3.5" />
                   <span>
                     {copy.labels.builtBy} {copy.labels.wiseCore}
@@ -2200,7 +2200,7 @@ export default function LandingPage() {
 
           <section id="showcase" className="landing-dark-section scroll-mt-24 py-16 text-white lg:py-24">
             <div className="landing-orb landing-orb--teal" aria-hidden="true" />
-            <div className="landing-orb landing-orb--blue" aria-hidden="true" />
+            <div className="landing-orb landing-orb--deep" aria-hidden="true" />
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               <Reveal>
                 <SectionIntro title={copy.showcaseTitle} body={copy.showcaseBody} inverse align="center" />

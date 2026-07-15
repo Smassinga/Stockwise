@@ -40,7 +40,7 @@ const statusOrder: SubscriptionStatus[] = ['active_paid', 'trial', 'expired', 's
 
 const statusColors: Record<SubscriptionStatus, string> = {
   active_paid: '#16a34a',
-  trial: '#0284c7',
+  trial: '#009679',
   expired: '#f59e0b',
   suspended: '#f43f5e',
   disabled: '#7c3aed',
@@ -70,7 +70,7 @@ function statusTone(status: SubscriptionStatus) {
     case 'active_paid':
       return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     case 'trial':
-      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+      return 'border-primary/25 bg-primary/10 text-primary dark:border-primary/30 dark:bg-primary/15 dark:text-primary'
     case 'expired':
       return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
     case 'suspended':

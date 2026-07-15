@@ -8,7 +8,7 @@ const actionToneClasses: Record<PremiumTone, string> = {
   negative: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-300/25 dark:bg-rose-300/10 dark:text-rose-100',
   warning: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-100',
   critical: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-100',
-  info: 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-300/25 dark:bg-sky-300/10 dark:text-sky-100',
+  info: 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10 dark:text-informational',
 }
 
 export type MobileQuickAction = {

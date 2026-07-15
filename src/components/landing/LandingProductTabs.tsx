@@ -109,7 +109,7 @@ function ProductSurface({ tab, copy }: { tab: LandingProductTab; copy: SurfaceCo
             const RowIcon = row.icon
             return (
               <div key={`${tab.id}-${row.label}`} className="landing-product-surface__row">
-                <RowIcon className="h-4 w-4 text-primary dark:text-sky-200" weight="duotone" aria-hidden="true" />
+                <RowIcon className="h-4 w-4 text-primary" weight="duotone" aria-hidden="true" />
                 <span className="landing-product-surface__row-label">{row.label}</span>
                 <span className="landing-product-surface__row-value">{row.value}</span>
                 <span

@@ -545,7 +545,7 @@ export default function CashPage() {
       </div>
 
       {!canManageSettlement ? (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+        <div className="rounded-2xl border border-informational/25 bg-informational/8 px-4 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
           {tf('cash.readOnlySettlement', 'Settlement-linked cash posting remains visible here for context, but only finance-authority users can post receipts and payments against legal settlement anchors.')}
         </div>
       ) : null}

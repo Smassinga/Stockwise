@@ -215,7 +215,7 @@ export default function Transactions() {
     switch (tp) {
       case 'receive':  return <span className={cn(base, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300')}>{tt('movement.receive', 'receive')}</span>
       case 'issue':    return <span className={cn(base, 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300')}>{tt('movement.issue', 'issue')}</span>
-      case 'transfer': return <span className={cn(base, 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300')}>{tt('movement.transfer', 'transfer')}</span>
+      case 'transfer': return <span className={cn(base, 'bg-informational/10 text-informational dark:bg-informational/15')}>{tt('movement.transfer', 'transfer')}</span>
       case 'adjust':   return <span className={cn(base, 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300')}>{tt('movement.adjust', 'adjust')}</span>
       default:         return <span className={cn(base, 'bg-muted text-foreground/70')}>{tt('common.dash', '—')}</span>
     }

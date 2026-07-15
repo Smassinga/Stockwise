@@ -162,7 +162,7 @@ const statusTone = (row: SettlementRow) => {
   if (normalizeMoneyValue(row.outstandingBase) <= 0) return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
   if (row.agingDays > 0) return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
   if (row.settledBase > 0) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-  return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+  return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
 }
 
 const dueTone = (row: SettlementRow) => {
@@ -180,7 +180,7 @@ const reviewTone = (state: FinanceReviewState) => {
     case 'overdue':
       return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
     case 'attention':
-      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+      return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
     case 'resolved':
       return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     default:
@@ -1074,7 +1074,7 @@ export default function SettlementsPage() {
       </div>
 
       {!canManageSettlement ? (
-        <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+        <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
           {tt('settlements.financeAuthorityNotice', 'Settlement history remains visible, but only finance-authority users can post settlement entries from this workspace.')}
         </div>
       ) : null}
@@ -1283,7 +1283,7 @@ export default function SettlementsPage() {
                         <span>{tt('settlements.creditedAmount', 'Credited')}</span>
                         <span className="font-mono font-semibold tabular-nums">{money(filteredBridgeTotals.creditedBase)}</span>
                       </div>
-                      <div className="flex items-center justify-between gap-3 text-sky-700 dark:text-sky-300">
+                      <div className="flex items-center justify-between gap-3 text-informational">
                         <span>{tt('settlements.debitedAmount', 'Debited')}</span>
                         <span className="font-mono font-semibold tabular-nums">{money(filteredBridgeTotals.debitedBase)}</span>
                       </div>
@@ -1357,7 +1357,7 @@ export default function SettlementsPage() {
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-3 text-xs">
                           <span className="text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</span>
-                          <span className="font-mono tabular-nums text-sky-700 dark:text-sky-300">{money(row.debitedBase)}</span>
+                          <span className="font-mono tabular-nums text-informational">{money(row.debitedBase)}</span>
                         </div>
                         <div className="mt-2 text-[11px] text-muted-foreground">
                           {isFinanceDocumentRow(row)
@@ -1646,7 +1646,7 @@ export default function SettlementsPage() {
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
-                        <div className={`mt-2 font-mono text-lg font-semibold tabular-nums ${reviewTotals.netAdjustments < 0 ? 'text-rose-700 dark:text-rose-300' : reviewTotals.netAdjustments > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}>{money(reviewTotals.netAdjustments)}</div>
+                        <div className={`mt-2 font-mono text-lg font-semibold tabular-nums ${reviewTotals.netAdjustments < 0 ? 'text-rose-700 dark:text-rose-300' : reviewTotals.netAdjustments > 0 ? 'text-informational' : ''}`}>{money(reviewTotals.netAdjustments)}</div>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</div>
@@ -1714,7 +1714,7 @@ export default function SettlementsPage() {
                               <td className="px-4 py-4 whitespace-nowrap">{row.document_date || tt('common.dash', '-')}</td>
                               <td className="px-4 py-4 whitespace-nowrap">{row.due_date || tt('common.dash', '-')}</td>
                               <td className="px-4 py-4 text-right font-mono tabular-nums">{money(n(row.original_total_base))}</td>
-                              <td className={`px-4 py-4 text-right font-mono tabular-nums ${n(row.net_adjustment_base) < 0 ? 'text-rose-700 dark:text-rose-300' : n(row.net_adjustment_base) > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}>{money(n(row.net_adjustment_base))}</td>
+                              <td className={`px-4 py-4 text-right font-mono tabular-nums ${n(row.net_adjustment_base) < 0 ? 'text-rose-700 dark:text-rose-300' : n(row.net_adjustment_base) > 0 ? 'text-informational' : ''}`}>{money(n(row.net_adjustment_base))}</td>
                               <td className="px-4 py-4 text-right font-mono tabular-nums font-semibold">{money(n(row.current_legal_total_base))}</td>
                               <td className="px-4 py-4 text-right font-mono tabular-nums">{money(n(row.settled_base))}</td>
                               <td className="px-4 py-4 text-right">
@@ -1848,7 +1848,7 @@ export default function SettlementsPage() {
                   <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</CardTitle></CardHeader>
                     <CardContent>
-                      <div className="font-mono tabular-nums text-sky-700 dark:text-sky-300">{money(activeRow.debitedBase)}</div>
+                      <div className="font-mono tabular-nums text-informational">{money(activeRow.debitedBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.debitedHelp', 'Increases from issued or posted debit notes')}</div>
                     </CardContent>
                   </Card>

@@ -1036,7 +1036,7 @@ export default function ProductionRuns() {
               </div>
 
               {selectedRun.status === 'draft' && !activePreview ? (
-                <div role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-300/30 dark:bg-sky-300/10 dark:text-sky-100">
+                <div role="status" className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
                   Refresh the readiness preview after draft changes before posting.
                 </div>
               ) : null}

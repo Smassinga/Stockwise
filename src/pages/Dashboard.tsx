@@ -875,8 +875,8 @@ export default function Dashboard() {
         'Complete initial stock, sales, or item setup so the dashboard becomes a live operating view.',
       ),
       badgeClass:
-        'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/50 dark:bg-sky-300/20 dark:text-sky-100',
-      iconClass: 'text-sky-700 dark:text-sky-300',
+        'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10',
+      iconClass: 'text-informational',
       icon: <ClockIcon weight="duotone" />,
     },
   }[operatingStatus]
@@ -1352,7 +1352,7 @@ export default function Dashboard() {
               <div className="rounded-[1.15rem] border border-card-border bg-surface-elevated px-4 py-3 shadow-[0_16px_34px_-32px_hsl(var(--foreground)/0.34)]">
                 <div className="h-1 w-10 rounded-full" style={{ backgroundColor: chartColors.revenue }} />
                 <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('kpi.revenue.title', { days: windowDays })}</div>
-                <div className="mt-2 text-xl font-semibold tracking-tight text-sky-700 dark:text-sky-200">{money(revenueWindow)}</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight text-chart-revenue">{money(revenueWindow)}</div>
                 <div className="mt-2 text-xs text-muted-foreground">
                   {hasRevenueData
                     ? tt('dashboard.revenueOrders', '{count} shipped orders contributed to this operational revenue view.', { count: shippedCurrent.length })
@@ -1456,7 +1456,7 @@ export default function Dashboard() {
                               ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
                               : severity === 'high'
                                 ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-                                : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300',
+                                : 'border-amber-200/70 bg-amber-50/50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/8 dark:text-amber-200',
                           )}
                         >
                           {severity === 'critical'

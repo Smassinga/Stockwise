@@ -154,7 +154,7 @@ function reviewTone(status?: FinanceReviewState | null) {
     case 'overdue':
       return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
     case 'attention':
-      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'
+      return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
     case 'resolved':
       return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     default:
@@ -2073,7 +2073,7 @@ export default function VendorBillDetailPage() {
                     {tt('financeDocs.vendorBills.issueCreditNote', 'Issue supplier credit note')}
                   </Button>
                 ) : (
-                  <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                  <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
                     {!canPostVendorAdjustments
                       ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
                       : tt('financeDocs.vendorBills.creditNotesResolved', 'This vendor bill is already fully credited. No further supplier credit note can be posted against it.')}
@@ -2168,7 +2168,7 @@ export default function VendorBillDetailPage() {
                     {tt('financeDocs.vendorBills.issueDebitNote', 'Issue supplier debit note')}
                   </Button>
                 ) : (
-                  <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                  <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
                     {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
                   </div>
                 )
