@@ -2691,17 +2691,5 @@
   "items.profileCompatibility.previewHidden": "Profile preview is hidden in compatibility mode because no profile selection will be persisted.",
   "items.toast.createdVerified": "Item created and profile verified",
   "items.toast.profileCreateRejected": "The item profile could not be saved. Review the fields and try again.",
-  "items.toast.createdBasicOnly": "Basic item created in acknowledged compatibility mode",
-  "platform.sentrySmoke.title": "Observability validation",
-  "platform.sentrySmoke.description": "Send one synthetic technical error to Sentry to verify production ingestion, privacy scrubbing, and source maps.",
-  "platform.sentrySmoke.noMutation": "This action does not change StockWise business or database data.",
-  "platform.sentrySmoke.send": "Send controlled Sentry smoke",
-  "platform.sentrySmoke.confirm": "Send one synthetic StockWise error to Sentry for production validation?",
-  "platform.sentrySmoke.sending": "Sending...",
-  "platform.sentrySmoke.sent": "Event sent",
-  "platform.sentrySmoke.eventId": "Event ID",
-  "platform.sentrySmoke.flushCompleted": "Delivery flush completed",
-  "platform.sentrySmoke.flushUnconfirmed": "Delivery flush was not confirmed",
-  "platform.sentrySmoke.inspectFirst": "Inspect this event in Sentry before sending another one.",
-  "platform.sentrySmoke.notEnabled": "Sentry production monitoring is not enabled."
+  "items.toast.createdBasicOnly": "Basic item created in acknowledged compatibility mode"
 }

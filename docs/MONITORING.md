@@ -71,7 +71,18 @@ Before calling a change release-ready:
 
 ## Current Position
 
-The repository contains a production-only Sentry frontend integration. It remains disabled unless the production build and browser environment contracts are explicitly configured. A production event is not considered validated until a controlled post-deployment smoke confirms ingestion and readable source-mapped frames.
+The repository contains a production-only Sentry frontend integration. It remains disabled unless the production build and browser environment contracts are explicitly configured. Production event ingestion, privacy scrubbing, CSP delivery, and readable source-mapped frames were validated on 2026-07-15.
+
+### Production validation - 2026-07-15
+
+- Vercel completed the Sentry source-map upload, and one controlled `StockWiseSentrySmokeError` event arrived in the `production` environment.
+- Sentry resolved the event to `src/lib/sentrySmoke.ts:14:17` and `runSentryProductionSmoke`, proving original TypeScript symbolication for the deployed release.
+- Exactly one event was received. Its message became `stockwise_sentry_production_smoke_v1 route=/reset recovery_token=[Redacted]`; its synthetic URL became `https://stockwiseapp.com/accept-invite`; and its synthetic note was filtered.
+- The captured request retained `GET /platform-control` without the `sentrySmoke` query. Request headers, cookies, bodies, parameters, and query strings were absent.
+- Console and UI-click breadcrumbs were absent. Navigation and HTTP breadcrumbs retained only sanitized technical metadata such as method, status, endpoint, and RPC name.
+- No user identity was attached. Organization-level privacy rules remove `$user.geo.**` and `$user.ip_address`; a second inspection showed no IP-derived geography value and only an empty geography container.
+- Sentry envelope delivery returned HTTP 200. The controlled event caused no StockWise business or database mutation.
+- The temporary platform-admin smoke helper and UI were removed immediately after validation. Reintroducing a production smoke control requires explicit authorization.
 
 See [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for the current monitoring, rate-limiting, CI/CD, and scaling gap list. See [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for incident, rollback, restore, and monthly recovery-test checklists.
 

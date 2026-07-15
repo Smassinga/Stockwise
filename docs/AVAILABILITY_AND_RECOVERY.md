@@ -41,7 +41,7 @@ Tighten these targets only after a successful restore drill and confirmed Supaba
 
 ## Frontend error detection
 
-Production-only Sentry frontend error monitoring can shorten detection and triage for browser failures after it is enabled and smoke-validated. It does not provide backup, restore, PITR, failover, or recovery execution, and it does not change the draft RTO/RPO targets above. The formal recovery drill remains incomplete until the monthly checklist is performed and recorded.
+Production-only Sentry frontend error monitoring is live and its runtime error ingestion, CSP delivery, privacy scrubbing, and TypeScript symbolication were production-validated on 2026-07-15. It shortens detection and triage for browser failures, but does not provide backup, restore, PITR, failover, or recovery execution and does not change the draft RTO/RPO targets above. PITR has not been claimed as enabled or verified, and the formal recovery drill remains incomplete until the monthly checklist is performed and recorded.
 
 Treat Sentry, Vercel logs, Supabase logs, and browser evidence as complementary signals. Do not assume an absent Sentry event proves service health, and do not send sensitive business or authentication data while collecting incident context.
 

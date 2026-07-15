@@ -99,6 +99,8 @@ Sentry is disabled by default in local development. The browser SDK initializes 
 
 Source-map upload is independently enabled only when `SENTRY_ORG`, `SENTRY_PROJECT`, and secret build-only `SENTRY_AUTH_TOKEN` values are all present. Missing Sentry variables must not block `npm run dev`, ordinary local production builds, or GitHub validation. Do not create `.env.sentry-build-plugin` or `VITE_SENTRY_AUTH_TOKEN`.
 
+The temporary production smoke helper used for the 2026-07-15 validation has been removed. Do not reintroduce a smoke route, query control, or synthetic-event helper without explicit authorization and a removal plan.
+
 ## Payment activation development
 
 The assisted activation package is live with hosted and local history aligned at 41 migrations. Continue to use local Supabase for replay, mismatch, authority-negative, storage-isolation, provider-reference collision, and concurrency tests; the production project reference remains mutation-blocked by the finance regression helper. Production rollout used only a synthetic proof and non-secret controlled channel. Do not seed provider credentials or real customer payment evidence in regression data.

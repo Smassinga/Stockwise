@@ -192,7 +192,9 @@ Current signals:
 - browser console checks during smoke QA
 - finance regression output
 
-The Sentry privacy baseline sets `sendDefaultPii=false`, retains at most an opaque authenticated-user UUID, removes user email/name/IP, cookies, request headers and bodies, authorization data, URL query strings/fragments, console breadcrumbs, and sensitive customer, supplier, bank, invoice, vendor-bill, payment-proof, and authentication context. A real controlled event still must be inspected before claiming absolute privacy.
+The Sentry privacy baseline sets `sendDefaultPii=false`, retains at most an opaque authenticated-user UUID, removes user email/name/IP, cookies, request headers and bodies, authorization data, URL query strings/fragments, console breadcrumbs, and sensitive customer, supplier, bank, invoice, vendor-bill, payment-proof, and authentication context. Browser-side and organization-level server-side privacy controls were validated with one controlled production event on 2026-07-15: message and URL secrets were scrubbed, request/query/body/header/cookie data was absent, no user identity was attached, and a second inspection showed no IP-derived geography value after `$user.geo.**` and `$user.ip_address` filtering.
+
+This validation is scoped evidence, not an absolute guarantee. Arbitrary business data manually attached by future code still requires review. Sentry monitoring for Supabase Edge Functions is not integrated, and tracing and Session Replay remain disabled.
 
 Not currently configured:
 
@@ -271,7 +273,7 @@ Recommended review cadence:
 1. Require the non-mutating validation workflow as a protected branch check.
 2. Add finance regression to CI only after a dedicated non-production Supabase project and guarded GitHub Actions environment exist.
 3. Run Supabase advisor and source review focused on RLS, security-definer functions, exposed views, and missing indexes for high-traffic pages.
-4. Validate the approved Sentry error path in production, then assign alert ownership and retention; uptime monitoring remains separate.
+4. Assign Sentry alert ownership and retention after the validated 2026-07-15 production error-path smoke; uptime monitoring remains separate.
 5. Run and record a monthly recovery drill using `docs/AVAILABILITY_AND_RECOVERY.md`.
 6. Review rate limits for invite mutation, Platform Control mutation, POS posting, invoice issuing, settlement posting, and heavy exports.
 7. Review Tauri desktop/Android release security: CSP, filesystem capabilities, code signing, updater, Android signing, and secret handling.

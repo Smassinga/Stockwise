@@ -41,6 +41,8 @@ Every `VITE_*` value is exposed to the browser bundle. `SENTRY_AUTH_TOKEN` is se
 
 Preview environments should leave `VITE_SENTRY_ENABLED` false or absent. Production monitoring is not validated merely by a successful build or deployment; record a controlled production event and verify a readable TypeScript/React stack before claiming live event delivery. DSN rotation requires reviewing the exact project ingestion origin in both CSP layers.
 
+The 2026-07-15 production validation established the current known-good release baseline: Vercel reported `[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry`, the controlled event arrived in the `production` environment, and Sentry resolved it to the original `src/lib/sentrySmoke.ts` TypeScript frame. Production deployments continue to require the existing variables above; `SENTRY_AUTH_TOKEN` remains confidential and build-only. Temporary smoke helpers, query controls, and buttons must be removed immediately after validation and must never remain in a normal release.
+
 Before a web release:
 
 ```bash

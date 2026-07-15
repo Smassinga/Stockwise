@@ -205,6 +205,8 @@ Escalate only after you have the concrete failing command, route, RPC, or log li
 
 ## Sentry frontend error monitoring
 
+Known-good baseline from the 2026-07-15 controlled production smoke: envelope delivery returned HTTP 200, the event used the `production` environment, source maps resolved to original StockWise TypeScript, message and request data were sanitized, and no geographic value remained after organization-level scrubbing. Use this baseline when distinguishing an integration regression from an application-specific event.
+
 ### Event does not appear
 
 Confirm the build is production, `VITE_SENTRY_ENABLED=true`, the public DSN is nonblank, and the deployed CSP permits the exact EU project ingestion origin. Preview and local development are intentionally disabled. Check browser Network/CSP output and Sentry project/environment filters without logging the DSN.

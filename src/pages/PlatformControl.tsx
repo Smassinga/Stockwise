@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -32,8 +32,6 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
-import { sentryEnabled } from '../lib/sentry'
-import { runSentryProductionSmoke, type SentryProductionSmokeResult } from '../lib/sentrySmoke'
 import {
   getCompanyAccessDetail,
   listCompanyAccessEvents,
@@ -169,7 +167,6 @@ function MetadataCard({
 
 export default function PlatformControlPage() {
   const { lang, t } = useI18n()
-  const [searchParams] = useSearchParams()
   const tt = useCallback(
     (key: string, fallback: string, vars?: Record<string, string | number>) =>
       withI18nFallback(t, key, fallback, vars),
@@ -199,37 +196,6 @@ export default function PlatformControlPage() {
   const [resetOpen, setResetOpen] = useState(false)
   const [resetReason, setResetReason] = useState('')
   const [resetConfirmation, setResetConfirmation] = useState('')
-  const [sentrySmokeSending, setSentrySmokeSending] = useState(false)
-  const [sentrySmokeResult, setSentrySmokeResult] = useState<SentryProductionSmokeResult | null>(null)
-
-  const showSentrySmoke =
-    import.meta.env.PROD && sentryEnabled && searchParams.get('sentrySmoke') === '1'
-
-  const handleSentrySmoke = useCallback(async () => {
-    if (sentrySmokeSending || sentrySmokeResult) return
-
-    const confirmed = window.confirm(
-      tt(
-        'platform.sentrySmoke.confirm',
-        'Send one synthetic StockWise error to Sentry for production validation?',
-      ),
-    )
-    if (!confirmed) return
-
-    setSentrySmokeSending(true)
-    try {
-      setSentrySmokeResult(await runSentryProductionSmoke())
-    } catch {
-      toast.error(
-        tt(
-          'platform.sentrySmoke.notEnabled',
-          'Sentry production monitoring is not enabled.',
-        ),
-      )
-    } finally {
-      setSentrySmokeSending(false)
-    }
-  }, [sentrySmokeResult, sentrySmokeSending, tt])
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.company_id === selectedCompanyId) || null,
@@ -590,62 +556,6 @@ export default function PlatformControlPage() {
               </div>
             </CardContent>
           </Card>
-
-          {showSentrySmoke ? (
-            <section className="rounded-lg border border-border bg-background p-4 sm:p-5" aria-labelledby="sentry-smoke-title">
-              <div className="max-w-3xl space-y-3">
-                <div>
-                  <h2 id="sentry-smoke-title" className="text-lg font-semibold text-foreground">
-                    {tt('platform.sentrySmoke.title', 'Observability validation')}
-                  </h2>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    {tt(
-                      'platform.sentrySmoke.description',
-                      'Send one synthetic technical error to Sentry to verify production ingestion, privacy scrubbing, and source maps.',
-                    )}
-                  </p>
-                </div>
-                <p className="text-sm font-medium leading-6 text-foreground">
-                  {tt(
-                    'platform.sentrySmoke.noMutation',
-                    'This action does not change StockWise business or database data.',
-                  )}
-                </p>
-                <Button
-                  type="button"
-                  onClick={handleSentrySmoke}
-                  disabled={sentrySmokeSending || Boolean(sentrySmokeResult)}
-                  className="w-full sm:w-auto"
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  {sentrySmokeSending
-                    ? tt('platform.sentrySmoke.sending', 'Sending...')
-                    : tt('platform.sentrySmoke.send', 'Send controlled Sentry smoke')}
-                </Button>
-                {sentrySmokeResult ? (
-                  <div className="space-y-1 break-words text-sm leading-6" role="status">
-                    <p className="font-medium text-foreground">
-                      {tt('platform.sentrySmoke.sent', 'Event sent')}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {tt('platform.sentrySmoke.eventId', 'Event ID')}: {sentrySmokeResult.eventId}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {sentrySmokeResult.flushed
-                        ? tt('platform.sentrySmoke.flushCompleted', 'Delivery flush completed')
-                        : tt('platform.sentrySmoke.flushUnconfirmed', 'Delivery flush was not confirmed')}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {tt(
-                        'platform.sentrySmoke.inspectFirst',
-                        'Inspect this event in Sentry before sending another one.',
-                      )}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
 
           <SubscriptionAnalyticsDashboard
             rows={rows}
