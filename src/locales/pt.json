@@ -1,4 +1,9 @@
 {
+  "appError.eyebrow": "StockWise",
+  "appError.title": "Ocorreu um erro",
+  "appError.description": "Não foi possível apresentar esta página com segurança. Recarregue-a ou volte ao painel.",
+  "appError.reload": "Recarregar página",
+  "appError.dashboard": "Voltar ao painel",
   "access_token": "Token de acesso",
   "actions.save": "Guardar alterações",
   "actions.saving": "A guardar…",

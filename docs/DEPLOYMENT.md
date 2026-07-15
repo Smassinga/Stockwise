@@ -26,6 +26,21 @@ VITE_SUPABASE_ANON_KEY=...
 VITE_SITE_URL=https://stockwiseapp.com
 ```
 
+Production frontend error monitoring additionally uses:
+
+```bash
+VITE_SENTRY_ENABLED=true
+VITE_SENTRY_DSN=<operator-managed public client DSN>
+VITE_SENTRY_ENVIRONMENT=production
+SENTRY_ORG=wisecore-technologies
+SENTRY_PROJECT=stockwise-web
+SENTRY_AUTH_TOKEN=<secret build-only token>
+```
+
+Every `VITE_*` value is exposed to the browser bundle. `SENTRY_AUTH_TOKEN` is secret, build-only, and must never use a `VITE_` prefix. With all three build-only values present, Vite creates hidden source maps, the Sentry plugin uploads them, and uploaded `.map` files are deleted from `dist`. Without those credentials, builds succeed without upload and without generating deployable source maps.
+
+Preview environments should leave `VITE_SENTRY_ENABLED` false or absent. Production monitoring is not validated merely by a successful build or deployment; record a controlled production event and verify a readable TypeScript/React stack before claiming live event delivery. DSN rotation requires reviewing the exact project ingestion origin in both CSP layers.
+
 Before a web release:
 
 ```bash

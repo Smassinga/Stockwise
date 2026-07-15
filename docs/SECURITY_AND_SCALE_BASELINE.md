@@ -183,6 +183,7 @@ The finance regression suite runs real Supabase-backed workflows, creates tempor
 
 Current signals:
 
+- production-only Sentry frontend error monitoring, enabled only by explicit production environment configuration
 - Vercel build and deployment logs
 - Vercel runtime logs
 - Supabase database logs
@@ -191,16 +192,20 @@ Current signals:
 - browser console checks during smoke QA
 - finance regression output
 
-Not currently committed:
+The Sentry privacy baseline sets `sendDefaultPii=false`, retains at most an opaque authenticated-user UUID, removes user email/name/IP, cookies, request headers and bodies, authorization data, URL query strings/fragments, console breadcrumbs, and sensitive customer, supplier, bank, invoice, vendor-bill, payment-proof, and authentication context. A real controlled event still must be inspected before claiming absolute privacy.
 
-- Sentry
+Not currently configured:
+
+- Sentry Logs, Session Replay, tracing, profiling, user feedback, and OpenTelemetry
+- Vercel Log Drains
+- Sentry monitoring for Supabase Edge Functions
 - LogRocket
 - Datadog
 - New Relic
 - formal uptime monitor
 - on-call alerting policy
 
-Recommendation: choose one lightweight error/uptime monitoring path only after approval, then document the exact events, retention, and owner. Do not add multiple overlapping observability tools.
+Sentry is detection and triage only; it does not change authorization, RLS, recovery, or availability guarantees. Retention, alert ownership, and a formal uptime monitor remain operational follow-up work.
 
 ## CI/CD Status
 
@@ -266,7 +271,7 @@ Recommended review cadence:
 1. Require the non-mutating validation workflow as a protected branch check.
 2. Add finance regression to CI only after a dedicated non-production Supabase project and guarded GitHub Actions environment exist.
 3. Run Supabase advisor and source review focused on RLS, security-definer functions, exposed views, and missing indexes for high-traffic pages.
-4. Add one approved monitoring/alerting layer for production errors and uptime, with owner, retention, and escalation rules.
+4. Validate the approved Sentry error path in production, then assign alert ownership and retention; uptime monitoring remains separate.
 5. Run and record a monthly recovery drill using `docs/AVAILABILITY_AND_RECOVERY.md`.
 6. Review rate limits for invite mutation, Platform Control mutation, POS posting, invoice issuing, settlement posting, and heavy exports.
 7. Review Tauri desktop/Android release security: CSP, filesystem capabilities, code signing, updater, Android signing, and secret handling.

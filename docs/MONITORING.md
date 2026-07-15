@@ -6,6 +6,7 @@ This document records the monitoring sources that actually matter for StockWise 
 
 ### Web and frontend
 
+- Sentry (`wisecore-technologies/stockwise-web`) for production frontend error events after production environment enablement
 - Vercel deployment/build logs
 - browser console and runtime error checks during smoke validation
 - `npm run build` for production bundle integrity
@@ -22,16 +23,15 @@ This document records the monitoring sources that actually matter for StockWise 
 - `npm run test:finance-regression`
 - targeted browser validation for Point of Sale, Platform Control, onboarding import, and finance-document workflows when those areas change
 
-## What Is Not Part of the Current Baseline
+## Excluded Observability Products
 
-These are not committed as current production dependencies:
+The first controlled Sentry package is error monitoring only. The following remain disabled and unconfigured:
 
-- Sentry
-- LogRocket
-- Datadog
-- New Relic
+- Sentry Logs, Session Replay, tracing, profiling, user feedback, and OpenTelemetry
+- Vercel Log Drains
+- Supabase Edge Function monitoring through Sentry
 
-If any of those are added later, this document should be updated only after the integration is real.
+Supabase database/Auth/Edge logs and Vercel build/runtime logs remain separate signal sources. Sentry does not replace backups, point-in-time recovery, restore validation, or recovery drills.
 
 ## What to Check by Area
 
@@ -69,9 +69,9 @@ Before calling a change release-ready:
 4. validate the relevant user flow in browser or packaged shell as appropriate
 5. check Supabase logs if the change touched RPCs, policies, or Edge Functions
 
-## Current Gap
+## Current Position
 
-StockWise has operational logging and regression coverage, but it does not yet have a dedicated third-party observability stack committed in-repo. That is acceptable as long as release validation stays disciplined and the existing Supabase/Vercel signals are actually reviewed.
+The repository contains a production-only Sentry frontend integration. It remains disabled unless the production build and browser environment contracts are explicitly configured. A production event is not considered validated until a controlled post-deployment smoke confirms ingestion and readable source-mapped frames.
 
 See [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for the current monitoring, rate-limiting, CI/CD, and scaling gap list. See [AVAILABILITY_AND_RECOVERY.md](AVAILABILITY_AND_RECOVERY.md) for incident, rollback, restore, and monthly recovery-test checklists.
 

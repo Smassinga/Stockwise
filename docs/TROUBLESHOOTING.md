@@ -203,6 +203,28 @@ Check:
 
 Escalate only after you have the concrete failing command, route, RPC, or log line. StockWise is now past the stage where "it seems broken" is a useful diagnosis.
 
+## Sentry frontend error monitoring
+
+### Event does not appear
+
+Confirm the build is production, `VITE_SENTRY_ENABLED=true`, the public DSN is nonblank, and the deployed CSP permits the exact EU project ingestion origin. Preview and local development are intentionally disabled. Check browser Network/CSP output and Sentry project/environment filters without logging the DSN.
+
+### Source maps do not resolve
+
+Confirm the deployment build received `SENTRY_ORG`, `SENTRY_PROJECT`, and secret build-only `SENTRY_AUTH_TOKEN`. Review the build log for an upload failure and confirm the event belongs to the same release artifacts. The plugin must delete uploaded `.map` files from `dist`; never solve symbolication by publicly serving them.
+
+### Production build reports a missing auth token
+
+Local and GitHub builds should omit the upload plugin and continue normally. For an intended production upload, repair the secret Vercel build variable rather than adding a token to `.env.example`, source control, `define`, or a `VITE_*` variable. A credentialed upload failure is a release failure and must not be silently ignored.
+
+### Quota spike
+
+Confirm the events are genuine StockWise failures before changing volume. Do not add broad `ignoreErrors`, tracing, Replay, or Logs to compensate. Group by release/environment, contain the faulty deployment if necessary, and assign an owner for the dominant error.
+
+### Sensitive data appears in an event
+
+Stop further event delivery for the affected deployment, preserve only non-sensitive incident metadata, rotate exposed access/recovery tokens or credentials immediately, and rotate the DSN if its abuse risk warrants it. Delete or restrict the affected issue/event in Sentry and escalate through the security incident process. Deletion alone does not undo exposure; identify the source, correct scrubbing, validate with controlled synthetic data, and document affected retention and access.
+
 ## Commercial tax and item profile diagnostics (live)
 
 - `commercial_tax_lines_unconfigured`: select an explicit configured treatment on every line; do not substitute `0%`.

@@ -39,6 +39,12 @@ These are suggested early-rollout targets, not contractual SLAs:
 
 Tighten these targets only after a successful restore drill and confirmed Supabase backup retention.
 
+## Frontend error detection
+
+Production-only Sentry frontend error monitoring can shorten detection and triage for browser failures after it is enabled and smoke-validated. It does not provide backup, restore, PITR, failover, or recovery execution, and it does not change the draft RTO/RPO targets above. The formal recovery drill remains incomplete until the monthly checklist is performed and recorded.
+
+Treat Sentry, Vercel logs, Supabase logs, and browser evidence as complementary signals. Do not assume an absent Sentry event proves service health, and do not send sensitive business or authentication data while collecting incident context.
+
 ## General Incident Checklist
 
 1. Assign an incident owner.

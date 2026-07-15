@@ -1,4 +1,9 @@
 {
+  "appError.eyebrow": "StockWise",
+  "appError.title": "Something went wrong",
+  "appError.description": "This page could not be displayed safely. Reload it or return to the dashboard.",
+  "appError.reload": "Reload page",
+  "appError.dashboard": "Return to dashboard",
   "access_token": "Access_token",
   "actions.save": "Save changes",
   "actions.saving": "Saving…",

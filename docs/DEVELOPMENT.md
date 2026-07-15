@@ -93,6 +93,12 @@ After database changes:
 - verify `npm run check:migrations`
 - verify `npx supabase db push` if the change is meant to go live
 
+## Frontend error monitoring
+
+Sentry is disabled by default in local development. The browser SDK initializes only for a production bundle when `VITE_SENTRY_ENABLED=true` and `VITE_SENTRY_DSN` is nonblank. `VITE_SENTRY_ENVIRONMENT` defaults to `production`. All `VITE_*` values are public browser-bundle configuration and must never contain a build auth token.
+
+Source-map upload is independently enabled only when `SENTRY_ORG`, `SENTRY_PROJECT`, and secret build-only `SENTRY_AUTH_TOKEN` values are all present. Missing Sentry variables must not block `npm run dev`, ordinary local production builds, or GitHub validation. Do not create `.env.sentry-build-plugin` or `VITE_SENTRY_AUTH_TOKEN`.
+
 ## Payment activation development
 
 The assisted activation package is live with hosted and local history aligned at 41 migrations. Continue to use local Supabase for replay, mismatch, authority-negative, storage-isolation, provider-reference collision, and concurrency tests; the production project reference remains mutation-blocked by the finance regression helper. Production rollout used only a synthetic proof and non-secret controlled channel. Do not seed provider credentials or real customer payment evidence in regression data.

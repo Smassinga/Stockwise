@@ -1,8 +1,10 @@
 // src/main.tsx
+import { Sentry, sentryEnabled } from './lib/sentry'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { AppErrorFallback } from './components/AppErrorFallback'
 import { AuthProvider } from './hooks/useAuth'
 import { Toaster } from 'react-hot-toast'
 import './index.css' // Tailwind + theme
@@ -15,20 +17,30 @@ if (import.meta.env.DEV) {
   ;(window as any).supabase = supabase
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+const rootOptions = sentryEnabled
+  ? {
+      onUncaughtError: Sentry.reactErrorHandler(),
+      onCaughtError: Sentry.reactErrorHandler(),
+      onRecoverableError: Sentry.reactErrorHandler(),
+    }
+  : undefined
+
+ReactDOM.createRoot(document.getElementById('root')!, rootOptions).render(
   <React.StrictMode>
     <I18nProvider>
-      <SEOProvider
-        siteName="StockWise"
-        baseUrl={import.meta.env.VITE_SITE_URL || 'https://stockwiseapp.com'}
-      >
-        <BrowserRouter>
-          <AuthProvider>
-            <App />
-            <Toaster position="top-right" />
-          </AuthProvider>
-        </BrowserRouter>
-      </SEOProvider>
+      <Sentry.ErrorBoundary fallback={<AppErrorFallback />} showDialog={false}>
+        <SEOProvider
+          siteName="StockWise"
+          baseUrl={import.meta.env.VITE_SITE_URL || 'https://stockwiseapp.com'}
+        >
+          <BrowserRouter>
+            <AuthProvider>
+              <App />
+              <Toaster position="top-right" />
+            </AuthProvider>
+          </BrowserRouter>
+        </SEOProvider>
+      </Sentry.ErrorBoundary>
     </I18nProvider>
   </React.StrictMode>
 )
