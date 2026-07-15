@@ -2677,5 +2677,17 @@
   "items.profileCompatibility.previewHidden": "A pré-visualização do perfil está oculta no modo de compatibilidade porque nenhuma seleção de perfil será guardada.",
   "items.toast.createdVerified": "Artigo criado e perfil verificado",
   "items.toast.profileCreateRejected": "Não foi possível guardar o perfil do artigo. Reveja os campos e tente novamente.",
-  "items.toast.createdBasicOnly": "Artigo básico criado no modo de compatibilidade confirmado"
+  "items.toast.createdBasicOnly": "Artigo básico criado no modo de compatibilidade confirmado",
+  "platform.sentrySmoke.title": "Validação de observabilidade",
+  "platform.sentrySmoke.description": "Enviar um erro técnico sintético ao Sentry para verificar a recepção em produção, a remoção de dados sensíveis e os mapas de código.",
+  "platform.sentrySmoke.noMutation": "Esta acção não altera dados de negócio nem dados da base de dados do StockWise.",
+  "platform.sentrySmoke.send": "Enviar teste controlado ao Sentry",
+  "platform.sentrySmoke.confirm": "Enviar um erro sintético do StockWise ao Sentry para validação em produção?",
+  "platform.sentrySmoke.sending": "A enviar...",
+  "platform.sentrySmoke.sent": "Evento enviado",
+  "platform.sentrySmoke.eventId": "ID do evento",
+  "platform.sentrySmoke.flushCompleted": "Envio concluído",
+  "platform.sentrySmoke.flushUnconfirmed": "Não foi possível confirmar a conclusão do envio",
+  "platform.sentrySmoke.inspectFirst": "Verifique este evento no Sentry antes de enviar outro.",
+  "platform.sentrySmoke.notEnabled": "A monitoria do Sentry em produção não está activa."
 }
