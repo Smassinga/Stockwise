@@ -122,7 +122,7 @@ Items, Stock Levels, and Movements expose intentionally off-canvas desktop navig
 
 ## 12. Localization Findings
 
-English and Portuguese theme, navigation, public/auth, and representative authenticated routes were checked. The Portuguese Dashboard renders `Painel`, localized navigation, and dark/light controls correctly. Some domain labels such as `Production Runs` and `Growth Batches`, and some route metadata titles, remain English in Portuguese mode. This is established localization debt rather than a regression from UX Phase 1 and is assigned to UX-7/UX-9.
+English and Portuguese theme, navigation, public/auth, and representative authenticated routes were checked. UX-1 localizes the complete shell and authenticated route-title map, including `Execuções de Produção`, `Lotes de Crescimento`, and the distinct Sales/Purchase order workspaces. Mixed terminology that remains inside page bodies is established localization debt assigned to the relevant domain package and UX-9.
 
 No new missing translation key or raw package backend code was observed.
 
@@ -150,15 +150,15 @@ The main demo risk is narrative density: a first-time viewer can see many capabl
 | UXF-02 | P1 | `App.tsx`, loading/state primitives | generic loading and ambiguous state feedback reduced trust | root text fallback and shared state review | corrected | UX-0 |
 | UXF-03 | P2 | dialog, sheet, popover, forms | elevated surfaces and focus could inherit environmental tint | primitive diff and contrast checks | corrected | UX-0 |
 | UXF-04 | P2 | Dashboard charts | cyan inventory and brand-blue revenue semantics competed with finance meaning | token and chart consumer review | corrected | UX-0 |
-| UXF-05 | P2 | authenticated shell/navigation | long route list increases scanning and discovery cost | four groups and 30+ navigation destinations | deferred | UX-1 |
+| UXF-05 | P2 | authenticated shell/navigation | long route list increases scanning and discovery cost | four groups and 30+ navigation destinations | corrected | UX-1 |
 | UXF-06 | P2 | `/dashboard` | long vertical cockpit dilutes first-viewport operating answer | production desktop/mobile inspection | deferred | UX-2 |
 | UXF-07 | P2 | `/settlements`, `/cash`, `/banks`, document detail | finance-anchor and correction logic is accurate but cognitively demanding | route and maintained copy review | deferred | UX-6 |
 | UXF-08 | P2 | `/production-runs`, `/growth-batches` | dense histories/tabs and mixed terminology slow scanning | production PT navigation and route review | deferred | UX-7/UX-9 |
 | UXF-09 | P2 | `/onboarding`, `/settings`, `/setup/import`, `/users` | setup steps are clear individually but not one continuous journey | route and setup-map review | deferred | UX-3 |
 | UXF-10 | P3 | Items, Stock Levels, Movements | shared register quality is strong, but detail/action consistency can improve | desktop table and mobile-card review | deferred | UX-4 |
 | UXF-11 | P3 | route-level loading branches | six literal loading references bypass the full shared state treatment | final source search | deferred | UX-9 |
-| UXF-12 | P3 | icon system/navigation | Lucide/Phosphor split is intentional but needs a future recognisability audit | `docs/icon-system.md` and imports | deferred | UX-1/UX-9 |
-| UXF-13 | P3 | route metadata and PT labels | some domain names/page titles remain English in Portuguese mode | production PT sample | deferred | UX-9 |
+| UXF-12 | P3 | icon system/navigation | Lucide/Phosphor split is intentional but needs a future recognisability audit | `docs/icon-system.md` and imports | navigation corrected; broader audit deferred | UX-1/UX-9 |
+| UXF-13 | P3 | route metadata and PT labels | some domain names/page titles remain English in Portuguese mode | production PT sample | shell and route metadata corrected; page bodies deferred | UX-1/UX-9 |
 | UXF-14 | P3 | cross-product demo journey | breadth is credible but first-time narrative is not curated | route inventory and landing/app comparison | deferred | UX-10 |
 
 Finding totals: P0 `0`, P1 `2`, P2 `7`, P3 `5`.
@@ -318,6 +318,22 @@ Lucide remains the only navigation/control icon system. Navigation icons inherit
 
 ## 24. UX-1 Validation And Deferrals
 
-Local implementation review confirmed one React root, unchanged route declarations and guards, no new dependency, no package-lock change, and no database or business-logic change. The credential-free production build and the query/detail active-state matrix passed. Full static gates, local `288/288`, responsive EN/PT light/dark browser QA, standard Validation, isolated finance CI, Vercel alignment, and production read-only smoke remain release gates to be recorded after execution.
+Local implementation review confirmed one React root, unchanged route declarations and guards, no new dependency, no package-lock change, and no database or business-logic change. The credential-free production build and query/detail active-state matrix passed. The complete local finance regression passed `288/288` against `http://127.0.0.1:54321` in `126.935s` of Node test time.
+
+Production rollout evidence for 2026-07-16:
+
+- implementation commit `75001f745ad4023a83724aafdae96934653fc450`;
+- Validation run `29497048907`, job `87616372190`, conclusion `success`;
+- isolated finance run `29497119715`, job `87616614335`, CLI `2.109.1`, 44 migrations through `20260712230118`, `288/288`, cleanup successful, no success artifact;
+- Vercel deployment `dpl_7QiigAx7oDKRxVQZdQfUVa7TZMpN`, Production/Ready, serving the implementation commit through `stockwiseapp.com` and the redirecting `www.stockwiseapp.com` alias;
+- authenticated read-only checks at `1440`, `1200`, `820`, and `390`, covering Portuguese/dark and English/light representative states;
+- 22 reached destinations: Dashboard, Point of Sale, both Orders tabs, Items, Stock Levels, Movements, Sales Invoices, Vendor Bills, Settlements, Cash, Banks, Recipes & Assemblies, Production Runs, Growth Batches, Users, Roles, Settings, Mozambique Compliance, Platform Control, Search, and Profile;
+- query matching proved Sales and Purchase mutually exclusive in grouped navigation, while the mobile Orders control remains an intentional aggregate workspace indicator;
+- mobile More proved body-scroll lock, the eight grouped sections, safe drawer scrolling, Escape close, and focus restoration to the invoking More control;
+- page-level overflow, fallback, console error/warning, CSP error, and missing required shell asset counts were `0`;
+- English and Portuguese group, route, utility, accessible-name, and browser-title checks passed; no raw translation key appeared;
+- production role evidence covered the authenticated company administrator who is also an authorized platform administrator. Ordinary and limited-role visibility was verified from the unchanged route guards and navigation filter, not by impersonating those roles in production;
+- no safe detail record link was available in the inspected Sales Invoice, Vendor Bill, or Bank registers, so detail-parent activation remains proven by the local active-state matrix and source review rather than a production detail navigation;
+- no production business record, schema, permission, route, workflow, Sentry setting, or hosted database state was changed.
 
 UXF-05 is addressed by workflow grouping and daily-route priority. The navigation portion of UXF-12 is addressed by the Lucide mapping. UXF-13 is addressed for shell labels and route metadata; the complete page-body terminology audit remains UX-9. UXF-14 is improved by making Sales, Purchasing, Inventory, Finance, Production, and Administration legible in the shell, while a guided customer/investor demonstration remains UX-10. UX-2 through UX-10 retain their documented order and scope.

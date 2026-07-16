@@ -277,6 +277,8 @@ Navigation rules:
 
 The shell must remain a navigation and context layer. It must not infer permissions, expose unresolved authority, create a backend preference, or move workflow decisions out of guarded pages and RPCs.
 
+UX-1 is live from implementation commit `75001f745ad4023a83724aafdae96934653fc450`. Production read-only QA confirmed the eight-group hierarchy, teal-plus-shape active treatment, separated company/user/platform context, five-control mobile dock, grouped More drawer, and EN/PT route metadata at `1440`, `1200`, `820`, and `390` without page overflow, console errors, or CSP errors.
+
 The `/bom` workflow bridge cards now use the shared premium card spacing pattern: icon badge, eyebrow/title/body stack, and separated action zone. Production smoke verified the Landed Cost card remains secondary, Production Runs remains more action-oriented, and the correction is spacing/hierarchy only, not a BOM workflow or posting change.
 
 ## What Not To Use
