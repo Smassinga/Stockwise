@@ -436,8 +436,10 @@ Hosted production and local replay contain 44 migrations through `20260712230118
 Controlled production smoke created mixed-rate SO `LEN-SO000000003` and PO `LEN-PO000000006`, then draft-only SI `LEN-INV2026-00001` and VB `LEN-VB00002`. No legal invoice was issued and no Vendor Bill was posted. A no-default line remained visibly unconfigured, confirmation was blocked, and draft `LEN-SO000000004` was cancelled. The temporary non-statutory options were deactivated and defaults restored to null. QA item `QA-TAX-20260712` retained its full profile and `123.45 MZN` price while `min_stock` alone moved to `1`.
 
 This package does not generate or submit SAF-T, file tax returns, scrape rates, infer jurisdiction, post a general-ledger tax journal, or issue a production legal document. Those remain separate scope. The older Forward-State Settlement and Output package remains historically unprovable as a standalone rollout from local evidence.
-# Non-fiscal Point of Sale boundary (local release candidate, 2026-07-16)
+# Non-fiscal Point of Sale boundary (live, 2026-07-16)
 
 A StockWise non-fiscal POS sale is operational evidence only: tax is explicitly not applied, stock and payment activity are recorded, and the transaction cannot be converted into a legal Sales Invoice. It is not described as exempt or zero-rated and carries no exemption reason or legal invoice identity. The database blocks linked Sales Invoice creation and issuance.
 
 Configured `zero` and configured `exempt` remain explicit company tax-option treatments governed by the normal commercial-tax model. Non-fiscal is a separate POS-only applicability mode and does not change ordinary Sales Order readiness, Purchase Orders, Vendor Bills, issued invoices, fiscal numbering, or future SAF-T scope.
+
+Migration `20260716130533_add_pos_tax_applicability_mode.sql` is live as hosted migration 45. Production verification confirmed the unconfigured read-only state and database enforcement surfaces without creating a POS transaction or changing the company mode. Configured, zero, exempt, non-fiscal posting, replay, mismatch, rollback, and invoice-prohibition mutation evidence remains isolated local regression evidence.

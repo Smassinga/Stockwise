@@ -314,8 +314,10 @@ New Sales Orders and Purchase Orders use canonical line-level tax. Company-confi
 Maintained item creation uses `create_item_with_profile` and verifies the authoritative persisted row before success. If protected profile fields are unavailable, role and inventory controls fail closed; basic-only creation requires explicit acknowledgement. The package adds no tax filing, SAF-T submission, seeded statutory rate, FIFO, COGS, fair value, stock posting, settlement, or finance-journal behavior.
 
 Controlled Leny Doçuras production smoke used synthetic non-statutory options, canonical mixed-rate SO/PO lines, draft-only SI/VB propagation, and QA item `QA-TAX-20260712`. Sales and purchase defaults were restored to null and both QA options were deactivated. No legal invoice was issued and no Vendor Bill was posted.
-# Explicit POS tax handling (local release candidate, 2026-07-16)
+# Explicit POS tax handling (live, 2026-07-16)
 
 Point of Sale now resolves one of three company states before posting: unconfigured, configured tax, or non-fiscal. Unconfigured blocks atomically. Configured tax preserves the canonical company default and rounded line snapshots. Non-fiscal records an operational Sales Order, stock issue, and immediate cash or bank settlement with tax explicitly not applied; it cannot become a legal Sales Invoice. A null setting is never treated as `0%`, exempt, or non-fiscal.
 
 The frontend obtains totals from authenticated `preview_operator_sale(...)`; the posting transaction independently uses the same internal resolver and settles the canonical tax-inclusive order total. Company mutation remains behind audited OWNER/ADMIN RPC `set_company_pos_tax_mode(...)`. Ordinary Sales Orders, all Purchase Orders, Vendor Bills, issued invoices, settlement anchors, stock valuation, and weighted-average cost retain their existing authority and behavior.
+
+Hosted production and local replay contain 45 migrations through `20260716130533_add_pos_tax_applicability_mode.sql`. The hosted backfill found one company tax-settings row without an effective sales default and left it explicitly unconfigured; zero companies were inferred as configured or non-fiscal. Production verification was catalog and read-only UI only. No production POS sale or company tax-mode change was performed.
