@@ -1,37 +1,15 @@
 // src/components/layout/AppLayout.tsx
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-  LayoutGrid,
-  Package,
-  ArrowLeftRight,
-  BarChart3,
-  Boxes,
-  Users as UsersIcon,
-  Users,
-  ShoppingCart,
-  Coins,
-  Truck,
-  Settings as SettingsIcon,
-  Menu,
-  LogOut,
-  Layers,          // BOM
-  Receipt,         // Transactions icon
-  FileText,        // Finance documents
-  Wallet,          // Cash icon
-  Banknote,        // Banks icon
-  CreditCard,      // Settlements icon
-  Calculator,      // Landed cost icon
-  Ruler,           // UoM
-  ClipboardList,   // Stock Levels
-  ShieldCheck,     // Mozambique compliance
-  X,
-  Search,
   ChevronDown,
-  ShoppingBasket,
-  Upload,
-  Factory,
-  Sprout,
+  ClipboardList,
+  LogOut,
+  Menu,
+  Package,
+  Search,
+  UserRound,
+  X,
 } from 'lucide-react'
 import { AppUser, useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/button'
@@ -53,49 +31,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
+import {
+  isNavigationItemActive,
+  isOrdersWorkspaceActive,
+  navigationDefinitions,
+  navigationGroups,
+  type NavigationDefinition,
+  type NavigationGroupId,
+} from './navigation'
 
 type Props = { user: AppUser; children: ReactNode }
 
-type NavItem = {
+type NavItem = NavigationDefinition & {
   label: string
-  to: string
-  icon: React.ComponentType<{ className?: string }>
+  description?: string
 }
 
 type NavSection = {
+  id: NavigationGroupId
   label: string
   items: NavItem[]
-}
-
-function buildNavLabels(tt: (key: string, fallback: string) => string): NavItem[] {
-  return [
-    { label: tt('nav.dashboard', 'Dashboard'), to: '/dashboard', icon: LayoutGrid },
-    { label: tt('nav.operator', 'Point of Sale'), to: '/operator', icon: ShoppingBasket },
-    { label: tt('nav.items', 'Items'), to: '/items', icon: Package },
-    { label: tt('nav.bom', 'Recipes & Assemblies'), to: '/bom', icon: Layers },
-    { label: tt('nav.productionRuns', 'Production Runs'), to: '/production-runs', icon: Factory },
-    { label: tt('nav.growthBatches', 'Growth Batches'), to: '/growth-batches', icon: Sprout },
-    { label: tt('nav.movements', 'Movements'), to: '/movements', icon: ArrowLeftRight },
-    { label: tt('nav.transactions', 'Transactions'), to: '/transactions', icon: Receipt },
-    { label: tt('nav.cash', 'Cash'), to: '/cash', icon: Wallet },
-    { label: tt('nav.banks', 'Banks'), to: '/banks', icon: Banknote },
-    { label: tt('nav.orders', 'Orders'), to: '/orders', icon: ShoppingCart },
-    { label: tt('nav.salesInvoices', 'Sales Invoices'), to: '/sales-invoices', icon: Receipt },
-    { label: tt('nav.complianceMz', 'Mozambique Compliance'), to: '/compliance/mz', icon: ShieldCheck },
-    { label: tt('nav.vendorBills', 'Vendor Bills'), to: '/vendor-bills', icon: FileText },
-    { label: tt('nav.settlements', 'Settlements'), to: '/settlements', icon: CreditCard },
-    { label: tt('nav.landedCost', 'Landed Cost'), to: '/landed-cost', icon: Calculator },
-    { label: tt('nav.reports', 'Reports'), to: '/reports', icon: BarChart3 },
-    { label: tt('nav.stockLevels', 'Stock Levels'), to: '/stock-levels', icon: ClipboardList },
-    { label: tt('nav.warehouses', 'Warehouses'), to: '/warehouses', icon: Boxes },
-    { label: tt('nav.users', 'Users'), to: '/users', icon: UsersIcon },
-    { label: tt('nav.customers', 'Customers'), to: '/customers', icon: Users },
-    { label: tt('nav.suppliers', 'Suppliers'), to: '/suppliers', icon: Truck },
-    { label: tt('nav.currency', 'Currency'), to: '/currency', icon: Coins },
-    { label: tt('nav.uom', 'UoM'), to: '/uom', icon: Ruler },
-    { label: tt('nav.imports', 'Imports'), to: '/setup/import', icon: Upload },
-    { label: tt('nav.settings', 'Settings'), to: '/settings', icon: SettingsIcon },
-  ]
 }
 
 function SearchBar({
@@ -136,6 +91,10 @@ export function AppLayout({ user, children }: Props) {
   const location = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const drawerRef = useRef<HTMLElement>(null)
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const drawerWasOpenRef = useRef(false)
   const { logout } = useAuth()
   const { companyName, myRole } = useOrg()
   const { t } = useI18n()
@@ -157,25 +116,26 @@ export function AppLayout({ user, children }: Props) {
   const displayCompany = companyName?.trim() || tt('shell.account.companyFallback', 'No company selected')
   const displayRole = useMemo(() => {
     if (!myRole) return tt('shell.account.roleFallback', 'Team member')
-    return String(myRole)
+    const fallback = String(myRole)
       .toLowerCase()
       .split('_')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
+    return tt(`users.roles.${String(myRole).toLowerCase()}`, fallback)
   }, [myRole, tt])
 
   const nav = useMemo(() => {
     const canManage = hasRole(myRole, [...CanManageUsers])
-    const base = buildNavLabels((key, fallback) => tt(key, fallback))
-    const filtered = base.filter(item => !(item.to === '/users' && !canManage))
-    if (isPlatformAdmin) {
-      filtered.push({
-        label: tt('platform.eyebrow', 'Platform control'),
-        to: '/platform-control',
-        icon: ShieldCheck,
-      })
-    }
-    return filtered
+    return navigationDefinitions
+      .filter((item) => !item.requiresUserManagement || canManage)
+      .filter((item) => !item.requiresPlatformAdmin || isPlatformAdmin)
+      .map((item) => ({
+        ...item,
+        label: tt(item.labelKey, item.fallbackLabel),
+        description: item.descriptionKey && item.fallbackDescription
+          ? tt(item.descriptionKey, item.fallbackDescription)
+          : undefined,
+      }))
   }, [isPlatformAdmin, myRole, tt])
 
   useEffect(() => {
@@ -200,66 +160,102 @@ export function AppLayout({ user, children }: Props) {
     if (!open) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus())
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = Array.from(
+        drawerRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true')
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (!first || !last) return
+
+      if (event.shiftKey && (document.activeElement === first || !drawerRef.current?.contains(document.activeElement))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
     return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
     }
   }, [open])
 
   useEffect(() => {
     setOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 768px)')
+    const closeAtDesktop = () => {
+      if (desktop.matches) setOpen(false)
+    }
+    closeAtDesktop()
+    desktop.addEventListener('change', closeAtDesktop)
+    return () => desktop.removeEventListener('change', closeAtDesktop)
+  }, [])
+
+  useEffect(() => {
+    if (drawerWasOpenRef.current && !open) {
+      window.requestAnimationFrame(() => drawerTriggerRef.current?.focus())
+    }
+    drawerWasOpenRef.current = open
+  }, [open])
 
   const navSections = useMemo<NavSection[]>(
-    () => {
-      const sectionMap = new Map([
-        [
-          tt('shell.nav.operations', 'Operations'),
-          ['/dashboard', '/operator', '/items', '/bom', '/production-runs', '/growth-batches', '/movements', '/stock-levels', '/warehouses'],
-        ],
-        [
-          tt('shell.nav.commercial', 'Commercial & finance'),
-          ['/orders', '/sales-invoices', '/compliance/mz', '/vendor-bills', '/settlements', '/transactions', '/cash', '/banks', '/landed-cost', '/reports'],
-        ],
-        [
-          tt('shell.nav.setup', 'Setup'),
-          ['/customers', '/suppliers', '/users', '/currency', '/uom', '/setup/import', '/settings'],
-        ],
-      ])
-
-      if (isPlatformAdmin) {
-        sectionMap.set(tt('shell.nav.platform', 'Platform'), ['/platform-control'])
-      }
-
-      return Array.from(sectionMap.entries()).map(([label, routes]) => ({
-        label,
-        items: routes
-          .map((route) => nav.find((item) => item.to === route))
-          .filter((item): item is NavItem => Boolean(item)),
+    () => navigationGroups
+      .map((group) => ({
+        id: group.id,
+        label: tt(group.labelKey, group.fallbackLabel),
+        items: nav.filter((item) => item.group === group.id),
       }))
-    },
-    [isPlatformAdmin, nav, tt]
+      .filter((section) => section.items.length > 0),
+    [nav, tt]
   )
 
-  const isActive = (to: string) =>
-    location.pathname === to || location.pathname.startsWith(to + '/')
+  const isActive = useCallback(
+    (item: Pick<NavigationDefinition, 'id' | 'to'>) =>
+      isNavigationItemActive(item, location.pathname, location.search),
+    [location.pathname, location.search],
+  )
 
-  const NavLink = ({ item }: { item: NavItem }) => {
+  const NavLink = ({ item, mobile = false }: { item: NavItem; mobile?: boolean }) => {
     const Icon = item.icon
-    const active = isActive(item.to)
+    const active = isActive(item)
     return (
       <Link
         to={item.to}
         onClick={() => setOpen(false)}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200',
+          'group/nav relative flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-[background-color,border-color,color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
           active
-            ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_16px_30px_-22px_hsl(var(--sidebar-primary)/0.72)]'
-            : 'text-sidebar-foreground/74 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+            ? 'border-sidebar-primary/25 bg-sidebar-primary text-sidebar-primary-foreground font-semibold shadow-[0_16px_30px_-22px_hsl(var(--sidebar-primary)/0.72)] before:absolute before:bottom-2 before:left-0 before:top-2 before:w-1 before:rounded-r-full before:bg-sidebar-primary-foreground/85'
+            : 'border-transparent font-medium text-sidebar-foreground/74 hover:border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
         )}
       >
-        <Icon className="h-5 w-5 flex-shrink-0" />
-        <span className="truncate">{item.label}</span>
+        <Icon className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{item.label}</span>
+          {mobile && item.description ? (
+            <span className={cn('mt-0.5 block text-xs leading-snug', active ? 'text-sidebar-primary-foreground/78' : 'text-sidebar-foreground/55')}>
+              {item.description}
+            </span>
+          ) : null}
+        </span>
       </Link>
     )
   }
@@ -274,26 +270,40 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5 xl:px-5">
+        <nav
+          className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 xl:px-5"
+          aria-label={tt('shell.navigation.primary', 'Primary navigation')}
+        >
           {navSections.map((section) => (
-            <div key={section.label} className="space-y-1.5">
-              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/55">
+            <section
+              key={section.id}
+              aria-labelledby={`desktop-nav-${section.id}`}
+              className={cn('space-y-1.5', section.id === 'platform' && 'border-t border-sidebar-border pt-5')}
+            >
+              <h2 id={`desktop-nav-${section.id}`} className="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/55">
                 {section.label}
-              </div>
+              </h2>
               <div className="space-y-1">
                 {section.items.map((item) => (
-                  <NavLink key={item.to} item={item} />
+                  <NavLink key={item.id} item={item} />
                 ))}
               </div>
-            </div>
+            </section>
           ))}
         </nav>
 
         <div className="space-y-3 border-t border-sidebar-border p-4">
-          <CompanySwitcher className="mb-3" />
+          <div className="space-y-1.5">
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/55">
+              {tt('shell.context.currentCompany', 'Current company')}
+            </div>
+            <CompanySwitcher />
+          </div>
           <div className="rounded-[1.35rem] border border-sidebar-border bg-sidebar-accent/55 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(0_0%_0%/0.6)]">
-            <div className="truncate text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/55">{displayCompany}</div>
-            <div className="mt-1 truncate text-sm font-medium">{displayName}</div>
+            <div className="truncate text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/55">
+              {tt('shell.context.currentUser', 'Current user')}
+            </div>
+            <div className="mt-1 truncate text-sm font-medium" title={displayName}>{displayName}</div>
             <div className="text-xs text-sidebar-foreground/60">{displayRole}</div>
             {isPlatformAdmin ? (
               <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
@@ -313,7 +323,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
     ),
-    [displayCompany, displayName, displayRole, isPlatformAdmin, location.pathname, logout, navSections, t, tt]
+    [displayName, displayRole, isPlatformAdmin, isActive, logout, navSections, t, tt]
   )
 
   const handleSearch = (e: FormEvent) => {
@@ -324,15 +334,48 @@ export function AppLayout({ user, children }: Props) {
   }
 
   const initial = (displayName || 'A').charAt(0).toUpperCase()
-  const mobilePrimaryNav = useMemo(
-    () => ['/dashboard', '/operator', '/orders', '/items']
-      .map((route) => nav.find((item) => item.to === route))
-      .filter((item): item is NavItem => Boolean(item)),
-    [nav],
-  )
+  const mobilePrimaryNav = useMemo(() => {
+    const dashboard = nav.find((item) => item.id === 'dashboard')
+    const pointOfSale = nav.find((item) => item.id === 'pointOfSale')
+    const entries = [
+      dashboard && {
+        id: dashboard.id,
+        label: tt('shell.mobile.dashboard', 'Dashboard'),
+        accessibleLabel: dashboard.label,
+        to: dashboard.to,
+        icon: dashboard.icon,
+        active: isActive(dashboard),
+      },
+      pointOfSale && {
+        id: pointOfSale.id,
+        label: tt('shell.mobile.pointOfSale', 'POS'),
+        accessibleLabel: pointOfSale.label,
+        to: pointOfSale.to,
+        icon: pointOfSale.icon,
+        active: isActive(pointOfSale),
+      },
+      {
+        id: 'orders',
+        label: tt('shell.mobile.orders', 'Orders'),
+        accessibleLabel: tt('shell.mobile.ordersWorkspace', 'Sales and purchase orders'),
+        to: '/orders?tab=sales',
+        icon: ClipboardList,
+        active: isOrdersWorkspaceActive(location.pathname),
+      },
+      {
+        id: 'stock',
+        label: tt('shell.mobile.stock', 'Stock'),
+        accessibleLabel: tt('shell.mobile.stockWorkspace', 'Items and stock'),
+        to: '/items',
+        icon: Package,
+        active: location.pathname === '/items',
+      },
+    ]
+    return entries.filter((item): item is NonNullable<typeof item> => Boolean(item))
+  }, [isActive, location.pathname, nav, tt])
   const mobileShowsMoreActive = useMemo(
-    () => !mobilePrimaryNav.some((item) => isActive(item.to)),
-    [location.pathname, mobilePrimaryNav],
+    () => !mobilePrimaryNav.some((item) => item.active),
+    [mobilePrimaryNav],
   )
 
   return (
@@ -344,16 +387,27 @@ export function AppLayout({ user, children }: Props) {
         <div
           className="fixed inset-0 z-40 bg-black/54 backdrop-blur-sm md:hidden"
           onClick={() => setOpen(false)}
+          aria-hidden="true"
         />
       )}
 
       {/* Mobile sidebar */}
       <aside
+        ref={drawerRef}
+        id="mobile-navigation-drawer"
+        role="dialog"
+        aria-modal={open || undefined}
+        aria-labelledby="mobile-navigation-title"
+        aria-hidden={!open}
+        inert={!open}
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex h-[100dvh] max-h-[100dvh] w-[88vw] max-w-[24rem] flex-col overflow-hidden border-r border-sidebar-border bg-sidebar pb-[var(--app-safe-bottom)] pt-[var(--app-safe-top)] text-sidebar-foreground shadow-[0_24px_60px_-30px_hsl(0_0%_0%/0.72)] transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
+        <h2 id="mobile-navigation-title" className="sr-only">
+          {tt('shell.navigation.mobile', 'Mobile navigation')}
+        </h2>
         <div className="flex h-16 shrink-0 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <BrandLockup compact subtitle="" />
@@ -361,44 +415,63 @@ export function AppLayout({ user, children }: Props) {
               <ThemeToggle compact />
             </div>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => setOpen(false)} 
-            aria-label="Close menu"
+          <Button
+            ref={closeButtonRef}
+            variant="ghost"
+            size="icon"
+            onClick={() => setOpen(false)}
+            aria-label={tt('shell.navigation.close', 'Close navigation')}
             className="h-9 w-9"
           >
             <X className="h-5 w-5" />
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
-          <div className="pb-3">
+          <div className="space-y-1.5 pb-4">
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/55">
+              {tt('shell.context.currentCompany', 'Current company')}
+            </div>
             <CompanySwitcher />
           </div>
-          <nav className="space-y-6 py-2">
+          <nav className="space-y-5 py-2" aria-label={tt('shell.navigation.mobileRoutes', 'Mobile routes')}>
             {navSections.map((section) => (
-              <div key={section.label} className="space-y-1.5">
-                <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/55">
+              <section
+                key={section.id}
+                aria-labelledby={`mobile-nav-${section.id}`}
+                className={cn('space-y-1.5', section.id === 'platform' && 'border-t border-sidebar-border pt-5')}
+              >
+                <h3 id={`mobile-nav-${section.id}`} className="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/55">
                   {section.label}
-                </div>
+                </h3>
                 <div className="space-y-1">
                   {section.items.map((item) => (
-                    <NavLink key={item.to} item={item} />
+                    <NavLink key={item.id} item={item} mobile />
                   ))}
                 </div>
-              </div>
+              </section>
             ))}
           </nav>
           <div className="mt-4 border-t border-sidebar-border pt-4">
             <div className="rounded-[1.35rem] border border-sidebar-border bg-sidebar-accent/55 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(0_0%_0%/0.6)]">
-              <div className="truncate text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/55">{displayCompany}</div>
-              <div className="mt-1 truncate text-sm font-medium">{displayName}</div>
+              <div className="truncate text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/55">
+                {tt('shell.context.currentUser', 'Current user')}
+              </div>
+              <div className="mt-1 truncate text-sm font-medium" title={displayName}>{displayName}</div>
               <div className="text-xs text-sidebar-foreground/60">{displayRole}</div>
               {isPlatformAdmin ? (
                 <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
                   {tt('platform.adminBadge', 'Platform admin')}
                 </div>
               ) : null}
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <LocaleToggle />
+              <Button asChild variant="ghost" size="sm" className="min-h-10 min-w-0 flex-1 justify-start">
+                <Link to="/profile" onClick={() => setOpen(false)}>
+                  <UserRound className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {t('common.profile')}
+                </Link>
+              </Button>
             </div>
             <Button
               variant="ghost"
@@ -413,14 +486,23 @@ export function AppLayout({ user, children }: Props) {
         </div>
       </aside>
 
-      <div className="flex min-h-[100dvh] min-w-0 flex-1 flex-col">
+      <div
+        className="flex min-h-[100dvh] min-w-0 flex-1 flex-col"
+        aria-hidden={open || undefined}
+        inert={open}
+      >
         <header className="sticky top-0 z-30 flex h-[calc(var(--app-shell-mobile-header)+var(--app-safe-top))] items-center gap-2.5 border-b border-border/80 bg-background/92 pl-[max(1rem,var(--app-safe-left))] pr-[max(1rem,var(--app-safe-right))] pt-[var(--app-safe-top)] shadow-[0_1px_0_hsl(var(--border)/0.65)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/78 md:h-16 md:gap-3 md:px-6 md:pt-0 xl:gap-4 xl:px-8 2xl:px-10">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="h-10 w-10 shrink-0 md:hidden"
-            onClick={() => setOpen(true)} 
-            aria-label="Open menu"
+            onClick={(event) => {
+              drawerTriggerRef.current = event.currentTarget
+              setOpen(true)
+            }}
+            aria-label={tt('shell.navigation.open', 'Open navigation')}
+            aria-expanded={open}
+            aria-controls="mobile-navigation-drawer"
           >
             <Menu className="h-5 w-5" />
           </Button>
@@ -448,7 +530,7 @@ export function AppLayout({ user, children }: Props) {
           </div>
           
           <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-2.5">
-            <LocaleToggle className="hidden xl:inline-flex" />
+            <LocaleToggle className="hidden md:inline-flex" />
             <NotificationCenter />
 
             <DropdownMenu>
@@ -456,7 +538,7 @@ export function AppLayout({ user, children }: Props) {
                 <Button
                   variant="outline"
                   className="hidden h-10 items-center gap-2 rounded-xl border-border/70 bg-background/80 px-2.5 md:inline-flex"
-                  aria-label="User menu"
+                  aria-label={tt('shell.account.userMenu', 'User menu')}
                 >
                   <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-muted/80 text-xs font-semibold text-foreground">
                     {initial}
@@ -484,19 +566,9 @@ export function AppLayout({ user, children }: Props) {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/profile')}>
-                  <Users className="h-4 w-4" />
+                  <UserRound className="h-4 w-4" />
                   {t('common.profile')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/settings')}>
-                  <SettingsIcon className="h-4 w-4" />
-                  {t('common.settings')}
-                </DropdownMenuItem>
-                {isPlatformAdmin ? (
-                  <DropdownMenuItem onClick={() => navigate('/platform-control')}>
-                    <ShieldCheck className="h-4 w-4" />
-                    {tt('platform.eyebrow', 'Platform control')}
-                  </DropdownMenuItem>
-                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => logout?.()}>
                   <LogOut className="h-4 w-4" />
@@ -511,39 +583,51 @@ export function AppLayout({ user, children }: Props) {
           {children}
         </main>
 
-        <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-background via-background/90 to-transparent pl-[max(0.75rem,var(--app-safe-left))] pr-[max(0.75rem,var(--app-safe-right))] pb-[calc(0.9rem+var(--app-safe-bottom))] pt-3 md:hidden">
+        <nav
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-background via-background/90 to-transparent pl-[max(0.75rem,var(--app-safe-left))] pr-[max(0.75rem,var(--app-safe-right))] pb-[calc(0.9rem+var(--app-safe-bottom))] pt-3 md:hidden"
+          aria-label={tt('shell.navigation.bottom', 'Primary mobile navigation')}
+        >
           <div className="pointer-events-auto mx-auto max-w-[30rem] rounded-[1.9rem] border border-border/80 bg-card/98 p-2.5 shadow-[0_34px_70px_-34px_hsl(var(--foreground)/0.5)] ring-1 ring-background/75 backdrop-blur-2xl">
           <div className="grid grid-cols-5 gap-2">
             {mobilePrimaryNav.map((item) => {
               const Icon = item.icon
-              const active = isActive(item.to)
+              const active = item.active
               return (
                 <Link
-                  key={item.to}
+                  key={item.id}
                   to={item.to}
+                  aria-label={item.accessibleLabel}
+                  aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'flex min-h-[4.75rem] flex-col items-center justify-center rounded-[1.25rem] px-2 text-center transition-[background-color,color,box-shadow]',
+                    'relative flex min-h-[4.75rem] min-w-0 flex-col items-center justify-center rounded-[1.25rem] px-1.5 text-center transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     active
-                      ? 'bg-primary text-primary-foreground shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)]'
+                      ? 'bg-primary text-primary-foreground font-semibold shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)] after:absolute after:bottom-1.5 after:h-1 after:w-5 after:rounded-full after:bg-primary-foreground/85'
                       : 'text-foreground/70 hover:bg-accent/45 hover:text-foreground',
                   )}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="mt-1 text-[11px] font-semibold leading-tight">{item.label}</span>
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  <span className="mt-1 max-w-full text-[11px] font-semibold leading-tight">{item.label}</span>
                 </Link>
               )
             })}
             <button
               type="button"
               className={cn(
-                'flex min-h-[4.75rem] flex-col items-center justify-center rounded-[1.25rem] px-2 text-center transition-[background-color,color,box-shadow]',
+                'relative flex min-h-[4.75rem] min-w-0 flex-col items-center justify-center rounded-[1.25rem] px-1.5 text-center transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 mobileShowsMoreActive
-                  ? 'bg-primary text-primary-foreground shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)]'
+                  ? 'bg-primary text-primary-foreground font-semibold shadow-[0_16px_28px_-22px_hsl(var(--primary)/0.92)] after:absolute after:bottom-1.5 after:h-1 after:w-5 after:rounded-full after:bg-primary-foreground/85'
                   : 'text-foreground/70 hover:bg-accent/45 hover:text-foreground',
               )}
-              onClick={() => setOpen(true)}
+              onClick={(event) => {
+                drawerTriggerRef.current = event.currentTarget
+                setOpen(true)
+              }}
+              aria-label={tt('shell.more', 'More')}
+              aria-expanded={open}
+              aria-controls="mobile-navigation-drawer"
+              aria-pressed={mobileShowsMoreActive}
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-5 w-5" aria-hidden="true" />
               <span className="mt-1 text-[11px] font-semibold leading-tight">{tt('shell.more', 'More')}</span>
             </button>
           </div>

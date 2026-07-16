@@ -256,6 +256,27 @@ Production UI smoke validated the G1-G2 register, detail overview, measurement h
 
 The visual reference standard is existing StockWise premium components. MVPBlocks or other galleries may be used only as inspiration; no MVPBlocks dependency or copied block is part of this package.
 
+## App Shell And Navigation Rules
+
+The maintained authenticated shell prioritizes daily operating work before setup. Desktop and grouped mobile navigation use this order: Overview, Sales, Purchasing, Inventory, Production, Finance, Administration, then the separately authorized Platform area. Customers stay with Sales; Suppliers and Landed Cost stay with Purchasing; Mozambique Compliance stays with Finance; Platform Control must never be presented as company Settings.
+
+Navigation rules:
+
+- directly visible entries must preserve existing routes, query parameters, role checks, company-access checks, and backend authority;
+- the shared Orders route must expose distinct Sales and Purchase labels using the maintained `tab=sales` and `tab=purchase` contract;
+- Point of Sale remains a prominent Overview and mobile destination for users already authorized by the existing shell contract;
+- Administration is visually secondary, and Platform is separated by structure as well as authorization;
+- the mobile dock has no more than five controls and uses Dashboard, POS, Orders, Stock, and More; More exposes every authorized route through the grouped drawer;
+- current company and current user are labelled as different contexts; internal company IDs and raw role codes must not be used as display fallbacks;
+- Search, Profile, language, theme, and sign-out are utilities, not competing primary destinations;
+- active state combines `aria-current`, typography, a shape indicator, and WiseCore teal selection rather than color alone;
+- detail routes activate their register parent, and shared query-tab routes activate exactly one destination;
+- desktop navigation owns an internal scroll region; the mobile drawer locks body scroll, contains focus, closes on Escape and route selection, and restores focus to its trigger;
+- all navigation icons use Lucide, consistent sizing, and `currentColor`; Phosphor remains reserved for decorative and premium illustration;
+- group labels, route labels, descriptions, utility labels, accessible names, and browser route titles require matching English and Portuguese terminology.
+
+The shell must remain a navigation and context layer. It must not infer permissions, expose unresolved authority, create a backend preference, or move workflow decisions out of guarded pages and RPCs.
+
 The `/bom` workflow bridge cards now use the shared premium card spacing pattern: icon badge, eyebrow/title/body stack, and separated action zone. Production smoke verified the Landed Cost card remains secondary, Production Runs remains more action-oriented, and the correction is spacing/hierarchy only, not a BOM workflow or posting change.
 
 ## What Not To Use

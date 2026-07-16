@@ -9,9 +9,10 @@ import { cn } from '../lib/utils'
 export default function CompanySwitcher({ className }: { className?: string }) {
   const { t } = useI18n()
   const { companies, companyId, companyName, setActiveCompany, switching } = useOrg()
+  const unnamedCompany = t('company.unnamedCompany')
   const options = useMemo(
-    () => companies.map(c => ({ id: c.id, label: c.name || c.id })),
-    [companies]
+    () => companies.map(c => ({ id: c.id, label: c.name?.trim() || unnamedCompany })),
+    [companies, unnamedCompany]
   )
   const activeLabel =
     options.find((option) => option.id === companyId)?.label ||
@@ -31,7 +32,7 @@ export default function CompanySwitcher({ className }: { className?: string }) {
         aria-busy={switching || undefined}
       >
         <Building2 className="h-4 w-4 shrink-0 text-primary" />
-        <span className="truncate">{activeLabel}</span>
+        <span className="truncate" title={activeLabel}>{activeLabel}</span>
       </div>
     )
   }

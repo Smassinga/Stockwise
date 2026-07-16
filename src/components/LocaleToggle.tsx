@@ -7,7 +7,7 @@ type Props = {
 }
 
 export default function LocaleToggle({ className, inverse = false }: Props) {
-  const { lang, setLang } = useI18n()
+  const { lang, setLang, t } = useI18n()
 
   return (
     <div
@@ -19,7 +19,7 @@ export default function LocaleToggle({ className, inverse = false }: Props) {
         className
       )}
       role="group"
-      aria-label="Language selector"
+      aria-label={t('locale.selector')}
     >
       {(['en', 'pt'] as const).map((option) => {
         const active = lang === option
@@ -28,6 +28,8 @@ export default function LocaleToggle({ className, inverse = false }: Props) {
             key={option}
             type="button"
             onClick={() => setLang(option)}
+            aria-label={option === 'en' ? t('locale.english') : t('locale.portuguese')}
+            aria-pressed={active}
             className={cn(
               'rounded-full px-3 py-1.5 transition-colors',
               active

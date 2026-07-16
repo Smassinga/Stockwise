@@ -115,4 +115,12 @@ The production neutral-surface release extended the palette checkpoint with a sh
 
 Document-level horizontal overflow remained zero. The desktop navigation layer is intentionally off-canvas at phone width on some register routes, but it did not widen the document or displace the mobile content. The release preserved mobile cards, contained table scrolling, touch-target dimensions, safe-area behavior, and existing action reachability. No production data mutation was used for this visual validation.
 
-Future mobile work is sequenced in `docs/ui-ux/PRODUCT_UX_AUDIT_2026-07.md`; this release did not restructure navigation, forms, or domain workflows.
+Future mobile work is sequenced in `docs/ui-ux/PRODUCT_UX_AUDIT_2026-07.md`; the UX-0 release did not restructure navigation, forms, or domain workflows.
+
+## UX-1 Mobile Navigation Contract
+
+The authenticated mobile dock is capped at five controls: Dashboard, POS, Orders, Stock, and More. The compact labels keep practical touch targets and Portuguese fit at 390 px; accessible names retain the full workspace meaning. Orders opens the existing shared Sales/Purchase workspace, Stock opens Items, and More is the route to every other authorized destination.
+
+More uses the same Overview, Sales, Purchasing, Inventory, Production, Finance, Administration, and conditional Platform structure as desktop. The drawer keeps current-company and localized user-role context separate, includes Profile, language, theme, and sign-out utilities without duplicating primary Settings or Platform routes, owns its scroll region, respects safe-area padding, locks page scrolling, closes on route selection or Escape, contains keyboard focus while open, and restores focus to the trigger. A closed drawer is inert and hidden from assistive technology.
+
+The dock and drawer do not change role, company-access, subscription, route, or query contracts. Fixed page actions must remain above the existing shell dock allowance, and the document must not become horizontally scrollable at Android widths.

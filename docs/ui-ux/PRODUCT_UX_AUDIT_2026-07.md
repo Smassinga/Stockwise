@@ -226,3 +226,98 @@ Finding totals: P0 `0`, P1 `2`, P2 `7`, P3 `5`.
 - Portuguese domain terminology and route metadata remain partially mixed.
 - The sidebar breadth and dashboard density still require focused design work rather than cosmetic changes.
 - The two remaining dark-teal literals are intentional print-document exceptions and must be reviewed if print rendering is redesigned.
+
+## 21. UX-1 App Shell And Navigation Baseline
+
+The 2026-07-16 UX-1 review started from commit `58ac56d1965f0fc8f5953e98af88a47f7fc5b6a5`, with 44 migrations and no route, permission, workflow, or database change pending. `App.tsx` declares 45 concrete route patterns plus the wildcard fallback. The authenticated shell directly listed 26 ordinary company destinations and one conditional Platform destination in four broad groups. The mobile dock showed Dashboard, Point of Sale, the undifferentiated Orders workspace, Items, and More; the More drawer repeated the four desktop groups.
+
+Evidence confirmed the following UX-1 findings:
+
+- one Commercial & finance group mixed sales, purchasing, ledgers, compliance, landed cost, and reporting;
+- Customers and Suppliers were separated from their daily Sales and Purchasing context;
+- the single Orders item could not distinguish the existing `tab=sales` and `tab=purchase` workspaces;
+- `/users/roles` was guarded and routable but not directly discoverable;
+- duplicate Lucide meanings included Receipt for invoices and transactions, Users for users and customers, and ShieldCheck for compliance and Platform Control;
+- active matching used only the pathname, so a query-tab destination could not express its actual state;
+- route metadata remained English for authenticated routes in Portuguese mode;
+- the mobile drawer scrolled and locked body scroll, but lacked explicit modal semantics, Escape handling, focus containment, and focus restoration;
+- company and user context were present but visually compressed into one account panel, and role codes were formatted rather than localized.
+
+No unauthorized-route flash was found. Membership and company-access guards resolve before `AppLayout` mounts, Users visibility continues to use `CanManageUsers`, and Platform Control starts hidden until the existing platform-admin status call resolves. Blocked-company and unresolved-access states remain outside the authenticated shell.
+
+## 22. UX-1 Route Inventory
+
+This inventory records actual route contracts. `company shell` means authenticated user, active membership, and enabled company access. Platform authority and MANAGER+ user-management authority remain the existing guards; navigation does not replace them.
+
+| Route pattern | EN / PT title or entry | IA or direct visibility | Existing guard, query, and active-parent rule |
+| --- | --- | --- | --- |
+| `/` | StockWise landing | public, not app navigation | public |
+| `/login` | Sign In / Iniciar Sessão | public account entry | public-only |
+| `/auth` | Login alias | not listed | redirects to `/login` |
+| `/auth/callback` | Signing In / A iniciar sessão | not listed | public callback |
+| `/update-password` | Update Password / Actualizar Palavra-passe | not listed | public recovery entry |
+| `/accept-invite` | Accept Invitation / Aceitar Convite | not listed | public invitation entry |
+| `/onboarding` | Company Setup / Configuração da Empresa | not listed | authenticated; shown when membership is unresolved or absent |
+| `/company-access` | Company Access / Acesso da Empresa | not listed | authenticated membership; blocked-company destination |
+| `/activation` | Verified Activation / Activação Verificada | not listed | authenticated membership; existing activation authority |
+| `/platform-control` | Platform Control / Controlo da Plataforma | Platform, desktop and More only when authorized | platform-admin guard; never activates company Settings |
+| `/dashboard` | Dashboard / Painel | Overview; desktop, dock, More | company shell; exact active parent |
+| `/operator` | Point of Sale / Ponto de Venda | Overview; desktop, dock, More | company shell; existing POS route authority unchanged |
+| `/items` | Items / Artigos | Inventory; desktop, Stock dock entry, More | company shell; exact active parent |
+| `/movements` | Stock Movements / Movimentos de stock | Inventory; desktop and More | company shell; movement history meaning |
+| `/warehouses` | Warehouses / Armazéns | Inventory; desktop and More | company shell |
+| `/stock-levels` | Stock Levels / Níveis de Stock | Inventory; desktop and More | company shell; current quantity meaning |
+| `/setup/import` | Opening Data / Dados Iniciais | Inventory, lower frequency; desktop and More | company shell; existing import behavior unchanged |
+| `/orders` | Sales Orders / Encomendas de Venda or Purchase Orders / Ordens de Compra | Sales and Purchasing; Orders dock aggregate | `tab=sales` selects Sales; the maintained default and link use `tab=purchase`; `orderId` remains unchanged |
+| `/orders/sales/:orderId` | legacy Sales Order workspace | not directly listed | existing redirect to `/orders?tab=sales&orderId=...` |
+| `/orders/purchase/:orderId` | legacy Purchase Order workspace | not directly listed | existing redirect to `/orders?tab=purchase&orderId=...` |
+| `/sales-invoices` | Sales Invoices / Faturas de venda | Sales; desktop and More | company shell; detail routes activate this parent |
+| `/sales-invoices/:invoiceId` | Sales Invoice Details / Detalhes da Fatura de Venda | not directly listed | company shell; title never exposes UUID |
+| `/customers` | Customers / Clientes | Sales; desktop and More | company shell |
+| `/vendor-bills` | Vendor Bills / Faturas de fornecedor | Purchasing; desktop and More | company shell; detail routes activate this parent |
+| `/vendor-bills/:billId` | Vendor Bill Details / Detalhes da Fatura de Fornecedor | not directly listed | company shell; title never exposes UUID |
+| `/suppliers` | Suppliers / Fornecedores | Purchasing; desktop and More | company shell |
+| `/landed-cost` | Landed Cost / Custo de Importação | Purchasing; desktop and More | company shell |
+| `/bom` | Recipes & Assemblies / Receitas e Montagens | Production; desktop and More | company shell |
+| `/production-runs` | Production Runs / Execuções de Produção | Production; desktop and More | company shell; existing optional `bomId` remains unchanged |
+| `/growth-batches` | Growth Batches / Lotes de Crescimento | Production; desktop and More | company shell; distinct optional lifecycle workspace |
+| `/settlements` | Settlements / Liquidações | Finance; desktop and More | company shell; existing ADMIN+ posting authority remains inside workflow |
+| `/cash` | Cash / Caixa | Finance; desktop and More | company shell; existing finance authority unchanged |
+| `/banks` | Banks / Bancos | Finance; desktop and More | company shell; detail routes activate this parent |
+| `/banks/:bankId` | Bank Details / Detalhes do Banco | not directly listed | company shell; title never exposes UUID |
+| `/transactions` | Transactions / Transacções | Finance; desktop and More | company shell; combined ledger meaning |
+| `/reports` | Reports / Relatórios | Finance; desktop and More | company shell |
+| `/compliance/mz` | Mozambique Compliance / Conformidade em Moçambique | Finance; desktop and More | company shell; fiscal readiness, not Platform Control |
+| `/users` | Users / Utilizadores | Administration when MANAGER+ | company shell plus `CanManageUsers`; exact active item |
+| `/users/roles` | Roles / Funções | Administration when MANAGER+ | same existing guard; distinct from Users active state |
+| `/currency` | Currency / Moeda | Administration; desktop and More | company shell |
+| `/uom` | Units of Measure / Unidades de Medida | Administration; desktop and More | company shell; canonical navigation entry |
+| `/settings/uoms` | Units of Measure / Unidades de Medida | not directly duplicated | existing alias activates Units of Measure, not Settings |
+| `/settings` | Settings / Definições | Administration; desktop and More | company shell; exact active item |
+| `/profile` | Profile / Perfil | personal utility | company shell; not a primary route |
+| `/search` | Search / Pesquisa | header utility | company shell; existing `q` query remains unchanged |
+
+## 23. UX-1 Implemented Information Architecture
+
+The consolidated navigation model contains 29 definitions in eight ordered groups. Platform is conditional, and Users plus Roles retain their existing MANAGER+ visibility. Ordinary OPERATOR and VIEWER users therefore see 26 company destinations; MANAGER, ADMIN, and OWNER users see 28; an independently authorized platform admin sees the separated Platform destination in addition to the routes available through their company role.
+
+1. Overview: Dashboard, Point of Sale.
+2. Sales: Sales Orders, Sales Invoices, Customers.
+3. Purchasing: Purchase Orders, Vendor Bills, Suppliers, Landed Cost.
+4. Inventory: Items, Stock Levels, Stock Movements, Warehouses, Opening Data.
+5. Production: Recipes & Assemblies, Production Runs, Growth Batches.
+6. Finance: Settlements, Cash, Banks, Transactions, Reports, Mozambique Compliance.
+7. Administration: Users, Roles, Currency, Units of Measure, Settings.
+8. Platform: Platform Control, visible only after existing platform-admin authority resolves.
+
+The mobile dock remains capped at five controls: Dashboard, POS, Orders, Stock, and More. Orders is an aggregate mobile entry into the existing shared workspace; query-aware Sales and Purchase links remain distinct in More. Stock opens Items; Stock Levels and Movements remain explicit in More. More opens the existing drawer, now using the desktop information architecture, current-company context, localized user context, profile/language/sign-out utilities, internal scrolling, body-scroll lock, Escape close, focus containment, and trigger focus restoration.
+
+Active route state now combines `aria-current`, font weight, filled selection, and a visible shape indicator. Query matching distinguishes Sales from Purchase; bank, invoice, and bill detail routes activate their parent; `/settings/uoms` activates Units of Measure; Users does not remain active on Roles; and Platform Control never activates company Settings. The actual singular `tab=purchase` contract is preserved.
+
+Lucide remains the only navigation/control icon system. Navigation icons inherit `currentColor`; duplicated meanings were replaced with workflow-specific icons, and Platform Control uses a system-administration icon distinct from fiscal compliance and company Settings. Phosphor remains unchanged for decorative and premium illustration.
+
+## 24. UX-1 Validation And Deferrals
+
+Local implementation review confirmed one React root, unchanged route declarations and guards, no new dependency, no package-lock change, and no database or business-logic change. The credential-free production build and the query/detail active-state matrix passed. Full static gates, local `288/288`, responsive EN/PT light/dark browser QA, standard Validation, isolated finance CI, Vercel alignment, and production read-only smoke remain release gates to be recorded after execution.
+
+UXF-05 is addressed by workflow grouping and daily-route priority. The navigation portion of UXF-12 is addressed by the Lucide mapping. UXF-13 is addressed for shell labels and route metadata; the complete page-body terminology audit remains UX-9. UXF-14 is improved by making Sales, Purchasing, Inventory, Finance, Production, and Administration legible in the shell, while a guided customer/investor demonstration remains UX-10. UX-2 through UX-10 retain their documented order and scope.
