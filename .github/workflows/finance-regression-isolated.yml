@@ -67,12 +67,12 @@ jobs:
           jq -e '.API_URL == "http://127.0.0.1:54321"' <<<"$status_json" >/dev/null
           jq -e '.DB_URL | startswith("postgresql://postgres:postgres@127.0.0.1:54322/")' <<<"$status_json" >/dev/null
           migration_json="$(supabase db query --local --output-format json "select count(*) as migration_count, max(version) as latest_version from supabase_migrations.schema_migrations;")"
-          jq -e '(if type == "array" then .[0] else .rows[0] end) | .migration_count == 44 and .latest_version == "20260712230118"' <<<"$migration_json" >/dev/null
+          jq -e '(if type == "array" then .[0] else .rows[0] end) | .migration_count == 45 and .latest_version == "20260716130533"' <<<"$migration_json" >/dev/null
           edge_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$SUPABASE_URL/functions/v1/mailer-company-access")"
           test "$edge_status" = '401' || test "$edge_status" = '405' || test "$edge_status" = '200'
           echo 'Target: ephemeral local Supabase (127.0.0.1)'
           echo 'Services: database, Auth, PostgREST, Storage, Realtime, Mailpit, and Edge Runtime healthy'
-          echo 'Migrations: 44 through 20260712230118'
+          echo 'Migrations: 45 through 20260716130533'
       - name: Run complete finance regression
         shell: bash
         run: |
