@@ -108,3 +108,11 @@ SO/PO line entry uses stacked cards on narrow screens and a contained horizontal
 The live palette alignment was checked at `1440`, `1200`, `820`, and `390` in light and dark mode. Public checks covered landing, login, signup, password recovery, and password update. Authenticated checks covered Dashboard, Items, Sales Orders, Purchase Orders, Sales Invoice and Vendor Bill registers/details, Settlements, Cash, Banks and Bank Detail, Settings, Platform Control, Production Runs, and Growth Batches. Representative Portuguese checks covered Dashboard, Items, Settlements, and Growth Batches.
 
 No page-level horizontal overflow, escaped action, fallback, raw package backend code, console error, or CSP error was found. Existing contained horizontal scrollers remained confined to their intended data surfaces. Touch targets and Android-first layouts were unchanged, StockWise remained the visible product identity, and WiseCore attribution remained owner/promoter context.
+
+## UI/UX Phase 1 surface validation (2026-07-16)
+
+The production neutral-surface release extended the palette checkpoint with a shared loading and state system. Authenticated production QA covered Dashboard, Items, Stock Levels, Movements, Orders, Sales Invoices, Vendor Bills, Settlements, Cash, Banks, Settings, Platform Control, Production Runs, and Growth Batches at `1440`, `1200`, `820`, and `390` in both themes. Representative Portuguese checks covered nine of those routes.
+
+Document-level horizontal overflow remained zero. The desktop navigation layer is intentionally off-canvas at phone width on some register routes, but it did not widen the document or displace the mobile content. The release preserved mobile cards, contained table scrolling, touch-target dimensions, safe-area behavior, and existing action reachability. No production data mutation was used for this visual validation.
+
+Future mobile work is sequenced in `docs/ui-ux/PRODUCT_UX_AUDIT_2026-07.md`; this release did not restructure navigation, forms, or domain workflows.

@@ -1,6 +1,6 @@
 # StockWise Icon System
 
-Checked: 2026-06-04
+Checked: 2026-07-16
 
 ## Current Problem
 
@@ -81,3 +81,7 @@ Lucide remains approved for core shadcn UI controls and navigation where recogni
 ## Bundle Guardrail
 
 Keep the Phosphor package as a single React dependency and do not add another icon package for operational app icons without removing or clearly scoping the old one. Avoid importing whole collections. Any future icon pass should compare production bundle output before and after if many icons are added.
+
+## UX Phase 1 Audit Note
+
+The July 2026 neutral-surface release did not add, remove, or replace an icon package. Phosphor remains the approved decorative/premium accent system and Lucide remains the functional navigation/control system. Both inherit semantic color through `currentColor`; generic blue or cyan icon defaults are not approved. A navigation recognisability and consistency review is deferred to UX-1/UX-9 in `docs/ui-ux/PRODUCT_UX_AUDIT_2026-07.md`.

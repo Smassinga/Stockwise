@@ -206,6 +206,20 @@ The onboarding invitation regression that previously blocked the full finance re
 
 Phase 4 UI work did not change the invitation RPCs, role assignment rules, settings persistence RPC, finance posting, POS posting, stock posting, settlements, invoice issuance, Supabase schema, or migrations.
 
+## UX Phase 1 Production Checkpoint (2026-07-16)
+
+The neutral surface and shared state system is live in production from implementation commit `53a36065f39cea971abb9b48f7c7b72a7ab03584` and Vercel deployment `dpl_5PdnDGS1BRs5MfybMENNenjZyj8K`.
+
+- The final maintained source scan contains zero `blue-*`, `sky-*`, `cyan-*`, `slate-*`, navy HSL, or navy RGB/shadow occurrences.
+- Two direct `#014558` values remain in self-contained Sales Order and Purchase Order print HTML. They are approved WiseCore dark-teal presentation exceptions because generated print markup cannot consume application CSS variables.
+- Production visual QA covered 14 authenticated routes at `1440`, `1200`, `820`, and `390` in light and dark mode, with representative Portuguese checks.
+- Page-level overflow, raw backend-code, fallback, console-error, and CSP-error counts were zero on the audited production routes.
+- Validation run `29471866754` and isolated finance run `29471901431` passed; the isolated run completed `288/288` and cleaned up its ephemeral stack.
+- StockWise remains the product identity. WiseCore Technologies, Lda. remains the owner and promoter.
+- No schema, business logic, package dependency, workflow trigger, or Sentry configuration changed.
+
+The evidence-backed product findings and UX-1 through UX-10 roadmap are maintained in [Product UX Audit - July 2026](ui-ux/PRODUCT_UX_AUDIT_2026-07.md).
+
 ## Production Runs Workspace Direction
 
 The first Production Runs workspace is live at `/production-runs`. It uses the same premium register/detail pattern as other operational workspaces:

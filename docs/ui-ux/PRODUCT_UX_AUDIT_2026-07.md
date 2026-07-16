@@ -1,0 +1,228 @@
+# StockWise Product UX Audit - July 2026
+
+Date: 2026-07-16
+
+Release: `53a36065f39cea971abb9b48f7c7b72a7ab03584`
+
+Scope: UX Phase 1 dark-surface reset, shared state foundation, and whole-product audit
+
+## 1. Executive Summary
+
+StockWise has a credible operational product foundation: broad inventory and finance coverage, backend-authoritative posting, responsive register patterns, guarded reversals, English and Portuguese localization, and a consistent StockWise product identity. The main visual defect was the dark theme's navy and blue-gray environmental cast. Shared loading, empty, error, blocked, and success states also lacked a sufficiently explicit semantic contract.
+
+UX Phase 1 corrected those system-level defects without changing data, permissions, routes, calculations, or workflow behavior. The live application now uses a neutral black and charcoal dark hierarchy, retains the WiseCore teal family for interaction and focus, and preserves red, amber, and positive green for their established meanings. The root loading fallback and shared premium state primitives now provide accessible, distinguishable states.
+
+The broader audit found no P0 defect. Remaining work is primarily information architecture, workflow compression, localization completeness, and consistency across domain-specific detail pages. Those findings are sequenced as UX-1 through UX-10 rather than being mixed into this release.
+
+## 2. Current Product Strengths
+
+- StockWise remains a coherent product brand while WiseCore Technologies, Lda. remains the owner and promoter.
+- Operational routes cover inventory, purchasing, sales, finance, production, Growth Batches, compliance, setup, and platform administration.
+- Backend-authoritative posting and event-specific reversals provide stronger trust than presentation-only demos.
+- Premium registers already support desktop comparison tables and Android-first review cards.
+- Light and dark themes, English and Portuguese, and responsive layouts are maintained in one application architecture.
+- Finance charts explain their source and distinguish revenue, COGS, gross margin, and inventory.
+- Empty states generally point to a next action instead of presenting decorative placeholders.
+- Production and Growth Batch flows expose immutable history and reversal evidence.
+
+## 3. Dark-Theme Defect Summary
+
+The initial maintained source scan covered 214 TypeScript, TSX, and CSS files. It found 54 `slate-*` utility occurrences, 13 navy HSL literals, 48 navy RGB/shadow literals, and 55 dark blue/navy-like hex occurrences. Direct `blue-*`, `sky-*`, and `cyan-*` utility counts were already zero at the release baseline, but blue-gray and navy were still embedded in shared surfaces, overlays, shadows, landing treatments, and document presentation.
+
+The final maintained source scan reports zero `blue-*`, `sky-*`, `cyan-*`, `slate-*`, navy HSL, and navy RGB/shadow occurrences. Two dark-teal hex occurrences remain in self-contained Sales Order and Purchase Order print HTML. Both are the approved WiseCore `#014558` dark teal, not generic blue, and cannot consume runtime CSS variables.
+
+## 4. Surface-Role Map
+
+| Role | Light mode | Dark mode | Semantic boundary |
+| --- | --- | --- | --- |
+| App canvas | near-white neutral | black-neutral | environmental surface only |
+| Sidebar | white/neutral | deepest neutral black | navigation context |
+| Routine card | white | charcoal | grouped operational content |
+| Elevated surface | white | lighter charcoal | dialogs, sheets, menus, popovers |
+| Muted region | light neutral | restrained neutral gray | passive groups and disabled/read-only context |
+| Primary action | WiseCore dark teal | moderated bright teal | action, selection, focus, active tabs |
+| Informational | charcoal/neutral | light neutral | factual state, not success |
+| Success | positive green | positive green | completed or healthy state only |
+| Warning | amber | amber | review or blocked prerequisite |
+| Error/destructive | red | red | failure, negative, destructive action |
+
+## 5. Information Architecture Map
+
+The authenticated shell currently exposes four groups:
+
+- Operations: Dashboard, Point of Sale, Items, Recipes & Assemblies, Production Runs, Growth Batches, Stock movements, Stock Levels, Warehouses.
+- Commercial & finance: Orders, Sales Invoices, Mozambique Compliance, Vendor Bills, Settlements, Transactions, Cash, Banks, Landed Cost, Reports.
+- Setup: Customers, Suppliers, Users, Currency, UOM, Imports, Settings.
+- Platform: Platform Control.
+
+The grouping is understandable, but the desktop navigation is long and the distinction between operational registers, setup, and finance resolution can require domain knowledge. UX-1 should refine labels, route prioritization, and mobile reachability without changing permissions or route contracts.
+
+## 6. Route Inventory
+
+| Area | Routes audited or inventoried | Primary job |
+| --- | --- | --- |
+| Public/auth | `/`, `/login`, `/auth/callback`, `/update-password`, `/accept-invite` | marketing, authentication, recovery, invitation |
+| Company entry | `/onboarding`, `/company-access`, `/activation` | company setup and access state |
+| Operations | `/dashboard`, `/operator`, `/items`, `/movements`, `/stock-levels`, `/warehouses` | daily control and inventory evidence |
+| Commercial | `/orders`, `/sales-invoices`, `/sales-invoices/:id`, `/vendor-bills`, `/vendor-bills/:id` | order and document lifecycle |
+| Finance | `/settlements`, `/transactions`, `/cash`, `/banks`, `/banks/:bankId`, `/landed-cost`, `/reports` | exposure, ledger, and reconciliation |
+| Production | `/bom`, `/production-runs`, `/growth-batches` | recipes, controlled production, biological/agricultural lifecycle |
+| Setup/admin | `/customers`, `/suppliers`, `/users`, `/users/roles`, `/currency`, `/uom`, `/settings/uoms`, `/setup/import`, `/settings` | master data and company configuration |
+| Compliance/platform | `/compliance/mz`, `/platform-control` | fiscal configuration and platform administration |
+| Utility | `/profile`, `/search` | account and cross-domain lookup |
+
+## 7. Workflow Journey Findings
+
+- Dashboard: strong operating-answer framing, but the full page remains vertically dense. UX-2 should sharpen the first viewport and progressively disclose deeper analytics.
+- Onboarding/setup: invite acceptance, company creation, compliance, opening data, and user setup are individually clear but do not yet form one persistent setup journey. UX-3 should connect existing routes without adding backend state.
+- Items/stock: premium register patterns are mature. UX-4 should standardize detail actions, loading states, and inventory evidence across Items, Stock Levels, and Movements.
+- Sales/purchasing: governed document state is strong, but creation, issuance/booking, settlement anchor transitions, and correction paths require careful explanation. UX-5 and UX-6 should simplify action hierarchy without changing finance authority.
+- Cash/bank/settlements: the model is credible and auditable, but operators must understand which SO, PO, SI, or VB is the active anchor. UX-6 should make anchor and outstanding state more immediate.
+- Recipes/production/Growth Batches: operational depth is a product strength. Dense detail tabs, long histories, and mixed terminology require focused UX-7 work.
+- Settings/platform/compliance: real backed functions are present, but administrative density and role distinctions need UX-8 consistency.
+
+## 8. Shared Component Findings
+
+UX Phase 1 corrected shared components before page-specific styling:
+
+- `AppLoadingState` provides an accessible root loading skeleton.
+- `PremiumSkeleton` announces loading politely and respects reduced motion.
+- `PremiumStatePanel` differentiates empty, error, blocked, success, and neutral states.
+- `PremiumEmptyState` retains existing call-site compatibility while using the shared semantics.
+- Dialog, alert-dialog, sheet, popover, input, textarea, select, button, and skeleton primitives now use neutral surfaces and visible focus treatment.
+- `AppLayout`, theme/locale controls, brand lockup, notifications, finance history cards, and platform analytics no longer leak navy/slate defaults.
+
+The remaining component concern is consistency of route-specific loading and error branches that still render literal text rather than the shared state layer.
+
+## 9. Loading, Empty, And Error State Findings
+
+- Root route loading changed from generic text to `AppLoadingState`.
+- Loading skeletons now use `role=status`, polite live regions, stable dimensions, and motion-safe animation.
+- Empty and error are no longer the same shared visual state.
+- Blocked uses amber warning semantics; success remains green; neutral facts remain neutral.
+- Six literal loading references remain in maintained route code. They are not a release blocker, but UX-9 should migrate meaningful route-level branches to the shared state contract.
+- Production inspection found no fallback page or raw backend-code leakage on the audited routes.
+
+## 10. Accessibility Findings
+
+- Verified contrast: dark primary `#00C98F` on `#014558` is 4.89:1; light primary `#014558` on white is 10.53:1.
+- Focus ring contrast is 9.46:1 in dark mode and 3.48:1 in light mode against the surrounding surface.
+- Dark body text contrast is 18.16:1; light body text contrast is 16.25:1.
+- Focus rings retain an offset and remain visible on neutral canvases.
+- Disabled and read-only controls remain visually distinct from active controls.
+- Status meaning is paired with copy, labels, icons, or position rather than color alone.
+- Chart series use labels and markers in addition to color.
+- Remaining accessibility work belongs in UX-9: systematic keyboard traversal, screen-reader flow, reduced-motion coverage, and localized accessible-name completeness.
+
+## 11. Responsive Findings
+
+Production checks covered 14 authenticated routes at `1440`, `1200`, `820`, and `390` in light and dark mode. Public/auth checks were also completed locally at the same widths. Document-level horizontal overflow was zero throughout.
+
+Items, Stock Levels, and Movements expose intentionally off-canvas desktop navigation controls at phone width, but the document width remains stable and the mobile content does not escape the viewport. Dense registers continue to use contained table scrolling or mobile card alternatives. No clipped dialog, escaped action row, fallback, or unreadable dark surface was observed in the inspected states.
+
+## 12. Localization Findings
+
+English and Portuguese theme, navigation, public/auth, and representative authenticated routes were checked. The Portuguese Dashboard renders `Painel`, localized navigation, and dark/light controls correctly. Some domain labels such as `Production Runs` and `Growth Batches`, and some route metadata titles, remain English in Portuguese mode. This is established localization debt rather than a regression from UX Phase 1 and is assigned to UX-7/UX-9.
+
+No new missing translation key or raw package backend code was observed.
+
+## 13. Investor And Demo Credibility Findings
+
+StockWise can demonstrate real operational breadth, governed finance and stock evidence, production lifecycle control, and responsive enterprise workflows. The neutral dark system materially improves perceived discipline and removes the previous template-like navy cast.
+
+The main demo risk is narrative density: a first-time viewer can see many capable routes before understanding the primary operating loop. UX-10 should prepare a truthful guided demonstration using existing data and workflows, without fabricated customers, metrics, or product claims.
+
+## 14. DevTools Findings
+
+- Production console errors: 0.
+- Production console warnings attributable to this package: 0.
+- CSP errors: 0.
+- React fallback activations: 0.
+- Raw backend-code matches on audited visible route content: 0.
+- Failed required brand asset observed during final checks: 0.
+- No deliberate Sentry event was generated. Normal page loads produced no browser error attributable to the release; direct Sentry issue-count verification was outside the available browser evidence.
+
+## 15. P0/P1/P2/P3 Finding Register
+
+| ID | Severity | Route/component | User impact | Evidence | Status | Package |
+| --- | --- | --- | --- | --- | --- | --- |
+| UXF-01 | P1 | global tokens, shell, landing, overlays | dark mode looked navy/template-like and weakened WiseCore identity | 54 slate, 13 navy HSL, 48 navy RGB, 55 navy-like hex baseline hits | corrected | UX-0 |
+| UXF-02 | P1 | `App.tsx`, loading/state primitives | generic loading and ambiguous state feedback reduced trust | root text fallback and shared state review | corrected | UX-0 |
+| UXF-03 | P2 | dialog, sheet, popover, forms | elevated surfaces and focus could inherit environmental tint | primitive diff and contrast checks | corrected | UX-0 |
+| UXF-04 | P2 | Dashboard charts | cyan inventory and brand-blue revenue semantics competed with finance meaning | token and chart consumer review | corrected | UX-0 |
+| UXF-05 | P2 | authenticated shell/navigation | long route list increases scanning and discovery cost | four groups and 30+ navigation destinations | deferred | UX-1 |
+| UXF-06 | P2 | `/dashboard` | long vertical cockpit dilutes first-viewport operating answer | production desktop/mobile inspection | deferred | UX-2 |
+| UXF-07 | P2 | `/settlements`, `/cash`, `/banks`, document detail | finance-anchor and correction logic is accurate but cognitively demanding | route and maintained copy review | deferred | UX-6 |
+| UXF-08 | P2 | `/production-runs`, `/growth-batches` | dense histories/tabs and mixed terminology slow scanning | production PT navigation and route review | deferred | UX-7/UX-9 |
+| UXF-09 | P2 | `/onboarding`, `/settings`, `/setup/import`, `/users` | setup steps are clear individually but not one continuous journey | route and setup-map review | deferred | UX-3 |
+| UXF-10 | P3 | Items, Stock Levels, Movements | shared register quality is strong, but detail/action consistency can improve | desktop table and mobile-card review | deferred | UX-4 |
+| UXF-11 | P3 | route-level loading branches | six literal loading references bypass the full shared state treatment | final source search | deferred | UX-9 |
+| UXF-12 | P3 | icon system/navigation | Lucide/Phosphor split is intentional but needs a future recognisability audit | `docs/icon-system.md` and imports | deferred | UX-1/UX-9 |
+| UXF-13 | P3 | route metadata and PT labels | some domain names/page titles remain English in Portuguese mode | production PT sample | deferred | UX-9 |
+| UXF-14 | P3 | cross-product demo journey | breadth is credible but first-time narrative is not curated | route inventory and landing/app comparison | deferred | UX-10 |
+
+Finding totals: P0 `0`, P1 `2`, P2 `7`, P3 `5`.
+
+## 16. Findings Corrected In This Package
+
+- Replaced navy/blue-gray/slate environmental styling with neutral surface tokens.
+- Made light and dark surface roles explicit for canvas, sidebar, cards, popovers, dialogs, sheets, and muted groups.
+- Reserved WiseCore teal for action, focus, selection, and approved brand emphasis.
+- Replaced blue/navy shadow literals with neutral black shadows.
+- Corrected revenue, COGS, gross-margin, and inventory chart semantics.
+- Added an accessible shared root loading state.
+- Unified loading, empty, error, blocked, success, and neutral shared states.
+- Improved shared form focus, disabled, and read-only presentation.
+- Removed the competing blue landing glow and retained a controlled teal/charcoal treatment.
+- Preserved StockWise product identity and WiseCore owner attribution.
+
+## 17. Findings Intentionally Deferred
+
+- Navigation regrouping, route prioritization, and mobile destination hierarchy.
+- Dashboard content reduction or data-model changes.
+- Persistent onboarding/setup progress state.
+- Finance workflow restructuring or new reconciliation behavior.
+- Production/Growth Batch information architecture changes.
+- Complete Portuguese terminology and route-title audit.
+- Systematic keyboard/screen-reader audit across all dialogs and dense workflows.
+- Investor/customer demonstration choreography.
+
+## 18. Recommended Implementation Packages
+
+| Package | Scope and routes | Shared components | Behavior to preserve | Dependencies | Validation | Risk | Migration | Finance regression | Production mutation smoke |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| UX-0 Dark theme and shared surface system | global shell, public/auth, all routes | tokens, overlays, forms, loading/state primitives | all current workflow and state semantics | none | static, build, local 288/288, production visual matrix | medium visual | no | required | no |
+| UX-1 App shell and navigation | authenticated shell and all route entry points | `AppLayout`, mobile drawer, navigation groups, search | permissions, routes, company context, sign-out | UX-0 | keyboard/mobile route reachability, EN/PT, visual matrix | medium | no | targeted/full if code paths change | no |
+| UX-2 Dashboard operating cockpit | `/dashboard` | register header, metric cards, charts, quick actions | current queries, date windows, revenue/COGS wording | UX-0/UX-1 | data reconciliation plus responsive visual QA | medium | not expected | required | read-only only |
+| UX-3 Onboarding and setup journey | `/onboarding`, `/settings`, `/setup/import`, `/users`, `/compliance/mz` | progress/navigation state, setup cards, forms | invitations, roles, settings RPCs, access control | UX-1 | local invitation/setup regression, EN/PT, mobile | high | only if separately approved | required | controlled only if backend state is added |
+| UX-4 Items, Stock Levels, and Movements | `/items`, `/stock-levels`, `/movements`, `/warehouses` | premium registers, filters, mobile cards, state panels | stock authority, WAC, posting, item edit limits | UX-0/UX-1 | local inventory regression and responsive register QA | medium | no expected | required | no mutation needed for visual release |
+| UX-5 Sales and purchasing workflows | `/orders`, `/sales-invoices`, `/vendor-bills` | form sections, action hierarchy, timeline cards | tax, issuance/booking, immutability, finance anchors | UX-1/UX-4 | full finance regression, legal-output comparison, EN/PT | high | no expected | required | controlled only after explicit authorization |
+| UX-6 Invoice, bill, settlement, cash, and bank workflows | document detail, `/settlements`, `/cash`, `/banks` | finance chain/timeline, state panels, dialogs | governed RPCs, idempotency, outstanding, anchor transitions | UX-5 | full finance regression, replay/local authority tests | high | no expected | required | controlled settlement smoke only if authorized |
+| UX-7 Recipes, Production Runs, and Growth Batches | `/bom`, `/production-runs`, `/growth-batches` | detail tabs, timelines, mobile action groups | posting, frozen cost, event-specific reversal, lifecycle rules | UX-1/UX-4 | full regression, EN/PT, local fixtures, responsive QA | high | no expected for presentation | required | no unless separately authorized |
+| UX-8 Settings, users, Platform Control, and compliance | `/settings`, `/users`, `/platform-control`, `/compliance/mz` | setup map, role/status panels, admin registers | membership authority, subscription/access control, fiscal rules | UX-1/UX-3 | role matrix, EN/PT, responsive/admin QA | high | no expected | required | no |
+| UX-9 Accessibility, localization, motion, and final consistency | all maintained routes | focus, live regions, state panels, locale metadata | all behavior; reduced-motion and wording boundaries | UX-1 through UX-8 | keyboard, screen reader, contrast, EN/PT, motion, visual matrix | medium | no | required for shared runtime changes | no |
+| UX-10 Investor and customer demonstration closeout | landing plus approved read-only product journey | guided copy, route choreography, evidence checklist | truthful data and product claims; no fabricated records | UX-1 through UX-9 | production read-only walkthrough, console/CSP/Sentry review | low/medium | no | not for docs-only work | no business mutation |
+
+## 19. Validation Evidence
+
+- Local migrations: `44`, latest `20260712230118_fix_canonical_sales_order_finance_state.sql`.
+- Static gates: migration check, TypeScript/React lint, CSS variable check, CSS class check, production build, and `git diff --check` passed.
+- Local finance regression: `288/288` passed against positively verified `http://127.0.0.1:54321`; duration `111.265s`.
+- Implementation commit: `53a36065f39cea971abb9b48f7c7b72a7ab03584`.
+- Validation: run `29471866754`, job `87536464288`, conclusion `success`.
+- Isolated finance regression: run `29471901431`, job `87536564350`, `288/288`, ephemeral loopback stack, cleanup passed, no success artifact.
+- Vercel: deployment `dpl_5PdnDGS1BRs5MfybMENNenjZyj8K`, Production/Ready, serving the implementation commit on `stockwiseapp.com` and `www.stockwiseapp.com`.
+- Production authenticated routes: `/dashboard`, `/items`, `/stock-levels`, `/movements`, `/orders`, `/sales-invoices`, `/vendor-bills`, `/settlements`, `/cash`, `/banks`, `/settings`, `/platform-control`, `/production-runs`, `/growth-batches`.
+- Production widths: `1440`, `1200`, `820`, `390`; themes: light and dark.
+- Portuguese production sampling: Dashboard plus Items, Settlements, Cash, Banks, Settings, Platform Control, Production Runs, and Growth Batches; local public/auth EN/PT checks covered landing, login, sign-up, password recovery, and password update.
+- Production document overflow, fallback, raw backend-code, console-error, and CSP-error counts: `0`.
+- No schema, hosted database, business-data, or Sentry configuration mutation was required.
+
+## 20. Remaining Risks
+
+- Not every destructive, blocked, reversed, immutable, and error state was deliberately recreated in production; those remain covered by maintained local regression and prior controlled rollout evidence.
+- Detail routes without a safe preselected record were audited through source/shared components and register entry points rather than by mutating production data.
+- Sentry issue-count access was not used; the release generated no deliberate event, and no browser console error attributable to normal page loading was observed.
+- Portuguese domain terminology and route metadata remain partially mixed.
+- The sidebar breadth and dashboard density still require focused design work rather than cosmetic changes.
+- The two remaining dark-teal literals are intentional print-document exceptions and must be reviewed if print rendering is redesigned.
