@@ -254,8 +254,8 @@ export function AppLayout({ user, children }: Props) {
         className={cn(
           'flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200',
           active
-            ? 'bg-primary text-primary-foreground shadow-[0_16px_30px_-22px_hsl(var(--primary)/0.85)]'
-            : 'text-foreground/74 hover:bg-accent/35 hover:text-foreground'
+            ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_16px_30px_-22px_hsl(var(--sidebar-primary)/0.72)]'
+            : 'text-sidebar-foreground/74 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
         )}
       >
         <Icon className="h-5 w-5 flex-shrink-0" />
@@ -266,8 +266,8 @@ export function AppLayout({ user, children }: Props) {
 
   const sidebar = useMemo(
     () => (
-      <aside className="hidden md:flex md:w-[17.5rem] md:flex-col md:border-r md:border-border/80 md:bg-background/75 md:backdrop-blur-xl xl:w-[18.5rem] 2xl:w-[19rem]">
-        <div className="flex h-16 items-center gap-2 border-b border-border/70 px-5">
+      <aside className="hidden text-sidebar-foreground md:flex md:w-[17.5rem] md:flex-col md:border-r md:border-sidebar-border md:bg-sidebar xl:w-[18.5rem] 2xl:w-[19rem]">
+        <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
           <BrandLockup compact subtitle="" />
           <div className="ml-2 shrink-0 overflow-visible">
             <ThemeToggle />
@@ -277,7 +277,7 @@ export function AppLayout({ user, children }: Props) {
         <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5 xl:px-5">
           {navSections.map((section) => (
             <div key={section.label} className="space-y-1.5">
-              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/55">
                 {section.label}
               </div>
               <div className="space-y-1">
@@ -289,12 +289,12 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
 
-        <div className="space-y-3 border-t border-border/70 p-4">
+        <div className="space-y-3 border-t border-sidebar-border p-4">
           <CompanySwitcher className="mb-3" />
-          <div className="rounded-[1.35rem] border border-border/70 bg-card/90 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
-            <div className="truncate text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{displayCompany}</div>
+          <div className="rounded-[1.35rem] border border-sidebar-border bg-sidebar-accent/55 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(0_0%_0%/0.6)]">
+            <div className="truncate text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/55">{displayCompany}</div>
             <div className="mt-1 truncate text-sm font-medium">{displayName}</div>
-            <div className="text-xs text-muted-foreground">{displayRole}</div>
+            <div className="text-xs text-sidebar-foreground/60">{displayRole}</div>
             {isPlatformAdmin ? (
               <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
                 {tt('platform.adminBadge', 'Platform admin')}
@@ -336,13 +336,13 @@ export function AppLayout({ user, children }: Props) {
   )
 
   return (
-    <div className="flex min-h-[100dvh] overflow-x-clip bg-muted/[0.08]">
+    <div className="flex min-h-[100dvh] overflow-x-clip bg-app-background">
       {sidebar}
 
       {/* Mobile overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-slate-950/36 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-black/54 backdrop-blur-sm md:hidden"
           onClick={() => setOpen(false)}
         />
       )}
@@ -350,7 +350,7 @@ export function AppLayout({ user, children }: Props) {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex h-[100dvh] max-h-[100dvh] w-[88vw] max-w-[24rem] flex-col overflow-hidden border-r border-border/80 bg-background/97 pb-[var(--app-safe-bottom)] pt-[var(--app-safe-top)] shadow-[0_24px_60px_-36px_hsl(var(--foreground)/0.4)] backdrop-blur-xl transition-transform duration-300 ease-in-out md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex h-[100dvh] max-h-[100dvh] w-[88vw] max-w-[24rem] flex-col overflow-hidden border-r border-sidebar-border bg-sidebar pb-[var(--app-safe-bottom)] pt-[var(--app-safe-top)] text-sidebar-foreground shadow-[0_24px_60px_-30px_hsl(0_0%_0%/0.72)] transition-transform duration-300 ease-in-out md:hidden',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -378,7 +378,7 @@ export function AppLayout({ user, children }: Props) {
           <nav className="space-y-6 py-2">
             {navSections.map((section) => (
               <div key={section.label} className="space-y-1.5">
-                <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/55">
                   {section.label}
                 </div>
                 <div className="space-y-1">
@@ -389,11 +389,11 @@ export function AppLayout({ user, children }: Props) {
               </div>
             ))}
           </nav>
-          <div className="mt-4 border-t border-border/70 pt-4">
-            <div className="rounded-[1.35rem] border border-border/70 bg-card/92 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.32)]">
-              <div className="truncate text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{displayCompany}</div>
+          <div className="mt-4 border-t border-sidebar-border pt-4">
+            <div className="rounded-[1.35rem] border border-sidebar-border bg-sidebar-accent/55 px-3.5 py-3.5 shadow-[0_14px_32px_-28px_hsl(0_0%_0%/0.6)]">
+              <div className="truncate text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/55">{displayCompany}</div>
               <div className="mt-1 truncate text-sm font-medium">{displayName}</div>
-              <div className="text-xs text-muted-foreground">{displayRole}</div>
+              <div className="text-xs text-sidebar-foreground/60">{displayRole}</div>
               {isPlatformAdmin ? (
                 <div className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/8 px-2 py-1 text-[11px] font-medium text-primary">
                   {tt('platform.adminBadge', 'Platform admin')}

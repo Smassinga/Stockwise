@@ -54,8 +54,7 @@ export default function ThemeToggle({ compact = false }: Props) {
     <button
       type="button"
       onClick={() => apply(!dark)}
-      className="inline-flex min-h-10 min-w-0 shrink-0 items-center gap-2 overflow-visible rounded-xl border px-3 py-2 text-sm
-                 border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800"
+      className="inline-flex min-h-10 min-w-0 shrink-0 items-center gap-2 overflow-visible rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted/70"
       aria-label={t('theme.toggle')}
       title={t('theme.toggle')}
     >

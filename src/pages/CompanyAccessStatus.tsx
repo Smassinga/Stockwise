@@ -126,7 +126,7 @@ export default function CompanyAccessStatusPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <Card className="overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-56px_rgba(15,23,42,0.55)]">
+          <Card className="overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-56px_rgba(0,0,0,0.55)]">
             <CardHeader className="border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05]">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/85 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 <Icon className="h-3.5 w-3.5" />
@@ -183,7 +183,7 @@ export default function CompanyAccessStatusPage() {
           </Card>
 
           <div className="space-y-6">
-            <Card className="border-border/70 bg-card shadow-[0_24px_80px_-56px_rgba(15,23,42,0.48)]">
+            <Card className="border-border/70 bg-card shadow-[0_24px_80px_-56px_rgba(0,0,0,0.48)]">
               <CardHeader>
                 <CardTitle>{tt('access.nextStepTitle', 'Next step')}</CardTitle>
                 <CardDescription>

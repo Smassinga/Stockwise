@@ -435,10 +435,10 @@ export function NotificationCenter() {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-[99998] bg-slate-950/24 backdrop-blur-[2px] dark:bg-slate-950/56 md:bg-slate-950/16" aria-hidden />
+          <div className="fixed inset-0 z-[99998] bg-black/24 backdrop-blur-[2px] dark:bg-black/60 md:bg-black/16" aria-hidden />
           <div
             data-role="notif-panel"
-            className="fixed inset-x-[max(0.75rem,var(--app-safe-left))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.6rem)] z-[99999] flex max-h-[calc(100dvh-var(--app-shell-mobile-header)-var(--app-shell-mobile-dock)-var(--app-safe-top)-var(--app-safe-bottom)-1.45rem)] flex-col overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white text-zinc-950 shadow-[0_34px_90px_-32px_rgba(15,23,42,0.55)] ring-1 ring-black/10 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:shadow-[0_34px_90px_-28px_rgba(0,0,0,0.85)] dark:ring-white/10 md:inset-x-auto md:right-6 md:top-20 md:w-[27.5rem] md:max-w-[calc(100vw-3rem)] md:max-h-[min(72vh,38rem)] xl:right-8"
+            className="fixed inset-x-[max(0.75rem,var(--app-safe-left))] top-[calc(var(--app-shell-mobile-header)+var(--app-safe-top)+0.6rem)] z-[99999] flex max-h-[calc(100dvh-var(--app-shell-mobile-header)-var(--app-shell-mobile-dock)-var(--app-safe-top)-var(--app-safe-bottom)-1.45rem)] flex-col overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white text-zinc-950 shadow-[0_34px_90px_-32px_rgba(0,0,0,0.55)] ring-1 ring-black/10 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:shadow-[0_34px_90px_-28px_rgba(0,0,0,0.85)] dark:ring-white/10 md:inset-x-auto md:right-6 md:top-20 md:w-[27.5rem] md:max-w-[calc(100vw-3rem)] md:max-h-[min(72vh,38rem)] xl:right-8"
             role="dialog"
             aria-label={t('notifications.title')}
           >
@@ -472,7 +472,7 @@ export function NotificationCenter() {
               {rows.map((n) => (
                 <div
                   key={n.id}
-                  className={`rounded-2xl border px-3.5 py-3.5 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.48)] transition-colors dark:shadow-[0_18px_40px_-30px_rgba(0,0,0,0.9)] ${
+                  className={`rounded-2xl border px-3.5 py-3.5 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.48)] transition-colors dark:shadow-[0_18px_40px_-30px_rgba(0,0,0,0.9)] ${
                     n.readAt
                       ? 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900'
                       : 'border-primary/35 bg-primary/8 hover:bg-primary/12 dark:border-primary/30 dark:bg-primary/12 dark:hover:bg-primary/16'

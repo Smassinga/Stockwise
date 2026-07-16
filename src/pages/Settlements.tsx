@@ -1080,7 +1080,7 @@ export default function SettlementsPage() {
       ) : null}
 
       <Tabs value={workspace} onValueChange={(value) => setWorkspace(value as 'settlement' | 'reconciliation')} className="space-y-6">
-        <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] p-4 shadow-[0_28px_80px_-54px_rgba(15,23,42,0.52)]">
+        <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] p-4 shadow-[0_28px_80px_-54px_rgba(0,0,0,0.52)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-2">
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
@@ -1140,7 +1140,7 @@ export default function SettlementsPage() {
         </Card>
       </div>
 
-      <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)]">
+      <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(0,0,0,0.45)]">
         <CardHeader className="pb-3">
           <CardTitle>{tt('settlements.filters', 'Filters')}</CardTitle>
           <CardDescription className="hidden sm:block">{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
@@ -1271,12 +1271,12 @@ export default function SettlementsPage() {
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 lg:grid-cols-5">
-                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                     <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</div>
                     <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.originalBase)}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.originalAmountHelp', 'Issued or posted starting amount before adjustments and settlements')}</div>
                   </div>
-                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                     <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
                     <div className="mt-2 space-y-1 text-sm">
                       <div className="flex items-center justify-between gap-3 text-rose-700 dark:text-rose-300">
@@ -1289,17 +1289,17 @@ export default function SettlementsPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                  <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.52)]">
                     <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.currentLegalAmount', 'Current legal')}</div>
                     <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.currentLegalBase)}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.currentLegalHelp', 'Original minus credits plus debits')}</div>
                   </div>
-                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                  <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                     <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</div>
                     <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.settledBase)}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.settledAmountHelp', 'Actual cash and bank settlement only')}</div>
                   </div>
-                  <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                  <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.52)]">
                     <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</div>
                     <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(filteredBridgeTotals.outstandingBase)}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.outstandingHelp', 'Current legal minus settled')}</div>
@@ -1307,7 +1307,7 @@ export default function SettlementsPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/95 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.48)]">
+              <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/95 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.48)]">
                 <table className="w-full min-w-[1480px] text-sm">
                   <thead className="bg-muted/30">
                     <tr className="border-b border-border/60 text-left">
@@ -1470,7 +1470,7 @@ export default function SettlementsPage() {
             </Card>
           </div>
 
-          <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)]">
+          <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(0,0,0,0.45)]">
             <CardHeader className="pb-3">
               <CardTitle>{tt('financeDocs.reconciliation.filters', 'Review filters')}</CardTitle>
               <CardDescription className="hidden sm:block">{tt('financeDocs.reconciliation.filtersHelp', 'Switch between AR and AP, then filter by counterparty, due position, review state, currency, or document date without leaving the active company.')}</CardDescription>
@@ -1599,7 +1599,7 @@ export default function SettlementsPage() {
                           key={`${row.anchor_id}:${row.exception_code}`}
                           type="button"
                           onClick={() => viewReconciliationAnchor(row.anchor_kind, row.anchor_id)}
-                          className="rounded-2xl border border-border/70 bg-background/95 p-4 text-left shadow-[0_18px_48px_-34px_rgba(15,23,42,0.45)] transition-transform duration-200 hover:-translate-y-0.5 hover:border-primary/30"
+                          className="rounded-2xl border border-border/70 bg-background/95 p-4 text-left shadow-[0_18px_48px_-34px_rgba(0,0,0,0.45)] transition-transform duration-200 hover:-translate-y-0.5 hover:border-primary/30"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="font-semibold tracking-tight">{row.anchor_reference}</div>
@@ -1640,27 +1640,27 @@ export default function SettlementsPage() {
                 <CardContent className="space-y-4">
                   <div className="rounded-2xl border border-border/70 bg-muted/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
                     <div className="grid gap-3 xl:grid-cols-6">
-                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</div>
                         <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.original)}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
                         <div className={`mt-2 font-mono text-lg font-semibold tabular-nums ${reviewTotals.netAdjustments < 0 ? 'text-rose-700 dark:text-rose-300' : reviewTotals.netAdjustments > 0 ? 'text-informational' : ''}`}>{money(reviewTotals.netAdjustments)}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                      <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.52)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</div>
                         <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.currentLegal)}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</div>
                         <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.settled)}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.52)]">
+                      <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.52)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</div>
                         <div className="mt-2 font-mono text-lg font-semibold tabular-nums">{money(reviewTotals.outstanding)}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)]">
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('financeDocs.reconciliation.needsReview', 'Needs review')}</div>
                         <div className="mt-2 text-lg font-semibold tracking-tight">{reviewTotals.reviewCount}</div>
                         <div className="mt-1 text-xs text-muted-foreground">{tt('financeDocs.reconciliation.overSettled', 'Over-settled total')}: <span className="font-mono tabular-nums">{money(reviewTotals.overSettled)}</span></div>
@@ -1673,7 +1673,7 @@ export default function SettlementsPage() {
                   ) : filteredReviewRows.length === 0 ? (
                     <p className="text-sm text-muted-foreground">{tt('financeDocs.reconciliation.registerEmpty', 'No reconciliation rows match the current review filters.')}</p>
                   ) : (
-                    <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/95 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.48)]">
+                    <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/95 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.48)]">
                       <table className="w-full min-w-[1640px] text-sm">
                         <thead className="bg-muted/30">
                           <tr className="border-b border-border/60 text-left">
@@ -1790,7 +1790,7 @@ export default function SettlementsPage() {
           <DialogBody className="pr-1">
             {activeRow && (
               <div className="space-y-4">
-                <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-5 shadow-[0_28px_80px_-52px_rgba(15,23,42,0.55)]">
+                <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-5 shadow-[0_28px_80px_-52px_rgba(0,0,0,0.55)]">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-3">
                       <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
@@ -1805,15 +1805,15 @@ export default function SettlementsPage() {
                       <div className="text-xs text-muted-foreground">{`${activeRow.sourceLabel} / ${activeRow.workflowLabel}`}</div>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.55)]">
+                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(0,0,0,0.55)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('table.date', 'Date')}</div>
                         <div className="mt-2 text-sm font-medium">{activeRow.documentDate || tt('common.dash', '-')}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.55)]">
+                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(0,0,0,0.55)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.dueDate', 'Due Date')}</div>
                         <div className={`mt-2 text-sm font-medium ${dueTone(activeRow)}`}>{activeRow.dueDate || tt('common.dash', '-')}</div>
                       </div>
-                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.55)]">
+                      <div className="rounded-2xl border border-border/60 bg-background/85 px-4 py-3 shadow-[0_14px_36px_-30px_rgba(0,0,0,0.55)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{tt('settlements.balanceStatus', 'Balance status')}</div>
                         <div className="mt-2">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(activeRow)}`}>
@@ -1831,35 +1831,35 @@ export default function SettlementsPage() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(0,0,0,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</CardTitle></CardHeader>
                     <CardContent>
                       <div className="font-mono tabular-nums">{money(activeRow.originalBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.originalAmountHelp', 'Issued or posted starting amount before adjustments and settlements')}</div>
                     </CardContent>
                   </Card>
-                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(0,0,0,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.creditedAmount', 'Credited')}</CardTitle></CardHeader>
                     <CardContent>
                       <div className="font-mono tabular-nums text-rose-700 dark:text-rose-300">{money(activeRow.creditedBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.creditedHelp', 'Reductions from issued or posted credit notes')}</div>
                     </CardContent>
                   </Card>
-                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(0,0,0,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</CardTitle></CardHeader>
                     <CardContent>
                       <div className="font-mono tabular-nums text-informational">{money(activeRow.debitedBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.debitedHelp', 'Increases from issued or posted debit notes')}</div>
                     </CardContent>
                   </Card>
-                  <Card className="border-border/70 bg-background/95 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.56)]">
+                  <Card className="border-border/70 bg-background/95 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.56)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.currentLegalAmount', 'Current legal')}</CardTitle></CardHeader>
                     <CardContent>
                       <div className="font-mono tabular-nums font-semibold">{money(activeRow.currentLegalBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.currentLegalHelp', 'Original minus credits plus debits')}</div>
                     </CardContent>
                   </Card>
-                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.5)]">
+                  <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(0,0,0,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle></CardHeader>
                     <CardContent>
                       <div className="font-mono tabular-nums">{money(activeRow.settledBase)}</div>
@@ -1869,7 +1869,7 @@ export default function SettlementsPage() {
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="border-border/70 bg-background/95 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.56)]">
+                  <Card className="border-border/70 bg-background/95 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.56)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle></CardHeader>
                     <CardContent>
                       <div className="font-mono tabular-nums font-semibold">{money(activeRow.outstandingBase)}</div>

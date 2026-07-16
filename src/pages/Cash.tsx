@@ -403,7 +403,7 @@ export default function CashPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-6 shadow-[0_30px_80px_-56px_rgba(15,23,42,0.48)]">
+      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-6 shadow-[0_30px_80px_-56px_rgba(0,0,0,0.48)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <div className="text-xs font-medium uppercase tracking-[0.22em] text-primary/75">

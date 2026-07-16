@@ -126,7 +126,7 @@ function ProductSurface({ tab, copy }: { tab: LandingProductTab; copy: SurfaceCo
 
         <div className="landing-product-surface__points">
           {tab.points.map((point) => (
-            <div key={point} className="flex gap-2 text-sm leading-6 text-slate-300">
+            <div key={point} className="flex gap-2 text-sm leading-6 text-zinc-300">
               <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-emerald-300" weight="duotone" aria-hidden="true" />
               <span>{point}</span>
             </div>
@@ -212,7 +212,7 @@ export function LandingProductTabs({ tabs, copy }: LandingProductTabsProps) {
           <div>
             <div className="landing-tabs__eyebrow">{activeTab.eyebrow}</div>
             <h3 className="mt-2 text-3xl font-semibold leading-tight text-white sm:text-4xl">{activeTab.title}</h3>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">{activeTab.body}</p>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">{activeTab.body}</p>
           </div>
           <ProductSurface tab={activeTab} copy={copy} />
         </motion.div>

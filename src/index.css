@@ -6,66 +6,69 @@
 
 @layer base {
   :root {
-    --background: 214 31% 97%;
-    --foreground: 222 47% 11%;
+    --background: 0 0% 97%;
+    --foreground: 0 0% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 0 0% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 0 0% 10%;
     --primary: 192 98% 17%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 32% 93%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 214 32% 94%;
-    --muted-foreground: 217 14% 42%;
+    --secondary: 0 0% 93%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 42%;
     --accent: 38 92% 48%;
-    --accent-foreground: 222 47% 11%;
+    --accent-foreground: 0 0% 10%;
     --destructive: 0 76% 52%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 216 24% 88%;
-    --input: 216 24% 88%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
     --ring: 168 100% 29%;
-    --app-background: 214 31% 97%;
+    --app-background: 0 0% 97%;
     --surface-elevated: 0 0% 100%;
-    --surface-muted: 214 30% 94%;
-    --card-border: 216 24% 88%;
-    --panel-border: 215 25% 83%;
+    --surface-muted: 0 0% 94%;
+    --card-border: 0 0% 88%;
+    --panel-border: 0 0% 83%;
     --financial-positive: 158 64% 34%;
     --financial-negative: 354 70% 50%;
     --financial-warning: 38 92% 46%;
     --financial-critical: 0 76% 52%;
-    --financial-neutral: 216 15% 43%;
-    --informational: 216 15% 38%;
+    --financial-neutral: 0 0% 43%;
+    --informational: 0 0% 38%;
     --chart-1: 192 98% 17%;
     --chart-2: 38 92% 48%;
     --chart-3: 160 84% 35%;
     --chart-4: 0 76% 52%;
-    --chart-5: 248 53% 54%;
-    --chart-revenue-line: 222 35% 20%;
+    --chart-5: 38 92% 46%;
+    --chart-revenue-line: 0 0% 20%;
     --chart-cogs-line: 0 76% 52%;
     --chart-margin-line: 158 64% 34%;
-    --chart-bar-primary: 221 39% 11%;
-    --chart-grid-border: 216 24% 88%;
-    --chart-marker-border: 216 24% 88%;
-    --chart-revenue: 222 35% 20%;
+    --chart-bar-primary: 0 0% 11%;
+    --chart-grid-border: 0 0% 88%;
+    --chart-marker-border: 0 0% 88%;
+    --chart-revenue: 0 0% 20%;
     --chart-cogs: 0 76% 52%;
     --chart-margin: 158 64% 34%;
-    --chart-inventory: 199 89% 40%;
-    --chart-receivables: 252 54% 54%;
+    --chart-inventory: 168 100% 29%;
+    --chart-receivables: 38 92% 46%;
     --focus-ring: 168 100% 29%;
-    --premium-dashboard-panel: 220 43% 12%;
-    --premium-dashboard-panel-foreground: 210 29% 97%;
-    --premium-dashboard-panel-muted: 215 18% 73%;
-    --premium-dashboard-panel-border: 217 31% 22%;
+    --premium-dashboard-panel: 0 0% 7%;
+    --premium-dashboard-panel-foreground: 0 0% 96%;
+    --premium-dashboard-panel-muted: 0 0% 73%;
+    --premium-dashboard-panel-border: 0 0% 18%;
     --sidebar: 0 0% 100%;
-    --sidebar-foreground: 222 47% 11%;
+    --sidebar-foreground: 0 0% 10%;
     --sidebar-primary: 192 98% 17%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 163 46% 92%;
     --sidebar-accent-foreground: 192 98% 17%;
-    --sidebar-border: 216 24% 88%;
+    --sidebar-border: 0 0% 88%;
     --sidebar-ring: 168 100% 29%;
     --sidebar-background: 0 0% 100%;
+    --landing-dark-canvas: 0 0% 4%;
+    --landing-dark-surface: 0 0% 7%;
+    --landing-dark-muted: 0 0% 78%;
     --radius: 0.65rem;
     --app-safe-top: env(safe-area-inset-top);
     --app-safe-right: env(safe-area-inset-right);
@@ -76,66 +79,66 @@
   }
 
   .dark {
-    --background: 222 36% 8%;
-    --foreground: 210 29% 96%;
-    --card: 220 30% 12%;
-    --card-foreground: 210 29% 96%;
-    --popover: 220 30% 12%;
-    --popover-foreground: 210 29% 96%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 96%;
     --primary: 163 100% 39%;
     --primary-foreground: 192 98% 17%;
-    --secondary: 219 25% 18%;
-    --secondary-foreground: 210 29% 96%;
-    --muted: 219 25% 18%;
-    --muted-foreground: 215 16% 70%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 67%;
     --accent: 38 92% 55%;
-    --accent-foreground: 222 47% 11%;
+    --accent-foreground: 0 0% 10%;
     --destructive: 0 74% 58%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 218 22% 23%;
-    --input: 218 22% 23%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
     --ring: 163 100% 39%;
-    --app-background: 222 36% 8%;
-    --surface-elevated: 220 30% 12%;
-    --surface-muted: 219 25% 16%;
-    --card-border: 218 22% 23%;
-    --panel-border: 217 26% 26%;
+    --app-background: 0 0% 4%;
+    --surface-elevated: 0 0% 9%;
+    --surface-muted: 0 0% 12%;
+    --card-border: 0 0% 18%;
+    --panel-border: 0 0% 21%;
     --financial-positive: 157 72% 44%;
     --financial-negative: 351 83% 66%;
     --financial-warning: 39 95% 58%;
     --financial-critical: 0 74% 58%;
-    --financial-neutral: 215 16% 70%;
-    --informational: 215 16% 74%;
+    --financial-neutral: 0 0% 67%;
+    --informational: 0 0% 74%;
     --chart-1: 163 100% 39%;
     --chart-2: 39 95% 58%;
     --chart-3: 157 72% 44%;
     --chart-4: 351 83% 66%;
-    --chart-5: 252 78% 72%;
-    --chart-revenue-line: 210 20% 88%;
+    --chart-5: 39 95% 58%;
+    --chart-revenue-line: 0 0% 88%;
     --chart-cogs-line: 351 83% 66%;
     --chart-margin-line: 157 72% 44%;
-    --chart-bar-primary: 210 29% 97%;
-    --chart-grid-border: 218 22% 23%;
-    --chart-marker-border: 218 22% 23%;
-    --chart-revenue: 210 20% 88%;
+    --chart-bar-primary: 0 0% 96%;
+    --chart-grid-border: 0 0% 18%;
+    --chart-marker-border: 0 0% 18%;
+    --chart-revenue: 0 0% 88%;
     --chart-cogs: 351 83% 66%;
     --chart-margin: 157 72% 44%;
-    --chart-inventory: 199 95% 58%;
-    --chart-receivables: 252 78% 72%;
+    --chart-inventory: 168 100% 29%;
+    --chart-receivables: 39 95% 58%;
     --focus-ring: 163 100% 39%;
-    --premium-dashboard-panel: 222 45% 8%;
-    --premium-dashboard-panel-foreground: 210 29% 97%;
-    --premium-dashboard-panel-muted: 215 18% 72%;
-    --premium-dashboard-panel-border: 216 30% 21%;
-    --sidebar: 220 30% 12%;
-    --sidebar-foreground: 210 29% 96%;
+    --premium-dashboard-panel: 0 0% 2%;
+    --premium-dashboard-panel-foreground: 0 0% 96%;
+    --premium-dashboard-panel-muted: 0 0% 72%;
+    --premium-dashboard-panel-border: 0 0% 18%;
+    --sidebar: 0 0% 2%;
+    --sidebar-foreground: 0 0% 96%;
     --sidebar-primary: 163 100% 39%;
     --sidebar-primary-foreground: 192 98% 17%;
-    --sidebar-accent: 192 58% 17%;
-    --sidebar-accent-foreground: 210 29% 96%;
-    --sidebar-border: 218 22% 23%;
+    --sidebar-accent: 0 0% 12%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 0 0% 18%;
     --sidebar-ring: 163 100% 39%;
-    --sidebar-background: 220 30% 12%;
+    --sidebar-background: 0 0% 2%;
   }
 }
 
@@ -450,8 +453,8 @@
     width: min(18rem, 24vw);
     border: 1px solid hsl(0 0% 100% / 0.16);
     border-radius: 0.85rem;
-    background: hsl(222 47% 8% / 0.74);
-    box-shadow: 0 24px 70px -42px hsl(222 47% 2% / 0.92);
+    background: hsl(var(--landing-dark-surface) / 0.78);
+    box-shadow: 0 24px 70px -42px hsl(0 0% 0% / 0.92);
     color: white;
     padding: 0.85rem;
     backdrop-filter: blur(18px);
@@ -465,7 +468,7 @@
 
   .landing-floating-card__body {
     margin-top: 0.2rem;
-    color: hsl(214 32% 84%);
+    color: hsl(var(--landing-dark-muted));
     font-size: 0.75rem;
     line-height: 1.45;
   }
@@ -544,7 +547,7 @@
     padding: 0.4rem 0.85rem;
     font-size: 0.86rem;
     font-weight: 700;
-    box-shadow: 0 12px 34px -30px hsl(222 47% 11% / 0.45);
+    box-shadow: 0 12px 34px -30px hsl(0 0% 0% / 0.35);
   }
 
   .landing-orb--teal {
@@ -620,7 +623,7 @@
     background:
       radial-gradient(circle at 12% 12%, hsl(163 100% 39% / 0.18), transparent 30rem),
       radial-gradient(circle at 90% 18%, hsl(var(--primary) / 0.18), transparent 28rem),
-      hsl(222 47% 8%);
+      hsl(var(--landing-dark-canvas));
   }
 
   .landing-dark-section::before {
@@ -660,7 +663,7 @@
     flex: 0 0 auto;
     border-radius: 0.55rem;
     padding: 0 0.9rem;
-    color: hsl(214 32% 82%);
+    color: hsl(var(--landing-dark-muted));
     font-size: 0.875rem;
     font-weight: 700;
     transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
@@ -690,7 +693,7 @@
     border: 1px solid hsl(0 0% 100% / 0.12);
     border-radius: 1rem;
     background: linear-gradient(135deg, hsl(0 0% 100% / 0.1), hsl(0 0% 100% / 0.045));
-    box-shadow: 0 28px 80px -46px hsl(222 47% 2% / 0.9);
+    box-shadow: 0 28px 80px -46px hsl(0 0% 0% / 0.9);
     padding: 1.1rem;
   }
 
@@ -707,7 +710,7 @@
     overflow: hidden;
     border: 1px solid hsl(0 0% 100% / 0.12);
     border-radius: 0.85rem;
-    background: hsl(222 47% 7% / 0.86);
+    background: hsl(var(--landing-dark-surface) / 0.9);
     color: white;
   }
 
@@ -762,7 +765,7 @@
 
   .landing-product-surface__row-label {
     min-width: 0;
-    color: hsl(214 32% 78%);
+    color: hsl(var(--landing-dark-muted));
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 0.75rem;
     overflow-wrap: anywhere;
@@ -805,7 +808,7 @@
   .landing-product-surface__footer {
     border-top: 1px solid hsl(0 0% 100% / 0.1);
     padding: 0.8rem 1rem;
-    color: hsl(214 32% 78%);
+    color: hsl(var(--landing-dark-muted));
     font-size: 0.78rem;
   }
 
@@ -818,7 +821,7 @@
     border: 1px solid hsl(var(--border) / 0.8);
     border-radius: 0.75rem;
     background: hsl(var(--card));
-    box-shadow: 0 12px 34px -30px hsl(222 47% 11% / 0.35);
+    box-shadow: 0 12px 34px -30px hsl(0 0% 0% / 0.28);
     transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
   }
 
@@ -1089,7 +1092,7 @@
 
     .landing-hover-lift:hover {
       transform: translateY(-4px);
-      box-shadow: 0 20px 55px -38px hsl(222 47% 11% / 45%);
+      box-shadow: 0 20px 55px -38px hsl(0 0% 0% / 45%);
     }
 
     .landing-bento-card:hover,

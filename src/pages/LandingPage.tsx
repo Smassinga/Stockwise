@@ -1434,7 +1434,7 @@ function SectionIntro({
       <p
         className={cn(
           'mt-4 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8',
-          inverse ? 'text-slate-300' : '',
+          inverse ? 'text-zinc-300' : '',
         )}
       >
         {body}
@@ -1480,7 +1480,7 @@ function InlineSurfaceIcon({
   )
 }
 
-function StatusPill({ children, tone = 'teal' }: { children: ReactNode; tone?: 'teal' | 'green' | 'amber' | 'slate' }) {
+function StatusPill({ children, tone = 'teal' }: { children: ReactNode; tone?: 'teal' | 'green' | 'amber' | 'neutral' }) {
   return (
     <span
       className={cn(
@@ -1488,7 +1488,7 @@ function StatusPill({ children, tone = 'teal' }: { children: ReactNode; tone?: '
         tone === 'teal' ? 'border-primary/30 bg-primary/10 text-primary dark:border-primary/35 dark:bg-primary/15 dark:text-primary' : '',
         tone === 'green' ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-700 dark:text-emerald-100' : '',
         tone === 'amber' ? 'border-amber-300/50 bg-amber-300/10 text-amber-800 dark:text-amber-100' : '',
-        tone === 'slate' ? 'border-slate-300/50 bg-slate-100 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-100' : '',
+        tone === 'neutral' ? 'border-border bg-muted text-muted-foreground dark:border-white/15 dark:bg-white/10 dark:text-zinc-100' : '',
       )}
     >
       {children}
@@ -1577,7 +1577,7 @@ function ProblemRecordsImage({ lang }: { lang: Lang }) {
       : 'Desk with inventory sheets, invoices, receipts, calculator, and manual business records.'
 
   return (
-    <figure className="landing-hover-lift overflow-hidden rounded-xl border border-border bg-card p-2 shadow-xl shadow-slate-950/10 dark:border-slate-700 dark:bg-slate-950/80 dark:shadow-black/35">
+    <figure className="landing-hover-lift overflow-hidden rounded-xl border border-border bg-card p-2 shadow-xl shadow-black/10 dark:border-zinc-700 dark:bg-black/80 dark:shadow-black/35">
       <img
         src="/landing/stockwise-records-desk.png"
         alt={altText}
@@ -1770,7 +1770,7 @@ function PricingCard({
       <CardContent className="flex h-full flex-col p-5">
         <div className="flex min-h-8 flex-wrap items-center gap-2">
           {plan.highlight ? <StatusPill tone="teal">{copy.labels.recommended}</StatusPill> : null}
-          {pricing.from ? <StatusPill tone="slate">{copy.labels.from}</StatusPill> : null}
+          {pricing.from ? <StatusPill tone="neutral">{copy.labels.from}</StatusPill> : null}
         </div>
 
         <div className="mt-4">
@@ -2038,7 +2038,7 @@ export default function LandingPage() {
         </header>
 
         <main className="landing-page overflow-hidden">
-          <section className="landing-hero relative isolate overflow-hidden border-b border-slate-900/25 bg-slate-950 text-white">
+          <section className="landing-hero relative isolate overflow-hidden border-b border-black/25 bg-black text-white">
             <img
               src="/landing/stockwise-records-desk.png"
               alt=""
@@ -2048,7 +2048,7 @@ export default function LandingPage() {
               decoding="async"
               className="absolute inset-0 -z-20 h-full w-full object-cover object-center opacity-80"
             />
-            <div className="absolute inset-0 -z-10 bg-slate-950/75" />
+            <div className="absolute inset-0 -z-10 bg-black/75" />
             <div className="landing-grid-field" aria-hidden="true" />
             <div className="landing-orb landing-orb--teal landing-orb--hero-a" aria-hidden="true" />
             <div className="landing-orb landing-orb--deep landing-orb--hero-b" aria-hidden="true" />
@@ -2071,7 +2071,7 @@ export default function LandingPage() {
                 <h1 className="mt-5 text-5xl font-semibold leading-none text-white sm:text-6xl lg:text-7xl">
                   {copy.heroTitle}
                 </h1>
-                <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
+                <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-zinc-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
 
                 <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                   <Button size="lg" asChild>
@@ -2088,7 +2088,7 @@ export default function LandingPage() {
                   </Button>
                 </div>
 
-                <div className="mx-auto mt-5 flex max-w-2xl justify-center gap-3 text-sm leading-6 text-slate-200">
+                <div className="mx-auto mt-5 flex max-w-2xl justify-center gap-3 text-sm leading-6 text-zinc-200">
                   <InlineSurfaceIcon name="activation" dark className="mt-0.5 h-4 w-4" />
                   <span>{copy.activationNote}</span>
                 </div>
@@ -2101,7 +2101,7 @@ export default function LandingPage() {
                   ].map(([value, label]) => (
                     <div key={value} className="rounded-lg border border-white/15 bg-white/10 p-3 backdrop-blur sm:p-4">
                       <div className="text-xl font-semibold text-white sm:text-2xl">{value}</div>
-                      <div className="mt-1 text-xs leading-5 text-slate-200 sm:text-sm">{label}</div>
+                      <div className="mt-1 text-xs leading-5 text-zinc-200 sm:text-sm">{label}</div>
                     </div>
                   ))}
                 </div>
@@ -2349,7 +2349,7 @@ export default function LandingPage() {
                 <SectionIntro title={copy.teamTitle} body={copy.teamBody} />
                 <div className="mt-6 rounded-lg border border-border bg-background p-4 shadow-sm sm:p-5">
                   <div className="grid gap-4">
-                    <div className="flex h-28 w-full items-center justify-center rounded-lg border border-border bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-950 sm:h-32">
+                    <div className="flex h-28 w-full items-center justify-center rounded-lg border border-border bg-white px-4 py-3 dark:border-white/10 dark:bg-black sm:h-32">
                       <img
                         src="/brand/wisecore-logo-light.png"
                         alt="WiseCore Technologies, Lda."
@@ -2389,11 +2389,11 @@ export default function LandingPage() {
             </div>
           </section>
 
-          <section className="border-t border-slate-800 bg-slate-950 py-16 text-white lg:py-20">
+          <section className="border-t border-zinc-800 bg-black py-16 text-white lg:py-20">
             <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
               <div className="max-w-2xl">
                 <h2 className="text-3xl font-semibold leading-tight sm:text-4xl">{copy.finalTitle}</h2>
-                <p className="mt-4 text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">{copy.finalBody}</p>
+                <p className="mt-4 text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">{copy.finalBody}</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button size="lg" asChild>

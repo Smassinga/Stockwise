@@ -37,7 +37,7 @@ export default function FinanceChainCard({ title, description, items }: Props) {
             {items.map((item) => (
               <div
                 key={item.id}
-                className="rounded-[1.25rem] border border-border/75 bg-gradient-to-br from-background via-background to-muted/20 p-4 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.75)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-30px_rgba(15,23,42,0.85)]"
+                className="rounded-[1.25rem] border border-border/75 bg-gradient-to-br from-background via-background to-muted/20 p-4 shadow-[0_18px_40px_-30px_rgba(0,0,0,0.75)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-30px_rgba(0,0,0,0.85)]"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">

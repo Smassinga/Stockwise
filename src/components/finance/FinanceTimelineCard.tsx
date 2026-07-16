@@ -39,7 +39,7 @@ export default function FinanceTimelineCard({ title, emptyLabel, entries }: Prop
                 ) : null}
                 <div className={`absolute left-0 top-1.5 h-5 w-5 rounded-full border shadow-sm ${toneClasses(entry.tone)}`} />
 
-                <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-[0_12px_34px_-28px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_-28px_rgba(15,23,42,0.75)]">
+                <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-[0_12px_34px_-28px_rgba(0,0,0,0.65)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_-28px_rgba(0,0,0,0.75)]">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="text-sm font-semibold tracking-tight">{entry.title}</div>

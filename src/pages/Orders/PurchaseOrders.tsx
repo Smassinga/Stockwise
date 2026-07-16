@@ -1325,7 +1325,7 @@ export default function PurchaseOrders() {
 
   function purchaseStatusClass(status?: string) {
     const value = legacyPurchaseWorkflowStatus(status)
-    if (value === 'draft') return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+    if (value === 'draft') return 'border-border/80 bg-surface-muted text-financial-neutral dark:border-panel-border dark:bg-surface-muted/70 dark:text-panel-premium-muted'
     if (value === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
     return 'border-primary/25 bg-primary/10 text-primary dark:border-primary/30 dark:bg-primary/15 dark:text-primary'
   }
@@ -1444,7 +1444,7 @@ export default function PurchaseOrders() {
     const value = purchaseState(po)?.receipt_status ?? legacyPurchaseReceiptStatus(po?.status)
     if (value === 'complete') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     if (value === 'partial') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-    return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-200'
+    return 'border-border/80 bg-surface-muted text-financial-neutral dark:border-panel-border dark:bg-surface-muted/70 dark:text-panel-premium-muted'
   }
 
   function purchaseSettlementLabel(po?: PO | null) {
@@ -1687,7 +1687,7 @@ export default function PurchaseOrders() {
       * { box-sizing: border-box; }
       body{
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        margin: 0; padding: 0; color: #0f172a;
+        margin: 0; padding: 0; color: #111311;
         font: 11.5px/1.35 ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
       }
       .wrap { padding: 0; }
@@ -1698,7 +1698,7 @@ export default function PurchaseOrders() {
       .brand { display: flex; align-items: center; gap: 10px; min-height: 38px; }
       .logo {
         height: 46px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
-        background: #f8fafc; padding: 3px;
+        background: #f7f8f7; padding: 3px;
       }
       .logo-fallback {
         height: 46px; width: 44px; border: 1px solid #e5e7eb; border-radius: 8px;
@@ -1707,28 +1707,28 @@ export default function PurchaseOrders() {
       .company-name { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
       .doc-meta { text-align: right; }
       .doc-title { font-size: 26px; font-weight: 800; letter-spacing: .01em; margin: 0; }
-      .muted { color: #64748b; }
+      .muted { color: #737a74; }
       .cap { text-transform: capitalize; }
 
       .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
       .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; }
-      .card h4 { margin: 0 0 4px; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .card h4 { margin: 0 0 4px; font-size: 10px; color: #5c625d; text-transform: uppercase; letter-spacing: .06em; }
       .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
-      .kv .k { color: #64748b; }
+      .kv .k { color: #737a74; }
       .addr { white-space: pre-wrap; }
       .section { margin-top: 10px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
       .section-head { padding: 8px 10px; background: #f2faf8; color: #014558; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
       .section-body { padding: 10px; }
       .item-name { font-weight: 600; }
-      .item-detail { margin-top: 3px; color: #64748b; font-size: 10px; line-height: 1.3; white-space: pre-wrap; }
+      .item-detail { margin-top: 3px; color: #737a74; font-size: 10px; line-height: 1.3; white-space: pre-wrap; }
 
       table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 11px; }
       th, td { border-bottom: 1px solid #eef2f7; padding: 6px 5px; text-align: left; }
-      thead th { background: #f8fafc; font-weight: 700; }
+      thead th { background: #f7f8f7; font-weight: 700; }
       .right { text-align: right; }
       .pill {
         display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 10px; line-height: 18px; vertical-align: middle;
-        border: 1px solid #e5e7eb; color: #334155; background: #f1f5f9; margin-left: 6px;
+        border: 1px solid #e5e7eb; color: #3f443f; background: #f1f5f9; margin-left: 6px;
       }
       .pill-ok { border-color: #86efac; background: #ecfdf5; color: #166534; }
 
@@ -1736,23 +1736,23 @@ export default function PurchaseOrders() {
         margin-top: 10px; width: 320px; margin-left: auto;
         display: grid; grid-template-columns: 1fr auto; row-gap: 4px;
       }
-      .totals .label { color: #475569; }
+      .totals .label { color: #5c625d; }
       .totals .grand { font-weight: 800; }
-      .totals .muted { color: #64748b; }
+      .totals .muted { color: #737a74; }
       .terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
       .terms-grid.single { grid-template-columns: 1fr; }
       .terms-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; background: #fff; min-height: 68px; }
-      .terms-box h4 { margin: 0 0 6px; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; }
+      .terms-box h4 { margin: 0 0 6px; font-size: 10px; color: #5c625d; text-transform: uppercase; letter-spacing: .06em; }
       .closing { page-break-inside: avoid; }
       .signatures { margin-top: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; page-break-inside: avoid; }
       .sig { padding-top: 20px; }
-      .sig-line { border-top: 1px solid #94a3b8; height: 1px; }
-      .sig-label { margin-top: 6px; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+      .sig-line { border-top: 1px solid #a1a7a2; height: 1px; }
+      .sig-label { margin-top: 6px; color: #5c625d; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
       .sig-name { margin-top: 4px; min-height: 14px; font-size: 11px; font-weight: 600; }
 
       .footnote {
         margin-top: 10px; padding-top: 6px; border-top: 1px dashed #e5e7eb;
-        color: #475569; font-size: 10px;
+        color: #5c625d; font-size: 10px;
       }
 
       @media print {

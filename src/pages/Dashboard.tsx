@@ -1289,7 +1289,7 @@ export default function Dashboard() {
         description={tt('dashboard.executiveHelp', 'Use this section to decide quickly whether the business is operating normally or needs attention today.')}
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)]">
-          <section className="overflow-hidden rounded-[calc(var(--radius)+0.35rem)] border border-card-border bg-card p-5 text-card-foreground shadow-[0_28px_80px_-52px_hsl(222_47%_11%/0.45)] dark:border-panel-premium-border dark:bg-panel-premium dark:text-panel-premium-foreground sm:p-6">
+          <section className="overflow-hidden rounded-[calc(var(--radius)+0.35rem)] border border-card-border bg-card p-5 text-card-foreground shadow-[0_28px_80px_-52px_hsl(0_0%_0%/0.45)] dark:border-panel-premium-border dark:bg-panel-premium dark:text-panel-premium-foreground sm:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">

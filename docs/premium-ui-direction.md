@@ -35,7 +35,20 @@ The only maintained hardcoded palette exception is generated Sales Order and Pur
 
 Light mode uses white and near-white operational surfaces, controlled borders, restrained shadows, and high-readability text.
 
-Dark mode uses deep charcoal/navy surfaces, moderated contrast, and non-neon semantic colors. It is not a color inversion of light mode.
+Dark mode uses black and neutral charcoal surfaces, moderated contrast, and non-neon semantic colors. Blue or navy must not be used as the environmental canvas. It is not a color inversion of light mode.
+
+The maintained surface hierarchy is deliberate in both themes:
+
+- the app canvas is the darkest or lightest environmental layer
+- routine cards use `--card`; menus and dialogs use the slightly elevated `--popover`
+- grouped controls and passive regions use `--muted` or `--secondary`
+- borders separate structure without becoming a second accent system
+- teal is reserved for primary action, focus, selection, and owned-brand emphasis
+- amber, red, and positive green retain their warning, destructive, and success meanings
+
+Loading, empty, error, blocked, success, and neutral states must remain visually and semantically distinct. The shared premium state panel owns those meanings; loading uses neutral skeletons with `role=status`, polite live announcements, and reduced-motion-safe animation. Empty states explain the missing prerequisite or next action. Error states use an alert role without rendering raw backend codes. Blocked states use warning semantics and must not be colored as success.
+
+Buttons, inputs, text areas, selects, dialogs, and sheets consume semantic tokens. Read-only and disabled fields must remain visibly different from active controls. Focus rings must stay visible in light and dark mode, including on compact Android layouts. Elevated surfaces should use neutral black shadows rather than blue or navy shadow literals.
 
 Dashboard dark panels are approved for the top cockpit and performance chart when they add status hierarchy. They should not be copied into forms, item registers, invoice details, or routine admin tables.
 
@@ -63,7 +76,7 @@ Rules:
 - Revenue, COGS, margin, inventory, and receivables use named chart tokens.
 - Revenue and COGS must be readable in both light and dark mode.
 - Daily finance trend charts use semantic operating colors: Revenue is neutral charcoal in light mode and a readable light neutral in dark mode through `--chart-revenue-line`, COGS is red through `--chart-cogs-line`, and Gross Margin is green through `--chart-margin-line`.
-- Inventory retains the named cyan `--chart-inventory` data-series token so it remains distinguishable from WiseCore teal actions, positive green, neutral Revenue, and negative red. It is a chart-only semantic exception, not product-brand or interaction styling.
+- Inventory retains the named `--chart-inventory` token but uses the moderated WiseCore mid teal. It remains a data-series token, not a general interaction utility. Where Inventory and primary actions appear together, labels, marker shapes, and placement must keep their meanings distinct without relying on color alone.
 - Daily line-chart markers are visible circles: normal dots are 8x8 px (`r=4`), active/hover dots are 10x10 px (`r=5`), and both use `--chart-grid-border` with `strokeWidth=1`.
 - `--chart-grid-border` controls grid lines, marker strokes, and tooltip marker borders so chart furniture stays consistent in light and dark mode.
 - Daily Revenue vs COGS is rendered as a timeline line chart with visible circular markers for each point; chart styling changed without changing the dashboard data-source logic.
@@ -255,6 +268,12 @@ Items disables protected profile controls when capability detection fails, shows
 
 The 2026-07-16 visual-identity rollout keeps StockWise as the product and WiseCore Technologies, Lda. as its owner and promoter. The maintained interactive palette now derives from the WiseCore logo: bright teal-green `#00C98F`, mid teal-green `#009679`, dark teal `#014558`, black, and white. Light mode uses dark teal for primary actions and mid teal for focus; dark mode uses the bright teal with a dark-teal foreground so the interface remains readable without becoming neon.
 
-The package replaced `199` explicit maintained-source blue/sky brand literals (`187` Tailwind sky utilities, four landing blue-orb references, three legacy `--sw-blue*` tokens, and five old blue hex literals) with semantic tokens or context-appropriate colors. The final raw count for those blue/sky/legacy literals is zero. Shared corrections covered `IconBadge`, `PremiumStatusBadge`, `PremiumMetricCard`, `MobileQuickActionGroup`, subscription analytics, Tailwind informational tone support, and the landing product tabs. Revenue is now neutral charcoal in light mode and a light neutral in dark mode; gross margin remains positive green and COGS remains red. The named cyan `--chart-inventory` series remains the sole blue-family semantic exception because it is a distinct data series, not product branding. Standalone Sales Order and Purchase Order print HTML uses the palette's dark teal and a pale teal background because generated print documents cannot consume application CSS variables.
+The package replaced `199` explicit maintained-source blue/sky brand literals (`187` Tailwind sky utilities, four landing blue-orb references, three legacy `--sw-blue*` tokens, and five old blue hex literals) with semantic tokens or context-appropriate colors. The final raw count for those blue/sky/legacy literals is zero. Shared corrections covered `IconBadge`, `PremiumStatusBadge`, `PremiumMetricCard`, `MobileQuickActionGroup`, subscription analytics, Tailwind informational tone support, and the landing product tabs. Revenue is neutral charcoal in light mode and a light neutral in dark mode; gross margin remains positive green and COGS remains red. The named `--chart-inventory` series now uses the WiseCore mid teal rather than cyan. Standalone Sales Order, Purchase Order, and finance-document print HTML use neutral charcoal text and furniture because generated print documents cannot consume application CSS variables; this remains presentation-only and does not change document wording or fiscal semantics.
 
 The landing's competing blue orb was replaced by one restrained deep-teal/charcoal glow. The unused and unreferenced `src/tokens.css` legacy token file was removed after repository-wide import verification. No logo was regenerated, no Ocean Breeze dependency was installed, and no route, schema, business logic, package identifier, or Sentry configuration changed.
+
+## Neutral surface and state foundation (Phase 1)
+
+The first whole-product UX phase neutralizes the remaining navy environmental styling without reworking route architecture or business workflows. Dark canvas, cards, popovers, sidebars, muted controls, borders, PWA theme colors, landing showcase surfaces, print furniture, and shadows now use black or neutral charcoal. WiseCore teal remains bounded to actions, focus, selection, and controlled brand emphasis.
+
+The shared state foundation consists of `AppLoadingState`, the accessible `PremiumSkeleton`, and `PremiumStatePanel`. These primitives prevent route-loading, empty, error, blocked, success, and neutral states from collapsing into the same generic card treatment. Existing `PremiumEmptyState` call sites retain their API and inherit the shared empty-state semantics. Further page-level adoption belongs to later roadmap phases where the local workflow can be assessed without changing backend-authoritative behaviour.

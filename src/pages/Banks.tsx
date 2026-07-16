@@ -195,7 +195,7 @@ export default function Banks() {
 
   return (
     <div className="space-y-6 overflow-x-hidden">
-      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-4 shadow-[0_30px_80px_-56px_rgba(15,23,42,0.48)] sm:p-6">
+      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-4 shadow-[0_30px_80px_-56px_rgba(0,0,0,0.48)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <div className="text-xs font-medium uppercase tracking-[0.22em] text-primary/75">
@@ -380,7 +380,7 @@ export default function Banks() {
               {rows.map((row) => (
                 <Card
                   key={row.id}
-                  className="border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-56px_rgba(15,23,42,0.48)] transition-transform duration-200 hover:-translate-y-0.5"
+                  className="border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-56px_rgba(0,0,0,0.48)] transition-transform duration-200 hover:-translate-y-0.5"
                 >
                   <CardHeader className="space-y-3 pb-3">
                     <div className="flex items-start justify-between gap-3">

@@ -188,7 +188,7 @@ function PortfolioMetricCard({
   return (
     <div
       data-subscription-metric-card={title}
-      className={`rounded-[1.5rem] border p-5 shadow-[0_24px_60px_-48px_rgba(15,23,42,0.6)] ${summaryTone(tone)}`}
+      className={`rounded-[1.5rem] border p-5 shadow-[0_24px_60px_-48px_rgba(0,0,0,0.6)] ${summaryTone(tone)}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -285,7 +285,7 @@ function MonitoringList({
   onSelectCompany: (companyId: string) => void
 }) {
   return (
-    <Card className="border-border/70 bg-card shadow-[0_22px_50px_-42px_rgba(15,23,42,0.55)]">
+    <Card className="border-border/70 bg-card shadow-[0_22px_50px_-42px_rgba(0,0,0,0.55)]">
       <CardHeader className="space-y-2">
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription className="text-sm leading-6">{description}</CardDescription>
@@ -361,7 +361,7 @@ function MobileCompanyCard({
   return (
     <div
       data-subscription-company-card={row.company_id}
-      className={`rounded-[1.5rem] border p-4 shadow-[0_20px_45px_-40px_rgba(15,23,42,0.55)] ${
+      className={`rounded-[1.5rem] border p-4 shadow-[0_20px_45px_-40px_rgba(0,0,0,0.55)] ${
         selectedCompanyId === row.company_id ? 'border-primary/40 bg-primary/[0.04]' : 'border-border/70 bg-background'
       }`}
     >
@@ -548,7 +548,7 @@ export default function SubscriptionAnalyticsDashboard({
   return (
     <TooltipProvider>
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-card shadow-[0_30px_80px_-52px_rgba(15,23,42,0.55)]">
+        <Card className="overflow-hidden border-border/70 bg-card shadow-[0_30px_80px_-52px_rgba(0,0,0,0.55)]">
           <CardHeader className="gap-6 border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] pb-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="max-w-4xl">
@@ -705,7 +705,7 @@ export default function SubscriptionAnalyticsDashboard({
             <div className="grid gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
               <Card
                 data-subscription-distribution="plans"
-                className="border-border/70 bg-background shadow-[0_24px_55px_-46px_rgba(15,23,42,0.6)]"
+                className="border-border/70 bg-background shadow-[0_24px_55px_-46px_rgba(0,0,0,0.6)]"
               >
                 <CardHeader className="gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -777,7 +777,7 @@ export default function SubscriptionAnalyticsDashboard({
 
               <Card
                 data-subscription-distribution="statuses"
-                className="border-border/70 bg-background shadow-[0_24px_55px_-46px_rgba(15,23,42,0.6)]"
+                className="border-border/70 bg-background shadow-[0_24px_55px_-46px_rgba(0,0,0,0.6)]"
               >
                 <CardHeader className="gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -905,7 +905,7 @@ export default function SubscriptionAnalyticsDashboard({
 
         <Card
           data-subscription-register="true"
-          className="border-border/70 bg-card shadow-[0_28px_70px_-52px_rgba(15,23,42,0.55)]"
+          className="border-border/70 bg-card shadow-[0_28px_70px_-52px_rgba(0,0,0,0.55)]"
         >
           <CardHeader className="gap-4 border-b border-border/70 bg-gradient-to-br from-background via-background to-muted/10">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">

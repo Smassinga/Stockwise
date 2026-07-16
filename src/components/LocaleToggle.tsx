@@ -14,7 +14,7 @@ export default function LocaleToggle({ className, inverse = false }: Props) {
       className={cn(
         'inline-flex items-center rounded-full border p-1 text-xs font-medium',
         inverse
-          ? 'border-white/15 bg-slate-950/50 text-white shadow-sm'
+          ? 'border-white/15 bg-black/55 text-white shadow-sm'
           : 'border-border bg-background/90 text-foreground shadow-sm',
         className
       )}
@@ -32,7 +32,7 @@ export default function LocaleToggle({ className, inverse = false }: Props) {
               'rounded-full px-3 py-1.5 transition-colors',
               active
                 ? inverse
-                  ? 'bg-white text-slate-950'
+                  ? 'bg-white text-black'
                   : 'bg-primary text-primary-foreground'
                 : inverse
                   ? 'text-white/72 hover:text-white'

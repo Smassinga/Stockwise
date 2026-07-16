@@ -18,7 +18,7 @@ export default function BrandLockup({
     <div className={cn('inline-flex flex-col gap-2', className)}>
       <div
         className={cn(
-          'inline-flex w-fit items-center rounded-[22px] border border-border/70 bg-white/95 shadow-[0_20px_50px_-32px_rgba(15,23,42,0.55)]',
+          'inline-flex w-fit items-center rounded-[22px] border border-border/70 bg-white/95 shadow-[0_20px_50px_-32px_rgba(0,0,0,0.45)]',
           compact ? 'px-3 py-2' : 'px-4 py-3',
         )}
       >

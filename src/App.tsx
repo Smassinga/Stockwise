@@ -6,6 +6,7 @@ import { useAuth } from './hooks/useAuth'
 import { OrgProvider, useOrg } from './hooks/useOrg'
 import { getMyCompanyAccessState, getPlatformAdminStatus } from './lib/companyAccess'
 import { CanManageUsers } from './lib/roles'
+import { AppLoadingState } from './components/premium/AppLoadingState'
 
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -49,11 +50,7 @@ const PlatformControl = lazy(() => import('./pages/PlatformControl'))
 const OpeningImport = lazy(() => import('./pages/OpeningImport'))
 
 function LoadingSplash() {
-  return (
-    <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-      Loading...
-    </div>
-  )
+  return <AppLoadingState />
 }
 
 function RequireAuth() {
