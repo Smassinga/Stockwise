@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -17,7 +18,14 @@ import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
 import { can } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
-import { createOperatorSaleIssue } from '../lib/operatorSale'
+import {
+  createOperatorSaleIssue,
+  operatorSaleBlockerMessage,
+  previewOperatorSale,
+  type OperatorSalePreview,
+  type OperatorSaleResult,
+} from '../lib/operatorSale'
+import { loadCommercialTaxConfiguration, type CommercialTaxConfiguration } from '../lib/commercialTax'
 import toast from 'react-hot-toast'
 import {
   Building2,
@@ -160,6 +168,27 @@ const copyByLang = {
     bankSettlementHelp: 'Bank posts to the selected bank account as a sale receipt.',
     couldNotPost: 'Could not post the sale.',
     loadFailed: 'Could not load the Point of Sale workspace.',
+    taxHandling: 'Tax handling',
+    configuredTax: 'Configured sales tax',
+    nonFiscalShort: 'Non-fiscal sale — tax not applied',
+    nonFiscalTitle: 'Non-fiscal POS sale',
+    nonFiscalBody: 'Tax is not applied. This sale records stock and payment activity but cannot be converted into a fiscal sales invoice.',
+    unconfiguredTax: 'Point of Sale tax handling has not been configured.',
+    unconfiguredAdmin: 'Configure Point of Sale tax handling before posting sales.',
+    unconfiguredOperator: 'Ask a company administrator to complete the setup.',
+    openTaxSettings: 'Open tax settings',
+    previewing: 'Calculating tax and total...',
+    previewFailed: 'The authoritative sale preview could not be prepared.',
+    subtotal: 'Subtotal',
+    tax: 'Tax',
+    totalToReceive: 'Total to receive',
+    paymentDestination: 'Payment destination',
+    previewChanged: 'The sale changed after preview. Wait for the totals to refresh before confirming.',
+    lastSaleTitle: 'Sale completed',
+    orderReference: 'Order reference',
+    taxMode: 'Tax mode',
+    totalReceived: 'Total received',
+    taxNotApplied: 'Tax not applied',
   },
   pt: {
     title: 'Ponto de Venda',
@@ -224,6 +253,27 @@ const copyByLang = {
     bankSettlementHelp: 'O banco lança na conta bancária selecionada como recebimento de venda.',
     couldNotPost: 'Não foi possível lançar a venda.',
     loadFailed: 'Não foi possível carregar o workspace de Ponto de Venda.',
+    taxHandling: 'Tratamento fiscal',
+    configuredTax: 'Imposto sobre vendas configurado',
+    nonFiscalShort: 'Venda não fiscal — imposto não aplicado',
+    nonFiscalTitle: 'Venda não fiscal no Ponto de Venda',
+    nonFiscalBody: 'O imposto não é aplicado. Esta venda regista o movimento de stock e o pagamento, mas não pode ser convertida numa fatura fiscal.',
+    unconfiguredTax: 'O tratamento fiscal do Ponto de Venda ainda não foi configurado.',
+    unconfiguredAdmin: 'Configure o tratamento fiscal do Ponto de Venda antes de lançar vendas.',
+    unconfiguredOperator: 'Peça a um administrador da empresa para concluir a configuração.',
+    openTaxSettings: 'Abrir definições fiscais',
+    previewing: 'A calcular o imposto e o total...',
+    previewFailed: 'Não foi possível preparar a pré-visualização autoritativa da venda.',
+    subtotal: 'Subtotal',
+    tax: 'Imposto',
+    totalToReceive: 'Total a receber',
+    paymentDestination: 'Destino do pagamento',
+    previewChanged: 'A venda mudou depois da pré-visualização. Aguarde a atualização dos totais antes de confirmar.',
+    lastSaleTitle: 'Venda concluída',
+    orderReference: 'Referência da encomenda',
+    taxMode: 'Modo fiscal',
+    totalReceived: 'Total recebido',
+    taxNotApplied: 'Imposto não aplicado',
   },
 } as const
 
@@ -245,6 +295,7 @@ export default function Operator() {
   const { lang } = useI18n()
   const copy = copyByLang[lang]
   const canPost = can.createMovement(myRole)
+  const canConfigureTax = ['OWNER', 'ADMIN'].includes(String(myRole || '').toUpperCase())
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -266,7 +317,13 @@ export default function Operator() {
   const [bankAccounts, setBankAccounts] = useState<BankAccountRow[]>([])
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [stockLevels, setStockLevels] = useState<StockLevelRow[]>([])
+  const [taxConfiguration, setTaxConfiguration] = useState<CommercialTaxConfiguration | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
+  const [preview, setPreview] = useState<OperatorSalePreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewFingerprint, setPreviewFingerprint] = useState<string | null>(null)
+  const [lastSale, setLastSale] = useState<OperatorSaleResult | null>(null)
   const pendingSaleRequestRef = useRef<PendingSaleRequest | null>(null)
 
   const loadData = async () => {
@@ -278,13 +335,14 @@ export default function Operator() {
       setBankAccounts([])
       setStockLevels([])
       setUoms([])
+      setTaxConfiguration(null)
       setLoading(false)
       return
     }
 
     setLoading(true)
     try {
-      const [warehouseRes, itemRes, customerRes, bankRes, uomRes, stockRes, currencyCode] = await Promise.all([
+      const [warehouseRes, itemRes, customerRes, bankRes, uomRes, stockRes, currencyCode, commercialTax] = await Promise.all([
         supabase
           .from('warehouses')
           .select('id, code, name')
@@ -315,6 +373,7 @@ export default function Operator() {
           .select('item_id, warehouse_id, bin_id, qty, allocated_qty, avg_cost')
           .eq('company_id', companyId),
         getBaseCurrencyCode(companyId).catch(() => 'MZN'),
+        loadCommercialTaxConfiguration(companyId),
       ])
 
       if (warehouseRes.error) throw warehouseRes.error
@@ -383,6 +442,7 @@ export default function Operator() {
         avgCost: toNumber(row.avg_cost),
       })))
       setBaseCurrencyCode(currencyCode || 'MZN')
+      setTaxConfiguration(commercialTax)
 
       if (!warehouseId && warehouseRows[0]?.id) {
         setWarehouseId(warehouseRows[0].id)
@@ -506,6 +566,78 @@ export default function Operator() {
     pendingSaleRequestRef.current = null
   }, [saleRequestFingerprint])
 
+  useEffect(() => {
+    setPreview(null)
+    setPreviewError(null)
+    setPreviewFingerprint(null)
+    if (!companyId || !binId || !cart.length || !canPost || (paymentMethod === 'bank' && !bankAccountId)) {
+      setPreviewLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setPreviewLoading(true)
+    const timer = window.setTimeout(() => {
+      void previewOperatorSale({
+        companyId,
+        sourceBinId: binId,
+        customerId: useNamedCustomer ? customerId || null : null,
+        orderDate: saleOrderDate,
+        currencyCode: baseCurrencyCode,
+        fxToBase: 1,
+        settlementMethod: paymentMethod,
+        bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
+        language: lang,
+        lines: cart.map((line) => ({
+          itemId: line.itemId,
+          qty: line.qty,
+          unitPrice: line.unitPrice,
+        })),
+      }).then((nextPreview) => {
+        if (cancelled) return
+        setPreview(nextPreview)
+        setPreviewFingerprint(saleRequestFingerprint)
+      }).catch((error: any) => {
+        if (cancelled) return
+        setPreviewError(error?.message || copy.previewFailed)
+      }).finally(() => {
+        if (!cancelled) setPreviewLoading(false)
+      })
+    }, 180)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    bankAccountId,
+    baseCurrencyCode,
+    binId,
+    canPost,
+    cart,
+    companyId,
+    copy.previewFailed,
+    customerId,
+    lang,
+    paymentMethod,
+    saleOrderDate,
+    saleRequestFingerprint,
+    useNamedCustomer,
+  ])
+
+  const configuredDefault = taxConfiguration?.salesDefault || null
+  const displayedPosMode = preview?.mode ?? taxConfiguration?.settings?.pos_sales_tax_mode ?? null
+  const previewIsCurrent = previewFingerprint === saleRequestFingerprint
+  const canConfirmPreview = Boolean(preview?.ready && previewIsCurrent && !previewLoading && !previewError)
+  const lastSaleDestination = lastSale?.settlement_method === 'bank'
+    ? bankAccounts.find((account) => account.id === lastSale.bank_account_id)?.name || copy.bankMethod
+    : copy.cashMethod
+  const previewBlockerMessage = preview && !preview.ready
+    ? preview.blockers
+        .map((code) => operatorSaleBlockerMessage(code, lang))
+        .find((message): message is string => Boolean(message)) || copy.previewFailed
+    : null
+
   function addItem(itemId: string) {
     const stockRow = stockRows.find((row) => row.item.id === itemId)
     if (!stockRow) return
@@ -575,6 +707,11 @@ export default function Operator() {
       toast.error(copy.bankRequired)
       return
     }
+    if (!canConfirmPreview) {
+      toast.error(previewError || copy.previewChanged)
+      return
+    }
+    const currentPreview = preview!
 
     try {
       setSubmitting(true)
@@ -596,6 +733,7 @@ export default function Operator() {
         settlementMethod: paymentMethod,
         bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
         requestKey,
+        language: lang,
         lines: cart.map((line) => ({
           itemId: line.itemId,
           qty: line.qty,
@@ -604,6 +742,13 @@ export default function Operator() {
       })
 
       pendingSaleRequestRef.current = null
+      setLastSale({
+        ...result,
+        subtotal: result.subtotal ?? currentPreview.subtotal,
+        tax_total: result.tax_total ?? currentPreview.tax_total,
+        total_amount: result.total_amount ?? currentPreview.total,
+        pos_tax_mode_snapshot: result.pos_tax_mode_snapshot ?? currentPreview.mode,
+      })
       await loadData()
       setCart([])
       setNotes('')
@@ -682,6 +827,54 @@ export default function Operator() {
 
         <div className="rounded-[1.2rem] border border-border/70 bg-muted/15 p-3 text-xs leading-5 text-muted-foreground">
           {copy.pricingHelp}
+        </div>
+
+        <div className="space-y-3 rounded-[1.25rem] border border-border/70 bg-background/88 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Label className="text-sm font-semibold">{copy.taxHandling}</Label>
+              {displayedPosMode === 'configured' ? (
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {copy.configuredTax}: {configuredDefault
+                    ? `${configuredDefault.display_name} (${Number(configuredDefault.rate).toLocaleString(undefined, { maximumFractionDigits: 4 })}%)`
+                    : copy.unconfiguredTax}
+                </p>
+              ) : displayedPosMode === 'non_fiscal' ? (
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.nonFiscalBody}</p>
+              ) : (
+                <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                  {canConfigureTax ? copy.unconfiguredAdmin : `${copy.unconfiguredTax} ${copy.unconfiguredOperator}`}
+                </p>
+              )}
+            </div>
+            <Badge variant="outline" className={displayedPosMode ? 'rounded-full' : 'rounded-full border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'}>
+              {displayedPosMode === 'configured'
+                ? copy.configuredTax
+                : displayedPosMode === 'non_fiscal'
+                  ? copy.nonFiscalShort
+                  : copy.unconfiguredTax}
+            </Badge>
+          </div>
+          {displayedPosMode === 'non_fiscal' ? (
+            <div className="rounded-lg border border-amber-500/35 bg-amber-500/8 p-3 text-sm">
+              <div className="font-medium">{copy.nonFiscalTitle}</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">{copy.nonFiscalBody}</div>
+            </div>
+          ) : null}
+          {!displayedPosMode && canConfigureTax ? (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/settings?section=commercial-tax">{copy.openTaxSettings}</Link>
+            </Button>
+          ) : null}
+          {previewLoading ? <p className="text-xs text-muted-foreground">{copy.previewing}</p> : null}
+          {previewError ? <p role="alert" className="text-xs text-destructive">{previewError}</p> : null}
+          {previewBlockerMessage ? (
+            <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">
+              {preview?.blockers.includes('commercial_tax_pos_mode_unconfigured') && canConfigureTax
+                ? copy.unconfiguredAdmin
+                : previewBlockerMessage}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-3 rounded-[1.25rem] border border-border/70 bg-background/88 p-4">
@@ -837,7 +1030,7 @@ export default function Operator() {
           )}
         </div>
 
-        <div className="grid gap-3 rounded-[1.25rem] border border-border/70 bg-muted/15 p-4 sm:grid-cols-3">
+        <div className="grid gap-3 rounded-[1.25rem] border border-border/70 bg-muted/15 p-4 sm:grid-cols-2 xl:grid-cols-5">
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.summaryItems}</div>
             <div className="mt-1 text-lg font-semibold">{cart.length}</div>
@@ -847,9 +1040,29 @@ export default function Operator() {
             <div className="mt-1 text-lg font-semibold">{formatQty(cartQty)}</div>
           </div>
           <div>
-            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.summaryTotal}</div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.subtotal}</div>
             <div className="mt-1 text-lg font-semibold">
-              {cartSubtotal.toLocaleString(undefined, {
+              {(previewIsCurrent ? preview?.subtotal ?? cartSubtotal : cartSubtotal).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}{' '}
+              {baseCurrencyCode}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.tax}</div>
+            <div className="mt-1 text-lg font-semibold">
+              {(previewIsCurrent ? preview?.tax_total ?? 0 : 0).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}{' '}
+              {baseCurrencyCode}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.totalToReceive}</div>
+            <div className="mt-1 text-lg font-semibold">
+              {(previewIsCurrent ? preview?.total ?? cartSubtotal : cartSubtotal).toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}{' '}
@@ -878,7 +1091,7 @@ export default function Operator() {
           </div>
         </div>
 
-        <Button className="h-12 w-full rounded-2xl" disabled={!canPost || submitting || cart.length === 0} onClick={() => void submitIssue()}>
+        <Button className="h-12 w-full rounded-2xl" disabled={!canPost || submitting || cart.length === 0 || !canConfirmPreview} onClick={() => void submitIssue()}>
           {submitting ? copy.posting : copy.confirm}
         </Button>
       </CardContent>
@@ -887,6 +1100,21 @@ export default function Operator() {
 
   return (
     <div className="app-page app-page--workspace">
+      {lastSale ? (
+        <Card className="border-primary/25 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.nonFiscalTitle : copy.lastSaleTitle}</CardTitle>
+            <CardDescription>{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.taxNotApplied : copy.configuredTax}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+            <div><span className="text-muted-foreground">{copy.orderReference}</span><div className="font-medium">{lastSale.order_no || '—'}</div></div>
+            <div><span className="text-muted-foreground">{copy.taxMode}</span><div className="font-medium">{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.nonFiscalShort : copy.configuredTax}</div></div>
+            <div><span className="text-muted-foreground">{copy.subtotal}</span><div className="font-medium">{Number(lastSale.subtotal || 0).toFixed(2)} {baseCurrencyCode}</div></div>
+            <div><span className="text-muted-foreground">{copy.tax}</span><div className="font-medium">{Number(lastSale.tax_total || 0).toFixed(2)} {baseCurrencyCode}</div></div>
+            <div><span className="text-muted-foreground">{copy.totalReceived}</span><div className="font-medium">{Number(lastSale.total_amount || 0).toFixed(2)} {baseCurrencyCode} · {lastSaleDestination}</div></div>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card className="overflow-hidden border-border/70 bg-card/96 shadow-[0_24px_54px_-36px_hsl(var(--foreground)/0.24)]">
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1055,7 +1283,7 @@ export default function Operator() {
             <ShoppingBag className="mr-2 h-4 w-4" />
             {copy.reviewIssue}
             <span className="ml-3 text-xs font-medium opacity-80">
-              {cart.length} • {formatQty(cartQty)} • {cartSubtotal.toLocaleString(undefined, {
+              {cart.length} • {formatQty(cartQty)} • {(previewIsCurrent ? preview?.total ?? cartSubtotal : cartSubtotal).toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}{' '}

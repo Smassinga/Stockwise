@@ -238,3 +238,12 @@ Stop further event delivery for the affected deployment, preserve only non-sensi
 - canonical Sales Order outstanding exceeds the displayed total by exactly its tax: verify migration `20260712230118_fix_canonical_sales_order_finance_state.sql` is applied and the frontend serves the current release; do not patch order totals directly.
 
 For local regression timeouts in Growth Batch CLI metadata checks, confirm local Supabase health and rerun that file in isolation to diagnose container/CLI contention. Release sign-off still requires the maintained complete finance command to pass.
+# POS tax handling errors
+
+- `commercial_tax_pos_mode_unconfigured`: choose configured tax or non-fiscal POS behavior in company Settings. Do not create a zero-rate fallback.
+- `commercial_tax_pos_default_unconfigured`: configured mode has no default sales-tax option.
+- `commercial_tax_pos_default_inactive`: the configured default is inactive or outside its effective dates.
+- `commercial_tax_pos_exemption_reason_required`: the configured default treatment requires a company POS reason.
+- `commercial_tax_non_fiscal_pos_invoice_forbidden`: the source is an operational non-fiscal POS sale and cannot be converted to or issued as a fiscal Sales Invoice.
+
+If the amount shown before confirmation differs from the posted amount, stop posting and verify that the frontend is using `preview_operator_sale(...)`, that cart/configuration changes invalidate the preview, and that the deployed migration and frontend commit match. Never repair the discrepancy by forcing `0%`, exemption, or a client-calculated settlement.

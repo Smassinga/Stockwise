@@ -363,3 +363,10 @@ Hosted production and local replay contain 44 migrations through `20260712230118
 - `create_item_with_profile` creates all protected item profile fields atomically and returns the authoritative item row for round-trip verification.
 
 Tax configuration and item-profile creation create no cash, bank, settlement, stock movement, stock-level, BOM, Production Run, Growth Batch, FIFO, COGS, fair-value, or journal rows and do not change an existing `items.unit_price`.
+# POS tax applicability (local release candidate, 2026-07-16)
+
+Migration `20260716130533_add_pos_tax_applicability_mode.sql` adds an explicit company-owned Point of Sale tax mode to `company_tax_settings`: `configured`, `non_fiscal`, or `NULL` for visibly unconfigured. It has no default. Existing settings rows are backfilled to `configured` only when their existing default sales-tax option is active and effective; no company is inferred as non-fiscal. The clean canonical replay contained no company rows, so its local backfill counts were `configured 0`, `unconfigured 0`, `non_fiscal 0`.
+
+POS orders now retain immutable `sales_orders.pos_tax_mode_snapshot` evidence. Configured lines continue to snapshot the selected option, treatment, label, rate, tax, and reason requirements. Non-fiscal POS lines instead use `tax_option_id = NULL`, code `POS_NON_FISCAL`, treatment `non_fiscal`, label `Tax not applied`, rate and tax `0`, no exemption requirement, and no exemption reason. This is neither configured zero-rated tax nor configured exemption.
+
+`commercial_tax_resolve_pos_context(...)` is the shared internal authority for preview and posting. `preview_operator_sale(...)` is read-only and creates no order, posting request, stock movement, or settlement. `set_company_pos_tax_mode(...)` is OWNER/ADMIN-only and appends `pos_tax_mode_changed` evidence. Non-fiscal POS orders remain operational Sales Orders with immediate settlement and stock evidence, but a database trigger prevents any linked legal Sales Invoice draft or issuance.

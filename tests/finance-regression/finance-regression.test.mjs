@@ -542,6 +542,11 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       p_default_sales_tax_option_id: regressionZeroTaxOption.id,
       p_default_purchase_tax_option_id: regressionZeroTaxOption.id,
     }), 'Expected the regression company tax defaults to be configured')
+    expectNoSupabaseError(await ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId,
+      p_mode: 'configured',
+      p_default_exemption_reason_text: null,
+    }), 'Expected the regression company POS tax mode to be configured')
 
     const accessState = unwrapRpcSingle(
       expectNoSupabaseError(
@@ -4742,6 +4747,586 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       }),
       'does not have enough stock',
     )
+  })
+
+  await t.test('POS tax applicability preserves configured tax and enables explicit non-fiscal sales', async (taxTest) => {
+    let checkNumber = 0
+    const check = async (name, fn) => {
+      checkNumber += 1
+      await taxTest.test(`${String(checkNumber).padStart(3, '0')} ${name}`, fn)
+    }
+
+    const posTaxItem = await ownerClient
+      .from('items')
+      .insert({
+        company_id: companyId,
+        sku: `${PREFIX.toUpperCase()}-POS-TAX`,
+        name: `${PREFIX} POS tax item`,
+        base_uom_id: eachUomId,
+        min_stock: 0,
+        unit_price: 10.05,
+        primary_role: 'resale',
+        track_inventory: true,
+        can_buy: true,
+        can_sell: true,
+        is_assembled: false,
+      })
+      .select('id,unit_price')
+      .single()
+    if (posTaxItem.error) throw posTaxItem.error
+    const posTaxItemId = posTaxItem.data.id
+    const openingQty = 30
+    const openingAvgCost = 4.25
+    expectNoSupabaseError(await ownerClient.from('stock_levels').insert({
+      company_id: companyId,
+      item_id: posTaxItemId,
+      warehouse_id: warehouseId,
+      bin_id: destinationBinId,
+      qty: openingQty,
+      avg_cost: openingAvgCost,
+      allocated_qty: 0,
+    }))
+
+    const standardOption = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('upsert_company_tax_option', {
+      p_company_id: companyId,
+      p_code: `${PREFIX.toUpperCase()}-POS-STD`,
+      p_display_name: `${PREFIX} POS standard 7.25%`,
+      p_treatment_type: 'standard',
+      p_rate: 7.25,
+      p_requires_exemption_reason: false,
+      p_effective_from: todayIso(),
+      p_effective_until: null,
+      p_option_id: null,
+    })))
+    const exemptOption = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('upsert_company_tax_option', {
+      p_company_id: companyId,
+      p_code: `${PREFIX.toUpperCase()}-POS-EXEMPT`,
+      p_display_name: `${PREFIX} POS exempt`,
+      p_treatment_type: 'exempt',
+      p_rate: 0,
+      p_requires_exemption_reason: true,
+      p_effective_from: todayIso(),
+      p_effective_until: null,
+      p_option_id: null,
+    })))
+
+    const productionRunsBefore = await countRows(ownerClient, 'production_runs', [['eq', 'company_id', companyId]])
+    const growthBatchesBefore = await countRows(ownerClient, 'growth_batches', [['eq', 'company_id', companyId]])
+    const posPayload = (overrides = {}) => ({
+      p_company_id: companyId,
+      p_bin_from_id: destinationBinId,
+      p_customer_id: null,
+      p_order_date: todayIso(),
+      p_currency_code: 'MZN',
+      p_fx_to_base: 1,
+      p_reference_no: `${PREFIX.toUpperCase()}-POS-TAX`,
+      p_notes: 'POS tax applicability regression',
+      p_lines: [{ item_id: posTaxItemId, qty: 2, unit_price: 10.05 }],
+      p_settlement_method: 'cash',
+      p_bank_account_id: null,
+      ...overrides,
+    })
+    const preview = async (overrides = {}) => {
+      const payload = posPayload(overrides)
+      const {
+        p_reference_no: _referenceNo,
+        p_notes: _notes,
+        p_request_key: _requestKey,
+        ...previewPayload
+      } = payload
+      return unwrapRpcSingle(expectNoSupabaseError(
+        await ownerClient.rpc('preview_operator_sale', previewPayload),
+        'Expected authoritative POS preview to succeed',
+      ))
+    }
+
+    const baseline = {
+      orders: await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]),
+      lines: await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]),
+      movements: await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]),
+      cash: await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]),
+      bank: await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]),
+      requests: await countRows(ownerClient, 'posting_requests', [
+        ['eq', 'company_id', companyId], ['eq', 'operation_type', 'operator.sale'],
+      ]),
+    }
+
+    await check('unconfigured company remains visibly unconfigured', async () => {
+      expectNoSupabaseError(await admin.from('company_tax_settings').update({
+        pos_sales_tax_mode: null,
+        pos_sales_exemption_reason_text: null,
+      }).eq('company_id', companyId))
+      const settings = await querySingle(ownerClient, 'company_tax_settings', 'pos_sales_tax_mode', [['eq', 'company_id', companyId]])
+      assert.equal(settings.pos_sales_tax_mode, null)
+    })
+    let unconfiguredPreview
+    await check('unconfigured POS preview returns the stable mode blocker', async () => {
+      unconfiguredPreview = await preview()
+      assert.equal(unconfiguredPreview.ready, false)
+      assert.deepEqual(unconfiguredPreview.blockers, ['commercial_tax_pos_mode_unconfigured'])
+    })
+    await check('unconfigured preview creates no posting request', async () => {
+      assert.equal(await countRows(ownerClient, 'posting_requests', [
+        ['eq', 'company_id', companyId], ['eq', 'operation_type', 'operator.sale'],
+      ]), baseline.requests)
+    })
+    await check('unconfigured posting fails atomically', async () => {
+      await expectPostgrestError(ownerClient.rpc('post_operator_sale', {
+        ...posPayload(), p_request_key: `${PREFIX}-pos-unconfigured`,
+      }), 'commercial_tax_pos_mode_unconfigured')
+    })
+    await check('unconfigured posting creates no Sales Order', async () => {
+      assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'company_id', companyId]]), baseline.orders)
+    })
+    await check('unconfigured posting creates no Sales Order line', async () => {
+      assert.equal(await countRows(ownerClient, 'sales_order_lines', [['eq', 'company_id', companyId]]), baseline.lines)
+    })
+    await check('unconfigured posting creates no stock movement', async () => {
+      assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'company_id', companyId]]), baseline.movements)
+    })
+    await check('unconfigured posting leaves stock level unchanged', async () => {
+      const level = await querySingle(ownerClient, 'stock_levels', 'qty,avg_cost', [
+        ['eq', 'company_id', companyId], ['eq', 'item_id', posTaxItemId],
+        ['eq', 'warehouse_id', warehouseId], ['eq', 'bin_id', destinationBinId],
+      ])
+      assert.equal(round2(level.qty), openingQty)
+      assert.equal(round2(level.avg_cost), openingAvgCost)
+    })
+    await check('unconfigured posting creates no cash transaction', async () => {
+      assert.equal(await countRows(ownerClient, 'cash_transactions', [['eq', 'company_id', companyId]]), baseline.cash)
+    })
+    await check('unconfigured posting creates no bank transaction', async () => {
+      assert.equal(await countRows(ownerClient, 'bank_transactions', [['eq', 'bank_id', bankAccountId]]), baseline.bank)
+    })
+    await check('unconfigured posting records no successful request result', async () => {
+      assert.equal(await countRows(ownerClient, 'posting_requests', [
+        ['eq', 'company_id', companyId], ['eq', 'operation_type', 'operator.sale'],
+        ['eq', 'status', 'succeeded'], ['eq', 'request_key', `${PREFIX}-pos-unconfigured`],
+      ]), 0)
+    })
+
+    await check('configured standard mode can be selected explicitly', async () => {
+      expectNoSupabaseError(await ownerClient.rpc('set_company_tax_defaults', {
+        p_company_id: companyId,
+        p_default_sales_tax_option_id: standardOption.id,
+        p_default_purchase_tax_option_id: regressionZeroTaxOptionId,
+      }))
+      const settings = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('set_company_pos_tax_mode', {
+        p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+      })))
+      assert.equal(settings.pos_sales_tax_mode, 'configured')
+    })
+    let standardPreview
+    await check('configured standard preview is ready', async () => {
+      standardPreview = await preview()
+      assert.equal(standardPreview.ready, true)
+      assert.equal(standardPreview.mode, 'configured')
+    })
+    await check('configured standard preview applies the default to every line', async () => {
+      assert.equal(standardPreview.lines.length, 1)
+      assert.equal(standardPreview.lines[0].tax_option_code, standardOption.code)
+      assert.equal(standardPreview.lines[0].tax_treatment, 'standard')
+    })
+    await check('configured standard preview preserves the exact rate', async () => {
+      assert.equal(Number(standardPreview.lines[0].tax_rate), 7.25)
+    })
+    await check('configured standard preview rounds tax per line', async () => {
+      assert.equal(round2(standardPreview.lines[0].subtotal), 20.1)
+      assert.equal(round2(standardPreview.lines[0].tax_amount), 1.46)
+    })
+    await check('configured standard header subtotal is authoritative', async () => {
+      assert.equal(round2(standardPreview.subtotal), 20.1)
+    })
+    await check('configured standard header tax is authoritative', async () => {
+      assert.equal(round2(standardPreview.tax_total), 1.46)
+    })
+    await check('configured standard total includes tax exactly once', async () => {
+      assert.equal(round2(standardPreview.total), 21.56)
+      assert.equal(round2(standardPreview.settled_amount_base), 21.56)
+    })
+    const standardRequestKey = `${PREFIX}-pos-standard`
+    let standardSale
+    await check('configured standard cash posting succeeds', async () => {
+      standardSale = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('post_operator_sale', {
+        ...posPayload(), p_request_key: standardRequestKey,
+      })))
+      assert.ok(standardSale.sales_order_id)
+      assert.equal(round2(standardSale.total_amount), 21.56)
+    })
+    let standardOrder
+    await check('configured standard order snapshots configured mode', async () => {
+      standardOrder = await querySingle(ownerClient, 'sales_orders',
+        'subtotal,tax_total,total_amount,pos_tax_mode_snapshot,tax_exemption_reason_text',
+        [['eq', 'id', standardSale.sales_order_id]])
+      assert.equal(standardOrder.pos_tax_mode_snapshot, 'configured')
+    })
+    await check('configured standard line snapshots are canonical', async () => {
+      const line = await querySingle(ownerClient, 'sales_order_lines',
+        'tax_option_id,tax_option_code_snapshot,tax_treatment_snapshot,tax_rate,tax_amount',
+        [['eq', 'so_id', standardSale.sales_order_id]])
+      assert.equal(line.tax_option_id, standardOption.id)
+      assert.equal(line.tax_option_code_snapshot, standardOption.code)
+      assert.equal(line.tax_treatment_snapshot, 'standard')
+      assert.equal(Number(line.tax_rate), 7.25)
+      assert.equal(round2(line.tax_amount), 1.46)
+    })
+    await check('configured standard preview equals posted totals', async () => {
+      assert.equal(round2(standardOrder.subtotal), round2(standardPreview.subtotal))
+      assert.equal(round2(standardOrder.tax_total), round2(standardPreview.tax_total))
+      assert.equal(round2(standardOrder.total_amount), round2(standardPreview.total))
+    })
+    await check('configured standard cash settlement equals tax-inclusive total', async () => {
+      const cash = await querySingle(ownerClient, 'cash_transactions', 'amount_base,ref_type,ref_id', [
+        ['eq', 'ref_type', 'SO'], ['eq', 'ref_id', standardSale.sales_order_id],
+      ])
+      assert.equal(round2(cash.amount_base), 21.56)
+      assert.equal(cash.ref_id, standardSale.sales_order_id)
+    })
+    await check('configured standard stock issue posts exactly once', async () => {
+      assert.equal(await countRows(ownerClient, 'stock_movements', [
+        ['eq', 'company_id', companyId], ['eq', 'ref_type', 'SO'], ['eq', 'ref_id', standardSale.sales_order_id],
+      ]), 1)
+    })
+    await check('same-key configured replay returns the original result', async () => {
+      const replay = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('post_operator_sale', {
+        ...posPayload(), p_request_key: standardRequestKey,
+      })))
+      assert.equal(replay.sales_order_id, standardSale.sales_order_id)
+      assert.equal(replay.settlement_id, standardSale.settlement_id)
+    })
+    await check('same-key configured replay creates no duplicate business rows', async () => {
+      assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'id', standardSale.sales_order_id]]), 1)
+      assert.equal(await countRows(ownerClient, 'cash_transactions', [['eq', 'ref_id', standardSale.sales_order_id]]), 1)
+      assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'ref_id', standardSale.sales_order_id]]), 1)
+    })
+    await check('same-key changed configured payload is rejected', async () => {
+      await expectPostgrestError(ownerClient.rpc('post_operator_sale', {
+        ...posPayload({ p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }] }),
+        p_request_key: standardRequestKey,
+      }), 'idempotency_key_payload_mismatch')
+    })
+
+    let zeroPreview
+    await check('explicit configured zero option remains configured tax', async () => {
+      expectNoSupabaseError(await ownerClient.rpc('set_company_tax_defaults', {
+        p_company_id: companyId,
+        p_default_sales_tax_option_id: regressionZeroTaxOptionId,
+        p_default_purchase_tax_option_id: regressionZeroTaxOptionId,
+      }))
+      zeroPreview = await preview({ p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }] })
+      assert.equal(zeroPreview.mode, 'configured')
+    })
+    await check('configured zero preview retains zero treatment', async () => {
+      assert.equal(zeroPreview.lines[0].tax_treatment, 'zero')
+      assert.equal(zeroPreview.lines[0].tax_option_code, `${PREFIX.toUpperCase()}-ZERO`)
+    })
+    await check('configured zero preview tax is exactly zero', async () => {
+      assert.equal(round2(zeroPreview.tax_total), 0)
+      assert.equal(round2(zeroPreview.total), round2(zeroPreview.subtotal))
+    })
+    await check('configured zero is never confused with non-fiscal', async () => {
+      assert.notEqual(zeroPreview.lines[0].tax_treatment, 'non_fiscal')
+      assert.notEqual(zeroPreview.lines[0].tax_option_code, 'POS_NON_FISCAL')
+    })
+
+    let exemptPreview
+    await check('configured exempt option without a reason returns a blocker', async () => {
+      expectNoSupabaseError(await ownerClient.rpc('set_company_tax_defaults', {
+        p_company_id: companyId,
+        p_default_sales_tax_option_id: exemptOption.id,
+        p_default_purchase_tax_option_id: regressionZeroTaxOptionId,
+      }))
+      expectNoSupabaseError(await admin.from('company_tax_settings').update({
+        pos_sales_tax_mode: 'configured', pos_sales_exemption_reason_text: null,
+      }).eq('company_id', companyId))
+      exemptPreview = await preview({ p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }] })
+      assert.equal(exemptPreview.ready, false)
+      assert.deepEqual(exemptPreview.blockers, ['commercial_tax_pos_exemption_reason_required'])
+    })
+    await check('configured exempt posting without a reason rolls back', async () => {
+      await expectPostgrestError(ownerClient.rpc('post_operator_sale', {
+        ...posPayload({ p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }] }),
+        p_request_key: `${PREFIX}-pos-exempt-missing`,
+      }), 'commercial_tax_pos_exemption_reason_required')
+      assert.equal(await countRows(ownerClient, 'sales_orders', [['eq', 'reference_no', `${PREFIX.toUpperCase()}-POS-TAX`]]), 1)
+    })
+    await check('configured exempt reason can be set explicitly', async () => {
+      const settings = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('set_company_pos_tax_mode', {
+        p_company_id: companyId,
+        p_mode: 'configured',
+        p_default_exemption_reason_text: 'Configured QA exemption reason',
+      })))
+      assert.equal(settings.pos_sales_exemption_reason_text, 'Configured QA exemption reason')
+    })
+    await check('configured exempt preview becomes ready with its reason', async () => {
+      exemptPreview = await preview({ p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }] })
+      assert.equal(exemptPreview.ready, true)
+      assert.equal(exemptPreview.requires_exemption_reason, true)
+      assert.equal(exemptPreview.exemption_reason_configured, true)
+    })
+    let exemptSale
+    await check('configured exempt posting preserves explicit treatment', async () => {
+      exemptSale = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('post_operator_sale', {
+        ...posPayload({
+          p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }],
+          p_reference_no: `${PREFIX.toUpperCase()}-POS-EXEMPT`,
+        }),
+        p_request_key: `${PREFIX}-pos-exempt`,
+      })))
+      const line = await querySingle(ownerClient, 'sales_order_lines',
+        'tax_treatment_snapshot,tax_option_code_snapshot,tax_amount', [['eq', 'so_id', exemptSale.sales_order_id]])
+      assert.equal(line.tax_treatment_snapshot, 'exempt')
+      assert.equal(line.tax_option_code_snapshot, exemptOption.code)
+      assert.equal(round2(line.tax_amount), 0)
+    })
+    await check('configured exempt reason is snapshotted on the order', async () => {
+      const order = await querySingle(ownerClient, 'sales_orders',
+        'tax_exemption_reason_text,pos_tax_mode_snapshot', [['eq', 'id', exemptSale.sales_order_id]])
+      assert.equal(order.tax_exemption_reason_text, 'Configured QA exemption reason')
+      assert.equal(order.pos_tax_mode_snapshot, 'configured')
+    })
+    await check('configured exempt remains distinct from non-fiscal', async () => {
+      const line = await querySingle(ownerClient, 'sales_order_lines',
+        'tax_treatment_snapshot,tax_option_code_snapshot', [['eq', 'so_id', exemptSale.sales_order_id]])
+      assert.notEqual(line.tax_treatment_snapshot, 'non_fiscal')
+      assert.notEqual(line.tax_option_code_snapshot, 'POS_NON_FISCAL')
+    })
+
+    await check('company can explicitly select non-fiscal mode', async () => {
+      const settings = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('set_company_pos_tax_mode', {
+        p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: null,
+      })))
+      assert.equal(settings.pos_sales_tax_mode, 'non_fiscal')
+      assert.equal(settings.pos_sales_exemption_reason_text, null)
+    })
+    await check('non-fiscal mode works without a default sales-tax option', async () => {
+      expectNoSupabaseError(await ownerClient.rpc('set_company_tax_defaults', {
+        p_company_id: companyId,
+        p_default_sales_tax_option_id: null,
+        p_default_purchase_tax_option_id: regressionZeroTaxOptionId,
+      }))
+      const settings = await querySingle(ownerClient, 'company_tax_settings',
+        'pos_sales_tax_mode,default_sales_tax_option_id', [['eq', 'company_id', companyId]])
+      assert.equal(settings.pos_sales_tax_mode, 'non_fiscal')
+      assert.equal(settings.default_sales_tax_option_id, null)
+    })
+    let nonFiscalPreview
+    await check('non-fiscal preview is ready', async () => {
+      nonFiscalPreview = await preview()
+      assert.equal(nonFiscalPreview.ready, true)
+      assert.equal(nonFiscalPreview.mode, 'non_fiscal')
+    })
+    await check('non-fiscal preview tax is exactly zero', async () => {
+      assert.equal(round2(nonFiscalPreview.tax_total), 0)
+      assert.equal(round2(nonFiscalPreview.lines[0].tax_amount), 0)
+    })
+    await check('non-fiscal preview total equals subtotal', async () => {
+      assert.equal(round2(nonFiscalPreview.subtotal), 20.1)
+      assert.equal(round2(nonFiscalPreview.total), 20.1)
+      assert.equal(round2(nonFiscalPreview.settled_amount_base), 20.1)
+    })
+    const nonFiscalCashKey = `${PREFIX}-pos-non-fiscal-cash`
+    let nonFiscalCashSale
+    await check('non-fiscal cash posting succeeds', async () => {
+      nonFiscalCashSale = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('post_operator_sale', {
+        ...posPayload({ p_reference_no: `${PREFIX.toUpperCase()}-POS-NON-FISCAL-CASH` }),
+        p_request_key: nonFiscalCashKey,
+      })))
+      assert.ok(nonFiscalCashSale.sales_order_id)
+      assert.equal(round2(nonFiscalCashSale.total_amount), 20.1)
+    })
+    await check('non-fiscal document snapshot is durable', async () => {
+      const order = await querySingle(ownerClient, 'sales_orders',
+        'pos_tax_mode_snapshot,subtotal,tax_total,total_amount,tax_exemption_reason_text',
+        [['eq', 'id', nonFiscalCashSale.sales_order_id]])
+      assert.equal(order.pos_tax_mode_snapshot, 'non_fiscal')
+      assert.equal(round2(order.tax_total), 0)
+      assert.equal(round2(order.total_amount), round2(order.subtotal))
+      assert.equal(order.tax_exemption_reason_text, null)
+    })
+    await check('non-fiscal line snapshot explicitly says tax not applied', async () => {
+      const line = await querySingle(ownerClient, 'sales_order_lines',
+        'tax_option_id,tax_option_code_snapshot,tax_treatment_snapshot,tax_label_snapshot,tax_rate,tax_amount,tax_requires_exemption_reason',
+        [['eq', 'so_id', nonFiscalCashSale.sales_order_id]])
+      assert.equal(line.tax_option_id, null)
+      assert.equal(line.tax_option_code_snapshot, 'POS_NON_FISCAL')
+      assert.equal(line.tax_treatment_snapshot, 'non_fiscal')
+      assert.equal(line.tax_label_snapshot, 'Tax not applied')
+      assert.equal(Number(line.tax_rate), 0)
+      assert.equal(round2(line.tax_amount), 0)
+      assert.equal(line.tax_requires_exemption_reason, false)
+    })
+    await check('non-fiscal line is not zero-rated', async () => {
+      const line = await querySingle(ownerClient, 'sales_order_lines', 'tax_treatment_snapshot', [['eq', 'so_id', nonFiscalCashSale.sales_order_id]])
+      assert.notEqual(line.tax_treatment_snapshot, 'zero')
+    })
+    await check('non-fiscal line is not exempt', async () => {
+      const line = await querySingle(ownerClient, 'sales_order_lines', 'tax_treatment_snapshot', [['eq', 'so_id', nonFiscalCashSale.sales_order_id]])
+      assert.notEqual(line.tax_treatment_snapshot, 'exempt')
+    })
+    await check('non-fiscal cash settlement equals subtotal', async () => {
+      const row = await querySingle(ownerClient, 'cash_transactions', 'amount_base,ref_id', [
+        ['eq', 'ref_type', 'SO'], ['eq', 'ref_id', nonFiscalCashSale.sales_order_id],
+      ])
+      assert.equal(round2(row.amount_base), 20.1)
+    })
+    await check('non-fiscal stock issue posts exactly once', async () => {
+      assert.equal(await countRows(ownerClient, 'stock_movements', [
+        ['eq', 'company_id', companyId], ['eq', 'ref_type', 'SO'], ['eq', 'ref_id', nonFiscalCashSale.sales_order_id],
+      ]), 1)
+    })
+    await check('non-fiscal same-key replay creates no duplicate', async () => {
+      const replay = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('post_operator_sale', {
+        ...posPayload({ p_reference_no: `${PREFIX.toUpperCase()}-POS-NON-FISCAL-CASH` }),
+        p_request_key: nonFiscalCashKey,
+      })))
+      assert.equal(replay.sales_order_id, nonFiscalCashSale.sales_order_id)
+      assert.equal(await countRows(ownerClient, 'cash_transactions', [['eq', 'ref_id', nonFiscalCashSale.sales_order_id]]), 1)
+      assert.equal(await countRows(ownerClient, 'stock_movements', [['eq', 'ref_id', nonFiscalCashSale.sales_order_id]]), 1)
+    })
+    await check('non-fiscal same-key payload mismatch remains rejected', async () => {
+      await expectPostgrestError(ownerClient.rpc('post_operator_sale', {
+        ...posPayload({
+          p_reference_no: `${PREFIX.toUpperCase()}-POS-NON-FISCAL-CASH`,
+          p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }],
+        }),
+        p_request_key: nonFiscalCashKey,
+      }), 'idempotency_key_payload_mismatch')
+    })
+    let nonFiscalBankSale
+    await check('non-fiscal bank posting succeeds', async () => {
+      nonFiscalBankSale = unwrapRpcSingle(expectNoSupabaseError(await ownerClient.rpc('post_operator_sale', {
+        ...posPayload({
+          p_reference_no: `${PREFIX.toUpperCase()}-POS-NON-FISCAL-BANK`,
+          p_lines: [{ item_id: posTaxItemId, qty: 1, unit_price: 10.05 }],
+          p_settlement_method: 'bank',
+          p_bank_account_id: bankAccountId,
+        }),
+        p_request_key: `${PREFIX}-pos-non-fiscal-bank`,
+      })))
+      assert.equal(nonFiscalBankSale.settlement_method, 'bank')
+    })
+    await check('non-fiscal bank settlement equals subtotal', async () => {
+      const row = await querySingle(ownerClient, 'bank_transactions', 'amount_base,ref_id', [
+        ['eq', 'ref_type', 'SO'], ['eq', 'ref_id', nonFiscalBankSale.sales_order_id],
+      ])
+      assert.equal(round2(row.amount_base), 10.05)
+    })
+    await check('later company mode changes do not alter historical non-fiscal sale', async () => {
+      expectNoSupabaseError(await ownerClient.rpc('set_company_tax_defaults', {
+        p_company_id: companyId,
+        p_default_sales_tax_option_id: standardOption.id,
+        p_default_purchase_tax_option_id: regressionZeroTaxOptionId,
+      }))
+      expectNoSupabaseError(await ownerClient.rpc('set_company_pos_tax_mode', {
+        p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+      }))
+      const order = await querySingle(ownerClient, 'sales_orders', 'pos_tax_mode_snapshot,tax_total', [['eq', 'id', nonFiscalCashSale.sales_order_id]])
+      assert.equal(order.pos_tax_mode_snapshot, 'non_fiscal')
+      assert.equal(round2(order.tax_total), 0)
+    })
+    await check('client cannot edit the non-fiscal document snapshot', async () => {
+      await expectPostgrestError(ownerClient.from('sales_orders')
+        .update({ pos_tax_mode_snapshot: 'configured' })
+        .eq('id', nonFiscalCashSale.sales_order_id), 'commercial_tax_pos_snapshot_immutable')
+    })
+    await check('ordinary Sales Order cannot self-select non-fiscal mode', async () => {
+      await expectPostgrestError(ownerClient.from('sales_orders').insert({
+        company_id: companyId,
+        customer_id: customerId,
+        order_date: todayIso(),
+        currency_code: 'MZN',
+        fx_to_base: 1,
+        status: 'draft',
+        pos_tax_mode_snapshot: 'non_fiscal',
+      }), 'commercial_tax_pos_snapshot_database_managed')
+    })
+    await check('Purchase Order schema does not accept POS non-fiscal mode', async () => {
+      await expectPostgrestError(ownerClient.from('purchase_orders').update({ pos_tax_mode_snapshot: 'non_fiscal' }).eq('id', purchaseOrderId), 'pos_tax_mode_snapshot')
+    })
+    await check('draft fiscal invoice creation from non-fiscal POS is blocked', async () => {
+      await assert.rejects(
+        openOrCreateSalesInvoiceDraftFromOrder(ownerClient, companyId, nonFiscalCashSale.sales_order_id),
+        (error) => /commercial_tax_non_fiscal_pos_invoice_forbidden/i.test(String(error?.message || error)),
+      )
+    })
+    await check('direct Sales Invoice insertion from non-fiscal POS is blocked', async () => {
+      const source = await querySingle(ownerClient, 'sales_orders', '*', [['eq', 'id', nonFiscalCashSale.sales_order_id]])
+      await expectPostgrestError(ownerClient.from('sales_invoices').insert({
+        company_id: companyId,
+        sales_order_id: nonFiscalCashSale.sales_order_id,
+        customer_id: source.customer_id,
+        invoice_date: source.order_date,
+        due_date: source.order_date,
+        currency_code: source.currency_code,
+        fx_to_base: source.fx_to_base,
+        subtotal: source.subtotal,
+        tax_total: source.tax_total,
+        total_amount: source.total_amount,
+        source_origin: 'native',
+        document_workflow_status: 'draft',
+        tax_calculation_mode: 'line',
+      }), 'commercial_tax_non_fiscal_pos_invoice_forbidden')
+    })
+    await check('invoice issuance guard covers linked status transitions in the database', async () => {
+      const migration = await readFile(
+        new URL('../../supabase/migrations/20260716130533_add_pos_tax_applicability_mode.sql', import.meta.url),
+        'utf8',
+      )
+      assert.match(migration, /before insert or update of sales_order_id, company_id, document_workflow_status/)
+      assert.match(migration, /commercial_tax_non_fiscal_pos_invoice_forbidden/)
+    })
+    await check('configured-tax POS retains normal invoice eligibility', async () => {
+      const draft = await openOrCreateSalesInvoiceDraftFromOrder(ownerClient, companyId, standardSale.sales_order_id)
+      assert.ok(draft.invoiceId)
+    })
+    await check('ordinary canonical Sales Order invoice eligibility remains intact', async () => {
+      const existing = await ownerClient.from('sales_invoices').select('id').eq('sales_order_id', salesOrderId).limit(1)
+      if (existing.error) throw existing.error
+      assert.ok(existing.data.length >= 1)
+    })
+    await check('non-fiscal immediately settled state has zero outstanding', async () => {
+      const state = await querySingle(ownerClient, 'v_sales_order_state',
+        'legacy_settled_base,legacy_outstanding_base', [['eq', 'id', nonFiscalCashSale.sales_order_id]])
+      assert.equal(round2(state.legacy_settled_base), 20.1)
+      assert.equal(round2(state.legacy_outstanding_base), 0)
+    })
+    await check('non-fiscal POS creates no duplicate receivable exposure', async () => {
+      assert.equal(await countRows(ownerClient, 'sales_invoices', [['eq', 'sales_order_id', nonFiscalCashSale.sales_order_id]]), 0)
+      assert.equal(await countRows(ownerClient, 'cash_transactions', [['eq', 'ref_id', nonFiscalCashSale.sales_order_id]]), 1)
+    })
+    await check('non-fiscal settled sale creates no false due reminder', async () => {
+      const notifications = await ownerClient.from('notifications')
+        .select('id')
+        .eq('company_id', companyId)
+        .like('url', `%${nonFiscalCashSale.sales_order_id}%`)
+      if (notifications.error) throw notifications.error
+      assert.equal(notifications.data.length, 0)
+    })
+    await check('POS tax package leaves item selling price unchanged', async () => {
+      const item = await querySingle(ownerClient, 'items', 'unit_price', [['eq', 'id', posTaxItemId]])
+      assert.equal(round2(item.unit_price), 10.05)
+    })
+    await check('POS tax package leaves weighted-average cost unchanged', async () => {
+      const level = await querySingle(ownerClient, 'stock_levels', 'avg_cost', [
+        ['eq', 'company_id', companyId], ['eq', 'item_id', posTaxItemId],
+        ['eq', 'warehouse_id', warehouseId], ['eq', 'bin_id', destinationBinId],
+      ])
+      assert.equal(round2(level.avg_cost), openingAvgCost)
+    })
+    await check('POS tax package creates no Production Run', async () => {
+      assert.equal(await countRows(ownerClient, 'production_runs', [['eq', 'company_id', companyId]]), productionRunsBefore)
+    })
+    await check('POS tax package creates no Growth Batch', async () => {
+      assert.equal(await countRows(ownerClient, 'growth_batches', [['eq', 'company_id', companyId]]), growthBatchesBefore)
+    })
+    await check('final stock delta equals only successful POS issues', async () => {
+      const level = await querySingle(ownerClient, 'stock_levels', 'qty', [
+        ['eq', 'company_id', companyId], ['eq', 'item_id', posTaxItemId],
+        ['eq', 'warehouse_id', warehouseId], ['eq', 'bin_id', destinationBinId],
+      ])
+      assert.equal(round2(level.qty), openingQty - 6)
+    })
   })
 
   await t.test('Opening stock import creates new buckets and updates existing stock deterministically', async () => {

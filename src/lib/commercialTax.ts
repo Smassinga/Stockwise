@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 
 export type CommercialTaxTreatment = 'standard' | 'zero' | 'exempt'
+export type PosSalesTaxMode = 'configured' | 'non_fiscal'
 
 export type CommercialTaxOption = {
   id: string
@@ -23,6 +24,8 @@ export type CommercialTaxSettings = {
   company_id: string
   default_sales_tax_option_id: string | null
   default_purchase_tax_option_id: string | null
+  pos_sales_tax_mode: PosSalesTaxMode | null
+  pos_sales_exemption_reason_text: string | null
   created_by: string
   created_at: string
   updated_by: string
@@ -99,7 +102,7 @@ export async function loadCommercialTaxConfiguration(companyId: string): Promise
       .order('display_name', { ascending: true }),
     supabase
       .from('company_tax_settings')
-      .select('company_id,default_sales_tax_option_id,default_purchase_tax_option_id,created_by,created_at,updated_by,updated_at')
+      .select('company_id,default_sales_tax_option_id,default_purchase_tax_option_id,pos_sales_tax_mode,pos_sales_exemption_reason_text,created_by,created_at,updated_by,updated_at')
       .eq('company_id', companyId)
       .maybeSingle(),
   ])

@@ -530,6 +530,7 @@ type SalesOrderDraftSource = {
   tax_total: number | null
   tax_calculation_mode: 'line' | 'legacy_header' | null
   tax_exemption_reason_text: string | null
+  pos_tax_mode_snapshot: 'configured' | 'non_fiscal' | null
 }
 
 type SalesOrderLineDraftSource = {
@@ -736,7 +737,9 @@ function humanizeRuntimeError(error: any, fallback: string, stage: string) {
   const matches = (...needles: string[]) => needles.some((needle) => haystack.includes(needle))
 
   let friendlyMessage: string | null = null
-  if (matches('company_fiscal_settings_missing')) {
+  if (matches('commercial_tax_non_fiscal_pos_invoice_forbidden')) {
+    friendlyMessage = 'This Point of Sale transaction is non-fiscal and cannot be converted into a fiscal sales invoice.'
+  } else if (matches('company_fiscal_settings_missing')) {
     friendlyMessage = 'Mozambique fiscal document defaults are not ready for this company yet. Try opening the draft again, then complete the company tax profile before issuing legal documents.'
   } else if (matches('finance_document_fiscal_series_missing')) {
       friendlyMessage = 'The active Mozambique fiscal series for this document year is missing. StockWise needs one series per document type before it can allocate the legal reference.'
@@ -1701,7 +1704,7 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
 
   const { data: order, error: orderError } = await supabase
     .from('sales_orders')
-    .select('id,company_id,customer_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total,tax_calculation_mode,tax_exemption_reason_text')
+    .select('id,company_id,customer_id,order_no,status,currency_code,fx_to_base,order_date,due_date,tax_total,tax_calculation_mode,tax_exemption_reason_text,pos_tax_mode_snapshot')
     .eq('company_id', companyId)
     .eq('id', salesOrderId)
     .maybeSingle<SalesOrderDraftSource>()
@@ -1715,6 +1718,9 @@ export async function createDraftSalesInvoiceFromOrder(companyId: string, salesO
   }
   if (!allowedSalesOrderForInvoice(order.status)) {
     throw new Error('Only confirmed, allocated, shipped, or closed sales orders can become fiscal invoice drafts.')
+  }
+  if (order.pos_tax_mode_snapshot === 'non_fiscal') {
+    throw new Error('commercial_tax_non_fiscal_pos_invoice_forbidden')
   }
 
   // sales_order_lines has no created_at column in the live schema.

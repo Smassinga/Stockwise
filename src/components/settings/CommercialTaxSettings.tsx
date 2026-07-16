@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { CircleDollarSign, Plus, Save, ShieldCheck } from 'lucide-react'
+import { CircleDollarSign, Info, Plus, Save, ShieldCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
 import {
@@ -11,10 +11,13 @@ import {
   type CommercialTaxTreatment,
 } from '../../lib/commercialTax'
 import { Badge } from '../ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Checkbox } from '../ui/checkbox'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Switch } from '../ui/switch'
 
@@ -24,6 +27,7 @@ type Props = {
 }
 
 const NO_DEFAULT = '__none__'
+const UNCONFIGURED_POS_MODE = '__unconfigured__'
 
 export function CommercialTaxSettings({ companyId, canEdit }: Props) {
   const { t } = useI18n()
@@ -36,6 +40,9 @@ export function CommercialTaxSettings({ companyId, canEdit }: Props) {
   const [configuration, setConfiguration] = useState<CommercialTaxConfiguration | null>(null)
   const [salesDefaultId, setSalesDefaultId] = useState(NO_DEFAULT)
   const [purchaseDefaultId, setPurchaseDefaultId] = useState(NO_DEFAULT)
+  const [posMode, setPosMode] = useState<'configured' | 'non_fiscal' | typeof UNCONFIGURED_POS_MODE>(UNCONFIGURED_POS_MODE)
+  const [posExemptionReason, setPosExemptionReason] = useState('')
+  const [nonFiscalAcknowledged, setNonFiscalAcknowledged] = useState(false)
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [treatment, setTreatment] = useState<CommercialTaxTreatment>('standard')
@@ -56,6 +63,9 @@ export function CommercialTaxSettings({ companyId, canEdit }: Props) {
       setConfiguration(next)
       setSalesDefaultId(next.settings?.default_sales_tax_option_id || NO_DEFAULT)
       setPurchaseDefaultId(next.settings?.default_purchase_tax_option_id || NO_DEFAULT)
+      setPosMode(next.settings?.pos_sales_tax_mode || UNCONFIGURED_POS_MODE)
+      setPosExemptionReason(next.settings?.pos_sales_exemption_reason_text || '')
+      setNonFiscalAcknowledged(false)
     } catch (error: any) {
       console.error(error)
       toast.error(taxErrorMessage(error, 'commercialTax.errors.load', 'Tax configuration could not be loaded'))
@@ -68,6 +78,10 @@ export function CommercialTaxSettings({ companyId, canEdit }: Props) {
 
   const activeOptions = configuration?.activeOptions || []
   const auditCount = useMemo(() => configuration?.options.length || 0, [configuration?.options.length])
+  const selectedSalesDefault = useMemo(
+    () => activeOptions.find((option) => option.id === salesDefaultId) || null,
+    [activeOptions, salesDefaultId],
+  )
 
   async function saveDefaults() {
     if (!companyId || !canEdit) return
@@ -121,6 +135,37 @@ export function CommercialTaxSettings({ companyId, canEdit }: Props) {
     } catch (error: any) {
       console.error(error)
       toast.error(taxErrorMessage(error, 'commercialTax.errors.createOption', 'Tax option could not be created'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function savePosMode() {
+    if (!companyId || !canEdit || posMode === UNCONFIGURED_POS_MODE) return
+    if (posMode === 'non_fiscal' && !nonFiscalAcknowledged) {
+      toast.error(tt('commercialTax.pos.ackRequired', 'Confirm that you understand the non-fiscal POS behavior before saving.'))
+      return
+    }
+
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('set_company_pos_tax_mode', {
+        p_company_id: companyId,
+        p_mode: posMode,
+        p_default_exemption_reason_text: posMode === 'configured' ? posExemptionReason.trim() || null : null,
+      })
+      if (error) throw error
+      toast.success(tt('commercialTax.pos.saved', 'Point of Sale tax handling saved'))
+      await refresh()
+    } catch (error: any) {
+      console.error(error)
+      const code = commercialTaxErrorCode(error)
+      const messages: Record<string, string> = {
+        commercial_tax_pos_default_unconfigured: tt('commercialTax.pos.errors.defaultUnconfigured', 'Configure an active default sales-tax option before using configured tax in Point of Sale.'),
+        commercial_tax_pos_default_inactive: tt('commercialTax.pos.errors.defaultInactive', 'The default sales-tax option is not currently effective.'),
+        commercial_tax_pos_exemption_reason_required: tt('commercialTax.pos.errors.reasonRequired', 'Enter the required exemption reason for the configured default option.'),
+      }
+      toast.error((code && messages[code]) || tt('commercialTax.pos.errors.save', 'Point of Sale tax handling could not be saved'))
     } finally {
       setSaving(false)
     }
@@ -199,6 +244,97 @@ export function CommercialTaxSettings({ companyId, canEdit }: Props) {
             <Button onClick={saveDefaults} disabled={!canEdit || saving}>
               <Save className="mr-2 h-4 w-4" />
               {tt('commercialTax.defaults.save', 'Save defaults')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{tt('commercialTax.pos.title', 'Point of Sale tax handling')}</CardTitle>
+          <CardDescription>
+            {tt('commercialTax.pos.description', 'Choose how future Point of Sale transactions apply tax. The choice is company-controlled and audited.')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {posMode === UNCONFIGURED_POS_MODE ? (
+            <Alert className="border-amber-500/40 bg-amber-500/8">
+              <Info className="h-4 w-4" />
+              <AlertTitle>{tt('commercialTax.pos.unconfiguredTitle', 'Point of Sale tax handling is not configured')}</AlertTitle>
+              <AlertDescription>{tt('commercialTax.pos.unconfiguredAdmin', 'Configure Point of Sale tax handling before posting sales.')}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <RadioGroup
+            value={posMode}
+            onValueChange={(value) => {
+              setPosMode(value as 'configured' | 'non_fiscal')
+              setNonFiscalAcknowledged(false)
+            }}
+            className="gap-3"
+            disabled={!canEdit || saving}
+          >
+            <Label className="flex cursor-pointer items-start gap-3 rounded-lg border p-4">
+              <RadioGroupItem value="configured" className="mt-0.5" />
+              <span className="min-w-0 space-y-1">
+                <span className="block font-medium">{tt('commercialTax.pos.configured', 'Use configured sales tax')}</span>
+                <span className="block text-sm font-normal text-muted-foreground">
+                  {selectedSalesDefault
+                    ? `${commercialTaxOptionLabel(selectedSalesDefault)} · ${tt(`commercialTax.treatment.${selectedSalesDefault.treatment_type}`, selectedSalesDefault.treatment_type)}`
+                    : tt('commercialTax.pos.configuredMissing', 'No effective default sales-tax option is selected.')}
+                </span>
+              </span>
+            </Label>
+            <Label className="flex cursor-pointer items-start gap-3 rounded-lg border p-4">
+              <RadioGroupItem value="non_fiscal" className="mt-0.5" />
+              <span className="min-w-0 space-y-1">
+                <span className="block font-medium">{tt('commercialTax.pos.nonFiscal', 'Non-fiscal POS sales — tax not applied')}</span>
+                <span className="block text-sm font-normal text-muted-foreground">
+                  {tt('commercialTax.pos.nonFiscalHelp', 'Tax is not applied. Future POS sales record stock and payment activity and cannot be converted into fiscal invoices.')}
+                </span>
+              </span>
+            </Label>
+          </RadioGroup>
+
+          {posMode === 'configured' && selectedSalesDefault?.requires_exemption_reason ? (
+            <div className="space-y-2">
+              <Label htmlFor="pos-sales-exemption-reason">{tt('commercialTax.pos.reason', 'Default POS exemption reason')}</Label>
+              <Input
+                id="pos-sales-exemption-reason"
+                value={posExemptionReason}
+                onChange={(event) => setPosExemptionReason(event.target.value)}
+                disabled={!canEdit || saving}
+              />
+              <p className="text-xs text-muted-foreground">{tt('commercialTax.pos.reasonHelp', 'Required by the selected configured tax option and snapshotted on future POS orders.')}</p>
+            </div>
+          ) : null}
+
+          {posMode === 'non_fiscal' ? (
+            <div className="space-y-3 rounded-lg border border-amber-500/35 bg-amber-500/8 p-4">
+              <p className="text-sm">{tt('commercialTax.pos.futureOnly', 'This affects future Point of Sale sales only. Prior transactions do not change.')}</p>
+              <Label className="flex items-start gap-3 font-normal">
+                <Checkbox
+                  checked={nonFiscalAcknowledged}
+                  onCheckedChange={(checked) => setNonFiscalAcknowledged(checked === true)}
+                  disabled={!canEdit || saving}
+                />
+                <span>{tt('commercialTax.pos.acknowledgement', 'I understand that StockWise will treat future Point of Sale transactions as non-fiscal operational sales and will prevent their conversion into fiscal invoices.')}</span>
+              </Label>
+            </div>
+          ) : null}
+
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>{tt('commercialTax.pos.disclaimer', 'This setting controls StockWise behavior and does not determine the company’s legal tax obligations.')}</AlertDescription>
+          </Alert>
+
+          <div className="flex justify-end">
+            <Button
+              onClick={savePosMode}
+              disabled={!canEdit || saving || posMode === UNCONFIGURED_POS_MODE || (posMode === 'configured' && !selectedSalesDefault) || (posMode === 'non_fiscal' && !nonFiscalAcknowledged)}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {tt('commercialTax.pos.save', 'Save Point of Sale tax handling')}
             </Button>
           </div>
         </CardContent>

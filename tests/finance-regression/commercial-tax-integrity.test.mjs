@@ -19,6 +19,7 @@ import {
 const PREFIX = 'TAXINT'
 const SOURCE = {
   migration: readFileSync(new URL('../../supabase/migrations/20260712052825_add_commercial_tax_integrity.sql', import.meta.url), 'utf8'),
+  posMigration: readFileSync(new URL('../../supabase/migrations/20260716130533_add_pos_tax_applicability_mode.sql', import.meta.url), 'utf8'),
   itemMigration: readFileSync(new URL('../../supabase/migrations/20260712052833_add_item_profile_trust.sql', import.meta.url), 'utf8'),
   financeStateMigration: readFileSync(new URL('../../supabase/migrations/20260712230118_fix_canonical_sales_order_finance_state.sql', import.meta.url), 'utf8'),
   salesOrders: readFileSync(new URL('../../src/pages/Orders/SalesOrders.tsx', import.meta.url), 'utf8'),
@@ -804,5 +805,174 @@ test('commercial tax integrity and item profile trust', async (t) => {
     assert.doesNotMatch(SOURCE.purchaseOrders, />\?<\/Button>/)
     assert.match(SOURCE.purchaseOrders, /aria-label=\{tt\('orders\.removeLine', 'Remove line'\)\}/)
     assert.match(SOURCE.purchaseOrders, /<Trash2 className="h-4 w-4" \/>/)
+  })
+  await check(127, 'POS mode column is nullable and has no silent default', async () => {
+    assert.match(SOURCE.posMigration, /add column pos_sales_tax_mode text,/)
+    assert.doesNotMatch(SOURCE.posMigration, /pos_sales_tax_mode text[^;]*default/i)
+  })
+  await check(128, 'POS mode constraint permits only configured or non-fiscal', async () => {
+    assert.match(SOURCE.posMigration, /pos_sales_tax_mode in \('configured', 'non_fiscal'\)/)
+  })
+  await check(129, 'POS backfill never selects non-fiscal', async () => {
+    assert.match(SOURCE.posMigration, /update public\.company_tax_settings settings\s+set pos_sales_tax_mode = 'configured'/i)
+    assert.doesNotMatch(SOURCE.posMigration, /update public\.company_tax_settings settings\s+set pos_sales_tax_mode = 'non_fiscal'/i)
+  })
+  await check(130, 'POS backfill requires an effective sales default', async () => {
+    assert.match(SOURCE.posMigration, /option_row\.effective_from <= current_date/)
+    assert.match(SOURCE.posMigration, /option_row\.effective_until is null or option_row\.effective_until >= current_date/)
+  })
+  await check(131, 'OWNER can set configured POS tax mode', async () => {
+    const row = firstRow(ok(await ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+    })))
+    assert.equal(row.pos_sales_tax_mode, 'configured')
+  })
+  await check(132, 'ADMIN can set configured POS tax mode', async () => {
+    const row = firstRow(ok(await companyAdminClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+    })))
+    assert.equal(row.pos_sales_tax_mode, 'configured')
+  })
+  await check(133, 'MANAGER cannot change POS tax mode', async () => {
+    await expectPostgrestError(managerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: null,
+    }), 'commercial_tax_admin_required')
+  })
+  await check(134, 'OPERATOR cannot change POS tax mode', async () => {
+    await expectPostgrestError(operatorClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: null,
+    }), 'commercial_tax_admin_required')
+  })
+  await check(135, 'VIEWER cannot change POS tax mode', async () => {
+    await expectPostgrestError(viewerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: null,
+    }), 'commercial_tax_admin_required')
+  })
+  await check(136, 'cross-company POS mode change is denied', async () => {
+    await expectPostgrestError(crossOwnerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: null,
+    }), 'commercial_tax_admin_required')
+  })
+  await check(137, 'anonymous POS mode change is denied', async () => {
+    await expectPostgrestError(anon.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: null,
+    }), '')
+  })
+  await check(138, 'PUBLIC and anon execute are revoked on POS configuration', async () => {
+    assert.match(SOURCE.posMigration, /revoke all on function public\.set_company_pos_tax_mode\(uuid, text, text\)\s+from public, anon/)
+  })
+  await check(139, 'authenticated is the only client role granted POS configuration execute', async () => {
+    assert.match(SOURCE.posMigration, /grant execute on function public\.set_company_pos_tax_mode\(uuid, text, text\)\s+to authenticated/)
+  })
+  await check(140, 'POS mode change appends audited before and after state', async () => {
+    const event = firstRow(ok(await ownerClient.from('company_tax_configuration_events')
+      .select('event_type,before_state,after_state')
+      .eq('company_id', companyId)
+      .eq('event_type', 'pos_tax_mode_changed')
+      .order('created_at', { ascending: false })
+      .limit(1)))
+    assert.equal(event.event_type, 'pos_tax_mode_changed')
+    assert.ok(event.after_state?.pos_sales_tax_mode)
+  })
+  await check(141, 'idempotent POS mode no-op does not duplicate audit evidence', async () => {
+    const before = (await ownerClient.from('company_tax_configuration_events').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).eq('event_type', 'pos_tax_mode_changed')).count
+    ok(await ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+    }))
+    const after = (await ownerClient.from('company_tax_configuration_events').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).eq('event_type', 'pos_tax_mode_changed')).count
+    assert.equal(after, before)
+  })
+  await check(142, 'historical POS configuration event cannot be updated', async () => {
+    const event = firstRow(ok(await ownerClient.from('company_tax_configuration_events').select('id')
+      .eq('company_id', companyId).eq('event_type', 'pos_tax_mode_changed').limit(1)))
+    await expectPostgrestError(ownerClient.from('company_tax_configuration_events').update({ event_type: 'tampered' }).eq('id', event.id), '')
+  })
+  await check(143, 'historical POS configuration event cannot be deleted', async () => {
+    const event = firstRow(ok(await ownerClient.from('company_tax_configuration_events').select('id')
+      .eq('company_id', companyId).eq('event_type', 'pos_tax_mode_changed').limit(1)))
+    await expectPostgrestError(ownerClient.from('company_tax_configuration_events').delete().eq('id', event.id), '')
+  })
+  await check(144, 'authenticated direct POS settings update remains denied', async () => {
+    await expectPostgrestError(ownerClient.from('company_tax_settings').update({ pos_sales_tax_mode: 'non_fiscal' }).eq('company_id', companyId), '')
+  })
+  await check(145, 'configured mode rejects a missing default sales option', async () => {
+    ok(await ownerClient.rpc('set_company_tax_defaults', {
+      p_company_id: companyId, p_default_sales_tax_option_id: null, p_default_purchase_tax_option_id: zeroOption.id,
+    }))
+    await expectPostgrestError(ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+    }), 'commercial_tax_pos_default_unconfigured')
+  })
+  await check(146, 'configured exempt default rejects a missing POS reason', async () => {
+    ok(await ownerClient.rpc('set_company_tax_defaults', {
+      p_company_id: companyId, p_default_sales_tax_option_id: exemptOption.id, p_default_purchase_tax_option_id: zeroOption.id,
+    }))
+    await expectPostgrestError(ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+    }), 'commercial_tax_pos_exemption_reason_required')
+  })
+  await check(147, 'configured exempt mode accepts and trims an explicit POS reason', async () => {
+    const row = firstRow(ok(await ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: '  QA configured reason  ',
+    })))
+    assert.equal(row.pos_sales_exemption_reason_text, 'QA configured reason')
+  })
+  await check(148, 'non-fiscal mode clears the configured exemption reason', async () => {
+    const row = firstRow(ok(await ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'non_fiscal', p_default_exemption_reason_text: 'must be cleared',
+    })))
+    assert.equal(row.pos_sales_tax_mode, 'non_fiscal')
+    assert.equal(row.pos_sales_exemption_reason_text, null)
+  })
+  await check(149, 'non-fiscal mode is not represented as zero or exempt', async () => {
+    assert.match(SOURCE.posMigration, /tax_treatment_snapshot := 'non_fiscal'/)
+    assert.doesNotMatch(SOURCE.posMigration, /pos_sales_tax_mode\s*=\s*'(zero|exempt)'/)
+  })
+  await check(150, 'POS exemption reason is rejected outside configured mode', async () => {
+    assert.match(SOURCE.posMigration, /pos_sales_tax_mode is not distinct from 'configured'[\s\S]*pos_sales_exemption_reason_text is null/)
+    const result = await admin.from('company_tax_settings').update({
+      pos_sales_tax_mode: null,
+      pos_sales_exemption_reason_text: 'must not persist while unconfigured',
+    }).eq('company_id', companyId)
+    assert.equal(result.error?.code, '23514')
+  })
+  await check(151, 'non-fiscal line snapshot is explicit and tax-not-applied', async () => {
+    assert.match(SOURCE.posMigration, /tax_option_code_snapshot := 'POS_NON_FISCAL'/)
+    assert.match(SOURCE.posMigration, /tax_label_snapshot := 'Tax not applied'/)
+  })
+  await check(152, 'internal POS resolver is denied to all client roles', async () => {
+    assert.match(SOURCE.posMigration, /revoke all on function public\.commercial_tax_resolve_pos_context\(uuid, date, boolean\)\s+from public, anon, authenticated/)
+  })
+  await check(153, 'POS resolver and mutation functions use restricted search paths', async () => {
+    const restricted = SOURCE.posMigration.match(/set search_path = pg_catalog, public/g) || []
+    assert.ok(restricted.length >= 7)
+  })
+  await check(154, 'tax settings and audit events retain FORCE RLS', async () => {
+    assert.match(SOURCE.migration, /alter table public\.company_tax_settings force row level security/)
+    assert.match(SOURCE.migration, /alter table public\.company_tax_configuration_events force row level security/)
+  })
+  await check(155, 'authoritative POS preview is read-only and creates no posting request', async () => {
+    const previewBody = SOURCE.posMigration.match(/create or replace function public\.preview_operator_sale[\s\S]*?\n\$\$;/i)?.[0] || ''
+    assert.match(previewBody, /language plpgsql\s+stable/)
+    assert.doesNotMatch(previewBody, /insert\s+into|update\s+public|delete\s+from|posting_requests/i)
+  })
+  await check(156, 'non-fiscal invoice prohibition is database-triggered', async () => {
+    assert.match(SOURCE.posMigration, /create trigger biu_04_sales_invoice_non_fiscal_pos_guard/)
+    assert.match(SOURCE.posMigration, /commercial_tax_non_fiscal_pos_invoice_forbidden/)
+  })
+  await check(157, 'ordinary Purchase Order tax behavior is not modified', async () => {
+    assert.doesNotMatch(SOURCE.posMigration, /create or replace function public\.commercial_tax_apply_purchase_order_line/)
+    assert.doesNotMatch(SOURCE.posMigration, /alter table public\.purchase_orders add column pos_/)
+  })
+  await check(158, 'POS settings finish in configured mode for later regression compatibility', async () => {
+    ok(await ownerClient.rpc('set_company_tax_defaults', {
+      p_company_id: companyId, p_default_sales_tax_option_id: standardOption.id, p_default_purchase_tax_option_id: zeroOption.id,
+    }))
+    const row = firstRow(ok(await ownerClient.rpc('set_company_pos_tax_mode', {
+      p_company_id: companyId, p_mode: 'configured', p_default_exemption_reason_text: null,
+    })))
+    assert.equal(row.pos_sales_tax_mode, 'configured')
   })
 })

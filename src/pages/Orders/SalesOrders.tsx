@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
+import { Badge } from '../../components/ui/badge'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import {
@@ -129,6 +130,7 @@ type SO = {
   tax_calculation_mode?: 'line' | 'legacy_header'
   tax_configuration_version?: number | null
   tax_exemption_reason_text?: string | null
+  pos_tax_mode_snapshot?: 'configured' | 'non_fiscal' | null
 }
 
 type SOL = {
@@ -555,7 +557,7 @@ export default function SalesOrders() {
 
     let q = supabase
       .from('sales_orders')
-      .select('id,customer_id,customer,status,currency_code,fx_to_base,subtotal,tax_total,total,total_amount,tax_calculation_mode,tax_configuration_version,tax_exemption_reason_text,due_date,updated_at,created_at,order_no,bill_to_name')
+      .select('id,customer_id,customer,status,currency_code,fx_to_base,subtotal,tax_total,total,total_amount,tax_calculation_mode,tax_configuration_version,tax_exemption_reason_text,pos_tax_mode_snapshot,due_date,updated_at,created_at,order_no,bill_to_name')
       .eq('company_id', companyId)
       .in('status', statuses as SoStatus[])
       .order('updated_at', { ascending: false })
@@ -688,7 +690,7 @@ export default function SalesOrders() {
     const [soRes, solRes, invoiceRes] = await Promise.all([
       supabase
         .from('sales_orders')
-        .select('id,customer_id,customer,status,order_date,currency_code,fx_to_base,subtotal,tax_total,total,total_amount,tax_calculation_mode,tax_configuration_version,tax_exemption_reason_text,due_date,payment_terms_id,payment_terms,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,confirmed_by,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,created_by,public_id,created_at,updated_at,order_no,company_id')
+        .select('id,customer_id,customer,status,order_date,currency_code,fx_to_base,subtotal,tax_total,total,total_amount,tax_calculation_mode,tax_configuration_version,tax_exemption_reason_text,pos_tax_mode_snapshot,due_date,payment_terms_id,payment_terms,reference_no,delivery_terms,notes,internal_notes,prepared_by,approved_by,confirmed_by,bill_to_name,bill_to_email,bill_to_phone,bill_to_tax_id,bill_to_billing_address,bill_to_shipping_address,expected_ship_date,created_by,public_id,created_at,updated_at,order_no,company_id')
         .eq('company_id', activeCompanyId),
       supabase
         .from('sales_order_lines')
@@ -1641,6 +1643,10 @@ export default function SalesOrders() {
       toast.error(tt('org.noCompany', 'Join or create a company first'))
       return
     }
+    if (so.pos_tax_mode_snapshot === 'non_fiscal') {
+      toast.error(tt('commercialTax.pos.invoiceForbidden', 'This Point of Sale transaction is non-fiscal and cannot be converted into a fiscal sales invoice.'))
+      return
+    }
 
     try {
       setCreatingInvoiceForOrderId(so.id)
@@ -1729,6 +1735,10 @@ export default function SalesOrders() {
     const currency = curSO(so) || '-'
     const fx = fxSO(so) || 1
     const lines = solines.filter(l => l.so_id === so.id)
+    const isNonFiscalPos = so.pos_tax_mode_snapshot === 'non_fiscal'
+    const outputTitle = isNonFiscalPos
+      ? tt('commercialTax.pos.receiptTitle', 'Non-fiscal sale receipt')
+      : tt('orders.salesOrder', 'Sales Order')
 
     const rows = lines.map(l => {
       const it = itemById.get(l.item_id)
@@ -1929,10 +1939,15 @@ export default function SalesOrders() {
             <div class="company-name">${companyName || '-'}</div>
           </div>
           <div class="doc-meta">
-            <h1 class="doc-title">${tt('orders.salesOrder', 'Sales Order')} ${number}</h1>
+            <h1 class="doc-title">${outputTitle} ${number}</h1>
             <div class="muted">${tt('orders.printed', 'Printed')}: <b>${printedAt}</b></div>
           </div>
         </div>
+
+        ${isNonFiscalPos ? `<div class="section">
+          <div class="section-head">${tt('commercialTax.pos.nonFiscalBadge', 'Non-fiscal POS sale')}</div>
+          <div class="section-body"><b>${tt('commercialTax.pos.notFiscalInvoice', 'Not a fiscal invoice')}</b><br/>${tt('commercialTax.pos.taxNotApplied', 'Tax not applied')}</div>
+        </div>` : ''}
 
         <div class="grid2">
           ${orderCard}
@@ -2532,7 +2547,14 @@ export default function SalesOrders() {
                 const amounts = amountSO(so)
                 return (
                   <tr key={so.id} className="border-b align-top">
-                    <td className="py-3 pr-2 font-medium">{soNo(so)}</td>
+                    <td className="py-3 pr-2 font-medium">
+                      <div>{soNo(so)}</div>
+                      {so.pos_tax_mode_snapshot === 'non_fiscal' ? (
+                        <Badge variant="outline" className="mt-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                          {tt('commercialTax.pos.nonFiscalBadge', 'Non-fiscal POS sale')}
+                        </Badge>
+                      ) : null}
+                    </td>
                     <td className="py-3 pr-2">{soCustomerLabel(so)}</td>
                     <td className="py-3 pr-2">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
@@ -2586,7 +2608,14 @@ export default function SalesOrders() {
                 const amounts = amountSO(so)
                 return (
                   <tr key={so.id} className="border-b align-top">
-                    <td className="py-3 pr-2 font-medium">{soNo(so)}</td>
+                    <td className="py-3 pr-2 font-medium">
+                      <div>{soNo(so)}</div>
+                      {so.pos_tax_mode_snapshot === 'non_fiscal' ? (
+                        <Badge variant="outline" className="mt-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                          {tt('commercialTax.pos.nonFiscalBadge', 'Non-fiscal POS sale')}
+                        </Badge>
+                      ) : null}
+                    </td>
                     <td className="py-3 pr-2">{soCustomerLabel(so)}</td>
                     <td className="py-3 pr-2">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${salesStatusClass(so.status)}`}>
@@ -2633,6 +2662,13 @@ export default function SalesOrders() {
             <div className="p-4 text-sm text-muted-foreground">{tt('orders.noSOSelected', 'No SO selected.')}</div>
           ) : (
             <div className="mt-4 space-y-5">
+              {selectedSO.pos_tax_mode_snapshot === 'non_fiscal' ? (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+                  <div className="font-semibold">{tt('commercialTax.pos.nonFiscalBadge', 'Non-fiscal POS sale')}</div>
+                  <div className="mt-1 text-muted-foreground">{tt('commercialTax.pos.taxNotApplied', 'Tax not applied')}</div>
+                  <div className="mt-1 text-muted-foreground">{tt('commercialTax.pos.notInvoiceEligible', 'Not eligible for fiscal invoice')}</div>
+                </div>
+              ) : null}
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>
@@ -2708,7 +2744,7 @@ export default function SalesOrders() {
                       >
                         {tt('financeDocs.mz.openLinkedInvoice', 'Open linked invoice')}
                       </Button>
-                    ) : canCreateFiscalInvoice(selectedSO.status) && (
+                    ) : selectedSO.pos_tax_mode_snapshot !== 'non_fiscal' && canCreateFiscalInvoice(selectedSO.status) && (
                       <Button
                         variant="secondary"
                         disabled={creatingInvoiceForOrderId === selectedSO.id}
@@ -2946,7 +2982,9 @@ export default function SalesOrders() {
                             <td className="px-3 py-3">{fmtAcct(shippedQty)} {uomCode}</td>
                             <td className="px-3 py-3">{fmtAcct(remaining(line))} {uomCode}</td>
                             <td className="px-3 py-3">{line.tax_label_snapshot
-                              ? `${line.tax_label_snapshot} (${n(line.tax_rate).toLocaleString()}%)`
+                              ? line.tax_treatment_snapshot === 'non_fiscal'
+                                ? line.tax_label_snapshot
+                                : `${line.tax_label_snapshot} (${n(line.tax_rate).toLocaleString()}%)`
                               : tt('commercialTax.mode.legacy', 'Legacy header tax')}</td>
                             <td className="px-3 py-3 text-right font-mono tabular-nums">{line.tax_amount == null ? '-' : fmtAcct(n(line.tax_amount))}</td>
                             <td className="px-3 py-3 text-right font-mono tabular-nums">{fmtAcct(n(line.line_total))}</td>
