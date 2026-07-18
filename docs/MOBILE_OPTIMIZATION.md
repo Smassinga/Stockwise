@@ -126,3 +126,9 @@ More uses the same Overview, Sales, Purchasing, Inventory, Production, Finance, 
 The dock and drawer do not change role, company-access, subscription, route, or query contracts. Fixed page actions must remain above the existing shell dock allowance, and the document must not become horizontally scrollable at Android widths.
 
 Production validation on 2026-07-16 covered `820` and `390` in Portuguese/dark and English/light representative states. The five controls remained reachable without horizontal overflow, all authorized grouped routes remained available through More, the drawer owned its scroll region and body lock, Escape closed it, and focus returned to the control that opened it. The authenticated production role was a company administrator with separate platform-admin authority; limited-role visibility remains guarded by the unchanged role filters and direct-route guards.
+
+## UX-2 Mobile Dashboard Contract
+
+The mobile dashboard follows a decision-first sequence: current day/scope, operating answer, action needed, quick actions, performance snapshot, performance drivers, latest stock movements, and detailed product performance. The sequence is responsive reordering of the same read-only evidence used on desktop, not a second calculation path.
+
+At `390` and `820`, metric values and Portuguese labels wrap inside their own surfaces, the performance chart stays contained, and the latest-movement list remains capped at three entries with a route to the full register. Loading, partial-cost, stale-read, negative-margin, supported-cost, and explicit-zero-cost states were exercised locally without widening the page or hiding the mobile dock. Production checks at both widths confirmed the live EN/PT cockpit order, mobile navigation reachability, and no visible fallback or missing translation. Existing safe-area and fixed-dock allowances remain unchanged.
