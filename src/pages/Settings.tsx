@@ -495,6 +495,10 @@ function readCachedLang(companyId?: string | null): "en" | "pt" | null {
   const c = companyId ? localStorage.getItem(langKey(companyId)) : null;
   return c === "en" || c === "pt" ? c : null;
 }
+function readActiveLang(): "en" | "pt" | null {
+  const value = localStorage.getItem("app:lang");
+  return value === "en" || value === "pt" ? value : null;
+}
 function writeCachedLang(
   companyId: string | null | undefined,
   lang: "en" | "pt",
@@ -889,17 +893,22 @@ function Settings() {
         if (!resSettings.data) {
           setMissingRow(true);
           if (!cancelled) {
-            setData(DEFAULTS);
+            const effectiveLang = cachedLang ?? readActiveLang() ?? DEFAULTS.locale.language;
+            setData({ ...DEFAULTS, locale: { language: effectiveLang } });
           }
         } else {
-          const merged = deepMerge(
-            DEFAULTS,
-            (resSettings.data.data as Partial<SettingsData>) ?? {},
-          );
+          const stored = (resSettings.data.data as Partial<SettingsData>) ?? {};
+          const merged = deepMerge(DEFAULTS, stored);
+          const storedLang = stored.locale?.language;
+          const effectiveLang =
+            storedLang === "en" || storedLang === "pt"
+              ? storedLang
+              : cachedLang ?? readActiveLang() ?? DEFAULTS.locale.language;
+          merged.locale.language = effectiveLang;
           if (!cancelled) {
             setData(merged);
-            setLang(merged.locale.language);
-            writeCachedLang(companyId, merged.locale.language);
+            setLang(effectiveLang);
+            writeCachedLang(companyId, effectiveLang);
           }
         }
 
