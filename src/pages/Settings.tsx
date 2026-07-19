@@ -890,8 +890,6 @@ function Settings() {
           setMissingRow(true);
           if (!cancelled) {
             setData(DEFAULTS);
-            setLang(DEFAULTS.locale.language);
-            writeCachedLang(companyId, DEFAULTS.locale.language);
           }
         } else {
           const merged = deepMerge(
