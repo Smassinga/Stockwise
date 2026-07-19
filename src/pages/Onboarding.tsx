@@ -62,6 +62,8 @@ type BootstrapCompanyResult = {
 type CompletionState = {
   companyId: string
   companyName: string
+  role: string
+  source: 'created' | 'invitation'
 }
 
 const copyByLang = {
@@ -75,7 +77,7 @@ const copyByLang = {
       'Create with only a company name first',
       'Finish fiscal, stock, and team setup from the guided next steps',
     ],
-    progressLabel: 'Onboarding progress',
+    progressLabel: 'Workspace entry',
     progressChoose: 'Choose your workspace path',
     progressCreate: 'Add the minimum company details',
     progressReady: 'Workspace ready for next steps',
@@ -141,9 +143,13 @@ const copyByLang = {
     readyBody:
       'Continue to the dashboard, or finish the setup areas that matter before posting live activity.',
     readySummaryLabel: 'Company created',
-    readinessTitle: 'Setup checklist',
+    readinessTitle: 'Continue company setup',
     readinessBody:
-      'Finish only the areas needed before your team starts daily work.',
+      'Settings shows evidence-backed readiness for the capabilities your company uses. Optional areas remain separate from blockers.',
+    roleLabel: 'Company role',
+    createdSummary: 'Company workspace created',
+    joinedSummary: 'Invitation accepted',
+    setupHub: 'Review company setup',
     readinessItems: [
       {
         title: 'Company shell',
@@ -195,7 +201,7 @@ const copyByLang = {
       'Crie primeiro apenas com o nome da empresa',
       'Conclua fiscalidade, stock e equipa a partir dos próximos passos',
     ],
-    progressLabel: 'Progresso do onboarding',
+    progressLabel: 'Entrada no workspace',
     progressChoose: 'Escolha o caminho do seu workspace',
     progressCreate: 'Adicione os dados mínimos da empresa',
     progressReady: 'Workspace pronto para os próximos passos',
@@ -261,9 +267,13 @@ const copyByLang = {
     readyBody:
       'Continue para o dashboard ou conclua as áreas de configuração necessárias antes de registar atividade real.',
     readySummaryLabel: 'Empresa criada',
-    readinessTitle: 'Checklist de configuração',
+    readinessTitle: 'Continuar a configuração da empresa',
     readinessBody:
-      'Conclua apenas as áreas necessárias antes de a equipa começar o trabalho diário.',
+      'As Definições mostram a prontidão comprovada para as capacidades usadas pela empresa. As áreas opcionais ficam separadas dos bloqueios.',
+    roleLabel: 'Função na empresa',
+    createdSummary: 'Workspace da empresa criado',
+    joinedSummary: 'Convite aceite',
+    setupHub: 'Rever configuração da empresa',
     readinessItems: [
       {
         title: 'Estrutura da empresa',
@@ -691,6 +701,8 @@ export default function Onboarding() {
       setCompletion({
         companyId: visibleCompanyId,
         companyName: bootstrap?.company_name?.trim() || name,
+        role: bootstrap?.out_role || 'OWNER',
+        source: 'created',
       })
       toast.success(copy.companyCreatedToast)
     } catch (error: any) {
@@ -710,7 +722,12 @@ export default function Onboarding() {
       await acceptPendingCompanyInvitation(invite.company_id)
       rememberCompanyLocally(invite.company_id)
       toast.success(copy.inviteAcceptedToast(invite.company_name || ''))
-      nav('/dashboard', { replace: true })
+      setCompletion({
+        companyId: invite.company_id,
+        companyName: invite.company_name || 'StockWise company',
+        role: invite.role,
+        source: 'invitation',
+      })
     } catch (error: any) {
       const friendly = getFriendlyInviteError(copy, error)
       setSubmitError(friendly)
@@ -866,32 +883,17 @@ export default function Onboarding() {
                       {copy.progressReady}
                     </Badge>
                   </div>
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    {copy.readinessItems.map((item, index) => {
-                      const done = index === 0
-                      const StepIcon = index === 0 ? CheckCircleIcon : index === 1 ? GearSixIcon : index === 2 ? PhosphorUserPlusIcon : BuildingsIcon
-                      return (
-                        <div
-                          key={item.title}
-                          className="flex min-h-[150px] flex-col gap-4 rounded-2xl border border-border/70 bg-card/85 p-5 shadow-[0_14px_34px_-30px_hsl(var(--foreground)/0.32)]"
-                        >
-                          <div className="flex min-w-0 items-start gap-3">
-                            <IconBadge tone={done ? 'positive' : 'primary'} size="card" className="mt-0.5">
-                              <StepIcon weight="duotone" />
-                            </IconBadge>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <div className="font-semibold text-foreground">{item.title}</div>
-                                <Badge variant={done ? 'default' : 'outline'} className="shrink-0">
-                                  {item.status}
-                                </Badge>
-                              </div>
-                              <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                        {completion.source === 'created' ? copy.createdSummary : copy.joinedSummary}
+                      </div>
+                      <div className="mt-2 font-semibold text-foreground">{completion.companyName}</div>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{copy.roleLabel}</div>
+                      <div className="mt-2 font-semibold text-foreground">{roleLabel(completion.role, lang)}</div>
+                    </div>
                   </div>
                 </div>
 
@@ -900,21 +902,9 @@ export default function Onboarding() {
                     <span>{copy.continueDashboard}</span>
                     <ArrowRight className="h-4 w-4" />
                   </Button>
-                  <Button variant="secondary" onClick={() => nav('/settings', { replace: true })} className="justify-between">
-                    <span>{copy.completeProfile}</span>
+                  <Button variant="secondary" onClick={() => nav('/settings?view=setup', { replace: true })} className="justify-between">
+                    <span>{copy.setupHub}</span>
                     <Settings2 className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" onClick={() => nav('/setup/import', { replace: true })} className="justify-between">
-                    <span>{copy.importOpeningData}</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" onClick={() => nav('/items', { replace: true })} className="justify-between">
-                    <span>{copy.addItems}</span>
-                    <Building2 className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" onClick={() => nav('/users', { replace: true })} className="justify-between sm:col-span-2">
-                    <span>{copy.inviteUsers}</span>
-                    <UserPlus className="h-4 w-4" />
                   </Button>
                 </div>
               </div>

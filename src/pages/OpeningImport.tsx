@@ -1,7 +1,8 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useRef } from 'react'
-import { AlertTriangle, FileSpreadsheet, PackagePlus, Upload, Warehouse } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle2, FileSpreadsheet, PackagePlus, Upload, Warehouse } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -216,6 +217,17 @@ const copyByLang = {
     importFailed: 'Import failed.',
     readyHelp: 'Validated rows ready to commit.',
     openingStockNote: 'Opening stock',
+    returnToSetup: 'Return to company setup',
+    dependenciesTitle: 'Before you import',
+    dependencies: {
+      locations: 'Locations establish the warehouses and bins used by stock imports.',
+      items: 'Items require a valid unit of measure. Currency is used where commercial values are supplied.',
+      customers: 'Customer currency codes must already be available to the company.',
+      suppliers: 'Supplier currency codes must already be available to the company.',
+      opening_stock: 'Opening stock requires existing items, warehouses, bins, units, quantities, and costs.',
+    },
+    resultTitle: 'Import completed',
+    resultBody: '{count} row(s) were committed for {dataset}. Refresh company setup to review the new evidence.',
   },
   pt: {
     title: 'Importação de dados iniciais',
@@ -246,6 +258,17 @@ const copyByLang = {
     importFailed: 'A importação falhou.',
     readyHelp: 'Linhas validadas prontas para gravar.',
     openingStockNote: 'Stock inicial',
+    returnToSetup: 'Voltar à configuração da empresa',
+    dependenciesTitle: 'Antes de importar',
+    dependencies: {
+      locations: 'Os locais criam os armazéns e bins usados pelas importações de stock.',
+      items: 'Os artigos exigem uma unidade de medida válida. A moeda é usada quando existem valores comerciais.',
+      customers: 'Os códigos de moeda dos clientes já devem estar disponíveis para a empresa.',
+      suppliers: 'Os códigos de moeda dos fornecedores já devem estar disponíveis para a empresa.',
+      opening_stock: 'O stock inicial exige artigos, armazéns, bins, unidades, quantidades e custos já configurados.',
+    },
+    resultTitle: 'Importação concluída',
+    resultBody: '{count} linha(s) foram gravadas para {dataset}. Actualize a configuração da empresa para rever a nova evidência.',
   },
 } as const
 
@@ -293,6 +316,7 @@ function uniqueIssues(issues: ImportIssue[]) {
 export default function OpeningImport() {
   const { companyId, myRole } = useOrg()
   const { lang } = useI18n()
+  const [searchParams, setSearchParams] = useSearchParams()
   const canImport = can.createMaster(myRole)
   const [activeTab, setActiveTab] = useState<DatasetKey>('items')
   const [loading, setLoading] = useState(true)
@@ -308,10 +332,16 @@ export default function OpeningImport() {
   const [customers, setCustomers] = useState<CustomerRow[]>([])
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([])
   const [convGraph, setConvGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
+  const [importResult, setImportResult] = useState<{ dataset: DatasetKey; count: number } | null>(null)
 
   const copy = copyByLang[lang]
   const activeDefinition = DATASETS.find((dataset) => dataset.key === activeTab) || DATASETS[0]
   const msg = (en: string, pt: string) => (lang === 'pt' ? pt : en)
+
+  useEffect(() => {
+    const dataset = searchParams.get('dataset')
+    setActiveTab(DATASETS.some((entry) => entry.key === dataset) ? dataset as DatasetKey : 'items')
+  }, [searchParams])
 
   async function loadLookups() {
     if (!companyId) {
@@ -769,6 +799,7 @@ export default function OpeningImport() {
       }
 
       toast.success(copy.importSucceeded.replace('{count}', String(preview.payload.length)))
+      setImportResult({ dataset: activeTab, count: preview.payload.length })
       setPreview(null)
       setFileName('')
       await loadLookups()
@@ -804,10 +835,32 @@ export default function OpeningImport() {
               </Badge>
             ) : null}
           </div>
+          <Button asChild variant="outline" className="w-full sm:w-fit">
+            <Link to="/settings?view=setup">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              {copy.returnToSetup}
+            </Link>
+          </Button>
         </CardHeader>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DatasetKey)} className="space-y-6">
+      {importResult ? (
+        <div role="status" aria-live="polite" className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <div className="font-semibold">{copy.resultTitle}</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {copy.resultBody
+                  .replace('{count}', String(importResult.count))
+                  .replace('{dataset}', DATASETS.find((entry) => entry.key === importResult.dataset)?.title[lang] || importResult.dataset)}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <Tabs value={activeTab} onValueChange={(value) => setSearchParams({ dataset: value })} className="space-y-6">
         <TabsList className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-3xl border border-border/70 bg-background/88 p-2">
           {DATASETS.map((dataset) => (
             <TabsTrigger key={dataset.key} value={dataset.key} className="shrink-0 rounded-2xl px-4 py-2.5">
@@ -818,6 +871,10 @@ export default function OpeningImport() {
 
         {DATASETS.map((dataset) => (
           <TabsContent key={dataset.key} value={dataset.key} className="space-y-6">
+            <div className="rounded-[var(--radius)] border border-border/70 bg-muted/20 p-4">
+              <div className="text-sm font-semibold">{copy.dependenciesTitle}</div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.dependencies[dataset.key]}</p>
+            </div>
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="space-y-2">
                 <CardTitle>{dataset.title[lang]}</CardTitle>

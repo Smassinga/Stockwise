@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Download } from 'lucide-react'
+import { Download, RefreshCw } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -54,6 +54,9 @@ export default function MozambiqueCompliancePage() {
     withI18nFallback(t, key, fallback, vars)
 
   const [loading, setLoading] = useState(true)
+  const [coreUnavailable, setCoreUnavailable] = useState(false)
+  const [optionalUnavailable, setOptionalUnavailable] = useState<string[]>([])
+  const [refreshToken, setRefreshToken] = useState(0)
   const [exportingFiscalDocuments, setExportingFiscalDocuments] = useState(false)
   const [exportFilters, setExportFilters] = useState<FiscalDocumentExportFilters>({
     documentType: 'all',
@@ -89,7 +92,9 @@ export default function MozambiqueCompliancePage() {
 
       try {
         setLoading(true)
-        const [nextSettings, nextSeries, nextExports, nextEvents, nextArtifacts] = await Promise.all([
+        setCoreUnavailable(false)
+        setOptionalUnavailable([])
+        const [settingsResult, seriesResult, exportsResult, eventsResult, artifactsResult] = await Promise.allSettled([
           getCompanyFiscalSettings(companyId),
           listCompanyFiscalSeries(companyId),
           listSaftMozExports(companyId),
@@ -98,11 +103,27 @@ export default function MozambiqueCompliancePage() {
         ])
 
         if (!active) return
-        setSettings(nextSettings)
-        setSeries(nextSeries)
-        setExports(nextExports)
-        setEvents(nextEvents)
-        setArtifacts(nextArtifacts)
+        if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
+        else {
+          setSettings(null)
+          setCoreUnavailable(true)
+          reportRuntimeError('fiscalSettings', settingsResult.reason)
+        }
+        if (seriesResult.status === 'fulfilled') setSeries(seriesResult.value)
+        else {
+          setSeries([])
+          setCoreUnavailable(true)
+          reportRuntimeError('fiscalSeries', seriesResult.reason)
+        }
+
+        const unavailable: string[] = []
+        if (exportsResult.status === 'fulfilled') setExports(exportsResult.value)
+        else { setExports([]); unavailable.push('exports'); reportRuntimeError('saftHistory', exportsResult.reason) }
+        if (eventsResult.status === 'fulfilled') setEvents(eventsResult.value)
+        else { setEvents([]); unavailable.push('events'); reportRuntimeError('auditHistory', eventsResult.reason) }
+        if (artifactsResult.status === 'fulfilled') setArtifacts(artifactsResult.value)
+        else { setArtifacts([]); unavailable.push('artifacts'); reportRuntimeError('artifactHistory', artifactsResult.reason) }
+        setOptionalUnavailable(unavailable)
       } catch (error: any) {
         reportRuntimeError('loadWorkspace', error)
         if (active) toast.error(error?.message || tt('financeDocs.mz.complianceLoadFailed', 'Failed to load Mozambique compliance data'))
@@ -114,7 +135,7 @@ export default function MozambiqueCompliancePage() {
     return () => {
       active = false
     }
-  }, [companyId])
+  }, [companyId, refreshToken])
 
   const activeSeries = series.filter((row) => row.is_active).sort((left, right) =>
     `${left.fiscal_year}-${left.document_type}`.localeCompare(`${right.fiscal_year}-${right.document_type}`),
@@ -173,6 +194,12 @@ export default function MozambiqueCompliancePage() {
 
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
+            <Link to="/settings?view=setup">{tt('setup.actions.return', 'Company setup')}</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/settings?section=company-profile">{tt('setup.areas.fiscal_identity.title', 'Fiscal identity')}</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link to="/sales-invoices">{tt('financeDocs.salesInvoices.title', 'Sales Invoices')}</Link>
           </Button>
           <Button asChild variant="outline">
@@ -181,15 +208,36 @@ export default function MozambiqueCompliancePage() {
         </div>
       </div>
 
+      {coreUnavailable || optionalUnavailable.length > 0 ? (
+        <div role="status" className="flex flex-col gap-3 rounded-[var(--radius)] border border-amber-500/30 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="font-semibold">
+              {coreUnavailable
+                ? tt('setup.compliance.coreUnavailable', 'Fiscal setup evidence is temporarily unavailable.')
+                : tt('setup.compliance.partialUnavailable', 'Some optional compliance history is temporarily unavailable.')}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {tt('setup.compliance.unavailableHelp', 'Unavailable evidence is not treated as missing setup. Retry the read before taking action.')}
+            </p>
+          </div>
+          <Button type="button" variant="outline" disabled={loading} onClick={() => setRefreshToken((value) => value + 1)}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            {tt('setup.actions.retry', 'Retry')}
+          </Button>
+        </div>
+      ) : null}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.settingsTitle', 'Company fiscal settings')}</CardTitle>
-            <CardDescription>{companyName || companyId || '-'}</CardDescription>
+            <CardDescription>{companyName || tt('setup.companyFallback', 'Active company')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+            ) : coreUnavailable ? (
+              <p className="text-sm text-muted-foreground">{tt('setup.compliance.coreUnavailable', 'Fiscal setup evidence is temporarily unavailable.')}</p>
             ) : !settings ? (
               <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.settingsMissing', 'No company fiscal settings are configured for the active company yet.')}</p>
             ) : (
@@ -239,6 +287,8 @@ export default function MozambiqueCompliancePage() {
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+            ) : coreUnavailable ? (
+              <p className="text-sm text-muted-foreground">{tt('setup.compliance.coreUnavailable', 'Fiscal setup evidence is temporarily unavailable.')}</p>
             ) : activeSeries.length === 0 ? (
               <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.seriesEmpty', 'No active fiscal series are configured for the current company.')}</p>
             ) : (
@@ -396,6 +446,8 @@ export default function MozambiqueCompliancePage() {
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+            ) : optionalUnavailable.includes('exports') ? (
+              <p className="text-sm text-muted-foreground">{tt('setup.compliance.optionalUnavailable', 'This optional history could not be loaded. Its absence is not a setup result.')}</p>
             ) : exports.length === 0 ? (
               <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.saftEmpty', 'No SAF-T export runs have been recorded for this company yet.')}</p>
             ) : (
@@ -430,6 +482,8 @@ export default function MozambiqueCompliancePage() {
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+            ) : optionalUnavailable.includes('artifacts') ? (
+              <p className="text-sm text-muted-foreground">{tt('setup.compliance.optionalUnavailable', 'This optional history could not be loaded. Its absence is not a setup result.')}</p>
             ) : artifacts.length === 0 ? (
               <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.archiveEmpty', 'No archived invoice artifacts are registered for this document yet.')}</p>
             ) : (
@@ -456,6 +510,8 @@ export default function MozambiqueCompliancePage() {
         <CardContent>
           {loading ? (
             <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+          ) : optionalUnavailable.includes('events') ? (
+            <p className="text-sm text-muted-foreground">{tt('setup.compliance.optionalUnavailable', 'This optional history could not be loaded. Its absence is not a setup result.')}</p>
           ) : events.length === 0 ? (
             <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.auditEmpty', 'No audit events have been captured for this document yet.')}</p>
           ) : (

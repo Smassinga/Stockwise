@@ -132,3 +132,11 @@ Production validation on 2026-07-16 covered `820` and `390` in Portuguese/dark a
 The mobile dashboard follows a decision-first sequence: current day/scope, operating answer, action needed, quick actions, performance snapshot, performance drivers, latest stock movements, and detailed product performance. The sequence is responsive reordering of the same read-only evidence used on desktop, not a second calculation path.
 
 At `390` and `820`, metric values and Portuguese labels wrap inside their own surfaces, the performance chart stays contained, and the latest-movement list remains capped at three entries with a route to the full register. Loading, partial-cost, stale-read, negative-margin, supported-cost, and explicit-zero-cost states were exercised locally without widening the page or hiding the mobile dock. Production checks at both widths confirmed the live EN/PT cockpit order, mobile navigation reachability, and no visible fallback or missing translation. Existing safe-area and fixed-dock allowances remain unchanged.
+
+## UX-3 Mobile Setup Contract
+
+At Android widths, onboarding remains a short workspace-entry decision: verify, join or create, then choose Dashboard or Company setup. It does not render a long static checklist. The assigned role and selected company wrap within the completion surface without exposing internal IDs.
+
+The Settings setup hub puts the next evidence-backed action before secondary metrics, uses a single-column card flow at `390`, and keeps optional extensions visually separate from core blockers. Deep-linked Settings sections receive programmatic focus, respect reduced-motion preferences, and provide a visible return action that refreshes readiness evidence.
+
+Opening import keeps horizontally scrollable data tables contained within their cards, while its dataset tabs, prerequisite guidance, durable result, and return-to-setup action remain reachable above the mobile dock. Users and Mozambique Compliance retain their existing authority gates and include a direct setup return path without adding another navigation system.

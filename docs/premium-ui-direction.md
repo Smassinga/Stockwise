@@ -329,3 +329,11 @@ The dashboard now leads with an operating answer rather than a uniform grid of m
 Revenue remains operational Sales Order evidence and COGS remains shipment-linked stock-issue evidence for the same order-item population and period. Daily chart totals must reconcile exactly to their headline totals. Known explicit zero cost is a valid, visibly distinct state; missing shipment cost, service-only rows, and unattributed movement cost are incomplete evidence and must withhold margin rather than becoming zero. Optional Top Client content appears only when a resolved named customer passes the maintained eligibility checks.
 
 The live implementation uses bounded reads over existing tables and adds no dashboard schema, RPC, migration, or authority. Independent core, performance, and optional-customer reads expose loading, partial, unavailable, and stale states without briefly presenting incomplete data as healthy. Production read-only QA covered `1440`, `1200`, `820`, and `390`, light/dark, and English/Portuguese; the cockpit reconciled its live Revenue and COGS totals, displayed no raw translation key or fallback, and required no business-data mutation.
+
+## UX-3 Setup Journey Contract
+
+Onboarding measures workspace entry only. It must never present its completion value as company setup readiness. Once a company is selected, Settings owns the ongoing journey through evidence-backed capability areas, not a universal score or forced sequence.
+
+Every setup surface keeps readiness, authority, and consequence separate. `Ready`, `Needs action`, `In progress`, `Optional`, `Not applicable`, and `Unavailable` describe evidence. `Can manage`, `Can review`, `Read-only`, and ask-role guidance describe the signed-in member. Optional areas use neutral treatment; unavailable reads never become amber missing-data claims.
+
+The setup hub leads the Settings first viewport, keeps core foundation before operational extensions, and uses one supported deep link per action. Query values select a maintained view only and never save, invite, import, or post. Mobile cards retain readable EN/PT copy, visible status text beyond color, practical targets, and the shell dock allowance.

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useI18n, withI18nFallback } from "../lib/i18n";
 import { useOrg } from "../hooks/useOrg";
@@ -48,6 +48,8 @@ import { WarehouseIcon } from "@phosphor-icons/react/dist/csr/Warehouse";
 // Existing uploader (fast preview / storage)
 import LogoUploader from "../components/settings/LogoUploader";
 import { CommercialTaxSettings } from "../components/settings/CommercialTaxSettings";
+import { SetupReadinessPanel } from "../components/setup/SetupReadinessPanel";
+import { useCompanySetupReadiness } from "../hooks/useCompanySetupReadiness";
 
 import {
   Bell,
@@ -516,6 +518,8 @@ function Settings() {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars);
   const { companyId, myRole } = useOrg();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setupReadiness = useCompanySetupReadiness(companyId, myRole);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -534,6 +538,34 @@ function Settings() {
   const [dueReminderLeadDaysError, setDueReminderLeadDaysError] = useState<string | null>(null);
   const [dueReminderBeforeDraft, setDueReminderBeforeDraft] = useState("");
   const [dueReminderAfterDraft, setDueReminderAfterDraft] = useState("");
+
+  useEffect(() => {
+    const section = searchParams.get("section");
+    const allowedSections: SettingsSectionKey[] = [
+      "company-profile",
+      "commercial-tax",
+      "localization",
+      "operations",
+      "inventory",
+      "notifications",
+      "due-reminders",
+      "documents",
+    ];
+    setActiveSection(section && allowedSections.includes(section as SettingsSectionKey)
+      ? section as SettingsSectionKey
+      : null);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!activeSection || loading) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`settings-${activeSection}`);
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target?.scrollIntoView({ block: "start", behavior: reducedMotion ? "auto" : "smooth" });
+      target?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeSection, loading]);
 
   const roleUpper = useMemo(() => String(myRole || "").toUpperCase(), [myRole]);
   const canEditAll = useMemo(
@@ -563,7 +595,7 @@ function Settings() {
     return { companyLabel, defaultWarehouse, valuationMethod };
   }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses]);
 
-  const profileReady = Boolean((profile?.trade_name || profile?.legal_name) && profile?.tax_id);
+  const profileReady = Boolean((profile?.trade_name || profile?.legal_name) && profile?.country_code);
   const fiscalReady = Boolean(profile?.legal_name && profile?.tax_id && profile?.country_code);
   const settingsGuideCards = useMemo<SettingsGuideCard[]>(
     () => {
@@ -856,26 +888,10 @@ function Settings() {
         if (resSettings.error) console.error(resSettings.error);
         if (!resSettings.data) {
           setMissingRow(true);
-          if (canEditAll) {
-            const rpc = await supabase.rpc("update_company_settings", {
-              p_company_id: companyId,
-              p_patch: DEFAULTS,
-            });
-            if (!rpc.error && !cancelled) {
-              const merged = deepMerge(
-                DEFAULTS,
-                (rpc.data as Partial<SettingsData>) ?? {},
-              );
-              setData(merged);
-              setLang(merged.locale.language);
-              writeCachedLang(companyId, merged.locale.language);
-            }
-          } else {
-            if (!cancelled) {
-              setData(DEFAULTS);
-              setLang(DEFAULTS.locale.language);
-              writeCachedLang(companyId, DEFAULTS.locale.language);
-            }
+          if (!cancelled) {
+            setData(DEFAULTS);
+            setLang(DEFAULTS.locale.language);
+            writeCachedLang(companyId, DEFAULTS.locale.language);
           }
         } else {
           const merged = deepMerge(
@@ -1147,7 +1163,17 @@ function Settings() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      {!activeSection ? (
+        <SetupReadinessPanel
+          areas={setupReadiness.areas}
+          loading={setupReadiness.loading}
+          nextArea={setupReadiness.nextArea}
+          summary={setupReadiness.summary}
+          onRefresh={() => void setupReadiness.refresh()}
+        />
+      ) : null}
+
+      {!activeSection ? <div className="grid gap-4 md:grid-cols-3">
         <PremiumMetricCard
           label={tt("settings.summary.companyTitle", "Company profile")}
           value={settingsSummary.companyLabel}
@@ -1178,56 +1204,7 @@ function Settings() {
           icon={<ScalesIcon weight="duotone" />}
           tone="neutral"
         />
-      </div>
-
-      <section className="rounded-[calc(var(--radius)+0.25rem)] border border-card-border bg-card p-4 shadow-[0_20px_48px_-38px_hsl(var(--foreground)/0.28)] sm:p-5">
-        <div>
-          <div className="premium-label">{copy.eyebrow}</div>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-foreground">{copy.operatingMapTitle}</h2>
-          <p className="mt-2 hidden max-w-3xl text-sm leading-6 text-muted-foreground sm:block">
-            {copy.operatingMapBody}
-          </p>
-        </div>
-        <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-          {settingsGuideCards.map((card) => (
-            <article
-              key={card.key}
-              className="group flex min-h-[180px] flex-col rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-elevated p-5 shadow-[0_16px_34px_-30px_hsl(var(--foreground)/0.34)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_22px_48px_-36px_hsl(var(--foreground)/0.42)]"
-            >
-              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
-                <IconBadge tone={card.tone} size="card">
-                  {card.icon}
-                </IconBadge>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold leading-5 text-foreground">{card.title}</h3>
-                  <div className="mt-2">
-                    <PremiumStatusBadge tone={card.tone}>{card.status}</PremiumStatusBadge>
-                  </div>
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-6 text-muted-foreground">{card.description}</p>
-              {card.href ? (
-                <Button asChild variant="ghost" className="mt-auto h-auto justify-start px-0 pt-4 text-sm font-semibold text-primary hover:text-primary">
-                  <Link to={card.href}>
-                    {card.actionLabel || copy.open}
-                    <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </Link>
-                </Button>
-              ) : card.section ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="mt-auto h-auto justify-start px-0 pt-4 text-sm font-semibold text-primary hover:text-primary"
-                  onClick={() => setActiveSection(card.section!)}
-                >
-                  {card.actionLabel || copy.review}
-                  <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </Button>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      </section>
+      </div> : null}
 
       {activeSection ? (
         <div className="space-y-4">
@@ -1235,14 +1212,17 @@ function Settings() {
             type="button"
             variant="outline"
             className="w-fit"
-            onClick={() => setActiveSection(null)}
+            onClick={() => {
+              setSearchParams({ view: "setup" });
+              void setupReadiness.refresh();
+            }}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             {copy.backToSettings}
           </Button>
 
       {/* ===================== Company Profile (companies) ===================== */}
-      <Card id="settings-company-profile" className={activeSection === "company-profile" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-company-profile" tabIndex={-1} className={activeSection === "company-profile" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building className="w-5 h-5" />{" "}
@@ -1672,12 +1652,12 @@ function Settings() {
         </CardContent>
       </Card>
 
-      <div id="settings-commercial-tax" className={activeSection === "commercial-tax" ? "scroll-mt-24" : "hidden"}>
+      <div id="settings-commercial-tax" tabIndex={-1} className={activeSection === "commercial-tax" ? "scroll-mt-24" : "hidden"}>
         <CommercialTaxSettings companyId={companyId} canEdit={canEditAll} />
       </div>
 
       {/* Localization & UI */}
-      <Card id="settings-localization" className={activeSection === "localization" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-localization" tabIndex={-1} className={activeSection === "localization" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="w-5 h-5" /> {t("sections.localization.title")}
@@ -1759,7 +1739,7 @@ function Settings() {
       </Card>
 
       {/* Sales & Fulfilment */}
-      <Card id="settings-operations" className={activeSection === "operations" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-operations" tabIndex={-1} className={activeSection === "operations" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>{t("sections.sales.title")}</CardTitle>
         </CardHeader>
@@ -1818,7 +1798,7 @@ function Settings() {
         </CardContent>
       </Card>
 
-      <Card id="settings-inventory" className={activeSection === "inventory" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-inventory" tabIndex={-1} className={activeSection === "inventory" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>{tt("settings.inventory.title", "Inventory valuation")}</CardTitle>
         </CardHeader>
@@ -1846,7 +1826,7 @@ function Settings() {
       </Card>
 
       {/* Notifications */}
-      <Card id="settings-notifications" className={activeSection === "notifications" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-notifications" tabIndex={-1} className={activeSection === "notifications" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="w-5 h-5" /> {tt("settings.digest.title", "Daily digest")}
@@ -1929,7 +1909,7 @@ function Settings() {
       </Card>
 
       {/* Due Reminder Worker Settings */}
-      <Card id="settings-due-reminders" className={activeSection === "due-reminders" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-due-reminders" tabIndex={-1} className={activeSection === "due-reminders" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5" /> {t("settings.dueReminders.title")}
@@ -2242,7 +2222,7 @@ function Settings() {
       </Card>
 
       {/* Documents & Templates (kept) */}
-      <Card id="settings-documents" className={activeSection === "documents" ? "scroll-mt-24" : "hidden"}>
+      <Card id="settings-documents" tabIndex={-1} className={activeSection === "documents" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="w-5 h-5" /> {t("sections.documents.title")}

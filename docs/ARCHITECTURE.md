@@ -42,11 +42,22 @@ The maintained product surfaces are:
 - authenticated users without an active membership land on `/onboarding`
 - onboarding now supports two first-class paths: join an invited company or create a new company
 - onboarding company creation is intentionally minimal and only requires the company name; legal identity, address, contacts, logo, bank details, tax details, and other deeper setup remain editable later in `Settings`
-- after company creation, onboarding shows the setup checklist for company profile, fiscal/legal readiness, users, and opening data; these are navigation and readiness cues, not new backend workflow gates
+- after company creation or explicit invitation acceptance, onboarding reports only workspace-entry completion, the selected company, and the assigned role; Dashboard is primary and `/settings?view=setup` is the ongoing company-setup destination
 - pending invitation discovery is email-bound and uses a dedicated authenticated RPC that only returns invites for the signed-in account email
 - invitation acceptance stays secure through the authenticated email match plus invite validity checks; expired invite rows are excluded from the onboarding list and rejected on acceptance
 - choosing `Create new company` no longer auto-consumes pending invitations; the invitation record remains pending unless the user explicitly accepts it
 - the `admin-users/sync` edge function may link invite rows to the authenticated user id after sign-in, but it must not auto-activate invited memberships; invite acceptance remains an explicit onboarding or invite-link action
+
+### Company setup readiness
+
+- `/onboarding` remains the secure workspace-entry route; active members use `/settings?view=setup` for ongoing company setup
+- the setup hub derives evidence from existing company-scoped reads and separates readiness, user authority, and workflow consequence; it creates no setup-progress database state and displays no universal completion percentage
+- reads for company identity, commercial tax/POS mode, fiscal settings and series, currencies, locations, items, opening-stock import evidence, customers, suppliers, members, banks, branding, and notifications are isolated so one unavailable optional source cannot be presented as missing setup
+- optional extensions such as additional users, customers, suppliers, banks, notifications, due reminders, branding, and opening stock remain optional until the related workflow is used
+- `NULL` POS tax mode remains visibly unconfigured; the setup hub does not change it or infer configured, zero, exempt, or non-fiscal treatment
+- Settings deep links accept only `view=setup|all` and the maintained section keys; opening import accepts only `locations`, `items`, `customers`, `suppliers`, and `opening_stock`
+- query parameters select a view only. They do not save Settings, accept invitations, import rows, or invoke posting RPCs
+- Mozambique Compliance loads core fiscal evidence separately from optional SAF-T run, artifact, and audit history; a failed optional read is shown as unavailable rather than empty or incomplete
 
 ## Authority Split
 

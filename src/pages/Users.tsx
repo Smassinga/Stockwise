@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { ArrowLeft, Search } from 'lucide-react'
 import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
 import { CrownIcon } from '@phosphor-icons/react/dist/csr/Crown'
 import { ShieldCheckIcon as PhosphorShieldCheckIcon } from '@phosphor-icons/react/dist/csr/ShieldCheck'
@@ -556,7 +556,7 @@ export default function Users() {
         meta={
           companyId ? (
             <>
-              <span>{t('users.company')}: {companyName || companyId}</span>
+              <span>{t('users.company')}: {companyName || tt('setup.companyFallback', 'Active company')}</span>
               <span aria-hidden="true">/</span>
               <span>{isRolesView ? roleCopy.navRoles : roleCopy.navMembers}</span>
             </>
@@ -564,6 +564,12 @@ export default function Users() {
         }
         actions={
           <div className="mobile-primary-actions">
+            <Button asChild size="sm" variant="outline">
+              <Link to="/settings?view=setup">
+                <ArrowLeft className="h-4 w-4" />
+                {tt('setup.users.return', 'Company setup')}
+              </Link>
+            </Button>
             <Button asChild size="sm" variant={isRolesView ? 'outline' : 'default'}>
               <Link to="/users">
                 <UsersThreeIcon className="h-4 w-4" weight="duotone" />
@@ -609,6 +615,14 @@ export default function Users() {
           icon={<XCircleIcon weight="duotone" />}
           tone={memberStats.disabled ? 'warning' : 'neutral'}
         />
+      </div>
+
+      <div className="rounded-[var(--radius)] border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+        {memberStats.invited > 0
+          ? tt('setup.users.pendingGuidance', '{count} invitation(s) are awaiting acceptance. Pending access is not active membership.', { count: memberStats.invited })
+          : memberStats.active <= 1
+            ? tt('setup.users.singleOwnerGuidance', 'A single-user company is valid. Invite teammates only when the operation requires shared access.')
+            : tt('setup.users.activeGuidance', 'Active members can use the company according to their assigned role. Review role definitions before changing access.')}
       </div>
 
       {isRolesView ? (
