@@ -151,7 +151,7 @@ Onboarding is a setup decision surface:
 - invited users see Join invited company and Create new company as separate explicit paths
 - pending invitation cards explain role, inviter, invitation date, expiry, and the explicit accept action
 - creating a new company leaves pending invitations pending and usable
-- the completion state now shows a setup checklist for company profile, fiscal/legal setup, users, and opening data
+- the completion state shows the selected company, assigned role, entry source, and explicit Dashboard or Company setup actions; ongoing readiness belongs to the Settings setup hub rather than a static onboarding checklist
 
 Settings is the operating setup map for company administrators. It should route to real backed surfaces only:
 
@@ -337,3 +337,5 @@ Onboarding measures workspace entry only. It must never present its completion v
 Every setup surface keeps readiness, authority, and consequence separate. `Ready`, `Needs action`, `In progress`, `Optional`, `Not applicable`, and `Unavailable` describe evidence. `Can manage`, `Can review`, `Read-only`, and ask-role guidance describe the signed-in member. Optional areas use neutral treatment; unavailable reads never become amber missing-data claims.
 
 The setup hub leads the Settings first viewport, keeps core foundation before operational extensions, and uses one supported deep link per action. Query values select a maintained view only and never save, invite, import, or post. Mobile cards retain readable EN/PT copy, visible status text beyond color, practical targets, and the shell dock allowance.
+
+UX-3 production validation completed on 2026-07-19. The final deployment passed at `1440`, `1200`, `820`, and `390`, light/dark, and EN/PT representative routes. A production-only locale fallback discovered during QA was corrected so an explicit stored company language still wins, while the active language control remains effective when no company locale is configured. No universal setup percentage, backend readiness state, schema, role, permission, or business mutation was introduced.
