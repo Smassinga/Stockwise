@@ -853,8 +853,10 @@ function Settings() {
         return;
       }
 
+      const activeLang = readActiveLang();
       const cachedLang = readCachedLang(companyId);
-      if (cachedLang) setLang(cachedLang);
+      const fallbackLang = activeLang ?? cachedLang;
+      if (fallbackLang) setLang(fallbackLang);
 
       try {
         setLoading(true);
@@ -893,7 +895,7 @@ function Settings() {
         if (!resSettings.data) {
           setMissingRow(true);
           if (!cancelled) {
-            const effectiveLang = cachedLang ?? readActiveLang() ?? DEFAULTS.locale.language;
+            const effectiveLang = activeLang ?? cachedLang ?? DEFAULTS.locale.language;
             setData({ ...DEFAULTS, locale: { language: effectiveLang } });
           }
         } else {
@@ -903,7 +905,7 @@ function Settings() {
           const effectiveLang =
             storedLang === "en" || storedLang === "pt"
               ? storedLang
-              : cachedLang ?? readActiveLang() ?? DEFAULTS.locale.language;
+              : activeLang ?? cachedLang ?? DEFAULTS.locale.language;
           merged.locale.language = effectiveLang;
           if (!cancelled) {
             setData(merged);
