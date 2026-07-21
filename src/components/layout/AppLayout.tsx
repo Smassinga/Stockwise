@@ -579,7 +579,7 @@ export function AppLayout({ user, children }: Props) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden pl-[max(1rem,var(--app-safe-left))] pr-[max(1rem,var(--app-safe-right))] pb-[calc(var(--app-shell-mobile-dock)+var(--app-safe-bottom)+1.25rem)] pt-4 md:px-6 md:pb-10 md:pt-7 xl:px-8 2xl:px-10">
+        <main className="app-main-content min-w-0 flex-1 overflow-x-hidden pl-[max(1rem,var(--app-safe-left))] pr-[max(1rem,var(--app-safe-right))] pb-[calc(var(--app-shell-mobile-dock)+var(--app-safe-bottom)+1.25rem)] md:px-6 md:pb-10 xl:px-8 2xl:px-10">
           {children}
         </main>
 

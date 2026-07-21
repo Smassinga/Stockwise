@@ -2,6 +2,10 @@
 
 This guide records the current repository workflow after the canonical Supabase baseline reset.
 
+## Authenticated Page Rhythm
+
+Use `app-main-content` in the authenticated shell for first-content clearance and the safe-area relationship. Use one `.app-page` root for page width and sibling rhythm. Do not add `mt-*` or page-root padding to repair a shell-spacing problem; verify `16px` phone, `20px` tablet, and `24px` desktop clearance at the shell boundary first.
+
 ## Core Commands
 
 ```bash

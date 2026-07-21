@@ -166,6 +166,10 @@
 }
 
 @layer components {
+  .app-main-content {
+    padding-top: 1rem;
+  }
+
   .app-page {
     width: 100%;
     max-width: 108rem;
@@ -354,12 +358,22 @@
   }
 
   @media (width >= 768px) {
+    .app-main-content {
+      padding-top: 1.25rem;
+    }
+
     .app-page {
       gap: 1.75rem;
     }
 
     .mobile-filter-stack {
       @apply grid-cols-2;
+    }
+  }
+
+  @media (width >= 1024px) {
+    .app-main-content {
+      padding-top: 1.5rem;
     }
   }
 

@@ -1,5 +1,6 @@
 // src/pages/Warehouses.tsx
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
@@ -23,9 +24,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '../components/ui/alert-dialog'
-import { Warehouse as WarehouseIcon, Plus, Search, Edit, Trash2, MapPin, Package } from 'lucide-react'
+import { AlertTriangle, FileUp, Warehouse as WarehouseIcon, Plus, Search, Edit, Trash2, MapPin, Package } from 'lucide-react'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useIsMobile } from '../hooks/use-mobile'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
+import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
 
 type Warehouse = {
   id: string
@@ -59,7 +65,9 @@ export function Warehouses() {
   const [bins, setBins] = useState<Bin[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [binLoadFailed, setBinLoadFailed] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isAddBinDialogOpen, setIsAddBinDialogOpen] = useState(false)
@@ -85,6 +93,7 @@ export function Warehouses() {
       try {
         setLoading(true)
         setError(null)
+        setBinLoadFailed(false)
         await loadAll(companyId, () => cancelled)
       } catch (e: any) {
         console.error(e)
@@ -142,6 +151,7 @@ export function Warehouses() {
       console.error(bnErr)
       toast.error(bnErr.message || tt('warehouses.toast.binLoadFailed', 'Failed to load bins'))
       setBins([])
+      setBinLoadFailed(true)
       return
     }
 
@@ -154,6 +164,7 @@ export function Warehouses() {
       createdAt: b.createdAt ?? null,
     }))
 
+    setBinLoadFailed(false)
     setBins(bns)
   }
 
@@ -375,11 +386,14 @@ export function Warehouses() {
     }
   }
 
-  const filtered = warehouses.filter(w =>
-    w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    w.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (w.address ?? '').toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filtered = warehouses.filter(w => {
+    const matchesSearch = w.name.toLowerCase().includes(searchTerm.toLowerCase())
+      || w.code.toLowerCase().includes(searchTerm.toLowerCase())
+      || (w.address ?? '').toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = statusFilter === 'all'
+      || (statusFilter === 'active' ? w.status === 'active' : w.status !== 'active')
+    return matchesSearch && matchesStatus
+  })
 
   const binsFor = (warehouseId: string) => bins.filter(b => b.warehouseId === warehouseId)
   const summary = {
@@ -392,39 +406,40 @@ export function Warehouses() {
   if (loading) {
     return (
       <div className="app-page app-page--workspace space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>
-        </div>
-        <div className="animate-pulse">
-          <div className="h-10 bg-muted rounded mb-4"></div>
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-16 bg-muted rounded"></div>
-            ))}
-          </div>
-        </div>
+        <PremiumSkeleton lines={3} label={tt('warehouses.loading', 'Loading warehouses')} />
+        <PremiumSkeleton lines={6} label={tt('warehouses.loadingRows', 'Loading warehouse locations')} />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="app-page app-page--workspace p-6">
-        <h2 className="text-xl font-bold mb-2">{t('errors.title')}</h2>
-        <p className="text-muted-foreground mb-4">{error}</p>
-        <Button onClick={() => location.reload()}>{t('common.retry')}</Button>
+      <div className="app-page app-page--workspace">
+        <PremiumStatePanel
+          kind="error"
+          icon={<AlertTriangle />}
+          title={tt('warehouses.loadErrorTitle', 'Warehouses unavailable')}
+          description={tt('warehouses.loadErrorBody', 'StockWise could not confirm the company warehouse register. Retry before changing locations or bins.')}
+          action={<Button onClick={() => location.reload()}>{t('common.retry')}</Button>}
+        />
       </div>
     )
   }
 
   return (
     <div className="app-page app-page--workspace space-y-6 w-full max-w-full overflow-x-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold">{t('nav.warehouses')}</h1>
-          <p className="text-muted-foreground">{t('warehouses.subtitle') ?? ''}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <PremiumRegisterHeader
+        eyebrow={tt('warehouses.eyebrow', 'Inventory locations')}
+        title={t('nav.warehouses')}
+        description={tt('warehouses.workspaceDescription', 'Maintain company warehouses and bin locations while preserving stock-history safeguards.')}
+        badges={
+          <>
+            <PremiumStatusBadge tone="neutral">{tt('warehouses.companyScoped', 'Company scoped')}</PremiumStatusBadge>
+            <PremiumStatusBadge tone={canManage ? 'positive' : 'neutral'}>{canManage ? tt('warehouses.manageAccess', 'Manager access') : tt('warehouses.readOnlyBadge', 'Read-only')}</PremiumStatusBadge>
+          </>
+        }
+      />
+      <div className="flex flex-wrap justify-end gap-2">
           <Dialog
             open={isAddBinDialogOpen}
             onOpenChange={(open) => {
@@ -551,7 +566,6 @@ export function Warehouses() {
               </DialogBody>
             </DialogContent>
           </Dialog>
-        </div>
       </div>
 
       {!canManage ? (
@@ -560,46 +574,25 @@ export function Warehouses() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.total', 'Warehouses')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.total}</div>
-            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.totalHelp', 'Configured locations in this company.')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.active', 'Active')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.active}</div>
-            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.activeHelp', 'Ready for receiving, picking, and transfers.')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.inactive', 'Inactive')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.inactive}</div>
-            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.inactiveHelp', 'Kept for history but not currently active.')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('warehouses.summary.bins', 'Bins')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.bins}</div>
-            <div className="text-xs text-muted-foreground">{tt('warehouses.summary.binsHelp', 'Storage locations distributed across warehouses.')}</div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PremiumMetricCard label={tt('warehouses.summary.total', 'Warehouses')} value={summary.total} description={tt('warehouses.summary.totalHelp', 'Configured locations in this company.')} icon={<WarehouseIcon />} />
+        <PremiumMetricCard label={tt('warehouses.summary.active', 'Active')} value={summary.active} description={tt('warehouses.summary.activeHelp', 'Ready for receiving, picking, and transfers.')} icon={<WarehouseIcon />} tone="positive" />
+        <PremiumMetricCard label={tt('warehouses.summary.inactive', 'Inactive')} value={summary.inactive} description={tt('warehouses.summary.inactiveHelp', 'Kept for history but not currently active.')} icon={<WarehouseIcon />} tone="neutral" />
+        <PremiumMetricCard label={tt('warehouses.summary.bins', 'Bins')} value={binLoadFailed ? tt('common.unavailable', 'Unavailable') : summary.bins} description={binLoadFailed ? tt('warehouses.summary.binsUnverified', 'Bin data could not be verified; this is not a confirmed zero.') : tt('warehouses.summary.binsHelp', 'Storage locations distributed across warehouses.')} icon={<Package />} tone={binLoadFailed ? 'warning' : 'info'} />
       </div>
 
-      <div className="flex items-center gap-4">
+      {binLoadFailed ? (
+        <PremiumStatePanel
+          kind="blocked"
+          compact
+          icon={<AlertTriangle />}
+          title={tt('warehouses.partialBinsTitle', 'Warehouse register loaded; bin data is unavailable')}
+          description={tt('warehouses.partialBinsBody', 'Warehouse counts are current, but StockWise could not verify bin locations. Retry before relying on bin totals or editing locations.')}
+          action={<Button variant="outline" onClick={() => companyId && void loadAll(companyId)}>{tt('common.retry', 'Retry')}</Button>}
+        />
+      ) : null}
+
+      <div className="flex flex-col gap-3 rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-card p-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -608,6 +601,22 @@ export function Warehouses() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
           />
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-40 space-y-1">
+            <Label className="text-xs text-muted-foreground">{tt('warehouses.status', 'Status')}</Label>
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tt('warehouses.statusAll', 'All statuses')}</SelectItem>
+                <SelectItem value="active">{warehouseStatusLabel('active')}</SelectItem>
+                <SelectItem value="inactive">{warehouseStatusLabel('inactive')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" asChild>
+            <Link to="/setup/import?dataset=locations"><FileUp className="h-4 w-4" />{tt('warehouses.importLocations', 'Import locations')}</Link>
+          </Button>
         </div>
       </div>
 
@@ -646,7 +655,7 @@ export function Warehouses() {
                         <div className="text-right">
                           <p className="text-sm"><span className="text-muted-foreground">{t('warehouses.bins') ?? 'Bins'}:</span> {wBins.length}</p>
                         </div>
-                        <Badge variant={wh.status === 'active' ? 'default' : 'secondary'}>{warehouseStatusLabel(wh.status)}</Badge>
+                        <PremiumStatusBadge tone={wh.status === 'active' ? 'positive' : 'neutral'}>{warehouseStatusLabel(wh.status)}</PremiumStatusBadge>
                         <div className="flex items-center gap-2">
                           <Dialog
                             open={editing?.id === wh.id}
@@ -668,6 +677,7 @@ export function Warehouses() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                aria-label={tt('warehouses.editNamed', 'Edit {name}', { name: wh.name })}
                                 disabled={!canManage}
                                 onClick={() => {
                                   setEditing(wh)
@@ -713,7 +723,7 @@ export function Warehouses() {
 
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" disabled={!canManage}>
+                              <Button variant="ghost" size="sm" disabled={!canManage} aria-label={tt('warehouses.deleteNamed', 'Delete {name}', { name: wh.name })}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </AlertDialogTrigger>

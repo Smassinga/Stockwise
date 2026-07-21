@@ -18,7 +18,7 @@ import {
   type PremiumDataTableColumn,
   type PremiumDataTableSortState,
 } from '../components/premium/PremiumDataTable'
-import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { PremiumImportExportActions } from '../components/premium/PremiumImportExportActions'
 import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
@@ -35,7 +35,10 @@ interface Item {
   name: string
   min_stock: number | null
   reorder_point: number | null
+  base_uom_id: string | null
 }
+
+interface Uom { id: string; code: string }
 
 interface Warehouse {
   id: string
@@ -48,6 +51,7 @@ interface StockLevelRow {
   item_id: string
   warehouse_id: string
   qty: number | null
+  allocated_qty?: number | null
   avg_cost: number | null
   updated_at?: string | null
 }
@@ -59,7 +63,7 @@ type SortOption =
   | 'warehouse_asc'
   | 'risk_desc'
 
-type StockStatus = 'healthy' | 'low' | 'out'
+type StockStatus = 'healthy' | 'low' | 'out' | 'negative' | 'threshold_unconfigured'
 type StockRiskFilter = 'all' | StockStatus
 
 type StockRow = {
@@ -71,11 +75,16 @@ type StockRow = {
   warehouseName: string
   warehouseCode: string
   onHandQty: number
+  allocatedQty: number
+  availableQty: number
+  uomCode: string
   avgCost: number
   totalValue: number
   minStock: number
+  thresholdConfigured: boolean
   shortageQty: number
   status: StockStatus
+  integrityIssue: boolean
 }
 
 function formatQuantity(value: number) {
@@ -95,6 +104,7 @@ export function StockLevels() {
   const [items, setItems] = useState<Item[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [stockLevels, setStockLevels] = useState<StockLevelRow[]>([])
+  const [uoms, setUoms] = useState<Uom[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [baseCode, setBaseCode] = useState('MZN')
@@ -136,11 +146,17 @@ export function StockLevels() {
 
       const { data: itemsData, error: itemError } = await supabase
         .from('items')
-        .select('id,sku,name,min_stock,reorder_point')
+        .select('id,sku,name,min_stock,reorder_point,base_uom_id')
         .eq('company_id', companyId)
         .order('name', { ascending: true })
       if (itemError) throw itemError
       setItems((itemsData ?? []) as Item[])
+
+      const { data: uomData, error: uomError } = await supabase
+        .from('uoms')
+        .select('id,code')
+      if (uomError) throw uomError
+      setUoms((uomData ?? []) as Uom[])
 
       const warehouseIds = whs.map((warehouse) => warehouse.id)
       if (!warehouseIds.length) {
@@ -150,7 +166,7 @@ export function StockLevels() {
 
       const { data: stockData, error: stockError } = await supabase
         .from('stock_levels')
-        .select('id,item_id,warehouse_id,qty,avg_cost,updated_at')
+        .select('id,item_id,warehouse_id,qty,allocated_qty,avg_cost,updated_at')
         .eq('company_id', companyId)
         .in('warehouse_id', warehouseIds)
 
@@ -165,34 +181,71 @@ export function StockLevels() {
 
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
   const warehouseById = useMemo(() => new Map(warehouses.map((warehouse) => [warehouse.id, warehouse])), [warehouses])
+  const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase()
-    const mapped = stockLevels
-      .map((stockLevel) => {
-        const item = itemById.get(stockLevel.item_id)
-        const warehouse = warehouseById.get(stockLevel.warehouse_id)
-        const onHandQty = Number(stockLevel.qty ?? 0)
-        const avgCost = Number(stockLevel.avg_cost ?? 0)
+    const grouped = new Map<string, {
+      itemId: string
+      warehouseId: string
+      onHandQty: number
+      allocatedQty: number
+      totalValue: number
+    }>()
+
+    for (const stockLevel of stockLevels) {
+      const key = `${stockLevel.item_id}:${stockLevel.warehouse_id}`
+      const current = grouped.get(key) ?? {
+        itemId: stockLevel.item_id,
+        warehouseId: stockLevel.warehouse_id,
+        onHandQty: 0,
+        allocatedQty: 0,
+        totalValue: 0,
+      }
+      const bucketQty = Number(stockLevel.qty ?? 0)
+      current.onHandQty += bucketQty
+      current.allocatedQty += Number(stockLevel.allocated_qty ?? 0)
+      current.totalValue += bucketQty * Number(stockLevel.avg_cost ?? 0)
+      grouped.set(key, current)
+    }
+
+    const mapped = Array.from(grouped.entries())
+      .map(([id, position]) => {
+        const item = itemById.get(position.itemId)
+        const warehouse = warehouseById.get(position.warehouseId)
+        const { onHandQty, allocatedQty, totalValue } = position
+        const avgCost = onHandQty === 0 ? 0 : totalValue / onHandQty
+        const thresholdConfigured = item?.min_stock != null || item?.reorder_point != null
         const minStock = Number(item?.min_stock ?? item?.reorder_point ?? 0)
         const shortageQty = minStock > 0 ? Math.max(minStock - onHandQty, 0) : 0
         const status: StockStatus =
-          onHandQty <= 0 ? 'out' : shortageQty > 0 ? 'low' : 'healthy'
+          onHandQty < 0
+            ? 'negative'
+            : onHandQty === 0
+              ? 'out'
+              : !thresholdConfigured
+                ? 'threshold_unconfigured'
+                : shortageQty > 0 ? 'low' : 'healthy'
 
         return {
-          id: stockLevel.id,
-          itemId: stockLevel.item_id,
-          itemName: item?.name || stockLevel.item_id,
+          id,
+          itemId: position.itemId,
+          itemName: item?.name || tt('stock.integrity.unknownItem', 'Unknown item reference'),
           sku: item?.sku || '',
-          warehouseId: stockLevel.warehouse_id,
-          warehouseName: warehouse?.name || stockLevel.warehouse_id,
+          warehouseId: position.warehouseId,
+          warehouseName: warehouse?.name || tt('stock.integrity.unknownWarehouse', 'Unknown warehouse reference'),
           warehouseCode: warehouse?.code || '',
           onHandQty,
+          allocatedQty,
+          availableQty: onHandQty - allocatedQty,
+          uomCode: uomById.get(item?.base_uom_id || '')?.code || tt('stock.uomUnknown', 'UoM unavailable'),
           avgCost,
-          totalValue: onHandQty * avgCost,
+          totalValue,
           minStock,
+          thresholdConfigured,
           shortageQty,
           status,
+          integrityIssue: !item || !warehouse,
         } satisfies StockRow
       })
       .filter((row) => (itemFilter === 'all' ? true : row.itemId === itemFilter))
@@ -216,7 +269,7 @@ export function StockLevels() {
         case 'warehouse_asc':
           return left.warehouseName.localeCompare(right.warehouseName)
         case 'risk_desc': {
-          const riskRank = { out: 0, low: 1, healthy: 2 }
+          const riskRank = { negative: 0, out: 1, low: 2, threshold_unconfigured: 3, healthy: 4 }
           const statusSort = riskRank[left.status] - riskRank[right.status]
           if (statusSort !== 0) return statusSort
           return right.shortageQty - left.shortageQty
@@ -226,18 +279,16 @@ export function StockLevels() {
           return right.totalValue - left.totalValue
       }
     })
-  }, [itemById, itemFilter, riskFilter, search, sortBy, stockLevels, warehouseById, warehouseFilter])
+  }, [itemById, itemFilter, riskFilter, search, sortBy, stockLevels, tt, uomById, warehouseById, warehouseFilter])
 
   const totals = useMemo(() => {
-    const totalUnits = rows.reduce((sum, row) => sum + row.onHandQty, 0)
     const totalValue = rows.reduce((sum, row) => sum + row.totalValue, 0)
-    const lowStock = rows.filter((row) => row.status !== 'healthy').length
-    const outOfStock = rows.filter((row) => row.status === 'out').length
+    const attention = rows.filter((row) => row.status !== 'healthy').length
+    const critical = rows.filter((row) => row.status === 'out' || row.status === 'negative').length
     return {
-      totalUnits,
       totalValue,
-      lowStock,
-      outOfStock,
+      attention,
+      critical,
       positions: rows.length,
       warehouseCount: new Set(rows.map((row) => row.warehouseId)).size,
     }
@@ -251,14 +302,16 @@ export function StockLevels() {
 
   const formatCurrency = (value: number) => formatMoneyBase(value, baseCode)
   const statusLabel = (status: StockStatus) => {
+    if (status === 'negative') return tt('stock.status.negative', 'Negative stock')
     if (status === 'out') return tt('stock.status.out', 'Out of stock')
     if (status === 'low') return tt('stock.status.low', 'Low stock')
+    if (status === 'threshold_unconfigured') return tt('stock.status.thresholdUnconfigured', 'Minimum threshold not configured')
     return tt('stock.status.healthy', 'Healthy')
   }
 
   const statusTone = (status: StockStatus): PremiumTone => {
-    if (status === 'out') return 'critical'
-    if (status === 'low') return 'warning'
+    if (status === 'out' || status === 'negative') return 'critical'
+    if (status === 'low' || status === 'threshold_unconfigured') return 'warning'
     return 'positive'
   }
 
@@ -302,15 +355,33 @@ export function StockLevels() {
     {
       id: 'qty',
       header: tt('table.onHand', 'On hand'),
-      cell: (row) => <span className="font-mono font-medium tabular-nums">{formatQuantity(row.onHandQty)}</span>,
+      cell: (row) => (
+        <div className="text-right">
+          <div className="font-mono font-medium tabular-nums">{formatQuantity(row.onHandQty)}</div>
+          <div className="text-xs text-muted-foreground">{row.uomCode}</div>
+        </div>
+      ),
       sortValue: (row) => row.onHandQty,
       align: 'right',
       minWidth: 120,
     },
     {
+      id: 'available',
+      header: tt('stock.available', 'Available'),
+      cell: (row) => (
+        <div className="text-right">
+          <div className="font-mono tabular-nums">{formatQuantity(row.availableQty)}</div>
+          {row.allocatedQty > 0 ? <div className="text-xs text-muted-foreground">{tt('stock.allocated', '{qty} allocated', { qty: formatQuantity(row.allocatedQty) })}</div> : null}
+        </div>
+      ),
+      sortValue: (row) => row.availableQty,
+      align: 'right',
+      minWidth: 130,
+    },
+    {
       id: 'minStock',
       header: tt('table.minStock', 'Min stock'),
-      cell: (row) => <span className="font-mono tabular-nums">{row.minStock > 0 ? formatQuantity(row.minStock) : tt('common.dash', '-')}</span>,
+      cell: (row) => <span className="font-mono tabular-nums">{row.thresholdConfigured ? `${formatQuantity(row.minStock)} ${row.uomCode}` : tt('stock.notConfigured', 'Not configured')}</span>,
       sortValue: (row) => row.minStock,
       align: 'right',
       minWidth: 120,
@@ -342,10 +413,11 @@ export function StockLevels() {
               {tt('stock.shortBy', 'Short by {qty}', { qty: formatQuantity(row.shortageQty) })}
             </span>
           ) : null}
+          {row.integrityIssue ? <PremiumStatusBadge tone="critical">{tt('stock.integrity.label', 'Data integrity warning')}</PremiumStatusBadge> : null}
         </div>
       ),
       sortValue: (row) => {
-        const rank = { out: 0, low: 1, healthy: 2 }
+        const rank = { negative: 0, out: 1, low: 2, threshold_unconfigured: 3, healthy: 4 }
         return rank[row.status]
       },
       minWidth: 170,
@@ -427,8 +499,9 @@ export function StockLevels() {
           { label: tt('table.item', 'Item'), value: (row) => row.itemName, width: 30 },
           { label: tt('table.sku', 'SKU'), value: (row) => row.sku || tt('common.dash', '—'), width: 16 },
           { label: tt('warehouses.warehouse', 'Warehouse'), value: (row) => row.warehouseName, width: 20 },
-          { label: tt('table.onHand', 'On hand'), value: (row) => row.onHandQty, type: 'number', width: 14 },
-          { label: tt('table.minStock', 'Min stock'), value: (row) => row.minStock || 0, type: 'number', width: 14 },
+          { label: tt('table.onHand', 'On hand'), value: (row) => `${row.onHandQty} ${row.uomCode}`, width: 16 },
+          { label: tt('stock.available', 'Available'), value: (row) => `${row.availableQty} ${row.uomCode}`, width: 16 },
+          { label: tt('table.minStock', 'Min stock'), value: (row) => row.thresholdConfigured ? `${row.minStock} ${row.uomCode}` : tt('stock.notConfigured', 'Not configured'), width: 16 },
           { label: `${tt('stock.avgCost', 'Average cost')} (${baseCode})`, value: (row) => row.avgCost, type: 'currency', width: 16 },
           { label: `${tt('stock.totalValue', 'Total value')} (${baseCode})`, value: (row) => row.totalValue, type: 'currency', width: 18 },
           { label: tt('stock.status', 'Status'), value: (row) => statusLabel(row.status), width: 16 },
@@ -470,10 +543,11 @@ export function StockLevels() {
   if (error) {
     return (
       <div className="app-page app-page--workspace">
-        <PremiumEmptyState
+        <PremiumStatePanel
+          kind="error"
           icon={<AlertTriangle />}
-          title={t('errors.title') ?? 'Error'}
-          description={error}
+          title={tt('stock.loadErrorTitle', 'Stock levels unavailable')}
+          description={tt('stock.loadErrorBody', 'StockWise could not confirm the current inventory balances. Retry before relying on quantities or valuation.')}
           action={<Button onClick={() => void loadData()}>{t('common.retry') ?? 'Retry'}</Button>}
         />
       </div>
@@ -501,7 +575,7 @@ export function StockLevels() {
       <PremiumRegisterHeader
         eyebrow={tt('stock.eyebrow', 'Inventory valuation')}
         title={t('nav.stockLevels')}
-        description={tt('stock.description', 'Review on-hand quantity, weighted average cost, and inventory value by warehouse.')}
+        description={tt('stock.description', 'Read-only inventory position by warehouse. Quantities remain in each item base unit and value uses weighted average cost.')}
         badges={
           <>
             <PremiumStatusBadge tone="info" icon={<CircleDollarSign />}>
@@ -533,17 +607,17 @@ export function StockLevels() {
               tone="positive"
             />
             <PremiumMetricCard
-              label={tt('stock.summary.units', 'On-hand units')}
-              value={formatQuantity(totals.totalUnits)}
-              description={tt('stock.summary.unitsHelp', '{count} stock positions in view.', { count: totals.positions })}
+              label={tt('stock.summary.positions', 'Stock positions')}
+              value={totals.positions}
+              description={tt('stock.summary.positionsHelp', 'Item and warehouse positions in the current filtered result; mixed units are not added together.')}
               icon={<Boxes />}
             />
             <PremiumMetricCard
-              label={tt('stock.summary.low', 'Low stock positions')}
-              value={totals.lowStock}
-              description={tt('stock.summary.lowHelp', 'Includes {count} positions already at zero stock.', { count: totals.outOfStock })}
+              label={tt('stock.summary.attention', 'Positions needing attention')}
+              value={totals.attention}
+              description={tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}
               icon={<AlertTriangle />}
-              tone={totals.lowStock > 0 ? 'warning' : 'positive'}
+              tone={totals.attention > 0 ? 'warning' : 'positive'}
             />
             <PremiumMetricCard
               label={tt('stock.summary.coverage', 'Warehouse coverage')}
@@ -602,7 +676,9 @@ export function StockLevels() {
                   <SelectItem value="all">{tt('stock.filters.statusAll', 'All statuses')}</SelectItem>
                   <SelectItem value="healthy">{statusLabel('healthy')}</SelectItem>
                   <SelectItem value="low">{statusLabel('low')}</SelectItem>
-                  <SelectItem value="out">{tt('stock.filters.zeroNegative', 'Zero or negative')}</SelectItem>
+                  <SelectItem value="out">{statusLabel('out')}</SelectItem>
+                  <SelectItem value="negative">{statusLabel('negative')}</SelectItem>
+                  <SelectItem value="threshold_unconfigured">{statusLabel('threshold_unconfigured')}</SelectItem>
                 </SelectContent>
               </Select>
             </PremiumTableFilter>
@@ -651,9 +727,9 @@ export function StockLevels() {
         summary={
           <div className="flex flex-wrap items-center gap-2">
             <span>{tt('stock.registerCount', '{count} stock positions in view', { count: rows.length })}</span>
-            {totals.lowStock > 0 ? (
+            {totals.attention > 0 ? (
               <PremiumStatusBadge tone="warning" icon={<AlertTriangle />}>
-                {tt('stock.resultsAttention', '{count} positions need attention', { count: totals.lowStock })}
+                {tt('stock.resultsAttention', '{count} positions need attention', { count: totals.attention })}
               </PremiumStatusBadge>
             ) : null}
           </div>
@@ -696,11 +772,11 @@ export function StockLevels() {
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
                     <div className="premium-label">{tt('table.onHand', 'On hand')}</div>
-                    <div className="mt-1 text-sm font-semibold">{formatQuantity(row.onHandQty)}</div>
+                    <div className="mt-1 text-sm font-semibold">{formatQuantity(row.onHandQty)} {row.uomCode}</div>
                   </div>
                   <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
                     <div className="premium-label">{tt('table.minStock', 'Min stock')}</div>
-                    <div className="mt-1 text-sm font-semibold">{row.minStock > 0 ? formatQuantity(row.minStock) : tt('common.dash', '-')}</div>
+                    <div className="mt-1 text-sm font-semibold">{row.thresholdConfigured ? `${formatQuantity(row.minStock)} ${row.uomCode}` : tt('stock.notConfigured', 'Not configured')}</div>
                   </div>
                   <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
                     <div className="premium-label">{t('stock.avgCost')}</div>
@@ -746,7 +822,7 @@ export function StockLevels() {
             ariaLabel={t('nav.stockLevels')}
             emptyState={stockEmptyState}
             rowClassName={(row) =>
-              row.status === 'out' ? 'bg-destructive/5' : row.status === 'low' ? 'bg-amber-500/5' : undefined
+              row.status === 'out' || row.status === 'negative' ? 'bg-destructive/5' : row.status === 'low' || row.status === 'threshold_unconfigured' ? 'bg-amber-500/5' : undefined
             }
             pagination={{
               page: stockPage,

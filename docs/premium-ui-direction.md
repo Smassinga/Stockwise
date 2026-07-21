@@ -113,12 +113,17 @@ Desktop registers may use wide tables when comparison matters. Android registers
 
 Items, Stock Levels, and Movements follow this implementation:
 
-- Items uses the register pattern for SKU/name, role indicators, base UoM, default sell price, stock status, readiness, minimum-stock editing, and guarded delete actions.
-- Stock Levels uses the register pattern for item/location lookup, warehouse filters, stock-risk filters, valuation columns, low-stock badges, Excel export, and movement/item shortcuts.
-- Movements uses the register pattern as a premium stock-ledger surface over `stock_movements`: summary cards for total movements, Entradas/Receipts, Saídas/Issues, Ajustes/Adjustments, and Transferências/Transfers; search plus date/type/reference/item/warehouse/bin filters; semantic movement badges; desktop sortable table; Android cards with details and source actions.
+- Items is register-first. `/items?view=register` is the default review surface and `/items?view=create` is the focused creation workspace; browser history remains meaningful and item profile authority is unchanged.
+- Stock Levels is explicitly read-only. It never adds quantities across mixed base units, shows each item base UoM, values on-hand using weighted average cost, and distinguishes healthy, low, out, negative, and minimum-threshold-unconfigured evidence.
+- Movements is history-first. `/movements?view=history` is the default ledger and `/movements?view=record&type=receive|issue|transfer|adjust` opens the focused governed posting workspace. The maintained `post_stock_*` RPCs and posting-request idempotency remain authoritative.
+- Warehouses uses the same register header, metric, status, loading, and partial-data language. A failed bin read is unavailable evidence, never a confirmed zero.
 - Bin filtering is not exposed on Stock Levels until the current stock-level read model exposes bin data to the page.
 
 Movements must stay a register, not another dashboard. It may improve presentation, filtering, loading/error states, and empty states, but it must not manually mutate `stock_levels`, change posting/valuation/POS/purchase logic, or imply a costing-policy change. `stock_movements` remains canonical and `stock_levels` remains derived.
+
+## Page Rhythm Contract
+
+The authenticated shell owns viewport clearance, header offset, safe-area insets, and mobile-dock clearance through `app-main-content`: `16px` on phones, `20px` on tablet widths, and `24px` from desktop widths. `.app-page` owns maximum width, internal vertical flow, and section rhythm only. Page headers own their internal padding; sections own spacing between siblings; cards own their content padding. Ordinary pages must not add compensating top margins or duplicate shell padding.
 
 ## Recipes & Assemblies
 

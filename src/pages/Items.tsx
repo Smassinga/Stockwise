@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Link } from 'react-router-dom'
-import { AlertTriangle, Download, ExternalLink, Package, PackageCheck, Pencil, Plus, Settings2, Tags, Trash2, Upload, Warehouse } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, ArrowLeft, Download, ExternalLink, Package, PackageCheck, Pencil, Plus, Settings2, Tags, Trash2, Upload, Warehouse } from 'lucide-react'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
@@ -41,12 +41,13 @@ import {
   type PremiumDataTableColumn,
   type PremiumDataTableSortState,
 } from '../components/premium/PremiumDataTable'
-import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
+import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { PremiumImportExportActions } from '../components/premium/PremiumImportExportActions'
 import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import { PremiumTableFilter } from '../components/premium/PremiumTableFilter'
 import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
@@ -127,8 +128,12 @@ export default function ItemsPage() {
   const { myRole, companyId } = useOrg()
   const isMobile = useIsMobile()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
+  const canCreateItem = can.createItem(role)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('view') === 'create' ? 'create' : 'register'
 
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uoms, setUoms] = useState<Uom[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
@@ -256,7 +261,7 @@ export default function ItemsPage() {
     return {
       total: items.length,
       stocked: items.filter((item) => item.trackInventory).length,
-      assembled: items.filter((item) => item.isAssembled || item.hasActiveBom).length,
+      nonStock: items.filter((item) => !item.trackInventory).length,
       warnings: warningCount,
     }
   }, [items])
@@ -272,11 +277,13 @@ export default function ItemsPage() {
   async function loadPage() {
     try {
       setLoading(true)
+      setLoadError(false)
       const currencyCode = await getBaseCurrencyCode(companyId).catch(() => 'MZN')
       setBaseCurrencyCode(currencyCode || 'MZN')
       await Promise.all([loadUoms(), loadItems()])
     } catch (error: any) {
       console.error(error)
+      setLoadError(true)
       toast.error(error?.message || tt('items.toast.loadFailed', 'Failed to load items'))
     } finally {
       setLoading(false)
@@ -515,6 +522,7 @@ export default function ItemsPage() {
       setUnitPrice('')
       setDraftProfile(EMPTY_PROFILE)
       setBasicOnlyAcknowledged(false)
+      setSearchParams({ view: 'register' }, { replace: true })
     } catch (error: any) {
       console.error(error)
       toast.error(itemProfileErrorCode(error)
@@ -771,7 +779,7 @@ export default function ItemsPage() {
     <PremiumImportExportActions
       importAction={
         <Button variant="outline" asChild>
-          <Link to="/setup/import">
+          <Link to="/setup/import?dataset=items">
             <Upload className="h-4 w-4" />
             {tt('register.import', 'Import')}
           </Link>
@@ -790,7 +798,28 @@ export default function ItemsPage() {
     />
   )
 
-  if (loading) return <div className="app-page app-page--workspace p-6">{tt('loading', 'Loading...')}</div>
+  if (loading) {
+    return (
+      <div className="app-page app-page--workspace space-y-4">
+        <PremiumSkeleton lines={3} label={tt('items.loading', 'Loading item register')} />
+        <PremiumSkeleton lines={6} label={tt('items.loadingRows', 'Loading item rows')} />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="app-page app-page--workspace">
+        <PremiumStatePanel
+          kind="error"
+          icon={<AlertTriangle />}
+          title={tt('items.loadErrorTitle', 'Item register unavailable')}
+          description={tt('items.loadErrorBody', 'StockWise could not load the item master safely. Retry before creating or editing items.')}
+          action={<Button onClick={() => void loadPage()}>{tt('common.retry', 'Retry')}</Button>}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="app-page app-page--workspace">
@@ -809,12 +838,14 @@ export default function ItemsPage() {
         }
         actions={
           <>
-            <Button asChild>
-              <a href="#item-create">
-                <Plus className="h-4 w-4" />
-                {tt('items.actions.create', 'Create item')}
-              </a>
-            </Button>
+            {view === 'create' || canCreateItem ? (
+              <Button asChild variant={view === 'create' ? 'outline' : 'default'}>
+                <Link to={view === 'create' ? '/items?view=register' : '/items?view=create'}>
+                  {view === 'create' ? <ArrowLeft className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {view === 'create' ? tt('items.actions.backToRegister', 'Back to register') : tt('items.actions.create', 'Create item')}
+                </Link>
+              </Button>
+            ) : null}
             {itemImportExportActions}
           </>
         }
@@ -834,11 +865,11 @@ export default function ItemsPage() {
               tone="positive"
             />
             <PremiumMetricCard
-              label={tt('items.summary.assembled', 'Assembly-related')}
-              value={summary.assembled}
-              description={tt('items.summary.assembledHelp', 'Items that are assembled themselves or consumed inside BOMs.')}
+              label={tt('items.summary.nonStock', 'Non-stock / services')}
+              value={summary.nonStock}
+              description={tt('items.summary.nonStockHelp', 'Services and other item masters that do not participate in inventory balances.')}
               icon={<PackageCheck />}
-              tone="info"
+              tone="neutral"
             />
             <PremiumMetricCard
               label={tt('items.summary.attention', 'Needs attention')}
@@ -851,7 +882,16 @@ export default function ItemsPage() {
         }
       />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.06fr)_minmax(20rem,0.94fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
+      {view === 'create' && !canCreateItem ? (
+        <PremiumStatePanel
+          kind="blocked"
+          title={tt('items.createReadOnlyTitle', 'Item creation is unavailable for this role')}
+          description={tt('items.createReadOnlyBody', 'Operator access or above is required to create item master records. The item register remains available for review.')}
+          action={<Button variant="outline" asChild><Link to="/items?view=register">{tt('items.actions.backToRegister', 'Back to register')}</Link></Button>}
+        />
+      ) : null}
+
+      {view === 'create' && canCreateItem ? <section className="grid gap-6 xl:grid-cols-[minmax(0,1.06fr)_minmax(20rem,0.94fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
         <Card id="item-create" className="border-border/70 bg-card shadow-sm">
           <CardHeader className="space-y-1 p-4 pb-2 sm:space-y-2 sm:p-6">
             <CardTitle className="text-base sm:text-lg">{tt('items.createTitle', 'Create a clear item master')}</CardTitle>
@@ -1113,7 +1153,7 @@ export default function ItemsPage() {
             </div>
           </CardContent>
         </Card>
-      </section>
+      </section> : null}
 
       <section id="item-register" className="space-y-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -1212,9 +1252,9 @@ export default function ItemsPage() {
                       : tt('items.emptyFiltered', 'Clear the filters or search term to see more items.')
                   }
                   action={
-                    items.length === 0 ? (
+                    items.length === 0 && canCreateItem ? (
                       <Button asChild>
-                        <a href="#item-create">{tt('items.actions.create', 'Create item')}</a>
+                        <Link to="/items?view=create">{tt('items.actions.create', 'Create item')}</Link>
                       </Button>
                     ) : null
                   }
