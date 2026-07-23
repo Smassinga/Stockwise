@@ -145,3 +145,11 @@ The Settings setup hub puts the next evidence-backed action before secondary met
 Opening import keeps horizontally scrollable data tables contained within their cards, while its dataset tabs, prerequisite guidance, durable result, and return-to-setup action remain reachable above the mobile dock. Users and Mozambique Compliance retain their existing authority gates and include a direct setup return path without adding another navigation system.
 
 Production UX-3 validation on 2026-07-19 covered the setup hub and its import, Users, and Mozambique Compliance continuations at `390` and `820`, with wider checks at `1200` and `1440`. Portuguese survived full Settings reload, both themes remained readable, the mobile dock and setup actions remained reachable, and page-level horizontal overflow, raw translation keys, console errors, and CSP errors were zero. No setup query triggered a mutation.
+
+## UX-5 Mobile Commercial Workflow Contract
+
+Sales Order, Purchase Order, Sales Invoice, and Vendor Bill registers are card-first below the desktop breakpoint. Each card keeps the document reference, counterparty, workflow state, amount, and one principal review action visible without horizontal scrolling. Secondary print, approval, fulfilment, receipt, billing, correction, and settlement actions stay in their existing governed detail workspaces.
+
+The shared `/orders` query contract remains `tab=sales|purchase` with `view=register|create|detail` and the existing `orderId`. Opening or closing a create/detail sheet must restore the register state without losing the selected Sales/Purchase context. Lifecycle strips stack into readable two- and one-column layouts and do not compete with the fixed mobile dock.
+
+Foreign-currency readiness and legal/financial anchor explanations must wrap at 390px. Portuguese labels may wrap naturally and must not be abbreviated into backend codes. Mobile commercial pages retain the shell-owned 16px first-content clearance and existing safe-area allowance.

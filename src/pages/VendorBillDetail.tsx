@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
+import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { useOrg } from '../hooks/useOrg'
 import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
@@ -88,6 +89,11 @@ import {
   voidVendorBill,
 } from '../lib/mzFinance'
 import { settlementLabelKey } from '../lib/orderState'
+import {
+  approvalPresentation,
+  settlementPresentation,
+  vendorBillWorkflowPresentation,
+} from '../lib/commercialWorkflowPresentation'
 
 type SupplierProfile = {
   name: string | null
@@ -1587,7 +1593,7 @@ export default function VendorBillDetailPage() {
 
       {missingView ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-          {tt('financeDocs.stateViewsUnavailable', 'The Step 2 finance-document views are not available yet. Apply the Step 2 migration and refresh this page.')}
+          {tt('financeDocs.stateViewsUnavailable', 'The governed finance-document state is temporarily unavailable. Retry after deployment verification.')}
         </div>
       ) : loading ? (
         <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
@@ -1689,6 +1695,46 @@ export default function VendorBillDetailPage() {
               ) : null}
             </div>
           </div>
+
+          <CommercialLifecycleStrip
+            translate={(key, fallback) => tt(key, fallback)}
+            items={[
+              {
+                id: 'workflow',
+                eyebrowKey: 'commercial.lifecycle.workflow',
+                eyebrowFallback: 'Workflow',
+                ...vendorBillWorkflowPresentation(row.document_workflow_status),
+                descriptionKey: 'commercial.lifecycle.billWorkflowHelp',
+                descriptionFallback: 'Draft preparation becomes immutable AP evidence after posting.',
+              },
+              {
+                id: 'approval',
+                eyebrowKey: 'commercial.lifecycle.approval',
+                eyebrowFallback: 'Approval',
+                ...approvalPresentation(approvalStatus),
+                descriptionKey: 'commercial.lifecycle.approvalHelp',
+                descriptionFallback: 'Finance approval remains separate from posting.',
+              },
+              {
+                id: 'anchor',
+                eyebrowKey: 'commercial.lifecycle.activeAnchor',
+                eyebrowFallback: 'Active anchor',
+                labelKey: 'commercial.lifecycle.vendorBillAnchor',
+                fallback: row.document_workflow_status === 'posted' ? 'Vendor Bill' : 'Purchase Order until posting',
+                tone: row.document_workflow_status === 'posted' ? 'positive' : 'neutral',
+                descriptionKey: 'commercial.lifecycle.purchaseAnchorHelp',
+                descriptionFallback: 'Posting transfers the payable balance to this bill.',
+              },
+              {
+                id: 'settlement',
+                eyebrowKey: 'commercial.lifecycle.settlement',
+                eyebrowFallback: 'Settlement',
+                ...settlementPresentation(row.settlement_status),
+                descriptionKey: 'commercial.lifecycle.settlementHelp',
+                descriptionFallback: 'Payments follow the currently active financial anchor.',
+              },
+            ]}
+          />
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
             <Card className="border-border/80 shadow-sm">

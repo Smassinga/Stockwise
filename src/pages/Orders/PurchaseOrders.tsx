@@ -8,12 +8,15 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog'
-import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../../components/ui/sheet'
 import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import { Trash2 } from 'lucide-react'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
+import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
+import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
+import { fxCanCreate, isValidFxRate, type FxReadinessState } from '../../lib/commercialWorkflowPresentation'
 import { addDaysIso, deriveDueDate, discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
@@ -319,6 +322,8 @@ export default function PurchaseOrders() {
     withI18nFallback(t, key, fallback, vars)
   const workflowLabel = tt('orders.workflow', 'Workflow')
   const workflowStagesLabel = tt('orders.workflowStages', 'Workflow stages')
+  const [registerSearch, setRegisterSearch] = useState('')
+  const [registerWorkflow, setRegisterWorkflow] = useState('all')
 
   // masters
   const [items, setItems] = useState<Item[]>([])
@@ -353,6 +358,8 @@ export default function PurchaseOrders() {
   const [poSupplierId, setPoSupplierId] = useState('')
   const [poCurrency, setPoCurrency] = useState('MZN')
   const [poFx, setPoFx] = useState('1')
+  const [poFxReadiness, setPoFxReadiness] = useState<FxReadinessState>({ status: 'base', rate: '1' })
+  const poFxLookupVersionRef = useRef(0)
   const [poOrderDate, setPoOrderDate] = useState<string>(() => todayYmd())
   const [poDate, setPoDate] = useState<string>(() => todayYmd())
   const [poDueDate, setPoDueDate] = useState<string>(() => todayYmd())
@@ -376,6 +383,85 @@ export default function PurchaseOrders() {
   const [vendorBillSupplierInvoiceDate, setVendorBillSupplierInvoiceDate] = useState<string>(() => todayYmd())
   const [vendorBillBillDate, setVendorBillBillDate] = useState<string>(() => todayYmd())
   const [vendorBillDueDate, setVendorBillDueDate] = useState<string>(() => todayYmd())
+
+  useEffect(() => {
+    async function fetchFxRate() {
+      if (!companyId || poCurrency === baseCode) {
+        setPoFx('1')
+        setPoFxReadiness({ status: 'base', rate: '1' })
+        return
+      }
+
+      const lookupVersion = ++poFxLookupVersionRef.current
+      setPoFxReadiness({ status: 'loading', rate: '' })
+
+      try {
+        const { data, error } = await supabase
+          .from('fx_rates')
+          .select('rate,date')
+          .eq('from_code', poCurrency)
+          .eq('to_code', baseCode)
+          .eq('company_id', companyId)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (lookupVersion !== poFxLookupVersionRef.current) return
+        if (error) {
+          console.warn('Failed to fetch purchase-order FX rate:', error)
+          setPoFxReadiness({ status: 'unavailable', rate: '' })
+          return
+        }
+
+        if (data && isValidFxRate(data.rate)) {
+          setPoFx(String(data.rate))
+          setPoFxReadiness({ status: 'loaded', rate: String(data.rate), sourceDate: data.date })
+        } else {
+          setPoFxReadiness({ status: 'unavailable', rate: '' })
+        }
+      } catch (error) {
+        if (lookupVersion !== poFxLookupVersionRef.current) return
+        console.warn('Error fetching purchase-order FX rate:', error)
+        setPoFxReadiness({ status: 'unavailable', rate: '' })
+      }
+    }
+
+    void fetchFxRate()
+  }, [baseCode, companyId, poCurrency])
+
+  useEffect(() => {
+    if (searchParams.get('view') === 'create') setPoOpen(true)
+  }, [searchParams])
+
+  function handlePoOpenChange(open: boolean) {
+    setPoOpen(open)
+    if (!open && searchParams.get('view') === 'create') {
+      const next = new URLSearchParams(searchParams)
+      next.set('view', 'register')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
+  function handlePurchaseCurrencyChange(value: string) {
+    poFxLookupVersionRef.current += 1
+    setPoCurrency(value)
+    if (value === baseCode) {
+      setPoFx('1')
+      setPoFxReadiness({ status: 'base', rate: '1' })
+      return
+    }
+    setPoFx('')
+    setPoFxReadiness({ status: 'loading', rate: '' })
+  }
+
+  function handlePurchaseFxChange(value: string) {
+    poFxLookupVersionRef.current += 1
+    setPoFx(value)
+    setPoFxReadiness({
+      status: isValidFxRate(value) ? 'manual' : 'invalid',
+      rate: value,
+    })
+  }
 
   const paymentTermById = useMemo(() => new Map(paymentTermsList.map(pt => [pt.id, pt])), [paymentTermsList])
   const paymentTermLabel = (termId?: string | null, fallback?: string | null) => {
@@ -788,6 +874,9 @@ export default function PurchaseOrders() {
     try {
       if (!poSupplierId) return toast.error(tt('orders.supplierRequired', 'Supplier is required'))
       if (!companyId) { toast.error('No company selected. Please sign in again or select a company.'); return }
+      if (!fxCanCreate(poCurrency, baseCode, poFxReadiness)) {
+        return toast.error(tt('commercial.fx.createBlocked', 'Enter or load a valid exchange rate before creating this foreign-currency order.'))
+      }
 
       const cleanLines = poLinesForm
         .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct), description: (l.description || '').trim() }))
@@ -857,6 +946,11 @@ export default function PurchaseOrders() {
       setPoOpen(false)
 
       await refreshPOData()
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'purchase')
+      next.set('view', 'detail')
+      next.set('orderId', poId)
+      setSearchParams(next)
     } catch (err: any) {
       console.error(err)
       const code = commercialTaxErrorCode(err)
@@ -1134,6 +1228,23 @@ export default function PurchaseOrders() {
     }),
     [pos, purchaseStateById]
   )
+  const visiblePurchaseOrders = useMemo(() => {
+    const needle = registerSearch.trim().toLowerCase()
+    return pos.filter((po) => {
+      const workflow = purchaseStateById.get(po.id)?.workflow_status ?? legacyPurchaseWorkflowStatus(po.status)
+      if (registerWorkflow !== 'all' && workflow !== registerWorkflow) return false
+      if (!needle) return true
+      return [poNo(po), poSupplierLabel(po), po.reference_no, workflow]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(needle)
+    })
+  }, [pos, purchaseStateById, registerSearch, registerWorkflow])
+  const visibleOutstandingPurchaseOrders = useMemo(
+    () => visiblePurchaseOrders.filter((po) => poOutstanding.some((row) => row.id === po.id)),
+    [poOutstanding, visiblePurchaseOrders],
+  )
   const activeTaxOptions = taxConfiguration?.activeOptions || []
   const taxOptionById = useMemo(() => new Map((taxConfiguration?.options || []).map((option) => [option.id, option])), [taxConfiguration?.options])
   const canConfigureTax = ['OWNER', 'ADMIN'].includes(String(myRole || '').toUpperCase())
@@ -1347,6 +1458,7 @@ export default function PurchaseOrders() {
     setPoViewOpen(true)
     const next = new URLSearchParams(searchParams)
     next.set('tab', 'purchase')
+    next.set('view', 'detail')
     next.set('orderId', po.id)
     setSearchParams(next, { replace: true })
   }
@@ -1953,10 +2065,7 @@ export default function PurchaseOrders() {
                 {tt('orders.poBrowserCta', 'Completed workflow')}
               </Button>
 
-              <Sheet open={poOpen} onOpenChange={setPoOpen}>
-                <SheetTrigger asChild>
-                  <Button size="sm">{tt('orders.newPO', 'New PO')}</Button>
-                </SheetTrigger>
+              <Sheet open={poOpen} onOpenChange={handlePoOpenChange}>
                 <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
                   <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
                     <SheetTitle>{tt('orders.newPO', 'New Purchase Order')}</SheetTitle>
@@ -1979,14 +2088,27 @@ export default function PurchaseOrders() {
                     </div>
                     <div>
                       <Label>{tt('orders.currency', 'Currency')}</Label>
-                      <Select value={poCurrency} onValueChange={setPoCurrency}>
+                      <Select value={poCurrency} onValueChange={handlePurchaseCurrencyChange}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>{currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div>
                       <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode })}</Label>
-                      <Input type="number" min="0" step="0.000001" value={poFx} onChange={e => setPoFx(e.target.value)} />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.000001"
+                        value={poFx}
+                        readOnly={poCurrency === baseCode}
+                        onChange={e => handlePurchaseFxChange(e.target.value)}
+                      />
+                      <ForeignCurrencyReadiness
+                        state={poFxReadiness}
+                        currencyCode={poCurrency}
+                        baseCurrencyCode={baseCode}
+                        translate={(key, fallback) => tt(key, fallback)}
+                      />
                     </div>
                     <div>
                       <Label>{tt('orders.expectedDate', 'Expected Date')}</Label>
@@ -2269,7 +2391,12 @@ export default function PurchaseOrders() {
                             <div className="text-right font-medium">{fmtAcct(poSubtotal + poTax)}</div>
                           </div>
                           <div className="mt-3">
-                            <Button onClick={createPO} disabled={!!taxConfigurationError}>{tt('orders.createPO', 'Create PO')}</Button>
+                            <Button
+                              onClick={createPO}
+                              disabled={!!taxConfigurationError || !fxCanCreate(poCurrency, baseCode, poFxReadiness)}
+                            >
+                              {tt('orders.createPO', 'Create PO')}
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -2282,7 +2409,28 @@ export default function PurchaseOrders() {
           </div>
         </CardHeader>
 
-        <CardContent className="overflow-x-auto w-full">
+        <CardContent className="pb-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <Input
+              type="search"
+              value={registerSearch}
+              onChange={(event) => setRegisterSearch(event.target.value)}
+              placeholder={tt('orders.searchPurchaseOrders', 'Search order, supplier, or reference')}
+              aria-label={tt('orders.searchPurchaseOrders', 'Search purchase orders')}
+            />
+            <Select value={registerWorkflow} onValueChange={setRegisterWorkflow}>
+              <SelectTrigger aria-label={workflowLabel}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tt('commercial.filters.allWorkflow', 'All workflow states')}</SelectItem>
+                <SelectItem value="draft">{tt('orders.draftStatus', 'Draft')}</SelectItem>
+                <SelectItem value="approved">{tt('orders.approvedStatus', 'Approved')}</SelectItem>
+                <SelectItem value="cancelled">{tt('orders.cancelledStatus', 'Cancelled')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+
+        <CardContent className="hidden w-full overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.po', 'PO')}</th>
@@ -2292,8 +2440,8 @@ export default function PurchaseOrders() {
               <th className="py-2 pr-2">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
             <tbody>
-              {poOutstanding.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
-              {poOutstanding.map(po => {
+              {visibleOutstandingPurchaseOrders.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
+              {visibleOutstandingPurchaseOrders.map(po => {
                 const amounts = amountPO(po)
                 const vendorBillAction = getPurchaseOrderVendorBillActionState(po)
                 return (
@@ -2307,28 +2455,11 @@ export default function PurchaseOrders() {
                     </td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                     <td className="py-3 pr-2">
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => openPurchaseOrderDetail(po)}>{tt('orders.view', 'View')}</Button>
-                        {vendorBillAction.kind === 'open_existing' && vendorBillAction.href ? (
-                          <Button size="sm" variant="outline" asChild>
-                            <Link to={vendorBillAction.href}>
-                              {vendorBillOpenLabel(vendorBillAction.existingBill)}
-                            </Link>
-                          </Button>
-                        ) : null}
-                        {vendorBillAction.kind === 'create' ? (
-                          <Button size="sm" variant="outline" onClick={() => openVendorBillDraftDialog(po)}>
-                            {tt('orders.createVendorBill', 'Raise vendor bill')}
-                          </Button>
-                        ) : null}
-                        <Button size="sm" variant="outline" onClick={() => printPO(po)}>{tt('orders.print', 'Print')}</Button>
-                        {String(po.status).toLowerCase() === 'draft' && (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => approvePO(po.id)}>{tt('orders.approve', 'Approve')}</Button>
-                            <Button size="sm" variant="destructive" onClick={() => cancelPO(po.id)}>{tt('orders.cancel', 'Cancel')}</Button>
-                          </>
-                        )}
-                      </div>
+                      <Button size="sm" onClick={() => openPurchaseOrderDetail(po)}>
+                        {String(po.status).toLowerCase() === 'draft'
+                          ? tt('commercial.actions.continueDraft', 'Continue draft')
+                          : tt('commercial.actions.reviewDocument', 'Review order')}
+                      </Button>
                       {vendorBillAction.kind === 'blocked' ? (
                         <div className="mt-2 max-w-sm text-xs text-muted-foreground">{vendorBillAction.reason}</div>
                       ) : null}
@@ -2339,12 +2470,41 @@ export default function PurchaseOrders() {
             </tbody>
           </table>
         </CardContent>
+        <CardContent className="grid gap-3 md:hidden">
+          {visibleOutstandingPurchaseOrders.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</p>
+          ) : visibleOutstandingPurchaseOrders.map((po) => {
+            const amounts = amountPO(po)
+            return (
+              <article key={po.id} className="rounded-lg border border-border/80 bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold">{poNo(po)}</h3>
+                    <p className="mt-1 truncate text-sm text-muted-foreground">{poSupplierLabel(po)}</p>
+                  </div>
+                  <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseStatusClass(po.status)}`}>
+                    {purchaseStatusLabel(po.status)}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="premium-label">{tt('orders.total', 'Total')}</div>
+                    <div className="mt-1 font-mono font-semibold tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</div>
+                  </div>
+                  <Button size="sm" onClick={() => openPurchaseOrderDetail(po)}>
+                    {tt('commercial.actions.reviewDocument', 'Review order')}
+                  </Button>
+                </div>
+              </article>
+            )
+          })}
+        </CardContent>
       </Card>
 
       {/* Recent */}
       <Card>
         <CardHeader><CardTitle>{tt('orders.recentPOs', 'Recent Purchase Orders')}</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto w-full">
+        <CardContent className="hidden w-full overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.po', 'PO')}</th>
@@ -2355,8 +2515,8 @@ export default function PurchaseOrders() {
               <th className="py-2 pr-2 text-right">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
             <tbody>
-              {pos.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</td></tr>}
-              {pos.map(po => {
+              {visiblePurchaseOrders.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</td></tr>}
+              {visiblePurchaseOrders.map(po => {
                 const amounts = amountPO(po)
                 const vendorBillAction = getPurchaseOrderVendorBillActionState(po)
                 return (
@@ -2398,6 +2558,35 @@ export default function PurchaseOrders() {
             </tbody>
           </table>
         </CardContent>
+        <CardContent className="grid gap-3 md:hidden">
+          {visiblePurchaseOrders.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">{tt('orders.noPOsYet', 'No POs yet.')}</p>
+          ) : visiblePurchaseOrders.map((po) => {
+            const amounts = amountPO(po)
+            return (
+              <article key={po.id} className="rounded-lg border border-border/80 bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold">{poNo(po)}</h3>
+                    <p className="mt-1 truncate text-sm text-muted-foreground">{poSupplierLabel(po)}</p>
+                  </div>
+                  <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${purchaseStatusClass(po.status)}`}>
+                    {purchaseStatusLabel(po.status)}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="premium-label">{curPO(po)}</div>
+                    <div className="mt-1 font-mono font-semibold tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</div>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => openPurchaseOrderDetail(po)}>
+                    {tt('commercial.actions.reviewDocument', 'Review order')}
+                  </Button>
+                </div>
+              </article>
+            )
+          })}
+        </CardContent>
       </Card>
 
       {/* View/Receive Sheet */}
@@ -2409,6 +2598,7 @@ export default function PurchaseOrders() {
           if (searchParams.get('orderId')) {
             const next = new URLSearchParams(searchParams)
             next.delete('orderId')
+            next.set('view', 'register')
             setSearchParams(next, { replace: true })
           }
         }
@@ -2462,6 +2652,76 @@ export default function PurchaseOrders() {
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedPO as any).due_date || tt('none', '(none)')}</div></div>
               </div>
               </div>
+
+              <CommercialLifecycleStrip
+                translate={(key, fallback) => tt(key, fallback)}
+                items={[
+                  {
+                    id: 'workflow',
+                    eyebrowKey: 'commercial.lifecycle.workflow',
+                    eyebrowFallback: 'Workflow',
+                    labelKey: purchaseWorkflowLabelKey(
+                      selectedPOState?.workflow_status ?? legacyPurchaseWorkflowStatus(selectedPO.status),
+                    ),
+                    fallback: purchaseStatusLabel(selectedPO.status),
+                    tone: String(selectedPO.status).toLowerCase() === 'cancelled'
+                      ? 'critical'
+                      : String(selectedPO.status).toLowerCase() === 'draft'
+                        ? 'neutral'
+                        : 'positive',
+                    descriptionKey: 'commercial.lifecycle.workflowHelp',
+                    descriptionFallback: 'Commercial approval and order progress.',
+                  },
+                  {
+                    id: 'stock',
+                    eyebrowKey: 'commercial.lifecycle.stock',
+                    eyebrowFallback: 'Stock',
+                    labelKey: purchaseReceiptLabelKey(
+                      selectedPOState?.receipt_status ?? legacyPurchaseReceiptStatus(selectedPO.status),
+                    ),
+                    fallback: purchaseReceiptLabel(selectedPO),
+                    tone: selectedPOState?.receipt_status === 'complete'
+                      ? 'positive'
+                      : selectedPOState?.receipt_status === 'partial'
+                        ? 'warning'
+                        : 'neutral',
+                    descriptionKey: 'commercial.lifecycle.purchaseStockHelp',
+                    descriptionFallback: 'Receipt remains independent from supplier billing.',
+                  },
+                  {
+                    id: 'finance',
+                    eyebrowKey: 'commercial.lifecycle.financeDocument',
+                    eyebrowFallback: 'Finance document',
+                    labelKey: selectedPOVendorBill
+                      ? `financeDocs.workflow.${selectedPOVendorBill.document_workflow_status}`
+                      : 'commercial.purchase.bill.none',
+                    fallback: selectedPOVendorBill
+                      ? selectedPOVendorBill.document_workflow_status === 'posted' ? 'Posted Vendor Bill' : 'Draft Vendor Bill'
+                      : 'No Vendor Bill',
+                    tone: selectedPOVendorBill?.document_workflow_status === 'posted' ? 'positive' : selectedPOVendorBill ? 'info' : 'neutral',
+                    descriptionKey: 'commercial.lifecycle.purchaseFinanceHelp',
+                    descriptionFallback: 'A posted Vendor Bill becomes the active AP anchor.',
+                  },
+                  {
+                    id: 'settlement',
+                    eyebrowKey: 'commercial.lifecycle.settlement',
+                    eyebrowFallback: 'Settlement',
+                    labelKey: selectedPOState?.settlement_status
+                      ? settlementLabelKey(selectedPOState.settlement_status)
+                      : 'commercial.statusUnavailable',
+                    fallback: purchaseSettlementLabel(selectedPO),
+                    tone: selectedPOState?.settlement_status === 'settled'
+                      ? 'positive'
+                      : selectedPOState?.settlement_status === 'overdue'
+                        ? 'critical'
+                        : selectedPOState?.settlement_status === 'partially_settled'
+                          ? 'warning'
+                          : 'neutral',
+                    descriptionKey: 'commercial.lifecycle.settlementHelp',
+                    descriptionFallback: 'Payments follow the currently active financial anchor.',
+                  },
+                ]}
+              />
 
               <OrderWorkflowStrip
                 eyebrow={tt('orders.nextAction', 'Next action')}

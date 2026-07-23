@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
+import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { useOrg } from '../hooks/useOrg'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
@@ -53,6 +54,11 @@ import {
   type FinanceReviewState,
 } from '../lib/financeReconciliation'
 import { settlementLabelKey } from '../lib/orderState'
+import {
+  approvalPresentation,
+  salesInvoiceWorkflowPresentation,
+  settlementPresentation,
+} from '../lib/commercialWorkflowPresentation'
 import {
   createAndIssueSalesCreditNoteForInvoice,
   createAndIssueSalesDebitNoteForInvoice,
@@ -1824,6 +1830,52 @@ export default function SalesInvoiceDetailPage() {
               ) : null}
             </div>
           </div>
+
+          <CommercialLifecycleStrip
+            translate={(key, fallback) => tt(key, fallback)}
+            items={[
+              {
+                id: 'workflow',
+                eyebrowKey: 'commercial.lifecycle.workflow',
+                eyebrowFallback: 'Workflow',
+                ...salesInvoiceWorkflowPresentation(invoice.document_workflow_status),
+                descriptionKey: 'commercial.lifecycle.invoiceWorkflowHelp',
+                descriptionFallback: 'Draft preparation becomes immutable legal evidence after issue.',
+              },
+              {
+                id: 'approval',
+                eyebrowKey: 'commercial.lifecycle.approval',
+                eyebrowFallback: 'Approval',
+                ...approvalPresentation(approvalStatus),
+                descriptionKey: 'commercial.lifecycle.approvalHelp',
+                descriptionFallback: 'Finance approval remains separate from legal issue.',
+              },
+              {
+                id: 'anchor',
+                eyebrowKey: 'commercial.lifecycle.activeAnchor',
+                eyebrowFallback: 'Active anchor',
+                labelKey: 'commercial.lifecycle.salesInvoiceAnchor',
+                fallback: isIssued ? 'Sales Invoice' : 'Sales Order until issue',
+                tone: isIssued ? 'positive' : 'neutral',
+                descriptionKey: 'commercial.lifecycle.salesAnchorHelp',
+                descriptionFallback: 'Issue transfers the collectible balance to this invoice.',
+              },
+              {
+                id: 'settlement',
+                eyebrowKey: 'commercial.lifecycle.settlement',
+                eyebrowFallback: 'Settlement',
+                ...(invoiceState
+                  ? settlementPresentation(invoiceState.settlement_status)
+                  : {
+                      labelKey: 'commercial.statusUnavailable',
+                      fallback: 'Status unavailable',
+                      tone: 'warning' as const,
+                    }),
+                descriptionKey: 'commercial.lifecycle.settlementHelp',
+                descriptionFallback: 'Collections follow the currently active financial anchor.',
+              },
+            ]}
+          />
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <Card className="border-border/80 shadow-sm">

@@ -284,6 +284,16 @@ The shell must remain a navigation and context layer. It must not infer permissi
 
 UX-1 is live from implementation commit `75001f745ad4023a83724aafdae96934653fc450`. Production read-only QA confirmed the eight-group hierarchy, teal-plus-shape active treatment, separated company/user/platform context, five-control mobile dock, grouped More drawer, and EN/PT route metadata at `1440`, `1200`, `820`, and `390` without page overflow, console errors, or CSP errors.
 
+## Commercial Workflow Presentation
+
+Commercial pages must not collapse document workflow, stock progress, finance-document state, approval, and settlement into one ambiguous status. Sales Orders and Purchase Orders are operational/commercial records. Issued Sales Invoices and posted Vendor Bills are the legal or financial documents and become the active settlement anchors under the existing backend rules.
+
+Register pages use the shared premium header, bounded metrics, search/filter controls, one principal next action per row, contained desktop tables, and card-first mobile lists. Document amount summaries distinguish original document total, current legal amount, and outstanding amount. Missing canonical state is unavailable evidence, not zero, and user-facing failure states must not instruct operators to run migrations.
+
+Order details may use a compact lifecycle strip for workflow, fulfilment or receipt, finance handoff, and settlement. The strip is explanatory only: it must derive from maintained state views and existing linked-document reads, never invent permission or mutation authority. Purchase receipt and Vendor Bill creation remain independent dimensions.
+
+Foreign-currency creation must expose base, loading, configured, manual, unavailable, and invalid rate states. Base currency may show its fixed `1:1` contract. Foreign currency must never treat a missing or failed rate lookup as trusted `1:1`; a positive finite configured or explicitly reviewed manual rate is required before draft creation.
+
 The `/bom` workflow bridge cards now use the shared premium card spacing pattern: icon badge, eyebrow/title/body stack, and separated action zone. Production smoke verified the Landed Cost card remains secondary, Production Runs remains more action-oriented, and the correction is spacing/hierarchy only, not a BOM workflow or posting change.
 
 ## What Not To Use

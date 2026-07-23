@@ -1,8 +1,12 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { Building2, FilePlus2, List, ReceiptText } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
+import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
 
 const PurchaseOrders = lazy(() => import('./Orders/PurchaseOrders'))
@@ -11,8 +15,14 @@ const SalesOrders = lazy(() => import('./Orders/SalesOrders'))
 export default function OrdersPage() {
   const { t } = useI18n()
   const tt = (k: string, f: string) => (t(k) === k ? f : t(k))
+  const { companyName } = useOrg()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') === 'sales' ? 'sales' : 'purchase'
+  const requestedView = searchParams.get('orderId')
+    ? 'detail'
+    : searchParams.get('view') === 'create'
+      ? 'create'
+      : 'register'
   const [tab, setTab] = useState<'purchase' | 'sales'>(requestedTab)
 
   useEffect(() => {
@@ -23,33 +33,59 @@ export default function OrdersPage() {
     setTab(next)
     const params = new URLSearchParams(searchParams)
     params.set('tab', next)
+    params.set('view', 'register')
+    params.delete('orderId')
     setSearchParams(params, { replace: true })
   }
 
+  function updateView(next: 'register' | 'create') {
+    const params = new URLSearchParams(searchParams)
+    params.set('tab', tab)
+    params.set('view', next)
+    if (next !== 'register') params.delete('orderId')
+    setSearchParams(params)
+  }
+
+  const isSales = tab === 'sales'
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('orders.workspace', 'Order workspace')}
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{tt('orders.title', 'Orders')}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              {tt('orders.subtitle', 'Create, review, approve, receive, and ship commercial orders here. Collections and payments stay in the settlements workspace so order workflow stays operationally focused.')}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
-            <Link to="/settlements">{tt('settlements.title', 'Collections & Payments')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/landed-cost">{tt('landedCost.title', 'Landed Cost')}</Link>
-          </Button>
-        </div>
-      </div>
+      <PremiumRegisterHeader
+        eyebrow={tt('orders.workspace', 'Order workspace')}
+        title={isSales ? tt('orders.salesWorkspaceTitle', 'Sales Orders') : tt('orders.purchaseWorkspaceTitle', 'Purchase Orders')}
+        description={isSales
+          ? tt('orders.salesWorkspaceDescription', 'Manage customer commitments, approval, fulfilment, and the handoff to legal Sales Invoices.')
+          : tt('orders.purchaseWorkspaceDescription', 'Manage supplier commitments, approval, receipt, and the independent handoff to Vendor Bills.')}
+        badges={
+          <>
+            <PremiumStatusBadge tone="info" icon={<Building2 />}>
+              {companyName || tt('orders.activeCompanyUnavailable', 'Active company unavailable')}
+            </PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral">
+              {requestedView === 'detail'
+                ? tt('orders.viewDetail', 'Detail')
+                : requestedView === 'create'
+                  ? tt('orders.viewCreate', 'Create draft')
+                  : tt('orders.viewRegister', 'Register')}
+            </PremiumStatusBadge>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant={requestedView === 'register' ? 'secondary' : 'outline'}
+              onClick={() => updateView('register')}
+            >
+              <List className="mr-2 h-4 w-4" />
+              {tt('orders.viewRegister', 'Register')}
+            </Button>
+            <Button onClick={() => updateView('create')}>
+              <FilePlus2 className="mr-2 h-4 w-4" />
+              {isSales ? tt('orders.newSO', 'New Sales Order') : tt('orders.newPO', 'New Purchase Order')}
+            </Button>
+          </>
+        }
+      />
 
       <div className="rounded-2xl border bg-card p-3 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -64,10 +100,26 @@ export default function OrdersPage() {
             </TabsList>
           </Tabs>
 
-          <div className="text-sm text-muted-foreground">
-            {tab === 'purchase'
-              ? tt('orders.purchaseHint', 'Use purchase orders for supplier commitments, approvals, receiving, and landed-cost prep.')
-              : tt('orders.salesHint', 'Use sales orders for customer commitments, approvals, allocation, and fulfilment.')}
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              {tab === 'purchase'
+                ? tt('orders.purchaseHint', 'Use purchase orders for supplier commitments, approvals, receiving, and landed-cost prep.')
+                : tt('orders.salesHint', 'Use sales orders for customer commitments, approvals, allocation, and fulfilment.')}
+            </p>
+            <Button asChild size="sm" variant="outline">
+              <Link to={isSales ? '/sales-invoices' : '/vendor-bills'}>
+                <ReceiptText className="mr-2 h-4 w-4" />
+                {isSales ? tt('financeDocs.salesInvoices.title', 'Sales Invoices') : tt('financeDocs.vendorBills.title', 'Vendor Bills')}
+              </Link>
+            </Button>
+            {!isSales ? (
+              <Button asChild size="sm" variant="outline">
+                <Link to="/landed-cost">{tt('landedCost.title', 'Landed Cost')}</Link>
+              </Button>
+            ) : null}
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/settlements">{tt('settlements.title', 'Collections & Payments')}</Link>
+            </Button>
           </div>
         </div>
       </div>
@@ -76,7 +128,7 @@ export default function OrdersPage() {
         fallback={
           <Card className="border-dashed">
             <CardContent className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
-              {tt('orders.loadingWorkspace', 'Loading order workspace…')}
+              {tt('orders.loadingWorkspace', 'Loading order workspace...')}
             </CardContent>
           </Card>
         }

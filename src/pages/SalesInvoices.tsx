@@ -1,37 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { AlertTriangle, FileCheck2, FileClock, Landmark, ReceiptText } from 'lucide-react'
 import { Button } from '../components/ui/button'
-import { Badge } from '../components/ui/badge'
-import { Input } from '../components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { PremiumDataTable, type PremiumDataTableColumn } from '../components/premium/PremiumDataTable'
+import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
+import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
+import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
 import { useOrg } from '../hooks/useOrg'
 import { useSalesInvoices } from '../hooks/useFinanceDocuments'
+import {
+  salesInvoiceResolutionLabelKey,
+  type SalesInvoiceStateRow,
+} from '../lib/financeDocuments'
 import { getBaseCurrencyCode } from '../lib/currency'
-import { salesInvoiceWorkflowLabelKey, type SalesInvoiceStateRow } from '../lib/financeDocuments'
+import {
+  approvalPresentation,
+  salesInvoiceWorkflowPresentation,
+  settlementPresentation,
+} from '../lib/commercialWorkflowPresentation'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 
-function workflowTone(status: SalesInvoiceStateRow['document_workflow_status']) {
-  switch (status) {
-    case 'issued':
-      return 'default'
-    case 'voided':
-      return 'destructive'
-    default:
-      return 'secondary'
-  }
-}
+const ALL_FILTER = 'all'
 
 export default function SalesInvoicesPage() {
-  const { companyId } = useOrg()
+  const { companyId, companyName } = useOrg()
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const { rows, loading, error, missingView } = useSalesInvoices(companyId)
   const [baseCode, setBaseCode] = useState('MZN')
   const [search, setSearch] = useState('')
+  const [workflowFilter, setWorkflowFilter] = useState(ALL_FILTER)
+  const [approvalFilter, setApprovalFilter] = useState(ALL_FILTER)
 
   useEffect(() => {
     if (!companyId) {
@@ -39,27 +43,17 @@ export default function SalesInvoicesPage() {
       return
     }
     let active = true
-    ;(async () => {
-      try {
-        const code = await getBaseCurrencyCode(companyId)
+    void getBaseCurrencyCode(companyId)
+      .then((code) => {
         if (active && code) setBaseCode(code)
-      } catch {
+      })
+      .catch(() => {
         if (active) setBaseCode('MZN')
-      }
-    })()
+      })
     return () => {
       active = false
     }
   }, [companyId])
-
-  useEffect(() => {
-    if (error) {
-      toast.error(
-        error.message ||
-          withI18nFallback(t, 'financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoices'),
-      )
-    }
-  }, [error, t])
 
   const formatDocumentMoney = (amount: number, code: string) =>
     new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
@@ -75,128 +69,280 @@ export default function SalesInvoicesPage() {
 
   const filteredRows = useMemo(() => {
     const needle = search.trim().toLowerCase()
-    const sorted = [...rows].sort((left, right) =>
-      `${right.invoice_date} ${right.internal_reference}`.localeCompare(`${left.invoice_date} ${left.internal_reference}`),
-    )
-    if (!needle) return sorted
-    return sorted.filter((row) =>
-      [
-        row.internal_reference,
-        row.counterparty_name,
-        row.order_no,
-        row.document_workflow_status,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(needle),
-    )
-  }, [rows, search])
+    return [...rows]
+      .sort((left, right) =>
+        `${right.invoice_date} ${right.internal_reference}`.localeCompare(`${left.invoice_date} ${left.internal_reference}`),
+      )
+      .filter((row) => {
+        if (workflowFilter !== ALL_FILTER && row.document_workflow_status !== workflowFilter) return false
+        if (approvalFilter !== ALL_FILTER && row.approval_status !== approvalFilter) return false
+        if (!needle) return true
+        return [
+          row.internal_reference,
+          row.counterparty_name,
+          row.order_no,
+          row.document_workflow_status,
+          row.resolution_status,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(needle)
+      })
+  }, [approvalFilter, rows, search, workflowFilter])
+
+  const metrics = useMemo(() => ({
+    drafts: rows.filter((row) => row.document_workflow_status === 'draft').length,
+    awaitingApproval: rows.filter((row) => row.approval_status === 'pending_approval').length,
+    issued: rows.filter((row) => row.document_workflow_status === 'issued').length,
+    outstanding: rows.reduce((sum, row) => sum + Number(row.outstanding_base || 0), 0),
+  }), [rows])
+
+  const columns = useMemo<PremiumDataTableColumn<SalesInvoiceStateRow>[]>(() => [
+    {
+      id: 'reference',
+      header: tt('financeDocs.fields.internalReference', 'Internal reference'),
+      minWidth: 190,
+      sortValue: (row) => row.internal_reference,
+      cell: (row) => (
+        <div>
+          <div className="font-semibold">{row.internal_reference}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {row.order_no
+              ? tt('financeDocs.fields.linkedOrderValue', 'Order {orderNo}', { orderNo: row.order_no })
+              : tt('financeDocs.fields.noLinkedOrder', 'No linked order')}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'customer',
+      header: tt('financeDocs.fields.customer', 'Customer'),
+      minWidth: 170,
+      sortValue: (row) => row.counterparty_name || '',
+      cell: (row) => row.counterparty_name || tt('common.none', 'None'),
+    },
+    {
+      id: 'dates',
+      header: tt('commercial.register.dates', 'Dates'),
+      minWidth: 145,
+      sortValue: (row) => row.invoice_date,
+      cell: (row) => (
+        <div className="text-sm">
+          <div>{row.invoice_date}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {tt('financeDocs.fields.dueDate', 'Due date')}: {row.due_date}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'state',
+      header: tt('commercial.register.lifecycle', 'Lifecycle'),
+      minWidth: 230,
+      cell: (row) => {
+        const workflow = salesInvoiceWorkflowPresentation(row.document_workflow_status)
+        const approval = approvalPresentation(row.approval_status)
+        const settlement = settlementPresentation(row.settlement_status)
+        return (
+          <div className="space-y-2">
+            <PremiumStatusBadge tone={workflow.tone}>{tt(workflow.labelKey, workflow.fallback)}</PremiumStatusBadge>
+            <div className="flex flex-wrap gap-1.5">
+              <PremiumStatusBadge tone={approval.tone}>{tt(approval.labelKey, approval.fallback)}</PremiumStatusBadge>
+              <PremiumStatusBadge tone={settlement.tone}>{tt(settlement.labelKey, settlement.fallback)}</PremiumStatusBadge>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {tt(salesInvoiceResolutionLabelKey(row.resolution_status), row.resolution_status)}
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      id: 'amount',
+      header: tt('commercial.register.amounts', 'Amounts'),
+      align: 'right',
+      minWidth: 180,
+      sortValue: (row) => row.current_legal_total_base,
+      cell: (row) => (
+        <div className="space-y-1 font-mono tabular-nums">
+          <div>{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
+          <div className="text-xs text-muted-foreground">
+            {tt('financeDocs.currentLegalAmount', 'Current legal')}: {formatBaseMoney(row.current_legal_total_base)}
+          </div>
+          <div className="text-xs font-semibold">
+            {tt('settlements.outstandingAmount', 'Outstanding')}: {formatBaseMoney(row.outstanding_base)}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'action',
+      header: tt('commercial.register.nextAction', 'Next action'),
+      align: 'right',
+      minWidth: 150,
+      enableHiding: false,
+      cell: (row) => (
+        <Button asChild size="sm" variant={row.document_workflow_status === 'draft' ? 'default' : 'outline'}>
+          <Link to={`/sales-invoices/${row.id}`}>
+            {row.document_workflow_status === 'draft'
+              ? row.approval_status === 'approved'
+                ? tt('commercial.actions.reviewIssue', 'Review issue readiness')
+                : tt('commercial.actions.continueDraft', 'Continue draft')
+              : tt('commercial.actions.reviewDocument', 'Review document')}
+          </Link>
+        </Button>
+      ),
+    },
+  ], [baseCode, lang, t])
+
+  const emptyState = (
+    <PremiumEmptyState
+      icon={<ReceiptText />}
+      title={search || workflowFilter !== ALL_FILTER || approvalFilter !== ALL_FILTER
+        ? tt('commercial.register.filteredEmpty', 'No documents match these filters.')
+        : tt('financeDocs.salesInvoices.emptyTitle', 'No sales invoices yet.')}
+      description={tt(
+        'financeDocs.salesInvoices.emptyBody',
+        'Create and approve a Sales Order, create its Sales Invoice draft, complete legal readiness, then issue it.',
+      )}
+      action={
+        <Button asChild variant="outline">
+          <Link to="/orders?tab=sales&view=register">{tt('financeDocs.salesInvoices.ordersLink', 'View sales orders')}</Link>
+        </Button>
+      }
+    />
+  )
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('financeDocs.eyebrow', 'Finance documents')}
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.salesInvoices.title', 'Sales Invoices')}</h1>
-            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
-              {tt('financeDocs.salesInvoices.subtitle', 'Issued sales invoices are the legal fiscal truth for Mozambique while sales orders remain operational and commercial documents only.')}
-            </p>
-          </div>
-        </div>
+      <PremiumRegisterHeader
+        eyebrow={tt('financeDocs.eyebrow', 'Finance documents')}
+        title={tt('financeDocs.salesInvoices.title', 'Sales Invoices')}
+        description={tt(
+          'financeDocs.salesInvoices.subtitle',
+          'Sales Orders remain operational. Issued Sales Invoices are the legal fiscal sales document and active financial anchor.',
+        )}
+        badges={
+          <>
+            <PremiumStatusBadge tone="info">{companyName || tt('orders.activeCompanyUnavailable', 'Active company unavailable')}</PremiumStatusBadge>
+            <PremiumStatusBadge tone="neutral">{baseCode}</PremiumStatusBadge>
+          </>
+        }
+        actions={
+          <>
+            <Button asChild>
+              <Link to="/orders?tab=sales&view=register">{tt('financeDocs.salesInvoices.ordersLink', 'View sales orders')}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/compliance/mz">{tt('nav.complianceMz', 'Mozambique compliance')}</Link>
+            </Button>
+            <Button asChild variant="ghost">
+              <Link to="/settlements">{tt('financeDocs.salesInvoices.settlementsLink', 'Settlement workspace')}</Link>
+            </Button>
+          </>
+        }
+        metrics={
+          <>
+            <PremiumMetricCard label={tt('commercial.metrics.drafts', 'Drafts')} value={metrics.drafts} icon={<FileClock />} />
+            <PremiumMetricCard label={tt('commercial.metrics.awaitingApproval', 'Awaiting approval')} value={metrics.awaitingApproval} tone="warning" icon={<FileClock />} />
+            <PremiumMetricCard label={tt('commercial.metrics.issuedInvoices', 'Issued invoices')} value={metrics.issued} tone="positive" icon={<FileCheck2 />} />
+            <PremiumMetricCard label={tt('settlements.outstandingAmount', 'Outstanding')} value={formatBaseMoney(metrics.outstanding)} icon={<Landmark />} />
+          </>
+        }
+      />
 
-        <div className="mobile-primary-actions">
-          <Button asChild variant="outline">
-            <Link to="/orders?tab=sales">{tt('financeDocs.salesInvoices.ordersLink', 'View sales orders')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/compliance/mz">{tt('nav.complianceMz', 'Mozambique compliance')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/settlements">{tt('financeDocs.salesInvoices.settlementsLink', 'Settlement workspace')}</Link>
-          </Button>
-        </div>
-      </div>
+      {missingView ? (
+        <PremiumStatePanel
+          kind="error"
+          icon={<AlertTriangle />}
+          title={tt('financeDocs.stateViewFailureTitle', 'Finance document state is unavailable')}
+          description={tt('financeDocs.stateViewFailureBody', 'StockWise could not load the governed finance-document read model. Retry after the deployment is verified.')}
+        />
+      ) : error ? (
+        <PremiumStatePanel
+          kind="error"
+          icon={<AlertTriangle />}
+          title={tt('financeDocs.salesInvoices.loadFailed', 'Failed to load sales invoices')}
+          description={tt('commercial.register.retainedNoData', 'No financial amounts are shown because the canonical read failed.')}
+        />
+      ) : (
+        <>
+          <PremiumTableToolbar
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchLabel={tt('common.search', 'Search')}
+            searchPlaceholder={tt('financeDocs.salesInvoices.searchPlaceholder', 'Search reference, customer, or order')}
+            filters={
+              <>
+                <Select value={workflowFilter} onValueChange={setWorkflowFilter}>
+                  <SelectTrigger aria-label={tt('financeDocs.fields.workflow', 'Workflow')}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER}>{tt('commercial.filters.allWorkflow', 'All workflow states')}</SelectItem>
+                    <SelectItem value="draft">{tt('financeDocs.workflow.draft', 'Draft')}</SelectItem>
+                    <SelectItem value="issued">{tt('financeDocs.workflow.issued', 'Issued')}</SelectItem>
+                    <SelectItem value="voided">{tt('financeDocs.workflow.voided', 'Voided')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={approvalFilter} onValueChange={setApprovalFilter}>
+                  <SelectTrigger aria-label={tt('financeDocs.fields.approval', 'Approval')}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER}>{tt('commercial.filters.allApproval', 'All approval states')}</SelectItem>
+                    <SelectItem value="draft">{tt('financeDocs.approval.draft', 'Draft preparation')}</SelectItem>
+                    <SelectItem value="pending_approval">{tt('financeDocs.approval.pendingApproval', 'Pending approval')}</SelectItem>
+                    <SelectItem value="approved">{tt('financeDocs.approval.approved', 'Approved')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            }
+            summary={tt('commercial.register.results', '{count} documents shown', { count: filteredRows.length })}
+          />
 
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader className="gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <CardTitle>{tt('financeDocs.salesInvoices.listTitle', 'Invoice register')}</CardTitle>
-            <CardDescription className="hidden sm:block">{tt('financeDocs.salesInvoices.listHelp', 'Search by legal reference, customer, or linked order. Draft invoices are created from sales orders, then issued through the compliance-gated runtime path.')}</CardDescription>
-          </div>
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-10"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={tt('financeDocs.salesInvoices.searchPlaceholder', 'Search internal reference, customer, or order')}
+          <div className="hidden md:block">
+            <PremiumDataTable
+              rows={filteredRows}
+              columns={columns}
+              getRowId={(row) => row.id}
+              loading={loading}
+              emptyState={emptyState}
+              ariaLabel={tt('financeDocs.salesInvoices.listTitle', 'Invoice register')}
             />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {missingView && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-              {tt('financeDocs.stateViewsUnavailable', 'The Step 2 finance-document views are not available yet. Apply the Step 2 migration and refresh this page.')}
-            </div>
-          )}
-
-          {loading ? (
-            <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
-          ) : filteredRows.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
-              <div className="text-lg font-medium">{tt('financeDocs.salesInvoices.emptyTitle', 'No sales invoices yet.')}</div>
-              <div className="mt-2 text-sm text-muted-foreground">{tt('financeDocs.salesInvoices.emptyBody', 'Create the first draft from a confirmed sales order, then issue it from the sales invoice detail page.')}</div>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{tt('financeDocs.fields.internalReference', 'Internal reference')}</TableHead>
-                  <TableHead>{tt('financeDocs.fields.customer', 'Customer')}</TableHead>
-                  <TableHead>{tt('financeDocs.fields.invoiceDate', 'Invoice date')}</TableHead>
-                  <TableHead>{tt('financeDocs.fields.dueDate', 'Due date')}</TableHead>
-                  <TableHead>{tt('financeDocs.fields.workflow', 'Workflow')}</TableHead>
-                  <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
-                  <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <div className="font-medium">{row.internal_reference}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {row.order_no ? tt('financeDocs.fields.linkedOrderValue', 'Order {orderNo}', { orderNo: row.order_no }) : tt('financeDocs.fields.noLinkedOrder', 'No linked order')}
+          <div className="md:hidden">
+            <PremiumMobileCardList
+              rows={filteredRows}
+              getRowId={(row) => row.id}
+              loading={loading}
+              emptyState={emptyState}
+              renderCard={(row) => {
+                const workflow = salesInvoiceWorkflowPresentation(row.document_workflow_status)
+                const settlement = settlementPresentation(row.settlement_status)
+                return (
+                  <article className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h2 className="truncate text-base font-semibold">{row.internal_reference}</h2>
+                        <p className="mt-1 truncate text-sm text-muted-foreground">{row.counterparty_name || tt('common.none', 'None')}</p>
                       </div>
-                    </TableCell>
-                    <TableCell>{row.counterparty_name || tt('common.none', 'None')}</TableCell>
-                    <TableCell>{row.invoice_date}</TableCell>
-                    <TableCell>{row.due_date}</TableCell>
-                    <TableCell>
-                      <Badge variant={workflowTone(row.document_workflow_status)}>
-                        {tt(salesInvoiceWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="font-mono tabular-nums">{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
-                      <div className="text-xs text-muted-foreground">{formatBaseMoney(row.total_amount_base)}</div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button asChild size="sm" variant="outline">
-                        <Link to={`/sales-invoices/${row.id}`}>{tt('financeDocs.viewDocument', 'View')}</Link>
+                      <PremiumStatusBadge tone={workflow.tone}>{tt(workflow.labelKey, workflow.fallback)}</PremiumStatusBadge>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div><div className="premium-label">{tt('financeDocs.fields.total', 'Total')}</div><div className="mt-1 font-mono">{formatDocumentMoney(row.total_amount, row.currency_code)}</div></div>
+                      <div className="text-right"><div className="premium-label">{tt('settlements.outstandingAmount', 'Outstanding')}</div><div className="mt-1 font-mono">{formatBaseMoney(row.outstanding_base)}</div></div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <PremiumStatusBadge tone={settlement.tone}>{tt(settlement.labelKey, settlement.fallback)}</PremiumStatusBadge>
+                      <Button asChild size="sm">
+                        <Link to={`/sales-invoices/${row.id}`}>{tt('commercial.actions.reviewDocument', 'Review document')}</Link>
                       </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                    </div>
+                  </article>
+                )
+              }}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

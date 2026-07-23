@@ -13,11 +13,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   SelectGroup, SelectLabel
 } from '../../components/ui/select'
-import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../../components/ui/sheet'
 import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
+import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
+import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
+import { fxCanCreate, isValidFxRate, type FxReadinessState } from '../../lib/commercialWorkflowPresentation'
 import { addDaysIso, deriveDueDate, discountedLineTotal, salesOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
@@ -362,6 +365,8 @@ export default function SalesOrders() {
     withI18nFallback(t, key, fallback, vars)
   const workflowLabel = tt('orders.workflow', 'Workflow')
   const workflowStagesLabel = tt('orders.workflowStages', 'Workflow stages')
+  const [registerSearch, setRegisterSearch] = useState('')
+  const [registerWorkflow, setRegisterWorkflow] = useState('all')
 
   // masters
   const [items, setItems] = useState<Item[]>([])
@@ -395,6 +400,8 @@ export default function SalesOrders() {
   const [soCustomerId, setSoCustomerId] = useState('')
   const [soCurrency, setSoCurrency] = useState('MZN')
   const [soFx, setSoFx] = useState('1')
+  const [soFxReadiness, setSoFxReadiness] = useState<FxReadinessState>({ status: 'base', rate: '1' })
+  const soFxLookupVersionRef = useRef(0)
   const [soOrderDate, setSoOrderDate] = useState<string>(() => todayYmd())
   const [soDate, setSoDate] = useState<string>(() => todayYmd())
   const [soDueDate, setSoDueDate] = useState<string>(() => todayYmd())
@@ -456,44 +463,85 @@ export default function SalesOrders() {
     }
   }
 
-  // Auto-fetch FX rate when currency changes
+  // Resolve configured FX without turning a failed foreign lookup into a trusted 1:1 rate.
   useEffect(() => {
     async function fetchFxRate() {
       if (!companyId || soCurrency === baseCode) {
         setSoFx('1')
+        setSoFxReadiness({ status: 'base', rate: '1' })
         return
       }
-      
+
+      const lookupVersion = ++soFxLookupVersionRef.current
+      setSoFxReadiness({ status: 'loading', rate: soFx })
+
       try {
         const { data, error } = await supabase
           .from('fx_rates')
-          .select('rate')
+          .select('rate,date')
           .eq('from_code', soCurrency)
           .eq('to_code', baseCode)
           .eq('company_id', companyId)
           .order('date', { ascending: false })
           .limit(1)
           .maybeSingle()
-        
+
+        if (lookupVersion !== soFxLookupVersionRef.current) return
         if (error) {
           console.warn('Failed to fetch FX rate:', error)
-          setSoFx('1')
+          setSoFxReadiness({ status: 'unavailable', rate: soFx })
           return
         }
-        
-        if (data) {
+
+        if (data && isValidFxRate(data.rate)) {
           setSoFx(String(data.rate))
+          setSoFxReadiness({ status: 'loaded', rate: String(data.rate), sourceDate: data.date })
         } else {
-          setSoFx('1')
+          setSoFxReadiness({ status: 'unavailable', rate: soFx })
         }
       } catch (err) {
+        if (lookupVersion !== soFxLookupVersionRef.current) return
         console.warn('Error fetching FX rate:', err)
-        setSoFx('1')
+        setSoFxReadiness({ status: 'unavailable', rate: soFx })
       }
     }
-    
-    fetchFxRate()
+
+    void fetchFxRate()
   }, [soCurrency, baseCode, companyId])
+
+  useEffect(() => {
+    if (searchParams.get('view') === 'create') setSoOpen(true)
+  }, [searchParams])
+
+  function handleSoOpenChange(open: boolean) {
+    setSoOpen(open)
+    if (!open && searchParams.get('view') === 'create') {
+      const next = new URLSearchParams(searchParams)
+      next.set('view', 'register')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
+  function handleSalesCurrencyChange(value: string) {
+    soFxLookupVersionRef.current += 1
+    setSoCurrency(value)
+    if (value === baseCode) {
+      setSoFx('1')
+      setSoFxReadiness({ status: 'base', rate: '1' })
+      return
+    }
+    setSoFx('')
+    setSoFxReadiness({ status: 'loading', rate: '' })
+  }
+
+  function handleSalesFxChange(value: string) {
+    soFxLookupVersionRef.current += 1
+    setSoFx(value)
+    setSoFxReadiness({
+      status: isValidFxRate(value) ? 'manual' : 'invalid',
+      rate: value,
+    })
+  }
 
   useEffect(() => {
     if (user?.name && !soPreparedBy.trim()) setSoPreparedBy(user.name)
@@ -1186,6 +1234,9 @@ export default function SalesOrders() {
     try {
       if (!companyId) return toast.error(tt('org.noCompany', 'Join or create a company first'))
       if (!soCustomerId) return toast.error(tt('orders.customerRequired', 'Customer is required'))
+      if (!fxCanCreate(soCurrency, baseCode, soFxReadiness)) {
+        return toast.error(tt('commercial.fx.createBlocked', 'Enter or load a valid exchange rate before creating this foreign-currency order.'))
+      }
       const cleanLines = soLinesForm
         .map(l => ({ ...l, qty: n(l.qty), unitPrice: n(l.unitPrice), discountPct: n(l.discountPct), description: (l.description || '').trim() } ))
         .filter(l => l.itemId && l.uomId && l.qty > 0 && l.unitPrice >= 0 && l.discountPct >= 0 && l.discountPct <= 100)
@@ -1284,6 +1335,11 @@ export default function SalesOrders() {
       setSoOpen(false)
 
       await refreshSalesData(companyId)
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'sales')
+      next.set('view', 'detail')
+      next.set('orderId', soId)
+      setSearchParams(next)
     } catch (err: any) {
       console.error(err)
       const code = commercialTaxErrorCode(err)
@@ -1525,6 +1581,23 @@ export default function SalesOrders() {
     }),
     [salesStateById, sos]
   )
+  const visibleSalesOrders = useMemo(() => {
+    const needle = registerSearch.trim().toLowerCase()
+    return sos.filter((so) => {
+      const workflow = salesStateById.get(so.id)?.workflow_status ?? legacySalesWorkflowStatus(so.status)
+      if (registerWorkflow !== 'all' && workflow !== registerWorkflow) return false
+      if (!needle) return true
+      return [soNo(so), soCustomerLabel(so), so.reference_no, workflow]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(needle)
+    })
+  }, [registerSearch, registerWorkflow, salesStateById, sos])
+  const visibleOutstandingSalesOrders = useMemo(
+    () => visibleSalesOrders.filter((so) => soOutstanding.some((row) => row.id === so.id)),
+    [soOutstanding, visibleSalesOrders],
+  )
   const activeTaxOptions = taxConfiguration?.activeOptions || []
   const taxOptionById = useMemo(() => new Map((taxConfiguration?.options || []).map((option) => [option.id, option])), [taxConfiguration?.options])
   const canConfigureTax = ['OWNER', 'ADMIN'].includes(String(myRole || '').toUpperCase())
@@ -1675,6 +1748,7 @@ export default function SalesOrders() {
     setSoViewOpen(true)
     const next = new URLSearchParams(searchParams)
     next.set('tab', 'sales')
+    next.set('view', 'detail')
     next.set('orderId', so.id)
     setSearchParams(next, { replace: true })
   }
@@ -2106,10 +2180,7 @@ export default function SalesOrders() {
                 {tt('orders.shippedBrowserCta', 'Completed workflow')}
               </Button>
 
-              <Sheet open={soOpen} onOpenChange={setSoOpen}>
-                <SheetTrigger asChild>
-                  <Button size="sm">{tt('orders.newSO', 'New SO')}</Button>
-                </SheetTrigger>
+              <Sheet open={soOpen} onOpenChange={handleSoOpenChange}>
                 <SheetContent side="right" className="w-full sm:w-[calc(100vw-16rem)] sm:max-w-none max-w-none p-0 md:p-6">
                   <SheetHeader className="px-4 pt-4 md:px-0 md:pt-0">
                     <SheetTitle>{tt('orders.newSO', 'New Sales Order')}</SheetTitle>
@@ -2134,7 +2205,7 @@ export default function SalesOrders() {
                     </div>
                     <div>
                       <Label>{tt('orders.currency', 'Currency')}</Label>
-                      <Select value={soCurrency} onValueChange={setSoCurrency}>
+                      <Select value={soCurrency} onValueChange={handleSalesCurrencyChange}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {(currencies.length ? currencies : [{ code: baseCode, name: baseCode }]).map(c =>
@@ -2145,7 +2216,20 @@ export default function SalesOrders() {
                     </div>
                     <div>
                       <Label>{tt('orders.fxToBase', 'FX to Base ({code})', { code: baseCode })}</Label>
-                      <Input type="number" min="0" step="0.000001" value={soFx} onChange={e => setSoFx(e.target.value)} />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.000001"
+                        value={soFx}
+                        readOnly={soCurrency === baseCode}
+                        onChange={e => handleSalesFxChange(e.target.value)}
+                      />
+                      <ForeignCurrencyReadiness
+                        state={soFxReadiness}
+                        currencyCode={soCurrency}
+                        baseCurrencyCode={baseCode}
+                        translate={(key, fallback) => tt(key, fallback)}
+                      />
                     </div>
                     <div>
                       <Label>{tt('orders.expectedShip', 'Expected Ship')}</Label>
@@ -2519,7 +2603,12 @@ export default function SalesOrders() {
                             <div className="text-right font-medium">{fmtAcct(soSubtotal + soTax)}</div>
                           </div>
                           <div className="mt-3">
-                            <Button onClick={createSO} disabled={!!taxConfigurationError}>{tt('orders.createSO', 'Create SO')}</Button>
+                            <Button
+                              onClick={createSO}
+                              disabled={!!taxConfigurationError || !fxCanCreate(soCurrency, baseCode, soFxReadiness)}
+                            >
+                              {tt('orders.createSO', 'Create SO')}
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -2532,7 +2621,29 @@ export default function SalesOrders() {
           </div>
         </CardHeader>
 
-        <CardContent className="overflow-x-auto w-full">
+        <CardContent className="pb-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <Input
+              type="search"
+              value={registerSearch}
+              onChange={(event) => setRegisterSearch(event.target.value)}
+              placeholder={tt('orders.searchSalesOrders', 'Search order, customer, or reference')}
+              aria-label={tt('orders.searchSalesOrders', 'Search sales orders')}
+            />
+            <Select value={registerWorkflow} onValueChange={setRegisterWorkflow}>
+              <SelectTrigger aria-label={workflowLabel}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tt('commercial.filters.allWorkflow', 'All workflow states')}</SelectItem>
+                <SelectItem value="draft">{tt('orders.draftStatus', 'Draft')}</SelectItem>
+                <SelectItem value="awaiting_approval">{tt('orders.awaitingApprovalStatus', 'Awaiting approval')}</SelectItem>
+                <SelectItem value="approved">{tt('orders.approvedStatus', 'Approved')}</SelectItem>
+                <SelectItem value="cancelled">{tt('orders.cancelledStatus', 'Cancelled')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+
+        <CardContent className="hidden w-full overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.so', 'SO')}</th>
@@ -2542,8 +2653,8 @@ export default function SalesOrders() {
               <th className="py-2 pr-2">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
             <tbody>
-              {soOutstanding.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
-              {soOutstanding.map(so => {
+              {visibleOutstandingSalesOrders.length === 0 && <tr><td colSpan={5} className="py-4 text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</td></tr>}
+              {visibleOutstandingSalesOrders.map(so => {
                 const amounts = amountSO(so)
                 return (
                   <tr key={so.id} className="border-b align-top">
@@ -2563,23 +2674,11 @@ export default function SalesOrders() {
                     </td>
                     <td className="py-3 pr-2 text-right font-mono tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</td>
                     <td className="py-3 pr-2">
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => openSalesOrderDetail(so)}>{tt('orders.view', 'View')}</Button>
-                        <Button size="sm" variant="outline" onClick={() => printSO(so)}>{tt('orders.print', 'Print')}</Button>
-                        <Button size="sm" variant="outline" onClick={() => printSO(so, true)}>{tt('orders.download', 'Download')}</Button>
-                        {String(so.status).toLowerCase() === 'draft' && (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => confirmSO(so.id)}>{tt('orders.confirm', 'Confirm')}</Button>
-                            <Button size="sm" variant="destructive" onClick={() => cancelSO(so.id)}>{tt('orders.cancel', 'Cancel')}</Button>
-                          </>
-                        )}
-                        {String(so.status).toLowerCase() === 'submitted' && (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => approveSO(so.id)}>{tt('orders.approve', 'Approve')}</Button>
-                            <Button size="sm" variant="destructive" onClick={() => cancelSO(so.id)}>{tt('orders.cancel', 'Cancel')}</Button>
-                          </>
-                        )}
-                      </div>
+                      <Button size="sm" onClick={() => openSalesOrderDetail(so)}>
+                        {String(so.status).toLowerCase() === 'draft'
+                          ? tt('commercial.actions.continueDraft', 'Continue draft')
+                          : tt('commercial.actions.reviewDocument', 'Review order')}
+                      </Button>
                     </td>
                   </tr>
                 )
@@ -2587,12 +2686,41 @@ export default function SalesOrders() {
             </tbody>
           </table>
         </CardContent>
+        <CardContent className="grid gap-3 md:hidden">
+          {visibleOutstandingSalesOrders.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">{tt('orders.nothingPending', 'Nothing pending.')}</p>
+          ) : visibleOutstandingSalesOrders.map((so) => {
+            const amounts = amountSO(so)
+            return (
+              <article key={so.id} className="rounded-lg border border-border/80 bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold">{soNo(so)}</h3>
+                    <p className="mt-1 truncate text-sm text-muted-foreground">{soCustomerLabel(so)}</p>
+                  </div>
+                  <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${salesStatusClass(so.status)}`}>
+                    {salesStatusLabel(so.status)}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="premium-label">{tt('orders.total', 'Total')}</div>
+                    <div className="mt-1 font-mono font-semibold tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</div>
+                  </div>
+                  <Button size="sm" onClick={() => openSalesOrderDetail(so)}>
+                    {tt('commercial.actions.reviewDocument', 'Review order')}
+                  </Button>
+                </div>
+              </article>
+            )
+          })}
+        </CardContent>
       </Card>
 
       {/* Recent */}
       <Card>
         <CardHeader><CardTitle>{tt('orders.recentSOs', 'Recent Sales Orders')}</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto w-full">
+        <CardContent className="hidden w-full overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b">
               <th className="py-2 pr-2">{tt('orders.so', 'SO')}</th>
@@ -2603,8 +2731,8 @@ export default function SalesOrders() {
               <th className="py-2 pr-2">{tt('orders.actions', 'Actions')}</th>
             </tr></thead>
             <tbody>
-              {sos.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noSOsYet', 'No SOs yet.')}</td></tr>}
-              {sos.map(so => {
+              {visibleSalesOrders.length === 0 && <tr><td colSpan={6} className="py-4 text-muted-foreground">{tt('orders.noSOsYet', 'No SOs yet.')}</td></tr>}
+              {visibleSalesOrders.map(so => {
                 const amounts = amountSO(so)
                 return (
                   <tr key={so.id} className="border-b align-top">
@@ -2635,6 +2763,35 @@ export default function SalesOrders() {
             </tbody>
           </table>
         </CardContent>
+        <CardContent className="grid gap-3 md:hidden">
+          {visibleSalesOrders.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">{tt('orders.noSOsYet', 'No SOs yet.')}</p>
+          ) : visibleSalesOrders.map((so) => {
+            const amounts = amountSO(so)
+            return (
+              <article key={so.id} className="rounded-lg border border-border/80 bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold">{soNo(so)}</h3>
+                    <p className="mt-1 truncate text-sm text-muted-foreground">{soCustomerLabel(so)}</p>
+                  </div>
+                  <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${salesStatusClass(so.status)}`}>
+                    {salesStatusLabel(so.status)}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="premium-label">{curSO(so)}</div>
+                    <div className="mt-1 font-mono font-semibold tabular-nums">{formatMoneyBase(amounts.totalBase, baseCode)}</div>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => openSalesOrderDetail(so)}>
+                    {tt('commercial.actions.reviewDocument', 'Review order')}
+                  </Button>
+                </div>
+              </article>
+            )
+          })}
+        </CardContent>
       </Card>
 
       {/* SO View / Ship */}
@@ -2646,6 +2803,7 @@ export default function SalesOrders() {
           if (searchParams.get('orderId')) {
             const next = new URLSearchParams(searchParams)
             next.delete('orderId')
+            next.set('view', 'register')
             setSearchParams(next, { replace: true })
           }
         }
@@ -2713,6 +2871,78 @@ export default function SalesOrders() {
                 <div><Label>{tt('financeDocs.fields.workflow', 'Workflow')}</Label><div>{linkedFiscalInvoice ? linkedFiscalInvoice.document_workflow_status.toUpperCase() : tt('common.none', 'None')}</div></div>
               </div>
               </div>
+
+              <CommercialLifecycleStrip
+                translate={(key, fallback) => tt(key, fallback)}
+                items={[
+                  {
+                    id: 'workflow',
+                    eyebrowKey: 'commercial.lifecycle.workflow',
+                    eyebrowFallback: 'Workflow',
+                    labelKey: salesWorkflowLabelKey(
+                      salesState(selectedSO)?.workflow_status ?? legacySalesWorkflowStatus(selectedSO.status),
+                    ),
+                    fallback: salesStatusLabel(selectedSO.status),
+                    tone: String(selectedSO.status).toLowerCase() === 'cancelled'
+                      ? 'critical'
+                      : String(selectedSO.status).toLowerCase() === 'submitted'
+                        ? 'warning'
+                        : String(selectedSO.status).toLowerCase() === 'draft'
+                          ? 'neutral'
+                          : 'positive',
+                    descriptionKey: 'commercial.lifecycle.workflowHelp',
+                    descriptionFallback: 'Commercial approval and order progress.',
+                  },
+                  {
+                    id: 'stock',
+                    eyebrowKey: 'commercial.lifecycle.stock',
+                    eyebrowFallback: 'Stock',
+                    labelKey: salesFulfilmentLabelKey(
+                      salesState(selectedSO)?.fulfilment_status ?? legacySalesFulfilmentStatus(selectedSO.status),
+                    ),
+                    fallback: salesFulfilmentLabel(selectedSO),
+                    tone: salesState(selectedSO)?.fulfilment_status === 'complete'
+                      ? 'positive'
+                      : salesState(selectedSO)?.fulfilment_status === 'partial'
+                        ? 'warning'
+                        : 'neutral',
+                    descriptionKey: 'commercial.lifecycle.salesStockHelp',
+                    descriptionFallback: 'Shipment remains an operational stock workflow.',
+                  },
+                  {
+                    id: 'finance',
+                    eyebrowKey: 'commercial.lifecycle.financeDocument',
+                    eyebrowFallback: 'Finance document',
+                    labelKey: linkedFiscalInvoice
+                      ? `financeDocs.workflow.${linkedFiscalInvoice.document_workflow_status}`
+                      : 'commercial.sales.invoice.none',
+                    fallback: linkedFiscalInvoice
+                      ? linkedFiscalInvoice.document_workflow_status === 'issued' ? 'Issued Sales Invoice' : 'Draft Sales Invoice'
+                      : 'No Sales Invoice',
+                    tone: linkedFiscalInvoice?.document_workflow_status === 'issued' ? 'positive' : linkedFiscalInvoice ? 'info' : 'neutral',
+                    descriptionKey: 'commercial.lifecycle.salesFinanceHelp',
+                    descriptionFallback: 'An issued invoice becomes the active AR anchor.',
+                  },
+                  {
+                    id: 'settlement',
+                    eyebrowKey: 'commercial.lifecycle.settlement',
+                    eyebrowFallback: 'Settlement',
+                    labelKey: salesState(selectedSO)?.settlement_status
+                      ? settlementLabelKey(salesState(selectedSO)?.settlement_status)
+                      : 'commercial.statusUnavailable',
+                    fallback: salesSettlementLabel(selectedSO),
+                    tone: salesState(selectedSO)?.settlement_status === 'settled'
+                      ? 'positive'
+                      : salesState(selectedSO)?.settlement_status === 'overdue'
+                        ? 'critical'
+                        : salesState(selectedSO)?.settlement_status === 'partially_settled'
+                          ? 'warning'
+                          : 'neutral',
+                    descriptionKey: 'commercial.lifecycle.settlementHelp',
+                    descriptionFallback: 'Collections follow the currently active financial anchor.',
+                  },
+                ]}
+              />
 
               <OrderWorkflowStrip
                 eyebrow={tt('orders.nextAction', 'Next action')}
