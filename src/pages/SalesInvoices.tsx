@@ -12,13 +12,11 @@ import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
 import { useOrg } from '../hooks/useOrg'
 import { useSalesInvoices } from '../hooks/useFinanceDocuments'
-import {
-  salesInvoiceResolutionLabelKey,
-  type SalesInvoiceStateRow,
-} from '../lib/financeDocuments'
+import { type SalesInvoiceStateRow } from '../lib/financeDocuments'
 import { getBaseCurrencyCode } from '../lib/currency'
 import {
   approvalPresentation,
+  salesInvoiceResolutionPresentation,
   salesInvoiceWorkflowPresentation,
   settlementPresentation,
 } from '../lib/commercialWorkflowPresentation'
@@ -144,6 +142,7 @@ export default function SalesInvoicesPage() {
         const workflow = salesInvoiceWorkflowPresentation(row.document_workflow_status)
         const approval = approvalPresentation(row.approval_status)
         const settlement = settlementPresentation(row.settlement_status)
+        const resolution = salesInvoiceResolutionPresentation(row.resolution_status)
         return (
           <div className="space-y-2">
             <PremiumStatusBadge tone={workflow.tone}>{tt(workflow.labelKey, workflow.fallback)}</PremiumStatusBadge>
@@ -152,7 +151,7 @@ export default function SalesInvoicesPage() {
               <PremiumStatusBadge tone={settlement.tone}>{tt(settlement.labelKey, settlement.fallback)}</PremiumStatusBadge>
             </div>
             <div className="text-xs text-muted-foreground">
-              {tt(salesInvoiceResolutionLabelKey(row.resolution_status), row.resolution_status)}
+              {tt(resolution.labelKey, resolution.fallback)}
             </div>
           </div>
         )
