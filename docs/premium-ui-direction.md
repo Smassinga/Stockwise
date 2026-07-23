@@ -294,6 +294,8 @@ Order details may use a compact lifecycle strip for workflow, fulfilment or rece
 
 Foreign-currency creation must expose base, loading, configured, manual, unavailable, and invalid rate states. Base currency may show its fixed `1:1` contract. Foreign currency must never treat a missing or failed rate lookup as trusted `1:1`; a positive finite configured or explicitly reviewed manual rate is required before draft creation.
 
+UX-5 is live from the implementation series `7e0d10a69b374c1b02682e905d259485d3dfdd89` through localization correction `89a3384509ca316533f96d3f5a259bc5b5437b4c`. Commercial registers now keep one principal action, card-first mobile review, explicit amount hierarchy, localized canonical workflow/resolution states, and a compact lifecycle strip. The Page Rhythm Contract remains shell-owned at 16px phone, 20px tablet, and 24px desktop. UX-6 may deepen settlement, cash, bank, and reconciliation workflows, but must preserve the order/document/anchor distinctions established here.
+
 The `/bom` workflow bridge cards now use the shared premium card spacing pattern: icon badge, eyebrow/title/body stack, and separated action zone. Production smoke verified the Landed Cost card remains secondary, Production Runs remains more action-oriented, and the correction is spacing/hierarchy only, not a BOM workflow or posting change.
 
 ## What Not To Use

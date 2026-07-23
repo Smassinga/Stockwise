@@ -160,8 +160,9 @@ The main demo risk is narrative density: a first-time viewer can see many capabl
 | UXF-12 | P3 | icon system/navigation | Lucide/Phosphor split is intentional but needs a future recognisability audit | `docs/icon-system.md` and imports | navigation corrected; broader audit deferred | UX-1/UX-9 |
 | UXF-13 | P3 | route metadata and PT labels | some domain names/page titles remain English in Portuguese mode | production PT sample | shell and route metadata corrected; page bodies deferred | UX-1/UX-9 |
 | UXF-14 | P3 | cross-product demo journey | breadth is credible but first-time narrative is not curated | route inventory and landing/app comparison | deferred | UX-10 |
+| UXF-16 | P1 | `/orders`, Sales Invoices, Vendor Bills | commercial lifecycle and row-action density obscured stock, finance-document, settlement, and active-anchor meaning | source audit plus desktop/mobile production review | corrected | UX-5 |
 
-Finding totals: P0 `0`, P1 `2`, P2 `7`, P3 `5`.
+Finding totals: P0 `0`, P1 `3`, P2 `7`, P3 `5`.
 
 ## 16. Findings Corrected In This Package
 
@@ -406,3 +407,21 @@ The Sales Invoice and Vendor Bill registers now use canonical finance-document s
 Foreign-currency order creation now distinguishes base, loading, configured, manual, unavailable, and invalid rate states. Base-currency drafts retain the explicit `1:1` contract. A foreign draft may be created only after a positive finite configured or reviewed manual rate exists; a missing or failed lookup no longer presents as trusted `1:1`. This is presentation and creation-readiness hardening over the existing fields and does not change FX calculation, tax, posting, stock, invoice, bill, correction, or settlement authority.
 
 Local implementation validation is recorded before release. UX-6 remains the dedicated Invoice, Bill, Settlement, Cash, and Bank workflow package; UX-5 links to the Settlement workspace but does not redesign or move settlement posting.
+
+## 29. UX-5 Sales And Purchasing Workflows - Production Rollout
+
+The implementation series comprised `7e0d10a69b374c1b02682e905d259485d3dfdd89`, localized finance-resolution correction `ffe2dfffcb8030c85e3484fa38502049f5518823`, localized order-anchor correction `2d2223ab686cff21f845f083c9c870214b8f9d09`, and final purchase-anchor localization `89a3384509ca316533f96d3f5a259bc5b5437b4c`. The final functional commit passed Validation run `29983970827`, job `89131666891`.
+
+The initial Orders architecture mixed register and mutation surfaces and offered several row actions at equal weight. Sales and Purchase registers now lead with search, workflow filters, bounded metrics, and one principal review action. Create work remains in query-backed sheets, details remain query-backed without route changes, and old `tab`/`orderId` deep links remain valid. The Page Rhythm Contract remains shell-owned at 16px phone, 20px tablet, and 24px desktop.
+
+The lifecycle truth map is durable: workflow, shipment/receipt, finance-document state, settlement, and active anchor remain separate. Sales shipment never implies invoice issuance; Purchase receipt never implies Vendor Bill posting. Existing tax snapshots, approval rules, shipment and receipt posting, idempotency, one-bill-per-order handling, governed issue/post actions, immutable legal documents, credit/debit corrections, and settlement-anchor transitions remain authoritative and unchanged.
+
+Sales Invoice and Vendor Bill registers now use canonical state reads, localized workflow and resolution presentation, explicit amount hierarchy, desktop tables, and mobile cards. Sales Invoice details retain the maintained legal output and correction paths. Vendor Bill details keep supplier invoice reference distinct from StockWise internal reference. Core read failures show unavailable evidence rather than zero; optional finance-chain reads remain secondary and do not overwrite core document truth.
+
+Foreign-currency readiness explicitly distinguishes base, configured, reviewed manual, loading, unavailable, and invalid states. Only base currency uses fixed `1:1`; a foreign draft requires a positive finite configured or reviewed manual rate. Commercial-tax calculations, output tax wording, legal totals, stock quantities, WAC, finance-document calculations, and settlement authority did not change.
+
+The final local finance run targeted `http://127.0.0.1:54321` and passed `393/393` in `102684.4413ms`. Finance Regression (Isolated) run `29984026542`, job `89131834131`, completed in 4m10s, replayed 45 migrations through `20260716130533`, passed `393/393`, cleaned up the loopback stack, and uploaded no success artifact.
+
+Production deployment `dpl_d3jAzAc1Wkjk8Y7FsqTtJK9VR3N1` reached Ready for `89a3384509ca316533f96d3f5a259bc5b5437b4c`, served `stockwiseapp.com` and `www.stockwiseapp.com`, and retained successful Sentry source-map upload. Read-only production QA covered both order tabs, Sales/Purchase detail, Sales Invoice register/detail, and Vendor Bill register/detail. Responsive evidence covered `1440`, `1200`, `820`, and `390`, with light/dark and EN/PT representative checks. Page overflow, raw workflow/resolution enums on changed surfaces, missing translations, fallback UI, console errors, and CSP errors were zero. Production checks used an ADMIN/platform-admin session; other role variants remain proven by unchanged guards and local regression, not by production impersonation. No order, shipment, receipt, invoice, bill, adjustment, settlement, tax, FX, or POS-mode mutation occurred.
+
+UXF-16 is closed. UXF-07 remains assigned to UX-6 for deeper Settlement, Cash, Bank, and document-reconciliation work. The next package is UX-6 Finance, Settlement, Cash, and Bank Workflows, inheriting the Page Rhythm and commercial lifecycle/anchor contracts.
