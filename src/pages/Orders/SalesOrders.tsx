@@ -20,7 +20,14 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
-import { fxCanCreate, isValidFxRate, type FxReadinessState } from '../../lib/commercialWorkflowPresentation'
+import {
+  fxCanCreate,
+  isValidFxRate,
+  salesInvoiceResolutionPresentation,
+  salesInvoiceWorkflowPresentation,
+  type FxReadinessState,
+} from '../../lib/commercialWorkflowPresentation'
+import type { SalesInvoiceResolutionStatus, SalesInvoiceWorkflowStatus } from '../../lib/financeDocuments'
 import { addDaysIso, deriveDueDate, discountedLineTotal, salesOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
@@ -163,7 +170,7 @@ type LinkedSalesInvoiceSummary = {
   id: string
   sales_order_id: string
   internal_reference: string
-  document_workflow_status: 'draft' | 'issued'
+  document_workflow_status: SalesInvoiceWorkflowStatus
   invoice_date: string
   due_date: string
   current_legal_total_base: number
@@ -173,7 +180,7 @@ type LinkedSalesInvoiceSummary = {
   debited_total_base: number
   credit_note_count: number
   debit_note_count: number
-  resolution_status: string
+  resolution_status: SalesInvoiceResolutionStatus
 }
 
 // NEW: UI mapping for Company Profile
@@ -2868,7 +2875,17 @@ export default function SalesOrders() {
                 <div><Label>{tt('orders.expectedShip', 'Expected Ship')}</Label><div>{(selectedSO as any).expected_ship_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('orders.dueDate', 'Due Date')}</Label><div>{(selectedSO as any).due_date || tt('none', '(none)')}</div></div>
                 <div><Label>{tt('financeDocs.fields.internalReference', 'Internal reference')}</Label><div>{linkedFiscalInvoice?.internal_reference || tt('common.none', 'None')}</div></div>
-                <div><Label>{tt('financeDocs.fields.workflow', 'Workflow')}</Label><div>{linkedFiscalInvoice ? linkedFiscalInvoice.document_workflow_status.toUpperCase() : tt('common.none', 'None')}</div></div>
+                <div>
+                  <Label>{tt('financeDocs.fields.workflow', 'Workflow')}</Label>
+                  <div>
+                    {linkedFiscalInvoice
+                      ? tt(
+                        salesInvoiceWorkflowPresentation(linkedFiscalInvoice.document_workflow_status).labelKey,
+                        salesInvoiceWorkflowPresentation(linkedFiscalInvoice.document_workflow_status).fallback,
+                      )
+                      : tt('common.none', 'None')}
+                  </div>
+                </div>
               </div>
               </div>
 
@@ -3013,7 +3030,19 @@ export default function SalesOrders() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div>
                     <Label>{tt('orders.salesBillingStatus', 'Billing status')}</Label>
-                    <div>{salesState(selectedSO)?.billing_status || tt('common.dash', '-')}</div>
+                    <div>
+                      {salesState(selectedSO)?.invoicing_status === 'draft'
+                        || salesState(selectedSO)?.invoicing_status === 'issued'
+                        ? tt(
+                          salesInvoiceWorkflowPresentation(
+                            salesState(selectedSO)?.invoicing_status as SalesInvoiceWorkflowStatus,
+                          ).labelKey,
+                          salesInvoiceWorkflowPresentation(
+                            salesState(selectedSO)?.invoicing_status as SalesInvoiceWorkflowStatus,
+                          ).fallback,
+                        )
+                        : tt('commercial.sales.invoice.none', 'No Sales Invoice')}
+                    </div>
                   </div>
                   <div>
                     <Label>{tt('orders.salesFinancialAnchor', 'Active anchor')}</Label>
@@ -3034,7 +3063,12 @@ export default function SalesOrders() {
                       <div>
                         <Label>{tt('financeDocs.salesInvoices.title', 'Sales Invoices')}</Label>
                         <div className="mt-1 font-medium">{linkedFiscalInvoice.internal_reference}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{linkedFiscalInvoice.resolution_status}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {tt(
+                            salesInvoiceResolutionPresentation(linkedFiscalInvoice.resolution_status).labelKey,
+                            salesInvoiceResolutionPresentation(linkedFiscalInvoice.resolution_status).fallback,
+                          )}
+                        </div>
                       </div>
                       <div>
                         <Label>{tt('financeDocs.mz.currentLegalAmount', 'Current legal amount')}</Label>

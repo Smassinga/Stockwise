@@ -16,7 +16,14 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
-import { fxCanCreate, isValidFxRate, type FxReadinessState } from '../../lib/commercialWorkflowPresentation'
+import {
+  fxCanCreate,
+  isValidFxRate,
+  vendorBillResolutionPresentation,
+  vendorBillWorkflowPresentation,
+  type FxReadinessState,
+} from '../../lib/commercialWorkflowPresentation'
+import type { VendorBillResolutionStatus, VendorBillWorkflowStatus } from '../../lib/financeDocuments'
 import { addDaysIso, deriveDueDate, discountedLineTotal, purchaseOrderAmounts } from '../../lib/orderFinance'
 import { buildConvGraph, convertQty, type ConvRow } from '../../lib/uom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
@@ -172,7 +179,7 @@ type PurchaseOrderVendorBillSummary = {
   internal_reference: string
   primary_reference: string
   supplier_invoice_reference: string | null
-  document_workflow_status: 'draft' | 'posted' | 'voided'
+  document_workflow_status: VendorBillWorkflowStatus
   bill_date: string
   current_legal_total_base: number
   settled_base: number
@@ -181,7 +188,7 @@ type PurchaseOrderVendorBillSummary = {
   debited_total_base: number
   credit_note_count: number
   debit_note_count: number
-  resolution_status: string
+  resolution_status: VendorBillResolutionStatus
 }
 
 type PurchaseOrderVendorBillActionState = {
@@ -2776,7 +2783,19 @@ export default function PurchaseOrders() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div>
                     <Label>{tt('orders.purchaseBillingStatus', 'Billing status')}</Label>
-                    <div>{selectedPOState?.billing_status || tt('common.dash', '-')}</div>
+                    <div>
+                      {selectedPOState?.billing_status === 'draft'
+                        || selectedPOState?.billing_status === 'posted'
+                        ? tt(
+                          vendorBillWorkflowPresentation(
+                            selectedPOState.billing_status as VendorBillWorkflowStatus,
+                          ).labelKey,
+                          vendorBillWorkflowPresentation(
+                            selectedPOState.billing_status as VendorBillWorkflowStatus,
+                          ).fallback,
+                        )
+                        : tt('commercial.purchase.bill.none', 'No Vendor Bill')}
+                    </div>
                   </div>
                   <div>
                     <Label>{tt('orders.purchaseFinancialAnchor', 'Active anchor')}</Label>
@@ -2812,8 +2831,18 @@ export default function PurchaseOrders() {
                     <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <div>
                         <Label>{tt('financeDocs.fields.workflow', 'Workflow')}</Label>
-                        <div className="mt-1">{selectedPOVendorBill.document_workflow_status}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{selectedPOVendorBill.resolution_status}</div>
+                        <div className="mt-1">
+                          {tt(
+                            vendorBillWorkflowPresentation(selectedPOVendorBill.document_workflow_status).labelKey,
+                            vendorBillWorkflowPresentation(selectedPOVendorBill.document_workflow_status).fallback,
+                          )}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {tt(
+                            vendorBillResolutionPresentation(selectedPOVendorBill.resolution_status).labelKey,
+                            vendorBillResolutionPresentation(selectedPOVendorBill.resolution_status).fallback,
+                          )}
+                        </div>
                       </div>
                       <div>
                         <Label>{tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total')}</Label>
