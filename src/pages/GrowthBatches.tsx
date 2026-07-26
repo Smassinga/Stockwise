@@ -2237,6 +2237,20 @@ function labelize(value: string) {
     .join(' ')
 }
 
+function eventSummaryLabel(
+  event: Pick<GrowthBatchEventRow, 'event_type' | 'event_summary'>,
+  lang: Language,
+  eventTypeLabel: (eventType: string | null | undefined) => string,
+) {
+  const summary = event.event_summary?.trim()
+  const normalizedSummary = summary?.toLowerCase()
+  const usesBackendCode = !summary
+    || normalizedSummary === event.event_type
+    || /^[a-z]+(?:_[a-z]+)+$/.test(summary)
+
+  return lang === 'pt' || usesBackendCode ? eventTypeLabel(event.event_type) : summary
+}
+
 function isGrowthBatchTransferBlockerCode(code: string): code is GrowthBatchTransferBlockerCode {
   return (transferBlockerCodes as readonly string[]).includes(code)
 }
@@ -5653,7 +5667,7 @@ export default function GrowthBatches() {
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <PremiumStatusBadge tone={eventTone[event.event_type]}>{growthBatchEventTypeLabel(event.event_type)}</PremiumStatusBadge>
-                                    <div className="mt-2 font-medium">{lang === 'pt' ? growthBatchEventTypeLabel(event.event_type) : event.event_summary}</div>
+                                    <div className="mt-2 font-medium">{eventSummaryLabel(event, lang, growthBatchEventTypeLabel)}</div>
                                     <div className="text-sm text-muted-foreground">{event.event_reference}</div>
                                   </div>
                                   {event.total_cost_delta ? <div className="text-sm font-semibold">{money(event.total_cost_delta, event.currency_code || selectedCurrency)}</div> : null}
