@@ -298,6 +298,16 @@ UX-5 is live from the implementation series `7e0d10a69b374c1b02682e905d259485d3d
 
 The `/bom` workflow bridge cards now use the shared premium card spacing pattern: icon badge, eyebrow/title/body stack, and separated action zone. Production smoke verified the Landed Cost card remains secondary, Production Runs remains more action-oriented, and the correction is spacing/hierarchy only, not a BOM workflow or posting change.
 
+## Finance Workspaces And Shareable Outputs
+
+Finance workspaces separate three questions: open exposure, posted settlement activity, and controller reconciliation. Exposure prioritizes counterparty, active anchor, current legal amount, settled amount, outstanding amount, due position, and one valid next action. Activity preserves cash and bank evidence after exposure is resolved. Reconciliation keeps the maintained review and exception views authoritative; the frontend does not recreate their formulas.
+
+Cash is a company-base-currency cash book, not a bank account. Bank pages distinguish account operating currency from company-base ledger values. Summary and register reads have independent loading and failure states, so a failed summary or balance never becomes a valid-looking zero. Bank reconciliation requires an explicitly selected statement and keeps book balance, statement closing balance, difference, transaction reconciliation, and statement status distinct.
+
+New finance Excel, PDF, and Print outputs share one typed source model and WiseCore dark-teal/neutral presentation. External advice shows the StockWise company and resolved counterparty, masks bank identifiers, excludes internal notes and raw IDs, and states that StockWise allocation evidence is not bank-issued proof. Excel uses numeric amount cells, frozen/filterable table headers, print setup, and explicit base currency. PDF and Print use the same model, A4 layout, repeated headers where needed, wrapped text, page numbering, and matching totals. Missing optional master data is omitted; an unresolved counterparty blocks external advice rather than producing an anonymous document.
+
+UX-6 is live from implementation `615dd19d889c2d03efb2e6429f0e726c31fd560b`. Optional grouped multi-event advice and a broader bounded counterparty-activity section remain deferred; single-event Remittance Advice and Receipt Allocation Advice plus current filtered reconciliation, cash, bank-ledger, and bank-reconciliation exports are the maintained contract.
+
 ## What Not To Use
 
 Avoid:

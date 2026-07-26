@@ -124,3 +124,11 @@ Commercial presentation must keep workflow, stock fulfilment or receipt, finance
 Base currency may use the explicit fixed `1:1` contract. A foreign-currency draft requires a positive finite configured rate or an explicitly reviewed manual rate. Missing or failed foreign-rate reads must remain visibly unavailable and must never become a trusted `1:1` fallback.
 
 For CI, `npm run test:finance-regression:ci` runs the same serial test set without loading `.env`. It is intended only for an ephemeral local Supabase stack at `http://127.0.0.1:54321`; it does not replace the existing developer command or permit remote mutation targets.
+
+## Finance workspace and output development
+
+UX-6 keeps `/settlements`, `/cash`, `/banks`, and `/banks/:bankId` on the existing finance authority. The frontend may organize exposure, posted activity, and reconciliation into query-backed views, but it must read current legal, settled, outstanding, over-settled, due, aging, review, and exception values from the maintained controller views. A failed summary, ledger, balance, statement, or counterparty read is unavailable evidence and must never become a confirmed zero or an anonymous external report.
+
+Finance exports use one typed read-only model for Excel, PDF, and Print. External advice must resolve the StockWise company and one customer or supplier, prefer immutable document snapshots over current master data, use company base currency for governed settlement values, mask bank account identifiers, and omit internal notes. Remittance Advice and Receipt Allocation Advice describe StockWise allocation evidence; neither is bank proof, a fiscal receipt, or confirmation that funds cleared. Do not create a separate print calculation path or recompute canonical reconciliation values in export helpers.
+
+The UX-6 implementation did not add a migration, RPC, view, Edge Function, dependency, posting path, or authority rule. Local mutation proof remains the protected loopback finance suite. Production validation is read-only and must not post settlements or adjustments, reconcile transactions, upload statements, import bank CSV files, or change the POS tax mode.
