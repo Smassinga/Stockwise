@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { FileSpreadsheet, FileText, Printer } from 'lucide-react'
 import { Button } from '../ui/button'
 import {
@@ -27,6 +27,7 @@ export function FinanceExportDialog({
   currencyBasis,
   language,
   allowBilingual = false,
+  children,
   labels,
   onGenerate,
 }: {
@@ -40,6 +41,7 @@ export function FinanceExportDialog({
   currencyBasis: string
   language: FinanceExportLanguage
   allowBilingual?: boolean
+  children?: ReactNode
   labels: {
     report: string
     scope: string
@@ -86,7 +88,7 @@ export function FinanceExportDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => {
       if (!generating) onOpenChange(nextOpen)
     }}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl" closeLabel={labels.cancel}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
@@ -103,7 +105,7 @@ export function FinanceExportDialog({
             </div>
             <div>
               <dt className="premium-label">{labels.period}</dt>
-              <dd className="mt-1 font-medium text-foreground">{period || '—'}</dd>
+              <dd className="mt-1 font-medium text-foreground">{period || '-'}</dd>
             </div>
             <div>
               <dt className="premium-label">{labels.recordCount}</dt>
@@ -130,6 +132,8 @@ export function FinanceExportDialog({
               </Select>
             </div>
           ) : null}
+
+          {children ? <div className="mt-4">{children}</div> : null}
 
           <div className="mt-5 grid gap-2 sm:grid-cols-3" aria-live="polite" aria-busy={Boolean(generating)}>
             <Button variant="outline" onClick={() => generate('excel')} disabled={Boolean(generating)}>

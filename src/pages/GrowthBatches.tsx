@@ -8,7 +8,9 @@ import {
   CheckCircle2,
   ClipboardList,
   Coins,
+  Download,
   LineChart,
+  MoreHorizontal,
   PackageMinus,
   Pencil,
   Plus,
@@ -22,10 +24,11 @@ import {
   WalletCards,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useIsMobile } from '../hooks/use-mobile'
-import { useI18n, type Locale } from '../lib/i18n'
+import { useI18n, withI18nFallback, type Locale } from '../lib/i18n'
 import { hasRole } from '../lib/roles'
 import {
   clearPostingRequestKey,
@@ -63,6 +66,19 @@ import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardLi
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu'
+import { ProductionPathGuide } from '../components/production/ProductionPathGuide'
+import { ProductionExportDialog } from '../components/production/ProductionExportDialog'
+import { loadFinanceExportCompany } from '../lib/financeExportData'
+import { buildGrowthBatchExportModel } from '../lib/productionExport'
 
 type BatchFamily = 'poultry' | 'livestock' | 'fish' | 'crop' | 'nursery' | 'other'
 type QuantityBasis = 'count' | 'weight' | 'area' | 'other'
@@ -2239,7 +2255,7 @@ function num(value: unknown, fallback = 0) {
 }
 
 function qty(value: unknown, maximumFractionDigits = 4) {
-  return num(value).toLocaleString(undefined, { maximumFractionDigits })
+  return num(value).toLocaleString(activeDocumentLocale(), { maximumFractionDigits })
 }
 
 function qtyWithUom(value: unknown, uomCode?: string | null, maximumFractionDigits = 4) {
@@ -2251,19 +2267,26 @@ function locationDisplay(parts: Array<string | null | undefined>) {
   return value || 'Not set'
 }
 
-function money(value: unknown, currency = 'MZN') {
-  return `${currency || 'MZN'} ${num(value).toLocaleString(undefined, {
+function money(value: unknown, currency?: string | null, unavailable = 'Cost unavailable') {
+  if (!currency) return unavailable
+  return `${currency} ${num(value).toLocaleString(activeDocumentLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
 }
 
+function activeDocumentLocale() {
+  return typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('pt')
+    ? 'pt-MZ'
+    : 'en-GB'
+}
+
 function compactDate(value?: string | null) {
-  return value ? new Date(value).toLocaleDateString() : 'Not set'
+  return value ? new Date(value).toLocaleDateString(activeDocumentLocale()) : 'Not set'
 }
 
 function compactDateTime(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : 'Not recorded'
+  return value ? new Date(value).toLocaleString(activeDocumentLocale()) : 'Not recorded'
 }
 
 function cleanText(value: string) {
@@ -2597,22 +2620,56 @@ function DetailSection({
 }
 
 export default function GrowthBatches() {
-  const { lang } = useI18n()
+  const { lang, t } = useI18n()
+  const tt = (key: string, fallback: string) => withI18nFallback(t, key, fallback)
+  const domainLabel = (value: string) => tt(`productionUx.enum.${value}`, labelize(value))
   const { companyId, myRole } = useOrg()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedView = searchParams.get('view')
+  const requestedBatchId = searchParams.get('batchId') || ''
+  const requestedSection = searchParams.get('section')
+  const view = requestedView === 'create' || requestedView === 'detail' || requestedView === 'register'
+    ? requestedView
+    : 'register'
+  const section = requestedSection === 'materials'
+    || requestedSection === 'lifecycle'
+    || requestedSection === 'measurements'
+    || requestedSection === 'costs'
+    || requestedSection === 'history'
+    || requestedSection === 'overview'
+    ? requestedSection
+    : 'overview'
   const isMobile = useIsMobile()
   const canOperate = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'])
   const canManage = hasRole(myRole, ['OWNER', 'ADMIN', 'MANAGER'])
   const transferCopy = growthBatchTransferCopy[lang]
   const harvestCopy = growthBatchHarvestCopy[lang]
   const completionCopy = growthBatchCompletionCopy[lang]
+  const growthError = (
+    error: unknown,
+    transfer?: GrowthBatchTransferCopy,
+    harvest?: GrowthBatchHarvestCopy,
+    completion?: GrowthBatchCompletionCopy,
+  ) => {
+    const message = friendlyError(error, transfer, harvest, completion)
+    const raw = error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message || '')
+      : String(error || '')
+    if (message === raw || (lang === 'pt' && !transfer && !harvest && !completion)) {
+      return tt('productionUx.validation.actionFailed', 'The Growth Batch action could not be completed. Review the entered data and try again.')
+    }
+    return message
+  }
   const completionStatusLabel = (status: string) => (
     status === 'active' || status === 'completed'
       ? completionCopy.statuses[status]
-      : labelize(status)
+      : domainLabel(status)
   )
 
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailErrors, setDetailErrors] = useState<Record<string, boolean>>({})
   const [saving, setSaving] = useState(false)
   const [batches, setBatches] = useState<GrowthBatchRegisterRow[]>([])
   const [currentState, setCurrentState] = useState<GrowthBatchCurrentState | null>(null)
@@ -2655,6 +2712,7 @@ export default function GrowthBatches() {
   const [transferReversalOpen, setTransferReversalOpen] = useState(false)
   const [harvestReversalOpen, setHarvestReversalOpen] = useState(false)
   const [completionReversalOpen, setCompletionReversalOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [draftForm, setDraftForm] = useState<DraftForm>(() => emptyDraftForm())
   const [editForm, setEditForm] = useState<DraftForm>(() => emptyDraftForm())
   const [measurementForm, setMeasurementForm] = useState<MeasurementForm>(() => emptyMeasurementForm())
@@ -2701,18 +2759,29 @@ export default function GrowthBatches() {
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
   const selectedBatch = useMemo(() => batches.find((batch) => batch.id === selectedId) || null, [batches, selectedId])
   const detailBatch = currentState || selectedBatch
-  const selectedCurrency = detailBatch?.base_currency_code || 'MZN'
+  const registerCurrencies = useMemo(
+    () => [...new Set(batches.map((batch) => batch.base_currency_code).filter(Boolean))],
+    [batches],
+  )
+  const selectedCurrency = detailBatch?.base_currency_code || (registerCurrencies.length === 1 ? registerCurrencies[0] : null)
+  const previousCompanyRef = useRef<string | null>(null)
+
+  const setRouteState = useCallback((nextView: 'register' | 'create' | 'detail', batchId?: string, nextSection = 'overview') => {
+    const next = new URLSearchParams()
+    next.set('view', nextView)
+    if (nextView === 'detail' && batchId) {
+      next.set('batchId', batchId)
+      next.set('section', nextSection)
+    }
+    setSearchParams(next)
+  }, [setSearchParams])
 
   const metricValues = useMemo(() => {
     const active = batches.filter((batch) => batch.status === 'active').length
     const draft = batches.filter((batch) => batch.status === 'draft').length
-    const directCost = batches.reduce((total, batch) => total + num(batch.accumulated_direct_cost), 0)
-    const latest = batches
-      .map((batch) => batch.latest_event_at || batch.created_at)
-      .filter(Boolean)
-      .sort()
-      .at(-1)
-    return { active, draft, directCost, latest }
+    const awaitingCompletion = batches.filter((batch) => batch.fully_harvested_awaiting_completion).length
+    const completed = batches.filter((batch) => batch.status === 'completed').length
+    return { active, draft, awaitingCompletion, completed }
   }, [batches])
 
   const filteredBatches = useMemo(() => {
@@ -2815,16 +2884,14 @@ export default function GrowthBatches() {
     const { data, error } = await supabase
       .from('growth_batches_register')
       .select('*')
+      .eq('company_id', companyId)
       .order('start_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(250)
     if (error) throw error
     const rows = (data || []) as GrowthBatchRegisterRow[]
     setBatches(rows)
-    setSelectedId((current) => {
-      if (current && rows.some((batch) => batch.id === current)) return current
-      return rows[0]?.id || ''
-    })
+    setSelectedId((current) => (current && rows.some((batch) => batch.id === current) ? current : ''))
   }, [companyId])
 
   const loadDetail = useCallback(async (batchId: string) => {
@@ -2839,13 +2906,15 @@ export default function GrowthBatches() {
       setHarvests([])
       setCompletions([])
       setEvents([])
+      setDetailErrors({})
       return
     }
 
     setDetailLoading(true)
+    setDetailErrors({})
     try {
       const [stateRes, detailRes, measurementRes, costRes, stockInputRes, lossRes, transferRes, harvestRes, completionRes, eventRes] = await Promise.all([
-        supabase.from('growth_batch_current_state').select('*').eq('id', batchId).maybeSingle(),
+        supabase.from('growth_batch_current_state').select('*').eq('company_id', companyId).eq('id', batchId).maybeSingle(),
         supabase
           .from('growth_batches')
           .select('id,species_text,purpose,notes,cancellation_reason,created_by,updated_by,activated_by,cancelled_by,completed_by,completed_at,created_at,updated_at')
@@ -2855,68 +2924,81 @@ export default function GrowthBatches() {
         supabase
           .from('growth_batch_measurement_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
           .from('growth_batch_direct_cost_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
           .from('growth_batch_stock_input_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false })
           .order('line_no', { ascending: true }),
         supabase
           .from('growth_batch_loss_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
           .from('growth_batch_transfer_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
           .from('growth_batch_harvest_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
           .from('growth_batch_completion_history')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: false }),
         supabase
           .from('growth_batch_event_timeline')
           .select('*')
+          .eq('company_id', companyId)
           .eq('growth_batch_id', batchId)
           .order('event_sequence', { ascending: true }),
       ])
       if (stateRes.error) throw stateRes.error
       if (detailRes.error) throw detailRes.error
-      if (measurementRes.error) throw measurementRes.error
-      if (costRes.error) throw costRes.error
-      if (stockInputRes.error) throw stockInputRes.error
-      if (lossRes.error) throw lossRes.error
-      if (transferRes.error) throw transferRes.error
-      if (harvestRes.error) throw harvestRes.error
-      if (completionRes.error) throw completionRes.error
-      if (eventRes.error) throw eventRes.error
       setCurrentState((stateRes.data || null) as GrowthBatchCurrentState | null)
       setDetailRow((detailRes.data || null) as GrowthBatchDetailRow | null)
-      setMeasurements((measurementRes.data || []) as GrowthBatchMeasurementRow[])
-      setDirectCosts((costRes.data || []) as GrowthBatchDirectCostRow[])
-      setStockInputs((stockInputRes.data || []) as GrowthBatchStockInputRow[])
-      setLosses((lossRes.data || []) as GrowthBatchLossRow[])
-      setTransfers((transferRes.data || []) as GrowthBatchTransferRow[])
-      setHarvests((harvestRes.data || []) as GrowthBatchHarvestRow[])
-      setCompletions((completionRes.data || []) as GrowthBatchCompletionRow[])
-      setEvents((eventRes.data || []) as GrowthBatchEventRow[])
+      const nextErrors: Record<string, boolean> = {}
+      const accept = <T,>(key: string, response: { data: T[] | null; error: unknown }, setter: (rows: T[]) => void) => {
+        if (response.error) {
+          nextErrors[key] = true
+          setter([])
+          return
+        }
+        setter(response.data || [])
+      }
+      accept('measurements', measurementRes as { data: GrowthBatchMeasurementRow[] | null; error: unknown }, setMeasurements)
+      accept('costs', costRes as { data: GrowthBatchDirectCostRow[] | null; error: unknown }, setDirectCosts)
+      accept('materials', stockInputRes as { data: GrowthBatchStockInputRow[] | null; error: unknown }, setStockInputs)
+      accept('losses', lossRes as { data: GrowthBatchLossRow[] | null; error: unknown }, setLosses)
+      accept('transfers', transferRes as { data: GrowthBatchTransferRow[] | null; error: unknown }, setTransfers)
+      accept('harvests', harvestRes as { data: GrowthBatchHarvestRow[] | null; error: unknown }, setHarvests)
+      accept('completion', completionRes as { data: GrowthBatchCompletionRow[] | null; error: unknown }, setCompletions)
+      accept('history', eventRes as { data: GrowthBatchEventRow[] | null; error: unknown }, setEvents)
+      setDetailErrors(nextErrors)
     } catch (error) {
       console.error(error)
-      toast.error('Failed to load Growth Batch detail')
+      setCurrentState(null)
+      setDetailRow(null)
+      setDetailErrors({ core: true })
+      toast.error(tt('productionUx.growth.detailUnavailable', 'Growth Batch detail is unavailable'))
     } finally {
       setDetailLoading(false)
     }
@@ -2925,12 +3007,14 @@ export default function GrowthBatches() {
   const refreshAll = useCallback(async () => {
     if (!companyId) return
     setLoading(true)
+    setLoadError(false)
     try {
       await loadMasterData()
       await loadBatches()
     } catch (error) {
       console.error(error)
-      toast.error('Failed to load Growth Batches')
+      setLoadError(true)
+      toast.error(tt('productionUx.growth.registerUnavailable', 'Growth Batch register is unavailable'))
     } finally {
       setLoading(false)
     }
@@ -2941,8 +3025,33 @@ export default function GrowthBatches() {
   }, [refreshAll])
 
   useEffect(() => {
-    void loadDetail(selectedId)
-  }, [loadDetail, selectedId])
+    if (view !== 'detail') {
+      setSelectedId('')
+      void loadDetail('')
+      return
+    }
+    if (!requestedBatchId || (batches.length > 0 && !batches.some((batch) => batch.id === requestedBatchId))) {
+      setRouteState('register')
+      return
+    }
+    setSelectedId(requestedBatchId)
+    void loadDetail(requestedBatchId)
+  }, [batches, loadDetail, requestedBatchId, setRouteState, view])
+
+  useEffect(() => {
+    if (!companyId) return
+    if (previousCompanyRef.current && previousCompanyRef.current !== companyId) {
+      setSelectedId('')
+      setRouteState('register')
+    }
+    previousCompanyRef.current = companyId
+  }, [companyId, setRouteState])
+
+  useEffect(() => {
+    if (view !== 'create') return
+    setDraftForm(emptyDraftForm())
+    setCreateOpen(true)
+  }, [view])
 
   useEffect(() => {
     setPage(1)
@@ -3041,19 +3150,19 @@ export default function GrowthBatches() {
 
   function ensureDraftFormValid(form: DraftForm) {
     const openingQty = requiredNumber(form.openingPrimaryQty)
-    if (!form.name.trim()) return 'Enter a batch name.'
-    if (!form.primaryUomId) return 'Select a primary unit.'
-    if (!Number.isFinite(openingQty) || openingQty <= 0) return 'Opening quantity must be greater than zero.'
-    if (form.primaryQuantityBasis === 'count' && openingQty !== Math.trunc(openingQty)) return 'Count batches must use whole-number quantities.'
-    if (form.openingTotalWeight.trim() && !form.weightUomId) return 'Select a weight unit when opening total weight is entered.'
-    if (form.area.trim() && !form.areaUomId) return 'Select an area unit when area is entered.'
-    if (form.expectedEndDate && form.startDate && form.expectedEndDate < form.startDate) return 'Expected end date must be on or after start date.'
+    if (!form.name.trim()) return tt('productionUx.validation.batchName', 'Enter a batch name.')
+    if (!form.primaryUomId) return tt('productionUx.validation.primaryUnit', 'Select a primary unit.')
+    if (!Number.isFinite(openingQty) || openingQty <= 0) return tt('productionUx.validation.openingQuantity', 'Opening quantity must be greater than zero.')
+    if (form.primaryQuantityBasis === 'count' && openingQty !== Math.trunc(openingQty)) return tt('productionUx.validation.wholeCount', 'Count batches must use whole-number quantities.')
+    if (form.openingTotalWeight.trim() && !form.weightUomId) return tt('productionUx.validation.weightUnit', 'Select a weight unit when opening total weight is entered.')
+    if (form.area.trim() && !form.areaUomId) return tt('productionUx.validation.areaUnit', 'Select an area unit when area is entered.')
+    if (form.expectedEndDate && form.startDate && form.expectedEndDate < form.startDate) return tt('productionUx.validation.endDate', 'Expected end date must be on or after start date.')
     return null
   }
 
   async function createDraft() {
-    if (!companyId) return toast.error('Select an active company first')
-    if (!canOperate) return toast.error('Your role cannot create Growth Batches')
+    if (!companyId) return toast.error(tt('productionUx.companyRequired', 'Select an active company first'))
+    if (!canOperate) return toast.error(tt('productionUx.validation.createRole', 'Your role cannot create Growth Batches'))
     const validation = ensureDraftFormValid(draftForm)
     if (validation) return toast.error(validation)
 
@@ -3065,14 +3174,14 @@ export default function GrowthBatches() {
       if (error) throw error
       clearPostingRequestKey(createRequestRef)
       const batchId = (data as { batch_id?: string } | null)?.batch_id
-      toast.success('Growth Batch draft created')
+      toast.success(tt('productionUx.growth.draftCreated', 'Growth Batch draft created'))
       setCreateOpen(false)
       setDraftForm(emptyDraftForm())
       await loadBatches()
-      if (batchId) setSelectedId(batchId)
+      if (batchId) setRouteState('detail', batchId)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3115,13 +3224,13 @@ export default function GrowthBatches() {
         p_patch: draftUpdatePatch(editForm),
       })
       if (error) throw error
-      toast.success('Growth Batch draft saved')
+      toast.success(tt('productionUx.growth.draftSaved', 'Growth Batch draft saved'))
       setEditOpen(false)
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3144,12 +3253,12 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(activateRequestRef)
-      toast.success('Growth Batch activated')
+      toast.success(tt('productionUx.growth.activated', 'Growth Batch activated'))
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3158,7 +3267,7 @@ export default function GrowthBatches() {
   async function cancelDraft() {
     if (!companyId || !detailBatch) return
     const reason = cancelReason.trim()
-    if (!reason) return toast.error('Enter a cancellation reason.')
+    if (!reason) return toast.error(tt('productionUx.validation.cancellationReason', 'Enter a cancellation reason.'))
     const fingerprint = stablePostingFingerprint({
       operation: 'growth.batch.cancel',
       companyId,
@@ -3176,14 +3285,14 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(cancelRequestRef)
-      toast.success('Growth Batch draft cancelled')
+      toast.success(tt('productionUx.growth.draftCancelled', 'Growth Batch draft cancelled'))
       setCancelOpen(false)
       setCancelReason('')
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3193,28 +3302,30 @@ export default function GrowthBatches() {
     if (!companyId || !detailBatch) return
     const value = requiredNumber(measurementForm.value)
     if (!Number.isFinite(value) || (measurementForm.measurementType !== 'temperature' && value < 0)) {
-      return toast.error(measurementForm.measurementType === 'temperature' ? 'Enter a valid temperature value.' : 'Measurement value must be zero or greater.')
+      return toast.error(measurementForm.measurementType === 'temperature'
+        ? tt('productionUx.validation.temperature', 'Enter a valid temperature value.')
+        : tt('productionUx.validation.measurementNonNegative', 'Measurement value must be zero or greater.'))
     }
-    if (!measurementForm.uomId) return toast.error('Select a measurement unit.')
+    if (!measurementForm.uomId) return toast.error(tt('productionUx.validation.measurementUnit', 'Select a measurement unit.'))
     const measurementUom = uomById.get(measurementForm.uomId)
     if (measurementForm.measurementType === 'total_weight' || measurementForm.measurementType === 'average_weight') {
-      if (!detailBatch.weight_uom_id) return toast.error('Set a batch weight unit before recording weight measurements.')
-      if (measurementForm.uomId !== detailBatch.weight_uom_id) return toast.error('Weight measurements must use the batch weight unit.')
+      if (!detailBatch.weight_uom_id) return toast.error(tt('productionUx.validation.batchWeightUnit', 'Set a batch weight unit before recording weight measurements.'))
+      if (measurementForm.uomId !== detailBatch.weight_uom_id) return toast.error(tt('productionUx.validation.weightMeasurementUnit', 'Weight measurements must use the batch weight unit.'))
     }
     if (measurementForm.measurementType === 'area_observation') {
-      if (!detailBatch.area_uom_id) return toast.error('Set a batch area unit before recording area observations.')
-      if (measurementForm.uomId !== detailBatch.area_uom_id) return toast.error('Area observations must use the batch area unit.')
+      if (!detailBatch.area_uom_id) return toast.error(tt('productionUx.validation.batchAreaUnit', 'Set a batch area unit before recording area observations.'))
+      if (measurementForm.uomId !== detailBatch.area_uom_id) return toast.error(tt('productionUx.validation.areaMeasurementUnit', 'Area observations must use the batch area unit.'))
     }
     if (measurementForm.measurementType === 'height' && measurementUom?.family !== 'length') {
-      return toast.error('Height measurements must use a length unit.')
+      return toast.error(tt('productionUx.validation.heightUnit', 'Height measurements must use a length unit.'))
     }
     if (measurementForm.measurementType === 'other' && !measurementForm.description.trim()) {
-      return toast.error('Describe the other measurement.')
+      return toast.error(tt('productionUx.validation.otherMeasurement', 'Describe the other measurement.'))
     }
     const observedAt = measurementForm.observedAt ? new Date(measurementForm.observedAt).toISOString() : new Date().toISOString()
     const observedDate = measurementForm.observedAt ? measurementForm.observedAt.slice(0, 10) : today()
-    if (observedDate < detailBatch.start_date) return toast.error('Observed date must be on or after the batch start date.')
-    if (observedDate > today()) return toast.error('Observed date cannot be in the future.')
+    if (observedDate < detailBatch.start_date) return toast.error(tt('productionUx.validation.observedAfterStart', 'Observed date must be on or after the batch start date.'))
+    if (observedDate > today()) return toast.error(tt('productionUx.validation.observedFuture', 'Observed date cannot be in the future.'))
     const payload = {
       operation: 'growth.batch.measurement',
       companyId,
@@ -3258,14 +3369,14 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(measurementRequestRef)
-      toast.success('Measurement recorded')
+      toast.success(tt('productionUx.growth.measurementRecorded', 'Measurement recorded'))
       setMeasurementOpen(false)
       setMeasurementForm(emptyMeasurementForm())
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3274,11 +3385,11 @@ export default function GrowthBatches() {
   async function recordDirectCost() {
     if (!companyId || !detailBatch) return
     const amount = requiredNumber(directCostForm.amount)
-    if (!Number.isFinite(amount) || amount <= 0) return toast.error('Direct cost amount must be greater than zero.')
-    if (!directCostForm.description.trim()) return toast.error('Enter a direct cost description.')
+    if (!Number.isFinite(amount) || amount <= 0) return toast.error(tt('productionUx.validation.directCostAmount', 'Direct cost amount must be greater than zero.'))
+    if (!directCostForm.description.trim()) return toast.error(tt('productionUx.validation.directCostDescription', 'Enter a direct cost description.'))
     const eventDate = directCostForm.eventDate || today()
-    if (eventDate < detailBatch.start_date) return toast.error('Direct cost date must be on or after the batch start date.')
-    if (eventDate > today()) return toast.error('Direct cost date cannot be in the future.')
+    if (eventDate < detailBatch.start_date) return toast.error(tt('productionUx.validation.directCostAfterStart', 'Direct cost date must be on or after the batch start date.'))
+    if (eventDate > today()) return toast.error(tt('productionUx.validation.directCostFuture', 'Direct cost date cannot be in the future.'))
     const payload = {
       operation: 'growth.batch.cost',
       companyId,
@@ -3304,14 +3415,14 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(directCostRequestRef)
-      toast.success('Direct cost recorded')
+      toast.success(tt('productionUx.growth.directCostRecorded', 'Direct cost recorded'))
       setDirectCostOpen(false)
       setDirectCostForm(emptyDirectCostForm())
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3365,20 +3476,20 @@ export default function GrowthBatches() {
   }
 
   function validateStockInputForm() {
-    if (!detailBatch || detailBatch.status !== 'active') return 'Stock inputs can only be posted to active Growth Batches.'
-    if (!stockInputForm.effectiveDate) return 'Select a stock input date.'
-    if (stockInputForm.effectiveDate < detailBatch.start_date) return 'Stock input date must be on or after the batch start date.'
-    if (stockInputForm.effectiveDate > today()) return 'Stock input date cannot be in the future.'
+    if (!detailBatch || detailBatch.status !== 'active') return tt('productionUx.validation.stockInputActive', 'Stock inputs can only be posted to active Growth Batches.')
+    if (!stockInputForm.effectiveDate) return tt('productionUx.validation.stockInputDate', 'Select a stock input date.')
+    if (stockInputForm.effectiveDate < detailBatch.start_date) return tt('productionUx.validation.stockInputAfterStart', 'Stock input date must be on or after the batch start date.')
+    if (stockInputForm.effectiveDate > today()) return tt('productionUx.validation.stockInputFuture', 'Stock input date cannot be in the future.')
     const bucketKeys = new Set<string>()
     for (const line of stockInputForm.lines) {
       const item = itemById.get(line.itemId)
       const quantity = requiredNumber(line.quantity)
-      if (!item) return 'Select a stock-tracked item for every line.'
-      if (!item.base_uom_id) return 'Selected stock items must have a base unit.'
-      if (!Number.isFinite(quantity) || quantity <= 0) return 'Stock input quantities must be greater than zero.'
-      if (!line.sourceWarehouseId || !line.sourceBinId) return 'Select a source warehouse and bin for every line.'
+      if (!item) return tt('productionUx.validation.stockItemEachLine', 'Select a stock-tracked item for every line.')
+      if (!item.base_uom_id) return tt('productionUx.validation.stockItemBaseUnit', 'Selected stock items must have a base unit.')
+      if (!Number.isFinite(quantity) || quantity <= 0) return tt('productionUx.validation.stockInputQuantity', 'Stock input quantities must be greater than zero.')
+      if (!line.sourceWarehouseId || !line.sourceBinId) return tt('productionUx.validation.stockInputSourceEachLine', 'Select a source warehouse and bin for every line.')
       const key = `${line.itemId}|${line.sourceWarehouseId}|${line.sourceBinId}`
-      if (bucketKeys.has(key)) return 'Combine duplicate stock input lines that use the same item, warehouse, and bin.'
+      if (bucketKeys.has(key)) return tt('productionUx.validation.stockInputDuplicate', 'Combine duplicate stock input lines that use the same item, warehouse, and bin.')
       bucketKeys.add(key)
     }
     return null
@@ -3401,13 +3512,13 @@ export default function GrowthBatches() {
       setStockInputPreview(preview)
       setStockInputPreviewStale(false)
       if (preview.ready) {
-        toast.success('Stock input preview is ready')
+        toast.success(tt('productionUx.growth.stockInputPreviewReady', 'Stock input preview is ready'))
       } else {
-        toast.error('Preview found blockers. Review the line details before posting.')
+        toast.error(tt('productionUx.validation.stockInputBlockers', 'Preview found blockers. Review the line details before posting.'))
       }
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3417,8 +3528,8 @@ export default function GrowthBatches() {
     if (!detailBatch) return
     const validation = validateStockInputForm()
     if (validation) return toast.error(validation)
-    if (!stockInputPreview || stockInputPreviewStale) return toast.error('Preview the current stock input before posting.')
-    if (!stockInputPreview.ready) return toast.error('Resolve preview blockers before posting stock input.')
+    if (!stockInputPreview || stockInputPreviewStale) return toast.error(tt('productionUx.validation.stockInputPreviewRequired', 'Preview the current stock input before posting.'))
+    if (!stockInputPreview.ready) return toast.error(tt('productionUx.validation.stockInputResolveBlockers', 'Resolve preview blockers before posting stock input.'))
     const payload = {
       operation: 'growth.batch.input',
       batchId: detailBatch.id,
@@ -3438,7 +3549,7 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(stockInputRequestRef)
-      toast.success('Stock input posted')
+      toast.success(tt('productionUx.growth.stockInputPosted', 'Stock input posted'))
       setStockInputOpen(false)
       setStockInputForm(emptyStockInputForm())
       setStockInputPreview(null)
@@ -3447,7 +3558,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3474,9 +3585,9 @@ export default function GrowthBatches() {
   async function reverseStockInput() {
     if (!detailBatch) return
     if (!reversalForm.eventId) return
-    if (!reversalForm.reason.trim()) return toast.error('Enter a reversal reason.')
+    if (!reversalForm.reason.trim()) return toast.error(tt('productionUx.validation.reversalReason', 'Enter a reversal reason.'))
     if (reversalForm.confirmation.trim() !== reversalForm.eventReference) {
-      return toast.error(`Type ${reversalForm.eventReference} to confirm the stock-input reversal.`)
+      return toast.error(`${tt('productionUx.validation.stockInputConfirm', 'Type the event reference to confirm the stock-input reversal')}: ${reversalForm.eventReference}.`)
     }
     const payload = {
       operation: 'growth.batch.input.reverse',
@@ -3495,14 +3606,14 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(stockInputReversalRequestRef)
-      toast.success('Stock input reversed')
+      toast.success(tt('productionUx.growth.stockInputReversed', 'Stock input reversed'))
       setReversalOpen(false)
       setReversalForm(emptyReversalForm())
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3530,27 +3641,27 @@ export default function GrowthBatches() {
   }
 
   function validateLossForm() {
-    if (!detailBatch || detailBatch.status !== 'active') return 'Losses can only be recorded on active Growth Batches.'
-    if (!lossForm.effectiveDate) return 'Select an effective date.'
-    if (lossForm.effectiveDate < detailBatch.start_date) return 'Loss date must be on or after the batch start date.'
-    if (lossForm.effectiveDate > today()) return 'Loss date cannot be in the future.'
-    if (!lossForm.reasonCode) return 'Select a loss reason.'
-    if (!lossReasonOptions.includes(lossForm.reasonCode)) return 'Select a valid reason for this loss type.'
-    if (lossForm.reasonCode === 'other' && !lossForm.notes.trim()) return 'Add notes when the reason is Other.'
+    if (!detailBatch || detailBatch.status !== 'active') return tt('productionUx.validation.lossActive', 'Losses can only be recorded on active Growth Batches.')
+    if (!lossForm.effectiveDate) return tt('productionUx.validation.effectiveDate', 'Select an effective date.')
+    if (lossForm.effectiveDate < detailBatch.start_date) return tt('productionUx.validation.lossAfterStart', 'Loss date must be on or after the batch start date.')
+    if (lossForm.effectiveDate > today()) return tt('productionUx.validation.lossFuture', 'Loss date cannot be in the future.')
+    if (!lossForm.reasonCode) return tt('productionUx.validation.lossReason', 'Select a loss reason.')
+    if (!lossReasonOptions.includes(lossForm.reasonCode)) return tt('productionUx.validation.lossReasonValid', 'Select a valid reason for this loss type.')
+    if (lossForm.reasonCode === 'other' && !lossForm.notes.trim()) return tt('productionUx.validation.lossOtherNotes', 'Add notes when the reason is Other.')
 
     const quantityLost = lossNumericValue(lossForm.quantityLost)
     const weightLost = lossNumericValue(lossForm.weightLost)
-    if (Number.isNaN(quantityLost) || Number.isNaN(weightLost)) return 'Enter valid loss numbers.'
-    if ((quantityLost ?? 0) < 0 || (weightLost ?? 0) < 0) return 'Loss values cannot be negative.'
-    if ((quantityLost ?? 0) <= 0 && (weightLost ?? 0) <= 0) return 'Enter a quantity loss, weight loss, or both.'
+    if (Number.isNaN(quantityLost) || Number.isNaN(weightLost)) return tt('productionUx.validation.lossNumbers', 'Enter valid loss numbers.')
+    if ((quantityLost ?? 0) < 0 || (weightLost ?? 0) < 0) return tt('productionUx.validation.lossNonNegative', 'Loss values cannot be negative.')
+    if ((quantityLost ?? 0) <= 0 && (weightLost ?? 0) <= 0) return tt('productionUx.validation.lossValue', 'Enter a quantity loss, weight loss, or both.')
     if (quantityLost != null && quantityLost > 0) {
       const currentQuantity = num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)
-      if (detailBatch.primary_quantity_basis === 'count' && quantityLost !== Math.trunc(quantityLost)) return 'Count-basis losses must use whole-number quantities.'
-      if (quantityLost > currentQuantity) return 'The loss quantity cannot exceed the current batch quantity.'
+      if (detailBatch.primary_quantity_basis === 'count' && quantityLost !== Math.trunc(quantityLost)) return tt('productionUx.validation.lossWholeCount', 'Count-basis losses must use whole-number quantities.')
+      if (quantityLost > currentQuantity) return tt('productionUx.validation.lossQuantityExceeds', 'The loss quantity cannot exceed the current batch quantity.')
     }
     if (weightLost != null && weightLost > 0) {
-      if (!detailBatch.weight_uom_id || detailBatch.latest_total_weight == null) return 'Record or configure a current total weight before entering weight loss.'
-      if (weightLost > num(detailBatch.latest_total_weight)) return 'The loss weight cannot exceed the current total weight.'
+      if (!detailBatch.weight_uom_id || detailBatch.latest_total_weight == null) return tt('productionUx.validation.lossCurrentWeight', 'Record or configure a current total weight before entering weight loss.')
+      if (weightLost > num(detailBatch.latest_total_weight)) return tt('productionUx.validation.lossWeightExceeds', 'The loss weight cannot exceed the current total weight.')
     }
     return null
   }
@@ -3579,13 +3690,13 @@ export default function GrowthBatches() {
       setLossPreview(preview)
       setLossPreviewStale(false)
       if (preview.ready) {
-        toast.success('Loss preview is ready')
+        toast.success(tt('productionUx.growth.lossPreviewReady', 'Loss preview is ready'))
       } else {
-        toast.error('Preview found blockers. Review the loss values before recording.')
+        toast.error(tt('productionUx.validation.lossBlockers', 'Preview found blockers. Review the loss values before recording.'))
       }
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3595,8 +3706,8 @@ export default function GrowthBatches() {
     if (!detailBatch) return
     const validation = validateLossForm()
     if (validation) return toast.error(validation)
-    if (!lossPreview || lossPreviewStale) return toast.error('Preview the current loss before recording.')
-    if (!lossPreview.ready) return toast.error('Resolve preview blockers before recording the loss.')
+    if (!lossPreview || lossPreviewStale) return toast.error(tt('productionUx.validation.lossPreviewRequired', 'Preview the current loss before recording.'))
+    if (!lossPreview.ready) return toast.error(tt('productionUx.validation.lossResolveBlockers', 'Resolve preview blockers before recording the loss.'))
     const payload = {
       operation: lossForm.lossType === 'mortality' ? 'growth.batch.mortality' : 'growth.batch.shrinkage',
       batchId: detailBatch.id,
@@ -3616,7 +3727,7 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(lossRequestRef)
-      toast.success(`${labelize(lossForm.lossType)} recorded`)
+      toast.success(tt('productionUx.growth.lossRecorded', '{type} recorded').replace('{type}', domainLabel(lossForm.lossType)))
       setLossOpen(false)
       setLossForm(emptyLossForm())
       setLossPreview(null)
@@ -3625,7 +3736,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3651,7 +3762,7 @@ export default function GrowthBatches() {
   async function reverseLoss() {
     if (!detailBatch) return
     if (!lossReversalForm.eventId) return
-    if (!lossReversalForm.reason.trim()) return toast.error('Enter a reversal reason.')
+    if (!lossReversalForm.reason.trim()) return toast.error(tt('productionUx.validation.reversalReason', 'Enter a reversal reason.'))
     const payload = {
       operation: lossReversalForm.lossType === 'mortality' ? 'growth.batch.mortality.reverse' : 'growth.batch.shrinkage.reverse',
       originalEventId: lossReversalForm.eventId,
@@ -3667,14 +3778,14 @@ export default function GrowthBatches() {
       })
       if (error) throw error
       clearPostingRequestKey(lossReversalRequestRef)
-      toast.success(`${labelize(lossReversalForm.lossType)} reversed`)
+      toast.success(tt('productionUx.growth.lossReversed', '{type} reversed').replace('{type}', domainLabel(lossReversalForm.lossType)))
       setLossReversalOpen(false)
       setLossReversalForm(emptyLossReversalForm())
       await loadBatches()
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error))
+      toast.error(growthError(error))
     } finally {
       setSaving(false)
     }
@@ -3725,8 +3836,8 @@ export default function GrowthBatches() {
     if (eventType === 'harvest_reversal') return harvestCopy.history.harvestReversalBadge
     if (eventType === 'completion') return completionCopy.history.completionBadge
     if (eventType === 'completion_reversal') return completionCopy.history.reversalBadge
-    return eventType ? labelize(eventType) : 'Created'
-  }, [completionCopy, harvestCopy, transferCopy])
+    return eventType ? domainLabel(eventType) : tt('productionUx.growth.createdAt', 'Created')
+  }, [completionCopy, harvestCopy, lang, t, transferCopy])
 
   function transferUnavailableReason() {
     if (!detailBatch || detailBatch.status !== 'active') return transferCopy.errors.unavailableActive
@@ -3787,7 +3898,7 @@ export default function GrowthBatches() {
       }
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, transferCopy))
+      toast.error(growthError(error, transferCopy))
     } finally {
       setSaving(false)
     }
@@ -3830,7 +3941,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, transferCopy))
+      toast.error(growthError(error, transferCopy))
     } finally {
       setSaving(false)
     }
@@ -3887,7 +3998,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, transferCopy))
+      toast.error(growthError(error, transferCopy))
     } finally {
       setSaving(false)
     }
@@ -3920,7 +4031,7 @@ export default function GrowthBatches() {
   function harvestKindLabel(kind: HarvestKind | string | null | undefined) {
     if (kind === 'full') return harvestCopy.history.full
     if (kind === 'partial') return harvestCopy.history.partial
-    return kind ? labelize(kind) : harvestCopy.fallback.notSet
+    return kind ? domainLabel(kind) : harvestCopy.fallback.notSet
   }
 
   function harvestBlockerLabel(code: string | null | undefined) {
@@ -3998,7 +4109,7 @@ export default function GrowthBatches() {
       }
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, undefined, harvestCopy))
+      toast.error(growthError(error, undefined, harvestCopy))
     } finally {
       setSaving(false)
     }
@@ -4043,7 +4154,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, undefined, harvestCopy))
+      toast.error(growthError(error, undefined, harvestCopy))
     } finally {
       setSaving(false)
     }
@@ -4109,7 +4220,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, undefined, harvestCopy))
+      toast.error(growthError(error, undefined, harvestCopy))
     } finally {
       setSaving(false)
     }
@@ -4165,7 +4276,7 @@ export default function GrowthBatches() {
       }
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, undefined, undefined, completionCopy))
+      toast.error(growthError(error, undefined, undefined, completionCopy))
     } finally {
       setSaving(false)
     }
@@ -4208,7 +4319,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, undefined, undefined, completionCopy))
+      toast.error(growthError(error, undefined, undefined, completionCopy))
     } finally {
       setSaving(false)
     }
@@ -4261,7 +4372,7 @@ export default function GrowthBatches() {
       await loadDetail(detailBatch.id)
     } catch (error) {
       console.error(error)
-      toast.error(friendlyError(error, undefined, undefined, completionCopy))
+      toast.error(growthError(error, undefined, undefined, completionCopy))
     } finally {
       setSaving(false)
     }
@@ -4270,11 +4381,11 @@ export default function GrowthBatches() {
   const columns = useMemo<PremiumDataTableColumn<GrowthBatchRegisterRow>[]>(() => [
     {
       id: 'reference',
-      header: 'Batch',
+      header: tt('productionUx.growth.batch', 'Batch'),
       cell: (batch) => (
         <button
           type="button"
-          onClick={() => setSelectedId(batch.id)}
+          onClick={() => setRouteState('detail', batch.id)}
           className="max-w-[15rem] text-left font-semibold text-primary hover:underline"
         >
           <span className="block truncate">{batch.reference_no}</span>
@@ -4286,21 +4397,21 @@ export default function GrowthBatches() {
     },
     {
       id: 'status',
-      header: 'Status',
-      cell: (batch) => <PremiumStatusBadge tone={statusTone[batch.status]}>{labelize(batch.status)}</PremiumStatusBadge>,
+      header: tt('productionUx.common.status', 'Status'),
+      cell: (batch) => <PremiumStatusBadge tone={statusTone[batch.status]}>{domainLabel(batch.status)}</PremiumStatusBadge>,
       sortValue: (batch) => batch.status,
       minWidth: 110,
     },
     {
       id: 'family',
-      header: 'Family',
-      cell: (batch) => labelize(batch.batch_family),
+      header: tt('productionUx.growth.family', 'Family'),
+      cell: (batch) => domainLabel(batch.batch_family),
       sortValue: (batch) => batch.batch_family,
       minWidth: 120,
     },
     {
       id: 'basis',
-      header: 'Basis',
+      header: tt('productionUx.growth.quantityBasis', 'Quantity basis'),
       cell: (batch) => `${qty(batch.current_primary_qty ?? batch.opening_primary_qty)} ${batch.primary_uom_code || ''}`.trim(),
       sortValue: (batch) => num(batch.current_primary_qty ?? batch.opening_primary_qty),
       align: 'right',
@@ -4308,15 +4419,15 @@ export default function GrowthBatches() {
     },
     {
       id: 'weight',
-      header: 'Weight',
-      cell: (batch) => (batch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(batch.latest_total_weight, batch.weight_uom_code)),
+      header: tt('productionUx.growth.latestWeight', 'Latest total weight'),
+      cell: (batch) => (batch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(batch.latest_total_weight, batch.weight_uom_code)),
       sortValue: (batch) => batch.latest_total_weight ?? -1,
       align: 'right',
       minWidth: 120,
     },
     {
       id: 'cost',
-      header: 'Memo cost',
+      header: tt('productionUx.growth.remainingCost', 'Remaining cost'),
       cell: (batch) => money(batch.remaining_cost, batch.base_currency_code || selectedCurrency),
       sortValue: (batch) => num(batch.remaining_cost),
       align: 'right',
@@ -4324,7 +4435,7 @@ export default function GrowthBatches() {
     },
     {
       id: 'latest',
-      header: 'Latest',
+      header: tt('productionUx.growth.latestActivity', 'Latest activity'),
       cell: (batch) => (
         <span>
           {growthBatchEventTypeLabel(batch.latest_event_type)}
@@ -4334,62 +4445,224 @@ export default function GrowthBatches() {
       sortValue: (batch) => batch.latest_event_at || batch.created_at,
       minWidth: 150,
     },
-  ], [growthBatchEventTypeLabel, selectedCurrency])
+  ], [growthBatchEventTypeLabel, selectedCurrency, setRouteState, tt])
+
+  const paginationLabels = useMemo(() => ({
+    rowsPerPage: tt('productionUx.pagination.rows', 'Rows'),
+    previous: tt('productionUx.pagination.previous', 'Previous'),
+    next: tt('productionUx.pagination.next', 'Next'),
+    pageSummary: (currentPage: number, totalPages: number) =>
+      tt('productionUx.pagination.page', 'Page {page} of {total}')
+        .replace('{page}', String(currentPage))
+        .replace('{total}', String(totalPages)),
+    rangeSummary: (from: number, to: number, total: number) =>
+      tt('productionUx.pagination.range', '{from}-{to} of {total}')
+        .replace('{from}', String(from))
+        .replace('{to}', String(to))
+        .replace('{total}', String(total)),
+  }), [tt])
 
   const sortedBatches = useMemo(() => sortPremiumRows(filteredBatches, columns, sort), [columns, filteredBatches, sort])
   const mobileRows = useMemo(() => getPremiumPageRows(sortedBatches, page, pageSize), [page, pageSize, sortedBatches])
 
   const draftActionButtons = detailBatch?.status === 'draft' && canOperate ? (
     <div className="flex w-full min-w-0 flex-wrap gap-2 sm:justify-start">
-      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openEditDialog} disabled={saving}>
-        <Pencil className="mr-2 h-4 w-4" />
-        Edit draft
-      </Button>
       <Button type="button" size="sm" className="w-full sm:w-auto" onClick={activateBatch} disabled={saving}>
         <CheckCircle2 className="mr-2 h-4 w-4" />
-        Activate
+        {tt('productionUx.growth.actions.activate', 'Activate')}
+      </Button>
+      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openEditDialog} disabled={saving}>
+        <Pencil className="mr-2 h-4 w-4" />
+        {tt('productionUx.growth.actions.editDraft', 'Edit draft')}
       </Button>
       <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setCancelOpen(true)} disabled={saving}>
         <Ban className="mr-2 h-4 w-4" />
-        Cancel
+        {tt('productionUx.growth.actions.cancelDraft', 'Cancel draft')}
       </Button>
     </div>
   ) : null
 
   const activeActionButtons = detailBatch?.status === 'active' && canOperate ? (
     <div className="flex w-full min-w-0 flex-wrap gap-2 sm:justify-start">
-      <Button type="button" size="sm" className="w-full sm:w-auto" onClick={openStockInputDialog} disabled={saving}>
-        <PackageMinus className="mr-2 h-4 w-4" />
-        Post stock input
-      </Button>
-      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
-        <ArrowRightLeft className="mr-2 h-4 w-4" />
-        {transferCopy.actions.transferBatch}
-      </Button>
-      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openHarvestDialog} disabled={saving || Boolean(harvestUnavailableReason())} title={harvestUnavailableReason() || undefined}>
-        <Sprout className="mr-2 h-4 w-4" />
-        {harvestCopy.actions.recordHarvest}
-      </Button>
-      {canManage ? (
-        <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openCompletionDialog} disabled={saving || Boolean(completionUnavailableReason())} title={completionUnavailableReason() || undefined}>
+      {detailBatch.fully_harvested_awaiting_completion && canManage ? (
+        <Button type="button" size="sm" className="w-full sm:w-auto" onClick={openCompletionDialog} disabled={saving || Boolean(completionUnavailableReason())} title={completionUnavailableReason() || undefined}>
           <CheckCircle2 className="mr-2 h-4 w-4" />
           {completionCopy.actions.completeBatch}
         </Button>
-      ) : null}
-      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openLossDialog} disabled={saving || num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0} title={num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0 ? harvestCopy.labels.awaitingCompletion : undefined}>
-        <AlertTriangle className="mr-2 h-4 w-4" />
-        Record loss
-      </Button>
-      <Button type="button" size="sm" className="w-full sm:w-auto" onClick={() => setMeasurementOpen(true)} disabled={saving}>
-        <LineChart className="mr-2 h-4 w-4" />
-        Record measurement
-      </Button>
-      <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setDirectCostOpen(true)} disabled={saving}>
-        <WalletCards className="mr-2 h-4 w-4" />
-        Add memo cost
-      </Button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="sm" className="w-full sm:w-auto" disabled={saving}>
+              <MoreHorizontal className="mr-2 h-4 w-4" />
+              {tt('productionUx.growth.actions.recordActivity', 'Record activity')}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>{tt('productionUx.growth.actionGroups.materials', 'Materials')}</DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={openStockInputDialog}>
+                <PackageMinus className="mr-2 h-4 w-4" />
+                {tt('productionUx.growth.actions.stockInput', 'Post stock input')}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{tt('productionUx.growth.actionGroups.observation', 'Observation')}</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => setMeasurementOpen(true)}>
+              <LineChart className="mr-2 h-4 w-4" />
+              {tt('productionUx.growth.actions.measurement', 'Record measurement')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{tt('productionUx.growth.actionGroups.location', 'Location')}</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={openTransferDialog} disabled={Boolean(transferUnavailableReason())}>
+              <ArrowRightLeft className="mr-2 h-4 w-4" />
+              {transferCopy.actions.transferBatch}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{tt('productionUx.growth.actionGroups.lifecycle', 'Lifecycle')}</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={openLossDialog} disabled={num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) <= 0}>
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              {tt('productionUx.growth.actions.loss', 'Record loss')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={openHarvestDialog} disabled={Boolean(harvestUnavailableReason())}>
+              <Sprout className="mr-2 h-4 w-4" />
+              {harvestCopy.actions.recordHarvest}
+            </DropdownMenuItem>
+            {canManage ? (
+              <DropdownMenuItem onSelect={openCompletionDialog} disabled={Boolean(completionUnavailableReason())}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                {completionCopy.actions.completeBatch}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{tt('productionUx.growth.actionGroups.cost', 'Cost')}</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => setDirectCostOpen(true)}>
+              <WalletCards className="mr-2 h-4 w-4" />
+              {tt('productionUx.growth.actions.memoCost', 'Add direct memo cost')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   ) : null
+
+  async function buildGrowthExport(language: 'en' | 'pt' | 'bi', selectedSections: string[]) {
+    if (!companyId || !detailBatch) throw new Error('growth_batch_export_context_unavailable')
+    if (!selectedCurrency) throw new Error('growth_batch_export_currency_unavailable')
+    const company = await loadFinanceExportCompany(companyId)
+    const eventRow = (
+      sequence: number,
+      reference: string,
+      date: string,
+      type: string,
+      effect: string,
+      actor: string | null,
+      notes: string | null,
+    ) => ({
+      sequence,
+      reference,
+      date,
+      type,
+      effect,
+      actor: actor || tt('productionUx.common.teamMember', 'Team member'),
+      notes,
+    })
+    return buildGrowthBatchExportModel({
+      company,
+      language,
+      baseCurrency: selectedCurrency,
+      selectedSections,
+      reference: detailBatch.reference_no,
+      name: detailBatch.name,
+      family: domainLabel(detailBatch.batch_family),
+      status: domainLabel(detailBatch.status),
+      startDate: detailBatch.start_date,
+      expectedEnd: detailBatch.expected_end_date,
+      summary: [
+        [tt('productionUx.growth.currentQuantity', 'Current quantity'), qtyWithUom(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty, detailBatch.primary_uom_code)],
+        [tt('productionUx.growth.latestWeight', 'Latest total weight'), detailBatch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)],
+        [tt('productionUx.growth.location', 'Location'), [detailBatch.warehouse_name, detailBatch.bin_code, detailBatch.location_description].filter(Boolean).join(' / ') || tt('productionUx.common.notSet', 'Not set')],
+      ],
+      costSummary: [
+        [tt('productionUx.growth.materialCost', 'Accumulated material cost'), num(detailBatch.accumulated_material_cost)],
+        [tt('productionUx.growth.directCost', 'Accumulated direct memo cost'), num(detailBatch.accumulated_direct_cost)],
+        [tt('productionUx.growth.totalCost', 'Accumulated total cost'), num(detailBatch.accumulated_total_cost)],
+        [tt('productionUx.growth.harvestedCost', 'Harvested cost'), num(detailBatch.harvested_cost)],
+        [tt('productionUx.growth.remainingCost', 'Remaining cost'), num(detailBatch.remaining_cost)],
+      ],
+      measurements: measurements.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        domainLabel(row.measurement_type),
+        qtyWithUom(row.value, row.uom_code),
+        row.actor_display_name,
+        row.notes || row.description,
+      )),
+      directCosts: directCosts.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        domainLabel(row.category),
+        money(row.amount, row.currency_code),
+        row.actor_display_name,
+        row.description,
+      )),
+      materials: stockInputs.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        row.item_name,
+        `${qtyWithUom(row.quantity, row.uom_code)} · ${money(row.frozen_total_cost, row.currency_code)} · ${[row.source_warehouse_name, row.source_bin_code].filter(Boolean).join(' / ')}`,
+        row.actor_display_name,
+        row.line_notes,
+      )),
+      losses: losses.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        domainLabel(row.loss_type),
+        `${qty(row.quantity_before)} → ${qty(row.quantity_after)} ${row.quantity_uom_code || detailBatch.primary_uom_code || ''}`.trim(),
+        row.actor_display_name,
+        row.notes || domainLabel(row.reason_code),
+      )),
+      transfers: transfers.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        tt('productionUx.growth.transfer', 'Location transfer'),
+        `${transferHistoryLocationLabel(row, 'source')} → ${transferHistoryLocationLabel(row, 'destination')}`,
+        row.actor_display_name,
+        row.notes || domainLabel(row.transfer_reason),
+      )),
+      harvests: harvests.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        harvestKindLabel(row.harvest_kind),
+        `${qtyWithUom(row.harvested_primary_qty, row.primary_uom_code)} · ${row.output_item_name} ${qtyWithUom(row.output_quantity, row.output_uom_code)} · ${money(row.allocated_cost, selectedCurrency)}`,
+        row.actor_display_name,
+        row.notes,
+      )),
+      completions: completions.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_effective_date,
+        completionStatusLabel(row.status_after),
+        `${completionStatusLabel(row.status_before)} → ${completionStatusLabel(row.status_after)}`,
+        row.actor_display_name,
+        row.notes || row.completion_reason,
+      )),
+      history: events.map((row) => eventRow(
+        row.event_sequence,
+        row.event_reference,
+        row.event_date,
+        growthBatchEventTypeLabel(row.event_type),
+        row.event_summary,
+        row.actor_display_name,
+        row.reason || row.notes,
+      )),
+    })
+  }
 
   const renderDraftForm = (
     form: DraftForm,
@@ -4401,34 +4674,34 @@ export default function GrowthBatches() {
     return (
       <div className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Batch name" htmlFor={`${mode}-growth-name`}>
+          <Field label={tt('productionUx.growth.batchName', 'Batch name')} htmlFor={`${mode}-growth-name`}>
             <Input
               id={`${mode}-growth-name`}
               value={form.name}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="e.g. Broiler House A Week 24"
+              placeholder={tt('productionUx.growth.batchNameExample', 'e.g. Broiler House A Week 24')}
             />
           </Field>
-          <Field label="Family" htmlFor={`${mode}-growth-family`}>
+          <Field label={tt('productionUx.growth.family', 'Family')} htmlFor={`${mode}-growth-family`}>
             <Select value={form.batchFamily} onValueChange={(value) => setForm((current) => ({ ...current, batchFamily: value as BatchFamily }))}>
-              <SelectTrigger id={`${mode}-growth-family`} aria-label="Batch family"><SelectValue /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-family`} aria-label={tt('productionUx.growth.family', 'Family')}><SelectValue /></SelectTrigger>
               <SelectContent>
-                {batchFamilies.map((family) => <SelectItem key={family} value={family}>{labelize(family)}</SelectItem>)}
+                {batchFamilies.map((family) => <SelectItem key={family} value={family}>{domainLabel(family)}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Quantity basis" htmlFor={`${mode}-growth-basis`}>
+          <Field label={tt('productionUx.growth.quantityBasis', 'Quantity basis')} htmlFor={`${mode}-growth-basis`}>
             <Select value={form.primaryQuantityBasis} onValueChange={(value) => setDraftBasis(value as QuantityBasis, mode)}>
-              <SelectTrigger id={`${mode}-growth-basis`} aria-label="Quantity basis"><SelectValue /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-basis`} aria-label={tt('productionUx.growth.quantityBasis', 'Quantity basis')}><SelectValue /></SelectTrigger>
               <SelectContent>
-                {quantityBases.map((basis) => <SelectItem key={basis} value={basis}>{labelize(basis)}</SelectItem>)}
+                {quantityBases.map((basis) => <SelectItem key={basis} value={basis}>{domainLabel(basis)}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Opening quantity" htmlFor={`${mode}-growth-opening-qty`}>
+          <Field label={tt('productionUx.growth.openingQuantity', 'Opening quantity')} htmlFor={`${mode}-growth-opening-qty`}>
             <Input
               id={`${mode}-growth-opening-qty`}
               type="number"
@@ -4438,7 +4711,7 @@ export default function GrowthBatches() {
               onChange={(event) => setForm((current) => ({ ...current, openingPrimaryQty: event.target.value }))}
             />
           </Field>
-          <Field label="Primary unit" htmlFor={`${mode}-growth-primary-uom`}>
+          <Field label={tt('productionUx.growth.primaryUnit', 'Primary unit')} htmlFor={`${mode}-growth-primary-uom`}>
             <Select
               value={form.primaryUomId || 'none'}
               onValueChange={(value) => setForm((current) => {
@@ -4450,9 +4723,9 @@ export default function GrowthBatches() {
                 }
               })}
             >
-              <SelectTrigger id={`${mode}-growth-primary-uom`} aria-label="Primary unit"><SelectValue placeholder="Select unit" /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-primary-uom`} aria-label={tt('productionUx.growth.primaryUnit', 'Primary unit')}><SelectValue placeholder={tt('productionUx.growth.selectUnit', 'Select unit')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Select unit</SelectItem>
+                <SelectItem value="none">{tt('productionUx.forms.selectUnit', 'Select unit')}</SelectItem>
                 {primaryUomOptions.map((uom) => <SelectItem key={uom.id} value={uom.id}>{uom.code} - {uom.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -4460,7 +4733,7 @@ export default function GrowthBatches() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Start date" htmlFor={`${mode}-growth-start`}>
+          <Field label={tt('productionUx.growth.startDate', 'Start date')} htmlFor={`${mode}-growth-start`}>
             <Input
               id={`${mode}-growth-start`}
               type="date"
@@ -4468,7 +4741,7 @@ export default function GrowthBatches() {
               onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))}
             />
           </Field>
-          <Field label="Expected end" htmlFor={`${mode}-growth-expected`}>
+          <Field label={tt('productionUx.growth.expectedEnd', 'Expected end')} htmlFor={`${mode}-growth-expected`}>
             <Input
               id={`${mode}-growth-expected`}
               type="date"
@@ -4479,26 +4752,26 @@ export default function GrowthBatches() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Species / cultivar" htmlFor={`${mode}-growth-species`}>
+          <Field label={tt('productionUx.growth.species', 'Species / cultivar')} htmlFor={`${mode}-growth-species`}>
             <Input
               id={`${mode}-growth-species`}
               value={form.speciesText}
               onChange={(event) => setForm((current) => ({ ...current, speciesText: event.target.value }))}
-              placeholder="Optional"
+              placeholder={tt('productionUx.common.optional', 'Optional')}
             />
           </Field>
-          <Field label="Purpose" htmlFor={`${mode}-growth-purpose`}>
+          <Field label={tt('productionUx.growth.purpose', 'Purpose')} htmlFor={`${mode}-growth-purpose`}>
             <Input
               id={`${mode}-growth-purpose`}
               value={form.purpose}
               onChange={(event) => setForm((current) => ({ ...current, purpose: event.target.value }))}
-              placeholder="Optional"
+              placeholder={tt('productionUx.common.optional', 'Optional')}
             />
           </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Opening total weight" htmlFor={`${mode}-growth-opening-weight`}>
+          <Field label={tt('productionUx.growth.openingWeight', 'Opening total weight')} htmlFor={`${mode}-growth-opening-weight`}>
             <Input
               id={`${mode}-growth-opening-weight`}
               type="number"
@@ -4506,19 +4779,19 @@ export default function GrowthBatches() {
               step="0.000001"
               value={form.openingTotalWeight}
               onChange={(event) => setForm((current) => ({ ...current, openingTotalWeight: event.target.value }))}
-              placeholder="Optional"
+              placeholder={tt('productionUx.common.optional', 'Optional')}
             />
           </Field>
-          <Field label="Weight unit" htmlFor={`${mode}-growth-weight-uom`} hint="Required for opening, total, and average weight.">
+          <Field label={tt('productionUx.growth.weightUnit', 'Weight unit')} htmlFor={`${mode}-growth-weight-uom`} hint={tt('productionUx.growth.weightUnitHelp', 'Required for opening, total, and average weight.')}>
             <Select value={form.weightUomId || 'none'} onValueChange={(value) => setForm((current) => ({ ...current, weightUomId: value === 'none' ? '' : value }))}>
-              <SelectTrigger id={`${mode}-growth-weight-uom`} aria-label="Weight unit"><SelectValue placeholder="Optional" /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-weight-uom`} aria-label={tt('productionUx.growth.weightUnit', 'Weight unit')}><SelectValue placeholder={tt('productionUx.common.optional', 'Optional')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No weight unit</SelectItem>
+                <SelectItem value="none">{tt('productionUx.forms.noWeightUnit', 'No weight unit')}</SelectItem>
                 {weightUoms.map((uom) => <SelectItem key={uom.id} value={uom.id}>{uom.code} - {uom.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Area" htmlFor={`${mode}-growth-area`}>
+          <Field label={tt('productionUx.growth.area', 'Area')} htmlFor={`${mode}-growth-area`}>
             <Input
               id={`${mode}-growth-area`}
               type="number"
@@ -4526,14 +4799,14 @@ export default function GrowthBatches() {
               step="0.000001"
               value={form.area}
               onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))}
-              placeholder="Optional"
+              placeholder={tt('productionUx.common.optional', 'Optional')}
             />
           </Field>
-          <Field label="Area unit" htmlFor={`${mode}-growth-area-uom`}>
+          <Field label={tt('productionUx.growth.areaUnit', 'Area unit')} htmlFor={`${mode}-growth-area-uom`}>
             <Select value={form.areaUomId || 'none'} onValueChange={(value) => setAreaUom(value, mode)}>
-              <SelectTrigger id={`${mode}-growth-area-uom`} aria-label="Area unit"><SelectValue placeholder="Optional" /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-area-uom`} aria-label={tt('productionUx.growth.areaUnit', 'Area unit')}><SelectValue placeholder={tt('productionUx.common.optional', 'Optional')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No area unit</SelectItem>
+                <SelectItem value="none">{tt('productionUx.forms.noAreaUnit', 'No area unit')}</SelectItem>
                 {areaUoms.map((uom) => <SelectItem key={uom.id} value={uom.id}>{uom.code} - {uom.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -4541,42 +4814,42 @@ export default function GrowthBatches() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Warehouse" htmlFor={`${mode}-growth-warehouse`}>
+          <Field label={tt('productionUx.growth.warehouse', 'Warehouse')} htmlFor={`${mode}-growth-warehouse`}>
             <Select value={form.warehouseId || 'none'} onValueChange={(value) => setDraftWarehouse(value, mode)}>
-              <SelectTrigger id={`${mode}-growth-warehouse`} aria-label="Warehouse"><SelectValue placeholder="Optional" /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-warehouse`} aria-label={tt('productionUx.growth.warehouse', 'Warehouse')}><SelectValue placeholder={tt('productionUx.common.optional', 'Optional')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No warehouse</SelectItem>
+                <SelectItem value="none">{tt('productionUx.forms.noWarehouse', 'No warehouse')}</SelectItem>
                 {warehouses.map((warehouse) => (
                   <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code ? `${warehouse.code} - ` : ''}{warehouse.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Bin" htmlFor={`${mode}-growth-bin`}>
+          <Field label={tt('productionUx.growth.bin', 'Bin')} htmlFor={`${mode}-growth-bin`}>
             <Select value={form.binId || 'none'} onValueChange={(value) => setForm((current) => ({ ...current, binId: value === 'none' ? '' : value }))}>
-              <SelectTrigger id={`${mode}-growth-bin`} aria-label="Bin"><SelectValue placeholder="Optional" /></SelectTrigger>
+              <SelectTrigger id={`${mode}-growth-bin`} aria-label={tt('productionUx.growth.bin', 'Bin')}><SelectValue placeholder={tt('productionUx.common.optional', 'Optional')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No bin</SelectItem>
+                <SelectItem value="none">{tt('productionUx.forms.noBin', 'No bin')}</SelectItem>
                 {binOptions.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} - {bin.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Location note" htmlFor={`${mode}-growth-location`}>
+          <Field label={tt('productionUx.growth.locationNote', 'Location note')} htmlFor={`${mode}-growth-location`}>
             <Input
               id={`${mode}-growth-location`}
               value={form.locationDescription}
               onChange={(event) => setForm((current) => ({ ...current, locationDescription: event.target.value }))}
-              placeholder="Optional"
+              placeholder={tt('productionUx.common.optional', 'Optional')}
             />
           </Field>
         </div>
 
-        <Field label="Notes" htmlFor={`${mode}-growth-notes`}>
+        <Field label={tt('productionUx.growth.notes', 'Notes')} htmlFor={`${mode}-growth-notes`}>
           <Textarea
             id={`${mode}-growth-notes`}
             value={form.notes}
             onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-            placeholder="Optional operating notes"
+            placeholder={tt('productionUx.growth.notesPlaceholder', 'Optional operating notes')}
           />
         </Field>
       </div>
@@ -4584,11 +4857,11 @@ export default function GrowthBatches() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+    <main className="app-page app-page--workspace">
       <PremiumRegisterHeader
-        eyebrow={completionCopy.page.eyebrow}
-        title="Growth Batches"
-        description={completionCopy.page.description}
+        eyebrow={tt('productionUx.growth.eyebrow', 'Group-level agricultural production')}
+        title={tt('productionUx.growth.title', 'Growth Batches')}
+        description={tt('productionUx.growth.description', 'Track group-level measurements, materials, losses, location, harvest and completion without implying individual records or finance posting.')}
         badges={
           <>
             <PremiumStatusBadge tone="info">{completionCopy.page.appendOnlyLedger}</PremiumStatusBadge>
@@ -4599,84 +4872,96 @@ export default function GrowthBatches() {
           <>
             <Button type="button" variant="outline" onClick={() => void refreshAll()} disabled={loading || saving}>
               <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
+              {tt('common.refresh', 'Refresh')}
             </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setDraftForm(emptyDraftForm())
-                setCreateOpen(true)
-              }}
-              disabled={!canOperate || saving}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Growth Batch
-            </Button>
+            {view !== 'register' ? (
+              <Button type="button" variant="outline" onClick={() => setRouteState('register')}>
+                {tt('productionUx.actions.backToRegister', 'Back to register')}
+              </Button>
+            ) : null}
+            {view === 'register' ? (
+              <Button type="button" onClick={() => setRouteState('create')} disabled={!canOperate || saving}>
+                <Plus className="mr-2 h-4 w-4" />
+                {tt('productionUx.growth.actions.new', 'New Growth Batch')}
+              </Button>
+            ) : null}
           </>
         }
         metrics={
           <>
-            <PremiumMetricCard label="Active" value={metricValues.active} description="Batches open for measurements, transfers, losses, harvests, completion, and memo costs" icon={<Sprout />} tone="positive" variant="panel" />
-            <PremiumMetricCard label="Drafts" value={metricValues.draft} description="Prepared but not activated" icon={<ClipboardList />} tone="info" variant="panel" />
-            <PremiumMetricCard label="Memo direct costs" value={money(metricValues.directCost, selectedCurrency)} description="Separate from stock-input material cost" icon={<Coins />} tone="warning" variant="panel" />
-            <PremiumMetricCard label="Latest activity" value={compactDate(metricValues.latest)} description="Newest event or created batch in the register" icon={<Activity />} tone="neutral" variant="panel" />
+            <PremiumMetricCard label={tt('productionUx.growth.metrics.active', 'Active batches')} value={metricValues.active} description={tt('productionUx.growth.metrics.activeHelp', 'Open for governed lifecycle activity')} icon={<Sprout />} tone="positive" variant="panel" />
+            <PremiumMetricCard label={tt('productionUx.growth.metrics.drafts', 'Draft batches')} value={metricValues.draft} description={tt('productionUx.growth.metrics.draftsHelp', 'Prepared but not activated')} icon={<ClipboardList />} tone="info" variant="panel" />
+            <PremiumMetricCard label={tt('productionUx.growth.metrics.awaiting', 'Awaiting completion')} value={metricValues.awaitingCompletion} description={tt('productionUx.growth.metrics.awaitingHelp', 'Fully harvested with completion still required')} icon={<AlertTriangle />} tone="warning" variant="panel" />
+            <PremiumMetricCard label={tt('productionUx.growth.metrics.completed', 'Completed batches')} value={metricValues.completed} description={tt('productionUx.growth.metrics.completedHelp', 'Lifecycle closed with immutable history')} icon={<CheckCircle2 />} tone="neutral" variant="panel" />
           </>
         }
       />
 
-      <Card className="border-card-border bg-card">
+      <ProductionPathGuide active="growth" />
+
+      {view === 'register' ? <Card className="border-card-border bg-card">
         <CardContent className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[minmax(16rem,1fr)_12rem_12rem_12rem_11rem_11rem]">
           <div className="relative min-w-0">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search reference, name, family, or location"
+              placeholder={tt('productionUx.growth.search', 'Search reference, name, family, or location')}
               className="pl-9"
             />
           </div>
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | BatchStatus)}>
-            <SelectTrigger aria-label="Status filter"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={tt('productionUx.growth.statusFilter', 'Status filter')}><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="all">{tt('productionUx.allStatuses', 'All statuses')}</SelectItem>
               {(['draft', 'active', 'completed', 'cancelled'] as BatchStatus[]).map((status) => (
-                <SelectItem key={status} value={status}>{labelize(status)}</SelectItem>
+                <SelectItem key={status} value={status}>{domainLabel(status)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={familyFilter} onValueChange={(value) => setFamilyFilter(value as 'all' | BatchFamily)}>
-            <SelectTrigger aria-label="Family filter"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={tt('productionUx.growth.familyFilter', 'Family filter')}><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All families</SelectItem>
-              {batchFamilies.map((family) => <SelectItem key={family} value={family}>{labelize(family)}</SelectItem>)}
+              <SelectItem value="all">{tt('productionUx.growth.allFamilies', 'All families')}</SelectItem>
+              {batchFamilies.map((family) => <SelectItem key={family} value={family}>{domainLabel(family)}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={basisFilter} onValueChange={(value) => setBasisFilter(value as 'all' | QuantityBasis)}>
-            <SelectTrigger aria-label="Quantity basis filter"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={tt('productionUx.growth.basisFilter', 'Quantity basis filter')}><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All bases</SelectItem>
-              {quantityBases.map((basis) => <SelectItem key={basis} value={basis}>{labelize(basis)}</SelectItem>)}
+              <SelectItem value="all">{tt('productionUx.growth.allBases', 'All bases')}</SelectItem>
+              {quantityBases.map((basis) => <SelectItem key={basis} value={basis}>{domainLabel(basis)}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Start date from" />
-          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Start date to" />
+          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label={tt('productionUx.growth.dateFrom', 'Start date from')} />
+          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label={tt('productionUx.growth.dateTo', 'Start date to')} />
         </CardContent>
-      </Card>
+      </Card> : null}
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(42rem,1fr)_minmax(30rem,0.8fr)]">
+      <div className={cn('grid gap-5', view === 'register' && '2xl:grid-cols-[minmax(42rem,1fr)_minmax(30rem,0.8fr)]')}>
+        {view === 'register' ? (
         <Card className="min-w-0 border-card-border bg-card">
           <CardHeader>
-            <CardTitle>Register</CardTitle>
-            <CardDescription>{filteredBatches.length} Growth Batch{filteredBatches.length === 1 ? '' : 'es'} in the current view</CardDescription>
+            <CardTitle>{tt('productionUx.growth.register', 'Growth Batch register')}</CardTitle>
+            <CardDescription>
+              {tt('productionUx.growth.registerCount', '{count} Growth Batches in the current view').replace('{count}', String(filteredBatches.length))}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {isMobile ? (
+            {loadError ? (
+              <PremiumEmptyState
+                icon={<AlertTriangle />}
+                title={tt('productionUx.growth.registerUnavailable', 'Growth Batch register is unavailable')}
+                description={tt('productionUx.growth.registerUnavailableDescription', 'The register could not be loaded. Existing data has not been treated as empty.')}
+                action={<Button type="button" variant="outline" onClick={() => void refreshAll()}>{tt('common.retry', 'Retry')}</Button>}
+              />
+            ) : isMobile ? (
               <PremiumMobileCardList
                 rows={mobileRows}
                 getRowId={(batch) => batch.id}
                 loading={loading}
                 error={null}
-                emptyState={<PremiumEmptyState icon={<Sprout />} title="No Growth Batches found" description="Create a draft to start tracking a biological or agricultural batch." compact />}
+                emptyState={<PremiumEmptyState icon={<Sprout />} title={tt('productionUx.growth.empty', 'No Growth Batches found')} description={tt('productionUx.growth.emptyHelp', 'Create a draft to start tracking a biological or agricultural batch.')} compact />}
                 pagination={{
                   page,
                   pageSize,
@@ -4684,11 +4969,12 @@ export default function GrowthBatches() {
                   onPageChange: setPage,
                   onPageSizeChange: setPageSize,
                   pageSizeOptions: [5, 10, 20],
+                  labels: paginationLabels,
                 }}
                 renderCard={(batch) => (
                   <button
                     type="button"
-                    onClick={() => setSelectedId(batch.id)}
+                    onClick={() => setRouteState('detail', batch.id)}
                     className={cn(
                       'w-full rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-card p-4 text-left shadow-[0_14px_32px_-28px_hsl(var(--foreground)/0.34)]',
                       selectedId === batch.id && 'border-primary/40 bg-primary/5',
@@ -4699,14 +4985,14 @@ export default function GrowthBatches() {
                         <div className="truncate font-semibold text-primary">{batch.reference_no}</div>
                         <div className="truncate text-sm text-muted-foreground">{batch.name}</div>
                       </div>
-                      <PremiumStatusBadge tone={statusTone[batch.status]}>{labelize(batch.status)}</PremiumStatusBadge>
+                      <PremiumStatusBadge tone={statusTone[batch.status]}>{domainLabel(batch.status)}</PremiumStatusBadge>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                      <SummaryItem label="Basis" value={`${qty(batch.current_primary_qty ?? batch.opening_primary_qty)} ${batch.primary_uom_code || ''}`.trim()} />
-                      <SummaryItem label="Weight" value={batch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(batch.latest_total_weight, batch.weight_uom_code)} />
-                      <SummaryItem label="Memo cost" value={money(batch.remaining_cost, batch.base_currency_code || selectedCurrency)} />
-                      <SummaryItem label="Family" value={labelize(batch.batch_family)} />
-                      <SummaryItem label="Latest" value={compactDate(batch.latest_event_at || batch.created_at)} />
+                      <SummaryItem label={tt('productionUx.growth.quantityBasis', 'Quantity basis')} value={`${qty(batch.current_primary_qty ?? batch.opening_primary_qty)} ${batch.primary_uom_code || ''}`.trim()} />
+                      <SummaryItem label={tt('productionUx.growth.latestWeight', 'Latest total weight')} value={batch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(batch.latest_total_weight, batch.weight_uom_code)} />
+                      <SummaryItem label={tt('productionUx.growth.remainingCost', 'Remaining cost')} value={money(batch.remaining_cost, batch.base_currency_code || selectedCurrency)} />
+                      <SummaryItem label={tt('productionUx.growth.family', 'Family')} value={domainLabel(batch.batch_family)} />
+                      <SummaryItem label={tt('productionUx.growth.latestActivity', 'Latest activity')} value={compactDate(batch.latest_event_at || batch.created_at)} />
                     </div>
                   </button>
                 )}
@@ -4720,32 +5006,34 @@ export default function GrowthBatches() {
                 sort={sort}
                 onSortChange={setSort}
                 rowClassName={(batch) => (batch.id === selectedId ? 'bg-primary/5' : undefined)}
-                emptyState={<PremiumEmptyState icon={<Sprout />} title="No Growth Batches found" description="Create a draft to start tracking a biological or agricultural batch." compact />}
+                emptyState={<PremiumEmptyState icon={<Sprout />} title={tt('productionUx.growth.empty', 'No Growth Batches found')} description={tt('productionUx.growth.emptyHelp', 'Create a draft to start tracking a biological or agricultural batch.')} compact />}
                 pagination={{
                   page,
                   pageSize,
                   onPageChange: setPage,
                   onPageSizeChange: setPageSize,
                   pageSizeOptions: [10, 20, 50],
+                  labels: paginationLabels,
                 }}
-                ariaLabel="Growth Batches register"
+                ariaLabel={tt('productionUx.growth.register', 'Growth Batch register')}
               />
             )}
           </CardContent>
         </Card>
+        ) : null}
 
-        <section className="min-w-0 space-y-5">
+        {view === 'detail' ? <section className="min-w-0 space-y-5">
           {!detailBatch ? (
-            <PremiumEmptyState icon={<Sprout />} title="Select a Growth Batch" description="Choose a register row to inspect lifecycle state, measurements, memo costs, and event history." />
+            <PremiumEmptyState icon={<Sprout />} title={tt('productionUx.growth.selectBatch', 'Select a Growth Batch')} description={tt('productionUx.growth.selectBatchHelp', 'Choose a register row to inspect lifecycle state, measurements, memo costs, and event history.')} />
           ) : (
             <>
               <Card className="border-card-border bg-card">
                 <CardHeader className="gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <PremiumStatusBadge tone={statusTone[detailBatch.status]}>{labelize(detailBatch.status)}</PremiumStatusBadge>
-                      <Badge variant="outline">{labelize(detailBatch.batch_family)}</Badge>
-                      <Badge variant="outline">{labelize(detailBatch.primary_quantity_basis)}</Badge>
+                      <PremiumStatusBadge tone={statusTone[detailBatch.status]}>{domainLabel(detailBatch.status)}</PremiumStatusBadge>
+                      <Badge variant="outline">{domainLabel(detailBatch.batch_family)}</Badge>
+                      <Badge variant="outline">{domainLabel(detailBatch.primary_quantity_basis)}</Badge>
                       {detailBatch.fully_harvested_awaiting_completion ? (
                         <Badge variant="secondary">{harvestCopy.labels.awaitingCompletion}</Badge>
                       ) : null}
@@ -4760,103 +5048,127 @@ export default function GrowthBatches() {
                       </span>
                     </CardTitle>
                     <CardDescription>
-                      {detailRow?.purpose || 'Group-level Growth Batch tracking. Stock inputs consume inventory, transfers move the whole batch operationally, harvests receive one output into stock, completion closes only the lifecycle, and COGS or valuation posting remains out of scope.'}
+                      {detailRow?.purpose || tt('productionUx.growth.detailDescription', 'Group-level Growth Batch tracking. Stock inputs consume inventory, transfers move the whole batch operationally, harvests receive one output into stock, completion closes only the lifecycle, and COGS or valuation posting remains out of scope.')}
                     </CardDescription>
                   </div>
                   <div className="flex w-full min-w-0 flex-col gap-2">
                     {draftActionButtons}
                     {activeActionButtons}
+                    {detailBatch.status === 'completed' || detailBatch.status === 'cancelled' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full sm:w-auto"
+                        onClick={() => setRouteState('detail', detailBatch.id, 'history')}
+                      >
+                        <ClipboardList className="mr-2 h-4 w-4" />
+                        {tt('productionUx.growth.actions.reviewHistory', 'Review history')}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto"
+                      onClick={() => setExportOpen(true)}
+                      disabled={!selectedCurrency}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      {tt('productionUx.export.report', 'Export operational report')}
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <SummaryItem label="Current quantity" value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
-                    <SummaryItem label="Latest weight" value={detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
-                    <SummaryItem label="Remaining cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                    <SummaryItem label={tt('productionUx.growth.currentQuantity', 'Current quantity')} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                    <SummaryItem label={tt('productionUx.growth.latestWeight', 'Latest total weight')} value={detailBatch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                    <SummaryItem label={tt('productionUx.growth.remainingCost', 'Remaining cost')} value={money(detailBatch.remaining_cost, selectedCurrency, tt('productionUx.costUnavailable', 'Cost unavailable'))} />
                     <SummaryItem label={completionCopy.labels.completedAt} value={detailBatch.completed_at ? compactDateTime(detailBatch.completed_at) : completionCopy.fallback.notRecorded} />
-                    <SummaryItem label="Start date" value={compactDate(detailBatch.start_date)} />
-                    <SummaryItem label="Expected end" value={compactDate(detailBatch.expected_end_date)} />
+                    <SummaryItem label={tt('productionUx.growth.startDate', 'Start date')} value={compactDate(detailBatch.start_date)} />
+                    <SummaryItem label={tt('productionUx.growth.expectedEnd', 'Expected end')} value={detailBatch.expected_end_date ? compactDate(detailBatch.expected_end_date) : tt('productionUx.common.notSet', 'Not set')} />
                     <SummaryItem
-                      label="Location"
+                      label={tt('productionUx.growth.location', 'Location')}
                       value={
                         detailBatch.warehouse_name || detailBatch.bin_code || detailBatch.location_description
                           ? [detailBatch.warehouse_name, detailBatch.bin_code, detailBatch.location_description].filter(Boolean).join(' / ')
-                          : 'Not set'
+                          : tt('productionUx.common.notSet', 'Not set')
                       }
                     />
                   </div>
                 </CardContent>
               </Card>
 
+              {Object.keys(detailErrors).length > 0 ? (
+                <div className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-4 text-sm" role="status">
+                  <div className="font-medium text-amber-800 dark:text-amber-200">
+                    {detailErrors.core
+                      ? tt('productionUx.growth.detailUnavailable', 'Growth Batch detail is unavailable')
+                      : tt('productionUx.growth.partialUnavailable', 'Some Growth Batch evidence is unavailable')}
+                  </div>
+                  <p className="mt-1 text-muted-foreground">
+                    {tt('productionUx.growth.partialUnavailableDescription', 'Unavailable evidence is identified separately and is not presented as an empty history or a zero cost.')}
+                  </p>
+                </div>
+              ) : null}
+
               {detailLoading ? (
                 <Card className="border-card-border bg-card">
-                  <CardContent className="p-5 text-sm text-muted-foreground">Loading Growth Batch detail...</CardContent>
+                  <CardContent className="p-5 text-sm text-muted-foreground">{tt('productionUx.growth.loadingDetail', 'Loading Growth Batch detail...')}</CardContent>
                 </Card>
               ) : (
-                <Tabs defaultValue="overview" className="min-w-0">
-                  <TabsList className="w-full justify-start overflow-x-auto">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="stock">Stock inputs</TabsTrigger>
-                    <TabsTrigger value="transfers">{transferCopy.history.title}</TabsTrigger>
-                    <TabsTrigger value="harvests">{harvestCopy.labels.tab}</TabsTrigger>
-                    <TabsTrigger value="completion">{completionCopy.labels.tab}</TabsTrigger>
-                    <TabsTrigger value="losses">Losses</TabsTrigger>
-                    <TabsTrigger value="measurements">Measurements</TabsTrigger>
-                    <TabsTrigger value="costs">Direct costs</TabsTrigger>
-                    <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                    <TabsTrigger value="audit">Audit</TabsTrigger>
+                <Tabs
+                  value={section}
+                  onValueChange={(nextSection) => setRouteState('detail', detailBatch.id, nextSection)}
+                  className="min-w-0"
+                >
+                  <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6">
+                    <TabsTrigger value="overview">{tt('productionUx.growth.sections.overview', 'Overview')}</TabsTrigger>
+                    <TabsTrigger value="materials">{tt('productionUx.growth.sections.materials', 'Materials & Location')}</TabsTrigger>
+                    <TabsTrigger value="lifecycle">{tt('productionUx.growth.sections.lifecycle', 'Lifecycle')}</TabsTrigger>
+                    <TabsTrigger value="measurements">{tt('productionUx.growth.sections.measurements', 'Measurements')}</TabsTrigger>
+                    <TabsTrigger value="costs">{tt('productionUx.growth.sections.costs', 'Costs')}</TabsTrigger>
+                    <TabsTrigger value="history">{tt('productionUx.growth.sections.history', 'History & Audit')}</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="overview" className="space-y-5">
                     <DetailSection
-                      title="Opening state"
-                      description="Opening quantities are captured on the draft and frozen when the batch is activated."
+                      title={tt('productionUx.growth.openingState', 'Opening state')}
+                      description={tt('productionUx.growth.openingStateHelp', 'Opening quantities are captured on the draft and frozen when the batch is activated.')}
                     >
                       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        <SummaryItem label="Opening quantity" value={`${qty(detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
-                        <SummaryItem label="Opening total weight" value={detailBatch.opening_total_weight == null ? 'Not set' : qtyWithUom(detailBatch.opening_total_weight, detailBatch.weight_uom_code)} />
-                        <SummaryItem label="Weight unit" value={detailBatch.weight_uom_code || 'Not set'} />
-                        <SummaryItem label="Area" value={detailBatch.area == null ? 'Not set' : `${qty(detailBatch.area)} ${detailBatch.area_uom_code || ''}`.trim()} />
-                        <SummaryItem label="Species / cultivar" value={detailRow?.species_text || 'Not set'} />
-                        <SummaryItem label="Latest event" value={growthBatchEventTypeLabel(detailBatch.latest_event_type)} />
-                        <SummaryItem label="Latest activity" value={compactDateTime(detailBatch.latest_event_at || detailBatch.created_at)} />
+                        <SummaryItem label={tt('productionUx.growth.openingQuantity', 'Opening quantity')} value={`${qty(detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                        <SummaryItem label={tt('productionUx.growth.openingWeight', 'Opening total weight')} value={detailBatch.opening_total_weight == null ? tt('productionUx.common.notSet', 'Not set') : qtyWithUom(detailBatch.opening_total_weight, detailBatch.weight_uom_code)} />
+                        <SummaryItem label={tt('productionUx.growth.weightUnit', 'Weight unit')} value={detailBatch.weight_uom_code || tt('productionUx.common.notSet', 'Not set')} />
+                        <SummaryItem label={tt('productionUx.growth.area', 'Area')} value={detailBatch.area == null ? tt('productionUx.common.notSet', 'Not set') : `${qty(detailBatch.area)} ${detailBatch.area_uom_code || ''}`.trim()} />
+                        <SummaryItem label={tt('productionUx.growth.species', 'Species / cultivar')} value={detailRow?.species_text || tt('productionUx.common.notSet', 'Not set')} />
+                        <SummaryItem label={tt('productionUx.growth.latestEvent', 'Latest event')} value={growthBatchEventTypeLabel(detailBatch.latest_event_type)} />
+                        <SummaryItem label={tt('productionUx.growth.latestActivity', 'Latest activity')} value={compactDateTime(detailBatch.latest_event_at || detailBatch.created_at)} />
                       </div>
                       {detailRow?.notes ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{detailRow.notes}</p> : null}
                     </DetailSection>
 
-                    <DetailSection
-                      title="Future scope guard"
-                      description="These controls remain unavailable until later phases add splitting, biological valuation, and accounting policies."
-                    >
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {['Split or child batches', 'Whole-batch reversal', 'Fair value adjustments', 'FIFO / COGS posting', 'Automatic finance posting'].map((item) => (
-                          <div key={item} className="flex items-center gap-2 rounded-xl border border-card-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                            <AlertTriangle className="h-4 w-4 text-amber-600" />
-                            <span>{item}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="stock">
+                  <TabsContent value="materials">
                     <DetailSection
-                      title="Stock input history"
-                      description="Stock inputs create physical issue movements, freeze source WAC as material cost, and do not create supplier bills, payments, bank transactions, or finance journals."
+                      title={tt('productionUx.growth.stockInputHistory', 'Stock input history')}
+                      description={tt('productionUx.growth.stockInputHistoryHelp', 'Stock inputs create physical issue movements, freeze source WAC as material cost, and do not create supplier bills, payments, bank transactions, or finance journals.')}
                       action={detailBatch.status === 'active' && canOperate ? (
                         <Button size="sm" onClick={openStockInputDialog}>
                           <PackageMinus className="mr-2 h-4 w-4" />
-                          Post stock input
+                          {tt('productionUx.growth.actions.stockInput', 'Post stock input')}
                         </Button>
                       ) : null}
                     >
                       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                        <SummaryItem label="Material cost" value={money(detailBatch.accumulated_material_cost, selectedCurrency)} />
-                        <SummaryItem label="Direct cost" value={money(detailBatch.accumulated_direct_cost, selectedCurrency)} />
-                        <SummaryItem label="Remaining cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                        <SummaryItem label={tt('productionUx.growth.materialCost', 'Accumulated material cost')} value={money(detailBatch.accumulated_material_cost, selectedCurrency)} />
+                        <SummaryItem label={tt('productionUx.growth.directCost', 'Accumulated direct memo cost')} value={money(detailBatch.accumulated_direct_cost, selectedCurrency)} />
+                        <SummaryItem label={tt('productionUx.growth.remainingCost', 'Remaining cost')} value={money(detailBatch.remaining_cost, selectedCurrency)} />
                       </div>
-                      {stockInputs.length === 0 ? (
-                        <PremiumEmptyState icon={<PackageMinus />} title="No stock inputs yet" description="Post stock input when physical material is issued to an active batch." compact />
+                      {detailErrors.materials ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : stockInputs.length === 0 ? (
+                        <PremiumEmptyState icon={<PackageMinus />} title={tt('productionUx.growth.noStockInputs', 'No stock inputs yet')} description={tt('productionUx.growth.noStockInputsHelp', 'Post stock input when physical material is issued to an active batch.')} compact />
                       ) : (
                         <div className="space-y-3">
                           {stockInputs.map((line) => {
@@ -4867,7 +5179,7 @@ export default function GrowthBatches() {
                                   <div className="min-w-0">
                                     <div className="font-medium">{line.item_name}</div>
                                     <div className="text-sm text-muted-foreground">
-                                      {[line.item_sku, line.event_reference, `Seq ${line.event_sequence}`].filter(Boolean).join(' / ')}
+                                      {[line.item_sku, line.event_reference, `${tt('productionUx.growth.sequenceShort', 'Seq')} ${line.event_sequence}`].filter(Boolean).join(' / ')}
                                     </div>
                                     <div className="mt-2 text-sm text-muted-foreground">
                                       {[line.source_warehouse_name, line.source_bin_code, line.source_bin_name].filter(Boolean).join(' / ')}
@@ -4879,18 +5191,20 @@ export default function GrowthBatches() {
                                   </div>
                                 </div>
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                                  <span>Movement {line.issue_movement_id}</span>
+                                  <span>{tt('productionUx.growth.issueMovementRecorded', 'Issue movement recorded')}</span>
                                   <span>{compactDate(line.event_effective_date)} / {compactDateTime(line.event_created_at)}</span>
                                 </div>
                                 {line.reversal_status === 'reversed' ? (
                                   <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    Reversed by {line.reversal_event_reference || 'reversal event'} on {compactDate(line.reversal_effective_date)}. Receipt movement {line.reversal_receipt_movement_id}.
+                                    {tt('productionUx.growth.reversedEvidence', 'Reversed by {reference} on {date}. Compensating receipt recorded.')
+                                      .replace('{reference}', line.reversal_event_reference || tt('productionUx.growth.reversalEvent', 'reversal event'))
+                                      .replace('{date}', compactDate(line.reversal_effective_date))}
                                   </p>
                                 ) : canReverseLine ? (
                                   <div className="mt-3">
                                     <Button type="button" size="sm" variant="outline" onClick={() => openReversalDialog(line)} disabled={saving}>
                                       <RotateCcw className="mr-2 h-4 w-4" />
-                                      Reverse event
+                                      {tt('productionUx.growth.reverseEvent', 'Reverse event')}
                                     </Button>
                                   </div>
                                 ) : null}
@@ -4902,7 +5216,7 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="transfers">
+                  <TabsContent value="materials">
                     <DetailSection
                       title={transferCopy.history.title}
                       description={transferCopy.history.description}
@@ -4918,7 +5232,9 @@ export default function GrowthBatches() {
                         <SummaryItem label={transferCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
                         <SummaryItem label={transferCopy.labels.latestWeight} value={detailBatch.latest_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
                       </div>
-                      {transfers.length === 0 ? (
+                      {detailErrors.transfers ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : transfers.length === 0 ? (
                         <PremiumEmptyState icon={<ArrowRightLeft />} title={transferCopy.history.emptyTitle} description={transferCopy.history.emptyDescription} compact />
                       ) : (
                         <div className="space-y-3">
@@ -4974,7 +5290,7 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="harvests">
+                  <TabsContent value="lifecycle">
                     <DetailSection
                       title={harvestCopy.history.title}
                       description={harvestCopy.history.description}
@@ -4997,7 +5313,9 @@ export default function GrowthBatches() {
                           <div className="mt-1 text-muted-foreground">{harvestCopy.labels.awaitingCompletion}</div>
                         </div>
                       ) : null}
-                      {harvests.length === 0 ? (
+                      {detailErrors.harvests ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : harvests.length === 0 ? (
                         <PremiumEmptyState icon={<Sprout />} title={harvestCopy.history.emptyTitle} description={harvestCopy.history.emptyDescription} compact />
                       ) : (
                         <div className="space-y-3">
@@ -5064,7 +5382,7 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="completion">
+                  <TabsContent value="lifecycle">
                     <DetailSection
                       title={completionCopy.history.title}
                       description={completionCopy.history.description}
@@ -5099,7 +5417,9 @@ export default function GrowthBatches() {
                           </div>
                         </div>
                       ) : null}
-                      {completions.length === 0 ? (
+                      {detailErrors.completion ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : completions.length === 0 ? (
                         <PremiumEmptyState icon={<CheckCircle2 />} title={completionCopy.history.emptyTitle} description={completionCopy.history.emptyDescription} compact />
                       ) : (
                         <div className="space-y-3">
@@ -5164,24 +5484,26 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="losses">
+                  <TabsContent value="lifecycle">
                     <DetailSection
-                      title="Mortality and shrinkage"
-                      description="Loss events reduce the current batch quantity and/or latest total weight. They do not create stock movements, finance rows, or cost write-offs."
+                      title={tt('productionUx.growth.lossHistory', 'Mortality and shrinkage')}
+                      description={tt('productionUx.growth.lossHistoryHelp', 'Loss events reduce the current batch quantity and/or latest total weight. They do not create stock movements, finance rows, or cost write-offs.')}
                       action={detailBatch.status === 'active' && canOperate && num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) > 0 ? (
                         <Button size="sm" onClick={openLossDialog} disabled={saving}>
                           <AlertTriangle className="mr-2 h-4 w-4" />
-                          Record loss
+                          {tt('productionUx.growth.actions.loss', 'Record loss')}
                         </Button>
                       ) : null}
                     >
                       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                        <SummaryItem label="Current quantity" value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
-                        <SummaryItem label="Latest weight" value={detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
-                        <SummaryItem label="Unreversed losses" value={detailBatch.unreversed_loss_event_count ?? 0} />
+                        <SummaryItem label={tt('productionUx.growth.currentQuantity', 'Current quantity')} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
+                        <SummaryItem label={tt('productionUx.growth.latestWeight', 'Latest total weight')} value={detailBatch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
+                        <SummaryItem label={tt('productionUx.growth.unreversedLosses', 'Unreversed losses')} value={detailBatch.unreversed_loss_event_count ?? 0} />
                       </div>
-                      {losses.length === 0 ? (
-                        <PremiumEmptyState icon={<AlertTriangle />} title="No mortality or shrinkage yet" description="Record loss only for active batches when quantity or weight has actually reduced." compact />
+                      {detailErrors.losses ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : losses.length === 0 ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.noLosses', 'No mortality or shrinkage yet')} description={tt('productionUx.growth.noLossesHelp', 'Record loss only for active batches when quantity or weight has actually reduced.')} compact />
                       ) : (
                         <div className="space-y-3">
                           {losses.map((loss) => {
@@ -5191,32 +5513,35 @@ export default function GrowthBatches() {
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <PremiumStatusBadge tone="warning">{labelize(loss.loss_type)}</PremiumStatusBadge>
-                                      {loss.reversal_status === 'reversed' ? <Badge variant="outline">Reversed</Badge> : null}
+                                      <PremiumStatusBadge tone="warning">{domainLabel(loss.loss_type)}</PremiumStatusBadge>
+                                      {loss.reversal_status === 'reversed' ? <Badge variant="outline">{tt('productionUx.status.reversed', 'Reversed')}</Badge> : null}
                                     </div>
-                                    <div className="mt-2 font-medium">{labelize(loss.reason_code)}</div>
-                                    <div className="text-sm text-muted-foreground">{loss.event_reference} by {loss.actor_display_name || 'Team member'}</div>
+                                    <div className="mt-2 font-medium">{domainLabel(loss.reason_code)}</div>
+                                    <div className="text-sm text-muted-foreground">{loss.event_reference} {tt('productionUx.common.by', 'by')} {loss.actor_display_name || tt('productionUx.common.teamMember', 'Team member')}</div>
                                   </div>
                                   <div className="text-right text-sm font-semibold">
                                     {loss.quantity_lost != null ? <div>-{qtyWithUom(loss.quantity_lost, loss.quantity_uom_code || uomById.get(loss.quantity_uom_id || '')?.code)}</div> : null}
                                     {loss.weight_lost != null ? <div>-{qtyWithUom(loss.weight_lost, loss.weight_uom_code || uomById.get(loss.weight_uom_id || '')?.code)}</div> : null}
-                                    <div className="text-xs font-normal text-muted-foreground">Seq {loss.event_sequence} / {compactDate(loss.event_effective_date)}</div>
+                                    <div className="text-xs font-normal text-muted-foreground">{tt('productionUx.growth.sequenceShort', 'Seq')} {loss.event_sequence} / {compactDate(loss.event_effective_date)}</div>
                                   </div>
                                 </div>
                                 <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2">
-                                  <SummaryItem label="Quantity" value={`${qty(loss.quantity_before)} -> ${qty(loss.quantity_after)} ${loss.quantity_uom_code || detailBatch.primary_uom_code || ''}`.trim()} />
-                                  <SummaryItem label="Weight" value={loss.total_weight_before == null && loss.total_weight_after == null ? 'Not affected' : `${qty(loss.total_weight_before)} -> ${qty(loss.total_weight_after)} ${loss.weight_uom_code || detailBatch.weight_uom_code || ''}`.trim()} />
+                                  <SummaryItem label={tt('productionUx.growth.quantity', 'Quantity')} value={`${qty(loss.quantity_before)} -> ${qty(loss.quantity_after)} ${loss.quantity_uom_code || detailBatch.primary_uom_code || ''}`.trim()} />
+                                  <SummaryItem label={tt('productionUx.growth.weight', 'Weight')} value={loss.total_weight_before == null && loss.total_weight_after == null ? tt('productionUx.common.notAffected', 'Not affected') : `${qty(loss.total_weight_before)} -> ${qty(loss.total_weight_after)} ${loss.weight_uom_code || detailBatch.weight_uom_code || ''}`.trim()} />
                                 </div>
                                 {loss.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{loss.notes}</p> : null}
                                 {loss.reversal_status === 'reversed' ? (
                                   <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    Reversed by {loss.reversal_event_reference || 'reversal event'} on {compactDate(loss.reversal_effective_date)}. {loss.reversal_reason || 'Reason recorded.'}
+                                    {tt('productionUx.growth.lossReversalEvidence', 'Reversed by {reference} on {date}. {reason}')
+                                      .replace('{reference}', loss.reversal_event_reference || tt('productionUx.growth.reversalEvent', 'reversal event'))
+                                      .replace('{date}', compactDate(loss.reversal_effective_date))
+                                      .replace('{reason}', loss.reversal_reason || tt('productionUx.growth.reasonRecorded', 'Reason recorded.'))}
                                   </p>
                                 ) : canReverseLoss ? (
                                   <div className="mt-3">
                                     <Button type="button" size="sm" variant="outline" onClick={() => openLossReversalDialog(loss)} disabled={saving}>
                                       <RotateCcw className="mr-2 h-4 w-4" />
-                                      Reverse loss
+                                      {tt('productionUx.growth.reverseLoss', 'Reverse loss event')}
                                     </Button>
                                   </div>
                                 ) : null}
@@ -5230,29 +5555,31 @@ export default function GrowthBatches() {
 
                   <TabsContent value="measurements">
                     <DetailSection
-                      title="Measurement history"
-                      description="Measurements are append-only. Total-weight measurements update latest total weight; population does not change in G1-G2."
+                      title={tt('productionUx.growth.measurementHistory', 'Measurement history')}
+                      description={tt('productionUx.growth.measurementHistoryHelp', 'Measurements are append-only. Total-weight measurements update latest total weight; population does not change.')}
                       action={detailBatch.status === 'active' && canOperate ? (
                         <Button size="sm" onClick={() => setMeasurementOpen(true)}>
                           <LineChart className="mr-2 h-4 w-4" />
-                          Record
+                          {tt('productionUx.growth.actions.measurement', 'Record measurement')}
                         </Button>
                       ) : null}
                     >
-                      {measurements.length === 0 ? (
-                        <PremiumEmptyState icon={<Ruler />} title="No measurements yet" compact />
+                      {detailErrors.measurements ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : measurements.length === 0 ? (
+                        <PremiumEmptyState icon={<Ruler />} title={tt('productionUx.growth.noMeasurements', 'No measurements yet')} compact />
                       ) : (
                         <div className="space-y-3">
                           {measurements.map((measurement) => (
                             <div key={measurement.id} className="rounded-xl border border-card-border bg-card p-4">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <div className="font-medium">{labelize(measurement.measurement_type)}</div>
-                                  <div className="text-sm text-muted-foreground">{measurement.event_reference} by {measurement.actor_display_name || 'Team member'}</div>
+                                  <div className="font-medium">{domainLabel(measurement.measurement_type)}</div>
+                                  <div className="text-sm text-muted-foreground">{measurement.event_reference} {tt('productionUx.common.by', 'by')} {measurement.actor_display_name || tt('productionUx.common.teamMember', 'Team member')}</div>
                                 </div>
                                 <div className="text-right text-sm font-semibold">
                                   {qtyWithUom(measurement.value, measurement.uom_code || uomById.get(measurement.uom_id)?.code)}
-                                  <div className="text-xs font-normal text-muted-foreground">Seq {measurement.event_sequence} · {compactDateTime(measurement.observed_at)}</div>
+                                  <div className="text-xs font-normal text-muted-foreground">{tt('productionUx.growth.sequenceShort', 'Seq')} {measurement.event_sequence} · {compactDateTime(measurement.observed_at)}</div>
                                 </div>
                               </div>
                               {measurement.description || measurement.notes ? (
@@ -5267,22 +5594,24 @@ export default function GrowthBatches() {
 
                   <TabsContent value="costs">
                     <DetailSection
-                      title="Memo direct costs"
-                      description="Direct costs update Growth Batch rollups only. They do not create bills, cash, bank, settlement, journal, invoice, stock, or COGS rows."
+                      title={tt('productionUx.growth.memoCosts', 'Memo direct costs')}
+                      description={tt('productionUx.growth.memoCostsHelp', 'Direct costs update Growth Batch rollups only. They do not create bills, cash, bank, settlement, journal, invoice, stock, or COGS rows.')}
                       action={detailBatch.status === 'active' && canOperate ? (
                         <Button size="sm" variant="outline" onClick={() => setDirectCostOpen(true)}>
                           <WalletCards className="mr-2 h-4 w-4" />
-                          Add cost
+                          {tt('productionUx.growth.actions.memoCost', 'Add direct memo cost')}
                         </Button>
                       ) : null}
                     >
                       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                        <SummaryItem label="Direct cost total" value={money(detailBatch.accumulated_direct_cost, selectedCurrency)} />
-                        <SummaryItem label="Material cost total" value={money(detailBatch.accumulated_material_cost, selectedCurrency)} />
-                        <SummaryItem label="Remaining memo cost" value={money(detailBatch.remaining_cost, selectedCurrency)} />
+                        <SummaryItem label={tt('productionUx.growth.directCost', 'Accumulated direct memo cost')} value={money(detailBatch.accumulated_direct_cost, selectedCurrency)} />
+                        <SummaryItem label={tt('productionUx.growth.materialCost', 'Accumulated material cost')} value={money(detailBatch.accumulated_material_cost, selectedCurrency)} />
+                        <SummaryItem label={tt('productionUx.growth.remainingCost', 'Remaining cost')} value={money(detailBatch.remaining_cost, selectedCurrency)} />
                       </div>
-                      {directCosts.length === 0 ? (
-                        <PremiumEmptyState icon={<Coins />} title="No memo direct costs yet" compact />
+                      {detailErrors.costs ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : directCosts.length === 0 ? (
+                        <PremiumEmptyState icon={<Coins />} title={tt('productionUx.growth.noMemoCosts', 'No memo direct costs yet')} compact />
                       ) : (
                         <div className="space-y-3">
                           {directCosts.map((cost) => (
@@ -5290,7 +5619,7 @@ export default function GrowthBatches() {
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <div className="font-medium">{cost.description}</div>
-                                  <div className="text-sm text-muted-foreground">{labelize(cost.category)} / {cost.event_reference} / Seq {cost.event_sequence}</div>
+                                  <div className="text-sm text-muted-foreground">{domainLabel(cost.category)} / {cost.event_reference} / {tt('productionUx.growth.sequenceShort', 'Seq')} {cost.event_sequence}</div>
                                 </div>
                                 <div className="text-right text-sm font-semibold">
                                   {money(cost.amount, cost.currency_code)}
@@ -5304,10 +5633,15 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="timeline">
-                    <DetailSection title="Event timeline" description="Lifecycle events are immutable and sequence-numbered per Growth Batch.">
-                      {events.length === 0 ? (
-                        <PremiumEmptyState icon={<CalendarDays />} title="No lifecycle events yet" compact />
+                  <TabsContent value="history">
+                    <DetailSection
+                      title={tt('productionUx.growth.timelineTitle', 'Event timeline')}
+                      description={tt('productionUx.growth.timelineDescription', 'Lifecycle events are immutable and sequence-numbered per Growth Batch.')}
+                    >
+                      {detailErrors.history ? (
+                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.historyUnavailable', 'History unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
+                      ) : events.length === 0 ? (
+                        <PremiumEmptyState icon={<CalendarDays />} title={tt('productionUx.growth.noEvents', 'No lifecycle events yet')} compact />
                       ) : (
                         <div className="space-y-3">
                           {events.map((event) => (
@@ -5319,11 +5653,19 @@ export default function GrowthBatches() {
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <PremiumStatusBadge tone={eventTone[event.event_type]}>{growthBatchEventTypeLabel(event.event_type)}</PremiumStatusBadge>
-                                    <div className="mt-2 font-medium">{event.event_summary}</div>
-                                    <div className="text-sm text-muted-foreground">{event.event_reference} / {compactDateTime(event.event_at)}</div>
+                                    <div className="mt-2 font-medium">{lang === 'pt' ? growthBatchEventTypeLabel(event.event_type) : event.event_summary}</div>
+                                    <div className="text-sm text-muted-foreground">{event.event_reference}</div>
                                   </div>
                                   {event.total_cost_delta ? <div className="text-sm font-semibold">{money(event.total_cost_delta, event.currency_code || selectedCurrency)}</div> : null}
                                   {event.weight_value != null ? <div className="text-sm font-semibold">{qtyWithUom(event.weight_value, event.weight_uom_code)}</div> : null}
+                                </div>
+                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 sm:grid-cols-3">
+                                  <SummaryItem label={tt('productionUx.growth.effectiveDate', 'Effective date')} value={compactDate(event.event_date)} />
+                                  <SummaryItem label={tt('productionUx.growth.recordedAt', 'Recorded at')} value={compactDateTime(event.event_at)} />
+                                  <SummaryItem label={tt('productionUx.growth.actor', 'Actor')} value={event.actor_display_name || tt('productionUx.common.teamMember', 'Team member')} />
+                                  {event.quantity_delta != null ? <SummaryItem label={tt('productionUx.growth.quantityEffect', 'Quantity effect')} value={qty(event.quantity_delta)} /> : null}
+                                  {event.weight_delta != null ? <SummaryItem label={tt('productionUx.growth.weightEffect', 'Weight effect')} value={qtyWithUom(event.weight_delta, event.weight_uom_code)} /> : null}
+                                  <SummaryItem label={tt('productionUx.growth.costEffect', 'Cost effect')} value={money(event.total_cost_delta, event.currency_code || selectedCurrency, tt('productionUx.costUnavailable', 'Cost unavailable'))} />
                                 </div>
                                 {event.reason || event.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{event.reason || event.notes}</p> : null}
                               </div>
@@ -5334,19 +5676,21 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="audit">
-                    <DetailSection title="Audit and lifecycle" description="Read-only user and timestamp references for the selected Growth Batch.">
+                  <TabsContent value="history">
+                    <DetailSection
+                      title={tt('productionUx.growth.auditTitle', 'Audit and lifecycle')}
+                      description={tt('productionUx.growth.auditDescription', 'Read-only timestamps and actor evidence for the selected Growth Batch.')}
+                    >
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <SummaryItem label="Created" value={compactDateTime(detailRow?.created_at || detailBatch.created_at)} />
-                        <SummaryItem label="Updated" value={compactDateTime(detailRow?.updated_at)} />
-                        <SummaryItem label="Activated" value={compactDateTime(detailBatch.activated_at)} />
-                        <SummaryItem label="Cancelled" value={compactDateTime(detailBatch.cancelled_at)} />
-                        <SummaryItem label="Created by" value={detailRow?.created_by || currentState?.created_by || 'Not recorded'} />
-                        <SummaryItem label="Updated by" value={detailRow?.updated_by || currentState?.updated_by || 'Not recorded'} />
+                        <SummaryItem label={tt('productionUx.growth.createdAt', 'Created')} value={compactDateTime(detailRow?.created_at || detailBatch.created_at)} />
+                        <SummaryItem label={tt('productionUx.growth.updatedAt', 'Updated')} value={compactDateTime(detailRow?.updated_at)} />
+                        <SummaryItem label={tt('productionUx.growth.activatedAt', 'Activated')} value={compactDateTime(detailBatch.activated_at)} />
+                        <SummaryItem label={tt('productionUx.growth.cancelledAt', 'Cancelled')} value={compactDateTime(detailBatch.cancelled_at)} />
+                        <SummaryItem label={tt('productionUx.growth.actorEvidence', 'Actor evidence')} value={tt('productionUx.growth.actorEvidenceHelp', 'Shown on each lifecycle event where available')} />
                       </div>
                       {detailRow?.cancellation_reason ? (
                         <p className="mt-4 rounded-xl border border-card-border bg-muted/20 p-3 text-sm leading-6 text-muted-foreground">
-                          Cancellation reason: {detailRow.cancellation_reason}
+                          {tt('productionUx.growth.cancellationReason', 'Cancellation reason')}: {detailRow.cancellation_reason}
                         </p>
                       ) : null}
                     </DetailSection>
@@ -5355,79 +5699,110 @@ export default function GrowthBatches() {
               )}
             </>
           )}
-        </section>
+        </section> : null}
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-4xl">
+      {detailBatch ? (
+        <ProductionExportDialog
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          title={tt('productionUx.export.growthTitle', 'Growth Batch Activity & Cost Report')}
+          scope={`${detailBatch.reference_no} · ${detailBatch.name}`}
+          recordCount={events.length}
+          currencyBasis={selectedCurrency || tt('productionUx.common.unavailable', 'Unavailable')}
+          sectionOptions={[
+            { id: 'materials', label: tt('productionUx.growth.sections.stockInputs', 'Stock inputs') },
+            { id: 'costs', label: tt('productionUx.growth.sections.directCosts', 'Direct memo costs') },
+            { id: 'lifecycle-losses', label: tt('productionUx.growth.sections.losses', 'Losses') },
+            { id: 'lifecycle-transfers', label: tt('productionUx.growth.sections.transfers', 'Location transfers') },
+            { id: 'lifecycle-harvests', label: tt('productionUx.growth.sections.harvests', 'Harvests') },
+            { id: 'lifecycle-completion', label: tt('productionUx.growth.sections.completion', 'Completion') },
+            { id: 'measurements', label: tt('productionUx.growth.sections.measurements', 'Measurements') },
+            { id: 'history', label: tt('productionUx.growth.sections.history', 'History & Audit') },
+          ]}
+          buildModel={buildGrowthExport}
+        />
+      ) : null}
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open && view === 'create') setRouteState('register')
+        }}
+      >
+        <DialogContent className="max-w-4xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Create Growth Batch Draft</DialogTitle>
-            <DialogDescription>Drafts can be edited until activation. Activation freezes the opening state and creates the first lifecycle event.</DialogDescription>
+            <DialogTitle>{tt('productionUx.growth.createTitle', 'Create Growth Batch draft')}</DialogTitle>
+            <DialogDescription>{tt('productionUx.growth.createDescription', 'Drafts can be edited until activation. Activation freezes the opening state and creates the first lifecycle event.')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">{renderDraftForm(draftForm, setDraftForm, 'create')}</DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="outline" onClick={() => {
+              setCreateOpen(false)
+              setRouteState('register')
+            }} disabled={saving}>{tt('common.close', 'Close')}</Button>
             <Button type="button" onClick={createDraft} disabled={saving}>
               <Save className="mr-2 h-4 w-4" />
-              Create draft
+              {tt('productionUx.growth.createDraft', 'Create draft')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Edit Draft</DialogTitle>
-            <DialogDescription>Draft changes are blocked after activation or cancellation.</DialogDescription>
+            <DialogTitle>{tt('productionUx.growth.editTitle', 'Edit draft')}</DialogTitle>
+            <DialogDescription>{tt('productionUx.growth.editDescription', 'Draft changes are blocked after activation or cancellation.')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">{renderDraftForm(editForm, setEditForm, 'edit')}</DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
             <Button type="button" onClick={saveDraft} disabled={saving}>
               <Save className="mr-2 h-4 w-4" />
-              Save draft
+              {tt('productionUx.forms.saveDraft', 'Save draft')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Cancel Draft</DialogTitle>
-            <DialogDescription>Cancellation creates an immutable event and prevents activation.</DialogDescription>
+            <DialogTitle>{tt('productionUx.growth.cancelTitle', 'Cancel draft')}</DialogTitle>
+            <DialogDescription>{tt('productionUx.growth.cancelDescription', 'Cancellation creates an immutable event and prevents activation.')}</DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <Field label="Cancellation reason" htmlFor="growth-cancel-reason">
+            <Field label={tt('productionUx.growth.cancellationReason', 'Cancellation reason')} htmlFor="growth-cancel-reason">
               <Textarea id="growth-cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
             </Field>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setCancelOpen(false)} disabled={saving}>Close</Button>
-            <Button type="button" variant="destructive" onClick={cancelDraft} disabled={saving}>Cancel draft</Button>
+            <Button type="button" variant="outline" onClick={() => setCancelOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
+            <Button type="button" variant="destructive" onClick={cancelDraft} disabled={saving}>{tt('productionUx.growth.actions.cancelDraft', 'Cancel draft')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={measurementOpen} onOpenChange={setMeasurementOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Record Measurement</DialogTitle>
-            <DialogDescription>Measurements are memo events. They do not change physical stock.</DialogDescription>
+            <DialogTitle>{tt('productionUx.growth.actions.measurement', 'Record measurement')}</DialogTitle>
+            <DialogDescription>{tt('productionUx.growth.measurementDescription', 'Measurements are informational events. They do not change physical stock.')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Type" htmlFor="growth-measurement-type">
+                <Field label={tt('productionUx.forms.type', 'Type')} htmlFor="growth-measurement-type">
                   <Select value={measurementForm.measurementType} onValueChange={(value) => setMeasurementForm((current) => ({ ...current, measurementType: value as MeasurementType }))}>
-                    <SelectTrigger id="growth-measurement-type" aria-label="Measurement type"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="growth-measurement-type" aria-label={tt('productionUx.forms.measurementType', 'Measurement type')}><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {measurementTypes.map((type) => <SelectItem key={type} value={type}>{labelize(type)}</SelectItem>)}
+                      {measurementTypes.map((type) => <SelectItem key={type} value={type}>{domainLabel(type)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Value" htmlFor="growth-measurement-value">
+                <Field label={tt('productionUx.forms.value', 'Value')} htmlFor="growth-measurement-value">
                   <Input
                     id="growth-measurement-value"
                     type="number"
@@ -5437,17 +5812,17 @@ export default function GrowthBatches() {
                     onChange={(event) => setMeasurementForm((current) => ({ ...current, value: event.target.value }))}
                   />
                 </Field>
-                <Field label="Unit" htmlFor="growth-measurement-uom">
+                <Field label={tt('productionUx.forms.unit', 'Unit')} htmlFor="growth-measurement-uom">
                   <Select value={measurementForm.uomId || 'none'} onValueChange={(value) => setMeasurementForm((current) => ({ ...current, uomId: value === 'none' ? '' : value }))}>
-                    <SelectTrigger id="growth-measurement-uom" aria-label="Measurement unit"><SelectValue placeholder="Select unit" /></SelectTrigger>
+                    <SelectTrigger id="growth-measurement-uom" aria-label={tt('productionUx.forms.measurementUnit', 'Measurement unit')}><SelectValue placeholder={tt('productionUx.forms.selectUnit', 'Select unit')} /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Select unit</SelectItem>
+                      <SelectItem value="none">{tt('productionUx.forms.selectUnit', 'Select unit')}</SelectItem>
                       {measurementUoms.map((uom) => <SelectItem key={uom.id} value={uom.id}>{uom.code} - {uom.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
               </div>
-              <Field label="Observed at" htmlFor="growth-measurement-observed">
+              <Field label={tt('productionUx.forms.observedAt', 'Observed at')} htmlFor="growth-measurement-observed">
                 <Input
                   id="growth-measurement-observed"
                   type="datetime-local"
@@ -5456,77 +5831,77 @@ export default function GrowthBatches() {
                 />
               </Field>
               <div className="grid gap-4 sm:grid-cols-4">
-                <Field label="Sample size" htmlFor="growth-measurement-sample"><Input id="growth-measurement-sample" type="number" min="0" step="0.000001" value={measurementForm.sampleSize} onChange={(event) => setMeasurementForm((current) => ({ ...current, sampleSize: event.target.value }))} /></Field>
-                <Field label="Minimum" htmlFor="growth-measurement-min"><Input id="growth-measurement-min" type="number" min={measurementForm.measurementType === 'temperature' ? undefined : '0'} step="0.000001" value={measurementForm.minimum} onChange={(event) => setMeasurementForm((current) => ({ ...current, minimum: event.target.value }))} /></Field>
-                <Field label="Maximum" htmlFor="growth-measurement-max"><Input id="growth-measurement-max" type="number" min={measurementForm.measurementType === 'temperature' ? undefined : '0'} step="0.000001" value={measurementForm.maximum} onChange={(event) => setMeasurementForm((current) => ({ ...current, maximum: event.target.value }))} /></Field>
-                <Field label="Average" htmlFor="growth-measurement-avg"><Input id="growth-measurement-avg" type="number" min={measurementForm.measurementType === 'temperature' ? undefined : '0'} step="0.000001" value={measurementForm.average} onChange={(event) => setMeasurementForm((current) => ({ ...current, average: event.target.value }))} /></Field>
+                <Field label={tt('productionUx.forms.sampleSize', 'Sample size')} htmlFor="growth-measurement-sample"><Input id="growth-measurement-sample" type="number" min="0" step="0.000001" value={measurementForm.sampleSize} onChange={(event) => setMeasurementForm((current) => ({ ...current, sampleSize: event.target.value }))} /></Field>
+                <Field label={tt('productionUx.forms.minimum', 'Minimum')} htmlFor="growth-measurement-min"><Input id="growth-measurement-min" type="number" min={measurementForm.measurementType === 'temperature' ? undefined : '0'} step="0.000001" value={measurementForm.minimum} onChange={(event) => setMeasurementForm((current) => ({ ...current, minimum: event.target.value }))} /></Field>
+                <Field label={tt('productionUx.forms.maximum', 'Maximum')} htmlFor="growth-measurement-max"><Input id="growth-measurement-max" type="number" min={measurementForm.measurementType === 'temperature' ? undefined : '0'} step="0.000001" value={measurementForm.maximum} onChange={(event) => setMeasurementForm((current) => ({ ...current, maximum: event.target.value }))} /></Field>
+                <Field label={tt('productionUx.forms.average', 'Average')} htmlFor="growth-measurement-avg"><Input id="growth-measurement-avg" type="number" min={measurementForm.measurementType === 'temperature' ? undefined : '0'} step="0.000001" value={measurementForm.average} onChange={(event) => setMeasurementForm((current) => ({ ...current, average: event.target.value }))} /></Field>
               </div>
-              <Field label="Description" htmlFor="growth-measurement-description">
-                <Input id="growth-measurement-description" value={measurementForm.description} onChange={(event) => setMeasurementForm((current) => ({ ...current, description: event.target.value }))} placeholder="Required only for Other" />
+              <Field label={tt('productionUx.forms.description', 'Description')} htmlFor="growth-measurement-description">
+                <Input id="growth-measurement-description" value={measurementForm.description} onChange={(event) => setMeasurementForm((current) => ({ ...current, description: event.target.value }))} placeholder={tt('productionUx.forms.requiredForOther', 'Required only for Other')} />
               </Field>
-              <Field label="Notes" htmlFor="growth-measurement-notes">
+              <Field label={tt('productionUx.common.notes', 'Notes')} htmlFor="growth-measurement-notes">
                 <Textarea id="growth-measurement-notes" value={measurementForm.notes} onChange={(event) => setMeasurementForm((current) => ({ ...current, notes: event.target.value }))} />
               </Field>
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setMeasurementOpen(false)} disabled={saving}>Close</Button>
-            <Button type="button" onClick={recordMeasurement} disabled={saving}>Record measurement</Button>
+            <Button type="button" variant="outline" onClick={() => setMeasurementOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
+            <Button type="button" onClick={recordMeasurement} disabled={saving}>{tt('productionUx.growth.actions.measurement', 'Record measurement')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={directCostOpen} onOpenChange={setDirectCostOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Add Memo Direct Cost</DialogTitle>
-            <DialogDescription>Memo direct costs update only the Growth Batch cost rollup.</DialogDescription>
+            <DialogTitle>{tt('productionUx.growth.actions.memoCost', 'Add direct memo cost')}</DialogTitle>
+            <DialogDescription>{tt('productionUx.growth.memoCostDescription', 'Direct memo costs update only the Growth Batch operational cost rollup and create no finance posting.')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Category" htmlFor="growth-direct-cost-category">
+                <Field label={tt('productionUx.forms.category', 'Category')} htmlFor="growth-direct-cost-category">
                   <Select value={directCostForm.category} onValueChange={(value) => setDirectCostForm((current) => ({ ...current, category: value as DirectCostCategory }))}>
-                    <SelectTrigger id="growth-direct-cost-category" aria-label="Direct cost category"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="growth-direct-cost-category" aria-label={tt('productionUx.forms.directCostCategory', 'Direct cost category')}><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {directCostCategories.map((category) => <SelectItem key={category} value={category}>{labelize(category)}</SelectItem>)}
+                      {directCostCategories.map((category) => <SelectItem key={category} value={category}>{domainLabel(category)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Event date" htmlFor="growth-direct-cost-date">
+                <Field label={tt('productionUx.forms.eventDate', 'Event date')} htmlFor="growth-direct-cost-date">
                   <Input id="growth-direct-cost-date" type="date" value={directCostForm.eventDate} onChange={(event) => setDirectCostForm((current) => ({ ...current, eventDate: event.target.value }))} />
                 </Field>
               </div>
-              <Field label="Description" htmlFor="growth-direct-cost-description">
+              <Field label={tt('productionUx.forms.description', 'Description')} htmlFor="growth-direct-cost-description">
                 <Input id="growth-direct-cost-description" value={directCostForm.description} onChange={(event) => setDirectCostForm((current) => ({ ...current, description: event.target.value }))} />
               </Field>
-              <Field label={`Amount (${selectedCurrency})`} htmlFor="growth-direct-cost-amount">
+              <Field label={`${tt('productionUx.forms.amount', 'Amount')} (${selectedCurrency})`} htmlFor="growth-direct-cost-amount">
                 <Input id="growth-direct-cost-amount" type="number" min="0.01" step="0.01" value={directCostForm.amount} onChange={(event) => setDirectCostForm((current) => ({ ...current, amount: event.target.value }))} />
               </Field>
-              <Field label="Notes" htmlFor="growth-direct-cost-notes">
+              <Field label={tt('productionUx.common.notes', 'Notes')} htmlFor="growth-direct-cost-notes">
                 <Textarea id="growth-direct-cost-notes" value={directCostForm.notes} onChange={(event) => setDirectCostForm((current) => ({ ...current, notes: event.target.value }))} />
               </Field>
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDirectCostOpen(false)} disabled={saving}>Close</Button>
-            <Button type="button" onClick={recordDirectCost} disabled={saving}>Add memo cost</Button>
+            <Button type="button" variant="outline" onClick={() => setDirectCostOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
+            <Button type="button" onClick={recordDirectCost} disabled={saving}>{tt('productionUx.growth.actions.memoCost', 'Add direct memo cost')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={stockInputOpen} onOpenChange={setStockInputOpen}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-5xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Post stock input</DialogTitle>
+            <DialogTitle>{tt('productionUx.growth.actions.stockInput', 'Post stock input')}</DialogTitle>
             <DialogDescription>
-              This records physical stock consumption and material cost for the batch. It does not create a supplier bill, cash payment, bank transaction or finance journal.
+              {tt('productionUx.growth.stockInputDescription', 'This records physical stock consumption and material cost for the batch. It does not create a supplier bill, cash payment, bank transaction or finance journal.')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Effective date" htmlFor="growth-stock-input-date">
+                <Field label={tt('productionUx.forms.effectiveDate', 'Effective date')} htmlFor="growth-stock-input-date">
                   <Input
                     id="growth-stock-input-date"
                     type="date"
@@ -5537,7 +5912,7 @@ export default function GrowthBatches() {
                     }}
                   />
                 </Field>
-                <Field label="Transaction notes" htmlFor="growth-stock-input-notes">
+                <Field label={tt('productionUx.forms.transactionNotes', 'Transaction notes')} htmlFor="growth-stock-input-notes">
                   <Input
                     id="growth-stock-input-notes"
                     value={stockInputForm.notes}
@@ -5545,7 +5920,7 @@ export default function GrowthBatches() {
                       markStockInputPreviewStale()
                       setStockInputForm((current) => ({ ...current, notes: event.target.value }))
                     }}
-                    placeholder="Optional"
+                    placeholder={tt('productionUx.common.optional', 'Optional')}
                   />
                 </Field>
               </div>
@@ -5558,12 +5933,12 @@ export default function GrowthBatches() {
                   return (
                     <div key={line.clientId} className="rounded-xl border border-card-border bg-card p-4">
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <div className="font-medium">Line {index + 1}</div>
+                        <div className="font-medium">{tt('productionUx.forms.line', 'Line')} {index + 1}</div>
                         <Button
                           type="button"
                           size="sm"
                           variant="ghost"
-                          aria-label={`Remove stock input line ${index + 1}`}
+                          aria-label={`${tt('productionUx.forms.removeStockInputLine', 'Remove stock input line')} ${index + 1}`}
                           onClick={() => removeStockInputLine(line.clientId)}
                           disabled={stockInputForm.lines.length === 1 || saving}
                         >
@@ -5571,13 +5946,13 @@ export default function GrowthBatches() {
                         </Button>
                       </div>
                       <div className="grid gap-4 lg:grid-cols-[minmax(14rem,1.3fr)_9rem_minmax(12rem,1fr)_minmax(12rem,1fr)]">
-                        <Field label="Item" htmlFor={`growth-stock-input-item-${line.clientId}`}>
+                        <Field label={tt('productionUx.forms.item', 'Item')} htmlFor={`growth-stock-input-item-${line.clientId}`}>
                           <Select value={line.itemId || 'none'} onValueChange={(value) => updateStockInputLine(line.clientId, { itemId: value === 'none' ? '' : value })}>
-                            <SelectTrigger id={`growth-stock-input-item-${line.clientId}`} aria-label={`Stock input item line ${index + 1}`}>
-                              <SelectValue placeholder="Select item" />
+                            <SelectTrigger id={`growth-stock-input-item-${line.clientId}`} aria-label={`${tt('productionUx.forms.stockInputItemLine', 'Stock input item line')} ${index + 1}`}>
+                              <SelectValue placeholder={tt('productionUx.forms.selectItem', 'Select item')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Select item</SelectItem>
+                              <SelectItem value="none">{tt('productionUx.forms.selectItem', 'Select item')}</SelectItem>
                               {items.map((option) => (
                                 <SelectItem key={option.id} value={option.id}>
                                   {option.sku ? `${option.sku} - ` : ''}{option.name}
@@ -5586,7 +5961,13 @@ export default function GrowthBatches() {
                             </SelectContent>
                           </Select>
                         </Field>
-                        <Field label="Quantity" htmlFor={`growth-stock-input-qty-${line.clientId}`} hint={item?.base_uom_id ? `Base unit: ${uomById.get(item.base_uom_id)?.code || item.base_uom_id}` : 'Base unit appears after item selection.'}>
+                        <Field
+                          label={tt('productionUx.forms.quantity', 'Quantity')}
+                          htmlFor={`growth-stock-input-qty-${line.clientId}`}
+                          hint={item?.base_uom_id
+                            ? `${tt('productionUx.forms.baseUnit', 'Base unit')}: ${uomById.get(item.base_uom_id)?.code || tt('productionUx.common.unavailable', 'Unavailable')}`
+                            : tt('productionUx.forms.baseUnitAfterSelection', 'Base unit appears after item selection.')}
+                        >
                           <Input
                             id={`growth-stock-input-qty-${line.clientId}`}
                             type="number"
@@ -5596,40 +5977,40 @@ export default function GrowthBatches() {
                             onChange={(event) => updateStockInputLine(line.clientId, { quantity: event.target.value })}
                           />
                         </Field>
-                        <Field label="Source warehouse" htmlFor={`growth-stock-input-wh-${line.clientId}`}>
+                        <Field label={tt('productionUx.forms.sourceWarehouse', 'Source warehouse')} htmlFor={`growth-stock-input-wh-${line.clientId}`}>
                           <Select value={line.sourceWarehouseId || 'none'} onValueChange={(value) => updateStockInputLine(line.clientId, { sourceWarehouseId: value === 'none' ? '' : value })}>
-                            <SelectTrigger id={`growth-stock-input-wh-${line.clientId}`} aria-label={`Stock input source warehouse line ${index + 1}`}><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                            <SelectTrigger id={`growth-stock-input-wh-${line.clientId}`} aria-label={`${tt('productionUx.forms.stockInputSourceWarehouseLine', 'Stock input source warehouse line')} ${index + 1}`}><SelectValue placeholder={tt('productionUx.selectWarehouse', 'Select warehouse')} /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Select warehouse</SelectItem>
+                              <SelectItem value="none">{tt('productionUx.selectWarehouse', 'Select warehouse')}</SelectItem>
                               {warehouses.map((warehouse) => (
                                 <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code ? `${warehouse.code} - ` : ''}{warehouse.name}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </Field>
-                        <Field label="Source bin" htmlFor={`growth-stock-input-bin-${line.clientId}`}>
+                        <Field label={tt('productionUx.forms.sourceBin', 'Source bin')} htmlFor={`growth-stock-input-bin-${line.clientId}`}>
                           <Select value={line.sourceBinId || 'none'} onValueChange={(value) => updateStockInputLine(line.clientId, { sourceBinId: value === 'none' ? '' : value })}>
-                            <SelectTrigger id={`growth-stock-input-bin-${line.clientId}`} aria-label={`Stock input source bin line ${index + 1}`}><SelectValue placeholder="Select bin" /></SelectTrigger>
+                            <SelectTrigger id={`growth-stock-input-bin-${line.clientId}`} aria-label={`${tt('productionUx.forms.stockInputSourceBinLine', 'Stock input source bin line')} ${index + 1}`}><SelectValue placeholder={tt('productionUx.selectBin', 'Select bin')} /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">Select bin</SelectItem>
+                              <SelectItem value="none">{tt('productionUx.selectBin', 'Select bin')}</SelectItem>
                               {lineBins.map((bin) => <SelectItem key={bin.id} value={bin.id}>{bin.code} - {bin.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </Field>
                       </div>
-                      <Field label="Line notes" htmlFor={`growth-stock-input-notes-${line.clientId}`}>
+                      <Field label={tt('productionUx.forms.lineNotes', 'Line notes')} htmlFor={`growth-stock-input-notes-${line.clientId}`}>
                         <Input
                           id={`growth-stock-input-notes-${line.clientId}`}
                           value={line.lineNotes}
                           onChange={(event) => updateStockInputLine(line.clientId, { lineNotes: event.target.value })}
-                          placeholder="Optional"
+                          placeholder={tt('productionUx.common.optional', 'Optional')}
                         />
                       </Field>
                       {previewLine ? (
                         <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-3">
-                          <SummaryItem label="Available" value={qtyWithUom(previewLine.available_quantity, uomById.get(previewLine.uom_id)?.code)} />
-                          <SummaryItem label="Estimated WAC" value={money(previewLine.estimated_unit_cost, selectedCurrency)} />
-                          <SummaryItem label="Line material cost" value={money(previewLine.estimated_line_cost, selectedCurrency)} />
+                          <SummaryItem label={tt('productionUx.forms.available', 'Available')} value={qtyWithUom(previewLine.available_quantity, uomById.get(previewLine.uom_id)?.code)} />
+                          <SummaryItem label={tt('productionUx.forms.estimatedWac', 'Estimated WAC')} value={money(previewLine.estimated_unit_cost, selectedCurrency)} />
+                          <SummaryItem label={tt('productionUx.forms.lineMaterialCost', 'Line material cost')} value={money(previewLine.estimated_line_cost, selectedCurrency)} />
                         </div>
                       ) : null}
                     </div>
@@ -5639,41 +6020,45 @@ export default function GrowthBatches() {
 
               <Button type="button" variant="outline" onClick={addStockInputLine} disabled={saving}>
                 <Plus className="mr-2 h-4 w-4" />
-                Add line
+                {tt('productionUx.forms.addLine', 'Add line')}
               </Button>
 
               {stockInputPreview ? (
                 <div className={cn('rounded-xl border p-4 text-sm', stockInputPreview.ready && !stockInputPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
-                  <div className="font-medium">{stockInputPreviewStale ? 'Preview is stale' : stockInputPreview.ready ? 'Preview ready' : 'Preview blockers'}</div>
+                  <div className="font-medium">{stockInputPreviewStale
+                    ? tt('productionUx.forms.previewStale', 'Preview is stale')
+                    : stockInputPreview.ready
+                      ? tt('productionUx.forms.previewReady', 'Preview ready')
+                      : tt('productionUx.forms.previewBlockers', 'Preview blockers')}</div>
                   {stockInputPreview.blocking_reasons?.length ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
                       {stockInputPreview.blocking_reasons.map((blocker, index) => (
-                        <li key={`${blocker.code || 'blocker'}-${index}`}>{labelize(String(blocker.code || 'blocker'))}</li>
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{growthError(String(blocker.code || 'blocker'))}</li>
                       ))}
                     </ul>
                   ) : null}
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <SummaryItem label="Material delta" value={money(stockInputPreview.estimated_total_material_cost, selectedCurrency)} />
-                    <SummaryItem label="Projected material" value={money(stockInputPreview.projected_material_cost, selectedCurrency)} />
-                    <SummaryItem label="Projected remaining" value={money(stockInputPreview.projected_remaining_cost, selectedCurrency)} />
+                    <SummaryItem label={tt('productionUx.forms.materialDelta', 'Material delta')} value={money(stockInputPreview.estimated_total_material_cost, selectedCurrency)} />
+                    <SummaryItem label={tt('productionUx.forms.projectedMaterial', 'Projected material')} value={money(stockInputPreview.projected_material_cost, selectedCurrency)} />
+                    <SummaryItem label={tt('productionUx.forms.projectedRemaining', 'Projected remaining')} value={money(stockInputPreview.projected_remaining_cost, selectedCurrency)} />
                   </div>
                 </div>
               ) : null}
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setStockInputOpen(false)} disabled={saving}>Close</Button>
-            <Button type="button" variant="outline" onClick={previewStockInput} disabled={saving}>Preview</Button>
+            <Button type="button" variant="outline" onClick={() => setStockInputOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
+            <Button type="button" variant="outline" onClick={previewStockInput} disabled={saving}>{tt('productionUx.forms.preview', 'Preview')}</Button>
             <Button type="button" onClick={postStockInput} disabled={saving || !stockInputPreview || stockInputPreviewStale || !stockInputPreview.ready}>
               <PackageMinus className="mr-2 h-4 w-4" />
-              Post stock input
+              {tt('productionUx.growth.actions.stockInput', 'Post stock input')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
             <DialogTitle>{transferCopy.dialog.title}</DialogTitle>
             <DialogDescription>
@@ -5816,7 +6201,7 @@ export default function GrowthBatches() {
       </Dialog>
 
       <Dialog open={transferReversalOpen} onOpenChange={setTransferReversalOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
             <DialogTitle>{transferCopy.dialog.reversalTitle}</DialogTitle>
             <DialogDescription>
@@ -5854,7 +6239,7 @@ export default function GrowthBatches() {
       </Dialog>
 
       <Dialog open={harvestOpen} onOpenChange={setHarvestOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
             <DialogTitle>{harvestCopy.dialog.title}</DialogTitle>
             <DialogDescription>
@@ -6049,7 +6434,7 @@ export default function GrowthBatches() {
       </Dialog>
 
       <Dialog open={harvestReversalOpen} onOpenChange={setHarvestReversalOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
             <DialogTitle>{harvestCopy.dialog.reversalTitle}</DialogTitle>
             <DialogDescription>
@@ -6087,7 +6472,7 @@ export default function GrowthBatches() {
       </Dialog>
 
       <Dialog open={completionOpen} onOpenChange={setCompletionOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
             <DialogTitle>{completionCopy.dialog.title}</DialogTitle>
             <DialogDescription>
@@ -6187,7 +6572,7 @@ export default function GrowthBatches() {
       </Dialog>
 
       <Dialog open={completionReversalOpen} onOpenChange={setCompletionReversalOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
             <DialogTitle>{completionCopy.dialog.reversalTitle}</DialogTitle>
             <DialogDescription>
@@ -6225,26 +6610,26 @@ export default function GrowthBatches() {
       </Dialog>
 
       <Dialog open={lossOpen} onOpenChange={setLossOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl" closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Record mortality or shrinkage</DialogTitle>
+            <DialogTitle>{tt('productionUx.growth.lossTitle', 'Record mortality or shrinkage')}</DialogTitle>
             <DialogDescription>
-              This records operational biological loss only. It updates current batch quantity and/or weight without stock movements, finance rows, or cost write-off.
+              {tt('productionUx.growth.lossDescription', 'This records operational biological loss only. It updates current batch quantity and/or weight without stock movements, finance rows, or cost write-off.')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Loss type" htmlFor="growth-loss-type">
+                <Field label={tt('productionUx.forms.lossType', 'Loss type')} htmlFor="growth-loss-type">
                   <Select value={lossForm.lossType} onValueChange={(value) => setLossType(value as LossType)}>
-                    <SelectTrigger id="growth-loss-type" aria-label="Loss type"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="growth-loss-type" aria-label={tt('productionUx.forms.lossType', 'Loss type')}><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="mortality">Mortality</SelectItem>
-                      <SelectItem value="shrinkage">Shrinkage</SelectItem>
+                      <SelectItem value="mortality">{tt('productionUx.growth.mortality', 'Mortality')}</SelectItem>
+                      <SelectItem value="shrinkage">{tt('productionUx.growth.shrinkage', 'Shrinkage')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Effective date" htmlFor="growth-loss-date">
+                <Field label={tt('productionUx.forms.effectiveDate', 'Effective date')} htmlFor="growth-loss-date">
                   <Input
                     id="growth-loss-date"
                     type="date"
@@ -6258,7 +6643,11 @@ export default function GrowthBatches() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={`Quantity lost (${detailBatch?.primary_uom_code || 'unit'})`} htmlFor="growth-loss-quantity" hint={`Current: ${qtyWithUom(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty, detailBatch?.primary_uom_code)}`}>
+                <Field
+                  label={`${tt('productionUx.forms.quantityLost', 'Quantity lost')} (${detailBatch?.primary_uom_code || tt('productionUx.forms.unit', 'Unit')})`}
+                  htmlFor="growth-loss-quantity"
+                  hint={`${tt('productionUx.forms.current', 'Current')}: ${qtyWithUom(detailBatch?.current_primary_qty ?? detailBatch?.opening_primary_qty, detailBatch?.primary_uom_code)}`}
+                >
                   <Input
                     id="growth-loss-quantity"
                     type="number"
@@ -6272,7 +6661,11 @@ export default function GrowthBatches() {
                   />
                 </Field>
                 {detailBatch?.weight_uom_id ? (
-                  <Field label={`Weight lost (${detailBatch.weight_uom_code || 'unit'})`} htmlFor="growth-loss-weight" hint={`Current: ${detailBatch.latest_total_weight == null ? 'Not recorded' : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)}`}>
+                  <Field
+                    label={`${tt('productionUx.forms.weightLost', 'Weight lost')} (${detailBatch.weight_uom_code || tt('productionUx.forms.unit', 'Unit')})`}
+                    htmlFor="growth-loss-weight"
+                    hint={`${tt('productionUx.forms.current', 'Current')}: ${detailBatch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)}`}
+                  >
                     <Input
                       id="growth-loss-weight"
                       type="number"
@@ -6289,7 +6682,7 @@ export default function GrowthBatches() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Reason" htmlFor="growth-loss-reason">
+                <Field label={tt('productionUx.forms.reason', 'Reason')} htmlFor="growth-loss-reason">
                   <Select
                     value={lossForm.reasonCode || 'none'}
                     onValueChange={(value) => {
@@ -6297,14 +6690,20 @@ export default function GrowthBatches() {
                       setLossForm((current) => ({ ...current, reasonCode: value === 'none' ? '' : value as LossReasonCode }))
                     }}
                   >
-                    <SelectTrigger id="growth-loss-reason" aria-label="Loss reason"><SelectValue placeholder="Select reason" /></SelectTrigger>
+                    <SelectTrigger id="growth-loss-reason" aria-label={tt('productionUx.forms.lossReason', 'Loss reason')}><SelectValue placeholder={tt('productionUx.forms.selectReason', 'Select reason')} /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Select reason</SelectItem>
-                      {lossReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{labelize(reason)}</SelectItem>)}
+                      <SelectItem value="none">{tt('productionUx.forms.selectReason', 'Select reason')}</SelectItem>
+                      {lossReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{domainLabel(reason)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Notes" htmlFor="growth-loss-notes" hint={lossForm.reasonCode === 'other' ? 'Required for Other.' : 'Optional unless reason is Other.'}>
+                <Field
+                  label={tt('productionUx.common.notes', 'Notes')}
+                  htmlFor="growth-loss-notes"
+                  hint={lossForm.reasonCode === 'other'
+                    ? tt('productionUx.forms.requiredForOtherShort', 'Required for Other.')
+                    : tt('productionUx.forms.optionalUnlessOther', 'Optional unless reason is Other.')}
+                >
                   <Input
                     id="growth-loss-notes"
                     value={lossForm.notes}
@@ -6318,45 +6717,49 @@ export default function GrowthBatches() {
 
               {lossPreview ? (
                 <div className={cn('rounded-xl border p-4 text-sm', lossPreview.ready && !lossPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
-                  <div className="font-medium">{lossPreviewStale ? 'Preview is stale' : lossPreview.ready ? 'Preview ready' : 'Preview blockers'}</div>
+                  <div className="font-medium">{lossPreviewStale
+                    ? tt('productionUx.forms.previewStale', 'Preview is stale')
+                    : lossPreview.ready
+                      ? tt('productionUx.forms.previewReady', 'Preview ready')
+                      : tt('productionUx.forms.previewBlockers', 'Preview blockers')}</div>
                   {lossPreview.blocking_reasons?.length ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
                       {lossPreview.blocking_reasons.map((blocker, index) => (
-                        <li key={`${blocker.code || 'blocker'}-${index}`}>{labelize(String(blocker.code || 'blocker'))}</li>
+                        <li key={`${blocker.code || 'blocker'}-${index}`}>{growthError(String(blocker.code || 'blocker'))}</li>
                       ))}
                     </ul>
                   ) : null}
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <SummaryItem label="Quantity" value={`${qty(lossPreview.current_quantity)} -> ${qty(lossPreview.resulting_quantity)} ${lossPreview.quantity_uom_code || detailBatch?.primary_uom_code || ''}`.trim()} />
-                    <SummaryItem label="Weight" value={lossPreview.current_total_weight == null && lossPreview.resulting_total_weight == null ? 'Not affected' : `${qty(lossPreview.current_total_weight)} -> ${qty(lossPreview.resulting_total_weight)} ${lossPreview.weight_uom_code || detailBatch?.weight_uom_code || ''}`.trim()} />
+                    <SummaryItem label={tt('productionUx.growth.quantity', 'Quantity')} value={`${qty(lossPreview.current_quantity)} -> ${qty(lossPreview.resulting_quantity)} ${lossPreview.quantity_uom_code || detailBatch?.primary_uom_code || ''}`.trim()} />
+                    <SummaryItem label={tt('productionUx.growth.weight', 'Weight')} value={lossPreview.current_total_weight == null && lossPreview.resulting_total_weight == null ? tt('productionUx.common.notAffected', 'Not affected') : `${qty(lossPreview.current_total_weight)} -> ${qty(lossPreview.resulting_total_weight)} ${lossPreview.weight_uom_code || detailBatch?.weight_uom_code || ''}`.trim()} />
                   </div>
                 </div>
               ) : null}
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setLossOpen(false)} disabled={saving}>Close</Button>
-            <Button type="button" variant="outline" onClick={previewLoss} disabled={saving}>Preview</Button>
+            <Button type="button" variant="outline" onClick={() => setLossOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
+            <Button type="button" variant="outline" onClick={previewLoss} disabled={saving}>{tt('productionUx.forms.preview', 'Preview')}</Button>
             <Button type="button" onClick={recordLoss} disabled={saving || !lossPreview || lossPreviewStale || !lossPreview.ready}>
               <AlertTriangle className="mr-2 h-4 w-4" />
-              Record loss
+              {tt('productionUx.growth.actions.loss', 'Record loss')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={lossReversalOpen} onOpenChange={setLossReversalOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Reverse loss event</DialogTitle>
+            <DialogTitle>{tt('productionUx.growth.reverseLoss', 'Reverse loss event')}</DialogTitle>
             <DialogDescription>
-              This creates a separate {labelize(lossReversalForm.lossType)} reversal event and restores the original frozen quantity and weight.
+              {tt('productionUx.growth.reverseLossDescription', 'This creates a separate reversal event and restores the original frozen quantity and weight.')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
             <div className="grid gap-4">
-              <SummaryItem label="Original event" value={lossReversalForm.eventReference || 'Not selected'} />
-              <Field label="Reason" htmlFor="growth-loss-reversal-reason">
+              <SummaryItem label={tt('productionUx.forms.originalEvent', 'Original event')} value={lossReversalForm.eventReference || tt('productionUx.forms.notSelected', 'Not selected')} />
+              <Field label={tt('productionUx.forms.reason', 'Reason')} htmlFor="growth-loss-reversal-reason">
                 <Textarea
                   id="growth-loss-reversal-reason"
                   value={lossReversalForm.reason}
@@ -6366,24 +6769,24 @@ export default function GrowthBatches() {
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setLossReversalOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="outline" onClick={() => setLossReversalOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
             <Button type="button" variant="destructive" onClick={reverseLoss} disabled={saving || !canManage}>
               <RotateCcw className="mr-2 h-4 w-4" />
-              Reverse loss
+              {tt('productionUx.growth.reverseLoss', 'Reverse loss event')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={reversalOpen} onOpenChange={setReversalOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={tt('common.close', 'Close')}>
           <DialogHeader>
-            <DialogTitle>Reverse stock-input event</DialogTitle>
-            <DialogDescription>This creates compensating stock receipts for one stock-input event. It is not a whole-batch reversal.</DialogDescription>
+            <DialogTitle>{tt('productionUx.growth.reverseStockInput', 'Reverse stock-input event')}</DialogTitle>
+            <DialogDescription>{tt('productionUx.growth.reverseStockInputDescription', 'This creates compensating stock receipts for one stock-input event. It is not a whole-batch reversal.')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="pr-1">
             <div className="grid gap-4">
-              <Field label="Effective date" htmlFor="growth-stock-reversal-date">
+              <Field label={tt('productionUx.forms.effectiveDate', 'Effective date')} htmlFor="growth-stock-reversal-date">
                 <Input
                   id="growth-stock-reversal-date"
                   type="date"
@@ -6391,14 +6794,14 @@ export default function GrowthBatches() {
                   onChange={(event) => setReversalForm((current) => ({ ...current, effectiveDate: event.target.value }))}
                 />
               </Field>
-              <Field label="Reason" htmlFor="growth-stock-reversal-reason">
+              <Field label={tt('productionUx.forms.reason', 'Reason')} htmlFor="growth-stock-reversal-reason">
                 <Textarea
                   id="growth-stock-reversal-reason"
                   value={reversalForm.reason}
                   onChange={(event) => setReversalForm((current) => ({ ...current, reason: event.target.value }))}
                 />
               </Field>
-              <Field label={`Type ${reversalForm.eventReference} to confirm`} htmlFor="growth-stock-reversal-confirm">
+              <Field label={`${tt('productionUx.forms.typeReferenceToConfirm', 'Type the reference to confirm')}: ${reversalForm.eventReference}`} htmlFor="growth-stock-reversal-confirm">
                 <Input
                   id="growth-stock-reversal-confirm"
                   value={reversalForm.confirmation}
@@ -6408,10 +6811,10 @@ export default function GrowthBatches() {
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setReversalOpen(false)} disabled={saving}>Close</Button>
+            <Button type="button" variant="outline" onClick={() => setReversalOpen(false)} disabled={saving}>{tt('common.close', 'Close')}</Button>
             <Button type="button" variant="destructive" onClick={reverseStockInput} disabled={saving || !canManage}>
               <RotateCcw className="mr-2 h-4 w-4" />
-              Reverse stock input
+              {tt('productionUx.growth.reverseStockInput', 'Reverse stock-input event')}
             </Button>
           </DialogFooter>
         </DialogContent>
