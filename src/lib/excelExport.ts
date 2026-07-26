@@ -285,14 +285,14 @@ export async function exportExcelReport<T>(options: ExcelReportOptions<T>) {
     cell.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF1D4ED8' },
+      fgColor: { argb: 'FF014558' },
     }
     cell.alignment = { vertical: 'middle', horizontal: column.type === 'text' ? 'left' : 'right' }
     cell.border = {
-      top: { style: 'thin', color: { argb: 'FFBFDBFE' } },
-      left: { style: 'thin', color: { argb: 'FFBFDBFE' } },
-      bottom: { style: 'thin', color: { argb: 'FFBFDBFE' } },
-      right: { style: 'thin', color: { argb: 'FFBFDBFE' } },
+      top: { style: 'thin', color: { argb: 'FF009679' } },
+      left: { style: 'thin', color: { argb: 'FF009679' } },
+      bottom: { style: 'thin', color: { argb: 'FF009679' } },
+      right: { style: 'thin', color: { argb: 'FF009679' } },
     }
   })
   headerRow.height = 22

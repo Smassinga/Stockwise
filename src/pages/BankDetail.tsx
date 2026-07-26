@@ -1,6 +1,6 @@
 // src/pages/BankDetail.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/db'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -20,6 +20,19 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
 import { financeCan } from '../lib/permissions'
+import { useAuth } from '../hooks/useAuth'
+import {
+  exportFinanceExcel,
+  exportFinancePdf,
+  maskFinanceAccountNumber,
+  printFinanceReport,
+  sanitizeFinanceFilename,
+  type FinanceExportModel,
+} from '../lib/financeExport'
+import { loadFinanceExportCompany } from '../lib/financeExportData'
+import { FinanceExportDialog, type FinanceExportFormat } from '../components/finance/FinanceExportDialog'
+import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
+import { Badge } from '../components/ui/badge'
 import {
   clearPostingRequestKey,
   getPostingRequestKeyForFingerprint,
@@ -71,6 +84,9 @@ type BankImportRow = {
   ref_type: null
   ref_id: null
 }
+
+type BankView = 'ledger' | 'reconciliation' | 'statements' | 'import' | 'settings'
+const validBankViews = new Set<BankView>(['ledger', 'reconciliation', 'statements', 'import', 'settings'])
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const monthStartISO = () => {
@@ -201,23 +217,36 @@ function bankImportErrorDetail(error: any) {
 // ---------------------------------------------------
 
 export default function BankDetail() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { bankId: bankIdA, id: bankIdB } = useParams()
   const bankId = bankIdA ?? bankIdB
-  const { myRole, companyId } = useOrg()
+  const { myRole, companyId, companyName } = useOrg()
+  const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawView = searchParams.get('view') as BankView | null
+  const view: BankView = rawView && validBankViews.has(rawView) ? rawView : 'ledger'
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const canEditBank = hasRole(myRole, CanManageUsers)
   const canManageSettlement = financeCan.settlementSensitive(myRole)
 
   const [bank, setBank] = useState<Bank | null>(null)
+  const [bankLoading, setBankLoading] = useState(true)
+  const [bankError, setBankError] = useState(false)
   const [from, setFrom] = useState<string>(monthStartISO())
   const [to, setTo] = useState<string>(todayISO())
   const [rows, setRows] = useState<Tx[]>([])
+  const [transactionsLoading, setTransactionsLoading] = useState(true)
+  const [transactionsError, setTransactionsError] = useState(false)
   const [orderRefByKey, setOrderRefByKey] = useState<Record<string, string>>({})
   const [onlyUnreconciled, setOnlyUnreconciled] = useState<boolean>(false)
   const [statements, setStatements] = useState<Statement[]>([])
-  const [bookBalance, setBookBalance] = useState<number>(0)
+  const [statementsLoading, setStatementsLoading] = useState(true)
+  const [statementsError, setStatementsError] = useState(false)
+  const [selectedStatementId, setSelectedStatementId] = useState<string | null>(null)
+  const [bookBalance, setBookBalance] = useState<number | null>(null)
+  const [bookBalanceLoading, setBookBalanceLoading] = useState(true)
+  const [bookBalanceError, setBookBalanceError] = useState(false)
   const [savingTx, setSavingTx] = useState<string | null>(null)
   const bankManualPostingRequestRef = useRef<PostingRequestKeyRef>(null)
 
@@ -233,6 +262,9 @@ export default function BankDetail() {
 
   // CSV import
   const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvPreviewRows, setCsvPreviewRows] = useState<BankImportRow[]>([])
+  const [csvPreviewError, setCsvPreviewError] = useState<string | null>(null)
+  const [previewingCsv, setPreviewingCsv] = useState(false)
   const [importing, setImporting] = useState(false)
 
   // Manual transaction form
@@ -240,6 +272,7 @@ export default function BankDetail() {
   const [txMemo, setTxMemo] = useState<string>('')
   const [txAmt, setTxAmt] = useState<string>('0')
   const [addingTx, setAddingTx] = useState(false)
+  const [exportKind, setExportKind] = useState<'ledger' | 'reconciliation' | null>(null)
 
   // Separate “latest request” guards
   const latestTxReq = useRef(0)
@@ -258,45 +291,66 @@ export default function BankDetail() {
   }, [companyId])
 
   const currency = (bank?.currency_code ?? baseCurrency) || 'MZN'
+  const selectedStatement = statements.find((statement) => statement.id === selectedStatementId) || null
 
   const diff = useMemo(() => {
-    const stmt = statements.find(s => s.reconciled) || statements[0]
-    const stBal = stmt?.closing_balance_base ?? 0
-    return bookBalance - stBal
-  }, [bookBalance, statements])
+    if (bookBalance === null || !selectedStatement) return null
+    return bookBalance - selectedStatement.closing_balance_base
+  }, [bookBalance, selectedStatement])
+
+  const setView = (next: BankView) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', next)
+    setSearchParams(params)
+  }
 
   useEffect(() => {
     if (!bankId || !companyId) {
       setBank(null)
+      setBankLoading(false)
       return
     }
-    loadBank()
+    setBank(null)
+    setSelectedStatementId(null)
+    void loadBank()
   }, [bankId, companyId])
 
   useEffect(() => {
     if (!scopedBankId) {
       setRows([])
       setStatements([])
-      setBookBalance(0)
+      setBookBalance(null)
       setOrderRefByKey({})
+      setTransactionsLoading(false)
+      setStatementsLoading(false)
+      setBookBalanceLoading(false)
       return
     }
-    loadTx()
-    loadStatements()
-    loadBookBalance()
+    void loadTx()
+    void loadStatements()
+    void loadBookBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedBankId, from, to, onlyUnreconciled])
 
   async function loadBank() {
     if (!bankId || !companyId) return
+    setBankLoading(true)
+    setBankError(false)
     const { data, error } = await supabase
       .from('bank_accounts')
       .select('id, company_id, name, bank_name, account_number, currency_code, tax_number, swift, nib')
       .eq('id', bankId)
       .eq('company_id', companyId)
       .maybeSingle()
-    if (error) { console.warn('bank_accounts not ready:', error.message); return }
+    if (error) {
+      console.warn('bank_accounts not ready:', error.message)
+      setBank(null)
+      setBankError(true)
+      setBankLoading(false)
+      return
+    }
     setBank(data as Bank)
+    setBankLoading(false)
   }
 
   async function saveBankDetails() {
@@ -322,6 +376,8 @@ export default function BankDetail() {
 
   async function loadTx() {
     if (!scopedBankId) return
+    setTransactionsLoading(true)
+    setTransactionsError(false)
     const myReq = ++latestTxReq.current
     let data: any[] | null = null
     let error: any = null
@@ -357,7 +413,14 @@ export default function BankDetail() {
       error = fallback.error
     }
     if (myReq !== latestTxReq.current) return
-    if (error) { console.warn('bank_transactions not ready:', error.message); setRows([]); setOrderRefByKey({}); return }
+    if (error) {
+      console.warn('bank_transactions not ready:', error.message)
+      setRows([])
+      setOrderRefByKey({})
+      setTransactionsError(true)
+      setTransactionsLoading(false)
+      return
+    }
     let list = (data as Tx[]) || []
     if (onlyUnreconciled) list = list.filter(r => !r.reconciled)
     setRows(list)
@@ -368,10 +431,13 @@ export default function BankDetail() {
       console.warn('Failed to resolve bank transaction order references:', lookupError)
       setOrderRefByKey({})
     }
+    setTransactionsLoading(false)
   }
 
   async function loadStatements() {
     if (!scopedBankId) return
+    setStatementsLoading(true)
+    setStatementsError(false)
     const myReq = ++latestStmtReq.current
     const { data, error } = await supabase
       .from('bank_statements')
@@ -380,21 +446,49 @@ export default function BankDetail() {
       .order('statement_date', { ascending: false })
       .order('created_at', { ascending: false })
     if (myReq !== latestStmtReq.current) return
-    if (error) { console.warn('bank_statements not ready:', error.message); setStatements([]); return }
+    if (error) {
+      console.warn('bank_statements not ready:', error.message)
+      setStatements([])
+      setStatementsError(true)
+      setStatementsLoading(false)
+      return
+    }
     setStatements(data as Statement[])
+    setStatementsLoading(false)
   }
 
   async function loadBookBalance() {
     if (!scopedBankId) return
+    setBookBalanceLoading(true)
+    setBookBalanceError(false)
     const myReq = ++latestBalReq.current
     const { data, error } = await supabase.rpc('bank_book_balance', { p_bank: scopedBankId })
     if (myReq !== latestBalReq.current) return
-    if (error) { console.warn('bank_book_balance not ready:', error.message); setBookBalance(0); return }
-    setBookBalance(typeof data === 'number' ? data : (data as any)?.balance ?? 0)
+    if (error) {
+      console.warn('bank_book_balance not ready:', error.message)
+      setBookBalance(null)
+      setBookBalanceError(true)
+      setBookBalanceLoading(false)
+      return
+    }
+    const balanceValue = typeof data === 'number'
+      ? data
+      : (data as { balance?: number | null } | null)?.balance
+    const normalizedBalance = balanceValue === null || balanceValue === undefined
+      ? Number.NaN
+      : Number(balanceValue)
+    if (!Number.isFinite(normalizedBalance)) {
+      setBookBalance(null)
+      setBookBalanceError(true)
+      setBookBalanceLoading(false)
+      return
+    }
+    setBookBalance(normalizedBalance)
+    setBookBalanceLoading(false)
   }
 
   async function toggleReconciled(txId: string, value: boolean) {
-    if (!scopedBankId) return
+    if (!scopedBankId || !canManageSettlement) return
     setSavingTx(txId)
     try {
       const { error } = await supabase
@@ -415,7 +509,7 @@ export default function BankDetail() {
   // ----- Statements: upload, open (download), delete -----
 
   async function uploadStatement() {
-    if (!scopedBankId) return
+    if (!scopedBankId || !canManageSettlement) return
     if (!stDate) { toast.error(t('bank.statementDate')); return }
     const closing = Number(stClosing)
     if (Number.isNaN(closing)) { toast.error(t('common.headsUp')); return }
@@ -482,12 +576,13 @@ export default function BankDetail() {
   }
 
   async function deleteStatement(s: Statement) {
-    if (!scopedBankId || s.bank_id !== scopedBankId) return
+    if (!scopedBankId || s.bank_id !== scopedBankId || !canManageSettlement) return
     if (s.reconciled) {
       toast.error(tf('bank.toast.statementLocked', 'Reconciled statements cannot be deleted'))
       return
     }
     setStatements(prev => prev.filter(x => x.id !== s.id))
+    if (selectedStatementId === s.id) setSelectedStatementId(null)
     try {
       if (s.file_path) {
         const { error: remErr } = await supabase.storage.from('bank-statements').remove([s.file_path])
@@ -505,6 +600,23 @@ export default function BankDetail() {
       toast.error(e?.message || t('bank.toast.deleteFailed'))
       await loadStatements()
     }
+  }
+
+  async function toggleStatementReconciled(statement: Statement) {
+    if (!scopedBankId || !canManageSettlement) return
+    const { error } = await supabase
+      .from('bank_statements')
+      .update({ reconciled: !statement.reconciled })
+      .eq('id', statement.id)
+      .eq('bank_id', scopedBankId)
+    if (error) {
+      toast.error(t('bank.toast.toggleFailed'))
+      return
+    }
+    setStatements((current) => current.map((row) => (
+      row.id === statement.id ? { ...row, reconciled: !row.reconciled } : row
+    )))
+    await loadBookBalance()
   }
 
   function showBankPostingError(error: any, context: 'import' | 'manual') {
@@ -566,6 +678,62 @@ export default function BankDetail() {
       : tf('bank.toast.txAddFailed', 'Failed to add transaction')))
   }
 
+  async function parseSelectedCsv() {
+    if (!csvFile) throw new Error('bank_import_file_required')
+    const text = await csvFile.text()
+    const lines = text
+      .split(/\r?\n/)
+      .map((line, index) => ({ line: line.trim(), rowNumber: index + 1 }))
+      .filter(({ line }) => Boolean(line))
+    if (lines.length === 0) throw new Error('bank_import_empty')
+
+    const delimiter = detectDelimiter(lines[0].line)
+    const header = lines[0].line.toLowerCase()
+    const start = /(date|data)/.test(header) && /(amount|valor)/.test(header) ? 1 : 0
+    const payload: BankImportRow[] = []
+    for (let index = start; index < lines.length; index += 1) {
+      const { line, rowNumber } = lines[index]
+      const columns = splitCSVLine(line, delimiter)
+      const happenedAt = normalizeDateDDMMYYYY(columns[0] ?? '')
+      const amount = parseAmount(columns[2] ?? '')
+      if (!happenedAt) throw Object.assign(new Error('bank_import_date_invalid'), { code: 'bank_import_date_invalid', rowNumber })
+      const amountToken = amount === null ? null : normalizedMoneyToken(amount)
+      if (!amountToken) throw Object.assign(new Error('bank_import_amount_invalid'), { code: 'bank_import_amount_invalid', rowNumber })
+      payload.push({
+        row_number: rowNumber,
+        happened_at: happenedAt,
+        memo: (columns[1] ?? '') || null,
+        amount_base: amountToken,
+        currency_code: currency || null,
+        direction: 'ledger',
+        ref_type: null,
+        ref_id: null,
+      })
+    }
+    if (!payload.length) throw new Error('bank_import_empty')
+    if (payload.length > 500) throw new Error('bank_import_row_limit_exceeded')
+    return payload
+  }
+
+  async function previewCsv() {
+    setPreviewingCsv(true)
+    setCsvPreviewRows([])
+    setCsvPreviewError(null)
+    try {
+      const payload = await parseSelectedCsv()
+      setCsvPreviewRows(payload)
+    } catch (error) {
+      console.error(error)
+      const detail = bankImportErrorDetail(error)
+      const message = detail.rowNumber
+        ? tf('bank.toast.csvRowFailed', 'CSV row {row}: validation failed', { row: detail.rowNumber })
+        : tf('bank.toast.csvImportFailed', 'The CSV could not be validated.')
+      setCsvPreviewError(message)
+    } finally {
+      setPreviewingCsv(false)
+    }
+  }
+
   // ----- CSV import (DD/MM/YYYY) -----
   async function importCsv() {
     if (!canManageSettlement) {
@@ -573,52 +741,17 @@ export default function BankDetail() {
       return
     }
     if (!companyId || !scopedBankId || !csvFile) { toast.error(tf('bank.toast.csvChoose', 'Choose a CSV file first')); return }
+    if (!csvPreviewRows.length || csvPreviewError) {
+      toast.error(tf('financeUx.previewRequired', 'Preview and validate the CSV before committing the import.'))
+      return
+    }
+    if (currency !== baseCurrency) {
+      toast.error(tf('financeUx.multiCurrencyImportBlocked', 'Import is unavailable because this account currency differs from the company base currency and no authoritative conversion amount is available.'))
+      return
+    }
     setImporting(true)
     try {
-      const text = await csvFile.text()
-      const lines = text
-        .split(/\r?\n/)
-        .map((line, index) => ({ line: line.trim(), rowNumber: index + 1 }))
-        .filter(({ line }) => Boolean(line))
-      if (lines.length === 0) { toast.error(tf('bank.toast.csvEmpty', 'Empty CSV')); return }
-
-      const delim = detectDelimiter(lines[0].line)
-      let start = 0
-      const header = lines[0].line.toLowerCase()
-      if (/(date|data)/.test(header) && /(amount|valor)/.test(header)) start = 1
-
-      const payload: BankImportRow[] = []
-      for (let i = start; i < lines.length; i++) {
-        const { line, rowNumber } = lines[i]
-        const cols = splitCSVLine(line, delim)
-        const isoDate = normalizeDateDDMMYYYY(cols[0] ?? '')
-        const amt = parseAmount(cols[2] ?? '')
-        if (!isoDate) {
-          throw Object.assign(new Error('bank_import_date_invalid'), {
-            code: 'bank_import_date_invalid',
-            rowNumber,
-          })
-        }
-        const amountToken = amt === null ? null : normalizedMoneyToken(amt)
-        if (!amountToken) {
-          throw Object.assign(new Error('bank_import_amount_invalid'), {
-            code: 'bank_import_amount_invalid',
-            rowNumber,
-          })
-        }
-        payload.push({
-          row_number: rowNumber,
-          happened_at: isoDate,
-          memo: (cols[1] ?? '') || null,
-          amount_base: amountToken,
-          currency_code: currency || null,
-          direction: 'ledger',
-          ref_type: null,
-          ref_id: null,
-        })
-      }
-      if (!payload.length) { toast.error(tf('bank.toast.csvNoRows', 'No valid rows to import')); return }
-
+      const payload = csvPreviewRows
       const requestKey = await durableBankImportRequestKey(companyId, scopedBankId, payload)
       const { data, error } = await supabase.rpc('post_bank_ledger_import', {
         p_company_id: companyId,
@@ -634,6 +767,8 @@ export default function BankDetail() {
         ? tf('bank.toast.csvReplayRestored', 'This import was already posted. No duplicate bank rows were created.')
         : tf('bank.toast.csvImported', 'Imported {count} rows', { count: importedCount }))
       setCsvFile(null)
+      setCsvPreviewRows([])
+      setCsvPreviewError(null)
       await loadTx()
       await loadBookBalance()
     } catch (e: any) {
@@ -698,14 +833,172 @@ export default function BankDetail() {
     return null
   }
 
+  const safeReference = (type: Tx['ref_type'], id: string | null | undefined) => {
+    if (!type || !id || !orderRefByKey[`${type}:${id}`]) return tf('financeUx.unresolvedReference', 'Unresolved reference')
+    return formatOrderReference(type, id, orderRefByKey, tf('financeUx.unresolvedReference', 'Unresolved reference'))
+  }
+
+  const buildBankExport = async (kind: 'ledger' | 'reconciliation'): Promise<FinanceExportModel> => {
+    if (!companyId || !bank || transactionsError || bookBalanceError || bookBalance === null) {
+      throw new Error('bank_export_evidence_unavailable')
+    }
+    if (kind === 'reconciliation' && (statementsError || !selectedStatement)) {
+      throw new Error('bank_reconciliation_statement_required')
+    }
+    const company = await loadFinanceExportCompany(companyId)
+    const bankContext = {
+      name: bank.name,
+      bankName: bank.bank_name,
+      maskedAccountNumber: maskFinanceAccountNumber(bank.account_number),
+      operatingCurrency: bank.currency_code || baseCurrency,
+      swift: bank.swift,
+    }
+    const inflows = rows.reduce((sum, row) => sum + (row.amount_base > 0 ? row.amount_base : 0), 0)
+    const outflows = rows.reduce((sum, row) => sum + (row.amount_base < 0 ? Math.abs(row.amount_base) : 0), 0)
+    const common = {
+      language: lang === 'pt' ? 'pt' as const : 'en' as const,
+      generatedAt: new Date().toISOString(),
+      generatedBy: user?.email || null,
+      company,
+      bank: bankContext,
+      period: { from, to },
+      filters: [onlyUnreconciled ? tf('bank.notReconciled', 'Unreconciled only') : tf('financeUx.allTransactions', 'All transactions')],
+      baseCurrency,
+    }
+    const transactionSection = {
+      title: tf('bank.transactions', 'Bank ledger'),
+      columns: [
+        { key: 'date', label: tf('table.date', 'Date'), width: 14 },
+        { key: 'reference', label: tf('table.ref', 'Reference'), width: 22 },
+        { key: 'memo', label: tf('bank.memo', 'Memo'), width: 36 },
+        { key: 'inflow', label: tf('financeUx.inflowBase', 'Inflow (base)'), width: 16, type: 'currency' as const },
+        { key: 'outflow', label: tf('financeUx.outflowBase', 'Outflow (base)'), width: 16, type: 'currency' as const },
+        { key: 'reconciled', label: tf('bank.reconciled', 'Reconciled'), width: 16 },
+      ],
+      rows: rows.map((row) => ({
+        date: row.happened_at,
+        reference: safeReference(row.ref_type, row.ref_id),
+        memo: row.memo || '',
+        inflow: row.amount_base > 0 ? row.amount_base : null,
+        outflow: row.amount_base < 0 ? Math.abs(row.amount_base) : null,
+        reconciled: row.reconciled ? tf('bank.reconciled', 'Reconciled') : tf('bank.notReconciled', 'Unreconciled'),
+      })),
+    }
+    if (kind === 'ledger') {
+      return {
+        context: {
+          ...common,
+          title: tf('financeUx.bankLedgerReport', 'Bank Ledger Report'),
+          subtitle: tf('financeUx.currentFilteredView', 'Current filtered view'),
+          disclaimer: tf('financeUx.bankLedgerDisclaimer', 'This report reflects StockWise bank-ledger evidence in company base currency.'),
+        },
+        summary: [
+          { label: tf('bank.bookBalance', 'Book balance'), value: bookBalance, type: 'currency' },
+          { label: tf('cash.inflows', 'Inflows'), value: inflows, type: 'currency' },
+          { label: tf('cash.outflows', 'Outflows'), value: outflows, type: 'currency' },
+          { label: tf('financeUx.transactionCount', 'Transaction count'), value: rows.length, type: 'number' },
+        ],
+        sections: [transactionSection],
+        filename: sanitizeFinanceFilename(`StockWise_Bank_Ledger_${bank.name}_${from}_${to}`),
+        orientation: 'landscape',
+      }
+    }
+    const reconciledCount = rows.filter((row) => row.reconciled).length
+    return {
+      context: {
+        ...common,
+        title: tf('financeUx.bankReconciliationReport', 'Bank Reconciliation Report'),
+        subtitle: `${tf('financeUx.selectedStatement', 'Selected statement')}: ${selectedStatement!.statement_date}`,
+        disclaimer: tf('financeUx.bankReconciliationDisclaimer', 'This report reflects StockWise bank-ledger and statement evidence. It is not a bank-issued statement.'),
+      },
+      summary: [
+        { label: tf('bank.bookBalance', 'Book balance'), value: bookBalance, type: 'currency' },
+        { label: tf('bank.statementBalance', 'Statement closing balance'), value: selectedStatement!.closing_balance_base, type: 'currency' },
+        { label: tf('bank.difference', 'Difference'), value: diff!, type: 'currency' },
+        { label: tf('financeUx.transactionCount', 'Transaction count'), value: rows.length, type: 'number' },
+        { label: tf('financeUx.reconciledCount', 'Reconciled'), value: reconciledCount, type: 'number' },
+        { label: tf('financeUx.unreconciledCount', 'Unreconciled'), value: rows.length - reconciledCount, type: 'number' },
+        { label: tf('cash.inflows', 'Inflows'), value: inflows, type: 'currency' },
+        { label: tf('cash.outflows', 'Outflows'), value: outflows, type: 'currency' },
+      ],
+      sections: [
+        {
+          title: tf('financeUx.statementEvidence', 'Statement evidence'),
+          columns: [
+            { key: 'date', label: tf('bank.statementDate', 'Statement date'), width: 18 },
+            { key: 'closing', label: tf('bank.statementBalance', 'Closing balance'), width: 18, type: 'currency' as const },
+            { key: 'file', label: tf('financeUx.fileEvidence', 'File evidence'), width: 18 },
+            { key: 'status', label: tf('financeUx.statementStatus', 'Statement status'), width: 18 },
+          ],
+          rows: [{
+            date: selectedStatement!.statement_date,
+            closing: selectedStatement!.closing_balance_base,
+            file: selectedStatement!.file_path ? tf('financeUx.present', 'Present') : tf('financeUx.notAttached', 'Not attached'),
+            status: selectedStatement!.reconciled ? tf('bank.reconciled', 'Reconciled') : tf('bank.notReconciled', 'Unreconciled'),
+          }],
+        },
+        transactionSection,
+      ],
+      filename: sanitizeFinanceFilename(`StockWise_Bank_Reconciliation_${bank.name}_${selectedStatement!.statement_date}`),
+      orientation: 'landscape',
+    }
+  }
+
+  const generateExport = async (format: FinanceExportFormat) => {
+    if (!exportKind) return
+    const model = await buildBankExport(exportKind)
+    if (format === 'excel') await exportFinanceExcel(model)
+    else if (format === 'pdf') await exportFinancePdf(model)
+    else await printFinanceReport(model)
+  }
+
+  const exportLabels = {
+    report: tf('financeUx.report', 'Report'),
+    scope: tf('financeUx.scope', 'Scope'),
+    period: tf('financeUx.period', 'Period'),
+    recordCount: tf('financeUx.recordCount', 'Record count'),
+    currencyBasis: tf('financeUx.currencyBasis', 'Currency basis'),
+    language: tf('financeUx.language', 'Language'),
+    english: tf('financeUx.english', 'English'),
+    portuguese: tf('financeUx.portuguese', 'Portuguese'),
+    bilingual: tf('financeUx.bilingual', 'Bilingual'),
+    downloadExcel: tf('financeUx.downloadExcel', 'Download Excel'),
+    downloadPdf: tf('financeUx.downloadPdf', 'Download PDF'),
+    print: tf('financeUx.print', 'Print'),
+    cancel: tf('actions.cancel', 'Cancel'),
+    preparing: tf('financeUx.preparing', 'Preparing output...'),
+    failed: tf('financeUx.exportFailed', 'The report could not be prepared. No partial output was downloaded.'),
+  }
+
+  if (bankLoading) {
+    return <div className="app-page app-page--workspace"><PremiumStatePanel variant="loading" title={tf('financeUx.loadingBankAccount', 'Loading bank account')} /></div>
+  }
+  if (bankError || !bank) {
+    return (
+      <div className="app-page app-page--workspace space-y-4">
+        <PremiumStatePanel
+          variant="error"
+          title={tf('financeUx.bankAccountUnavailable', 'Bank account unavailable')}
+          description={tf('financeUx.bankAccountUnavailableHelp', 'The account does not belong to the active company or its evidence could not be loaded.')}
+        />
+        <Button asChild variant="outline"><Link to="/banks">{tf('financeUx.backToBanks', 'Back to bank accounts')}</Link></Button>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-4 overflow-x-hidden">
+    <div className="app-page app-page--workspace space-y-6 overflow-x-hidden">
       {/* Header + filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold">{bank?.name ?? t('banks.title')}</h1>
-          <div className="truncate text-sm text-muted-foreground">
-            {bank?.bank_name ?? '—'} · {bank?.account_number ?? '—'} · {(bank?.currency_code ?? baseCurrency) || 'MZN'}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>{bank.bank_name || tf('banks.noBankName', 'Bank name not recorded')}</span>
+            <span aria-hidden="true">·</span>
+            <span>{maskFinanceAccountNumber(bank.account_number) || tf('common.dash', '-')}</span>
+            <Badge variant="outline">{tf('financeUx.accountOperatingCurrency', 'Account operating currency')}: {currency}</Badge>
+            <Badge variant="outline">{tf('financeUx.companyBaseCurrency', 'Company base currency')}: {baseCurrency}</Badge>
+            <Badge variant="outline">{companyName || tf('company.selectCompany', 'Select company')}</Badge>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-end">
@@ -730,8 +1023,22 @@ export default function BankDetail() {
         </div>
       </div>
 
+      <nav aria-label={tf('financeUx.bankViews', 'Bank account views')} className="flex flex-wrap gap-2">
+        {([
+          ['ledger', tf('financeUx.ledger', 'Ledger')],
+          ['reconciliation', tf('financeUx.reconciliation', 'Reconciliation')],
+          ['statements', tf('bank.statements', 'Statements')],
+          ['import', tf('financeUx.import', 'Import')],
+          ['settings', tf('settings.title', 'Settings')],
+        ] as const).map(([key, label]) => (
+          <Button key={key} variant={view === key ? 'default' : 'outline'} onClick={() => setView(key)} aria-current={view === key ? 'page' : undefined}>
+            {label}
+          </Button>
+        ))}
+      </nav>
+
       {/* Bank master data */}
-      <Card>
+      {view === 'settings' ? <Card>
         <CardHeader><CardTitle>{t('bank.details')}</CardTitle></CardHeader>
         <CardContent className="grid md:grid-cols-3 gap-3">
           {/* NEW: Nickname */}
@@ -806,32 +1113,100 @@ export default function BankDetail() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card> : null}
 
-      {/* Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Card>
-        <CardHeader><CardTitle>{t('bank.bookBalance')}</CardTitle></CardHeader>
-          <CardContent className="text-2xl">{formatMoneyBase(bookBalance, baseCurrency)}</CardContent>
-        </Card>
-        <Card>
-        <CardHeader><CardTitle>{t('bank.statementBalance')}</CardTitle></CardHeader>
-          <CardContent className="text-2xl">
-            {formatMoneyBase(
-              statements.find(s => s.reconciled)?.closing_balance_base ??
-              statements[0]?.closing_balance_base ?? 0,
-              baseCurrency,
+      {view === 'reconciliation' ? (
+        <div className="space-y-4">
+          {statementsError ? (
+            <PremiumStatePanel variant="error" title={tf('financeUx.statementEvidenceUnavailable', 'Statement evidence unavailable')} description={tf('financeUx.statementEvidenceUnavailableHelp', 'No statement or reconciliation difference has been inferred.')} />
+          ) : statementsLoading ? (
+            <PremiumStatePanel variant="loading" title={tf('financeUx.loadingStatements', 'Loading statements')} />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>{tf('financeUx.selectedStatement', 'Selected statement')}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Label htmlFor="selected-statement">{tf('financeUx.statementForReconciliation', 'Statement for reconciliation')}</Label>
+                  <select
+                    id="selected-statement"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={selectedStatementId || ''}
+                    onChange={(event) => setSelectedStatementId(event.target.value || null)}
+                  >
+                    <option value="">{tf('financeUx.selectStatement', 'Select a statement')}</option>
+                    {statements.map((statement) => (
+                      <option key={statement.id} value={statement.id}>
+                        {statement.statement_date} · {formatMoneyBase(statement.closing_balance_base, baseCurrency)} · {statement.reconciled ? tf('bank.reconciled', 'Reconciled') : tf('bank.notReconciled', 'Unreconciled')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={!selectedStatement || transactionsError || bookBalanceError}
+                  onClick={() => setExportKind('reconciliation')}
+                >
+                  {tf('financeUx.exportBankReconciliation', 'Export Bank Reconciliation')}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {!selectedStatement && !statementsLoading && !statementsError ? (
+            <PremiumStatePanel
+              variant="empty"
+              title={tf('financeUx.selectStatementTitle', 'Select a statement to begin reconciliation')}
+              description={tf('financeUx.selectStatementHelp', 'StockWise will not assume which statement should be compared with the bank book.')}
+            />
+          ) : null}
+
+          {selectedStatement ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <Card><CardHeader><CardTitle>{t('bank.bookBalance')}</CardTitle></CardHeader><CardContent className="text-2xl">{bookBalanceLoading ? tf('common.loading', 'Loading...') : bookBalanceError || bookBalance === null ? tf('common.unavailable', 'Unavailable') : formatMoneyBase(bookBalance, baseCurrency)}</CardContent></Card>
+              <Card><CardHeader><CardTitle>{t('bank.statementBalance')}</CardTitle></CardHeader><CardContent className="text-2xl">{formatMoneyBase(selectedStatement.closing_balance_base, baseCurrency)}</CardContent></Card>
+              <Card><CardHeader><CardTitle>{t('bank.difference')}</CardTitle></CardHeader><CardContent className="text-2xl">{diff === null ? tf('common.unavailable', 'Unavailable') : formatMoneyBase(diff, baseCurrency)}</CardContent></Card>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {view === 'reconciliation' && selectedStatement ? (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle>{tf('financeUx.transactionReconciliation', 'Transaction reconciliation')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {transactionsLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingBankLedger', 'Loading Bank Ledger')} /> : transactionsError ? (
+              <PremiumStatePanel variant="error" title={tf('financeUx.bankLedgerUnavailable', 'Bank Ledger unavailable')} description={tf('financeUx.bankLedgerUnavailableHelp', 'No transaction reconciliation status has been inferred.')} />
+            ) : rows.length === 0 ? (
+              <PremiumStatePanel variant="empty" title={tf('bank.noTx', 'No bank transactions match the current filters.')} />
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {rows.map((row) => (
+                  <article key={row.id} className="rounded-lg border border-border/70 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{row.memo || tf('financeUx.bankLedgerEntry', 'Bank ledger entry')}</p>
+                        <p className="text-sm text-muted-foreground">{row.happened_at} · {safeReference(row.ref_type, row.ref_id)}</p>
+                      </div>
+                      <Badge variant={row.reconciled ? 'secondary' : 'outline'}>{row.reconciled ? tf('bank.reconciled', 'Reconciled') : tf('bank.notReconciled', 'Unreconciled')}</Badge>
+                    </div>
+                    <p className="mt-3 text-lg font-semibold">{formatMoneyBase(row.amount_base, baseCurrency)}</p>
+                    <Button className="mt-3" size="sm" variant="outline" disabled={!canManageSettlement || savingTx === row.id} onClick={() => toggleReconciled(row.id, !row.reconciled)}>
+                      {row.reconciled ? tf('financeUx.markUnreconciled', 'Mark unreconciled') : t('bank.markReconciled')}
+                    </Button>
+                  </article>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
-        <Card>
-        <CardHeader><CardTitle>{t('bank.difference')}</CardTitle></CardHeader>
-          <CardContent className="text-2xl">{formatMoneyBase(diff, baseCurrency)}</CardContent>
-        </Card>
-      </div>
+      ) : null}
 
       {/* Transactions */}
-      <Card className="overflow-hidden">
+      {view === 'ledger' ? <Card className="overflow-hidden">
         <CardHeader className="flex flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-between">
           <CardTitle>{t('bank.transactions')}</CardTitle>
           <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-end">
@@ -846,22 +1221,15 @@ export default function BankDetail() {
                 <Input value={txMemo} onChange={e => setTxMemo(e.target.value)} placeholder={tf('bank.placeholder.memo', 'e.g., Bank fee')} />
               </div>
               <div className="min-w-0">
-                <Label>{t('bank.amount', { code: currency })}</Label>
+                <Label>{tf('financeUx.amountCompanyBase', 'Amount in company base currency ({code})', { code: baseCurrency })}</Label>
                 <Input inputMode="decimal" value={txAmt} onChange={e => setTxAmt(e.target.value)} placeholder={tf('bank.placeholder.amount', '-120.00')} />
               </div>
               <Button className="w-full sm:w-auto" onClick={addTx} disabled={!canManageSettlement || addingTx}>{addingTx ? t('actions.saving') : t('cash.add')}</Button>
             </div>
 
-            {/* CSV import */}
-            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <div className="min-w-0">
-                <Label className="block">{t('bank.csv.fileLabel')}</Label>
-                <Input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files?.[0] ?? null)} />
-              </div>
-              <Button className="w-full sm:w-auto" onClick={importCsv} disabled={!canManageSettlement || importing || !csvFile}>
-                {importing ? t('bank.csv.importing') : t('bank.csv.import')}
-              </Button>
-            </div>
+            <Button variant="outline" disabled={transactionsError || bookBalanceError} onClick={() => setExportKind('ledger')}>
+              {tf('financeUx.exportBankLedger', 'Export Bank Ledger')}
+            </Button>
           </div>
         </CardHeader>
 
@@ -871,34 +1239,34 @@ export default function BankDetail() {
               {tf('bank.financeAuthorityNotice', 'Only finance-authority users can post bank ledger transactions or import statement rows.')}
             </div>
           ) : null}
-          {/* Guidance */}
-          <div className="mb-2 hidden text-xs text-muted-foreground sm:block">{t('bank.csv.header')}</div>
-          <table className="mb-4 hidden w-full rounded border text-xs sm:table">
-            <thead className="bg-muted/30 text-left">
-              <tr>
-                <th className="py-2 px-3">{t('table.date')} (DD/MM/YYYY)</th>
-                <th className="py-2 px-3">{t('bank.memo')}</th>
-                <th className="py-2 px-3 text-right">{t('bank.amount', { code: currency })}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t">
-                <td className="py-2 px-3">{t('bank.csv.placeholderDate')}</td>
-                <td className="py-2 px-3">{t('bank.csv.placeholderOpen')}</td>
-                <td className="py-2 px-3 text-right">{t('bank.csv.placeholderAmount')}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="text-xs text-muted-foreground mb-4"></div>
-
           {/* List */}
-          <table className="w-full text-sm">
+          {transactionsLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingBankLedger', 'Loading Bank Ledger')} /> : transactionsError ? (
+            <PremiumStatePanel variant="error" title={tf('financeUx.bankLedgerUnavailable', 'Bank Ledger unavailable')} description={tf('financeUx.bankLedgerUnavailableHelp', 'An empty ledger and zero balance have not been inferred.')} />
+          ) : rows.length === 0 ? (
+            <PremiumStatePanel variant="empty" title={t('bank.noTx')} />
+          ) : <>
+            <div className="grid gap-3 sm:hidden">
+              {rows.map((row) => (
+                <article key={row.id} className="rounded-lg border border-border/70 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><p className="font-medium">{row.memo || tf('financeUx.bankLedgerEntry', 'Bank ledger entry')}</p><p className="mt-1 text-sm text-muted-foreground">{row.happened_at}</p></div>
+                    <Badge variant={row.reconciled ? 'secondary' : 'outline'}>{row.reconciled ? t('bank.reconciled') : t('bank.notReconciled')}</Badge>
+                  </div>
+                  <p className="mt-3 text-xl font-semibold">{formatMoneyBase(row.amount_base, baseCurrency)}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{safeReference(row.ref_type, row.ref_id)}</p>
+                  <Button className="mt-3" variant="outline" size="sm" onClick={() => toggleReconciled(row.id, !row.reconciled)} disabled={!canManageSettlement || savingTx === row.id}>
+                    {row.reconciled ? tf('financeUx.markUnreconciled', 'Mark unreconciled') : t('bank.markReconciled')}
+                  </Button>
+                </article>
+              ))}
+            </div>
+            <table className="hidden w-full text-sm sm:table">
             <thead className="text-left sticky top-0 bg-background">
               <tr>
                 <th className="py-2 pr-3">{t('table.date')}</th>
                 <th className="py-2 pr-3">{t('table.ref')}</th>
                 <th className="py-2 pr-3">{t('bank.memo')}</th>
-                <th className="py-2 pr-3 text-right">{t('bank.amount', { code: currency })}</th>
+                <th className="py-2 pr-3 text-right">{tf('financeUx.amountCompanyBase', 'Amount in company base currency ({code})', { code: baseCurrency })}</th>
                 <th className="py-2 pl-3 text-right">{t('bank.reconciled')}</th>
               </tr>
             </thead>
@@ -909,10 +1277,10 @@ export default function BankDetail() {
                   <td className="py-2 pr-3">
                     {referenceHref(r.ref_type, r.ref_id) ? (
                       <Link className="text-primary underline-offset-4 hover:underline" to={referenceHref(r.ref_type, r.ref_id)!}>
-                        {formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))}
+                        {safeReference(r.ref_type, r.ref_id)}
                       </Link>
                     ) : (
-                      formatOrderReference(r.ref_type, r.ref_id, orderRefByKey, t('common.dash'))
+                      safeReference(r.ref_type, r.ref_id)
                     )}
                   </td>
                   <td className="py-2 pr-3">{r.memo ?? t('common.dash')}</td>
@@ -922,23 +1290,75 @@ export default function BankDetail() {
                       variant={r.reconciled ? 'secondary' : 'outline'}
                       size="sm"
                       onClick={() => toggleReconciled(r.id, !r.reconciled)}
-                      disabled={savingTx === r.id}
+                      disabled={!canManageSettlement || savingTx === r.id}
                     >
                       {r.reconciled ? t('bank.reconciled') : t('bank.markReconciled')}
                     </Button>
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
-                <tr><td className="py-6 text-muted-foreground" colSpan={5}>{t('bank.noTx')}</td></tr>
-              )}
             </tbody>
           </table>
+          </>}
         </CardContent>
-      </Card>
+      </Card> : null}
+
+      {view === 'import' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{tf('financeUx.importBankLedger', 'Import Bank Ledger')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="rounded-lg border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">{t('bank.csv.header')}</p>
+              <p className="mt-1">{tf('financeUx.bankImportContract', 'CSV rows require date, memo, and amount. Validation is all-or-nothing, limited to 500 rows, and preserves idempotent replay.')}</p>
+              <p className="mt-1">{tf('financeUx.bankImportCurrency', 'The CSV currency must match the account operating currency. Posted ledger values remain company-base-currency evidence.')}</p>
+              {currency !== baseCurrency ? (
+                <p className="mt-2 font-medium text-amber-700 dark:text-amber-300">{tf('financeUx.multiCurrencyImportBlocked', 'Import is unavailable because this account currency differs from the company base currency and no authoritative conversion amount is available.')}</p>
+              ) : null}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+              <div className="space-y-2">
+                <Label>{t('bank.csv.fileLabel')}</Label>
+                <Input type="file" accept=".csv" onChange={e => {
+                  setCsvFile(e.target.files?.[0] ?? null)
+                  setCsvPreviewRows([])
+                  setCsvPreviewError(null)
+                }} />
+              </div>
+              <Button variant="outline" onClick={previewCsv} disabled={previewingCsv || !csvFile || currency !== baseCurrency}>
+                {previewingCsv ? tf('financeUx.previewing', 'Validating...') : tf('financeUx.previewImport', 'Preview import')}
+              </Button>
+              <Button onClick={importCsv} disabled={!canManageSettlement || importing || !csvPreviewRows.length || Boolean(csvPreviewError) || currency !== baseCurrency}>
+                {importing ? t('bank.csv.importing') : tf('financeUx.commitImport', 'Commit import')}
+              </Button>
+            </div>
+            {csvPreviewError ? (
+              <PremiumStatePanel variant="error" title={tf('financeUx.importValidationFailed', 'Import validation failed')} description={csvPreviewError} />
+            ) : null}
+            {csvPreviewRows.length ? (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-positive/30 bg-positive/10 px-4 py-3 text-sm text-positive">
+                  {tf('financeUx.importPreviewReady', '{count} rows passed local validation. Commit remains an atomic governed database operation.', { count: csvPreviewRows.length })}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b text-left"><th className="py-2 pr-3">{t('table.date')}</th><th className="py-2 pr-3">{t('bank.memo')}</th><th className="py-2 text-right">{tf('financeUx.amountCompanyBase', 'Amount in company base currency ({code})', { code: baseCurrency })}</th></tr></thead>
+                    <tbody>{csvPreviewRows.slice(0, 10).map((row) => <tr key={row.row_number} className="border-b border-border/60"><td className="py-2 pr-3">{row.happened_at}</td><td className="py-2 pr-3">{row.memo || tf('common.dash', '-')}</td><td className="py-2 text-right">{formatMoneyBase(Number(row.amount_base), baseCurrency)}</td></tr>)}</tbody>
+                  </table>
+                </div>
+                {csvPreviewRows.length > 10 ? <p className="text-sm text-muted-foreground">{tf('financeUx.previewLimited', 'Preview shows the first 10 validated rows. All {count} rows will be committed atomically.', { count: csvPreviewRows.length })}</p> : null}
+              </div>
+            ) : null}
+            {!canManageSettlement ? (
+              <p className="text-sm text-muted-foreground">{tf('bank.financeAuthorityNotice', 'Only finance-authority users can import bank ledger rows.')}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Statements */}
-      <Card>
+      {view === 'statements' ? <Card>
         <CardHeader><CardTitle>{t('bank.statements')}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="grid md:grid-cols-4 gap-3 items-end">
@@ -947,7 +1367,7 @@ export default function BankDetail() {
               <Input type="date" value={stDate} onChange={e => setStDate(e.target.value)} />
             </div>
             <div>
-              <Label>{t('bank.closing', { code: currency })}</Label>
+              <Label>{tf('financeUx.statementClosingBase', 'Statement closing balance in company base currency ({code})', { code: baseCurrency })}</Label>
               <Input inputMode="decimal" value={stClosing} onChange={e => setStClosing(e.target.value)} />
             </div>
             <div>
@@ -955,18 +1375,39 @@ export default function BankDetail() {
               <Input type="file" onChange={e => setStFile(e.target.files?.[0] ?? null)} />
             </div>
             <div>
-              <Button onClick={uploadStatement} disabled={uploading}>
+              <Button onClick={uploadStatement} disabled={!canManageSettlement || uploading}>
                 {uploading ? t('bank.uploading') : t('bank.saveStatement')}
               </Button>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {statementsLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingStatements', 'Loading statements')} /> : statementsError ? (
+            <PremiumStatePanel variant="error" title={tf('financeUx.statementEvidenceUnavailable', 'Statement evidence unavailable')} description={tf('financeUx.statementEvidenceUnavailableHelp', 'No empty statement register has been inferred.')} />
+          ) : statements.length === 0 ? (
+            <PremiumStatePanel variant="empty" title={t('bank.noStatements')} />
+          ) : <>
+            <div className="grid gap-3 sm:hidden">
+              {statements.map((statement) => (
+                <article key={statement.id} className="rounded-lg border border-border/70 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><p className="font-medium">{statement.statement_date}</p><p className="mt-1 text-xl font-semibold">{formatMoneyBase(statement.closing_balance_base, baseCurrency)}</p></div>
+                    <Badge variant={statement.reconciled ? 'secondary' : 'outline'}>{statement.reconciled ? t('bank.reconciled') : t('bank.notReconciled')}</Badge>
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setSelectedStatementId(statement.id); setView('reconciliation') }}>{tf('financeUx.selectForReconciliation', 'Select for reconciliation')}</Button>
+                    {statement.file_path ? <Button variant="outline" size="sm" onClick={() => openFile(statement.file_path!)}>{t('bank.view')}</Button> : null}
+                    <Button variant="outline" size="sm" disabled={!canManageSettlement} onClick={() => toggleStatementReconciled(statement)}>{statement.reconciled ? tf('financeUx.markUnreconciled', 'Mark unreconciled') : t('bank.markReconciled')}</Button>
+                    <Button variant="destructive" size="sm" disabled={statement.reconciled || !canManageSettlement} onClick={() => deleteStatement(statement)}>{t('bank.delete')}</Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto sm:block">
             <table className="w-full text-sm">
               <thead className="text-left">
                 <tr>
                   <th className="py-2 pr-3">{t('table.date')}</th>
-                  <th className="py-2 pr-3 text-right">{t('bank.closing', { code: currency })}</th>
+                  <th className="py-2 pr-3 text-right">{tf('financeUx.statementClosingBase', 'Statement closing balance ({code})', { code: baseCurrency })}</th>
                   <th className="py-2 pr-3">{t('bank.file')}</th>
                   <th className="py-2 pr-3">{t('bank.actions')}</th>
                 </tr>
@@ -984,22 +1425,27 @@ export default function BankDetail() {
                     <td className="py-2 pr-3">
                       <div className="flex justify-end gap-2">
                         <Button
+                          variant={selectedStatementId === s.id ? 'secondary' : 'outline'}
+                          size="sm"
+                          onClick={() => {
+                            setSelectedStatementId(s.id)
+                            setView('reconciliation')
+                          }}
+                        >
+                          {selectedStatementId === s.id ? tf('financeUx.selected', 'Selected') : tf('financeUx.selectForReconciliation', 'Select for reconciliation')}
+                        </Button>
+                        <Button
                           variant={s.reconciled ? 'secondary' : 'outline'}
                           size="sm"
-                          onClick={async () => {
-                            const { error } = await supabase.from('bank_statements')
-                              .update({ reconciled: !s.reconciled }).eq('id', s.id).eq('bank_id', scopedBankId)
-                            if (error) { toast.error(t('bank.toast.toggleFailed')); return }
-                            setStatements(prev => prev.map(x => x.id === s.id ? { ...x, reconciled: !x.reconciled } : x))
-                            await loadBookBalance()
-                          }}
+                          disabled={!canManageSettlement}
+                          onClick={() => toggleStatementReconciled(s)}
                         >
                           {s.reconciled ? t('bank.reconciled') : t('bank.notReconciled')}
                         </Button>
                         <Button
                           variant="destructive"
                           size="sm"
-                          disabled={s.reconciled}
+                          disabled={s.reconciled || !canManageSettlement}
                           onClick={() => deleteStatement(s)}
                         >
                           {t('bank.delete')}
@@ -1008,14 +1454,32 @@ export default function BankDetail() {
                     </td>
                   </tr>
                 ))}
-                {statements.length === 0 && (
-                  <tr><td className="py-6 text-muted-foreground" colSpan={4}>{t('bank.noStatements')}</td></tr>
-                )}
               </tbody>
             </table>
           </div>
+          </>}
         </CardContent>
-      </Card>
+      </Card> : null}
+
+      <FinanceExportDialog
+        open={Boolean(exportKind)}
+        onOpenChange={(open) => {
+          if (!open) setExportKind(null)
+        }}
+        title={exportKind === 'reconciliation'
+          ? tf('financeUx.bankReconciliationReport', 'Bank Reconciliation Report')
+          : tf('financeUx.bankLedgerReport', 'Bank Ledger Report')}
+        description={tf('financeUx.exportConfirmation', 'Confirm the evidence scope before generating the file.')}
+        scope={exportKind === 'reconciliation'
+          ? tf('financeUx.oneBankReconciliation', 'One bank reconciliation')
+          : tf('financeUx.currentFilteredView', 'Current filtered view')}
+        period={`${from} - ${to}`}
+        recordCount={rows.length}
+        currencyBasis={`${tf('financeUx.companyBaseCurrency', 'Company base currency')}: ${baseCurrency}`}
+        language={lang === 'pt' ? 'pt' : 'en'}
+        labels={exportLabels}
+        onGenerate={generateExport}
+      />
     </div>
   )
 }

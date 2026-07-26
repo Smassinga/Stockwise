@@ -401,13 +401,13 @@ export async function saveXLSX(filename: string, ctx: HeaderCtx, sheets: SheetDe
       const cell = headerRow.getCell(index + 1)
       cell.value = label
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF014558' } }
       cell.alignment = excelAlignment('text')
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FFBFDBFE' } },
-        left: { style: 'thin', color: { argb: 'FFBFDBFE' } },
-        bottom: { style: 'thin', color: { argb: 'FFBFDBFE' } },
-        right: { style: 'thin', color: { argb: 'FFBFDBFE' } },
+        top: { style: 'thin', color: { argb: 'FF009679' } },
+        left: { style: 'thin', color: { argb: 'FF009679' } },
+        bottom: { style: 'thin', color: { argb: 'FF009679' } },
+        right: { style: 'thin', color: { argb: 'FF009679' } },
       }
     })
     headerRow.height = 22
@@ -546,7 +546,7 @@ export async function pdfTable(
       textColor: [15, 23, 42],
     },
     headStyles: {
-      fillColor: [29, 78, 216],
+      fillColor: [1, 69, 88],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       halign: 'left',

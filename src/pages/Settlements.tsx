@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Download, FileWarning, Landmark, ReceiptText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
+import { useAuth } from '../hooks/useAuth'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -12,6 +14,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
+import { FinanceExportDialog, type FinanceExportFormat } from '../components/finance/FinanceExportDialog'
+import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
+import {
+  exportFinanceExcel,
+  exportFinancePdf,
+  maskFinanceAccountNumber,
+  printFinanceReport,
+  type FinanceExportLanguage,
+  type FinanceExportModel,
+} from '../lib/financeExport'
+import {
+  loadFinanceAdviceDocumentDetails,
+  loadFinanceExportCompany,
+  loadFinanceExportCounterparty,
+} from '../lib/financeExportData'
+import {
+  loadFinanceSettlementActivity,
+  type FinanceActivityRow,
+} from '../lib/financeActivity'
 import {
   getBankTransactionWriteMessage,
   getBankTransactionRefSupport,
@@ -60,6 +81,10 @@ import {
   type PurchaseOrderStateRow,
   type SalesOrderStateRow,
 } from '../lib/orderState'
+import {
+  salesInvoiceResolutionPresentation,
+  vendorBillResolutionPresentation,
+} from '../lib/commercialWorkflowPresentation'
 
 type CashTx = {
   id: string
@@ -85,6 +110,8 @@ type BankTx = {
 type BankAccount = {
   id: string
   name: string
+  bank_name?: string | null
+  account_number?: string | null
   currency_code?: string | null
 }
 
@@ -125,11 +152,24 @@ type SettlementRow = {
   sourceLabel: string
 }
 
-function isMissingStateViewError(error: any, viewName: string) {
-  const code = String(error?.code || '')
-  const message = String(error?.message || '').toLowerCase()
-  const details = String(error?.details || '').toLowerCase()
-  const hint = String(error?.hint || '').toLowerCase()
+type FinanceWorkspaceView = 'exposure' | 'activity' | 'reconciliation'
+type FinanceWorkspaceSide = 'ar' | 'ap'
+
+type FinanceExportRequest =
+  | { kind: 'exposure' }
+  | { kind: 'activity' }
+  | { kind: 'reconciliation' }
+  | { kind: 'advice'; activity: FinanceActivityRow }
+
+const validWorkspaceViews = new Set<FinanceWorkspaceView>(['exposure', 'activity', 'reconciliation'])
+const validWorkspaceSides = new Set<FinanceWorkspaceSide>(['ar', 'ap'])
+
+function isMissingStateViewError(error: unknown, viewName: string) {
+  const sdkError = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown } | null
+  const code = String(sdkError?.code || '')
+  const message = String(sdkError?.message || '').toLowerCase()
+  const details = String(sdkError?.details || '').toLowerCase()
+  const hint = String(sdkError?.hint || '').toLowerCase()
   const name = viewName.toLowerCase()
 
   return code === 'PGRST205'
@@ -155,6 +195,11 @@ const normalizeMoneyValue = (value: number) => {
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
+const activityStartISO = () => {
+  const date = new Date()
+  date.setDate(date.getDate() - 29)
+  return date.toISOString().slice(0, 10)
+}
 const emptyRows = { receive: [] as SettlementRow[], pay: [] as SettlementRow[] }
 const isCancelled = (status?: string | null) => ['cancelled', 'canceled'].includes(String(status || '').toLowerCase())
 
@@ -195,8 +240,14 @@ const exceptionSeverityTone = (severity: FinanceReconciliationExceptionRow['seve
 
 export default function SettlementsPage() {
   const { companyId, companyName, myRole } = useOrg()
+  const { user } = useAuth()
   const { t, lang } = useI18n()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const viewParam = searchParams.get('view') as FinanceWorkspaceView | null
+  const sideParam = searchParams.get('side') as FinanceWorkspaceSide | null
+  const workspaceView: FinanceWorkspaceView = viewParam && validWorkspaceViews.has(viewParam) ? viewParam : 'exposure'
+  const workspaceSide: FinanceWorkspaceSide = sideParam && validWorkspaceSides.has(sideParam) ? sideParam : 'ar'
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const salesWorkflowLabel = (status?: SalesOrderStateRow['workflow_status'] | null) => {
@@ -298,8 +349,6 @@ export default function SettlementsPage() {
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [bankRefsSupported, setBankRefsSupported] = useState<boolean | null>(() => getBankTransactionRefSupport())
 
-  const [workspace, setWorkspace] = useState<'settlement' | 'reconciliation'>('settlement')
-  const [tab, setTab] = useState<'receive' | 'pay'>('receive')
   const [search, setSearch] = useState('')
   const [partyFilter, setPartyFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
@@ -307,7 +356,6 @@ export default function SettlementsPage() {
   const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'due_soon' | 'current'>('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [reviewSide, setReviewSide] = useState<FinanceReconciliationRow['ledger_side']>('AR')
   const [reviewSearch, setReviewSearch] = useState('')
   const [reviewPartyFilter, setReviewPartyFilter] = useState('ALL')
   const [reviewCurrencyFilter, setReviewCurrencyFilter] = useState('ALL')
@@ -315,6 +363,19 @@ export default function SettlementsPage() {
   const [reviewStateFilter, setReviewStateFilter] = useState<'all' | FinanceReviewState>('all')
   const [reviewFromDate, setReviewFromDate] = useState('')
   const [reviewToDate, setReviewToDate] = useState('')
+  const [activityFrom, setActivityFrom] = useState(activityStartISO())
+  const [activityTo, setActivityTo] = useState(todayISO())
+  const [activityMethod, setActivityMethod] = useState<'all' | 'cash' | 'bank'>('all')
+  const [activitySearch, setActivitySearch] = useState('')
+  const [activityRows, setActivityRows] = useState<FinanceActivityRow[]>([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState<string | null>(null)
+  const [exportRequest, setExportRequest] = useState<FinanceExportRequest | null>(null)
+  const [lastSettlementResult, setLastSettlementResult] = useState<{
+    activity: FinanceActivityRow
+    outstandingAfter: number
+    replayed: boolean
+  } | null>(null)
 
   const [activeRow, setActiveRow] = useState<SettlementRow | null>(null)
   const [dialogTab, setDialogTab] = useState<'settle' | 'history'>('settle')
@@ -325,6 +386,17 @@ export default function SettlementsPage() {
   const [settleBankId, setSettleBankId] = useState('')
 
   const money = (amount: number) => formatMoneyBase(amount, baseCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')
+  const tab: 'receive' | 'pay' = workspaceSide === 'ar' ? 'receive' : 'pay'
+  const reviewSide: FinanceReconciliationRow['ledger_side'] = workspaceSide === 'ar' ? 'AR' : 'AP'
+
+  const updateWorkspaceQuery = (
+    next: Partial<{ view: FinanceWorkspaceView; side: FinanceWorkspaceSide }>,
+  ) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', next.view || workspaceView)
+    params.set('side', next.side || workspaceSide)
+    setSearchParams(params)
+  }
 
   useEffect(() => {
     if (!banks.length) return
@@ -332,6 +404,59 @@ export default function SettlementsPage() {
       setSettleBankId(banks[0].id)
     }
   }, [banks, settleBankId])
+
+  useEffect(() => {
+    setSearch('')
+    setPartyFilter('ALL')
+    setStatusFilter('ALL')
+    setCurrencyFilter('ALL')
+    setDueFilter('all')
+    setFromDate('')
+    setToDate('')
+    setReviewSearch('')
+    setReviewPartyFilter('ALL')
+    setReviewCurrencyFilter('ALL')
+    setReviewDueFilter('all')
+    setReviewStateFilter('all')
+    setReviewFromDate('')
+    setReviewToDate('')
+    setActivitySearch('')
+    setActivityMethod('all')
+    setActivityFrom(activityStartISO())
+    setActivityTo(todayISO())
+    setActiveRow(null)
+    setExportRequest(null)
+    setLastSettlementResult(null)
+  }, [companyId])
+
+  useEffect(() => {
+    if (!companyId) {
+      setActivityRows([])
+      setActivityError(null)
+      setActivityLoading(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setActivityLoading(true)
+      setActivityError(null)
+      try {
+        const nextRows = await loadFinanceSettlementActivity(companyId, activityFrom, activityTo)
+        if (!cancelled) setActivityRows(nextRows)
+      } catch (error) {
+        console.error('[settlements] failed to load settlement activity', error)
+        if (!cancelled) {
+          setActivityRows([])
+          setActivityError(tt('financeUx.activityUnavailable', 'Settlement activity evidence is unavailable.'))
+        }
+      } finally {
+        if (!cancelled) setActivityLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activityFrom, activityTo, companyId, refreshKey])
 
   useEffect(() => {
     if (!companyId) {
@@ -373,7 +498,7 @@ export default function SettlementsPage() {
 
       if (fallback.error) throw fallback.error
 
-      return ((fallback.data || []) as any[]).map(row => ({
+      return ((fallback.data || []) as BankTx[]).map(row => ({
         ...row,
         ref_type: null,
         ref_id: null,
@@ -386,7 +511,7 @@ export default function SettlementsPage() {
         const baseCurrency = await getBaseCurrencyCode(companyId)
 
         const [banksRes, soRes, poRes, siRes, vbRes, cashRes, reviewRes, exceptionRes] = await Promise.all([
-          supabase.from('bank_accounts').select('id,name,currency_code').eq('company_id', companyId).order('name', { ascending: true }),
+          supabase.from('bank_accounts').select('id,name,bank_name,account_number,currency_code').eq('company_id', companyId).order('name', { ascending: true }),
           supabase
             .from('v_sales_order_state')
             .select('*')
@@ -506,7 +631,7 @@ export default function SettlementsPage() {
             return {
               kind: 'SO' as const,
               id: order.id,
-              reference: order.order_no || order.id,
+              reference: order.order_no || tt('financeUx.unresolvedReference', 'Unresolved reference'),
               counterparty: order.counterparty_name || tt('common.none', 'None'),
               documentDate: order.order_date,
               dueDate: order.due_date,
@@ -582,7 +707,7 @@ export default function SettlementsPage() {
             return {
               kind: 'PO' as const,
               id: order.id,
-              reference: order.order_no || order.id,
+              reference: order.order_no || tt('financeUx.unresolvedReference', 'Unresolved reference'),
               counterparty: order.counterparty_name || tt('common.none', 'None'),
               documentDate: order.order_date,
               dueDate: order.due_date,
@@ -662,8 +787,8 @@ export default function SettlementsPage() {
           setReviewRows([])
           setReviewExceptions([])
           setBanks([])
-          setStateViewsUnavailable(false)
-          setReconciliationViewsUnavailable(false)
+          setStateViewsUnavailable(true)
+          setReconciliationViewsUnavailable(true)
           toast.error(error?.message || tt('settlements.loadFailed', 'Failed to load settlements'))
         }
       } finally {
@@ -713,6 +838,31 @@ export default function SettlementsPage() {
     settledBase: filteredRows.reduce((sum, row) => sum + row.settledBase, 0),
     outstandingBase: filteredRows.reduce((sum, row) => sum + row.outstandingBase, 0),
   }), [filteredRows])
+  const filteredActivityRows = useMemo(() => {
+    const query = activitySearch.trim().toLowerCase()
+    const side = workspaceSide === 'ar' ? 'AR' : 'AP'
+    return activityRows.filter((row) => {
+      if (row.ledgerSide !== side) return false
+      if (activityMethod !== 'all' && row.channel !== activityMethod) return false
+      if (query) {
+        const haystack = [
+          row.anchorReference,
+          row.operationalReference,
+          row.counterpartyName,
+          row.memo,
+          row.bankName,
+          row.bankInstitution,
+          row.refType,
+        ].join(' ').toLowerCase()
+        if (!haystack.includes(query)) return false
+      }
+      return true
+    })
+  }, [activityMethod, activityRows, activitySearch, workspaceSide])
+  const activityTotal = useMemo(
+    () => filteredActivityRows.reduce((sum, row) => sum + row.amountBase, 0),
+    [filteredActivityRows],
+  )
 
   const currentReviewRows = useMemo(
     () => reviewRows.filter((row) => row.ledger_side === reviewSide),
@@ -876,6 +1026,21 @@ export default function SettlementsPage() {
         return tt('orders.status.unknown', 'Unknown')
     }
   }
+  const resolutionContextLabel = (row: FinanceReconciliationRow) => {
+    if (row.anchor_kind === 'sales_invoice' || row.anchor_kind === 'sales_invoice_draft') {
+      const presentation = salesInvoiceResolutionPresentation(
+        row.resolution_status as Parameters<typeof salesInvoiceResolutionPresentation>[0],
+      )
+      return tt(presentation.labelKey, presentation.fallback)
+    }
+    if (row.anchor_kind === 'vendor_bill') {
+      const presentation = vendorBillResolutionPresentation(
+        row.resolution_status as Parameters<typeof vendorBillResolutionPresentation>[0],
+      )
+      return tt(presentation.labelKey, presentation.fallback)
+    }
+    return settlementSummaryLabel(row.settlement_status as SettlementBalanceStatus)
+  }
 
   function openSettlement(row: SettlementRow, nextDialogTab: 'settle' | 'history' = 'settle') {
     setActiveRow(row)
@@ -920,6 +1085,11 @@ export default function SettlementsPage() {
     setSaving(true)
 
     try {
+      let postingResult: {
+        transaction_id?: string
+        replayed?: boolean
+        amount_base?: number
+      } | null = null
       if (settleMethod === 'cash') {
         const { data, error } = await supabase.rpc('post_cash_settlement', {
           p_company_id: companyId,
@@ -931,7 +1101,8 @@ export default function SettlementsPage() {
           p_request_key: requestKey,
         })
         if (error) throw error
-        if ((Array.isArray(data) ? data[0] : data)?.replayed) {
+        postingResult = (Array.isArray(data) ? data[0] : data) as typeof postingResult
+        if (postingResult?.replayed) {
           toast.success(tt('settlements.replaySaved', 'The earlier settlement was already posted. Its original result has been restored.'))
         }
       } else {
@@ -965,11 +1136,60 @@ export default function SettlementsPage() {
 
         setBankTransactionRefSupport(true)
         setBankRefsSupported(true)
-        if ((Array.isArray(data) ? data[0] : data)?.replayed) {
+        postingResult = (Array.isArray(data) ? data[0] : data) as typeof postingResult
+        if (postingResult?.replayed) {
           toast.success(tt('settlements.replaySaved', 'The earlier settlement was already posted. Its original result has been restored.'))
         }
       }
 
+      const bank = settleMethod === 'bank' ? banks.find((item) => item.id === settleBankId) || null : null
+      const anchorKind: FinanceActivityRow['anchorKind'] =
+        activeRow.kind === 'SI'
+          ? 'sales_invoice'
+          : activeRow.kind === 'VB'
+            ? 'vendor_bill'
+            : activeRow.kind === 'SO'
+              ? 'sales_order'
+              : 'purchase_order'
+      const transactionId = String(postingResult?.transaction_id || '')
+      if (transactionId) {
+        setLastSettlementResult({
+          activity: {
+            id: transactionId,
+            ledgerSide: activeRow.kind === 'SO' || activeRow.kind === 'SI' ? 'AR' : 'AP',
+            channel: settleMethod,
+            happenedAt: settleDate,
+            createdAt: new Date().toISOString(),
+            amountBase: Number(postingResult?.amount_base || amount),
+            memo: settleMemo.trim() || null,
+            refType: activeRow.kind,
+            refId: activeRow.id,
+            anchorKind,
+            anchorId: activeRow.id,
+            anchorReference: activeRow.reference,
+            operationalReference: isFinanceDocumentRow(activeRow) ? null : activeRow.reference,
+            counterpartyName: activeRow.counterparty,
+            documentDate: activeRow.documentDate,
+            dueDate: activeRow.dueDate,
+            originalLegalBase: activeRow.originalBase,
+            creditedBase: activeRow.creditedBase,
+            debitedBase: activeRow.debitedBase,
+            currentLegalBase: activeRow.currentLegalBase,
+            settledBase: normalizeMoneyValue(activeRow.settledBase + amount),
+            outstandingBase: normalizeMoneyValue(Math.max(0, activeRow.outstandingBase - amount)),
+            reviewState: null,
+            bankId: bank?.id || null,
+            bankName: bank?.name || null,
+            bankInstitution: bank?.bank_name || null,
+            maskedAccountNumber: maskFinanceAccountNumber(bank?.account_number),
+            bankOperatingCurrency: bank?.currency_code || null,
+            reconciled: settleMethod === 'bank' ? false : null,
+            unresolvedReference: false,
+          },
+          outstandingAfter: normalizeMoneyValue(Math.max(0, activeRow.outstandingBase - amount)),
+          replayed: Boolean(postingResult?.replayed),
+        })
+      }
       toast.success(activeRow.kind === 'SO' || activeRow.kind === 'SI'
         ? tt('settlements.receiptSaved', 'Receipt saved')
         : tt('settlements.paymentSaved', 'Payment saved'))
@@ -1041,10 +1261,505 @@ export default function SettlementsPage() {
     }
   }
 
+  function activityAnchorKindLabel(anchorKind: FinanceActivityRow['anchorKind']) {
+    if (anchorKind === 'sales_invoice' || anchorKind === 'sales_invoice_draft') return tt('nav.salesInvoices', 'Sales Invoices')
+    if (anchorKind === 'vendor_bill') return tt('nav.vendorBills', 'Vendor Bills')
+    if (anchorKind === 'sales_order') return tt('nav.salesOrders', 'Sales Orders')
+    if (anchorKind === 'purchase_order') return tt('nav.purchaseOrders', 'Purchase Orders')
+    return tt('financeUx.unresolvedReference', 'Unresolved reference')
+  }
+
+  const exportDialogLabels = {
+    report: tt('financeUx.export.report', 'Report'),
+    scope: tt('financeUx.export.scope', 'Scope'),
+    period: tt('financeUx.export.period', 'Period'),
+    recordCount: tt('financeUx.export.recordCount', 'Record count'),
+    currencyBasis: tt('financeUx.export.currencyBasis', 'Currency basis'),
+    language: tt('financeUx.export.language', 'Output language'),
+    english: tt('financeUx.export.english', 'English'),
+    portuguese: tt('financeUx.export.portuguese', 'Portuguese'),
+    bilingual: tt('financeUx.export.bilingual', 'Bilingual'),
+    downloadExcel: tt('financeUx.export.downloadExcel', 'Download Excel'),
+    downloadPdf: tt('financeUx.export.downloadPdf', 'Download PDF'),
+    print: tt('financeUx.export.print', 'Print'),
+    cancel: tt('common.cancel', 'Cancel'),
+    preparing: tt('financeUx.export.preparing', 'Preparing...'),
+    failed: tt('financeUx.export.failed', 'The finance output could not be prepared. No partial file was downloaded.'),
+  }
+
+  const defaultExportLanguage: FinanceExportLanguage = lang === 'pt' ? 'pt' : 'en'
+  const outputLabel = (language: FinanceExportLanguage, pt: string, en: string) =>
+    language === 'bi' ? `${pt} / ${en}` : language === 'pt' ? pt : en
+
+  const adviceTitle = (row: FinanceActivityRow, language: FinanceExportLanguage) => {
+    if (language === 'bi') {
+      return row.ledgerSide === 'AP'
+        ? 'Aviso de pagamento / Remittance Advice'
+        : 'Aviso de alocação do recebimento / Receipt Allocation Advice'
+    }
+    if (language === 'pt') {
+      return row.ledgerSide === 'AP' ? 'Aviso de pagamento' : 'Aviso de alocação do recebimento'
+    }
+    return row.ledgerSide === 'AP' ? 'Remittance Advice' : 'Receipt Allocation Advice'
+  }
+
+  const adviceDisclaimer = (row: FinanceActivityRow, language: FinanceExportLanguage) => {
+    const en = row.ledgerSide === 'AP'
+      ? 'This remittance advice records the payment allocation in StockWise. It is not a bank-issued proof of transfer or confirmation that funds have cleared.'
+      : 'This advice confirms how the receipt was allocated in StockWise. It is not a fiscal receipt or bank-issued confirmation.'
+    const pt = row.ledgerSide === 'AP'
+      ? 'Este aviso regista a alocação do pagamento no StockWise. Não constitui prova bancária de transferência nem confirmação de que os fundos foram compensados.'
+      : 'Este aviso confirma como o recebimento foi alocado no StockWise. Não constitui recibo fiscal nem confirmação emitida pelo banco.'
+    return language === 'bi' ? `${pt}\n${en}` : language === 'pt' ? pt : en
+  }
+
+  async function buildFinanceExportModel(
+    request: FinanceExportRequest,
+    language: FinanceExportLanguage,
+  ): Promise<FinanceExportModel> {
+    if (!companyId) throw new Error('finance_export_company_required')
+    const company = await loadFinanceExportCompany(companyId)
+    const dateStamp = todayISO()
+    const generatedAt = new Date().toISOString()
+    const sideLabel = workspaceSide === 'ar'
+      ? (language === 'pt' ? 'Contas a receber' : 'Accounts receivable')
+      : (language === 'pt' ? 'Contas a pagar' : 'Accounts payable')
+
+    if (request.kind === 'advice') {
+      const row = request.activity
+      if (!row.anchorKind || !row.anchorId || row.unresolvedReference) throw new Error('finance_export_counterparty_unresolved')
+      const [counterparty, details] = await Promise.all([
+        loadFinanceExportCounterparty({
+          companyId,
+          ledgerSide: row.ledgerSide,
+          anchorKind: row.anchorKind,
+          anchorId: row.anchorId,
+          fallbackName: row.counterpartyName,
+        }),
+        loadFinanceAdviceDocumentDetails(companyId, row.anchorKind, row.anchorId),
+      ])
+      if (!counterparty?.name) throw new Error('finance_export_counterparty_unresolved')
+      const title = adviceTitle(row, language)
+      const method = row.channel === 'bank'
+        ? outputLabel(language, 'Banco', 'Bank')
+        : outputLabel(language, 'Livro de caixa', 'Cash Book')
+      const methodLabel = row.ledgerSide === 'AP'
+        ? outputLabel(language, 'Método de pagamento', 'Payment method')
+        : outputLabel(language, 'Método de recebimento', 'Receipt method')
+      const allocationLabel = row.ledgerSide === 'AP'
+        ? outputLabel(language, 'Alocação do pagamento', 'Payment allocation')
+        : outputLabel(language, 'Alocação do recebimento', 'Receipt allocation')
+      const reconciliationStatus = row.reconciled == null
+        ? outputLabel(language, 'Não aplicável ao livro de caixa', 'Not applicable to Cash Book')
+        : row.reconciled
+          ? outputLabel(language, 'Reconciliado', 'Reconciled')
+          : outputLabel(language, 'Não reconciliado', 'Unreconciled')
+      const filenameParty = counterparty.code || counterparty.name
+      return {
+        filename: `StockWise_${row.ledgerSide === 'AP' ? 'Remittance' : 'Receipt_Allocation'}_${filenameParty}_${dateStamp}`,
+        orientation: 'portrait',
+        context: {
+          title,
+          subtitle: outputLabel(language, 'Registado no StockWise', 'Recorded in StockWise'),
+          language,
+          generatedAt,
+          generatedBy: user?.name || null,
+          company,
+          counterparty,
+          bank: row.channel === 'bank'
+            ? {
+              name: row.bankName || (language === 'pt' ? 'Conta bancária' : 'Bank account'),
+              bankName: row.bankInstitution,
+              maskedAccountNumber: row.maskedAccountNumber,
+              operatingCurrency: row.bankOperatingCurrency,
+            }
+            : null,
+          period: { from: row.happenedAt, to: row.happenedAt },
+          filters: [
+            `${methodLabel}: ${method}`,
+            `${outputLabel(language, 'Estado de reconciliação', 'Reconciliation status')}: ${reconciliationStatus}`,
+          ],
+          baseCurrency: baseCode,
+          disclaimer: adviceDisclaimer(row, language),
+        },
+        summary: [
+          { label: outputLabel(language, 'Data', 'Date'), value: row.happenedAt },
+          { label: methodLabel, value: method },
+          { label: outputLabel(language, 'Valor registado', 'Recorded amount'), value: row.amountBase, type: 'currency' },
+        ],
+        sections: [
+          {
+            title: outputLabel(language, 'Documento', 'Document'),
+            columns: [
+              { key: 'external', label: row.ledgerSide === 'AP' ? outputLabel(language, 'Referência da factura do fornecedor', 'Supplier invoice reference') : outputLabel(language, 'Referência da factura de venda', 'Sales Invoice reference'), width: 22 },
+              { key: 'finance', label: outputLabel(language, 'Referência StockWise', 'StockWise reference'), width: 20 },
+              { key: 'operational', label: outputLabel(language, 'Referência operacional', 'Operational reference'), width: 20 },
+              { key: 'date', label: outputLabel(language, 'Data do documento', 'Document date'), type: 'date', width: 14 },
+              { key: 'due', label: outputLabel(language, 'Vencimento', 'Due date'), type: 'date', width: 14 },
+            ],
+            rows: [{
+              external: details.externalReference || '—',
+              finance: details.primaryReference || row.anchorReference || '—',
+              operational: details.operationalReference || row.operationalReference || '—',
+              date: details.documentDate || row.documentDate || '—',
+              due: details.dueDate || row.dueDate || '—',
+            }],
+          },
+          {
+            title: allocationLabel,
+            columns: [
+              { key: 'original', label: outputLabel(language, 'Valor legal original', 'Original legal amount'), type: 'currency', width: 18 },
+              { key: 'credits', label: outputLabel(language, 'Créditos', 'Credits'), type: 'currency', width: 15 },
+              { key: 'debits', label: outputLabel(language, 'Débitos', 'Debits'), type: 'currency', width: 15 },
+              { key: 'legal', label: outputLabel(language, 'Valor legal actual', 'Current legal amount'), type: 'currency', width: 18 },
+              { key: 'allocated', label: allocationLabel, type: 'currency', width: 18 },
+              { key: 'outstanding', label: outputLabel(language, 'Em aberto actualmente', 'Current outstanding'), type: 'currency', width: 18 },
+            ],
+            rows: [{
+              original: row.originalLegalBase,
+              credits: row.creditedBase,
+              debits: row.debitedBase,
+              legal: row.currentLegalBase,
+              allocated: row.amountBase,
+              outstanding: row.outstandingBase,
+            }],
+            totals: [{
+              legal: outputLabel(language, 'Total', 'Total'),
+              allocated: row.amountBase,
+            }],
+          },
+        ],
+      }
+    }
+
+    if (request.kind === 'activity') {
+      const title = language === 'pt'
+        ? `Actividade de liquidação — ${sideLabel}`
+        : `Settlement Activity — ${sideLabel}`
+      return {
+        filename: `StockWise_${workspaceSide.toUpperCase()}_Settlement_Activity_${dateStamp}`,
+        orientation: 'landscape',
+        context: {
+          title,
+          language,
+          generatedAt,
+          generatedBy: user?.name || null,
+          company,
+          counterpartyScope: language === 'pt' ? 'Múltiplas contrapartes' : 'Multiple counterparties',
+          period: { from: activityFrom, to: activityTo },
+          filters: [
+            activityMethod === 'all'
+              ? (language === 'pt' ? 'Todos os métodos' : 'All methods')
+              : activityMethod === 'cash'
+                ? (language === 'pt' ? 'Livro de caixa' : 'Cash Book')
+                : (language === 'pt' ? 'Banco' : 'Bank'),
+          ],
+          baseCurrency: baseCode,
+        },
+        summary: [
+          { label: language === 'pt' ? 'Registos' : 'Records', value: filteredActivityRows.length, type: 'number' },
+          { label: language === 'pt' ? 'Valor total' : 'Total amount', value: activityTotal, type: 'currency' },
+        ],
+        sections: [{
+          title,
+          columns: [
+            { key: 'date', label: language === 'pt' ? 'Data' : 'Date', type: 'date', width: 13 },
+            { key: 'side', label: language === 'pt' ? 'Lado' : 'Side', width: 8 },
+            { key: 'method', label: language === 'pt' ? 'Método' : 'Method', width: 12 },
+            { key: 'source', label: language === 'pt' ? 'Origem' : 'Source', width: 18 },
+            { key: 'counterparty', label: language === 'pt' ? 'Contraparte' : 'Counterparty', width: 24 },
+            { key: 'anchor', label: language === 'pt' ? 'Documento principal' : 'Active anchor', width: 20 },
+            { key: 'operational', label: language === 'pt' ? 'Referência operacional' : 'Operational reference', width: 20 },
+            { key: 'memo', label: language === 'pt' ? 'Memorando' : 'Memo', width: 28 },
+            { key: 'amount', label: language === 'pt' ? 'Valor base' : 'Base amount', type: 'currency', width: 16 },
+            { key: 'reconciled', label: language === 'pt' ? 'Reconciliação' : 'Reconciliation', width: 16 },
+          ],
+          rows: filteredActivityRows.map((row) => ({
+            date: row.happenedAt,
+            side: row.ledgerSide,
+            method: row.channel === 'bank' ? (language === 'pt' ? 'Banco' : 'Bank') : (language === 'pt' ? 'Caixa' : 'Cash'),
+            source: row.bankName || (language === 'pt' ? 'Livro de caixa' : 'Cash Book'),
+            counterparty: row.counterpartyName || (language === 'pt' ? 'Contraparte não resolvida' : 'Unresolved counterparty'),
+            anchor: row.anchorReference || (language === 'pt' ? 'Referência não resolvida' : 'Unresolved reference'),
+            operational: row.operationalReference || '—',
+            memo: row.memo || '—',
+            amount: row.amountBase,
+            reconciled: row.reconciled == null
+              ? '—'
+              : row.reconciled
+                ? (language === 'pt' ? 'Reconciliado' : 'Reconciled')
+                : (language === 'pt' ? 'Não reconciliado' : 'Unreconciled'),
+          })),
+          totals: [{ memo: language === 'pt' ? 'Total' : 'Total', amount: activityTotal }],
+        }],
+      }
+    }
+
+    if (request.kind === 'reconciliation') {
+      const partyNames = Array.from(new Set(filteredReviewRows.map((row) => row.counterparty_name).filter(Boolean)))
+      const singleParty = partyNames.length === 1 ? partyNames[0] : null
+      const title = singleParty
+        ? workspaceSide === 'ar'
+          ? language === 'pt' ? 'Relatório de reconciliação do cliente' : 'Customer Reconciliation Report'
+          : language === 'pt' ? 'Relatório de reconciliação do fornecedor' : 'Supplier Reconciliation Report'
+        : language === 'pt'
+          ? `Reconciliação — ${sideLabel}`
+          : `${sideLabel} Reconciliation`
+      const counterparty = singleParty && filteredReviewRows[0]
+        ? await loadFinanceExportCounterparty({
+          companyId,
+          ledgerSide: filteredReviewRows[0].ledger_side,
+          anchorKind: filteredReviewRows[0].anchor_kind,
+          anchorId: filteredReviewRows[0].anchor_id,
+          fallbackName: singleParty,
+        })
+        : null
+      return {
+        filename: singleParty
+          ? `StockWise_${workspaceSide.toUpperCase()}_Reconciliation_${singleParty}_${dateStamp}`
+          : `StockWise_${workspaceSide.toUpperCase()}_Reconciliation_${dateStamp}`,
+        orientation: 'landscape',
+        context: {
+          title,
+          language,
+          generatedAt,
+          generatedBy: user?.name || null,
+          company,
+          counterparty,
+          counterpartyScope: counterparty
+            ? null
+            : singleParty
+              ? language === 'pt'
+                ? `Contraparte não resolvida: ${singleParty}`
+                : `Unresolved counterparty: ${singleParty}`
+              : language === 'pt'
+                ? `Múltiplos ${workspaceSide === 'ar' ? 'clientes' : 'fornecedores'}`
+                : `Multiple ${workspaceSide === 'ar' ? 'customers' : 'suppliers'}`,
+          period: { from: reviewFromDate || null, to: reviewToDate || null },
+          filters: [
+            reviewPartyFilter !== 'ALL' ? reviewPartyFilter : '',
+            reviewDueFilter !== 'all' ? duePositionLabel(reviewDueFilter as FinanceReconciliationRow['due_position']) : '',
+            reviewStateFilter !== 'all' ? reviewStateLabel(reviewStateFilter) : '',
+          ].filter(Boolean),
+          baseCurrency: baseCode,
+        },
+        summary: [
+          { label: language === 'pt' ? 'Documentos' : 'Documents', value: filteredReviewRows.length, type: 'number' },
+          { label: language === 'pt' ? 'Valor original' : 'Original total', value: reviewTotals.original, type: 'currency' },
+          { label: language === 'pt' ? 'Ajustamentos líquidos' : 'Net adjustments', value: reviewTotals.netAdjustments, type: 'currency' },
+          { label: language === 'pt' ? 'Valor legal actual' : 'Current legal amount', value: reviewTotals.currentLegal, type: 'currency' },
+          { label: language === 'pt' ? 'Liquidado' : 'Settled', value: reviewTotals.settled, type: 'currency' },
+          { label: language === 'pt' ? 'Em aberto' : 'Outstanding', value: reviewTotals.outstanding, type: 'currency' },
+          { label: language === 'pt' ? 'Liquidado em excesso' : 'Over-settled', value: reviewTotals.overSettled, type: 'currency' },
+          { label: language === 'pt' ? 'Documentos vencidos' : 'Overdue documents', value: reviewTotals.overdueCount, type: 'number' },
+          { label: language === 'pt' ? 'Necessitam revisão' : 'Needs review', value: reviewTotals.reviewCount, type: 'number' },
+          { label: language === 'pt' ? 'Excepções' : 'Exceptions', value: reviewTotals.exceptionCount, type: 'number' },
+        ],
+        sections: [
+          {
+            title: language === 'pt' ? 'Documentos' : 'Documents',
+            columns: [
+              { key: 'anchor', label: language === 'pt' ? 'Documento principal' : 'Active anchor', width: 20 },
+              { key: 'operational', label: language === 'pt' ? 'Referência operacional' : 'Operational reference', width: 20 },
+              { key: 'counterparty', label: language === 'pt' ? 'Contraparte' : 'Counterparty', width: 24 },
+              { key: 'date', label: language === 'pt' ? 'Data' : 'Date', type: 'date', width: 13 },
+              { key: 'due', label: language === 'pt' ? 'Vencimento' : 'Due date', type: 'date', width: 13 },
+              { key: 'original', label: language === 'pt' ? 'Original' : 'Original', type: 'currency', width: 16 },
+              { key: 'credits', label: language === 'pt' ? 'Créditos' : 'Credits', type: 'currency', width: 16 },
+              { key: 'debits', label: language === 'pt' ? 'Débitos' : 'Debits', type: 'currency', width: 16 },
+              { key: 'legal', label: language === 'pt' ? 'Valor legal actual' : 'Current legal', type: 'currency', width: 17 },
+              { key: 'settled', label: language === 'pt' ? 'Liquidado' : 'Settled', type: 'currency', width: 16 },
+              { key: 'rawOutstanding', label: language === 'pt' ? 'Em aberto bruto' : 'Raw outstanding', type: 'currency', width: 16 },
+              { key: 'outstanding', label: language === 'pt' ? 'Em aberto' : 'Outstanding', type: 'currency', width: 16 },
+              { key: 'overSettled', label: language === 'pt' ? 'Liquidado em excesso' : 'Over-settled', type: 'currency', width: 16 },
+              { key: 'duePosition', label: language === 'pt' ? 'Posição de vencimento' : 'Due position', width: 16 },
+              { key: 'aging', label: language === 'pt' ? 'Antiguidade' : 'Aging', width: 16 },
+              { key: 'review', label: language === 'pt' ? 'Revisão' : 'Review state', width: 16 },
+              { key: 'exceptions', label: language === 'pt' ? 'Excepções' : 'Exceptions', width: 28 },
+            ],
+            rows: filteredReviewRows.map((row) => ({
+              anchor: row.anchor_reference,
+              operational: row.operational_reference || '—',
+              counterparty: row.counterparty_name || (language === 'pt' ? 'Não resolvida' : 'Unresolved'),
+              date: row.document_date || '—',
+              due: row.due_date || '—',
+              original: Number(row.original_total_base || 0),
+              credits: Number(row.credited_total_base || 0),
+              debits: Number(row.debited_total_base || 0),
+              legal: Number(row.current_legal_total_base || 0),
+              settled: Number(row.settled_base || 0),
+              rawOutstanding: Number(row.raw_outstanding_base || 0),
+              outstanding: Number(row.outstanding_base || 0),
+              overSettled: Number(row.over_settled_base || 0),
+              duePosition: duePositionLabel(row.due_position),
+              aging: agingBucketLabel(row.aging_bucket),
+              review: reviewStateLabel(row.review_state),
+              exceptions: (row.exception_codes || []).map(exceptionLabel).join('; ') || '—',
+            })),
+            totals: [{
+              counterparty: language === 'pt' ? 'Total' : 'Total',
+              original: reviewTotals.original,
+              credits: filteredReviewRows.reduce((sum, row) => sum + n(row.credited_total_base), 0),
+              debits: filteredReviewRows.reduce((sum, row) => sum + n(row.debited_total_base), 0),
+              legal: reviewTotals.currentLegal,
+              settled: reviewTotals.settled,
+              rawOutstanding: filteredReviewRows.reduce((sum, row) => sum + n(row.raw_outstanding_base), 0),
+              outstanding: reviewTotals.outstanding,
+              overSettled: reviewTotals.overSettled,
+            }],
+          },
+          {
+            title: language === 'pt' ? 'Excepções' : 'Exceptions',
+            columns: [
+              { key: 'anchor', label: language === 'pt' ? 'Documento principal' : 'Active anchor', width: 20 },
+              { key: 'counterparty', label: language === 'pt' ? 'Contraparte' : 'Counterparty', width: 24 },
+              { key: 'severity', label: language === 'pt' ? 'Severidade' : 'Severity', width: 14 },
+              { key: 'group', label: language === 'pt' ? 'Grupo' : 'Group', width: 18 },
+              { key: 'exception', label: language === 'pt' ? 'Excepção' : 'Exception', width: 36 },
+              { key: 'outstanding', label: language === 'pt' ? 'Em aberto' : 'Outstanding', type: 'currency', width: 16 },
+            ],
+            rows: filteredReviewExceptions.map((row) => ({
+              anchor: row.anchor_reference,
+              counterparty: row.counterparty_name || (language === 'pt' ? 'Não resolvida' : 'Unresolved'),
+              severity: row.severity === 'critical'
+                ? (language === 'pt' ? 'Crítica' : 'Critical')
+                : (language === 'pt' ? 'Aviso' : 'Warning'),
+              group: exceptionGroupLabel(row.exception_group),
+              exception: exceptionLabel(row.exception_code),
+              outstanding: Number(row.outstanding_base || 0),
+            })),
+          },
+        ],
+      }
+    }
+
+    const title = language === 'pt'
+      ? `Saldos em aberto — ${sideLabel}`
+      : `${sideLabel} Exposure`
+    return {
+      filename: `StockWise_${workspaceSide.toUpperCase()}_Exposure_${dateStamp}`,
+      orientation: 'landscape',
+      context: {
+        title,
+        language,
+        generatedAt,
+        generatedBy: user?.name || null,
+        company,
+        counterpartyScope: language === 'pt' ? 'Múltiplas contrapartes' : 'Multiple counterparties',
+        period: { from: fromDate || null, to: toDate || null },
+        filters: [partyFilter !== 'ALL' ? partyFilter : '', dueFilter !== 'all' ? dueFilter : ''].filter(Boolean),
+        baseCurrency: baseCode,
+      },
+      summary: [
+        { label: language === 'pt' ? 'Documentos' : 'Documents', value: filteredRows.length, type: 'number' },
+        { label: language === 'pt' ? 'Valor legal actual' : 'Current legal amount', value: filteredBridgeTotals.currentLegalBase, type: 'currency' },
+        { label: language === 'pt' ? 'Liquidado' : 'Settled', value: filteredBridgeTotals.settledBase, type: 'currency' },
+        { label: language === 'pt' ? 'Em aberto' : 'Outstanding', value: filteredBridgeTotals.outstandingBase, type: 'currency' },
+      ],
+      sections: [{
+        title,
+        columns: [
+          { key: 'counterparty', label: language === 'pt' ? 'Contraparte' : 'Counterparty', width: 24 },
+          { key: 'anchor', label: language === 'pt' ? 'Documento principal' : 'Active anchor', width: 20 },
+          { key: 'anchorType', label: language === 'pt' ? 'Tipo de documento' : 'Anchor type', width: 18 },
+          { key: 'date', label: language === 'pt' ? 'Data' : 'Date', type: 'date', width: 13 },
+          { key: 'due', label: language === 'pt' ? 'Vencimento' : 'Due date', type: 'date', width: 13 },
+          { key: 'legal', label: language === 'pt' ? 'Valor legal actual' : 'Current legal', type: 'currency', width: 17 },
+          { key: 'settled', label: language === 'pt' ? 'Liquidado' : 'Settled', type: 'currency', width: 16 },
+          { key: 'outstanding', label: language === 'pt' ? 'Em aberto' : 'Outstanding', type: 'currency', width: 16 },
+          { key: 'aging', label: language === 'pt' ? 'Antiguidade' : 'Aging', width: 16 },
+          { key: 'workflow', label: language === 'pt' ? 'Fluxo' : 'Workflow', width: 18 },
+        ],
+        rows: filteredRows.map((row) => ({
+          counterparty: row.counterparty,
+          anchor: row.reference,
+          anchorType: isFinanceDocumentRow(row)
+            ? (language === 'pt' ? 'Documento financeiro' : 'Finance document')
+            : (language === 'pt' ? 'Encomenda operacional' : 'Operational order'),
+          date: row.documentDate || '—',
+          due: row.dueDate || '—',
+          legal: row.currentLegalBase,
+          settled: row.settledBase,
+          outstanding: row.outstandingBase,
+          aging: row.agingDays > 0 ? `${row.agingDays}d` : '—',
+          workflow: row.workflowLabel,
+        })),
+        totals: [{
+          counterparty: language === 'pt' ? 'Total' : 'Total',
+          legal: filteredBridgeTotals.currentLegalBase,
+          settled: filteredBridgeTotals.settledBase,
+          outstanding: filteredBridgeTotals.outstandingBase,
+        }],
+      }],
+    }
+  }
+
+  async function generateFinanceExport(format: FinanceExportFormat, language: FinanceExportLanguage) {
+    if (!exportRequest) return
+    const model = await buildFinanceExportModel(exportRequest, language)
+    if (format === 'excel') await exportFinanceExcel(model)
+    else if (format === 'pdf') await exportFinancePdf(model)
+    else await printFinanceReport(model)
+  }
+
+  const exportDialogMeta = useMemo(() => {
+    if (!exportRequest) return null
+    if (exportRequest.kind === 'advice') {
+      const row = exportRequest.activity
+      return {
+        title: adviceTitle(row, defaultExportLanguage),
+        scope: row.counterpartyName || tt('financeUx.unresolvedCounterparty', 'Unresolved counterparty'),
+        period: row.happenedAt,
+        recordCount: 1,
+        allowBilingual: true,
+      }
+    }
+    if (exportRequest.kind === 'activity') {
+      return {
+        title: tt('financeUx.activityExportTitle', 'Export settlement activity'),
+        scope: workspaceSide === 'ar' ? tt('financeUx.receivables', 'Accounts receivable') : tt('financeUx.payables', 'Accounts payable'),
+        period: `${activityFrom} — ${activityTo}`,
+        recordCount: filteredActivityRows.length,
+        allowBilingual: false,
+      }
+    }
+    if (exportRequest.kind === 'reconciliation') {
+      return {
+        title: workspaceSide === 'ar' ? tt('financeUx.exportArReconciliation', 'Export current AR reconciliation') : tt('financeUx.exportApReconciliation', 'Export current AP reconciliation'),
+        scope: reviewPartyFilter === 'ALL' ? tt('financeUx.currentFilteredView', 'Current filtered view') : reviewPartyFilter,
+        period: reviewFromDate || reviewToDate ? `${reviewFromDate || '—'} — ${reviewToDate || '—'}` : null,
+        recordCount: filteredReviewRows.length,
+        allowBilingual: false,
+      }
+    }
+    return {
+      title: workspaceSide === 'ar' ? tt('financeUx.exportArExposure', 'Export current AR exposure') : tt('financeUx.exportApExposure', 'Export current AP exposure'),
+      scope: partyFilter === 'ALL' ? tt('financeUx.currentFilteredView', 'Current filtered view') : partyFilter,
+      period: fromDate || toDate ? `${fromDate || '—'} — ${toDate || '—'}` : null,
+      recordCount: filteredRows.length,
+      allowBilingual: false,
+    }
+  }, [
+    activityFrom,
+    activityTo,
+    defaultExportLanguage,
+    exportRequest,
+    filteredActivityRows.length,
+    filteredReviewRows.length,
+    filteredRows.length,
+    fromDate,
+    partyFilter,
+    reviewFromDate,
+    reviewPartyFilter,
+    reviewToDate,
+    toDate,
+    workspaceSide,
+  ])
+
   const activeHistory = activeRow?.history || []
 
   return (
-    <div className="space-y-6 overflow-x-hidden">
+    <div className="app-page app-page--workspace space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
@@ -1079,45 +1794,119 @@ export default function SettlementsPage() {
         </div>
       ) : null}
 
-      <Tabs value={workspace} onValueChange={(value) => setWorkspace(value as 'settlement' | 'reconciliation')} className="space-y-6">
+      {lastSettlementResult ? (
+        <section
+          className="rounded-[calc(var(--radius)+0.35rem)] border border-emerald-300/35 bg-emerald-300/5 p-4 sm:p-5"
+          role="status"
+          aria-live="polite"
+          tabIndex={-1}
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="premium-label text-emerald-700 dark:text-emerald-300">
+                {lastSettlementResult.activity.ledgerSide === 'AR'
+                  ? tt('financeUx.receiptRecorded', 'Receipt recorded')
+                  : tt('financeUx.paymentRecorded', 'Payment recorded')}
+              </div>
+              <h2 className="mt-2 text-xl font-semibold tracking-tight">{lastSettlementResult.activity.counterpartyName}</h2>
+              <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt className="text-muted-foreground">{tt('financeUx.activeAnchor', 'Active financial anchor')}</dt>
+                  <dd className="font-medium">{lastSettlementResult.activity.anchorReference}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{tt('table.date', 'Date')}</dt>
+                  <dd className="font-medium">{lastSettlementResult.activity.happenedAt}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{tt('financeUx.method', 'Method')}</dt>
+                  <dd className="font-medium">{lastSettlementResult.activity.channel === 'bank' ? lastSettlementResult.activity.bankName : tt('financeUx.cashBook', 'Cash Book')}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{tt('financeUx.amountBase', 'Amount in company base currency')}</dt>
+                  <dd className="font-mono font-semibold tabular-nums">{money(lastSettlementResult.activity.amountBase)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{tt('financeUx.outstandingAfter', 'Outstanding after posting')}</dt>
+                  <dd className="font-mono font-semibold tabular-nums">{money(lastSettlementResult.outstandingAfter)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{tt('financeUx.replayStatus', 'Replay status')}</dt>
+                  <dd className="font-medium">{lastSettlementResult.replayed ? tt('financeUx.replayed', 'Restored idempotent result') : tt('financeUx.newPosting', 'New posting')}</dd>
+                </div>
+              </dl>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setExportRequest({ kind: 'advice', activity: lastSettlementResult.activity })}>
+                <Download className="h-4 w-4" />
+                {lastSettlementResult.activity.ledgerSide === 'AP'
+                  ? tt('financeUx.remittanceAdvice', 'Remittance Advice')
+                  : tt('financeUx.receiptAdvice', 'Receipt Allocation Advice')}
+              </Button>
+              <Button variant="outline" onClick={() => updateWorkspaceQuery({
+                view: 'activity',
+                side: lastSettlementResult.activity.ledgerSide === 'AR' ? 'ar' : 'ap',
+              })}>
+                {tt('financeUx.openActivity', 'Open Activity')}
+              </Button>
+              {lastSettlementResult.activity.anchorKind ? (
+                <Button onClick={() => viewReconciliationAnchor(lastSettlementResult.activity.anchorKind!, lastSettlementResult.activity.anchorId || lastSettlementResult.activity.refId)}>
+                  {tt('financeUx.viewAnchor', 'View anchor')}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <Tabs value={workspaceView} onValueChange={(value) => updateWorkspaceQuery({ view: value as FinanceWorkspaceView })} className="space-y-6">
         <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] p-4 shadow-[0_28px_80px_-54px_rgba(0,0,0,0.52)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-2">
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
-                {tt('settlements.workspaceEyebrow', 'Phase 3 reconciliation')}
+                {tt('financeUx.workspaceEyebrow', 'Finance control workspace')}
               </div>
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight">
-                  {tt('settlements.workspaceTitle', 'Settlement operations and controller review')}
+                  {tt('financeUx.workspaceTitle', 'Exposure, settlement activity, and reconciliation')}
                 </h2>
                 <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                   {tt(
                     'settlements.workspaceHelp',
-                    'Use the operational workspace to post receipts and payments. Use reconciliation review to bridge original value, adjustments, settlement, current legal exposure, due position, and exceptions from the active finance anchor.',
+                    'Review open exposure, retain posted receipt and payment evidence, and investigate reconciliation exceptions without duplicating the active finance anchor.',
                   )}
                 </p>
               </div>
             </div>
-            <TabsList className="h-auto w-full justify-start gap-1 rounded-2xl bg-muted/70 p-1 lg:w-auto">
-              <TabsTrigger value="settlement" className="min-w-[190px] rounded-xl">
-                {tt('settlements.workspaceSettlement', 'Settlement workflow')}
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-2xl bg-muted/70 p-1 lg:w-auto">
+              <TabsTrigger value="exposure" className="min-w-0 rounded-xl lg:min-w-[150px]">
+                {tt('financeUx.exposure', 'Exposure')}
               </TabsTrigger>
-              <TabsTrigger value="reconciliation" className="min-w-[190px] rounded-xl">
-                {tt('settlements.workspaceReconciliation', 'Reconciliation review')}
+              <TabsTrigger value="activity" className="min-w-0 rounded-xl lg:min-w-[170px]">
+                {tt('financeUx.activity', 'Settlement activity')}
+              </TabsTrigger>
+              <TabsTrigger value="reconciliation" className="min-w-0 rounded-xl lg:min-w-[150px]">
+                {tt('financeUx.reconciliation', 'Reconciliation')}
               </TabsTrigger>
             </TabsList>
           </div>
         </div>
 
-        <TabsContent value="settlement" className="mt-0 space-y-6">
+        <TabsContent value="exposure" className="mt-0 space-y-6">
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.pendingReceive', 'Pending to receive')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{money(receiveTotal)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.pendingReceiveHelp', '{count} receivable anchors are open across sales orders awaiting issue and issued sales invoices.', { count: rows.receive.length })}</p>
+            <div className="text-2xl font-semibold tracking-tight">
+              {loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : money(receiveTotal)}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {stateViewsUnavailable
+                ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')
+                : tt('settlements.pendingReceiveHelp', '{count} receivable anchors are open across sales orders awaiting issue and issued sales invoices.', { count: rows.receive.length })}
+            </p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
@@ -1125,8 +1914,14 @@ export default function SettlementsPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.pendingPay', 'Pending to pay')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{money(payTotal)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.pendingPayHelp', '{count} payable anchors are open across purchase orders awaiting booking and posted vendor bills.', { count: rows.pay.length })}</p>
+            <div className="text-2xl font-semibold tracking-tight">
+              {loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : money(payTotal)}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {stateViewsUnavailable
+                ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')
+                : tt('settlements.pendingPayHelp', '{count} payable anchors are open across purchase orders awaiting booking and posted vendor bills.', { count: rows.pay.length })}
+            </p>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-sm">
@@ -1134,8 +1929,14 @@ export default function SettlementsPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.overdue', 'Overdue balances')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{overdueCount}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('settlements.overdueHelp', 'Overdue rows are ranked using the due date of the active settlement anchor, whether that anchor is still an order or already a finance document.')}</p>
+            <div className="text-2xl font-semibold tracking-tight">
+              {loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : overdueCount}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {stateViewsUnavailable
+                ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')
+                : tt('settlements.overdueHelp', 'Overdue rows are ranked using the due date of the active settlement anchor, whether that anchor is still an order or already a finance document.')}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -1146,7 +1947,7 @@ export default function SettlementsPage() {
           <CardDescription className="hidden sm:block">{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Tabs value={tab} onValueChange={(value) => setTab(value as 'receive' | 'pay')}>
+          <Tabs value={tab} onValueChange={(value) => updateWorkspaceQuery({ side: value === 'receive' ? 'ar' : 'ap' })}>
             <TabsList className="h-auto w-full justify-start gap-1 rounded-xl bg-muted/70 p-1 md:w-auto">
               <TabsTrigger value="receive" className="min-w-[180px] rounded-lg">{tt('settlements.pendingReceive', 'Pending to receive')}</TabsTrigger>
               <TabsTrigger value="pay" className="min-w-[180px] rounded-lg">{tt('settlements.pendingPay', 'Pending to pay')}</TabsTrigger>
@@ -1229,6 +2030,19 @@ export default function SettlementsPage() {
                     {tt('common.clear', 'Clear')}
                   </Button>
                 </div>
+                <div className="flex items-end">
+                  <Button
+                    className="w-full sm:w-auto"
+                    variant="outline"
+                    onClick={() => setExportRequest({ kind: 'exposure' })}
+                    disabled={loading || stateViewsUnavailable}
+                  >
+                    <Download className="h-4 w-4" />
+                    {workspaceSide === 'ar'
+                      ? tt('financeUx.exportArExposure', 'Export current AR exposure')
+                      : tt('financeUx.exportApExposure', 'Export current AP exposure')}
+                  </Button>
+                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -1245,13 +2059,14 @@ export default function SettlementsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {stateViewsUnavailable && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-              {tt('settlements.stateViewsUnavailable', 'The settlement state views are not available yet. Apply the settlement-anchor migration and refresh this page.')}
-            </div>
-          )}
           {loading ? (
             <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+          ) : stateViewsUnavailable ? (
+            <PremiumStatePanel
+              variant="error"
+              title={tt('financeUx.exposureUnavailable', 'Settlement exposure unavailable')}
+              description={tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')}
+            />
           ) : filteredRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">{tt('settlements.empty', 'No settlement anchors match the current filters.')}</p>
           ) : (
@@ -1419,6 +2234,254 @@ export default function SettlementsPage() {
       </Card>
         </TabsContent>
 
+        <TabsContent value="activity" className="mt-0 space-y-6">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {tt('financeUx.activityRecords', 'Settlement records')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">
+                  {activityLoading ? tt('common.loading', 'Loading...') : activityError ? tt('common.unavailable', 'Unavailable') : filteredActivityRows.length}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {activityError
+                    ? tt('financeUx.activityUnavailableHelp', 'No zero or empty result has been inferred. Refresh the page or try a narrower date range.')
+                    : tt('financeUx.activityRecordsHelp', 'Posted receipts and payments remain available after exposure is resolved.')}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {workspaceSide === 'ar' ? tt('financeUx.received', 'Received') : tt('financeUx.paid', 'Paid')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tracking-tight">
+                  {activityLoading ? tt('common.loading', 'Loading...') : activityError ? tt('common.unavailable', 'Unavailable') : money(activityTotal)}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {activityError
+                    ? tt('financeUx.activityUnavailableHelp', 'No zero or empty result has been inferred. Refresh the page or try a narrower date range.')
+                    : tt('financeUx.activityTotalHelp', 'Company-base value across the current filtered activity.')}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {tt('financeUx.defaultActivityRange', 'Default activity range')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-semibold tracking-tight">{activityFrom} — {activityTo}</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {tt('financeUx.defaultActivityRangeHelp', 'Activity starts with the last 30 days and can be narrowed explicitly.')}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle>{tt('financeUx.activityFilters', 'Activity filters')}</CardTitle>
+              <CardDescription>
+                {tt('financeUx.activityFiltersHelp', 'Filter posted evidence by ledger side, date, method, counterparty, or active anchor.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Tabs value={workspaceSide} onValueChange={(value) => updateWorkspaceQuery({ side: value as FinanceWorkspaceSide })}>
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/70 p-1 sm:w-auto">
+                  <TabsTrigger value="ar" className="rounded-lg sm:min-w-[180px]">{tt('financeUx.receivables', 'Accounts receivable')}</TabsTrigger>
+                  <TabsTrigger value="ap" className="rounded-lg sm:min-w-[180px]">{tt('financeUx.payables', 'Accounts payable')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="xl:col-span-2">
+                  <Label>{tt('common.search', 'Search')}</Label>
+                  <Input
+                    value={activitySearch}
+                    onChange={(event) => setActivitySearch(event.target.value)}
+                    placeholder={tt('financeUx.activitySearch', 'Counterparty, anchor, memo, bank, or operational reference')}
+                  />
+                </div>
+                <div>
+                  <Label>{tt('filters.from', 'From')}</Label>
+                  <Input type="date" value={activityFrom} onChange={(event) => setActivityFrom(event.target.value)} />
+                </div>
+                <div>
+                  <Label>{tt('filters.to', 'To')}</Label>
+                  <Input type="date" value={activityTo} onChange={(event) => setActivityTo(event.target.value)} />
+                </div>
+                <div>
+                  <Label>{tt('financeUx.method', 'Method')}</Label>
+                  <Select value={activityMethod} onValueChange={(value) => setActivityMethod(value as typeof activityMethod)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{tt('common.all', 'All')}</SelectItem>
+                      <SelectItem value="cash">{tt('financeUx.cashBook', 'Cash Book')}</SelectItem>
+                      <SelectItem value="bank">{tt('financeUx.bank', 'Bank')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setExportRequest({ kind: 'activity' })}
+                  disabled={activityLoading || Boolean(activityError)}
+                >
+                  <Download className="h-4 w-4" />
+                  {tt('financeUx.exportActivity', 'Export current settlement activity')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle>{tt('financeUx.activityRegister', 'Settlement Activity')}</CardTitle>
+              <CardDescription>
+                {tt('financeUx.activityRegisterHelp', 'Review which cash or bank transaction produced each posted receipt or payment, including resolved documents.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {activityError ? (
+                <PremiumStatePanel
+                  kind="error"
+                  icon={<FileWarning />}
+                  title={tt('financeUx.activityUnavailable', 'Settlement activity evidence is unavailable.')}
+                  description={tt('financeUx.activityUnavailableHelp', 'No zero or empty result has been inferred. Refresh the page or try a narrower date range.')}
+                />
+              ) : activityLoading ? (
+                <PremiumStatePanel
+                  kind="neutral"
+                  icon={<ReceiptText />}
+                  title={tt('financeUx.activityLoading', 'Loading settlement activity...')}
+                />
+              ) : filteredActivityRows.length === 0 ? (
+                <PremiumStatePanel
+                  kind="empty"
+                  icon={<ReceiptText />}
+                  title={tt('financeUx.activityEmpty', 'No settlement activity matches the current filters.')}
+                  description={tt('financeUx.activityEmptyHelp', 'This is a successful empty result for the selected date range and ledger side.')}
+                />
+              ) : (
+                <>
+                  <div className="space-y-3 lg:hidden">
+                    {filteredActivityRows.map((row) => (
+                      <article key={`${row.channel}:${row.id}`} className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-card p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground">{row.counterpartyName || tt('financeUx.unresolvedCounterparty', 'Unresolved counterparty')}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">{row.anchorReference || tt('financeUx.unresolvedReference', 'Unresolved reference')}</p>
+                          </div>
+                          <Badge variant="outline">{row.ledgerSide}</Badge>
+                        </div>
+                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <dt className="premium-label">{tt('table.date', 'Date')}</dt>
+                            <dd className="mt-1">{row.happenedAt}</dd>
+                          </div>
+                          <div>
+                            <dt className="premium-label">{tt('financeUx.method', 'Method')}</dt>
+                            <dd className="mt-1">{row.channel === 'bank' ? row.bankName || tt('financeUx.bank', 'Bank') : tt('financeUx.cashBook', 'Cash Book')}</dd>
+                          </div>
+                          <div className="col-span-2">
+                            <dt className="premium-label">{tt('financeUx.amountBase', 'Amount in company base currency')}</dt>
+                            <dd className="mt-1 font-mono text-base font-semibold tabular-nums">{money(row.amountBase)}</dd>
+                          </div>
+                        </dl>
+                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                          {row.anchorKind ? (
+                            <Button variant="outline" size="sm" onClick={() => viewReconciliationAnchor(row.anchorKind!, row.anchorId || row.refId)}>
+                              {tt('financeUx.viewAnchor', 'View anchor')}
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            onClick={() => setExportRequest({ kind: 'advice', activity: row })}
+                            disabled={row.unresolvedReference || !row.counterpartyName}
+                          >
+                            {row.ledgerSide === 'AP'
+                              ? tt('financeUx.remittanceAdvice', 'Remittance Advice')
+                              : tt('financeUx.receiptAdvice', 'Receipt Allocation Advice')}
+                          </Button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="hidden overflow-x-auto rounded-2xl border border-border/70 lg:block">
+                    <table className="w-full min-w-[1180px] text-sm" aria-label={tt('financeUx.activityRegister', 'Settlement Activity')}>
+                      <thead className="bg-muted/30 text-left">
+                        <tr>
+                          <th className="px-4 py-3">{tt('table.date', 'Date')}</th>
+                          <th className="px-4 py-3">{tt('financeUx.method', 'Method')}</th>
+                          <th className="px-4 py-3">{tt('settlements.counterparty', 'Counterparty')}</th>
+                          <th className="px-4 py-3">{tt('financeUx.activeAnchor', 'Active financial anchor')}</th>
+                          <th className="px-4 py-3">{tt('financeUx.operationalReference', 'Operational reference')}</th>
+                          <th className="px-4 py-3">{tt('cash.memo', 'Memo')}</th>
+                          <th className="px-4 py-3 text-right">{tt('financeUx.amountBase', 'Amount in company base currency')}</th>
+                          <th className="px-4 py-3">{tt('financeUx.reconciliation', 'Reconciliation')}</th>
+                          <th className="px-4 py-3 text-right">{tt('orders.actions', 'Actions')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredActivityRows.map((row) => (
+                          <tr key={`${row.channel}:${row.id}`} className="border-t border-border/60 align-top">
+                            <td className="px-4 py-3 whitespace-nowrap">{row.happenedAt}</td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{row.channel === 'bank' ? row.bankName || tt('financeUx.bank', 'Bank') : tt('financeUx.cashBook', 'Cash Book')}</div>
+                              {row.channel === 'bank' && row.maskedAccountNumber ? <div className="mt-1 text-xs text-muted-foreground">{row.maskedAccountNumber}</div> : null}
+                            </td>
+                            <td className="px-4 py-3">{row.counterpartyName || tt('financeUx.unresolvedCounterparty', 'Unresolved counterparty')}</td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{row.anchorReference || tt('financeUx.unresolvedReference', 'Unresolved reference')}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">{activityAnchorKindLabel(row.anchorKind)}</div>
+                            </td>
+                            <td className="px-4 py-3">{row.operationalReference || '—'}</td>
+                            <td className="max-w-[260px] px-4 py-3 text-muted-foreground">{row.memo || '—'}</td>
+                            <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">{money(row.amountBase)}</td>
+                            <td className="px-4 py-3">
+                              {row.reconciled == null
+                                ? tt('financeUx.cashTrace', 'Cash trace')
+                                : row.reconciled
+                                  ? tt('financeUx.reconciled', 'Reconciled')
+                                  : tt('financeUx.unreconciled', 'Unreconciled')}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex justify-end gap-2">
+                                {row.anchorKind ? (
+                                  <Button variant="outline" size="sm" onClick={() => viewReconciliationAnchor(row.anchorKind!, row.anchorId || row.refId)}>
+                                    {tt('financeUx.viewAnchor', 'View anchor')}
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  size="sm"
+                                  onClick={() => setExportRequest({ kind: 'advice', activity: row })}
+                                  disabled={row.unresolvedReference || !row.counterpartyName}
+                                >
+                                  {row.ledgerSide === 'AP'
+                                    ? tt('financeUx.remittanceShort', 'Remittance')
+                                    : tt('financeUx.receiptAdviceShort', 'Receipt advice')}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="reconciliation" className="mt-0 space-y-6">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <Card className="border-border/80 shadow-sm xl:col-span-2">
@@ -1476,7 +2539,7 @@ export default function SettlementsPage() {
               <CardDescription className="hidden sm:block">{tt('financeDocs.reconciliation.filtersHelp', 'Switch between AR and AP, then filter by counterparty, due position, review state, currency, or document date without leaving the active company.')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Tabs value={reviewSide} onValueChange={(value) => setReviewSide(value as FinanceReconciliationRow['ledger_side'])}>
+              <Tabs value={reviewSide} onValueChange={(value) => updateWorkspaceQuery({ side: value === 'AR' ? 'ar' : 'ap' })}>
                 <TabsList className="h-auto w-full justify-start gap-1 rounded-xl bg-muted/70 p-1 md:w-auto">
                   <TabsTrigger value="AR" className="min-w-[180px] rounded-lg">{tt('financeDocs.reconciliation.arTitle', 'Accounts receivable')}</TabsTrigger>
                   <TabsTrigger value="AP" className="min-w-[180px] rounded-lg">{tt('financeDocs.reconciliation.apTitle', 'Accounts payable')}</TabsTrigger>
@@ -1561,6 +2624,16 @@ export default function SettlementsPage() {
                       >
                         {tt('common.clear', 'Clear')}
                       </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setExportRequest({ kind: 'reconciliation' })}
+                        disabled={loading || reconciliationViewsUnavailable}
+                      >
+                        <Download className="h-4 w-4" />
+                        {workspaceSide === 'ar'
+                          ? tt('financeUx.exportArReconciliation', 'Export current AR reconciliation')
+                          : tt('financeUx.exportApReconciliation', 'Export current AP reconciliation')}
+                      </Button>
                       <div className="flex flex-wrap gap-2">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone('exception')}`}>{reviewStateLabel('exception')}: {reviewStateCounts.exception}</span>
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone('overdue')}`}>{reviewStateLabel('overdue')}: {reviewStateCounts.overdue}</span>
@@ -1577,7 +2650,7 @@ export default function SettlementsPage() {
           {reconciliationViewsUnavailable ? (
             <Card className="border-amber-200 bg-amber-50/80 text-amber-900 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
               <CardContent className="pt-6 text-sm">
-                {tt('financeDocs.reconciliation.viewsUnavailable', 'The reconciliation review views are not available yet. Apply the Phase 3A reconciliation migration and refresh this page.')}
+                {tt('financeDocs.reconciliation.viewsUnavailable', 'Reconciliation evidence is unavailable. No zero or all-clear result has been inferred. Refresh the page or contact support if the problem continues.')}
               </CardContent>
             </Card>
           ) : (
@@ -1739,8 +2812,8 @@ export default function SettlementsPage() {
                                 <div className="font-medium">{agingBucketLabel(row.aging_bucket)}</div>
                               </td>
                               <td className="px-4 py-4">
-                                <div className="font-medium">{String(row.resolution_status || row.settlement_status || tt('common.dash', '-')).replaceAll('_', ' ')}</div>
-                                <div className="mt-1 text-xs text-muted-foreground">{String(row.adjustment_status || row.credit_status || tt('common.dash', '-')).replaceAll('_', ' ')}</div>
+                                <div className="font-medium">{resolutionContextLabel(row)}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{reviewStateLabel(row.review_state)}</div>
                               </td>
                               <td className="px-4 py-4">
                                 <div className="flex flex-wrap gap-2">
@@ -1771,6 +2844,23 @@ export default function SettlementsPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {exportDialogMeta ? (
+        <FinanceExportDialog
+          open={Boolean(exportRequest)}
+          onOpenChange={(open) => { if (!open) setExportRequest(null) }}
+          title={exportDialogMeta.title}
+          description={tt('financeUx.export.confirmHelp', 'Confirm the report scope before generating a read-only finance output.')}
+          scope={exportDialogMeta.scope}
+          period={exportDialogMeta.period}
+          recordCount={exportDialogMeta.recordCount}
+          currencyBasis={`${tt('financeUx.companyBaseCurrency', 'Company base currency')}: ${baseCode}`}
+          language={defaultExportLanguage}
+          allowBilingual={exportDialogMeta.allowBilingual}
+          labels={exportDialogLabels}
+          onGenerate={generateFinanceExport}
+        />
+      ) : null}
 
       <Dialog open={!!activeRow} onOpenChange={(open) => { if (!open) setActiveRow(null) }}>
         <DialogContent className="max-w-5xl">

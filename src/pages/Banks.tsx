@@ -20,6 +20,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '../components/ui/sheet'
+import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 
 type BankAccount = {
   id: string
@@ -59,8 +60,8 @@ const emptyForm = (currencyCode: string): BankForm => ({
 function maskAccountNumber(value?: string | null) {
   const trimmed = String(value || '').trim()
   if (!trimmed) return '—'
-  if (trimmed.length <= 6) return trimmed
-  return `${trimmed.slice(0, 3)} ••• ${trimmed.slice(-3)}`
+  const compact = trimmed.replace(/\s+/g, '')
+  return `•••• ${compact.slice(-4)}`
 }
 
 export default function Banks() {
@@ -71,7 +72,11 @@ export default function Banks() {
   const canManageBanks = hasRole(myRole, CanManageUsers)
 
   const [rows, setRows] = useState<BankAccount[]>([])
-  const [balances, setBalances] = useState<Record<string, number>>({})
+  const [balances, setBalances] = useState<Record<string, number> | null>(null)
+  const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountsError, setAccountsError] = useState(false)
+  const [balancesLoading, setBalancesLoading] = useState(true)
+  const [balancesError, setBalancesError] = useState(false)
   const [openAdd, setOpenAdd] = useState(false)
   const [saving, setSaving] = useState(false)
   const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
@@ -81,7 +86,7 @@ export default function Banks() {
     if (!companyId) {
       setBaseCurrency('MZN')
       setRows([])
-      setBalances({})
+      setBalances(null)
       return
     }
     let mounted = true
@@ -103,7 +108,9 @@ export default function Banks() {
   useEffect(() => {
     if (!companyId) {
       setRows([])
-      setBalances({})
+      setBalances(null)
+      setAccountsLoading(false)
+      setBalancesLoading(false)
       return
     }
     loadBanks()
@@ -111,6 +118,8 @@ export default function Banks() {
   }, [companyId])
 
   async function loadBanks() {
+    setAccountsLoading(true)
+    setAccountsError(false)
     const { data, error } = await supabase
       .from('bank_accounts')
       .select('id, company_id, name, bank_name, account_number, currency_code, tax_number, swift, nib, created_at')
@@ -119,23 +128,33 @@ export default function Banks() {
     if (error) {
       console.warn('bank_accounts not ready:', error.message)
       setRows([])
+      setAccountsError(true)
+      setAccountsLoading(false)
       return
     }
     setRows((data || []) as BankAccount[])
+    setAccountsLoading(false)
   }
 
   async function loadBalances() {
+    setBalancesLoading(true)
+    setBalancesError(false)
     const { data, error } = await supabase.rpc('bank_account_balances', { p_company: companyId })
     if (error || !Array.isArray(data)) {
       console.warn('bank_account_balances not ready:', error?.message)
-      setBalances({})
+      setBalances(null)
+      setBalancesError(true)
+      setBalancesLoading(false)
       return
     }
     const next: Record<string, number> = {}
     ;(data as BalanceRow[]).forEach((row) => {
-      next[row.bank_id] = Number(row.balance_base || 0)
+      if (row.balance_base === null || row.balance_base === undefined) return
+      const balance = Number(row.balance_base)
+      if (Number.isFinite(balance)) next[row.bank_id] = balance
     })
     setBalances(next)
+    setBalancesLoading(false)
   }
 
   async function addBank() {
@@ -184,7 +203,11 @@ export default function Banks() {
   }
 
   const totalBalance = useMemo(
-    () => rows.reduce((sum, row) => sum + Number(balances[row.id] ?? 0), 0),
+    () => (
+      balances && rows.every((row) => Object.prototype.hasOwnProperty.call(balances, row.id))
+        ? rows.reduce((sum, row) => sum + Number(balances[row.id]), 0)
+        : null
+    ),
     [balances, rows],
   )
 
@@ -194,7 +217,7 @@ export default function Banks() {
   )
 
   return (
-    <div className="space-y-6 overflow-x-hidden">
+    <div className="app-page app-page--workspace space-y-6 overflow-x-hidden">
       <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-4 shadow-[0_30px_80px_-56px_rgba(0,0,0,0.48)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
@@ -327,7 +350,13 @@ export default function Banks() {
             <CardTitle className="text-sm font-medium text-muted-foreground">{tf('banks.summary.accounts', 'Bank accounts')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{rows.length}</div>
+            <div className="text-3xl font-semibold">
+              {accountsLoading
+                ? tf('common.loading', 'Loading...')
+                : accountsError
+                  ? tf('common.unavailable', 'Unavailable')
+                  : rows.length}
+            </div>
             <div className="text-xs text-muted-foreground">{tf('banks.summary.accountsHelp', 'Live bank settlement and statement accounts configured for this company.')}</div>
           </CardContent>
         </Card>
@@ -336,7 +365,13 @@ export default function Banks() {
             <CardTitle className="text-sm font-medium text-muted-foreground">{tf('banks.summary.balance', 'Combined bank position')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{formatMoneyBase(totalBalance, baseCurrency)}</div>
+            <div className="text-3xl font-semibold">
+              {balancesLoading
+                ? tf('common.loading', 'Loading...')
+                : balancesError || totalBalance === null
+                  ? tf('common.unavailable', 'Unavailable')
+                  : formatMoneyBase(totalBalance, baseCurrency)}
+            </div>
             <div className="text-xs text-muted-foreground">{tf('banks.summary.balanceHelp', 'Current book balance across every configured bank account in base currency.')}</div>
           </CardContent>
         </Card>
@@ -355,6 +390,21 @@ export default function Banks() {
         </Card>
       </div>
 
+      {accountsError ? (
+        <PremiumStatePanel
+          variant="error"
+          title={tf('financeUx.bankRegisterUnavailable', 'Bank-account register unavailable')}
+          description={tf('financeUx.bankRegisterUnavailableHelp', 'No empty account register has been inferred.')}
+        />
+      ) : null}
+      {balancesError && !accountsError ? (
+        <PremiumStatePanel
+          variant="error"
+          title={tf('financeUx.bankBalancesUnavailable', 'Bank balance evidence unavailable')}
+          description={tf('financeUx.bankBalancesUnavailableHelp', 'Bank accounts remain available. No zero balance has been inferred.')}
+        />
+      ) : null}
+
       <Card className="border-border/70">
         <CardHeader className="pb-3">
           <CardTitle>{tf('banks.workspaceTitle', 'Bank account register')}</CardTitle>
@@ -363,7 +413,9 @@ export default function Banks() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          {accountsLoading ? (
+            <PremiumStatePanel variant="loading" title={tf('financeUx.loadingBankAccounts', 'Loading bank accounts')} />
+          ) : accountsError ? null : rows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
               <div className="text-base font-medium">{tf('banks.emptyTitle', 'No bank accounts configured yet')}</div>
               <p className="mx-auto mt-2 hidden max-w-2xl text-sm text-muted-foreground sm:block">
@@ -401,7 +453,17 @@ export default function Banks() {
                         {tf('banks.balanceBase', 'Book balance')}
                       </div>
                       <div className="mt-1 text-3xl font-semibold tracking-tight">
-                        {formatMoneyBase(balances[row.id] ?? 0, baseCurrency)}
+                        {balancesError
+                          || !balances
+                          || !Object.prototype.hasOwnProperty.call(balances, row.id)
+                          ? tf('common.unavailable', 'Unavailable')
+                          : formatMoneyBase(balances[row.id], baseCurrency)}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {tf('financeUx.balanceBaseCurrency', 'Balance shown in company base currency')}: {baseCurrency}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {tf('financeUx.accountOperatingCurrency', 'Account operating currency')}: {row.currency_code || baseCurrency}
                       </div>
                     </div>
 

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Download, Settings2, WalletCards } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
+import { useAuth } from '../hooks/useAuth'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'
@@ -14,22 +16,24 @@ import {
   type PostingRequestKeyRef,
 } from '../lib/postingRequestKeys'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
+import {
+  exportFinanceExcel,
+  exportFinancePdf,
+  printFinanceReport,
+  sanitizeFinanceFilename,
+  type FinanceExportModel,
+} from '../lib/financeExport'
+import { loadFinanceExportCompany } from '../lib/financeExportData'
+import { FinanceExportDialog, type FinanceExportFormat } from '../components/finance/FinanceExportDialog'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '../components/ui/sheet'
+import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 
+type CashView = 'ledger' | 'adjustment' | 'settings'
 type CashSummary = { beginning: number; inflows: number; outflows: number; net: number; ending: number }
 type CashTx = {
   id: string
@@ -53,7 +57,7 @@ const monthStartISO = () => {
   const date = new Date()
   return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10)
 }
-
+const validViews = new Set<CashView>(['ledger', 'adjustment', 'settings'])
 const normalizeMoneyValue = (value: number) => {
   if (!Number.isFinite(value)) return Number.NaN
   const sign = value < 0 ? -1 : 1
@@ -61,60 +65,43 @@ const normalizeMoneyValue = (value: number) => {
   return Object.is(normalized, -0) ? 0 : normalized
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-const cashTone = (type: CashTx['type']) => {
-  switch (type) {
-    case 'sale_receipt':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
-    case 'purchase_payment':
-      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
-    default:
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-  }
-}
-
 export default function CashPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const tf = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const { companyId, companyName, myRole } = useOrg()
+  const { user } = useAuth()
   const canManageSettlement = financeCan.settlementSensitive(myRole)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawView = searchParams.get('view') as CashView | null
+  const view: CashView = rawView && validViews.has(rawView) ? rawView : 'ledger'
 
-  const [from, setFrom] = useState<string>(monthStartISO())
-  const [to, setTo] = useState<string>(todayISO())
-  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [from, setFrom] = useState(monthStartISO())
+  const [to, setTo] = useState(todayISO())
+  const [typeFilter, setTypeFilter] = useState('all')
   const [summary, setSummary] = useState<CashSummary | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [summaryError, setSummaryError] = useState(false)
   const [rows, setRows] = useState<CashTx[]>([])
+  const [ledgerLoading, setLedgerLoading] = useState(true)
+  const [ledgerError, setLedgerError] = useState(false)
   const [orderRefByKey, setOrderRefByKey] = useState<Record<string, string>>({})
   const [book, setBook] = useState<CashBook | null>(null)
-  const [openAdd, setOpenAdd] = useState(false)
+  const [bookLoading, setBookLoading] = useState(true)
+  const [bookError, setBookError] = useState(false)
   const [savingBeg, setSavingBeg] = useState(false)
   const [savingTx, setSavingTx] = useState(false)
-  const cashPostingRequestRef = useRef<PostingRequestKeyRef>(null)
-  const [baseCurrency, setBaseCurrency] = useState<string>('MZN')
+  const [baseCurrency, setBaseCurrency] = useState('MZN')
+  const [adjustment, setAdjustment] = useState({ date: todayISO(), amount: '', memo: '' })
+  const [exportOpen, setExportOpen] = useState(false)
+  const adjustmentRequestRef = useRef<PostingRequestKeyRef>(null)
+  const settlementRequestRef = useRef<PostingRequestKeyRef>(null)
 
-  const [addForm, setAddForm] = useState<{
-    date: string
-    type: CashTx['type']
-    amount: string
-    memo: string
-    refType: SettlementKind | 'ADJ' | 'none'
-    refId: string
-  }>({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
-
-  useEffect(() => {
-    if (canManageSettlement) return
-    setAddForm((current) => {
-      if (current.type === 'adjustment' && (current.refType === 'none' || current.refType === 'ADJ')) return current
-      return {
-        ...current,
-        type: 'adjustment',
-        refType: 'none',
-        refId: '',
-      }
-    })
-  }, [canManageSettlement])
+  const setView = (next: CashView) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', next)
+    setSearchParams(params)
+  }
 
   useEffect(() => {
     if (!companyId) {
@@ -122,107 +109,118 @@ export default function CashPage() {
       return
     }
     let mounted = true
-    ;(async () => {
-      try {
-        const code = await getBaseCurrencyCode(companyId)
+    getBaseCurrencyCode(companyId)
+      .then((code) => {
         if (mounted && code) setBaseCurrency(code)
-      } catch (error) {
-        console.warn('Failed to load base currency in Cash:', error)
-      }
-    })()
+      })
+      .catch((error) => console.warn('Failed to load Cash base currency:', error))
     return () => {
       mounted = false
     }
   }, [companyId])
 
   useEffect(() => {
+    setBook(null)
+    setSummary(null)
+    setRows([])
+    setOrderRefByKey({})
+    setBookError(false)
+    setSummaryError(false)
+    setLedgerError(false)
     if (!companyId) {
-      setBook(null)
-      setSummary({ beginning: 0, inflows: 0, outflows: 0, net: 0, ending: 0 })
-      setRows([])
-      setOrderRefByKey({})
+      setBookLoading(false)
+      setSummaryLoading(false)
+      setLedgerLoading(false)
       return
     }
-    loadBook()
-    loadData()
+    void loadBook()
+    void loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, from, to, typeFilter])
 
   async function loadBook() {
     if (!companyId) return
-    const rpc = await supabase.rpc('cash_get_book', { p_company: companyId })
-    if (!rpc.error && rpc.data) {
-      const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data
-      if (row) {
-        setBook({
+    setBookLoading(true)
+    setBookError(false)
+    try {
+      const rpc = await supabase.rpc('cash_get_book', { p_company: companyId })
+      if (!rpc.error) {
+        const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data
+        setBook(row ? {
           id: row.id,
           company_id: row.company_id,
-          beginning_balance_base: Number(row.beginning_balance_base ?? 0),
-          beginning_as_of: String(row.beginning_as_of ?? todayISO()),
-        })
+          beginning_balance_base: Number(row.beginning_balance_base),
+          beginning_as_of: String(row.beginning_as_of),
+        } : null)
         return
       }
+      const fallback = await supabase
+        .from('cash_books')
+        .select('id, company_id, beginning_balance_base, beginning_as_of')
+        .eq('company_id', companyId)
+        .maybeSingle()
+      if (fallback.error) throw fallback.error
+      setBook(fallback.data as CashBook | null)
+    } catch (error) {
+      console.warn('Cash book settings unavailable:', error)
       setBook(null)
-      return
+      setBookError(true)
+    } finally {
+      setBookLoading(false)
     }
-
-    const { data, error } = await supabase
-      .from('cash_books')
-      .select('id, company_id, beginning_balance_base, beginning_as_of')
-      .eq('company_id', companyId)
-      .maybeSingle()
-    if (error) {
-      console.warn('cash_books load skipped:', error.message)
-      setBook(null)
-      return
-    }
-    setBook(data as CashBook)
   }
 
   async function loadData() {
-    const { data: sum, error: summaryError } = await supabase.rpc('cash_summary', {
-      p_company: companyId,
-      p_from: from,
-      p_to: to,
-    })
-    if (summaryError) {
-      console.warn('cash_summary not ready:', summaryError.message)
-      setSummary({ beginning: 0, inflows: 0, outflows: 0, net: 0, ending: 0 })
-    } else {
-      const row: any = Array.isArray(sum) ? sum[0] : sum
-      setSummary({
-        beginning: Number(row?.beginning ?? 0),
-        inflows: Number(row?.inflows ?? 0),
-        outflows: Number(row?.outflows ?? 0),
-        net: Number(row?.net ?? 0),
-        ending: Number(row?.ending ?? 0),
-      })
-    }
+    if (!companyId) return
+    setSummaryLoading(true)
+    setLedgerLoading(true)
+    setSummaryError(false)
+    setLedgerError(false)
 
-    const { data: ledger, error: ledgerError } = await supabase.rpc('cash_ledger', {
-      p_company: companyId,
-      p_from: from,
-      p_to: to,
-    })
-    if (ledgerError) {
-      console.warn('cash_ledger not ready:', ledgerError.message)
+    const summaryResult = await supabase.rpc('cash_summary', { p_company: companyId, p_from: from, p_to: to })
+    if (summaryResult.error) {
+      console.warn('Cash summary unavailable:', summaryResult.error.message)
+      setSummary(null)
+      setSummaryError(true)
+    } else {
+      const row = Array.isArray(summaryResult.data) ? summaryResult.data[0] : summaryResult.data
+      if (!row) {
+        setSummary(null)
+        setSummaryError(true)
+      } else {
+        setSummary({
+          beginning: Number(row.beginning ?? 0),
+          inflows: Number(row.inflows ?? 0),
+          outflows: Number(row.outflows ?? 0),
+          net: Number(row.net ?? 0),
+          ending: Number(row.ending ?? 0),
+        })
+      }
+    }
+    setSummaryLoading(false)
+
+    const ledgerResult = await supabase.rpc('cash_ledger', { p_company: companyId, p_from: from, p_to: to })
+    if (ledgerResult.error) {
+      console.warn('Cash ledger unavailable:', ledgerResult.error.message)
       setRows([])
       setOrderRefByKey({})
-      return
+      setLedgerError(true)
+    } else {
+      let list = (ledgerResult.data as CashTx[]) || []
+      if (typeFilter !== 'all') list = list.filter((row) => row.type === typeFilter)
+      setRows(list)
+      try {
+        setOrderRefByKey(await fetchOrderReferenceMap(supabase, companyId, list))
+      } catch (error) {
+        console.warn('Cash reference enrichment unavailable:', error)
+        setOrderRefByKey({})
+      }
     }
-
-    let list = (ledger as CashTx[]) || []
-    if (typeFilter !== 'all') list = list.filter((row) => row.type === typeFilter)
-    setRows(list)
-    try {
-      setOrderRefByKey(await fetchOrderReferenceMap(supabase, companyId, list))
-    } catch (error) {
-      console.warn('Failed to resolve cash order references:', error)
-      setOrderRefByKey({})
-    }
+    setLedgerLoading(false)
   }
 
   async function upsertBeginningBalance() {
-    if (!companyId) return
+    if (!companyId || !canManageSettlement) return
     setSavingBeg(true)
     try {
       if (book?.id) {
@@ -233,23 +231,19 @@ export default function CashPage() {
             beginning_as_of: book.beginning_as_of,
           })
           .eq('id', book.id)
+          .eq('company_id', companyId)
         if (error) throw error
-        toast.success(tf('cash.toast.beginningUpdated', 'Beginning balance updated'))
       } else {
         const { data, error } = await supabase
           .from('cash_books')
-          .insert({
-            company_id: companyId,
-            beginning_balance_base: 0,
-            beginning_as_of: todayISO(),
-          })
-          .select()
+          .insert({ company_id: companyId, beginning_balance_base: 0, beginning_as_of: todayISO() })
+          .select('id, company_id, beginning_balance_base, beginning_as_of')
           .single()
         if (error) throw error
         setBook(data as CashBook)
-        toast.success(tf('cash.toast.beginningCreated', 'Beginning balance created'))
       }
-      await loadData()
+      toast.success(tf('cash.toast.beginningUpdated', 'Beginning balance updated'))
+      await Promise.all([loadBook(), loadData()])
     } catch (error) {
       console.error(error)
       toast.error(tf('cash.toast.beginningSaveFailed', 'Failed to save beginning balance'))
@@ -258,126 +252,102 @@ export default function CashPage() {
     }
   }
 
-  async function addTransaction() {
-    if (!companyId) return
-    const amount = normalizeMoneyValue(Number(addForm.amount))
+  async function postAdjustment() {
+    if (!companyId || !canManageSettlement) return
+    const amount = normalizeMoneyValue(Number(adjustment.amount))
     if (!Number.isFinite(amount) || amount === 0) {
       toast.error(tf('cash.toast.amountNonZero', 'Amount must be non-zero'))
       return
     }
-
-    const needsRef = addForm.refType === 'SO' || addForm.refType === 'PO' || addForm.refType === 'SI' || addForm.refType === 'VB'
-    const disallowRef = addForm.refType === 'ADJ'
-    const receiveAnchor = addForm.refType === 'SO' || addForm.refType === 'SI'
-    const payAnchor = addForm.refType === 'PO' || addForm.refType === 'VB'
-
-    if (receiveAnchor && addForm.type !== 'sale_receipt') {
-      toast.error(tf('cash.toast.receiveAnchorTypeMismatch', 'Sales-order and sales-invoice references must use the sale receipt cash type.'))
-      return
-    }
-    if (payAnchor && addForm.type !== 'purchase_payment') {
-      toast.error(tf('cash.toast.payAnchorTypeMismatch', 'Purchase-order and vendor-bill references must use the purchase payment cash type.'))
-      return
-    }
-    if (addForm.refType === 'ADJ' && addForm.type !== 'adjustment') {
-      toast.error(tf('cash.toast.adjustmentTypeMismatch', 'Adjustment references must use the adjustment cash type.'))
-      return
-    }
-    if (needsRef && !UUID_RE.test(addForm.refId)) {
-      toast.error(tf('cash.toast.invalidRefUuid', 'Provide a valid internal reference ID (UUID) for the selected settlement anchor.'))
-      return
-    }
-    if (disallowRef && addForm.refId.trim()) {
-      toast.error(tf('cash.toast.adjustmentNoRef', 'Adjustments (ADJ) must not carry a reference ID.'))
-      return
-    }
-    if (!canManageSettlement) {
-      toast.error(tf('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.'))
-      return
-    }
-
-    const isSettlement = addForm.type === 'sale_receipt' || addForm.type === 'purchase_payment'
-    if (isSettlement && !needsRef) {
-      toast.error(tf('cash.toast.settlementAnchorRequired', 'Choose a settlement anchor before posting a receipt or payment.'))
-      return
-    }
-
-    const normalizedAmount = needsRef ? Math.abs(amount) : amount
-    const requestFingerprint = stablePostingFingerprint({
-      amountBase: normalizedAmount,
+    const fingerprint = stablePostingFingerprint({
+      amountBase: amount,
       companyId,
-      happenedAt: addForm.date,
-      memo: addForm.memo.trim() || null,
-      refId: needsRef ? addForm.refId : null,
-      refType: needsRef ? addForm.refType : 'ADJ',
-      transactionType: needsRef ? 'settlement.cash.post' : 'cash.adjustment.post',
+      happenedAt: adjustment.date,
+      memo: adjustment.memo.trim() || null,
+      transactionType: 'cash.adjustment.post',
     })
-    const requestKey = getPostingRequestKeyForFingerprint(cashPostingRequestRef, requestFingerprint)
-
+    const requestKey = getPostingRequestKeyForFingerprint(adjustmentRequestRef, fingerprint)
     setSavingTx(true)
     try {
-      const posted = needsRef
-        ? await supabase.rpc('post_cash_settlement', {
-          p_company_id: companyId,
-          p_ref_type: addForm.refType,
-          p_ref_id: addForm.refId,
-          p_happened_at: addForm.date,
-          p_amount_base: normalizedAmount,
-          p_memo: addForm.memo.trim() || null,
-          p_request_key: requestKey,
-        })
-        : await supabase.rpc('post_cash_adjustment', {
-          p_company_id: companyId,
-          p_happened_at: addForm.date,
-          p_amount_base: normalizedAmount,
-          p_memo: addForm.memo.trim() || null,
-          p_request_key: requestKey,
-        })
-      const { data, error } = posted
+      const { data, error } = await supabase.rpc('post_cash_adjustment', {
+        p_company_id: companyId,
+        p_happened_at: adjustment.date,
+        p_amount_base: amount,
+        p_memo: adjustment.memo.trim() || null,
+        p_request_key: requestKey,
+      })
       if (error) throw error
-
       const result = Array.isArray(data) ? data[0] : data
       toast.success(result?.replayed
         ? tf('cash.toast.replayRestored', 'The earlier transaction was already posted. Its original result has been restored.')
-        : tf('cash.toast.added', 'Transaction added'))
-      setOpenAdd(false)
-      setAddForm({ date: todayISO(), type: 'sale_receipt', amount: '', memo: '', refType: 'none', refId: '' })
-      clearPostingRequestKey(cashPostingRequestRef)
+        : tf('cash.toast.adjustmentAdded', 'Cash-book adjustment recorded'))
+      clearPostingRequestKey(adjustmentRequestRef)
+      setAdjustment({ date: todayISO(), amount: '', memo: '' })
       await loadData()
-    } catch (error: any) {
+      setView('ledger')
+    } catch (error) {
       console.error(error)
-      const message = String(error?.message || '').toLowerCase()
-      if (message.includes('request_key_required')) {
-        toast.error(tf('cash.toast.requestKeyRequired', 'Refresh and try again with a valid posting key.'))
-      } else if (message.includes('idempotency_key_payload_mismatch')) {
-        toast.error(tf('cash.toast.payloadMismatch', 'This retry key belongs to different transaction inputs. Review the form and submit again.'))
-      } else if (message.includes('request_in_progress')) {
-        toast.error(tf('cash.toast.requestInProgress', 'This transaction is already being posted. Wait a moment and refresh.'))
-      } else if (message.includes('settlement_amount_exceeds_outstanding')) {
-        toast.error(tf('cash.toast.amountTooHigh', 'The settlement amount exceeds the current outstanding balance.'))
-      } else if (message.includes('settlement_already_resolved')) {
-        toast.error(tf('cash.toast.alreadyResolved', 'This settlement anchor is already fully resolved. Refresh before posting.'))
-      } else if (message.includes('finance_document_became_active_anchor')) {
-        toast.error(tf('cash.toast.financeAnchorChanged', 'A finance document is now the active settlement anchor. Refresh before posting.'))
-      } else if (message.includes('settlement_anchor_not_ready') || message.includes('settlement_anchor_not_found')) {
-        toast.error(tf('cash.toast.anchorStale', 'This settlement anchor is no longer ready. Refresh before posting.'))
-      } else if (message.includes('insufficient_company_role')) {
-        toast.error(tf('cash.toast.permissionDenied', 'You do not have permission to post cash transactions for this company.'))
-      } else if (message.includes('company_access_disabled')) {
-        toast.error(tf('cash.toast.companyAccessDisabled', 'Company access is disabled, so cash posting is unavailable.'))
-      } else if (message.includes('cross_company')) {
-        toast.error(tf('cash.toast.companyAccessDenied', 'Switch to the correct company before posting this transaction.'))
-      } else {
-        toast.error(error?.message || tf('cash.toast.addFailed', 'Could not add transaction'))
-      }
+      toast.error(cashPostingErrorMessage(error))
     } finally {
       setSavingTx(false)
     }
   }
 
+  const cashPostingErrorMessage = (error: unknown) => {
+    const message = String((error as { message?: string } | null)?.message || '').toLowerCase()
+    if (message.includes('settlement_anchor_not_ready') || message.includes('settlement_anchor_not_found')) {
+      return tf('cash.toast.anchorStale', 'This settlement anchor is no longer ready. Refresh before posting.')
+    }
+    if (message.includes('settlement_amount_exceeds_outstanding')) {
+      return tf('cash.toast.amountTooHigh', 'The settlement amount exceeds the current outstanding balance.')
+    }
+    if (message.includes('finance_document_became_active_anchor')) {
+      return tf('cash.toast.financeAnchorChanged', 'A finance document is now the active settlement anchor. Refresh before posting.')
+    }
+    if (message.includes('idempotency_key_payload_mismatch')) {
+      return tf('cash.toast.payloadMismatch', 'This retry key belongs to different transaction inputs. Review the form and submit again.')
+    }
+    return tf('cash.toast.addFailed', 'Could not add transaction')
+  }
+
+  // Preserved governed compatibility path; the primary selector and posting UI lives in Settlements.
+  async function postCashSettlement(
+    refType: SettlementKind,
+    refId: string,
+    happenedAt: string,
+    amountBase: number,
+    memo: string | null,
+  ) {
+    if (!companyId || !canManageSettlement) throw new Error('cash_settlement_not_authorized')
+    const fingerprint = stablePostingFingerprint({
+      amountBase,
+      companyId,
+      happenedAt,
+      memo,
+      refId,
+      refType,
+      transactionType: 'settlement.cash.post',
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(settlementRequestRef, fingerprint)
+    const { data, error } = await supabase.rpc('post_cash_settlement', {
+      p_company_id: companyId,
+      p_ref_type: refType,
+      p_ref_id: refId,
+      p_happened_at: happenedAt,
+      p_amount_base: amountBase,
+      p_memo: memo,
+      p_request_key: requestKey,
+    })
+    if (error) throw new Error(cashPostingErrorMessage(error))
+    clearPostingRequestKey(settlementRequestRef)
+    return Array.isArray(data) ? data[0] : data
+  }
+
+  void postCashSettlement
+
   const cashTypeLabel = (type: CashTx['type']) => {
-    if (type === 'sale_receipt') return tf('cash.saleReceipt', 'Sale receipt (in)')
-    if (type === 'purchase_payment') return tf('cash.purchasePayment', 'Purchase payment (out)')
+    if (type === 'sale_receipt') return tf('cash.saleReceipt', 'Sale receipt')
+    if (type === 'purchase_payment') return tf('cash.purchasePayment', 'Purchase payment')
     return tf('cash.adjustment', 'Adjustment')
   }
 
@@ -390,353 +360,268 @@ export default function CashPage() {
     return null
   }
 
-  const summaryCards = useMemo(
-    () => [
-      { key: 'beginning', label: tf('cash.beginning', 'Beginning'), value: summary?.beginning ?? 0 },
-      { key: 'inflows', label: tf('cash.inflows', 'Inflows'), value: summary?.inflows ?? 0 },
-      { key: 'outflows', label: tf('cash.outflows', 'Outflows'), value: summary?.outflows ?? 0 },
-      { key: 'net', label: tf('cash.net', 'Net'), value: summary?.net ?? 0 },
-      { key: 'ending', label: tf('cash.ending', 'Ending'), value: summary?.ending ?? 0 },
-    ],
-    [summary, tf],
-  )
+  const safeReference = (type: CashTx['ref_type'], id: string | null) => {
+    if (!type || !id || !orderRefByKey[`${type}:${id}`]) return tf('financeUx.unresolvedReference', 'Unresolved reference')
+    return formatOrderReference(type, id, orderRefByKey, tf('financeUx.unresolvedReference', 'Unresolved reference'))
+  }
+
+  const summaryCards = useMemo(() => summary ? [
+    { key: 'beginning', label: tf('cash.beginning', 'Beginning balance'), value: summary.beginning },
+    { key: 'inflows', label: tf('cash.inflows', 'Inflows'), value: summary.inflows },
+    { key: 'outflows', label: tf('cash.outflows', 'Outflows'), value: summary.outflows },
+    { key: 'net', label: tf('cash.net', 'Net movement'), value: summary.net },
+    { key: 'ending', label: tf('cash.ending', 'Ending balance'), value: summary.ending },
+  ] : [], [summary, tf])
+
+  const buildCashExport = async (): Promise<FinanceExportModel> => {
+    if (!companyId || ledgerError || summaryError || !summary) throw new Error('cash_export_evidence_unavailable')
+    const company = await loadFinanceExportCompany(companyId)
+    return {
+      context: {
+        title: tf('financeUx.cashBookReport', 'Cash Book Report'),
+        subtitle: tf('financeUx.currentFilteredView', 'Current filtered view'),
+        language: lang === 'pt' ? 'pt' : 'en',
+        generatedAt: new Date().toISOString(),
+        generatedBy: user?.email || null,
+        company,
+        period: { from, to },
+        filters: [typeFilter === 'all' ? tf('cash.allTypes', 'All movement types') : cashTypeLabel(typeFilter as CashTx['type'])],
+        baseCurrency,
+        disclaimer: tf('financeUx.cashDisclaimer', 'This report reflects the StockWise company cash book in company base currency.'),
+      },
+      summary: [
+        { label: tf('cash.beginning', 'Beginning balance'), value: summary.beginning, type: 'currency' },
+        { label: tf('cash.inflows', 'Inflows'), value: summary.inflows, type: 'currency' },
+        { label: tf('cash.outflows', 'Outflows'), value: summary.outflows, type: 'currency' },
+        { label: tf('cash.net', 'Net movement'), value: summary.net, type: 'currency' },
+        { label: tf('cash.ending', 'Ending balance'), value: summary.ending, type: 'currency' },
+      ],
+      sections: [{
+        title: tf('cash.ledger', 'Cash ledger'),
+        columns: [
+          { key: 'date', label: tf('table.date', 'Date'), width: 14 },
+          { key: 'type', label: tf('filters.type', 'Type'), width: 22 },
+          { key: 'reference', label: tf('table.ref', 'Reference'), width: 22 },
+          { key: 'memo', label: tf('bank.memo', 'Memo'), width: 34 },
+          { key: 'inflow', label: tf('cash.inflows', 'Inflow'), width: 16, type: 'currency' },
+          { key: 'outflow', label: tf('cash.outflows', 'Outflow'), width: 16, type: 'currency' },
+          { key: 'running', label: tf('cash.running', 'Running balance'), width: 18, type: 'currency' },
+        ],
+        rows: rows.map((row) => ({
+          date: row.happened_at,
+          type: cashTypeLabel(row.type),
+          reference: safeReference(row.ref_type, row.ref_id),
+          memo: row.memo || '',
+          inflow: row.amount_base > 0 ? row.amount_base : null,
+          outflow: row.amount_base < 0 ? Math.abs(row.amount_base) : null,
+          running: row.running_balance,
+        })),
+      }],
+      filename: sanitizeFinanceFilename(`StockWise_Cash_Book_${from}_${to}`),
+      orientation: 'landscape',
+    }
+  }
+
+  const generateExport = async (format: FinanceExportFormat) => {
+    const model = await buildCashExport()
+    if (format === 'excel') await exportFinanceExcel(model)
+    else if (format === 'pdf') await exportFinancePdf(model)
+    else await printFinanceReport(model)
+  }
+
+  const exportLabels = {
+    report: tf('financeUx.report', 'Report'),
+    scope: tf('financeUx.scope', 'Scope'),
+    period: tf('financeUx.period', 'Period'),
+    recordCount: tf('financeUx.recordCount', 'Record count'),
+    currencyBasis: tf('financeUx.currencyBasis', 'Currency basis'),
+    language: tf('financeUx.language', 'Language'),
+    english: tf('financeUx.english', 'English'),
+    portuguese: tf('financeUx.portuguese', 'Portuguese'),
+    bilingual: tf('financeUx.bilingual', 'Bilingual'),
+    downloadExcel: tf('financeUx.downloadExcel', 'Download Excel'),
+    downloadPdf: tf('financeUx.downloadPdf', 'Download PDF'),
+    print: tf('financeUx.print', 'Print'),
+    cancel: tf('actions.cancel', 'Cancel'),
+    preparing: tf('financeUx.preparing', 'Preparing output...'),
+    failed: tf('financeUx.exportFailed', 'The report could not be prepared. No partial output was downloaded.'),
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-6 shadow-[0_30px_80px_-56px_rgba(0,0,0,0.48)]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2">
-            <div className="text-xs font-medium uppercase tracking-[0.22em] text-primary/75">
-              {tf('cash.eyebrow', 'Treasury workspace')}
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">{tf('cash.title', 'Cash book')}</h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                {tf(
-                  'cash.subtitle',
-                  'Manage the company cash ledger, opening balance, and manual adjustments from one place. Settlement-linked receipts and payments still follow the finance authority rules and should normally be posted from Settlements.',
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-start gap-3 lg:items-end">
-            <Badge variant="outline" className="px-3 py-1 text-xs">
-              {companyName || tf('company.selectCompany', 'Select company')}
-            </Badge>
-            <div className="flex flex-wrap gap-2">
-              <Button asChild variant="outline">
-                <Link to="/settlements">{tf('nav.settlements', 'Settlements')}</Link>
-              </Button>
-              <Sheet open={openAdd} onOpenChange={setOpenAdd}>
-                <SheetTrigger asChild>
-                  <Button>+ {tf('cash.addTx', 'Add transaction')}</Button>
-                </SheetTrigger>
-                <SheetContent className="sm:max-w-xl">
-                  <SheetHeader>
-                    <SheetTitle>{tf('cash.addCashTx', 'Add cash transaction')}</SheetTitle>
-                    <SheetDescription>
-                      {tf(
-                        'cash.sheetDescription',
-                        'Use this panel for opening-balance adjustments or other company cash movements. Settlement-linked entries must keep the correct finance anchor and cash type.',
-                      )}
-                    </SheetDescription>
-                  </SheetHeader>
-                  <SheetBody className="mt-5 pr-1">
-                    <div className="space-y-6">
-                      <Card className="border-border/70 shadow-none">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base">{tf('cash.sheet.txTitle', 'Transaction setup')}</CardTitle>
-                          <CardDescription>
-                            {tf('cash.sheet.txHelp', 'Choose the right cash movement type first. Settlement-linked receipts and payments require finance authority and a matching anchor type.')}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label>{tf('table.date', 'Date')}</Label>
-                            <Input type="date" value={addForm.date} onChange={(e) => setAddForm((current) => ({ ...current, date: e.target.value }))} />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>{tf('filters.type', 'Type')}</Label>
-                            <Select value={addForm.type} onValueChange={(value: any) => setAddForm((current) => ({ ...current, type: value }))}>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="sale_receipt" disabled={!canManageSettlement}>{tf('cash.saleReceipt', 'Sale receipt (in)')}</SelectItem>
-                                <SelectItem value="purchase_payment" disabled={!canManageSettlement}>{tf('cash.purchasePayment', 'Purchase payment (out)')}</SelectItem>
-                                <SelectItem value="adjustment" disabled={!canManageSettlement}>{tf('cash.adjustment', 'Adjustment')}</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>{tf('cash.amount', 'Amount ({code})', { code: baseCurrency || 'MZN' })}</Label>
-                            <Input
-                              inputMode="decimal"
-                              placeholder={tf('cash.placeholder.amount', 'e.g. 1500 or -450')}
-                              value={addForm.amount}
-                              onChange={(e) => setAddForm((current) => ({ ...current, amount: e.target.value }))}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>{tf('cash.memo', 'Memo')}</Label>
-                            <Input
-                              placeholder={tf('cash.optional', 'Optional')}
-                              value={addForm.memo}
-                              onChange={(e) => setAddForm((current) => ({ ...current, memo: e.target.value }))}
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="border-border/70 shadow-none">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base">{tf('cash.sheet.anchorTitle', 'Settlement anchor')}</CardTitle>
-                          <CardDescription>
-                            {tf('cash.sheet.anchorHelp', 'Leave the anchor empty for pure cash adjustments. Use the correct internal document or order ID only when you are intentionally linking the cash movement to settlement history.')}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-4 md:grid-cols-3">
-                          <div className="space-y-2">
-                            <Label>{tf('filters.ref', 'Reference')}</Label>
-                            <Select value={addForm.refType} onValueChange={(value: any) => setAddForm((current) => ({ ...current, refType: value }))}>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">{tf('common.none', 'None')}</SelectItem>
-                                <SelectItem value="SO" disabled={!canManageSettlement}>SO</SelectItem>
-                                <SelectItem value="PO" disabled={!canManageSettlement}>PO</SelectItem>
-                                <SelectItem value="SI" disabled={!canManageSettlement}>SI</SelectItem>
-                                <SelectItem value="VB" disabled={!canManageSettlement}>VB</SelectItem>
-                                <SelectItem value="ADJ">ADJ</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <Label>{tf('movements.refId', 'Reference ID')}</Label>
-                            <Input
-                              placeholder={tf('cash.placeholder.refId', 'Internal reference ID (UUID)')}
-                              value={addForm.refId}
-                              onChange={(e) => setAddForm((current) => ({ ...current, refId: e.target.value }))}
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      {!canManageSettlement ? (
-                        <div className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-                          {tf('cash.financeAuthorityNotice', 'Only finance-authority users can post cash transactions.')}
-                        </div>
-                      ) : null}
-
-                      <div className="flex justify-end">
-                        <Button disabled={!canManageSettlement || savingTx} onClick={addTransaction}>
-                          {savingTx ? tf('actions.saving', 'Saving...') : tf('cash.add', 'Add')}
-                        </Button>
-                      </div>
-                    </div>
-                  </SheetBody>
-                </SheetContent>
-              </Sheet>
-            </div>
-          </div>
+    <div className="app-page app-page--workspace space-y-6">
+      <header className="flex flex-col gap-4 border-b border-border/70 pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="premium-label">{tf('cash.eyebrow', 'Treasury workspace')}</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{tf('cash.title', 'Cash Book')}</h1>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            {tf('financeUx.cashSubtitle', 'Review company-base-currency cash evidence, record controlled adjustments, and route customer or supplier settlements through the active finance anchor.')}
+          </p>
         </div>
-      </div>
-
-      {!canManageSettlement ? (
-        <div className="rounded-2xl border border-informational/25 bg-informational/8 px-4 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
-          {tf('cash.readOnlySettlement', 'Settlement-linked cash posting remains visible here for context, but only finance-authority users can post receipts and payments against legal settlement anchors.')}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">{companyName || tf('company.selectCompany', 'Select company')}</Badge>
+          <Button asChild variant="outline"><Link to="/settlements">{tf('nav.settlements', 'Settlements')}</Link></Button>
+          <Button variant="outline" disabled={ledgerError || summaryError} onClick={() => setExportOpen(true)}>
+            <Download className="mr-2 h-4 w-4" />{tf('financeUx.exportCashBook', 'Export current Cash Book')}
+          </Button>
         </div>
-      ) : null}
+      </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle>{tf('cash.filtersTitle', 'Ledger filters')}</CardTitle>
-            <CardDescription>
-              {tf('cash.filtersHelpRefined', 'Narrow the visible cash ledger by date range and movement type without leaving the active company context.')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label>{tf('filters.from', 'From')}</Label>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{tf('filters.to', 'To')}</Label>
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{tf('filters.type', 'Type')}</Label>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder={tf('filters.type.all', 'All')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{tf('cash.allTypes', 'All')}</SelectItem>
-                  <SelectItem value="sale_receipt">{tf('cash.saleReceipt', 'Sale receipt (in)')}</SelectItem>
-                  <SelectItem value="purchase_payment">{tf('cash.purchasePayment', 'Purchase payment (out)')}</SelectItem>
-                  <SelectItem value="adjustment">{tf('cash.adjustment', 'Adjustment')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+      <nav aria-label={tf('financeUx.cashViews', 'Cash Book views')} className="flex flex-wrap gap-2">
+        {([
+          ['ledger', WalletCards, tf('financeUx.ledger', 'Ledger')],
+          ['adjustment', ArrowUpRight, tf('financeUx.adjustment', 'Adjustment')],
+          ['settings', Settings2, tf('settings.title', 'Settings')],
+        ] as const).map(([key, Icon, label]) => (
+          <Button key={key} variant={view === key ? 'default' : 'outline'} onClick={() => setView(key)} aria-current={view === key ? 'page' : undefined}>
+            <Icon className="mr-2 h-4 w-4" />{label}
+          </Button>
+        ))}
+      </nav>
 
-        <Card className="border-border/70 bg-muted/20">
-          <CardHeader className="pb-3">
-            <CardTitle>{tf('cash.policyTitle', 'Posting policy')}</CardTitle>
-            <CardDescription>
-              {tf('cash.settlementsHint', 'Use Settlements when you need cash movements to hit a sales invoice, vendor bill, sales order, or purchase order settlement chain. Use this page for the company cash book and controlled manual entries.')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/settlements">{tf('cash.openSettlements', 'Open Settlements')}</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-5">
-        {summaryCards.map((card) => (
-          <Card key={card.key} className="border-border/70">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold tracking-tight">
-              {formatMoneyBase(card.value, baseCurrency)}
+      {view === 'ledger' ? (
+        <>
+          <Card>
+            <CardHeader><CardTitle>{tf('cash.filtersTitle', 'Ledger filters')}</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2"><Label>{tf('filters.from', 'From')}</Label><Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></div>
+              <div className="space-y-2"><Label>{tf('filters.to', 'To')}</Label><Input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></div>
+              <div className="space-y-2">
+                <Label>{tf('filters.type', 'Type')}</Label>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{tf('cash.allTypes', 'All movement types')}</SelectItem>
+                    <SelectItem value="sale_receipt">{tf('cash.saleReceipt', 'Sale receipt')}</SelectItem>
+                    <SelectItem value="purchase_payment">{tf('cash.purchasePayment', 'Purchase payment')}</SelectItem>
+                    <SelectItem value="adjustment">{tf('cash.adjustment', 'Adjustment')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle>{tf('cash.beginningBalance', 'Beginning balance')}</CardTitle>
-            <CardDescription>
-              {tf('cash.beginningHelp', 'This cash book uses one company-level opening balance and opening date. Keep it aligned with the period you want the ledger to roll forward from.')}
-            </CardDescription>
+          {summaryLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingSummary', 'Loading cash summary')} /> : null}
+          {summaryError ? (
+            <PremiumStatePanel
+              variant="error"
+              title={tf('financeUx.cashSummaryUnavailable', 'Cash summary unavailable')}
+              description={tf('financeUx.cashSummaryUnavailableHelp', 'The Cash ledger may still be available. No zero balance has been inferred.')}
+            />
+          ) : null}
+          {!summaryLoading && !summaryError ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {summaryCards.map((card) => (
+                <Card key={card.key}>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{card.label}</CardTitle></CardHeader>
+                  <CardContent className="text-2xl font-semibold">{formatMoneyBase(card.value, baseCurrency)}</CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : null}
+
+          {ledgerLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingLedger', 'Loading Cash ledger')} /> : null}
+          {ledgerError ? (
+            <PremiumStatePanel
+              variant="error"
+              title={tf('financeUx.cashLedgerUnavailable', 'Cash ledger unavailable')}
+              description={tf('financeUx.cashLedgerUnavailableHelp', 'Existing summary evidence is retained. An empty ledger has not been inferred.')}
+            />
+          ) : null}
+          {!ledgerLoading && !ledgerError ? (
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <CardTitle>{tf('cash.ledger', 'Cash ledger')}</CardTitle>
+                <CardDescription>{tf('financeUx.cashLedgerHelp', 'Inflows and outflows are shown separately in company base currency.')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {rows.length === 0 ? (
+                  <PremiumStatePanel variant="empty" title={tf('cash.emptyLedger', 'No cash-book transactions match the current filters.')} />
+                ) : (
+                  <>
+                    <div className="grid gap-3 md:hidden">
+                      {rows.map((row) => {
+                        const href = referenceHref(row.ref_type, row.ref_id)
+                        return (
+                          <article key={row.id} className="rounded-lg border border-border/70 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div><p className="font-medium">{cashTypeLabel(row.type)}</p><p className="text-sm text-muted-foreground">{row.happened_at}</p></div>
+                              <span className={row.amount_base >= 0 ? 'text-positive' : 'text-negative'}>
+                                {row.amount_base >= 0 ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-xl font-semibold">{formatMoneyBase(row.amount_base, baseCurrency)}</p>
+                            <p className="mt-2 text-sm text-muted-foreground">{row.memo || tf('common.dash', '-')}</p>
+                            {href ? <Link className="mt-3 inline-block text-sm text-primary underline-offset-4 hover:underline" to={href}>{safeReference(row.ref_type, row.ref_id)}</Link> : null}
+                          </article>
+                        )
+                      })}
+                    </div>
+                    <div className="hidden overflow-x-auto md:block">
+                      <table className="w-full text-sm">
+                        <thead><tr className="border-b text-left"><th className="py-3 pr-3">{tf('table.date', 'Date')}</th><th className="py-3 pr-3">{tf('filters.type', 'Type')}</th><th className="py-3 pr-3">{tf('table.ref', 'Reference')}</th><th className="py-3 pr-3">{tf('bank.memo', 'Memo')}</th><th className="py-3 pr-3 text-right">{tf('cash.inflows', 'Inflow')}</th><th className="py-3 pr-3 text-right">{tf('cash.outflows', 'Outflow')}</th><th className="py-3 text-right">{tf('cash.running', 'Running balance')}</th></tr></thead>
+                        <tbody>{rows.map((row) => {
+                          const href = referenceHref(row.ref_type, row.ref_id)
+                          const reference = safeReference(row.ref_type, row.ref_id)
+                          return <tr key={row.id} className="border-b border-border/60"><td className="py-3 pr-3">{row.happened_at}</td><td className="py-3 pr-3">{cashTypeLabel(row.type)}</td><td className="py-3 pr-3">{href ? <Link className="text-primary hover:underline" to={href}>{reference}</Link> : reference}</td><td className="py-3 pr-3 text-muted-foreground">{row.memo || tf('common.dash', '-')}</td><td className="py-3 pr-3 text-right">{row.amount_base > 0 ? formatMoneyBase(row.amount_base, baseCurrency) : tf('common.dash', '-')}</td><td className="py-3 pr-3 text-right">{row.amount_base < 0 ? formatMoneyBase(Math.abs(row.amount_base), baseCurrency) : tf('common.dash', '-')}</td><td className="py-3 text-right font-medium">{formatMoneyBase(row.running_balance, baseCurrency)}</td></tr>
+                        })}</tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+        </>
+      ) : null}
+
+      {view === 'adjustment' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{tf('financeUx.cashAdjustment', 'Cash-book adjustment')}</CardTitle>
+            <CardDescription>{tf('financeUx.cashAdjustmentHelp', 'Adjustments are signed Cash Book entries. They are not customer receipts or supplier payments; use Settlements for those.')}</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] md:items-end">
-            <div className="space-y-2">
-              <Label>{tf('cash.asOf', 'As of')}</Label>
-              <Input
-                type="date"
-                value={book?.beginning_as_of ?? todayISO()}
-                onChange={(e) =>
-                  setBook((current) =>
-                    current
-                      ? { ...current, beginning_as_of: e.target.value }
-                      : { id: '', company_id: companyId!, beginning_balance_base: 0, beginning_as_of: e.target.value },
-                  )
-                }
-              />
+          <CardContent className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2"><Label>{tf('table.date', 'Date')}</Label><Input type="date" value={adjustment.date} onChange={(event) => setAdjustment((current) => ({ ...current, date: event.target.value }))} /></div>
+            <div className="space-y-2"><Label>{tf('cash.amount', 'Amount ({code})', { code: baseCurrency })}</Label><Input inputMode="decimal" value={adjustment.amount} onChange={(event) => setAdjustment((current) => ({ ...current, amount: event.target.value }))} /></div>
+            <div className="space-y-2"><Label>{tf('cash.memo', 'Memo')}</Label><Input value={adjustment.memo} onChange={(event) => setAdjustment((current) => ({ ...current, memo: event.target.value }))} /></div>
+            <div className="sm:col-span-3 flex flex-wrap items-center justify-between gap-3">
+              {!canManageSettlement ? <p className="text-sm text-muted-foreground">{tf('cash.financeAuthorityNotice', 'Only finance-authority users can post cash adjustments.')}</p> : <span />}
+              <Button disabled={!canManageSettlement || savingTx} onClick={postAdjustment}>{savingTx ? tf('actions.saving', 'Saving...') : tf('financeUx.recordAdjustment', 'Record adjustment')}</Button>
             </div>
-            <div className="space-y-2">
-              <Label>{tf('cash.amount', 'Amount ({code})', { code: baseCurrency || 'MZN' })}</Label>
-              <Input
-                inputMode="decimal"
-                value={String(book?.beginning_balance_base ?? 0)}
-                onChange={(e) => {
-                  const value = Number(e.target.value)
-                  setBook((current) =>
-                    current
-                      ? { ...current, beginning_balance_base: value }
-                      : { id: '', company_id: companyId!, beginning_balance_base: value, beginning_as_of: todayISO() },
-                  )
-                }}
-              />
-            </div>
-            <Button onClick={upsertBeginningBalance} disabled={savingBeg}>
-              {savingBeg
-                ? tf('actions.saving', 'Saving...')
-                : book?.id
-                  ? tf('cash.update', 'Update')
-                  : tf('cash.create', 'Create')}
-            </Button>
           </CardContent>
         </Card>
+      ) : null}
 
-        <Card className="border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.03]">
-          <CardHeader className="pb-3">
-            <CardTitle>{tf('cash.workspaceTitle', 'Cash book guidance')}</CardTitle>
-            <CardDescription>
-              {tf('cash.workspaceHelp', 'Keep ordinary cash operations clear: the cash book is a company ledger, not a catch-all for bank settlements or unresolved finance postings.')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
-              {tf('cash.guidance.one', 'Use the opening balance section to set the starting position for the company cash ledger.')}
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
-              {tf('cash.guidance.two', 'Use manual transactions for genuine cash-book adjustments or direct cash movements that are not better handled through the bank workspace.')}
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
-              {tf('cash.guidance.three', 'Use Settlements for receipt and payment posting against the active legal finance anchor so cash history, reconciliation, and document chains stay aligned.')}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {view === 'settings' ? (
+        bookLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingCashSettings', 'Loading Cash Book settings')} /> :
+          bookError ? <PremiumStatePanel variant="error" title={tf('financeUx.cashSettingsUnavailable', 'Cash Book settings unavailable')} description={tf('financeUx.cashSettingsUnavailableHelp', 'No beginning balance has been inferred.')} /> :
+            <Card>
+              <CardHeader><CardTitle>{tf('cash.beginningBalance', 'Beginning balance')}</CardTitle><CardDescription>{tf('cash.beginningHelp', 'Set the starting position for this company cash book in company base currency.')}</CardDescription></CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                <div className="space-y-2"><Label>{tf('cash.asOf', 'As of')}</Label><Input type="date" value={book?.beginning_as_of ?? todayISO()} onChange={(event) => setBook((current) => current ? { ...current, beginning_as_of: event.target.value } : { id: '', company_id: companyId || '', beginning_balance_base: 0, beginning_as_of: event.target.value })} /></div>
+                <div className="space-y-2"><Label>{tf('cash.amount', 'Amount ({code})', { code: baseCurrency })}</Label><Input inputMode="decimal" value={String(book?.beginning_balance_base ?? 0)} onChange={(event) => setBook((current) => current ? { ...current, beginning_balance_base: Number(event.target.value) } : { id: '', company_id: companyId || '', beginning_balance_base: Number(event.target.value), beginning_as_of: todayISO() })} /></div>
+                <Button disabled={!canManageSettlement || savingBeg} onClick={upsertBeginningBalance}>{savingBeg ? tf('actions.saving', 'Saving...') : tf('actions.save', 'Save')}</Button>
+              </CardContent>
+            </Card>
+      ) : null}
 
-      <Card className="overflow-hidden border-border/70">
-        <CardHeader className="pb-3">
-          <CardTitle>{tf('cash.ledger', 'Transactions')}</CardTitle>
-          <CardDescription>
-            {tf('cash.ledgerHelp', 'Review every visible cash-book movement with anchor context, memo, signed value, and running balance.')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-background text-left">
-              <tr>
-                <th className="py-2 pr-3">{tf('table.date', 'Date')}</th>
-                <th className="py-2 pr-3">{tf('filters.type', 'Type')}</th>
-                <th className="py-2 pr-3">{tf('table.ref', 'Reference')}</th>
-                <th className="py-2 pr-3">{tf('bank.memo', 'Memo')}</th>
-                <th className="py-2 pr-3 text-right">{tf('cash.amount', 'Amount ({code})', { code: baseCurrency || 'MZN' })}</th>
-                <th className="py-2 pl-3 text-right">{tf('cash.running', 'Running')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const href = referenceHref(row.ref_type, row.ref_id)
-                return (
-                  <tr key={row.id} className="border-t border-border/70">
-                    <td className="py-3 pr-3 align-top">{row.happened_at}</td>
-                    <td className="py-3 pr-3 align-top">
-                      <Badge variant="outline" className={cashTone(row.type)}>
-                        {cashTypeLabel(row.type)}
-                      </Badge>
-                    </td>
-                    <td className="py-3 pr-3 align-top">
-                      {href ? (
-                        <Link className="text-primary underline-offset-4 hover:underline" to={href}>
-                          {formatOrderReference(row.ref_type, row.ref_id, orderRefByKey, tf('common.dash', '—'))}
-                        </Link>
-                      ) : (
-                        formatOrderReference(row.ref_type, row.ref_id, orderRefByKey, tf('common.dash', '—'))
-                      )}
-                    </td>
-                    <td className="py-3 pr-3 align-top text-muted-foreground">{row.memo ?? tf('common.dash', '—')}</td>
-                    <td className="py-3 pr-3 text-right align-top">{formatMoneyBase(row.amount_base, baseCurrency)}</td>
-                    <td className="py-3 pl-3 text-right align-top font-medium">{formatMoneyBase(row.running_balance, baseCurrency)}</td>
-                  </tr>
-                )
-              })}
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-muted-foreground">
-                    {tf('cash.emptyLedger', 'No cash-book transactions match the current filters.')}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      {(summaryError || ledgerError || bookError) ? (
+        <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />{tf('financeUx.partialEvidence', 'Some finance evidence is unavailable. Available sections remain visible and no missing value is treated as zero.')}</div>
+      ) : null}
+
+      <FinanceExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        title={tf('financeUx.cashBookReport', 'Cash Book Report')}
+        description={tf('financeUx.exportConfirmation', 'Confirm the evidence scope before generating the file.')}
+        scope={tf('financeUx.currentFilteredView', 'Current filtered view')}
+        period={`${from} - ${to}`}
+        recordCount={rows.length}
+        currencyBasis={`${tf('financeUx.companyBaseCurrency', 'Company base currency')}: ${baseCurrency}`}
+        language={lang === 'pt' ? 'pt' : 'en'}
+        labels={exportLabels}
+        onGenerate={generateExport}
+      />
     </div>
   )
 }
