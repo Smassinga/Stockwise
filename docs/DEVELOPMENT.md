@@ -132,3 +132,19 @@ UX-6 keeps `/settlements`, `/cash`, `/banks`, and `/banks/:bankId` on the existi
 Finance exports use one typed read-only model for Excel, PDF, and Print. External advice must resolve the StockWise company and one customer or supplier, prefer immutable document snapshots over current master data, use company base currency for governed settlement values, mask bank account identifiers, and omit internal notes. Remittance Advice and Receipt Allocation Advice describe StockWise allocation evidence; neither is bank proof, a fiscal receipt, or confirmation that funds cleared. Do not create a separate print calculation path or recompute canonical reconciliation values in export helpers.
 
 The UX-6 implementation did not add a migration, RPC, view, Edge Function, dependency, posting path, or authority rule. Local mutation proof remains the protected loopback finance suite. Production validation is read-only and must not post settlements or adjustments, reconcile transactions, upload statements, import bank CSV files, or change the POS tax mode.
+
+## Production workspace and output development
+
+UX-7 keeps `/bom`, `/production-runs`, and `/growth-batches` on the existing stock, costing, lifecycle, idempotency, role, and reversal authority. Recipes & Assemblies is the simple Recipe-driven stock transformation path; Production Runs preserve planned-versus-actual and frozen-cost evidence; Growth Batches preserve group-level biological or agricultural lifecycle evidence. Query-backed register, create, detail, build, and section state is presentation state only and must never post from URL state.
+
+Keep cost labels exact. Recipe material cost is a current WAC estimate, draft Production Run cost is a preview estimate, posted Production Run cost is frozen evidence, Growth Batch direct cost is a memo operational cost, harvested cost is not COGS, and failed currency or cost reads are unavailable rather than zero. Production and Growth Batch activity must not create finance rows or change `items.unit_price`.
+
+Recipe Specification, Production Run Cost Sheet, and Growth Batch Activity & Cost Report use one typed source model for Excel, PDF, and Print. They require company identity, explicit currency evidence, numeric Excel cells, A4 PDF output, safe filenames, WiseCore teal/neutral styling, and operational-scope disclaimers. Export helpers remain read-only and must not duplicate production costing, stock rollups, or lifecycle calculations.
+
+The maintained query contracts are:
+
+- `/bom?view=register|create|detail|build` with a company-scoped `bomId` for detail/build;
+- `/production-runs?view=register|create|detail` with a company-scoped `runId`; the existing bare `bomId` creation link remains compatible;
+- `/growth-batches?view=register|create|detail` with a company-scoped `batchId` and `section=overview|materials|lifecycle|measurements|costs|history`.
+
+Growth Batch detail has six presentation sections, but all existing event types and event-specific reversals remain available. Event summaries that are empty or enum-shaped must use the localized event-type label. Do not expose raw lifecycle codes, UUIDs, RPC names, or developer future-scope controls in normal production workspaces.

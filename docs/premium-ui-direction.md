@@ -308,6 +308,20 @@ New finance Excel, PDF, and Print outputs share one typed source model and WiseC
 
 UX-6 is live from implementation `615dd19d889c2d03efb2e6429f0e726c31fd560b`. Optional grouped multi-event advice and a broader bounded counterparty-activity section remain deferred; single-event Remittance Advice and Receipt Allocation Advice plus current filtered reconciliation, cash, bank-ledger, and bank-reconciliation exports are the maintained contract.
 
+## UX-7 Production Workspace Direction
+
+The production routes are register-first and share one workflow-selection explanation:
+
+- Recipes & Assemblies is the simple Recipe-driven stock transformation path and retains Quick Assembly;
+- Production Runs is the controlled planned-versus-actual path with preview, frozen material/direct-cost snapshots, posting evidence, and event-specific reversal;
+- Growth Batches is group-level biological or agricultural lifecycle tracking, not an individual record, stock item, finance document, or profitability model.
+
+Each selected record exposes one primary action and no more than two immediate secondary actions. Remaining activities belong in a labelled workflow menu or on their source event. Growth Batch detail uses Overview, Materials & Location, Lifecycle, Measurements, Costs, and History & Audit instead of ten equal-weight tabs. Developer future-scope ideas must remain in technical documentation, not disabled operational controls.
+
+Production cost presentation must distinguish current Recipe WAC estimates, draft Production Run preview estimates, frozen posted Production Run costs, Growth Batch memo direct costs, harvested cost, remaining cost, explicit zero, unavailable evidence, and not-applicable evidence. Teal remains action/focus/selection; success, warning, and destructive colors remain semantic.
+
+Production exports inherit the UX-6 company-header, WiseCore palette, numeric Excel, A4 PDF, page-numbering, safe-filename, and shared-source-model rules. Recipe Specification, Production Run Cost Sheet, and Growth Batch Activity & Cost Report are internal operational outputs. Their disclaimers must not imply accounting posting, COGS, fair value, individual identity, or bank/payment evidence.
+
 ## What Not To Use
 
 Avoid:

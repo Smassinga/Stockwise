@@ -434,3 +434,33 @@ G5.2 preserves the accounting and stock boundary:
 - no change to current primary quantity, current total weight, area, accumulated material cost, accumulated direct cost, accumulated total cost, harvested cost, remaining cost, or `items.unit_price`
 - no sale, invoice, COGS, FIFO layer, fair-value entry, finance journal, cash, bank, AP, AR, vendor-bill allocation, supplier liability, split batch, child batch, whole-batch reversal, profitability dashboard, or individual animal/plant record
 - only `status`, `completed_by`, `completed_at`, audit fields, and latest event sequence change under a completion-specific transaction-local guard
+
+## UX-7 Production Presentation Contract
+
+UX-7 is live as a presentation and output package on the existing 45-migration, 393-test production authority. It adds no migration, RPC, view, Edge Function, stock trigger, costing rule, lifecycle rule, grant, or RLS change.
+
+The maintained route contracts are register-first:
+
+- Recipes & Assemblies: register, create, detail, and Quick Assembly build states on `/bom`;
+- Production Runs: register, create, and detail states on `/production-runs`, retaining bare `bomId` compatibility;
+- Growth Batches: register, create, and detail states on `/growth-batches`, with Overview, Materials & Location, Lifecycle, Measurements, Costs, and History & Audit.
+
+The operational choice remains explicit:
+
+- Quick Assembly is a simple Recipe-driven stock transformation;
+- Production Run preserves planned-versus-actual quantities, sources, frozen WAC/material cost, additional direct-cost snapshots, output unit cost, stock movements, and controlled reversal;
+- Growth Batch preserves group-level quantities, weight, location, measurements, memo costs, stock inputs, losses, harvest, completion, event chronology, and event-specific reversal.
+
+Cost presentation must not blur authority:
+
+- Recipe material cost is a current WAC estimate and may change;
+- draft Production Run cost is a preview estimate;
+- posted or reversed Production Run cost is frozen evidence;
+- additional Production Run direct costs are production-cost snapshots, not paid accounting expenses;
+- Growth Batch direct costs are memo operational costs;
+- harvested cost is not COGS;
+- unavailable cost or currency evidence is not zero and is not silently labelled MZN.
+
+Recipe Specification, Production Run Cost Sheet, and Growth Batch Activity & Cost Report are company-branded internal operational outputs in Excel, PDF, and Print. They use canonical displayed values and include scope disclaimers; they do not create finance evidence, individual animal/plant records, fair-value valuation, COGS, or accounting postings.
+
+Local regression passed `393/393` against loopback Supabase, and the isolated workflow repeated `393/393` after replaying all 45 migrations. Production QA was read-only and created or changed no Recipe, assembly, Production Run, Growth Batch, stock movement, cost event, finance row, selling price, or POS setting.
