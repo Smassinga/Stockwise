@@ -126,6 +126,8 @@ type LandingCopy = {
   demoCta: string
   signIn: string
   openDashboard: string
+  openMenu: string
+  closeMenu: string
   footerTagline: string
   labels: {
     annual: string
@@ -579,6 +581,8 @@ const copyByLang: Record<Lang, LandingCopy> = {
     demoCta: 'Book a demo',
     signIn: 'Sign in',
     openDashboard: 'Open dashboard',
+    openMenu: 'Open menu',
+    closeMenu: 'Close menu',
     footerTagline:
       'Inventory, sales, purchases, documents, settlements, reports, users, and Mozambique-ready records in one serious workspace.',
     labels: {
@@ -1049,6 +1053,8 @@ const copyByLang: Record<Lang, LandingCopy> = {
     demoCta: 'Marcar demonstração',
     signIn: 'Iniciar sessão',
     openDashboard: 'Abrir dashboard',
+    openMenu: 'Abrir menu',
+    closeMenu: 'Fechar menu',
     footerTagline:
       'Inventário, vendas, compras, documentos, liquidações, relatórios, utilizadores e registos para Moçambique num workspace sério.',
     labels: {
@@ -1983,7 +1989,7 @@ export default function LandingPage() {
                 variant="ghost"
                 size="icon"
                 className="hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+                aria-label={menuOpen ? copy.closeMenu : copy.openMenu}
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((value) => !value)}
               >
