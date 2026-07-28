@@ -158,3 +158,13 @@ The maintained routes are `/settings?view=overview|company|operations|communicat
 The Fiscal Document Review Workbook is an XLSX review aid. It is not an official SAF-T/XML submission file, tax return, proof of submission, or Tax Authority acceptance. Core fiscal settings and active series govern supported-issuance readiness; optional SAF-T preparation, artifact, and audit histories fail independently. Raw storage paths, UUIDs, and canonical status values are not normal business labels.
 
 The UX-8 release added no migration, RPC, view, Edge Function, dependency, role rule, entitlement rule, reset scope, fiscal authority, or production mutation. A production-only member-dialog focus-return defect was corrected in `c8c135bf4f3dcfb2bea30f010be9b5bb165de674`; both explicit close and Escape now restore focus to the originating Review member control.
+
+## UX-9A conversion and setup feedback development
+
+UX-9A is a bounded interaction package, not the wider UX-9 consistency audit. Landing CTAs must remain links or anchors with one accessible name and no nested interactive controls. The logged-out hero owns the only pulse; authenticated, header, mobile-menu, pricing, and final CTAs remain stable. Pricing glare is decorative, pointer-transparent, fine-pointer-only, clipped to the existing card radius, and disabled by reduced motion. Public pricing remains the maintained four-plan, seven-day-trial, MZN, manual-activation model.
+
+Onboarding progress follows the existing asynchronous authority: account check, company creation, active-company selection, membership confirmation, and invitation acceptance. It must not use a timer, artificial percentage, or simulated completion. Failures restore the existing form and entered values; successful company or invitation entry renders the existing durable completion state immediately.
+
+The Currency preview is presentation-only and calculates the entered direction as `source amount * entered rate`. It does not invert rates, look up a reverse rate, save data, post finance activity, or imply a transfer. Incomplete or unavailable evidence remains instructional or unavailable rather than `0.00`. The compact saved-rate result is shown only after the maintained FX save succeeds and does not delay the real save.
+
+Use the existing `framer-motion` package and CSS media queries for these effects. Under reduced motion, pulse, glare sweep, loader rotation, translating CTA text, and animated checkmark drawing stop while equivalent text and focus treatment remain visible. Do not add `motion`, replace the base Button or Card, add a dependency, or move onboarding, membership, currency, pricing, activation, or finance authority into presentation code.

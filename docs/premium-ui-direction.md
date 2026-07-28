@@ -390,3 +390,13 @@ Users is register-first and separates invitation creation from email delivery. O
 Platform Control uses portfolio, activation, selected-company, communication, audit, and isolated danger workflows. Stored subscription state remains separate from effective access. Catalogue MRR and ARR are catalogue indicators, not collected revenue. Operational reset remains alone in the danger section with exact deleted/preserved scope, UUID confirmation, reason, rate limit, and backend audit.
 
 Mozambique Compliance leads with supported-issuance readiness from core identity, settings, and series evidence. Optional histories fail independently. The Fiscal Document Review Workbook is an Excel review aid with an explicit non-SAF-T, non-tax-return, non-submission disclaimer. No universal compliance score, manual next-number control, raw status, or raw storage path belongs in the primary experience.
+
+## UX-9A Conversion, Motion, Setup, And Currency Feedback
+
+Conversion motion is restrained and consequence-aware. A single logged-out hero CTA may pulse; pricing cards and the final CTA may use a subtle, clipped glare on fine pointers. Authenticated actions, operational alerts, destructive states, finance exceptions, and fiscal warnings do not pulse or glare. Hover and focus-visible provide equivalent enhancement, while touch users receive a complete static state.
+
+The Magic UI Interactive Hover Button, Pulsating Button, and Glare Hover sources were reviewed, but their registry output was not installed. StockWise uses audited link-safe landing adaptations, the existing rounded-rectangle geometry, WiseCore green/black/neutral styling, existing `framer-motion`, and the maintained base Button and Card unchanged.
+
+Onboarding feedback communicates the actual asynchronous step without timers or fake progress. Currency feedback is explicitly a conversion preview and saved-rate confirmation, never a transfer, payment, settlement, or accounting result. Price labels use natural `Price`/`Prices` and `Preço`/`Preços`; MZN remains in formatted amounts and every operational currency context where it carries meaning.
+
+All UX-9A motion has a stable reduced-motion equivalent. Decorative pulse, glare, loader accents, arrows, and checkmarks are hidden from assistive technology and cannot intercept input. Loaders use status semantics, preview readiness is announced, focus remains visible, and no information depends on animation alone.
