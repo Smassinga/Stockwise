@@ -261,6 +261,7 @@ export default function Users() {
   const [selectedRole, setSelectedRole] = useState<Role>('VIEWER')
   const [selectedStatus, setSelectedStatus] = useState<Status>('active')
   const inviteButtonRef = useRef<HTMLButtonElement>(null)
+  const memberReviewTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   const [myEmail, setMyEmail] = useState<string | null>(null)
   const [myName, setMyName] = useState<string | null>(null)
@@ -306,7 +307,8 @@ export default function Users() {
     if (searchParams.get('action') !== 'invite') setInviteResult(null)
   }, [searchParams])
 
-  function openMember(member: Member) {
+  function openMember(member: Member, trigger: HTMLButtonElement) {
+    memberReviewTriggerRef.current = trigger
     setSelectedMember(member)
     setSelectedRole(member.role)
     setSelectedStatus(member.status)
@@ -923,7 +925,7 @@ export default function Users() {
                       <div>{t('users.table.confirmed')}: {member.email_confirmed_at ? new Date(member.email_confirmed_at).toLocaleString() : t('common.dash')}</div>
                       <div>{t('users.table.lastSignin')}: {member.last_sign_in_at ? new Date(member.last_sign_in_at).toLocaleString() : t('common.dash')}</div>
                     </div>
-                    <Button className="mt-4 w-full" variant="outline" onClick={() => openMember(member)}>
+                    <Button className="mt-4 w-full" variant="outline" onClick={(event) => openMember(member, event.currentTarget)}>
                       <UserCog className="h-4 w-4" />
                       {tt('users.reviewMember', 'Review member')}
                     </Button>
@@ -977,7 +979,7 @@ export default function Users() {
                       </td>
                       <td className="py-2 pr-2">
                         <div className="flex justify-end">
-                          <Button variant="outline" size="sm" onClick={() => openMember(member)}>
+                          <Button variant="outline" size="sm" onClick={(event) => openMember(member, event.currentTarget)}>
                             <UserCog className="h-4 w-4" />
                             {tt('users.reviewMember', 'Review member')}
                           </Button>
@@ -996,7 +998,16 @@ export default function Users() {
       )}
 
       <Dialog open={Boolean(selectedMember)} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className="max-w-2xl"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            if (memberReviewTriggerRef.current?.isConnected) {
+              memberReviewTriggerRef.current.focus()
+            }
+            memberReviewTriggerRef.current = null
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{tt('users.memberReviewTitle', 'Review member')}</DialogTitle>
             <DialogDescription>
