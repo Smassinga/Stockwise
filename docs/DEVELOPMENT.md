@@ -148,3 +148,13 @@ The maintained query contracts are:
 - `/growth-batches?view=register|create|detail` with a company-scoped `batchId` and `section=overview|materials|lifecycle|measurements|costs|history`.
 
 Growth Batch detail has six presentation sections, but all existing event types and event-specific reversals remain available. Event summaries that are empty or enum-shaped must use the localized event-type label. Do not expose raw lifecycle codes, UUIDs, RPC names, or developer future-scope controls in normal production workspaces.
+
+## Administration and compliance workspace development
+
+UX-8 keeps authenticated identity, company membership, company entitlement, and platform administration as separate authority domains. Settings is a query-backed company command centre; Users remains governed by the maintained role and invitation helpers; Platform Control remains independently platform-admin guarded; Mozambique Compliance remains company-scoped and readiness-first. Presentation helpers may label authority, readiness, or unavailable evidence, but they must not reproduce role hierarchy, effective-access, activation, reset, or fiscal-readiness authority.
+
+The maintained routes are `/settings?view=overview|company|operations|communications|documents`, `/users`, `/users/roles`, `/platform-control?view=portfolio|activation|company`, and `/compliance/mz?view=readiness|series|export|history`. Legacy Settings `section` links still open and focus their governed section. Query state never saves settings, creates an invitation, changes access, decides activation, sends an audited notice, resets data, or changes fiscal evidence.
+
+The Fiscal Document Review Workbook is an XLSX review aid. It is not an official SAF-T/XML submission file, tax return, proof of submission, or Tax Authority acceptance. Core fiscal settings and active series govern supported-issuance readiness; optional SAF-T preparation, artifact, and audit histories fail independently. Raw storage paths, UUIDs, and canonical status values are not normal business labels.
+
+The UX-8 release added no migration, RPC, view, Edge Function, dependency, role rule, entitlement rule, reset scope, fiscal authority, or production mutation. A production-only member-dialog focus-return defect was corrected in `c8c135bf4f3dcfb2bea30f010be9b5bb165de674`; both explicit close and Escape now restore focus to the originating Review member control.

@@ -290,3 +290,11 @@ That future layer should reuse the current plan catalog and entitlement state in
 ## Assisted verified activation (live)
 
 The assisted request workflow is live at migration 41. Trial, expired, and active-paid companies may submit; suspended/disabled companies receive support-only handling. OWNER/ADMIN chooses an exact priced period from `plan_catalog`, uploads private evidence, and submits. Only a platform admin can approve, and approval extends future paid access or starts from server approval time before calling the existing entitlement control plane atomically. Upload alone never changes access. Controlled production smoke used synthetic evidence only; provider webhooks, automatic verification/reconciliation, and automatic confirmation email remain future scope.
+
+## UX-8 access presentation
+
+UX-8 presents authenticated identity, company membership, effective company entitlement, and platform administration as separate evidence. Company OWNER and ADMIN roles do not imply platform-admin authority, and platform-admin visibility does not grant a company role. Settings labels access as platform-managed and does not expose self-service plan, paid-activation, suspension, purge, or reset controls.
+
+Platform Control separates stored subscription state from backend-derived effective access. Portfolio catalogue MRR/ARR remain catalogue indicators, not collected revenue. Activation approval, access changes, notice sending, and operational reset retain their existing backend checks and audit paths. Outbound notices remain manual after saved access state; approval does not send confirmation automatically.
+
+Authenticated production closeout used Leny Doçuras only after legitimate reactivation. Its allowed trial state opened protected company routes without changing entitlement, and the run made no access, activation, notice, membership, or reset mutation. Operational reset remains a separate later action requiring non-active-paid eligibility, exact company UUID, written reason, scope review, rate limit, and audit evidence.

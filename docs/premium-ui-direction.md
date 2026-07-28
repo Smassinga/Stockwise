@@ -380,3 +380,13 @@ Every setup surface keeps readiness, authority, and consequence separate. `Ready
 The setup hub leads the Settings first viewport, keeps core foundation before operational extensions, and uses one supported deep link per action. Query values select a maintained view only and never save, invite, import, or post. Mobile cards retain readable EN/PT copy, visible status text beyond color, practical targets, and the shell dock allowance.
 
 UX-3 production validation completed on 2026-07-19. The final deployment passed at `1440`, `1200`, `820`, and `390`, light/dark, and EN/PT representative routes. A production-only locale fallback discovered during QA was corrected so an explicit stored company language still wins, while the active language control remains effective when no company locale is configured. No universal setup percentage, backend readiness state, schema, role, permission, or business mutation was introduced.
+
+## UX-8 Administration And Compliance Contract
+
+Settings remains the company command centre and groups company identity, operations, communications, documents, people, and platform-managed access by authority and operational effect. Section saves remain local. Weighted average is the only presented live valuation policy; FIFO is explanatory future scope, not a selector. Company users may review entitlement evidence but cannot use Settings as a substitute for Platform Control.
+
+Users is register-first and separates invitation creation from email delivery. One principal row action opens member review; role comparison, disable, removal, and hierarchy blockers remain secondary and explicit. Company roles describe authority inside one company. Platform-admin authority is independent and never follows from OWNER or ADMIN.
+
+Platform Control uses portfolio, activation, selected-company, communication, audit, and isolated danger workflows. Stored subscription state remains separate from effective access. Catalogue MRR and ARR are catalogue indicators, not collected revenue. Operational reset remains alone in the danger section with exact deleted/preserved scope, UUID confirmation, reason, rate limit, and backend audit.
+
+Mozambique Compliance leads with supported-issuance readiness from core identity, settings, and series evidence. Optional histories fail independently. The Fiscal Document Review Workbook is an Excel review aid with an explicit non-SAF-T, non-tax-return, non-submission disclaimer. No universal compliance score, manual next-number control, raw status, or raw storage path belongs in the primary experience.

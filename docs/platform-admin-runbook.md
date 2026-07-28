@@ -182,3 +182,11 @@ Future payment automation should reuse the existing control plane rather than by
 ## Payment request review (live)
 
 Platform Control has a live queue and channel editor. Reviewers compare current access, requested plan/period, authoritative and declared amounts, method, normalized provider identity, payer, timestamp, and private proof. Start review before deciding. Use correction for repairable evidence, reject with a reason, or explicitly confirm approval. Approval updates request, immutable events, access audit, control action, and entitlement in one transaction. The existing paid-activation email preview/send remains a separate manual step; approval does not send it automatically. Use non-secret commercial channel instructions only and deactivate temporary channels after controlled validation.
+
+## UX-8 operating surface
+
+Platform Control is query-backed: `view=portfolio`, `view=activation`, or `view=company` with `section=overview|access|communications|audit|danger`. Invalid company IDs return to the portfolio through the existing platform-admin data boundary. Opening a query view never performs a mutation.
+
+The portfolio keeps stored subscription status, effective access, owner evidence, member count, sign-in evidence, and catalogue indicators distinct. Activation review keeps private proof in detail and approval behind explicit confirmation. Company communications require a canonical recipient and saved access state; successful sends remain audited and manual. Operational reset is isolated in Danger with its exact deleted and preserved scope.
+
+UX-8 production verification used an independently authorised platform-admin session. The first protected-route harness could not navigate the authenticated surface and was replaced with the supported authenticated Chrome/Playwright path. Platform Portuguese localization was corrected by `5c7cd6cb3a953c9df1177658046e7ea417fcc85b`. No activation decision, access change, notice send, or reset was performed during closeout.

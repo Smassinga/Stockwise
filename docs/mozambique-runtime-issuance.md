@@ -443,3 +443,11 @@ A StockWise non-fiscal POS sale is operational evidence only: tax is explicitly 
 Configured `zero` and configured `exempt` remain explicit company tax-option treatments governed by the normal commercial-tax model. Non-fiscal is a separate POS-only applicability mode and does not change ordinary Sales Order readiness, Purchase Orders, Vendor Bills, issued invoices, fiscal numbering, or future SAF-T scope.
 
 Migration `20260716130533_add_pos_tax_applicability_mode.sql` is live as hosted migration 45. Production verification confirmed the unconfigured read-only state and database enforcement surfaces without creating a POS transaction or changing the company mode. Configured, zero, exempt, non-fiscal posting, replay, mismatch, rollback, and invoice-prohibition mutation evidence remains isolated local regression evidence.
+
+## UX-8 compliance workspace (live, 2026-07-28)
+
+`/compliance/mz` is readiness-first with `view=readiness|series|export|history`. Supported-issuance readiness uses core company identity, fiscal settings, and active series. Optional SAF-T preparation, artifact, and finance-event histories retain independent unavailable and empty states and do not change the readiness conclusion.
+
+The series register localizes document types and keeps next numbers read-only. The export surface is named **Fiscal Document Review Workbook** / **Livro de Revisão de Documentos Fiscais** and remains XLSX-only. Its bilingual disclaimer states that the workbook organises StockWise fiscal and commercial evidence for review; it is not an official SAF-T/XML submission file, tax return, proof of submission, or Tax Authority acceptance.
+
+Authenticated read-only production QA used Leny Doçuras after legitimate reactivation. Readiness, series, workbook framing, and optional history passed English/Portuguese, light/dark, and desktop/tablet/phone checks without raw UUID, storage path, canonical status, translation key, overflow, console, or CSP findings. No workbook was generated or downloaded, no fiscal setting or series changed, no document was issued, no SAF-T preparation row was created, and the company POS mode remained `non_fiscal`.
