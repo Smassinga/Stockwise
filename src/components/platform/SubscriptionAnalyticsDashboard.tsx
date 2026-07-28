@@ -43,7 +43,7 @@ const statusColors: Record<SubscriptionStatus, string> = {
   trial: '#009679',
   expired: '#f59e0b',
   suspended: '#f43f5e',
-  disabled: '#7c3aed',
+  disabled: '#71717a',
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -59,10 +59,6 @@ function formatDate(value: string | null | undefined, locale: string, fallback =
 function formatDateTime(value: string | null | undefined, locale: string, fallback = '-') {
   if (!value) return fallback
   return new Date(value).toLocaleString(locale)
-}
-
-function formatStatus(status: string | null | undefined, fallback = '-') {
-  return status ? status.replaceAll('_', ' ') : fallback
 }
 
 function statusTone(status: SubscriptionStatus) {
@@ -274,6 +270,7 @@ function MonitoringList({
   variant = 'default',
   actionLabel,
   onSelectCompany,
+  tt,
 }: {
   title: string
   description: string
@@ -283,6 +280,7 @@ function MonitoringList({
   variant?: 'default' | 'warning'
   actionLabel: string
   onSelectCompany: (companyId: string) => void
+  tt: CopyFn
 }) {
   return (
     <Card className="border-border/70 bg-card shadow-[0_22px_50px_-42px_rgba(0,0,0,0.55)]">
@@ -307,13 +305,13 @@ function MonitoringList({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate font-medium text-foreground">{row.company_name || row.company_id}</div>
+                  <div className="truncate font-medium text-foreground">{row.company_name || tt('platform.companyNameUnavailable', 'Company name unavailable')}</div>
                   <div className="mt-1 break-all text-xs leading-5 text-muted-foreground">
                     {row.notification_recipient_email || row.company_email || '-'}
                   </div>
                 </div>
                 <Badge className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(row.effective_status)}`}>
-                  {formatStatus(row.effective_status)}
+                  {tt(`administration.subscription.${row.effective_status}`, tt('administration.statusUnavailable', 'Status unavailable'))}
                 </Badge>
               </div>
               <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
@@ -367,11 +365,10 @@ function MobileCompanyCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-semibold text-foreground">{row.company_name || row.company_id}</div>
-          <div className="mt-1 break-all text-xs leading-5 text-muted-foreground">{row.company_id}</div>
+          <div className="truncate font-semibold text-foreground">{row.company_name || tt('platform.companyNameUnavailable', 'Company name unavailable')}</div>
         </div>
         <Badge className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(row.effective_status)}`}>
-          {formatStatus(row.effective_status)}
+          {tt(`administration.subscription.${row.effective_status}`, tt('administration.statusUnavailable', 'Status unavailable'))}
         </Badge>
       </div>
 
@@ -447,7 +444,7 @@ export default function SubscriptionAnalyticsDashboard({
             .map((row) => [row.plan_code, { code: row.plan_code, name: row.plan_name || row.plan_code }]),
         ).values(),
       ).sort((left, right) => left.name.localeCompare(right.name)),
-    [rows],
+    [rows, tt],
   )
 
   const overallMetrics = useMemo(() => {
@@ -503,10 +500,10 @@ export default function SubscriptionAnalyticsDashboard({
     () =>
       statusOrder.map((status) => ({
         status,
-        label: formatStatus(status),
+        label: tt(`administration.subscription.${status}`, tt('administration.statusUnavailable', 'Status unavailable')),
         count: rows.filter((row) => row.effective_status === status).length,
       })),
-    [rows],
+    [rows, tt],
   )
 
   const expiringSoonRows = useMemo(
@@ -879,6 +876,7 @@ export default function SubscriptionAnalyticsDashboard({
                   variant="warning"
                   actionLabel={tt('platform.openControl', 'Open control')}
                   onSelectCompany={onSelectCompany}
+                  tt={tt}
                 />
                 <MonitoringList
                   title={tt('platform.recentlyExpiredTitle', 'Recently expired')}
@@ -888,6 +886,7 @@ export default function SubscriptionAnalyticsDashboard({
                   emptyText={tt('platform.recentlyExpiredEmpty', 'No company expired within the last 30 days.')}
                   actionLabel={tt('platform.openControl', 'Open control')}
                   onSelectCompany={onSelectCompany}
+                  tt={tt}
                 />
                 <MonitoringList
                   title={tt('platform.metadataAttentionTitle', 'Metadata attention')}
@@ -897,6 +896,7 @@ export default function SubscriptionAnalyticsDashboard({
                   emptyText={tt('platform.metadataAttentionEmpty', 'All listed companies currently have plan, expiry, and recipient metadata in place.')}
                   actionLabel={tt('platform.openControl', 'Open control')}
                   onSelectCompany={onSelectCompany}
+                  tt={tt}
                 />
               </div>
             </div>
@@ -951,7 +951,7 @@ export default function SubscriptionAnalyticsDashboard({
                   <SelectItem value="all">{tt('platform.filterAllStatuses', 'All statuses')}</SelectItem>
                   {statusOrder.map((status) => (
                     <SelectItem key={status} value={status}>
-                      {formatStatus(status)}
+                      {tt(`administration.subscription.${status}`, tt('administration.statusUnavailable', 'Status unavailable'))}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1058,8 +1058,7 @@ export default function SubscriptionAnalyticsDashboard({
                                 <Building2 className="h-4 w-4" />
                               </span>
                               <div className="min-w-0">
-                                <div className="truncate font-medium text-foreground">{row.company_name || row.company_id}</div>
-                                <div className="mt-1 break-all text-xs text-muted-foreground">{row.company_id}</div>
+                                <div className="truncate font-medium text-foreground">{row.company_name || tt('platform.companyNameUnavailable', 'Company name unavailable')}</div>
                               </div>
                             </div>
                           </td>
@@ -1076,7 +1075,7 @@ export default function SubscriptionAnalyticsDashboard({
                           </td>
                           <td className="px-4 py-4 align-top">
                             <Badge className={`rounded-full border px-2.5 py-1 font-medium capitalize ${statusTone(row.effective_status)}`}>
-                              {formatStatus(row.effective_status)}
+                              {tt(`administration.subscription.${row.effective_status}`, tt('administration.statusUnavailable', 'Status unavailable'))}
                             </Badge>
                             <div className="mt-2 text-xs text-muted-foreground">
                               {row.active_member_count} / {row.member_count} {tt('platform.members', 'Members').toLowerCase()}

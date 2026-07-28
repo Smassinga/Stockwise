@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Download, RefreshCw } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
@@ -30,6 +30,20 @@ import {
   type SaftMozExportRow,
 } from '../lib/mzFinance'
 import { can } from '../lib/permissions'
+import { supabase } from '../lib/supabase'
+import { AdministrationSectionNav } from '../components/administration/AdministrationSectionNav'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
+import {
+  artifactBusinessName,
+  complianceArtifactLabel,
+  complianceEventLabel,
+  complianceStatusLabel,
+  fiscalDocumentTypeLabel,
+} from '../lib/compliancePresentation'
+
+type ComplianceView = 'readiness' | 'series' | 'export' | 'history'
+const complianceViews: ComplianceView[] = ['readiness', 'series', 'export', 'history']
 
 function exportTone(status: SaftMozExportRow['status']) {
   switch (status) {
@@ -49,7 +63,12 @@ function shortDate(value?: string | null) {
 
 export default function MozambiqueCompliancePage() {
   const { companyId, companyName, myRole } = useOrg()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedView = searchParams.get('view')
+  const activeView: ComplianceView = complianceViews.includes(requestedView as ComplianceView)
+    ? requestedView as ComplianceView
+    : 'readiness'
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
 
@@ -67,6 +86,11 @@ export default function MozambiqueCompliancePage() {
   const [exports, setExports] = useState<SaftMozExportRow[]>([])
   const [events, setEvents] = useState<FinanceDocumentEventRow[]>([])
   const [artifacts, setArtifacts] = useState<FiscalDocumentArtifactRow[]>([])
+  const [companyIdentity, setCompanyIdentity] = useState<{
+    legal_name: string | null
+    tax_id: string | null
+    country_code: string | null
+  } | null>(null)
 
   function reportRuntimeError(event: string, error: unknown, context: Record<string, unknown> = {}) {
     console.error(`[mz-runtime] MozambiqueCompliance.${event}`, {
@@ -87,6 +111,7 @@ export default function MozambiqueCompliancePage() {
         setExports([])
         setEvents([])
         setArtifacts([])
+        setCompanyIdentity(null)
         return
       }
 
@@ -94,7 +119,16 @@ export default function MozambiqueCompliancePage() {
         setLoading(true)
         setCoreUnavailable(false)
         setOptionalUnavailable([])
-        const [settingsResult, seriesResult, exportsResult, eventsResult, artifactsResult] = await Promise.allSettled([
+        const [identityResult, settingsResult, seriesResult, exportsResult, eventsResult, artifactsResult] = await Promise.allSettled([
+          supabase
+            .from('companies')
+            .select('legal_name,tax_id,country_code')
+            .eq('id', companyId)
+            .single()
+            .then(({ data, error }) => {
+              if (error) throw error
+              return data
+            }),
           getCompanyFiscalSettings(companyId),
           listCompanyFiscalSeries(companyId),
           listSaftMozExports(companyId),
@@ -103,6 +137,12 @@ export default function MozambiqueCompliancePage() {
         ])
 
         if (!active) return
+        if (identityResult.status === 'fulfilled') setCompanyIdentity(identityResult.value)
+        else {
+          setCompanyIdentity(null)
+          setCoreUnavailable(true)
+          reportRuntimeError('companyIdentity', identityResult.reason)
+        }
         if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
         else {
           setSettings(null)
@@ -140,6 +180,12 @@ export default function MozambiqueCompliancePage() {
   const activeSeries = series.filter((row) => row.is_active).sort((left, right) =>
     `${left.fiscal_year}-${left.document_type}`.localeCompare(`${right.fiscal_year}-${right.document_type}`),
   )
+  const requiredSeries = new Set(activeSeries.map((row) => row.document_type))
+  const supportedIssuanceReady = !coreUnavailable &&
+    Boolean(companyIdentity?.legal_name && companyIdentity?.tax_id && companyIdentity?.country_code && settings) &&
+    ['sales_invoice', 'sales_credit_note', 'sales_debit_note'].every((type) => requiredSeries.has(type as FinanceDocumentFiscalSeriesRow['document_type']))
+  const unavailableLabel = tt('administration.statusUnavailable', 'Status unavailable')
+  const complianceLanguage = lang === 'pt' ? 'pt' : 'en'
   const canExportFiscalDocuments = can.exportReports(myRole)
 
   function updateExportFilter<Key extends keyof FiscalDocumentExportFilters>(
@@ -179,34 +225,36 @@ export default function MozambiqueCompliancePage() {
 
   return (
     <div className="space-y-6 overflow-x-hidden">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('financeDocs.mz.complianceEyebrow', 'Mozambique compliance')}
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{tt('financeDocs.mz.complianceTitle', 'Fiscal compliance')}</h1>
-            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
-              {tt('financeDocs.mz.complianceSubtitle', 'Review fiscal settings, active series, SAF-T readiness history, archive rows, audit activity, and fiscal document exports for Mozambique readiness.')}
-            </p>
-          </div>
-        </div>
+      <PremiumPageHeader
+        title={tt('financeDocs.mz.complianceTitle', 'Mozambique compliance')}
+        description={tt('financeDocs.mz.complianceSubtitle', 'Review supported issuance readiness, fiscal series, the fiscal review workbook, and optional evidence history.')}
+        context={
+          <PremiumStatusBadge tone={coreUnavailable ? 'warning' : supportedIssuanceReady ? 'positive' : 'warning'}>
+            {coreUnavailable
+              ? tt('administration.evidenceUnavailable', 'Evidence unavailable')
+              : supportedIssuanceReady
+                ? tt('financeDocs.mz.readySupportedIssuance', 'Ready for supported StockWise issuance')
+                : tt('financeDocs.mz.needsConfiguration', 'Needs configuration')}
+          </PremiumStatusBadge>
+        }
+        actions={
+          <Button asChild variant="outline">
+            <Link to="/settings?view=overview">{tt('setup.actions.return', 'Company setup')}</Link>
+          </Button>
+        }
+      />
 
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
-            <Link to="/settings?view=setup">{tt('setup.actions.return', 'Company setup')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/settings?section=company-profile">{tt('setup.areas.fiscal_identity.title', 'Fiscal identity')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/sales-invoices">{tt('financeDocs.salesInvoices.title', 'Sales Invoices')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/orders?tab=sales">{tt('financeDocs.salesInvoices.ordersLink', 'View sales orders')}</Link>
-          </Button>
-        </div>
-      </div>
+      <AdministrationSectionNav
+        label={tt('financeDocs.mz.viewNavigation', 'Compliance views')}
+        value={activeView}
+        onChange={(view) => setSearchParams({ view })}
+        sections={[
+          { value: 'readiness', label: tt('financeDocs.mz.readinessView', 'Fiscal readiness') },
+          { value: 'series', label: tt('financeDocs.mz.seriesView', 'Fiscal series') },
+          { value: 'export', label: tt('financeDocs.mz.exportView', 'Review workbook') },
+          { value: 'history', label: tt('financeDocs.mz.historyView', 'Optional history') },
+        ]}
+      />
 
       {coreUnavailable || optionalUnavailable.length > 0 ? (
         <div role="status" className="flex flex-col gap-3 rounded-[var(--radius)] border border-amber-500/30 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -227,8 +275,38 @@ export default function MozambiqueCompliancePage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {activeView === 'readiness' ? (
         <Card className="border-border/80 shadow-sm">
+          <CardHeader>
+            <CardTitle>{tt('financeDocs.mz.readinessTitle', 'Readiness for supported StockWise issuance')}</CardTitle>
+            <CardDescription>
+              {tt('financeDocs.mz.readinessHelp', 'Readiness uses live company identity, fiscal settings, and active fiscal-series evidence. It is not a universal legal-compliance score.')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              [tt('financeDocs.mz.legalIdentity', 'Legal identity'), companyIdentity?.legal_name],
+              [tt('financeDocs.mz.nuit', 'NUIT'), companyIdentity?.tax_id],
+              [tt('financeDocs.mz.jurisdiction', 'Jurisdiction'), companyIdentity?.country_code || settings?.jurisdiction_code],
+              [tt('financeDocs.mz.languageCode', 'Document language'), settings?.document_language_code],
+              [tt('financeDocs.mz.presentationCurrency', 'Presentation currency'), settings?.presentation_currency_code],
+              [tt('financeDocs.mz.activeSeriesEvidence', 'Active fiscal series'), activeSeries.length ? String(activeSeries.length) : null],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-border/70 bg-muted/15 p-4">
+                <div className="text-xs text-muted-foreground">{label}</div>
+                <div className="mt-1 font-medium">
+                  {coreUnavailable
+                    ? tt('administration.evidenceUnavailable', 'Evidence unavailable')
+                    : value || tt('financeDocs.mz.needsConfiguration', 'Needs configuration')}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className={activeView === 'readiness' || activeView === 'series' ? 'grid gap-4 lg:grid-cols-2' : 'hidden'}>
+        <Card className={activeView === 'readiness' ? 'border-border/80 shadow-sm' : 'hidden'}>
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.settingsTitle', 'Company fiscal settings')}</CardTitle>
             <CardDescription>{companyName || tt('setup.companyFallback', 'Active company')}</CardDescription>
@@ -279,7 +357,7 @@ export default function MozambiqueCompliancePage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 shadow-sm">
+        <Card className={activeView === 'series' ? 'border-border/80 shadow-sm lg:col-span-2' : 'hidden'}>
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.seriesTitle', 'Active fiscal series')}</CardTitle>
             <CardDescription className="hidden sm:block">{tt('financeDocs.mz.seriesHelp', 'These rows drive the next legal references for invoice, credit note, and debit note issuance.')}</CardDescription>
@@ -298,15 +376,17 @@ export default function MozambiqueCompliancePage() {
                     <TableHead>{tt('financeDocs.mz.documentType', 'Document type')}</TableHead>
                     <TableHead>{tt('financeDocs.mz.seriesCode', 'Series')}</TableHead>
                     <TableHead>{tt('common.year', 'Year')}</TableHead>
+                    <TableHead>{tt('financeDocs.mz.activeState', 'Active state')}</TableHead>
                     <TableHead className="text-right">{tt('financeDocs.mz.nextNumber', 'Next number')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {activeSeries.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>{row.document_type}</TableCell>
+                      <TableCell>{fiscalDocumentTypeLabel(row.document_type, complianceLanguage, unavailableLabel)}</TableCell>
                       <TableCell>{row.series_code}</TableCell>
                       <TableCell>{row.fiscal_year}</TableCell>
+                      <TableCell><Badge variant="secondary">{tt('common.active', 'Active')}</Badge></TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{row.next_number}</TableCell>
                     </TableRow>
                   ))}
@@ -317,20 +397,26 @@ export default function MozambiqueCompliancePage() {
         </Card>
       </div>
 
-      <Card className="border-border/80 shadow-sm">
+      <Card className={activeView === 'export' ? 'border-border/80 shadow-sm' : 'hidden'}>
         <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <CardTitle>{tt('financeDocs.mz.fiscalExportTitle', 'Exportação de Documentos Fiscais / Fiscal Document Export')}</CardTitle>
+            <CardTitle>{tt('financeDocs.mz.reviewWorkbookTitle', 'Fiscal Document Review Workbook')}</CardTitle>
             <CardDescription className="mt-2 max-w-4xl leading-6">
               {tt(
                 'financeDocs.mz.fiscalExportHelp',
-                'Esta exportação organiza os dados fiscais e comerciais registados no StockWise para revisão e apoio à conformidade. A submissão oficial SAF-T/XML deve obedecer ao formato técnico exigido pela Autoridade Tributária e deve ser validada pelo contabilista ou consultor fiscal antes de submissão.',
+                'Este livro organiza os dados fiscais e comerciais registados no StockWise para revisão e apoio à conformidade.',
               )}
             </CardDescription>
             <CardDescription className="mt-2 max-w-4xl leading-6">
               {tt(
                 'financeDocs.mz.fiscalExportHelpEn',
-                'This export organises fiscal and commercial data recorded in StockWise for review and compliance support. Official SAF-T/XML submission must follow the technical format required by the Tax Authority and should be validated by an accountant or tax advisor before submission.',
+                'This workbook organises fiscal and commercial data recorded in StockWise for review and compliance support.',
+              )}
+            </CardDescription>
+            <CardDescription className="mt-2 max-w-4xl font-medium leading-6 text-foreground">
+              {tt(
+                'financeDocs.mz.workbookNonClaim',
+                'It is not an official SAF-T/XML submission file, tax return, proof of submission, or Tax Authority acceptance.',
               )}
             </CardDescription>
           </div>
@@ -437,7 +523,7 @@ export default function MozambiqueCompliancePage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={activeView === 'history' ? 'grid gap-4 lg:grid-cols-2' : 'hidden'}>
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle>{tt('financeDocs.mz.saftTitle', 'SAF-T (Moz) run registry')}</CardTitle>
@@ -456,7 +542,9 @@ export default function MozambiqueCompliancePage() {
                   <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-medium">{shortDate(row.period_start)} - {shortDate(row.period_end)}</div>
-                      <Badge variant={exportTone(row.status)}>{row.status.toUpperCase()}</Badge>
+                      <Badge variant={exportTone(row.status)}>
+                        {complianceStatusLabel(row.status, complianceLanguage, unavailableLabel)}
+                      </Badge>
                     </div>
                     <div className="mt-2 text-sm text-muted-foreground">
                       {tt('financeDocs.mz.saftDocs', 'Documents')}: {row.source_document_count} /{' '}
@@ -490,9 +578,15 @@ export default function MozambiqueCompliancePage() {
               <div className="space-y-3">
                 {artifacts.slice(0, 10).map((row) => (
                   <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
-                    <div className="font-medium">{row.file_name || row.storage_path}</div>
+                    <div className="font-medium">
+                      {artifactBusinessName(row.file_name, tt('financeDocs.mz.archivedArtifact', 'Archived artifact'))}
+                    </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {row.document_kind} / {row.artifact_type} / {tt('financeDocs.mz.retainedUntil', 'Retained until')} {shortDate(row.retained_until)}
+                      {fiscalDocumentTypeLabel(row.document_kind, complianceLanguage, unavailableLabel)}
+                      {' / '}
+                      {complianceArtifactLabel(row.artifact_type, complianceLanguage, unavailableLabel)}
+                      {' / '}
+                      {tt('financeDocs.mz.retainedUntil', 'Retained until')} {shortDate(row.retained_until)}
                     </div>
                   </div>
                 ))}
@@ -502,7 +596,7 @@ export default function MozambiqueCompliancePage() {
         </Card>
       </div>
 
-      <Card className="border-border/80 shadow-sm">
+      <Card className={activeView === 'history' ? 'border-border/80 shadow-sm' : 'hidden'}>
         <CardHeader>
           <CardTitle>{tt('financeDocs.mz.auditTrail', 'Audit trail')}</CardTitle>
           <CardDescription className="hidden sm:block">{tt('financeDocs.mz.auditAdminHelp', 'Recent finance-document and SAF-T activity for the active company.')}</CardDescription>
@@ -519,11 +613,19 @@ export default function MozambiqueCompliancePage() {
               {events.slice(0, 15).map((row) => (
                 <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-medium">{row.document_kind} / {row.event_type}</div>
+                    <div className="font-medium">
+                      {fiscalDocumentTypeLabel(row.document_kind, complianceLanguage, unavailableLabel)}
+                      {' / '}
+                      {complianceEventLabel(row.event_type, complianceLanguage, unavailableLabel)}
+                    </div>
                     <div className="text-xs text-muted-foreground">{row.occurred_at.replace('T', ' ').slice(0, 19)}</div>
                   </div>
                   {(row.from_status || row.to_status) ? (
-                    <div className="mt-1 text-sm text-muted-foreground">{row.from_status || '-'} - {row.to_status || '-'}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {complianceStatusLabel(row.from_status, complianceLanguage, unavailableLabel)}
+                      {' → '}
+                      {complianceStatusLabel(row.to_status, complianceLanguage, unavailableLabel)}
+                    </div>
                   ) : null}
                 </div>
               ))}

@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
   BellRing,
   Building2,
   CalendarClock,
-  ExternalLink,
   Eye,
   Mail,
   Send,
@@ -54,6 +53,16 @@ import { internalPlanOptions } from '../lib/pricingPlans'
 import { PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
 import SubscriptionAnalyticsDashboard from '../components/platform/SubscriptionAnalyticsDashboard'
 import PaymentActivationAdmin from '../components/platform/PaymentActivationAdmin'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { AdministrationSectionNav } from '../components/administration/AdministrationSectionNav'
+import { AdministrationAuthorityBadge } from '../components/administration/AdministrationAuthorityBadge'
+import { isKnownSubscriptionStatus, subscriptionStatusKey } from '../lib/administrationPresentation'
+
+type PlatformView = 'portfolio' | 'activation' | 'company'
+type PlatformCompanySection = 'overview' | 'access' | 'communications' | 'audit' | 'danger'
+
+const platformViews: PlatformView[] = ['portfolio', 'activation', 'company']
+const companySections: PlatformCompanySection[] = ['overview', 'access', 'communications', 'audit', 'danger']
 
 function asDateInput(value: string | null | undefined) {
   return value ? value.slice(0, 10) : ''
@@ -67,10 +76,6 @@ function formatDate(value: string | null | undefined, locale: string, fallback =
 function formatDateTime(value: string | null | undefined, locale: string, fallback = '-') {
   if (!value) return fallback
   return new Date(value).toLocaleString(locale)
-}
-
-function formatStatus(status: string | null | undefined, fallback = '-') {
-  return status ? status.replaceAll('_', ' ') : fallback
 }
 
 function statusTone(status: SubscriptionStatus) {
@@ -115,18 +120,21 @@ function recipientSourceLabel(source: string | null | undefined) {
   }
 }
 
-function controlActionLabel(actionType: string | null | undefined) {
+function controlActionLabel(
+  actionType: string | null | undefined,
+  translate: (key: string, fallback: string) => string,
+) {
   switch (actionType) {
     case 'operational_reset':
-      return 'Operational data reset'
+      return translate('platform.controlActionOperationalReset', 'Operational data reset')
     case 'access_email_expiry_warning_sent':
-      return 'Expiry warning email sent'
+      return translate('platform.controlActionExpirySent', 'Expiry warning email sent')
     case 'access_email_purge_warning_sent':
-      return 'Purge warning email sent'
+      return translate('platform.controlActionPurgeSent', 'Purge warning email sent')
     case 'access_email_activation_confirmation_sent':
-      return 'Activation confirmation email sent'
+      return translate('platform.controlActionActivationSent', 'Activation confirmation email sent')
     default:
-      return actionType ? actionType.replaceAll('_', ' ') : 'Control action'
+      return translate('platform.controlActionUnavailable', 'Control action unavailable')
   }
 }
 
@@ -173,6 +181,16 @@ export default function PlatformControlPage() {
     [t],
   )
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedView = searchParams.get('view')
+  const platformView: PlatformView = platformViews.includes(requestedView as PlatformView)
+    ? requestedView as PlatformView
+    : 'portfolio'
+  const requestedSection = searchParams.get('section')
+  const companySection: PlatformCompanySection = companySections.includes(requestedSection as PlatformCompanySection)
+    ? requestedSection as PlatformCompanySection
+    : 'overview'
+  const requestedCompanyId = searchParams.get('companyId') || ''
 
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -196,6 +214,19 @@ export default function PlatformControlPage() {
   const [resetOpen, setResetOpen] = useState(false)
   const [resetReason, setResetReason] = useState('')
   const [resetConfirmation, setResetConfirmation] = useState('')
+  const [portfolioError, setPortfolioError] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [auditUnavailable, setAuditUnavailable] = useState(false)
+  const [controlUnavailable, setControlUnavailable] = useState(false)
+  const [durableResult, setDurableResult] = useState<string | null>(null)
+
+  const subscriptionLabel = useCallback(
+    (value: string | null | undefined, fallback = '-') =>
+      isKnownSubscriptionStatus(value)
+        ? tt(subscriptionStatusKey(value), value)
+        : fallback,
+    [tt],
+  )
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.company_id === selectedCompanyId) || null,
@@ -298,43 +329,55 @@ export default function PlatformControlPage() {
   const loadCompanies = useCallback(
     async (preferredCompanyId?: string) => {
       setLoading(true)
+      setPortfolioError(null)
       try {
         const companyRows = await listCompanySubscriptionDashboard()
         setRows(companyRows)
+        if (preferredCompanyId && !companyRows.some((row) => row.company_id === preferredCompanyId)) {
+          setSearchParams({ view: 'portfolio' }, { replace: true })
+        }
         setSelectedCompanyId((currentId) => {
           const targetId = preferredCompanyId || currentId
           if (targetId && companyRows.some((row) => row.company_id === targetId)) return targetId
           return companyRows[0]?.company_id || ''
         })
+      } catch (error) {
+        console.error(error)
+        setPortfolioError(tt('platform.portfolioUnavailable', 'Company portfolio unavailable'))
       } finally {
         setLoading(false)
       }
     },
-    [],
+    [setSearchParams, tt],
   )
 
   const fetchSelectedCompanyData = useCallback(async (companyId: string) => {
-    const [detailRow, events, controlEvents] = await Promise.all([
+    const [detailResult, eventsResult, controlResult] = await Promise.allSettled([
       getCompanyAccessDetail(companyId),
       listCompanyAccessEvents(companyId),
       listCompanyControlActions(companyId),
     ])
+    if (detailResult.status === 'rejected') throw detailResult.reason
     return {
-      detailRow,
-      events,
-      controlEvents,
+      detailRow: detailResult.value,
+      events: eventsResult.status === 'fulfilled' ? eventsResult.value : [],
+      controlEvents: controlResult.status === 'fulfilled' ? controlResult.value : [],
+      auditUnavailable: eventsResult.status === 'rejected',
+      controlUnavailable: controlResult.status === 'rejected',
     }
   }, [])
 
   useEffect(() => {
-    void loadCompanies()
-  }, [loadCompanies])
+    void loadCompanies(requestedCompanyId)
+  }, [loadCompanies, requestedCompanyId])
 
   useEffect(() => {
-    if (!selectedCompanyId) {
+    if (platformView !== 'company' || !selectedCompanyId) {
       setDetail(null)
       setAuditRows([])
       setControlRows([])
+      setAuditUnavailable(false)
+      setControlUnavailable(false)
       return
     }
 
@@ -342,18 +385,24 @@ export default function PlatformControlPage() {
     setDetail(null)
     setAuditRows([])
     setControlRows([])
+    setAuditUnavailable(false)
+    setControlUnavailable(false)
     setDetailLoading(true)
+    setDetailError(null)
 
     ;(async () => {
       try {
-        const { detailRow, events, controlEvents } = await fetchSelectedCompanyData(selectedCompanyId)
+        const result = await fetchSelectedCompanyData(selectedCompanyId)
         if (cancelled) return
-        setDetail(detailRow)
-        setAuditRows(events)
-        setControlRows(controlEvents)
+        setDetail(result.detailRow)
+        setAuditRows(result.events)
+        setControlRows(result.controlEvents)
+        setAuditUnavailable(result.auditUnavailable)
+        setControlUnavailable(result.controlUnavailable)
       } catch (error) {
         if (cancelled) return
         console.error(error)
+        setDetailError(tt('platform.detailUnavailable', 'Selected-company detail unavailable'))
         toast.error(tt('platform.detailLoadFailed', 'Failed to load company control details.'))
       } finally {
         if (!cancelled) setDetailLoading(false)
@@ -363,7 +412,7 @@ export default function PlatformControlPage() {
     return () => {
       cancelled = true
     }
-  }, [fetchSelectedCompanyData, selectedCompanyId, tt])
+  }, [fetchSelectedCompanyData, platformView, selectedCompanyId, tt])
 
   useEffect(() => {
     if (!detail) {
@@ -393,10 +442,12 @@ export default function PlatformControlPage() {
   }, [detail])
 
   async function refreshSelectedCompany(companyId: string) {
-    const { detailRow, events, controlEvents } = await fetchSelectedCompanyData(companyId)
-    setDetail(detailRow)
-    setAuditRows(events)
-    setControlRows(controlEvents)
+    const result = await fetchSelectedCompanyData(companyId)
+    setDetail(result.detailRow)
+    setAuditRows(result.events)
+    setControlRows(result.controlEvents)
+    setAuditUnavailable(result.auditUnavailable)
+    setControlUnavailable(result.controlUnavailable)
   }
 
   async function applyChange() {
@@ -413,6 +464,7 @@ export default function PlatformControlPage() {
         reason: reason || null,
       })
       await Promise.all([loadCompanies(detail.company_id), refreshSelectedCompany(detail.company_id)])
+      setDurableResult(tt('platform.accessUpdatedResult', 'Access updated. The stored and effective access evidence has been refreshed.'))
       toast.success(tt('platform.saved', 'Company access updated.'))
     } catch (error: any) {
       console.error(error)
@@ -435,6 +487,9 @@ export default function PlatformControlPage() {
       setResetOpen(false)
       setResetConfirmation('')
       setResetReason('')
+      setDurableResult(
+        tt('platform.resetDurableResult', 'Operational reset completed. Company identity, memberships, credentials, subscription, and control-plane evidence were retained.'),
+      )
       toast.success(
         tt('platform.resetSuccess', 'Operational company data reset completed ({count} rows removed).', {
           count: countDeletedRows(result?.deleted_summary),
@@ -477,6 +532,9 @@ export default function PlatformControlPage() {
         note: emailNote || null,
       })
       await refreshSelectedCompany(detail.company_id)
+      setDurableResult(
+        tt('platform.emailDurableResult', 'Access email sent and the control-action audit has been refreshed.'),
+      )
       toast.success(
         tt('platform.emailSent', 'Company email sent to {email}.', {
           email: sent?.recipient_email || detail.notification_recipient_email || PUBLIC_CONTACT_EMAIL,
@@ -492,72 +550,74 @@ export default function PlatformControlPage() {
 
   function handleSelectCompany(companyId: string) {
     setSelectedCompanyId(companyId)
-    if (typeof document !== 'undefined') {
-      requestAnimationFrame(() => {
-        document.getElementById('platform-company-workspace')?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        })
-      })
-    }
+    setSearchParams({ view: 'company', companyId, section: 'overview' })
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+    <div className="space-y-6 overflow-x-hidden">
       <AlertDialog
         open={resetOpen}
         onOpenChange={(open) => {
           if (!resetting) setResetOpen(open)
         }}
       >
-        <div className="mx-auto max-w-7xl space-y-6">
-          <Card className="overflow-hidden border-border/70 bg-card shadow-[0_28px_90px_-56px_rgba(0,0,0,0.55)]">
-            <CardHeader className="border-b border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05]">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/85 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {tt('platform.eyebrow', 'Platform control')}
-              </div>
-              <CardTitle className="mt-4 text-2xl tracking-tight sm:text-3xl">
-                {tt('platform.title', 'Manual subscription and access control')}
-              </CardTitle>
-              <CardDescription className="hidden max-w-3xl text-base leading-7 sm:block">
-                {tt(
-                  'platform.description',
-                  'This control plane governs 7-day trials, manual paid activation, suspensions, expiry, commercial notices, and guarded operational resets. Payment automation remains intentionally deferred.',
-                )}
-              </CardDescription>
-              <div className="mobile-primary-actions mt-5">
-                <Button variant="outline" asChild>
-                  <Link to="/dashboard">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    {tt('platform.backToDashboard', 'Back to dashboard')}
-                  </Link>
-                </Button>
-                <Button variant="ghost" asChild>
-                  <Link to="/#pricing">
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    {tt('platform.openLanding', 'Open public pricing')}
-                  </Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-muted-foreground sm:p-6">
-              <div className="hidden max-w-3xl leading-6 sm:block">
-                {tt(
-                  'platform.heroNote',
-                  'Use the analytics workspace below to monitor plan mix, expiring companies, restricted access, and catalogue-based recurring value before opening the selected company controls.',
-                )}
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3 text-xs leading-5 text-muted-foreground">
-                {tt(
-                  'platform.heroGuardrail',
-                  'All portfolio data in this view remains platform-admin only and is not exposed to ordinary company users.',
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="space-y-6">
+          <PremiumPageHeader
+            title={tt('platform.controlTitle', 'Platform Control')}
+            description={tt(
+              'platform.controlDescription',
+              'Review tenant access, assisted activation, manual communications, audit evidence, and guarded operational resets.',
+            )}
+            context={<AdministrationAuthorityBadge authority="platform" label={tt('platform.adminBadge', 'Platform admin')} />}
+            actions={
+              <Button variant="outline" asChild>
+                <Link to="/dashboard">
+                  <ArrowLeft className="h-4 w-4" />
+                  {tt('platform.backToDashboard', 'Back to dashboard')}
+                </Link>
+              </Button>
+            }
+          />
 
-          <SubscriptionAnalyticsDashboard
+          <AdministrationSectionNav
+            label={tt('platform.viewNavigation', 'Platform Control views')}
+            value={platformView}
+            onChange={(view) => {
+              if (accessFormDirty && !window.confirm(tt('platform.unsavedWarning', 'Discard unsaved access changes?'))) return
+              setSearchParams({ view })
+            }}
+            sections={[
+              { value: 'portfolio', label: tt('platform.portfolio', 'Portfolio') },
+              { value: 'activation', label: tt('platform.activationRequests', 'Activation requests') },
+              { value: 'company', label: tt('platform.selectedCompany', 'Selected company') },
+            ]}
+          />
+
+          {platformView === 'company' ? (
+            <AdministrationSectionNav
+              label={tt('platform.companySectionNavigation', 'Selected company sections')}
+              value={companySection}
+              onChange={(section) => {
+                if (accessFormDirty && !window.confirm(tt('platform.unsavedWarning', 'Discard unsaved access changes?'))) return
+                setSearchParams({ view: 'company', companyId: selectedCompanyId, section })
+              }}
+              sections={[
+                { value: 'overview', label: tt('platform.sectionOverview', 'Overview') },
+                { value: 'access', label: tt('platform.sectionAccess', 'Access') },
+                { value: 'communications', label: tt('platform.sectionCommunications', 'Communications') },
+                { value: 'audit', label: tt('platform.sectionAudit', 'Audit') },
+                { value: 'danger', label: tt('platform.sectionDanger', 'Danger') },
+              ]}
+            />
+          ) : null}
+
+          {durableResult ? (
+            <div role="status" tabIndex={-1} className="rounded-lg border border-primary/25 bg-primary/5 p-4">
+              <div className="font-medium">{durableResult}</div>
+            </div>
+          ) : null}
+
+          {platformView === 'portfolio' && !portfolioError ? <SubscriptionAnalyticsDashboard
             rows={rows}
             loading={loading}
             locale={locale}
@@ -565,58 +625,22 @@ export default function PlatformControlPage() {
             onRefresh={() => loadCompanies(selectedCompanyId)}
             onSelectCompany={handleSelectCompany}
             tt={tt}
-          />
+          /> : null}
 
-          <PaymentActivationAdmin
+          {platformView === 'portfolio' && portfolioError ? (
+            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-5">
+              <div className="font-medium">{portfolioError}</div>
+              <Button className="mt-3" variant="outline" onClick={() => void loadCompanies()}>{tt('actions.retry', 'Retry')}</Button>
+            </div>
+          ) : null}
+
+          {platformView === 'activation' ? <PaymentActivationAdmin
             locale={locale}
             onOpenCompany={handleSelectCompany}
             tt={tt}
-          />
+          /> : null}
 
-          <Card className="border-border/70 bg-card">
-            <CardHeader>
-              <CardTitle>{tt('platform.adminAccessTitle', 'Admin access and first setup')}</CardTitle>
-              <CardDescription>
-                {tt(
-                  'platform.adminAccessBody',
-                  'Platform control is permission-based. The route is /platform-control and it only appears in navigation for active platform admins.',
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">
-                <div className="font-medium text-foreground">
-                  {tt('platform.bootstrapTitle', 'Bootstrap the first platform admin')}
-                </div>
-                <p className="mt-2">
-                  {tt(
-                    'platform.bootstrapBody',
-                    'Sign in with the target user first, then run the documented bootstrap command from the repo root with service-role credentials available in .env.',
-                  )}
-                </p>
-                <pre className="mt-3 max-w-full whitespace-pre-wrap break-words rounded-xl border border-border/70 bg-background px-4 py-3 text-xs text-foreground">
-                  npm run bootstrap:platform-admin -- admin@company.com --note "Initial platform admin"
-                </pre>
-              </div>
-              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background p-4 text-sm leading-6 text-muted-foreground">
-                <div className="font-medium text-foreground">
-                  {tt('platform.manualActivationTitle', 'Current operating model')}
-                </div>
-                <ul className="mt-3 space-y-2">
-                  <li>{tt('platform.manualActivationOnly', 'Paid access remains manual in this phase.')}</li>
-                  <li>{tt('platform.paymentDeferred', 'Payment checkout and automatic activation remain intentionally deferred.')}</li>
-                  <li>
-                    {tt(
-                      'platform.supportRouting',
-                      'Inbound activation and support requests are routed to geral@stockwiseapp.com.',
-                    )}
-                  </li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-6">
+          {platformView === 'company' ? <div className="space-y-6">
               <Card id="platform-company-workspace" className="border-border/70 bg-card">
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -626,7 +650,7 @@ export default function PlatformControlPage() {
                     </div>
                     {selectedCompanyId ? (
                       <Badge className={`rounded-full border px-3 py-1 font-medium capitalize ${statusTone(selectedStatus as SubscriptionStatus)}`}>
-                        {formatStatus(selectedStatus)}
+                        {subscriptionLabel(selectedStatus)}
                       </Badge>
                     ) : null}
                   </div>
@@ -642,7 +666,7 @@ export default function PlatformControlPage() {
                     </div>
                   ) : detail ? (
                     <>
-                      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                      <div className={companySection === 'overview' ? 'grid gap-4 xl:grid-cols-[1.05fr_0.95fr]' : 'hidden'}>
                         <div className="rounded-2xl border border-border/70 bg-muted/10 p-5">
                           <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                             <Building2 className="h-3.5 w-3.5" />
@@ -653,13 +677,12 @@ export default function PlatformControlPage() {
                             <MetadataCard label={tt('platform.companyCreated', 'Created')} value={formatDate(detail.company_created_at, locale)} />
                             <MetadataCard label={tt('platform.companyEmail', 'Registered company email')} value={detail.company_email || '-'} />
                             <MetadataCard label={tt('platform.language', 'Preferred language')} value={detail.company_preferred_lang || '-'} />
-                            <MetadataCard
-                              label={tt('platform.companyUuid', 'Company UUID')}
-                              value={detail.company_id}
-                              mono
-                            />
                             <MetadataCard label={tt('platform.legalName', 'Legal name')} value={detail.legal_name || '-'} />
                             <MetadataCard label={tt('platform.tradeName', 'Trade name')} value={detail.trade_name || '-'} />
+                            <details className="rounded-lg border border-border/70 bg-background p-3 sm:col-span-2">
+                              <summary className="cursor-pointer text-sm font-medium">{tt('platform.technicalMetadata', 'Technical metadata')}</summary>
+                              <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{detail.company_id}</div>
+                            </details>
                           </div>
                         </div>
 
@@ -684,7 +707,14 @@ export default function PlatformControlPage() {
                             <MetadataCard
                               label={tt('platform.ownerRole', 'Owner membership')}
                               value={
-                                [formatStatus(detail.owner_member_role), formatStatus(detail.owner_member_status)]
+                                [
+                                  detail.owner_member_role
+                                    ? tt(`users.roles.${detail.owner_member_role.toLowerCase()}`, tt('platform.notCaptured', 'Not captured'))
+                                    : tt('platform.notCaptured', 'Not captured'),
+                                  detail.owner_member_status
+                                    ? tt(`users.statuses.${detail.owner_member_status.toLowerCase()}`, tt('platform.notCaptured', 'Not captured'))
+                                    : tt('platform.notCaptured', 'Not captured'),
+                                ]
                                   .filter((value) => value !== '-')
                                   .join(' / ') || '-'
                               }
@@ -711,11 +741,11 @@ export default function PlatformControlPage() {
                         </div>
                       </div>
 
-                      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                      <div className={companySection === 'access' ? 'grid gap-4 xl:grid-cols-[1.05fr_0.95fr]' : 'hidden'}>
                         <div className="rounded-2xl border border-border/70 bg-background p-5">
                           <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/15 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                             <ShieldCheck className="h-3.5 w-3.5" />
-                            {tt('platform.accessControls', 'Access and commercial controls')}
+                            {tt('platform.proposedAccess', 'Proposed access change')}
                           </div>
                           <div className="mt-4 grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
@@ -787,11 +817,11 @@ export default function PlatformControlPage() {
                         <div className="rounded-2xl border border-border/70 bg-muted/10 p-5">
                           <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                             <CalendarClock className="h-3.5 w-3.5" />
-                            {tt('platform.commercialDates', 'Commercial dates and posture')}
+                            {tt('platform.currentAccess', 'Current access')}
                           </div>
                           <div className="mt-4 grid auto-rows-fr gap-3 sm:grid-cols-2">
                             <MetadataCard label={tt('platform.planCode', 'Plan code')} value={detail.plan_code} />
-                            <MetadataCard label={tt('platform.subscriptionStatus', 'Stored status')} value={formatStatus(detail.subscription_status)} />
+                            <MetadataCard label={tt('platform.subscriptionStatus', 'Stored status')} value={subscriptionLabel(detail.subscription_status)} />
                             <MetadataCard label={tt('platform.trialStarted', 'Trial started')} value={formatDate(detail.trial_started_at, locale)} />
                             <MetadataCard label={tt('platform.trialEnds', 'Trial ends')} value={formatDate(detail.trial_expires_at, locale)} />
                             <MetadataCard label={tt('platform.activationGrantedAt', 'Activated on')} value={formatDate(detail.access_granted_at, locale)} />
@@ -814,7 +844,7 @@ export default function PlatformControlPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-2xl border border-border/70 bg-muted/10 p-5">
+                      <div className={companySection === 'communications' ? 'rounded-2xl border border-border/70 bg-muted/10 p-5' : 'hidden'}>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -945,7 +975,7 @@ export default function PlatformControlPage() {
                         ) : null}
                       </div>
 
-                      <div className="rounded-2xl border border-rose-200/70 bg-rose-50/60 p-5 dark:border-rose-500/20 dark:bg-rose-500/10">
+                      <div className={companySection === 'danger' ? 'rounded-2xl border border-rose-200/70 bg-rose-50/60 p-5 dark:border-rose-500/20 dark:bg-rose-500/10' : 'hidden'}>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="inline-flex items-center gap-2 rounded-full border border-rose-200/80 bg-background px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-rose-700 dark:border-rose-500/30 dark:text-rose-300">
@@ -964,7 +994,7 @@ export default function PlatformControlPage() {
                           </div>
                           <Button variant="destructive" disabled={!detail.reset_allowed} onClick={() => setResetOpen(true)}>
                             <Trash2 className="mr-2 h-4 w-4" />
-                            {tt('platform.resetAction', 'Reset company data')}
+                            {tt('platform.resetOperationalAction', 'Reset operational company data')}
                           </Button>
                         </div>
 
@@ -1000,14 +1030,14 @@ export default function PlatformControlPage() {
                       </div>
                     </>
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-6 text-sm text-muted-foreground">
-                      {tt('platform.detailUnavailable', 'The selected company detail could not be loaded. Refresh the register and try again.')}
+                    <div role={detailError ? 'alert' : undefined} className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-6 text-sm text-muted-foreground">
+                      {detailError || tt('platform.detailUnavailable', 'The selected company detail could not be loaded. Refresh the register and try again.')}
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              <Card className="border-border/70 bg-card">
+              <Card className={companySection === 'audit' ? 'border-border/70 bg-card' : 'hidden'}>
                 <CardHeader>
                   <CardTitle>{tt('platform.auditTitle', 'Access audit')}</CardTitle>
                   <CardDescription>
@@ -1018,7 +1048,11 @@ export default function PlatformControlPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {auditRows.length === 0 ? (
+                  {auditUnavailable ? (
+                    <div role="alert" className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-5 text-sm text-muted-foreground">
+                      {tt('platform.auditUnavailable', 'Access audit unavailable. Company access evidence remains available.')}
+                    </div>
+                  ) : auditRows.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-5 text-sm text-muted-foreground">
                       {tt('platform.auditEmpty', 'No manual access events are recorded for the selected company yet.')}
                     </div>
@@ -1028,17 +1062,22 @@ export default function PlatformControlPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="font-medium">
-                              {formatStatus(row.previous_status)} to {formatStatus(row.next_status)}
+                              {row.previous_status ? subscriptionLabel(row.previous_status) : tt('platform.notCaptured', 'Not captured')}
+                              {' → '}
+                              {subscriptionLabel(row.next_status)}
                             </div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {(row.previous_plan_code || '-')} to {(row.next_plan_code || '-')}
+                              {tt('platform.planChange', '{from} to {to}', {
+                                from: row.previous_plan_code || '-',
+                                to: row.next_plan_code || '-',
+                              })}
                             </div>
                           </div>
                           <div className="text-xs text-muted-foreground">{formatDateTime(row.created_at, locale)}</div>
                         </div>
                         {row.reason ? <div className="mt-3 text-sm text-muted-foreground">{row.reason}</div> : null}
                         <div className="mt-3 text-xs text-muted-foreground">
-                          {row.actor_email || row.actor_user_id || tt('platform.systemActor', 'System / not captured')}
+                          {row.actor_email || tt('platform.systemActor', 'System / not captured')}
                         </div>
                       </div>
                     ))
@@ -1046,7 +1085,7 @@ export default function PlatformControlPage() {
                 </CardContent>
               </Card>
 
-              <Card className="border-border/70 bg-card">
+              <Card className={companySection === 'audit' ? 'border-border/70 bg-card' : 'hidden'}>
                 <CardHeader>
                   <CardTitle>{tt('platform.controlActionsTitle', 'Control actions')}</CardTitle>
                   <CardDescription>
@@ -1057,7 +1096,11 @@ export default function PlatformControlPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {controlRows.length === 0 ? (
+                  {controlUnavailable ? (
+                    <div role="alert" className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-5 text-sm text-muted-foreground">
+                      {tt('platform.controlActionsUnavailable', 'Control-action history unavailable. Company access evidence remains available.')}
+                    </div>
+                  ) : controlRows.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border/80 bg-muted/10 p-5 text-sm text-muted-foreground">
                       {tt('platform.controlActionsEmpty', 'No critical control actions are recorded for the selected company yet.')}
                     </div>
@@ -1074,9 +1117,9 @@ export default function PlatformControlPage() {
                         <div key={row.id} className="rounded-2xl border border-border/70 bg-background p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <div className="font-medium">{controlActionLabel(row.action_type)}</div>
+                              <div className="font-medium">{controlActionLabel(row.action_type, tt)}</div>
                               <div className="mt-1 text-xs text-muted-foreground">
-                                {row.actor_email || row.actor_user_id || tt('platform.systemActor', 'System / not captured')}
+                                {row.actor_email || tt('platform.systemActor', 'System / not captured')}
                               </div>
                             </div>
                             <div className="text-xs text-muted-foreground">{formatDateTime(row.created_at, locale)}</div>
@@ -1112,7 +1155,7 @@ export default function PlatformControlPage() {
                   )}
                 </CardContent>
               </Card>
-          </div>
+          </div> : null}
         </div>
 
         <AlertDialogContent className="max-w-2xl">
@@ -1161,7 +1204,7 @@ export default function PlatformControlPage() {
               }
               onClick={() => void confirmReset()}
             >
-              {resetting ? tt('actions.saving', 'Saving') : tt('platform.resetAction', 'Reset company data')}
+              {resetting ? tt('actions.saving', 'Saving') : tt('platform.resetOperationalAction', 'Reset operational company data')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Search } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, Search, UserCog } from 'lucide-react'
 import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
 import { CrownIcon } from '@phosphor-icons/react/dist/csr/Crown'
 import { ShieldCheckIcon as PhosphorShieldCheckIcon } from '@phosphor-icons/react/dist/csr/ShieldCheck'
@@ -8,7 +8,7 @@ import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree'
 import { WarningIcon } from '@phosphor-icons/react/dist/csr/Warning'
 import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle'
 import toast from 'react-hot-toast'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { authFetch } from '../lib/authFetch'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
 import { IconBadge } from '../components/premium/IconBadge'
@@ -37,6 +38,13 @@ type Member = {
   created_at?: string | null
   last_sign_in_at?: string | null
   email_confirmed_at?: string | null
+}
+
+type InviteResult = {
+  state: 'sent' | 'email_failed' | 'link_copied' | 'created'
+  email: string
+  role: Role
+  link: string
 }
 
 const roleRank = (role: Role) => ({ OWNER: 0, ADMIN: 1, MANAGER: 2, OPERATOR: 3, VIEWER: 4 }[role] ?? 99)
@@ -229,6 +237,7 @@ export default function Users() {
   const { companyId, companyName, myRole } = useOrg()
   const { t, lang } = useI18n()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const roleCopy = roleDefinitionCopy[lang]
@@ -240,17 +249,24 @@ export default function Users() {
 
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
+  const [memberError, setMemberError] = useState<string | null>(null)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('VIEWER')
   const [sendingInvite, setSendingInvite] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | Status>('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | Role>('all')
+  const [inviteResult, setInviteResult] = useState<InviteResult | null>(null)
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null)
+  const [selectedRole, setSelectedRole] = useState<Role>('VIEWER')
+  const [selectedStatus, setSelectedStatus] = useState<Status>('active')
+  const inviteButtonRef = useRef<HTMLButtonElement>(null)
 
   const [myEmail, setMyEmail] = useState<string | null>(null)
   const [myName, setMyName] = useState<string | null>(null)
 
   const roleLabel = (role: Role) => tt(`users.roles.${role.toLowerCase()}`, role)
-  const statusLabel = (status: Status) => tt(`users.statuses.${status}`, status.charAt(0).toUpperCase() + status.slice(1))
+  const statusLabel = (status: Status) => tt(`users.statuses.${status}`, tt('administration.statusUnavailable', 'Status unavailable'))
   const statusVariant = (status: Status) => (status === 'active' ? 'default' : status === 'invited' ? 'secondary' : 'outline')
 
   const higherThanMe = (role: Role) => (myRole ? roleRank(role) < roleRank(myRole) : false)
@@ -286,10 +302,21 @@ export default function Users() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
+  useEffect(() => {
+    if (searchParams.get('action') !== 'invite') setInviteResult(null)
+  }, [searchParams])
+
+  function openMember(member: Member) {
+    setSelectedMember(member)
+    setSelectedRole(member.role)
+    setSelectedStatus(member.status)
+  }
+
   async function refreshMembers() {
     if (!companyId) return
     try {
       setLoading(true)
+      setMemberError(null)
       const data = await authFetch<{ users?: Member[] }>(`admin-users/?company_id=${encodeURIComponent(companyId)}`, {
         method: 'GET',
       })
@@ -297,7 +324,9 @@ export default function Users() {
     } catch (e: any) {
       console.error(e)
       const message = extractFnErr(e)
-      toast.error(message || tt('users.toast.loadFailed', 'Failed to load members'))
+      const friendly = message || tt('users.toast.loadFailed', 'Failed to load members')
+      setMemberError(friendly)
+      toast.error(friendly)
     } finally {
       setLoading(false)
     }
@@ -320,14 +349,12 @@ export default function Users() {
       if (error) {
         const message = extractFnErr(error)
         console.error('mailer-invite 4xx/5xx:', { message, raw: error })
-        toast.error(tt('users.toast.inviteFailed', 'Invite failed: {message}', { message }))
         return { ok: false }
       }
       if (data?.warning) toast(tt('users.toast.inviteWarning', 'Invite created with warning: {warning}', { warning: data.warning }))
       return { ok: true, link: data?.link }
     } catch (e: any) {
       console.error('mailer-invite threw:', e)
-      toast.error(e?.message || tt('users.toast.inviteFailedNetwork', 'Invite failed (network)'))
       return { ok: false }
     }
   }
@@ -366,11 +393,14 @@ export default function Users() {
         try {
           await navigator.clipboard.writeText(link)
           toast.error(t('users.emailSendFailed'))
+          setInviteResult({ state: 'email_failed', email, role: inviteRole, link })
         } catch {
           toast.error(t('users.couldNotCopyLink'))
+          setInviteResult({ state: 'created', email, role: inviteRole, link })
         }
       } else {
         toast.success(t('users.inviteSent', { email }))
+        setInviteResult({ state: 'sent', email, role: inviteRole, link })
       }
 
       setInviteEmail('')
@@ -385,29 +415,18 @@ export default function Users() {
   }
 
   async function copyInviteLink() {
-    if (!companyId) return
-    if (!canManageUsers) return toast.error(tt('users.noPermissionToInvite', 'You do not have permission to invite users.'))
-    const email = inviteEmail.trim().toLowerCase()
-    if (!email) return toast.error(tt('users.toast.enterEmailFirst', 'Enter an email first (the link is tied to that email)'))
-    if (!canInviteAdmins && (inviteRole === 'OWNER' || inviteRole === 'ADMIN')) {
-      return toast.error(tt('users.cannotAssignOwnerAdmin', 'You cannot invite owners/admins.'))
-    }
+    if (!inviteResult) return
     try {
-      const { data: token, error } = await supabase.rpc('reinvite_company_member', {
-        p_company: companyId,
-        p_email: email,
-      })
-      if (error) throw error
-      const link = `${window.location.origin}/accept-invite?token=${token}`
-      await navigator.clipboard.writeText(link)
+      await navigator.clipboard.writeText(inviteResult.link)
       toast.success(tt('users.toast.linkCopied', 'Invite link copied'))
+      setInviteResult({ ...inviteResult, state: 'link_copied' })
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('users.toast.linkGenerateFailed', 'Could not generate link'))
+      toast.error(e?.message || tt('users.toast.copyLinkFailed', 'Could not copy the invite link'))
     }
   }
 
-  async function reinvite(email: string) {
+  async function reinvite(email: string, role: Role) {
     if (!email) return toast.error(tt('users.noEmailRecord', 'No email on record for this member.'))
     if (!companyId) return
     if (!canManageUsers) return toast.error(tt('users.toast.noPermissionReinvite', 'You do not have permission to reinvite.'))
@@ -424,7 +443,7 @@ export default function Users() {
         company_name: companyName || 'StockWise',
         invite_link: link,
         email,
-        role: 'VIEWER',
+        role,
         inviter_name: myName,
         inviter_email: myEmail,
         mode: 'email',
@@ -525,18 +544,20 @@ export default function Users() {
     const needle = searchTerm.trim().toLowerCase()
     return sortedMembers.filter((member) => {
       const matchesStatus = statusFilter === 'all' ? true : member.status === statusFilter
+      const matchesRole = roleFilter === 'all' ? true : member.role === roleFilter
       const matchesSearch = needle
         ? [member.email || '', member.role, member.status].join(' ').toLowerCase().includes(needle)
         : true
-      return matchesStatus && matchesSearch
+      return matchesStatus && matchesRole && matchesSearch
     })
-  }, [searchTerm, sortedMembers, statusFilter])
+  }, [roleFilter, searchTerm, sortedMembers, statusFilter])
 
   const memberStats = useMemo(() => {
     const active = members.filter((member) => member.status === 'active').length
     const invited = members.filter((member) => member.status === 'invited').length
     const disabled = members.filter((member) => member.status === 'disabled').length
-    return { total: members.length, active, invited, disabled }
+    const sensitive = members.filter((member) => member.status === 'active' && ['OWNER', 'ADMIN'].includes(member.role)).length
+    return { total: members.length, active, invited, disabled, sensitive }
   }, [members])
 
   if (!canAccessUsersPage) {
@@ -582,48 +603,58 @@ export default function Users() {
                 {roleCopy.navRoles}
               </Link>
             </Button>
+            {!isRolesView ? (
+              <Button ref={inviteButtonRef} size="sm" onClick={() => setSearchParams({ action: 'invite' })}>
+                <UserPlusIcon className="h-4 w-4" weight="duotone" />
+                {tt('users.inviteMember', 'Invite member')}
+              </Button>
+            ) : null}
           </div>
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <PremiumMetricCard
-          label={tt('users.summary.members', 'Members')}
-          value={memberStats.total}
-          description={tt('users.summary.membersHelp', 'Active and invited company records')}
-          icon={<UsersThreeIcon weight="duotone" />}
-          tone="neutral"
-        />
-        <PremiumMetricCard
-          label={tt('users.summary.active', 'Active')}
-          value={memberStats.active}
-          description={tt('users.summary.activeHelp', 'Members currently able to access the company')}
-          icon={<CheckCircleIcon weight="duotone" />}
-          tone="positive"
-        />
-        <PremiumMetricCard
-          label={tt('users.summary.invited', 'Invited')}
-          value={memberStats.invited}
-          description={tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}
-          icon={<UserPlusIcon weight="duotone" />}
-          tone={memberStats.invited ? 'info' : 'neutral'}
-        />
-        <PremiumMetricCard
-          label={tt('users.summary.disabled', 'Disabled')}
-          value={memberStats.disabled}
-          description={tt('users.summary.disabledHelp', 'Historical users kept without active access')}
-          icon={<XCircleIcon weight="duotone" />}
-          tone={memberStats.disabled ? 'warning' : 'neutral'}
-        />
-      </div>
+      {!isRolesView ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-4">
+            <PremiumMetricCard
+              label={tt('users.summary.active', 'Active')}
+              value={memberStats.active}
+              description={tt('users.summary.activeHelp', 'Members currently able to access the company')}
+              icon={<CheckCircleIcon weight="duotone" />}
+              tone="positive"
+            />
+            <PremiumMetricCard
+              label={tt('users.summary.invited', 'Invited')}
+              value={memberStats.invited}
+              description={tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}
+              icon={<UserPlusIcon weight="duotone" />}
+              tone={memberStats.invited ? 'info' : 'neutral'}
+            />
+            <PremiumMetricCard
+              label={tt('users.summary.disabled', 'Disabled')}
+              value={memberStats.disabled}
+              description={tt('users.summary.disabledHelp', 'Historical users kept without active access')}
+              icon={<XCircleIcon weight="duotone" />}
+              tone={memberStats.disabled ? 'warning' : 'neutral'}
+            />
+            <PremiumMetricCard
+              label={tt('users.summary.sensitive', 'Sensitive roles')}
+              value={memberStats.sensitive}
+              description={tt('users.summary.sensitiveHelp', 'Active Owners and Admins with elevated company authority')}
+              icon={<CrownIcon weight="duotone" />}
+              tone={memberStats.sensitive ? 'info' : 'neutral'}
+            />
+          </div>
 
-      <div className="rounded-[var(--radius)] border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
-        {memberStats.invited > 0
-          ? tt('setup.users.pendingGuidance', '{count} invitation(s) are awaiting acceptance. Pending access is not active membership.', { count: memberStats.invited })
-          : memberStats.active <= 1
-            ? tt('setup.users.singleOwnerGuidance', 'A single-user company is valid. Invite teammates only when the operation requires shared access.')
-            : tt('setup.users.activeGuidance', 'Active members can use the company according to their assigned role. Review role definitions before changing access.')}
-      </div>
+          <div className="rounded-[var(--radius)] border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+            {memberStats.invited > 0
+              ? tt('setup.users.pendingGuidance', '{count} invitation(s) are awaiting acceptance. Pending access is not active membership.', { count: memberStats.invited })
+              : memberStats.active <= 1
+                ? tt('setup.users.singleOwnerGuidance', 'A single-user company is valid. Invite teammates only when the operation requires shared access.')
+                : tt('setup.users.activeGuidance', 'Active members can use the company according to their assigned role. Review role definitions before changing access.')}
+          </div>
+        </>
+      ) : null}
 
       {isRolesView ? (
         <div className="space-y-4">
@@ -712,25 +743,37 @@ export default function Users() {
         </div>
       ) : (
         <>
-      <Card className="border-dashed">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <Dialog
+        open={searchParams.get('action') === 'invite'}
+        onOpenChange={(open) => {
+          if (!open && !sendingInvite) {
+            setSearchParams({})
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-2xl"
+          closeLabel={t('common.close')}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            inviteButtonRef.current?.focus()
+          }}
+        >
+          <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
             <UserPlusIcon className="h-5 w-5" weight="duotone" />
             {tt('users.inviteTitle', 'Invite teammate')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          </DialogTitle>
+          <DialogDescription>
+            {tt('users.inviteHelp', 'Invite records stay visible until the teammate accepts. Creating the invitation and delivering its email are separate results.')}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
           {!companyId ? (
             <p className="text-muted-foreground">{t('users.noCompany')}</p>
           ) : (
             <div className="space-y-4">
-              <p className="hidden max-w-3xl text-sm text-muted-foreground sm:block">
-                {tt(
-                  'users.inviteHelp',
-                  'Invite records stay visible until the teammate accepts, which makes it easier to resend links or adjust access without losing the trail.'
-                )}
-              </p>
-              <div className="grid max-w-4xl gap-3 sm:grid-cols-3 sm:items-end">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <Label>{t('users.email')}</Label>
                   <Input
@@ -758,29 +801,47 @@ export default function Users() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={invite} disabled={!canManageUsers || sendingInvite}>
-                    {sendingInvite ? t('loading') : t('users.inviteAndEmail')}
-                  </Button>
-                  <Button variant="outline" onClick={copyInviteLink} disabled={!canManageUsers}>
-                    {t('users.copyInviteLink')}
-                  </Button>
-                  <Button variant="outline" onClick={() => { setInviteEmail(''); setInviteRole('VIEWER') }}>
-                    {t('common.clear')}
-                  </Button>
-                </div>
               </div>
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-4 text-sm">
+                <div className="font-medium">{roleLabel(inviteRole)}</div>
+                <div className="mt-1 text-muted-foreground">{roleCopy.definitions[inviteRole].summary}</div>
+              </div>
+              {inviteResult ? (
+                <div role="status" tabIndex={-1} className="rounded-lg border border-primary/25 bg-primary/5 p-4">
+                  <div className="font-medium">
+                    {inviteResult.state === 'sent'
+                      ? tt('users.inviteResult.sent', 'Invitation created and email sent')
+                      : inviteResult.state === 'email_failed'
+                        ? tt('users.inviteResult.emailFailed', 'Invitation created; email delivery failed')
+                        : inviteResult.state === 'link_copied'
+                          ? tt('users.inviteResult.linkCopied', 'Invitation link copied')
+                          : tt('users.inviteResult.created', 'Invitation created; link available for copying')}
+                  </div>
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    {inviteResult.email} / {roleLabel(inviteResult.role)}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </DialogBody>
+        <DialogFooter className="flex-wrap">
+          <Button variant="outline" onClick={copyInviteLink} disabled={!inviteResult || sendingInvite}>
+            {t('users.copyInviteLink')}
+          </Button>
+          <Button onClick={invite} disabled={!canManageUsers || sendingInvite}>
+            {sendingInvite ? t('loading') : t('users.inviteAndEmail')}
+          </Button>
+        </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
           <CardTitle>{t('users.members')}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <div className="mb-4 grid gap-3 md:grid-cols-[1fr_220px]">
+          <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px_200px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -801,19 +862,36 @@ export default function Users() {
                 <SelectItem value="disabled">{tt('users.summary.disabled', 'Disabled')}</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as 'all' | Role)}>
+              <SelectTrigger aria-label={tt('users.filters.role', 'Filter by role')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tt('users.filters.allRoles', 'All roles')}</SelectItem>
+                {allRoles.map((role) => <SelectItem key={role} value={role}>{roleLabel(role)}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
-          {loading ? (
+          {memberError ? (
+            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div className="font-medium">{tt('users.registerUnavailable', 'Member register unavailable')}</div>
+              <div className="mt-1 text-sm text-muted-foreground">{memberError}</div>
+              <Button className="mt-3" variant="outline" onClick={() => void refreshMembers()}>
+                {tt('actions.retry', 'Retry')}
+              </Button>
+            </div>
+          ) : loading ? (
             <p className="text-muted-foreground">{t('loading')}</p>
           ) : filteredMembers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
               <div className="text-lg font-medium">
-                {searchTerm || statusFilter !== 'all'
+                {searchTerm || statusFilter !== 'all' || roleFilter !== 'all'
                   ? tt('users.empty.filteredTitle', 'No members match the current filters.')
                   : tt('users.empty.title', 'No members yet.')}
               </div>
               <div className="mt-2 text-sm text-muted-foreground">
-                {searchTerm || statusFilter !== 'all'
+                {searchTerm || statusFilter !== 'all' || roleFilter !== 'all'
                   ? tt('users.empty.filteredBody', 'Clear the filters or search for a different email.')
                   : tt('users.empty.body', 'Invite the first teammate to start managing company access from here.')}
               </div>
@@ -823,7 +901,6 @@ export default function Users() {
             <div className="space-y-3 md:hidden">
               {filteredMembers.map((member) => {
                 const isSelf = !!myEmail && !!member.email && member.email.toLowerCase() === myEmail.toLowerCase()
-                const isHigher = higherThanMe(member.role)
                 return (
                   <div key={`mobile-${member.user_id || member.email || `${member.role}-${member.status}-${member.created_at}`}`} className="rounded-2xl border border-border/70 bg-background/92 p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
@@ -846,59 +923,10 @@ export default function Users() {
                       <div>{t('users.table.confirmed')}: {member.email_confirmed_at ? new Date(member.email_confirmed_at).toLocaleString() : t('common.dash')}</div>
                       <div>{t('users.table.lastSignin')}: {member.last_sign_in_at ? new Date(member.last_sign_in_at).toLocaleString() : t('common.dash')}</div>
                     </div>
-                    <div className="mt-4 grid gap-2">
-                      <Select
-                        value={member.role}
-                        onValueChange={(value) => member.email && updateMember(member.email, { role: value as Role }, member.role)}
-                        disabled={!canManageUsers || isHigher || !member.email}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {roleOptions.map((role) => (
-                            <SelectItem
-                              key={role}
-                              value={role}
-                              disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, role) || isHigher}
-                            >
-                              {roleLabel(role)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={member.status}
-                        onValueChange={(value) => member.email && updateMember(member.email, { status: value as Status }, member.role)}
-                        disabled={!canManageUsers || isHigher || !member.email}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(['invited', 'active', 'disabled'] as Status[]).map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {statusLabel(status)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="mobile-primary-actions">
-                        {member.status === 'invited' && member.email ? (
-                          <Button variant="outline" size="sm" onClick={() => reinvite(member.email!)} disabled={!canManageUsers || isHigher}>
-                            {t('users.resendEmail')}
-                          </Button>
-                        ) : null}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => member.email && removeMember(member.email, member.role)}
-                          disabled={!canManageUsers || isSelf || isHigher || !member.email}
-                        >
-                          {t('common.remove')}
-                        </Button>
-                      </div>
-                    </div>
+                    <Button className="mt-4 w-full" variant="outline" onClick={() => openMember(member)}>
+                      <UserCog className="h-4 w-4" />
+                      {tt('users.reviewMember', 'Review member')}
+                    </Button>
                   </div>
                 )
               })}
@@ -918,15 +946,6 @@ export default function Users() {
               <tbody>
                 {filteredMembers.map((member) => {
                   const isSelf = !!myEmail && !!member.email && member.email.toLowerCase() === myEmail.toLowerCase()
-                  const isHigher = higherThanMe(member.role)
-                  const removeDisabled = !canManageUsers || isSelf || isHigher
-                  const removeTitle = !canManageUsers
-                    ? tt('common.noPermission', 'No permission')
-                    : isSelf
-                      ? t('users.cannotRemoveSelf')
-                      : isHigher
-                        ? t('users.cannotRemoveHigherRole')
-                        : t('users.removeMember')
 
                   return (
                     <tr key={member.user_id || member.email || `${member.role}-${member.status}-${member.created_at}`} className="border-b">
@@ -940,52 +959,15 @@ export default function Users() {
                         </div>
                       </td>
                       <td className="py-2 pr-2">
-                        <Select
-                          value={member.role}
-                          onValueChange={(value) => member.email && updateMember(member.email, { role: value as Role }, member.role)}
-                          disabled={!canManageUsers || isHigher || !member.email}
-                        >
-                          <SelectTrigger className="w-40">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {roleOptions.map((role) => (
-                              <SelectItem
-                                key={role}
-                                value={role}
-                                disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, role) || isHigher}
-                              >
-                            {roleLabel(role)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Badge variant="outline">{roleLabel(member.role)}</Badge>
                       </td>
                       <td className="py-2 pr-2">
-                        <div className="space-y-2">
-                          <Badge
-                            variant={statusVariant(member.status)}
-                            className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
-                          >
-                            {statusLabel(member.status)}
-                          </Badge>
-                          <Select
-                            value={member.status}
-                            onValueChange={(value) => member.email && updateMember(member.email, { status: value as Status }, member.role)}
-                            disabled={!canManageUsers || isHigher || !member.email}
-                          >
-                            <SelectTrigger className="w-36">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(['invited', 'active', 'disabled'] as Status[]).map((status) => (
-                                <SelectItem key={status} value={status}>
-                                  {statusLabel(status)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        <Badge
+                          variant={statusVariant(member.status)}
+                          className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
+                        >
+                          {statusLabel(member.status)}
+                        </Badge>
                       </td>
                       <td className="py-2 pr-2">
                         {member.email_confirmed_at ? new Date(member.email_confirmed_at).toLocaleString() : t('common.dash')}
@@ -994,60 +976,11 @@ export default function Users() {
                         {member.last_sign_in_at ? new Date(member.last_sign_in_at).toLocaleString() : t('common.dash')}
                       </td>
                       <td className="py-2 pr-2">
-                        <div className="flex flex-col items-end gap-1">
-                          <div className="flex gap-2">
-                            {member.status === 'invited' && member.email ? (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => reinvite(member.email!)}
-                                  disabled={!canManageUsers || isHigher}
-                                  title={isHigher ? t('users.higherRole') : t('users.resendEmail')}
-                                >
-                                  {t('users.resendEmail')}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  onClick={async () => {
-                                    if (!canManageUsers || isHigher || !member.email) return
-                                    try {
-                                      const { data: token, error } = await supabase.rpc('reinvite_company_member', {
-                                        p_company: companyId!,
-                                        p_email: member.email,
-                                      })
-                                      if (error) throw error
-                                      const link = `${window.location.origin}/accept-invite?token=${token}`
-                                      await navigator.clipboard.writeText(link)
-                                      toast.success(t('users.copyInviteLink'))
-                                    } catch (e: any) {
-                                      toast.error(e?.message || t('users.couldNotCopyLink'))
-                                    }
-                                  }}
-                                  disabled={!canManageUsers || isHigher || !member.email}
-                                  title={isHigher ? t('users.higherRole') : t('users.copyInviteLink')}
-                                >
-                                  {t('users.copyLink')}
-                                </Button>
-                              </>
-                            ) : null}
-                            <Button
-                              variant="outline"
-                              onClick={() => member.email && removeMember(member.email, member.role)}
-                              disabled={removeDisabled || !member.email}
-                              title={removeTitle}
-                            >
-                              {t('common.remove')}
-                            </Button>
-                          </div>
-                          {isHigher ? (
-                            <Button
-                              variant="secondary"
-                              disabled
-                              className="h-7 cursor-not-allowed px-2 text-xs opacity-60"
-                            >
-                              {t('users.higherRole')}
-                            </Button>
-                          ) : null}
+                        <div className="flex justify-end">
+                          <Button variant="outline" size="sm" onClick={() => openMember(member)}>
+                            <UserCog className="h-4 w-4" />
+                            {tt('users.reviewMember', 'Review member')}
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -1061,6 +994,117 @@ export default function Users() {
       </Card>
         </>
       )}
+
+      <Dialog open={Boolean(selectedMember)} onOpenChange={(open) => !open && setSelectedMember(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{tt('users.memberReviewTitle', 'Review member')}</DialogTitle>
+            <DialogDescription>
+              {tt('users.memberReviewHelp', 'Review company role and membership status. Backend role and ownership rules remain authoritative.')}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedMember ? (
+            <DialogBody className="space-y-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border/70 p-4">
+                  <div className="text-xs text-muted-foreground">{t('users.email')}</div>
+                  <div className="mt-1 break-all font-medium">{selectedMember.email || tt('users.emailUnavailable', 'Email unavailable')}</div>
+                </div>
+                <div className="rounded-lg border border-border/70 p-4">
+                  <div className="text-xs text-muted-foreground">{t('users.table.lastSignin')}</div>
+                  <div className="mt-1 font-medium">
+                    {selectedMember.last_sign_in_at
+                      ? new Date(selectedMember.last_sign_in_at).toLocaleString()
+                      : tt('users.notCaptured', 'Not captured')}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>{tt('users.currentRole', 'Current role')}</Label>
+                  <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">{roleLabel(selectedMember.role)}</div>
+                </div>
+                <div className="space-y-2">
+                  <Label>{tt('users.newRole', 'New role')}</Label>
+                  <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as Role)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {roleOptions.map((role) => (
+                        <SelectItem key={role} value={role} disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, role)}>
+                          {roleLabel(role)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-4 text-sm">
+                <div className="font-medium">{roleLabel(selectedRole)}</div>
+                <div className="mt-1 text-muted-foreground">{roleCopy.definitions[selectedRole].summary}</div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{tt('users.membershipStatus', 'Membership status')}</Label>
+                <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as Status)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(['invited', 'active', 'disabled'] as Status[]).map((status) => (
+                      <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {tt('users.disableRemoveDistinction', 'Disabled membership retains historical evidence without active company access. Removing membership is a separate action and does not delete the authentication account.')}
+                </p>
+              </div>
+
+              {higherThanMe(selectedMember.role) ? (
+                <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+                  {tt('users.cannotModifyHigherRole', 'You cannot modify a member with a higher role than yours.')}
+                </div>
+              ) : null}
+            </DialogBody>
+          ) : null}
+          <DialogFooter className="flex-wrap">
+            {selectedMember?.status === 'invited' && selectedMember.email ? (
+              <Button variant="outline" onClick={() => void reinvite(selectedMember.email!, selectedMember.role)}>
+                {t('users.resendEmail')}
+              </Button>
+            ) : null}
+            {selectedMember?.email ? (
+              <Button
+                variant="destructive"
+                disabled={
+                  selectedMember.email.toLowerCase() === (myEmail || '').toLowerCase() ||
+                  higherThanMe(selectedMember.role)
+                }
+                onClick={async () => {
+                  await removeMember(selectedMember.email!, selectedMember.role)
+                  setSelectedMember(null)
+                }}
+              >
+                {tt('users.removeMembership', 'Remove membership')}
+              </Button>
+            ) : null}
+            <Button
+              disabled={!selectedMember?.email || higherThanMe(selectedMember.role)}
+              onClick={async () => {
+                if (!selectedMember?.email) return
+                await updateMember(
+                  selectedMember.email,
+                  { role: selectedRole, status: selectedStatus },
+                  selectedMember.role,
+                )
+                setSelectedMember(null)
+              }}
+            >
+              {tt('users.saveMemberChanges', 'Save member changes')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

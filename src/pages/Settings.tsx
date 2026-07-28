@@ -50,6 +50,8 @@ import LogoUploader from "../components/settings/LogoUploader";
 import { CommercialTaxSettings } from "../components/settings/CommercialTaxSettings";
 import { SetupReadinessPanel } from "../components/setup/SetupReadinessPanel";
 import { useCompanySetupReadiness } from "../hooks/useCompanySetupReadiness";
+import { AdministrationAuthorityBadge } from "../components/administration/AdministrationAuthorityBadge";
+import { AdministrationSectionNav } from "../components/administration/AdministrationSectionNav";
 
 import {
   Bell,
@@ -60,6 +62,7 @@ import {
   FileText,
   Globe,
   Plus,
+  Settings2,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -159,6 +162,15 @@ type SettingsSectionKey =
   | "notifications"
   | "due-reminders"
   | "documents";
+
+type SettingsView = "overview" | "company" | "operations" | "communications" | "documents";
+
+const settingsViewSections: Record<Exclude<SettingsView, "overview">, SettingsSectionKey[]> = {
+  company: ["company-profile", "localization"],
+  operations: ["operations", "inventory", "commercial-tax"],
+  communications: ["notifications", "due-reminders"],
+  documents: ["documents"],
+};
 
 const settingsGuideCopy = {
   en: {
@@ -530,7 +542,11 @@ function Settings() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [missingRow, setMissingRow] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionKey | null>(null);
+  const [activeView, setActiveView] = useState<SettingsView>("overview");
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [settingsUnavailable, setSettingsUnavailable] = useState(false);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
+  const [warehousesUnavailable, setWarehousesUnavailable] = useState(false);
 
   const [data, setData] = useState<SettingsData>(DEFAULTS);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
@@ -545,6 +561,7 @@ function Settings() {
 
   useEffect(() => {
     const section = searchParams.get("section");
+    const requestedView = searchParams.get("view");
     const allowedSections: SettingsSectionKey[] = [
       "company-profile",
       "commercial-tax",
@@ -555,9 +572,17 @@ function Settings() {
       "due-reminders",
       "documents",
     ];
-    setActiveSection(section && allowedSections.includes(section as SettingsSectionKey)
+    const allowedViews: SettingsView[] = ["overview", "company", "operations", "communications", "documents"];
+    const nextView: SettingsView = requestedView === "setup"
+      ? "overview"
+      : allowedViews.includes(requestedView as SettingsView)
+        ? requestedView as SettingsView
+        : "overview";
+    const explicitSection = section && allowedSections.includes(section as SettingsSectionKey)
       ? section as SettingsSectionKey
-      : null);
+      : null;
+    setActiveView(nextView);
+    setActiveSection(explicitSection || (nextView === "overview" ? null : settingsViewSections[nextView][0]));
   }, [searchParams]);
 
   useEffect(() => {
@@ -590,14 +615,15 @@ function Settings() {
       profile?.legal_name ||
       data.documents.brand.name ||
       tt("settings.summary.companyFallback", "Company profile not set");
-    const defaultWarehouse =
-      warehouses.find((warehouse) => warehouse.id === data.dashboard.defaultWarehouseId)?.name ||
-      (data.dashboard.defaultWarehouseId === "ALL"
-        ? tt("filters.warehouse.all", "All warehouses")
-        : tt("settings.summary.notSet", "Not set"));
+    const defaultWarehouse = warehousesUnavailable
+      ? tt("administration.evidenceUnavailable", "Evidence unavailable")
+      : warehouses.find((warehouse) => warehouse.id === data.dashboard.defaultWarehouseId)?.name ||
+        (data.dashboard.defaultWarehouseId === "ALL"
+          ? tt("filters.warehouse.all", "All warehouses")
+          : tt("settings.summary.notSet", "Not set"));
     const valuationMethod = tt("reports.weightedAverage", "Weighted Average");
     return { companyLabel, defaultWarehouse, valuationMethod };
-  }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses]);
+  }, [data.dashboard.defaultWarehouseId, data.documents.brand.name, profile?.legal_name, profile?.trade_name, t, warehouses, warehousesUnavailable]);
 
   const profileReady = Boolean((profile?.trade_name || profile?.legal_name) && profile?.country_code);
   const fiscalReady = Boolean(profile?.legal_name && profile?.tax_id && profile?.country_code);
@@ -648,9 +674,11 @@ function Settings() {
           key: "warehouses-bins",
           title: copy.cards.warehousesBins.title,
           description: copy.cards.warehousesBins.description,
-          status: warehouses.length
-            ? tt("warehouses.summary.totalCount", "{count} warehouses", { count: warehouses.length })
-            : copy.statusNeedsWork,
+          status: warehousesUnavailable
+            ? tt("administration.evidenceUnavailable", "Evidence unavailable")
+            : warehouses.length
+              ? tt("warehouses.summary.totalCount", "{count} warehouses", { count: warehouses.length })
+              : copy.statusNeedsWork,
           actionLabel: copy.open,
           href: "/warehouses",
           tone: warehouses.length ? "positive" : "warning",
@@ -798,6 +826,7 @@ function Settings() {
       t,
       tt,
       warehouses.length,
+      warehousesUnavailable,
     ],
   );
   const activeSectionTitle = activeSection
@@ -861,9 +890,11 @@ function Settings() {
       try {
         setLoading(true);
         setMissingRow(false);
+        setSettingsUnavailable(false);
+        setProfileUnavailable(false);
+        setWarehousesUnavailable(false);
 
-        // load settings + company + warehouses in parallel (snappier)
-        const [resSettings, profileRow, resWh] = await Promise.all([
+        const [resSettings, resProfile, resWh] = await Promise.all([
           supabase
             .from("company_settings")
             .select("data")
@@ -875,14 +906,7 @@ function Settings() {
               'id, legal_name, trade_name, email_subject_prefix, tax_id, registration_no, phone, email, website, address_line1, address_line2, city, state, postal_code, country_code, print_footer_note, logo_path, preferred_lang'
             )
             .eq('id', companyId)
-            .single()
-            .then(({ data, error }) => {
-              if (error) {
-                console.error(error);
-                return null;
-              }
-              return data;
-            }),
+            .single(),
           supabase
             .from("warehouses")
             .select("id,name")
@@ -890,9 +914,10 @@ function Settings() {
             .order("name", { ascending: true }),
         ]);
 
-        // settings
-        if (resSettings.error) console.error(resSettings.error);
-        if (!resSettings.data) {
+        if (resSettings.error) {
+          console.error(resSettings.error);
+          if (!cancelled) setSettingsUnavailable(true);
+        } else if (!resSettings.data) {
           setMissingRow(true);
           if (!cancelled) {
             const effectiveLang = activeLang ?? cachedLang ?? DEFAULTS.locale.language;
@@ -914,12 +939,19 @@ function Settings() {
           }
         }
 
-        // company
-        if (profileRow && !cancelled)
-          setProfile(profileRow);
-        // warehouses
-        if (!resWh.error && !cancelled)
+        if (resProfile.error) {
+          console.error(resProfile.error);
+          if (!cancelled) setProfileUnavailable(true);
+        } else if (!cancelled) {
+          setProfile(resProfile.data);
+        }
+
+        if (resWh.error) {
+          console.error(resWh.error);
+          if (!cancelled) setWarehousesUnavailable(true);
+        } else if (!cancelled) {
           setWarehouses((resWh.data ?? []) as Warehouse[]);
+        }
       } catch (e: any) {
         console.error(e);
         toast.error(e?.message || tt("settings.toast.loadFailed", "Failed to load settings"));
@@ -1143,12 +1175,12 @@ function Settings() {
               {activeSection === "company-profile" ? (
                 <Button
                   onClick={saveProfile}
-                  disabled={savingProfile || !canEditOps}
+                  disabled={savingProfile || !canEditOps || profileUnavailable}
                 >
                   {savingProfile ? t("actions.saving") : copy.saveCompany}
                 </Button>
               ) : (
-                <Button onClick={save} disabled={saving || !canEditOps}>
+                <Button onClick={save} disabled={saving || !canEditOps || settingsUnavailable}>
                   {saving ? t("actions.saving") : copy.saveChanges}
                 </Button>
               )}
@@ -1156,6 +1188,50 @@ function Settings() {
           ) : null
         }
       />
+
+      <AdministrationSectionNav
+        label={tt("administration.settingsNavigation", "Settings views")}
+        value={activeView}
+        onChange={(view) => setSearchParams({ view })}
+        sections={[
+          { value: "overview", label: tt("administration.settings.overview", "Overview"), icon: <Settings2 className="h-4 w-4" /> },
+          { value: "company", label: tt("administration.settings.company", "Company") },
+          { value: "operations", label: tt("administration.settings.operations", "Operations") },
+          { value: "communications", label: tt("administration.settings.communications", "Communications") },
+          { value: "documents", label: tt("administration.settings.documents", "Documents") },
+        ]}
+      />
+
+      {activeView !== "overview" ? (
+        <AdministrationSectionNav
+          label={tt("administration.settingsAreaNavigation", "Settings areas")}
+          value={activeSection || ""}
+          onChange={(section) => setSearchParams({ view: activeView, section })}
+          sections={settingsViewSections[activeView].map((section) => ({
+            value: section,
+            label: settingsGuideCards.find((card) => card.section === section)?.title || section,
+          }))}
+        />
+      ) : (
+        <div className="flex flex-wrap gap-2" aria-label={tt("administration.authorityLegend", "Authority ownership")}>
+          <AdministrationAuthorityBadge authority="company" label={tt("administration.companyControlled", "Company-controlled")} />
+          <AdministrationAuthorityBadge authority="finance" label={tt("administration.financeControlled", "Finance-controlled")} />
+          <AdministrationAuthorityBadge authority="platform" label={tt("administration.platformManaged", "Platform-managed")} />
+        </div>
+      )}
+
+      {settingsUnavailable || profileUnavailable || warehousesUnavailable ? (
+        <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <div className="font-medium">{tt("administration.settings.partialUnavailable", "Some settings evidence is unavailable")}</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {[
+              settingsUnavailable ? tt("administration.settings.companySettingsUnavailable", "Company settings unavailable") : null,
+              profileUnavailable ? tt("administration.settings.profileUnavailable", "Company profile unavailable") : null,
+              warehousesUnavailable ? tt("administration.settings.warehousesUnavailable", "Warehouse defaults unavailable") : null,
+            ].filter(Boolean).join(" / ")}
+          </div>
+        </div>
+      ) : null}
 
       {!canEditOps && (
         <div className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-surface-muted/35 px-4 py-3 text-sm text-muted-foreground">
@@ -1215,6 +1291,47 @@ function Settings() {
         />
       </div> : null}
 
+      {!activeSection ? (
+        <div className="flex flex-col gap-4 rounded-lg border border-border/70 bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <AdministrationAuthorityBadge
+              authority="platform"
+              label={tt("administration.platformManaged", "Platform-managed")}
+            />
+            <h2 className="mt-3 text-base font-semibold text-foreground">
+              {tt("administration.settings.platformAccessTitle", "Company subscription and access")}
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              {tt(
+                "administration.settings.platformAccessDescription",
+                "StockWise platform administration manages entitlement status. Company users can review access and submit activation evidence where applicable.",
+              )}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/company-access">
+                {tt("administration.settings.reviewAccess", "Review company access")}
+              </Link>
+            </Button>
+            {canEditAll ? (
+              <Button asChild>
+                <Link to="/activation">
+                  {tt("administration.settings.openActivation", "Open activation")}
+                </Link>
+              </Button>
+            ) : null}
+            {isPlatformAdmin ? (
+              <Button variant="outline" asChild>
+                <Link to="/platform-control">
+                  {tt("administration.settings.openPlatformControl", "Open Platform Control")}
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {activeSection ? (
         <div className="space-y-4">
           <Button
@@ -1222,7 +1339,7 @@ function Settings() {
             variant="outline"
             className="w-fit"
             onClick={() => {
-              setSearchParams({ view: "setup" });
+              setSearchParams({ view: "overview" });
               void setupReadiness.refresh();
             }}
           >
