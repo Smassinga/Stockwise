@@ -19,6 +19,10 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import PublicAuthShell from '../components/auth/PublicAuthShell'
+import {
+  WorkspaceSetupLoader,
+  type WorkspaceSetupStep,
+} from '../components/onboarding/WorkspaceSetupLoader'
 import { Alert, AlertDescription } from '../components/ui/alert'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -473,6 +477,7 @@ export default function Onboarding() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [acceptingCompanyId, setAcceptingCompanyId] = useState<string | null>(null)
+  const [workspaceStep, setWorkspaceStep] = useState<WorkspaceSetupStep>('checking-account')
   const [companyName, setCompanyName] = useState('')
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [resending, setResending] = useState(false)
@@ -637,6 +642,7 @@ export default function Onboarding() {
 
     try {
       setCreating(true)
+      setWorkspaceStep('creating-company')
       setSubmitError(null)
 
       const { data, error } = await withTimeout(
@@ -671,6 +677,7 @@ export default function Onboarding() {
 
       rememberCompanyLocally(companyId)
 
+      setWorkspaceStep('selecting-company')
       const { error: activeErr } = await withTimeout(
         setActiveCompanyRpc(companyId),
         SET_ACTIVE_COMPANY_TIMEOUT_MS,
@@ -686,6 +693,7 @@ export default function Onboarding() {
         })
       }
 
+      setWorkspaceStep('confirming-access')
       try {
         await withTimeout(
           supabase.auth.refreshSession(),
@@ -718,6 +726,7 @@ export default function Onboarding() {
   async function acceptInvitation(invite: PendingCompanyInvitation) {
     try {
       setAcceptingCompanyId(invite.company_id)
+      setWorkspaceStep('accepting-invitation')
       setSubmitError(null)
       await acceptPendingCompanyInvitation(invite.company_id)
       rememberCompanyLocally(invite.company_id)
@@ -749,9 +758,9 @@ export default function Onboarding() {
         heroBody={copy.heroBody}
         highlights={copy.highlights}
       >
-        <Card className="border-border/70 bg-card/95 shadow-xl">
-          <CardContent className="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground">
-            {t('loading')}
+          <Card className="border-border/70 bg-card/95 shadow-xl">
+          <CardContent className="p-0">
+            <WorkspaceSetupLoader step="checking-account" size="lg" />
           </CardContent>
         </Card>
       </PublicAuthShell>
@@ -828,22 +837,40 @@ export default function Onboarding() {
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <CardTitle>{completion ? copy.readyTitle : hasInvites ? copy.choiceTitle : copy.noInvitesTitle}</CardTitle>
+                  <CardTitle>
+                    {creating || acceptingCompanyId
+                      ? copy.subtitle
+                      : completion
+                        ? copy.readyTitle
+                        : hasInvites
+                          ? copy.choiceTitle
+                          : copy.noInvitesTitle}
+                  </CardTitle>
                   <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
-                    {completion ? copy.readyBody : hasInvites ? copy.choiceBody : copy.noInvitesBody}
+                    {creating || acceptingCompanyId
+                      ? copy.subtitle
+                      : completion
+                        ? copy.readyBody
+                        : hasInvites
+                          ? copy.choiceBody
+                          : copy.noInvitesBody}
                   </p>
                 </div>
-                <Badge variant="secondary" className="hidden rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em] sm:inline-flex">
-                  {progressText}
-                </Badge>
+                {!creating && !acceptingCompanyId ? (
+                  <Badge variant="secondary" className="hidden rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em] sm:inline-flex">
+                    {progressText}
+                  </Badge>
+                ) : null}
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  <span>{copy.progressLabel}</span>
-                  <span>{progressValue}%</span>
+              {!creating && !acceptingCompanyId ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    <span>{copy.progressLabel}</span>
+                    <span>{progressValue}%</span>
+                  </div>
+                  <Progress value={progressValue} className="h-2" />
                 </div>
-                <Progress value={progressValue} className="h-2" />
-              </div>
+              ) : null}
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -854,7 +881,17 @@ export default function Onboarding() {
               </Alert>
             ) : null}
 
-            {completion ? (
+            {creating || acceptingCompanyId ? (
+              <WorkspaceSetupLoader
+                step={workspaceStep}
+                companyName={
+                  creating
+                    ? companyName.trim()
+                    : invites.find((invite) => invite.company_id === acceptingCompanyId)?.company_name
+                }
+                size="lg"
+              />
+            ) : completion ? (
               <div className="space-y-6">
                 <div className="rounded-3xl border border-primary/15 bg-primary/5 p-5">
                   <div className="flex items-start gap-3">

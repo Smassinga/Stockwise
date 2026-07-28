@@ -32,12 +32,15 @@ import {
 } from 'lucide-react'
 import BrandLockup from '../components/brand/BrandLockup'
 import { LandingFaq } from '../components/landing/LandingFaq'
+import { LandingInteractiveCta } from '../components/landing/LandingInteractiveCta'
 import { LandingProductTabs, type LandingProductSurface, type LandingProductTab } from '../components/landing/LandingProductTabs'
+import { LandingPulsatingCta } from '../components/landing/LandingPulsatingCta'
 import LocaleToggle from '../components/LocaleToggle'
 import ThemeToggle from '../components/ThemeToggle'
 import { IconBadge } from '../components/premium/IconBadge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
+import { GlareHover } from '../components/ui/glare-hover'
 import { useAuth } from '../hooks/useAuth'
 import { useI18n } from '../lib/i18n'
 import { buildPublicMailto, PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
@@ -120,7 +123,7 @@ type LandingCopy = {
   teamMembers: Array<{ name: string; role: string; body: string }>
   finalTitle: string
   finalBody: string
-  finalSecondary: string
+  demoCta: string
   signIn: string
   openDashboard: string
   footerTagline: string
@@ -573,7 +576,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
     finalTitle: 'Ready to bring stock, operations, and records into one workspace?',
     finalBody:
       'Start the 7-day trial or contact StockWise for a controlled activation and rollout conversation.',
-    finalSecondary: 'Talk to us',
+    demoCta: 'Book a demo',
     signIn: 'Sign in',
     openDashboard: 'Open dashboard',
     footerTagline:
@@ -1043,7 +1046,7 @@ const copyByLang: Record<Lang, LandingCopy> = {
     finalTitle: 'Pronto para juntar stock, operações e registos no mesmo workspace?',
     finalBody:
       'Inicie o teste de 7 dias ou contacte a StockWise para uma conversa controlada de ativação e rollout.',
-    finalSecondary: 'Falar connosco',
+    demoCta: 'Marcar demonstração',
     signIn: 'Iniciar sessão',
     openDashboard: 'Abrir dashboard',
     footerTagline:
@@ -1761,13 +1764,19 @@ function PricingCard({
   const onboardingPrice = plan.onboardingMzn != null ? formatLandingMzn(plan.onboardingMzn, locale) : null
 
   return (
-    <Card
-      className={cn(
-        'landing-pricing-card group flex h-full flex-col border-border/70 bg-card shadow-sm',
-        plan.highlight ? 'border-primary/45 shadow-md ring-1 ring-primary/25' : '',
-      )}
+    <GlareHover
+      className="h-full w-full cursor-default rounded-xl overflow-hidden"
+      opacity={plan.highlight ? 0.17 : 0.11}
+      duration={plan.highlight ? 750 : 800}
+      playOnce
     >
-      <CardContent className="flex h-full flex-col p-5">
+      <Card
+        className={cn(
+          'landing-pricing-card group flex h-full flex-col border-border/70 bg-card shadow-sm',
+          plan.highlight ? 'border-primary/45 shadow-md ring-1 ring-primary/25' : '',
+        )}
+      >
+        <CardContent className="flex h-full flex-col p-5">
         <div className="flex min-h-8 flex-wrap items-center gap-2">
           {plan.highlight ? <StatusPill tone="teal">{copy.labels.recommended}</StatusPill> : null}
           {pricing.from ? <StatusPill tone="neutral">{copy.labels.from}</StatusPill> : null}
@@ -1839,16 +1848,13 @@ function PricingCard({
           </div>
         </div>
 
-        <div className="mt-auto grid gap-3 pt-6">
-          <Button
-            asChild
-            className="landing-pricing-primary-cta"
+          <div className="mt-auto grid gap-3 pt-6">
+          <LandingInteractiveCta
+            to={trialHref}
+            className="landing-pricing-primary-cta w-full"
           >
-            <Link to={trialHref}>
-              {ctaLabel}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          </Button>
+            {ctaLabel}
+          </LandingInteractiveCta>
           <Button
             variant="outline"
             asChild
@@ -1859,9 +1865,10 @@ function PricingCard({
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </a>
           </Button>
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </GlareHover>
   )
 }
 
@@ -1880,6 +1887,7 @@ export default function LandingPage() {
   const signInLabel = user ? copy.openDashboard : copy.signIn
   const activationHref = useMemo(() => buildPublicMailto(copy.mailSubjects.activation), [copy.mailSubjects.activation])
   const contactHref = useMemo(() => buildPublicMailto(copy.mailSubjects.contact), [copy.mailSubjects.contact])
+  const demoHref = useMemo(() => buildPublicMailto(copy.mailSubjects.demo), [copy.mailSubjects.demo])
   const productTabs = useMemo(() => landingProductTabsFor(lang), [lang])
   const productSurfaceLabels = useMemo(() => landingProductSurfaceLabels(lang), [lang])
 
@@ -2074,12 +2082,15 @@ export default function LandingPage() {
                 <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-zinc-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
 
                 <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                  <Button size="lg" asChild>
-                    <Link to={trialHref}>
+                  {user ? (
+                    <LandingInteractiveCta to={trialHref} className="min-h-12 px-8">
                       {primaryCtaLabel}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </Link>
-                  </Button>
+                    </LandingInteractiveCta>
+                  ) : (
+                    <LandingPulsatingCta to={trialHref} className="min-h-12">
+                      {primaryCtaLabel}
+                    </LandingPulsatingCta>
+                  )}
                   <Button size="lg" variant="outline" asChild>
                     <a href="#pricing">
                       {copy.secondaryCta}
@@ -2390,25 +2401,32 @@ export default function LandingPage() {
           </section>
 
           <section className="border-t border-zinc-800 bg-black py-16 text-white lg:py-20">
-            <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-              <div className="max-w-2xl">
-                <h2 className="text-3xl font-semibold leading-tight sm:text-4xl">{copy.finalTitle}</h2>
-                <p className="mt-4 text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">{copy.finalBody}</p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button size="lg" asChild>
-                  <Link to={trialHref}>
-                    {primaryCtaLabel}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </Link>
-                </Button>
-                <Button size="lg" variant="outline" className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white" asChild>
-                  <a href={contactHref}>
-                    {copy.finalSecondary}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </a>
-                </Button>
-              </div>
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <GlareHover
+                className="w-full cursor-default rounded-xl overflow-hidden border border-white/15 bg-zinc-950"
+                opacity={0.1}
+                duration={850}
+                playOnce
+              >
+                <div className="flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between lg:p-10">
+                  <div className="max-w-2xl">
+                    <h2 className="text-3xl font-semibold leading-tight sm:text-4xl">{copy.finalTitle}</h2>
+                    <p className="mt-4 text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">{copy.finalBody}</p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <LandingInteractiveCta to={trialHref} className="min-h-12 px-7">
+                      {primaryCtaLabel}
+                    </LandingInteractiveCta>
+                    <LandingInteractiveCta
+                      href={demoHref}
+                      tone="light-outline"
+                      className="min-h-12 px-7"
+                    >
+                      {copy.demoCta}
+                    </LandingInteractiveCta>
+                  </div>
+                </div>
+              </GlareHover>
             </div>
           </section>
         </main>

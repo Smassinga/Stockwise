@@ -917,6 +917,117 @@
     color: hsl(var(--primary));
   }
 
+  .landing-interactive-cta {
+    gap: 0.55rem;
+    text-decoration: none;
+    transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .landing-interactive-cta__accent {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: hsl(var(--foreground) / 0.1);
+    opacity: 0;
+  }
+
+  .landing-interactive-cta__label,
+  .landing-interactive-cta__arrow {
+    position: relative;
+    z-index: 1;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .landing-interactive-cta:focus-visible {
+    box-shadow: 0 0 0 4px hsl(var(--primary) / 0.22);
+  }
+
+  .landing-pulsating-cta {
+    text-decoration: none;
+    transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .landing-pulsating-cta__pulse {
+    border: 1px solid hsl(var(--primary) / 0.7);
+  }
+
+  .glare-hover::before {
+    position: absolute;
+    z-index: 10;
+    top: -35%;
+    bottom: -35%;
+    left: -65%;
+    width: var(--glare-size);
+    pointer-events: none;
+    content: "";
+    background: linear-gradient(
+      var(--glare-angle),
+      transparent 42%,
+      var(--glare-color) 50%,
+      transparent 58%
+    );
+    transform: translateX(-70%);
+    transition: transform var(--glare-duration) cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .glare-hover--static::before {
+    display: none;
+  }
+
+  .workspace-setup-loader__mark {
+    position: relative;
+    display: inline-flex;
+    width: 3.75rem;
+    height: 3.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 3px solid hsl(var(--border));
+    border-top-color: hsl(var(--primary));
+    border-radius: 999px;
+  }
+
+  .workspace-setup-loader__accent {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 2px solid transparent;
+    border-right-color: hsl(var(--primary) / 0.45);
+    border-bottom-color: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 999px;
+  }
+
+  .workspace-setup-loader__mark--static {
+    border-color: hsl(var(--border));
+    border-top-color: hsl(var(--primary));
+  }
+
+  .workspace-setup-loader__mark--static .workspace-setup-loader__accent {
+    border-right-color: hsl(var(--primary) / 0.45);
+    border-bottom-color: hsl(var(--muted-foreground) / 0.35);
+  }
+
+  @keyframes landing-cta-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+    }
+
+    45% {
+      box-shadow: 0 0 0 0.55rem hsl(var(--primary) / 0.18);
+    }
+  }
+
+  @keyframes workspace-loader-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes workspace-loader-counter-spin {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+
   @keyframes landing-orb-drift-a {
     0%,
     100% {
@@ -1014,6 +1125,26 @@
   }
 
   @media (hover: hover) and (pointer: fine) {
+    .landing-interactive-cta:not(.landing-interactive-cta--static):hover .landing-interactive-cta__accent,
+    .landing-interactive-cta:not(.landing-interactive-cta--static):focus-visible .landing-interactive-cta__accent {
+      opacity: 1;
+    }
+
+    .landing-interactive-cta:not(.landing-interactive-cta--static):hover .landing-interactive-cta__label,
+    .landing-interactive-cta:not(.landing-interactive-cta--static):focus-visible .landing-interactive-cta__label {
+      transform: translateX(-0.12rem);
+    }
+
+    .landing-interactive-cta:not(.landing-interactive-cta--static):hover .landing-interactive-cta__arrow,
+    .landing-interactive-cta:not(.landing-interactive-cta--static):focus-visible .landing-interactive-cta__arrow {
+      transform: translateX(0.18rem);
+    }
+
+    .glare-hover:not(.glare-hover--static):hover::before,
+    .glare-hover:not(.glare-hover--static):focus-within::before {
+      transform: translateX(115%);
+    }
+
     .landing-bento-card:hover::after {
       opacity: 1;
     }
@@ -1064,6 +1195,18 @@
   }
 
   @media (prefers-reduced-motion: no-preference) {
+    .landing-pulsating-cta__pulse {
+      animation: landing-cta-pulse 2.4s ease-out infinite;
+    }
+
+    .workspace-setup-loader__mark {
+      animation: workspace-loader-spin 1.15s linear infinite;
+    }
+
+    .workspace-setup-loader__accent {
+      animation: workspace-loader-counter-spin 1.65s linear infinite;
+    }
+
     .landing-floating-card {
       animation: landing-floating-drift 7.5s ease-in-out infinite;
       will-change: transform;
@@ -1122,6 +1265,19 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .landing-interactive-cta,
+    .landing-interactive-cta__label,
+    .landing-interactive-cta__arrow,
+    .landing-pulsating-cta,
+    .landing-pulsating-cta__pulse,
+    .glare-hover::before,
+    .workspace-setup-loader__mark,
+    .workspace-setup-loader__accent {
+      transform: none;
+      transition: none;
+      animation: none;
+    }
+
     .landing-scroll-reveal,
     .landing-scroll-reveal.is-visible,
     .landing-hover-lift,

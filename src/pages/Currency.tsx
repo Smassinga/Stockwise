@@ -8,6 +8,11 @@ import { Button } from '../components/ui/button'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import {
+  FxConversionPreview,
+  FxRateSavedResult,
+  type SavedFxRate,
+} from '../components/currency/FxConversionPreview'
 import toast from 'react-hot-toast'
 import { setBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
@@ -49,6 +54,7 @@ export default function CurrencyPage() {
   const [from, setFrom] = useState<string>('USD')
   const [to, setTo] = useState<string>('MZN')
   const [rate, setRate] = useState<string>('')
+  const [savedFxRate, setSavedFxRate] = useState<SavedFxRate | null>(null)
 
   const allowedCodes = useMemo(() => new Set(allowed.map(a => a.code)), [allowed])
   const availableCurrencies = useMemo(
@@ -64,6 +70,7 @@ export default function CurrencyPage() {
 
   // -------- Load (per-company) --------
   useEffect(() => {
+    setSavedFxRate(null)
     if (!companyId) {
       setAllCurrencies([])
       setAllowed([])
@@ -209,6 +216,7 @@ export default function CurrencyPage() {
         toast.error(tt('currency.toast.enableBoth', 'Both currencies must be enabled for this company'))
         return
       }
+      setSavedFxRate(null)
       const payload = { date: fxDate, from_code: from, to_code: to, rate: r }
       const { error } = await supabase
         .from('fx_rates')
@@ -222,6 +230,7 @@ export default function CurrencyPage() {
         .limit(200)
       if (rErr) throw rErr
       setFx((data || []) as FxRate[])
+      setSavedFxRate({ date: fxDate, from, to, rate: r })
       setRate('')
       toast.success(tt('currency.toast.rateSaved', 'FX rate saved'))
     } catch (e: any) {
@@ -370,7 +379,7 @@ export default function CurrencyPage() {
       {/* FX */}
       <Card>
         <CardHeader><CardTitle>{t('currency.addFx')}</CardTitle></CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-5">
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div>
             <Label>{t('currency.date')}</Label>
             <Input type="date" value={fxDate} onChange={e => setFxDate(e.target.value)} disabled={!canEdit} />
@@ -410,6 +419,17 @@ export default function CurrencyPage() {
           </div>
         </CardContent>
       </Card>
+
+      {savedFxRate ? <FxRateSavedResult result={savedFxRate} /> : null}
+
+      <FxConversionPreview
+        key={companyId || 'no-company'}
+        date={fxDate}
+        from={from}
+        to={to}
+        rate={rate}
+        currencies={allowed}
+      />
 
       {/* Recent rates */}
       <Card>
