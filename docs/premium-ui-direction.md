@@ -400,3 +400,8 @@ The Magic UI Interactive Hover Button, Pulsating Button, and Glare Hover sources
 Onboarding feedback communicates the actual asynchronous step without timers or fake progress. Currency feedback is explicitly a conversion preview and saved-rate confirmation, never a transfer, payment, settlement, or accounting result. Price labels use natural `Price`/`Prices` and `Preço`/`Preços`; MZN remains in formatted amounts and every operational currency context where it carries meaning.
 
 All UX-9A motion has a stable reduced-motion equivalent. Decorative pulse, glare, loader accents, arrows, and checkmarks are hidden from assistive technology and cannot intercept input. Loaders use status semantics, preview readiness is announced, focus remains visible, and no information depends on animation alone.
+## UX-9B shell and workspace consistency
+
+UX-9B corrected the desktop sidebar root cause by making the `aside` a sticky `100dvh` flex container with hidden root overflow, a `min-h-0` independently scrolling navigation region, and fixed brand/company/account regions. `AppLayout` remains responsible for header, safe-area, page-edge, and mobile-dock clearance; shared `app-page` variants own width and vertical rhythm.
+
+Items, Stock Levels, and Stock Movements use the compact shared search/filter/action toolbar with natural EN/PT result counts. Currency now uses the maintained page header and metric cards; enabled rows are neutral with a textual active badge rather than a full green success treatment. Monetary revenue-minus-COGS values are labelled Gross profit / Lucro bruto; the percentage remains Gross margin / Margem bruta.

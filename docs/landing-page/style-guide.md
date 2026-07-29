@@ -86,3 +86,6 @@ Mobile animation should be simplified: no strong atmospheric movement, no floati
 ## Dependency Position
 
 No new dependencies are planned. The landing page should use the existing React, Tailwind, shadcn-style primitives, approved Phosphor/Lucide icon boundary, and framer-motion dependency already present in the app.
+## UX-9B copy rules
+
+Prefer plain buyer language over internal evidence terminology in high-level sections. Keep technical terms in product previews, use cases, FAQ, or maintained documentation where context makes them useful. Preserve one dominant CTA per section, factual sample-data labels, EN/PT wrapping, light/dark contrast, touch behavior, and reduced-motion completeness.

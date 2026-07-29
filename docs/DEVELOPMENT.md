@@ -168,3 +168,6 @@ Onboarding progress follows the existing asynchronous authority: account check, 
 The Currency preview is presentation-only and calculates the entered direction as `source amount * entered rate`. It does not invert rates, look up a reverse rate, save data, post finance activity, or imply a transfer. Incomplete or unavailable evidence remains instructional or unavailable rather than `0.00`. The compact saved-rate result is shown only after the maintained FX save succeeds and does not delay the real save.
 
 Use the existing `framer-motion` package and CSS media queries for these effects. Under reduced motion, pulse, glare sweep, loader rotation, translating CTA text, and animated checkmark drawing stop while equivalent text and focus treatment remain visible. Do not add `motion`, replace the base Button or Card, add a dependency, or move onboarding, membership, currency, pricing, activation, or finance authority into presentation code.
+## UX-9B presentation boundary
+
+UX-9B is frontend presentation and copy only. It adds no migration, RPC, view, Edge Function, dependency, pricing/plan calculation, dashboard calculation, currency calculation, onboarding authority, finance authority, or POS-mode change. Desktop sidebar scrolling is CSS-owned; production QA remains read-only.

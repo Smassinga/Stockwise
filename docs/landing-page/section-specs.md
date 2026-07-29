@@ -191,3 +191,6 @@ Short, confident prompt to start the trial or contact StockWise.
 ## 14. Footer
 
 Include StockWise, WiseCore Technologies, Lda., support email, and only real routes/anchors.
+## UX-9B maintained sequence
+
+The hero uses the business-control eyebrow and “Know what you have, what sold, and what needs attention.” headline, followed by genuine product signals. The problem section explains late discovery caused by scattered records. The implementation section contains five steps: review the current process, configure the workspace, prepare starting data, train the team, and review the first operating cycle. Portuguese uses natural Mozambican wording.

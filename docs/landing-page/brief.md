@@ -63,3 +63,6 @@ Do not claim:
 - Do not redesign authenticated dashboard, POS, Android, Platform Control, onboarding logic, finance, stock, invoice, settlement, or database logic.
 - Do not add heavy 3D or animation dependencies.
 - Do not create a separate design system unrelated to the authenticated premium UI direction.
+## UX-9B conversion direction
+
+Lead with the owner's need to know what exists, what sold, and what needs attention. Progress from immediate product proof to business problems, connected control, product preview, guided implementation, use cases, pricing, FAQ, WiseCore team, and one dominant final action. Do not fabricate customer proof or promise support beyond plan-specific pricing copy.

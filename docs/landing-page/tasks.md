@@ -42,3 +42,10 @@
 - The hero and problem section use `/landing/stockwise-records-desk.png`; no external image URL is used.
 - The WiseCore proof section uses `/brand/wisecore-logo-light.png` and `/brand/wisecore-logo-dark.png` generated from the supplied company asset.
 - Page-level animation remains lightweight and CSS/IntersectionObserver-based.
+## UX-9B completed
+
+- [x] Replace the generic hero with owner-control EN/PT copy.
+- [x] Strengthen the business-problem framing without invented loss claims.
+- [x] Add the five-step guided implementation path.
+- [x] Preserve public pricing, trial, manual activation, product proof, FAQ, team, and demo mailto.
+- [x] Validate EN/PT, light/dark, responsive, keyboard, and reduced-motion presentation.
