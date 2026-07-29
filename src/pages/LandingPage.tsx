@@ -81,6 +81,7 @@ type LandingCopy = {
   nav: Array<{ label: string; href: string }>
   productLabel: string
   productMenu: Array<{ title: string; body: string; href: string; icon: IconName }>
+  heroEyebrow: string
   heroTitle: string
   heroBody: string
   heroSignals: Array<{ title: string; body: string; icon: IconName; tone: 'teal' | 'green' | 'amber' }>
@@ -253,9 +254,10 @@ const copyByLang: Record<Lang, LandingCopy> = {
         icon: 'growth',
       },
     ],
-    heroTitle: 'StockWise',
+    heroEyebrow: 'Inventory and business control for growing teams',
+    heroTitle: 'Know what you have, what sold, and what needs attention.',
     heroBody:
-      'Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.',
+      'StockWise connects stock, sales, purchases, payments and production so you can run the business with fewer surprises.',
     heroSignals: [
       {
         title: 'POS sale recorded',
@@ -270,8 +272,8 @@ const copyByLang: Record<Lang, LandingCopy> = {
         tone: 'teal',
       },
       {
-        title: 'Mortality reversal reviewed',
-        body: 'Growth Batch loss evidence remains clear.',
+        title: 'Stock attention visible',
+        body: 'The team can see what needs review.',
         icon: 'growth',
         tone: 'amber',
       },
@@ -348,9 +350,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
         icon: 'records',
       },
     ],
-    problemTitle: 'The everyday challenges costing your business control',
+    problemTitle: 'Small daily gaps become expensive business problems.',
     problemBody:
-      'Most growing businesses do not lose control in one big event. It happens through small daily gaps: stock sold without movement records, purchases that never update availability, invoices saved in different places, and payments tracked outside the system.',
+      'When stock, sales, purchases and payments live in different places, owners discover problems late—after an item is missing, a reorder was missed or a balance no longer makes sense.',
     problems: [
       {
         title: 'Stock tracked in Excel or manual books',
@@ -427,33 +429,33 @@ const copyByLang: Record<Lang, LandingCopy> = {
     showcaseBody:
       'StockWise connects the operational pieces so owners can see what exists, what moved, what was sold, what is owed, and what needs attention.',
     showcaseNote: 'Illustrative preview based on current StockWise workflows. Values shown are sample operating data.',
-    workflowTitle: 'From company setup to a clearer operating flow.',
+    workflowTitle: 'A guided path from scattered records to daily control.',
     workflowBody:
-      'StockWise follows the way daily work moves: setup, stock, operations, documents, settlement follow-up, and review.',
+      'A practical rollout starts with the way your team works today and ends with a reviewed first operating cycle.',
     workflowSteps: [
       {
-        title: 'Create the company workspace',
-        body: 'Set up the company profile, users, roles, warehouses, and operating preferences.',
+        title: 'Review your current process',
+        body: 'We identify how stock, sales, purchases and payments are currently handled.',
         icon: 'security',
       },
       {
-        title: 'Add or import items and opening stock',
-        body: 'Start with item records, stock levels, minimum-stock thresholds, and initial inventory data.',
+        title: 'Configure the workspace',
+        body: 'We set up the company, users, roles, warehouses and operating preferences.',
         icon: 'imports',
       },
       {
-        title: 'Record sales, purchases, POS, and movements',
-        body: 'Keep daily operating events, stock movement, and commercial records in one traceable flow.',
+        title: 'Prepare the starting data',
+        body: 'Add or import items, suppliers, customers and opening stock.',
         icon: 'connected',
       },
       {
-        title: 'Control production and active batches',
-        body: 'Use production and Growth Batch records where the operation needs materials, measurements, or input cost evidence.',
+        title: 'Train the team',
+        body: 'Users learn the workflows relevant to their daily responsibilities.',
         icon: 'production',
       },
       {
-        title: 'Issue documents and track settlements',
-        body: 'Organise invoices, notes, vendor bills, cash, bank, payment follow-up, dashboards, and reports.',
+        title: 'Review the first operating cycle',
+        body: 'We help confirm that stock, documents and follow-up are working as expected.',
         icon: 'documents',
       },
     ],
@@ -725,9 +727,10 @@ const copyByLang: Record<Lang, LandingCopy> = {
         icon: 'growth',
       },
     ],
-    heroTitle: 'StockWise',
+    heroEyebrow: 'Controlo de stock e do negócio para equipas em crescimento',
+    heroTitle: 'Saiba o que tem, o que vendeu e o que precisa de atenção.',
     heroBody:
-      'Controle stock, compras, vendas, pagamentos, produção e lotes em crescimento num workspace sério, criado para operações reais em Moçambique.',
+      'O StockWise liga stock, vendas, compras, pagamentos e produção para ajudar a gerir o negócio com menos surpresas.',
     heroSignals: [
       {
         title: 'Venda no Ponto de Venda registada',
@@ -742,8 +745,8 @@ const copyByLang: Record<Lang, LandingCopy> = {
         tone: 'teal',
       },
       {
-        title: 'Reversão de mortalidade revista',
-        body: 'A evidência do lote permanece clara.',
+        title: 'Atenção ao stock visível',
+        body: 'A equipa vê o que precisa de revisão.',
         icon: 'growth',
         tone: 'amber',
       },
@@ -820,9 +823,9 @@ const copyByLang: Record<Lang, LandingCopy> = {
         icon: 'records',
       },
     ],
-    problemTitle: 'Os desafios diários que custam controlo ao negócio',
+    problemTitle: 'Pequenas falhas diárias tornam-se problemas caros para o negócio.',
     problemBody:
-      'A maioria dos negócios em crescimento não perde controlo num único grande evento. Acontece em pequenas falhas diárias: stock vendido sem registo de movimento, compras que não atualizam disponibilidade, faturas guardadas em lugares diferentes e pagamentos seguidos fora do sistema.',
+      'Quando stock, vendas, compras e pagamentos ficam separados, os problemas aparecem tarde—depois de faltar um artigo, perder uma reposição ou deixar de fazer sentido um saldo.',
     problems: [
       {
         title: 'Stock controlado em Excel ou livros manuais',
@@ -899,33 +902,33 @@ const copyByLang: Record<Lang, LandingCopy> = {
     showcaseBody:
       'O StockWise liga as peças operacionais para que os donos vejam o que existe, o que mexeu, o que foi vendido, o que está por pagar e o que precisa de atenção.',
     showcaseNote: 'Pré-visualização ilustrativa baseada nos fluxos atuais do StockWise. Os valores são exemplos.',
-    workflowTitle: 'Da configuração da empresa a um fluxo operacional mais claro.',
+    workflowTitle: 'Um caminho acompanhado, de registos dispersos ao controlo diário.',
     workflowBody:
-      'O StockWise segue a forma como o trabalho diário se move: configuração, stock, operações, documentos, liquidações e revisão.',
+      'Uma implementação prática começa na forma como a equipa trabalha hoje e termina com a revisão do primeiro ciclo operacional.',
     workflowSteps: [
       {
-        title: 'Crie o workspace da empresa',
-        body: 'Configure perfil da empresa, utilizadores, funções, armazéns e preferências de operação.',
+        title: 'Rever o processo actual',
+        body: 'Identificamos como a empresa gere stock, vendas, compras e pagamentos.',
         icon: 'security',
       },
       {
-        title: 'Adicione ou importe itens e stock inicial',
-        body: 'Comece com itens, níveis de stock, limites mínimos e dados iniciais de inventário.',
+        title: 'Configurar o workspace',
+        body: 'Configuramos a empresa, utilizadores, funções, armazéns e preferências operacionais.',
         icon: 'imports',
       },
       {
-        title: 'Registe vendas, compras, POS e movimentos',
-        body: 'Mantenha eventos diários, movimento de stock e registos comerciais num fluxo rastreável.',
+        title: 'Preparar os dados iniciais',
+        body: 'Adicione ou importe artigos, fornecedores, clientes e stock inicial.',
         icon: 'connected',
       },
       {
-        title: 'Controle produção e lotes ativos',
-        body: 'Use produção e Growth Batches quando a operação precisa de materiais, medições ou evidência de custo de inputs.',
+        title: 'Formar a equipa',
+        body: 'Cada utilizador aprende os fluxos relevantes para o seu trabalho diário.',
         icon: 'production',
       },
       {
-        title: 'Emita documentos e acompanhe liquidações',
-        body: 'Organize faturas, notas, vendor bills, caixa, banco, pagamentos, dashboards e relatórios.',
+        title: 'Rever o primeiro ciclo operacional',
+        body: 'Ajudamos a confirmar que stock, documentos e seguimento funcionam como esperado.',
         icon: 'documents',
       },
     ],
@@ -1341,7 +1344,7 @@ function landingProductSurfaceLabels(lang: Lang) {
         dashboard: [
           { label: 'Valor de stock', value: 'MZN 128K' },
           { label: 'Receita operacional', value: 'MZN 42K' },
-          { label: 'Margem bruta', value: 'MZN 24K' },
+          { label: 'Lucro bruto', value: 'MZN 24K' },
         ],
         stock: [
           { label: 'BK-001', value: 'Atual' },
@@ -1380,7 +1383,7 @@ function landingProductSurfaceLabels(lang: Lang) {
       dashboard: [
         { label: 'Inventory value', value: 'MZN 128K' },
         { label: 'Operational revenue', value: 'MZN 42K' },
-        { label: 'Gross margin', value: 'MZN 24K' },
+        { label: 'Gross profit', value: 'MZN 24K' },
       ],
       stock: [
         { label: 'BK-001', value: 'Current' },
@@ -2075,14 +2078,12 @@ export default function LandingPage() {
                 transition={{ duration: 0.55, ease: revealEase }}
                 className="mx-auto max-w-4xl text-center"
               >
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase text-white backdrop-blur">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-white backdrop-blur">
                   <InlineSurfaceIcon name="company" dark className="h-3.5 w-3.5" />
-                  <span>
-                    {copy.labels.builtBy} {copy.labels.wiseCore}
-                  </span>
+                  <span>{copy.heroEyebrow}</span>
                 </div>
 
-                <h1 className="mt-5 text-5xl font-semibold leading-none text-white sm:text-6xl lg:text-7xl">
+                <h1 className="mt-5 text-4xl font-semibold leading-[1.05] text-white sm:text-5xl lg:text-6xl">
                   {copy.heroTitle}
                 </h1>
                 <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-zinc-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
