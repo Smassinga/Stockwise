@@ -262,8 +262,8 @@ export function AppLayout({ user, children }: Props) {
 
   const sidebar = useMemo(
     () => (
-      <aside className="hidden text-sidebar-foreground md:flex md:w-[17.5rem] md:flex-col md:border-r md:border-sidebar-border md:bg-sidebar xl:w-[18.5rem] 2xl:w-[19rem]">
-        <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
+      <aside className="sticky top-0 hidden h-[100dvh] max-h-[100dvh] shrink-0 overflow-hidden text-sidebar-foreground md:flex md:w-[17.5rem] md:flex-col md:border-r md:border-sidebar-border md:bg-sidebar xl:w-[18.5rem] 2xl:w-[19rem]">
+        <div className="flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border px-5">
           <BrandLockup compact subtitle="" />
           <div className="ml-2 shrink-0 overflow-visible">
             <ThemeToggle />
@@ -271,7 +271,7 @@ export function AppLayout({ user, children }: Props) {
         </div>
 
         <nav
-          className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 xl:px-5"
+          className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 xl:px-5"
           aria-label={tt('shell.navigation.primary', 'Primary navigation')}
         >
           {navSections.map((section) => (
@@ -292,7 +292,7 @@ export function AppLayout({ user, children }: Props) {
           ))}
         </nav>
 
-        <div className="space-y-3 border-t border-sidebar-border p-4">
+        <div className="shrink-0 space-y-3 border-t border-sidebar-border p-4">
           <div className="space-y-1.5">
             <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/55">
               {tt('shell.context.currentCompany', 'Current company')}

@@ -16,6 +16,9 @@ import {
 import toast from 'react-hot-toast'
 import { setBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type FxRate = {
@@ -241,8 +244,8 @@ export default function CurrencyPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
+      <div className="app-page app-page--workspace">
+        <PremiumPageHeader title={t('currency.title')} description={t('currency.subtitle')} />
         <Card><CardContent className="p-6"><div className="h-24 rounded bg-muted animate-pulse" /></CardContent></Card>
         <Card><CardContent className="p-6"><div className="h-24 rounded bg-muted animate-pulse" /></CardContent></Card>
         <Card><CardContent className="p-6"><div className="h-24 rounded bg-muted animate-pulse" /></CardContent></Card>
@@ -251,23 +254,20 @@ export default function CurrencyPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{t('currency.title')}</h1>
-          <p className="hidden text-muted-foreground sm:block">
-            {tt(
-              'currency.subtitle',
-              'Control which currencies this company can transact in, define the base currency, and maintain recent FX rates.'
-            )}
-          </p>
-        </div>
-        {companyId ? (
-          <div className="text-sm text-muted-foreground">
-            {tt('users.company', 'Company')}: {companyName || companyId}
-          </div>
-        ) : null}
-      </div>
+    <div className="app-page app-page--workspace">
+      <PremiumPageHeader
+        title={t('currency.title')}
+        description={tt(
+          'currency.subtitle',
+          'Control the currencies this company uses, set the base currency, and maintain FX rates.'
+        )}
+        context={companyId ? (
+          <PremiumStatusBadge tone="neutral">
+            {tt('users.company', 'Company')}: {companyName || tt('company.selectCompany', 'Company')}
+          </PremiumStatusBadge>
+        ) : undefined}
+        status={!canEdit ? <PremiumStatusBadge tone="info">{tt('common.readOnly', 'Read-only')}</PremiumStatusBadge> : undefined}
+      />
 
       {!canEdit ? (
         <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
@@ -279,38 +279,14 @@ export default function CurrencyPage() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('currency.summary.base', 'Base currency')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{base}</div>
-            <div className="text-xs text-muted-foreground">{tt('currency.summary.baseHelp', 'Used as the default valuation and reporting currency.')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('currency.summary.enabled', 'Enabled currencies')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{allowed.length}</div>
-            <div className="text-xs text-muted-foreground">{tt('currency.summary.enabledHelp', 'Currencies currently available to this company.')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('currency.summary.fxRows', 'Recent FX rows')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{fx.length}</div>
-            <div className="text-xs text-muted-foreground">{tt('currency.summary.fxRowsHelp', 'Saved rates visible in the current company scope.')}</div>
-          </CardContent>
-        </Card>
+        <PremiumMetricCard label={tt('currency.summary.base', 'Base currency')} value={base} description={tt('currency.summary.baseHelp', 'Used as the default valuation and reporting currency.')} />
+        <PremiumMetricCard label={tt('currency.summary.enabled', 'Enabled currencies')} value={allowed.length} description={tt('currency.summary.enabledHelp', 'Currencies currently available to this company.')} />
+        <PremiumMetricCard label={tt('currency.summary.fxRows', 'Recent FX rows')} value={fx.length} description={tt('currency.summary.fxRowsHelp', 'Saved rates visible in the current company scope.')} />
       </div>
 
       {/* Allowed per company */}
       <Card>
-        <CardHeader><CardTitle>{t('currency.allowed')}</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">{t('currency.allowed')}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
           <div className="text-sm text-muted-foreground">
             {tt('currency.allowedHelp', 'Keep enabled codes aligned with the currencies you actually buy, sell, and settle in.')}
@@ -323,26 +299,27 @@ export default function CurrencyPage() {
                 <div
                   key={c.code}
                   className={[
-                    'flex min-w-0 max-w-full flex-wrap items-center gap-2 border rounded px-2 py-1',
+                    'flex min-w-0 max-w-full flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-foreground',
                     on
-                      ? 'bg-emerald-50 border-emerald-300/70 text-emerald-900 ' +
-                        'dark:bg-emerald-500/15 dark:border-emerald-400/30 dark:text-emerald-200'
-                      : 'bg-muted/40 border-border text-foreground ' +
-                        'dark:bg-muted/20 dark:text-foreground'
+                      ? ''
+                      : 'bg-muted/30'
                   ].join(' ')}
                 >
                   <div className="min-w-[4.25rem] font-mono text-sm">{c.code}</div>
                   <div className="min-w-0 flex-1 truncate text-sm">{c.name}</div>
                   {on ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full hover:bg-emerald-100 dark:hover:bg-emerald-500/25 sm:w-auto"
-                      onClick={() => removeAllowed(c.code)}
-                      disabled={!canEdit}
-                    >
-                      {tt('currency.disable', 'Disable')}
-                    </Button>
+                    <>
+                      <PremiumStatusBadge tone="positive">{tt('currency.enabledStatus', 'Enabled')}</PremiumStatusBadge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="min-h-9 w-full sm:w-auto"
+                        onClick={() => removeAllowed(c.code)}
+                        disabled={!canEdit}
+                      >
+                        {tt('currency.disable', 'Disable')}
+                      </Button>
+                    </>
                   ) : (
                     <Button size="sm" className="w-full sm:w-auto" onClick={() => addAllowed(c.code)} disabled={!canEdit}>
                       {t('suppliers.enable')}

@@ -895,7 +895,7 @@ export default function Dashboard() {
       action: () => navigate('/movements'),
     })
     if (marginNegative) cards.push({
-      title: tt('dashboard.marginAction', 'Review negative gross margin'),
+      title: tt('dashboard.marginAction', 'Review negative gross profit'),
       body: tt('dashboard.marginActionHelp', 'The supported shipment-linked cost basis exceeds operational revenue in this period.'),
       count: grossMargin === null ? t('common.dash') : money(grossMargin),
       tone: 'critical',
@@ -1148,7 +1148,7 @@ export default function Dashboard() {
                   : tt('dashboard.knownCostOnly', 'Known cost: {value}; missing evidence: {count}.', { value: money(currentCogs), count: currentCostCoverage.missingCount })}
               />
               <PremiumMetricCard
-                label={t('kpi.grossMargin.title')}
+                label={tt('dashboard.executiveTileMargin', 'Gross profit')}
                 value={grossMargin === null ? tt('dashboard.unavailableValue', 'Unavailable') : money(grossMargin)}
                 tone={grossMargin === null ? 'warning' : grossMargin < 0 ? 'critical' : 'positive'}
                 icon={grossMargin !== null && grossMargin < 0 ? <TrendDownIcon weight="duotone" /> : <TrendUpIcon weight="duotone" />}
@@ -1190,7 +1190,7 @@ export default function Dashboard() {
                       <Legend iconType="circle" wrapperStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 12, paddingTop: 12 }} />
                       <Line type="monotone" dataKey="revenue" name={t('table.revenue')} stroke={chartColors.revenue} strokeWidth={2.8} dot={{ r: 4, stroke: chartColors.grid }} activeDot={{ r: 5, stroke: chartColors.grid }} connectNulls={false} />
                       <Line type="monotone" dataKey="cogs" name={t('table.cogs')} stroke={chartColors.cogs} strokeWidth={2.8} dot={{ r: 4, stroke: chartColors.grid }} activeDot={{ r: 5, stroke: chartColors.grid }} connectNulls={false} />
-                      <Line type="monotone" dataKey="margin" name={t('table.grossMargin')} stroke={chartColors.margin} strokeWidth={2.8} dot={{ r: 4, stroke: chartColors.grid }} activeDot={{ r: 5, stroke: chartColors.grid }} connectNulls={false} />
+                      <Line type="monotone" dataKey="margin" name={tt('dashboard.executiveTileMargin', 'Gross profit')} stroke={chartColors.margin} strokeWidth={2.8} dot={{ r: 4, stroke: chartColors.grid }} activeDot={{ r: 5, stroke: chartColors.grid }} connectNulls={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1250,7 +1250,7 @@ export default function Dashboard() {
             meta={productPerformance[0]
               ? productPerformance[0].margin === null
                 ? costStateCopy(productPerformance[0].costState)
-                : tt('dashboard.leadingProductMargin', '{value} gross margin.', { value: money(productPerformance[0].margin) })
+                : tt('dashboard.leadingProductMargin', '{value} gross profit.', { value: money(productPerformance[0].margin) })
               : undefined}
           />
         </div>

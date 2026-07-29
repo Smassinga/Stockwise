@@ -13,7 +13,7 @@ export function PremiumTableFilter({
 }) {
   return (
     <div className={cn('space-y-1.5', className)}>
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      <Label className="text-xs font-semibold text-foreground/80">{label}</Label>
       {children}
     </div>
   )

@@ -189,6 +189,15 @@
     max-width: 118rem;
   }
 
+  .app-page--register {
+    max-width: 118rem;
+  }
+
+  .app-page--detail,
+  .app-page--form {
+    max-width: 96rem;
+  }
+
   .screen-intro {
     display: flex;
     flex-direction: column;
@@ -202,7 +211,7 @@
   }
 
   .screen-subtitle {
-    @apply text-sm leading-6 text-muted-foreground;
+    @apply max-w-3xl text-sm leading-6 text-muted-foreground;
   }
 
   .premium-label {
@@ -387,6 +396,10 @@
     }
 
     .app-page--analytics {
+      max-width: 124rem;
+    }
+
+    .app-page--register {
       max-width: 124rem;
     }
   }
