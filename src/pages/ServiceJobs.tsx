@@ -254,7 +254,8 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
   const [directCategory, setDirectCategory] = useState('labour')
   const [customerMaterial, setCustomerMaterial] = useState('')
   const [customerQuantity, setCustomerQuantity] = useState('1')
-  const [customerUom, setCustomerUom] = useState('ea')
+  const [customerUom, setCustomerUom] = useState('')
+  const [uoms, setUoms] = useState<{ id: string; code: string; name: string }[]>([])
   const [stockItems, setStockItems] = useState<{ id: string; name: string; base_uom_id: string }[]>([])
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([])
   const [bins, setBins] = useState<{ id: string; name: string; warehouseId: string }[]>([])
@@ -268,7 +269,7 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
   const [correctionReason, setCorrectionReason] = useState('')
 
   const load = useCallback(async () => {
-    const [lineRead, timeRead, materialRead, costRead, allocationRead, eventRead, costSummary, itemRead, warehouseRead, binRead, billRead] = await Promise.all([
+    const [lineRead, timeRead, materialRead, costRead, allocationRead, eventRead, costSummary, itemRead, uomRead, warehouseRead, binRead, billRead] = await Promise.all([
       supabase.from('service_job_lines').select('*').eq('service_job_id', job.id).order('created_at'),
       supabase.from('service_job_time_entries').select('*').eq('service_job_id', job.id).order('created_at', { ascending: false }),
       supabase.from('service_job_materials').select('*').eq('service_job_id', job.id).order('created_at', { ascending: false }),
@@ -277,11 +278,12 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
       supabase.from('service_job_events').select('id,event_type,occurred_at,reason').eq('service_job_id', job.id).order('occurred_at', { ascending: false }),
       supabase.rpc('get_service_job_cost_summary', { p_company_id: companyId, p_service_job_id: job.id }),
       supabase.from('items').select('id,name,base_uom_id').eq('company_id', companyId).eq('track_inventory', true).order('name'),
+      supabase.from('uoms').select('id,code,name').order('code'),
       supabase.from('warehouses').select('id,name').eq('company_id', companyId).eq('status', 'active').order('name'),
       supabase.from('bins').select('id,name,warehouseId').eq('company_id', companyId).eq('status', 'active').order('name'),
       supabase.from('vendor_bills').select('id,internal_reference').eq('company_id', companyId).eq('document_workflow_status', 'posted').eq('approval_status', 'approved'),
     ])
-    const firstError = [lineRead, timeRead, materialRead, costRead, allocationRead, eventRead, costSummary, itemRead, warehouseRead, binRead, billRead].find(result => result.error)?.error
+    const firstError = [lineRead, timeRead, materialRead, costRead, allocationRead, eventRead, costSummary, itemRead, uomRead, warehouseRead, binRead, billRead].find(result => result.error)?.error
     if (firstError) { toast.error(firstError.message); return }
     setLines((lineRead.data || []) as JobLine[])
     setTimes((timeRead.data || []) as TimeEntry[])
@@ -291,6 +293,11 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
     setEvents((eventRead.data || []) as Event[])
     setSummary(costSummary.data as CostSummary)
     setStockItems((itemRead.data || []) as { id: string; name: string; base_uom_id: string }[])
+    const availableUoms = (uomRead.data || []) as { id: string; code: string; name: string }[]
+    setUoms(availableUoms)
+    setCustomerUom(current => availableUoms.some(uom => uom.id === current)
+      ? current
+      : (availableUoms.find(uom => uom.code.toUpperCase() === 'EA')?.id || availableUoms[0]?.id || ''))
     setWarehouses((warehouseRead.data || []) as { id: string; name: string }[])
     setBins((binRead.data || []) as { id: string; name: string; warehouseId: string }[])
     const billIds = (billRead.data || []).map(bill => bill.id)
@@ -362,8 +369,8 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
         {canOperate && job.costing_status === 'open' ? <div className="mb-3 grid gap-3 rounded-xl border p-4 sm:grid-cols-2">
           <label className="space-y-1 sm:col-span-2"><Label>{tt('common.description', 'Description')}</Label><Input value={customerMaterial} onChange={event => setCustomerMaterial(event.target.value)} /></label>
           <label className="space-y-1"><Label>{tt('common.quantity', 'Quantity')}</Label><Input type="number" min="0.0001" value={customerQuantity} onChange={event => setCustomerQuantity(event.target.value)} /></label>
-          <label className="space-y-1"><Label>{tt('serviceJobs.uom', 'Unit')}</Label><Input value={customerUom} onChange={event => setCustomerUom(event.target.value)} /></label>
-          <Button className="sm:col-span-2" variant="outline" disabled={busy || !customerMaterial.trim() || Number(customerQuantity) <= 0} onClick={() => mutate('add_customer_service_job_material', { p_company_id: companyId, p_service_job_id: job.id, p_description: customerMaterial, p_quantity: Number(customerQuantity), p_uom_id: customerUom, p_occurred_on: new Date().toISOString().slice(0, 10), p_item_id: null, p_notes: null }, tt('serviceJobs.customerMaterialAdded', 'Customer-supplied material recorded'))}>{tt('serviceJobs.addCustomerMaterial', 'Record customer-supplied material')}</Button>
+          <label className="space-y-1"><Label>{tt('serviceJobs.uom', 'Unit')}</Label><Select value={customerUom} onValueChange={setCustomerUom}><SelectTrigger><SelectValue placeholder={tt('serviceJobs.chooseUom', 'Choose unit')} /></SelectTrigger><SelectContent>{uoms.map(uom => <SelectItem key={uom.id} value={uom.id}>{uom.code} · {uom.name}</SelectItem>)}</SelectContent></Select></label>
+          <Button className="sm:col-span-2" variant="outline" disabled={busy || !customerMaterial.trim() || Number(customerQuantity) <= 0 || !customerUom} onClick={() => mutate('add_customer_service_job_material', { p_company_id: companyId, p_service_job_id: job.id, p_description: customerMaterial, p_quantity: Number(customerQuantity), p_uom_id: customerUom, p_occurred_on: new Date().toISOString().slice(0, 10), p_item_id: null, p_notes: null }, tt('serviceJobs.customerMaterialAdded', 'Customer-supplied material recorded'))}>{tt('serviceJobs.addCustomerMaterial', 'Record customer-supplied material')}</Button>
         </div> : null}
         <EvidenceList empty={tt('serviceJobs.noCustomerMaterials', 'No customer-supplied materials recorded.')} rows={materials.filter(item => item.supply_type === 'customer').map(item => ({ id: item.id, title: `${item.description} · ${item.quantity} ${item.uom_id}`, detail: tt('serviceJobs.customerSupplied', 'Customer supplied') }))} />
       </PremiumSection>

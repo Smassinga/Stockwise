@@ -147,6 +147,9 @@ test('workspace is routed, navigable and starts from a Sales Order', () => {
 test('workspace keeps company and customer materials visibly separate', () => {
   assert.match(workspace, /companyMaterials/)
   assert.match(workspace, /customerMaterials/)
+  assert.match(workspace, /from\('uoms'\)\.select\('id,code,name'\)/)
+  assert.match(workspace, /<Select value=\{customerUom\} onValueChange=\{setCustomerUom\}>/)
+  assert.doesNotMatch(workspace, /useState\('ea'\)/)
   assert.doesNotMatch(workspace, /fixed-width/)
 })
 test('Portuguese service terminology is UTF-8 and exact', () => {
