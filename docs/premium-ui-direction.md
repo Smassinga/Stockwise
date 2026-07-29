@@ -405,3 +405,9 @@ All UX-9A motion has a stable reduced-motion equivalent. Decorative pulse, glare
 UX-9B corrected the desktop sidebar root cause by making the `aside` a sticky `100dvh` flex container with hidden root overflow, a `min-h-0` independently scrolling navigation region, and fixed brand/company/account regions. `AppLayout` remains responsible for header, safe-area, page-edge, and mobile-dock clearance; shared `app-page` variants own width and vertical rhythm.
 
 Items, Stock Levels, and Stock Movements use the compact shared search/filter/action toolbar with natural EN/PT result counts. Currency now uses the maintained page header and metric cards; enabled rows are neutral with a textual active badge rather than a full green success treatment. Monetary revenue-minus-COGS values are labelled Gross profit / Lucro bruto; the percentage remains Gross margin / Margem bruta.
+
+## UX-9C owner cockpit
+
+Dashboard hierarchy is now: page header, compact period/warehouse toolbar, five primary KPIs, secondary indicators, trend, principal actions, product/customer drivers, and inventory links. The full-width Latest Stock Movements section is removed while maintained movement navigation remains.
+
+The analytics canvas retains the shell-owned `app-page--analytics` wide-screen limits. Primary cards use five columns only where space permits, fall to two columns on tablet/phone, and never force a five-card phone row. Custom dates query only after Apply; invalid or empty ranges cannot read. All controls have visible labels and accessible names, unavailable states remain textual, and chart meaning is also summarised in text.

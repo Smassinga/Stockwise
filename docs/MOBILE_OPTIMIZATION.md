@@ -190,3 +190,9 @@ Local checks covered normal and reduced motion, fine-pointer and touch/no-hover 
 ## UX-9B responsive closeout
 
 The maintained page rhythm remains 16px phone, 20px tablet, and 24px desktop top clearance with shell-owned horizontal padding and mobile-dock clearance. Shared register toolbars place search first, wrap filters into two columns where labels fit, and keep Columns, Clear, and natural result counts reachable. Landing QA covered 1440, 820, and 390 widths in EN/PT and light/dark with one H1, no horizontal overflow, visible keyboard focus, and a complete reduced-motion state.
+
+## UX-9C responsive owner cockpit
+
+The owner cockpit keeps one decision hierarchy across desktop, tablet, and phone: scope controls, five primary KPIs, secondary indicators, trend, attention items, and performance drivers. Primary metrics collapse without creating a five-card phone row, custom-date controls remain labelled, and secondary labels have explicit top padding so text never touches the panel edge.
+
+Production checks passed at `820x1180` and `390x844` with one page heading, no horizontal overflow, and no clipped metric labels. The wider local matrix also passed at `2560x1440`, `1920x1080`, `1440x900`, `1366x768`, `1200x800`, and `1024x768`.

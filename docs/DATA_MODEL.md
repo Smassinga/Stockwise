@@ -370,3 +370,13 @@ Migration `20260716130533_add_pos_tax_applicability_mode.sql` adds an explicit c
 POS orders now retain immutable `sales_orders.pos_tax_mode_snapshot` evidence. Configured lines continue to snapshot the selected option, treatment, label, rate, tax, and reason requirements. Non-fiscal POS lines instead use `tax_option_id = NULL`, code `POS_NON_FISCAL`, treatment `non_fiscal`, label `Tax not applied`, rate and tax `0`, no exemption requirement, and no exemption reason. This is neither configured zero-rated tax nor configured exemption.
 
 `commercial_tax_resolve_pos_context(...)` is the shared internal authority for preview and posting. `preview_operator_sale(...)` is read-only and creates no order, posting request, stock movement, or settlement. `set_company_pos_tax_mode(...)` is OWNER/ADMIN-only and appends `pos_tax_mode_changed` evidence. Non-fiscal POS orders remain operational Sales Orders with immediate settlement and stock evidence, but a database trigger prevents any linked legal Sales Invoice draft or issuance.
+
+## Owner dashboard read model
+
+Migration `20260729143000_add_owner_dashboard_read_model.sql` adds the read-only authenticated `get_owner_dashboard(...)` RPC. It requires the active company to match the requested company and reuses effective member/company-access authority; public, anonymous, cross-company, and expired access are denied. The function has an empty fixed `search_path`, exposes no mutation, and aggregates at query time.
+
+Operational activity is keyed by distinct Sales Order ID, so POS-generated Sales Orders are counted once. `shipped` and `closed` orders use shipment evidence first and maintained `shipped_at` only as fallback. Gross profit and gross margin are withheld when shipment-linked direct-cost evidence is incomplete. The JSON contract leaves cost sources additive so future governed service-job costs can be introduced without changing the dashboard interface; service costing is not implemented here.
+
+Inventory value remains current weighted-average stock value. Minimum-stock exceptions retain company-level `items.min_stock` semantics and must not be described as warehouse-specific thresholds.
+
+Production contains 46 linked migrations through `20260729143000_add_owner_dashboard_read_model.sql`. The rollout did not add or alter posting, costing, legal-document, settlement, General Ledger, or service-costing authority.

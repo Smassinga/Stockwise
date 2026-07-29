@@ -332,3 +332,13 @@ Point of Sale now resolves one of three company states before posting: unconfigu
 The frontend obtains totals from authenticated `preview_operator_sale(...)`; the posting transaction independently uses the same internal resolver and settles the canonical tax-inclusive order total. Company mutation remains behind audited OWNER/ADMIN RPC `set_company_pos_tax_mode(...)`. Ordinary Sales Orders, all Purchase Orders, Vendor Bills, issued invoices, settlement anchors, stock valuation, and weighted-average cost retain their existing authority and behavior.
 
 Hosted production and local replay contain 45 migrations through `20260716130533_add_pos_tax_applicability_mode.sql`. The hosted backfill found one company tax-settings row without an effective sales default and left it explicitly unconfigured; zero companies were inferred as configured or non-fiscal. Production verification was catalog and read-only UI only. No production POS sale or company tax-mode change was performed.
+
+## UX-9C owner performance cockpit
+
+The Dashboard is operational-only and optimised for the business owner. It consumes one company-scoped RPC rather than bounded raw-table reads. The first row is fixed to operational sales, gross profit, gross margin, completion rate, and current open orders. A future Financial view remains dependent on governed General Ledger authority and is intentionally absent.
+
+Today compares with the prior day; Monday-through-today compares with the equivalent prior week; month-to-date compares with the capped equivalent prior month; a custom inclusive range compares with the immediately preceding equal-length range. Period and warehouse state live in query parameters. Open orders and weighted-average inventory are current-state metrics.
+
+Completion rate uses eligible Sales Orders created in the selected period (`submitted`, `confirmed`, `allocated`, `shipped`, `closed`), with only `shipped` and `closed` complete. Draft and cancelled orders are excluded. Named-customer analysis excludes `is_cash` rows and determines new/repeat status from completed purchases, not customer creation. Product ranking supports operational revenue, base quantity, and complete supported gross profit.
+
+The production rollout applied migration `20260729143000` after the linked dry run identified it as the only pending file. The hosted ledger now contains 46 migrations. No dashboard QA action writes business data.
