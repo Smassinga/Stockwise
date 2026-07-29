@@ -1,5 +1,58 @@
 export type DashboardCostState = 'supported' | 'explicit_zero' | 'partial' | 'unavailable' | 'not_applicable'
 
+export type DashboardPeriodPreset = 'today' | 'week' | 'month' | 'custom'
+export type DashboardDateRange = { start: string; end: string; compareStart: string; compareEnd: string }
+
+const DASHBOARD_DAY_MS = 86_400_000
+const localDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+const dateAtNoon = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day, 12)
+}
+const shiftDays = (value: Date, days: number) => new Date(value.getTime() + days * DASHBOARD_DAY_MS)
+
+export function dashboardPeriodRange(
+  preset: DashboardPeriodPreset,
+  today = new Date(),
+  customStart?: string,
+  customEnd?: string,
+): DashboardDateRange | null {
+  const anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12)
+  let start = anchor
+  let end = anchor
+  if (preset === 'week') start = shiftDays(anchor, -((anchor.getDay() + 6) % 7))
+  if (preset === 'month') start = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 12)
+  if (preset === 'custom') {
+    if (!customStart || !customEnd || customEnd < customStart) return null
+    start = dateAtNoon(customStart)
+    end = dateAtNoon(customEnd)
+  }
+  const elapsedDays = Math.round((end.getTime() - start.getTime()) / DASHBOARD_DAY_MS)
+  let compareEnd = shiftDays(start, -1)
+  let compareStart = shiftDays(compareEnd, -elapsedDays)
+  if (preset === 'week') {
+    compareStart = shiftDays(start, -7)
+    compareEnd = shiftDays(end, -7)
+  }
+  if (preset === 'month') {
+    compareStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1, 12)
+    const previousMonthEnd = new Date(anchor.getFullYear(), anchor.getMonth(), 0, 12)
+    compareEnd = new Date(anchor.getFullYear(), anchor.getMonth() - 1, Math.min(anchor.getDate(), previousMonthEnd.getDate()), 12)
+  }
+  return {
+    start: localDate(start),
+    end: localDate(end),
+    compareStart: localDate(compareStart),
+    compareEnd: localDate(compareEnd),
+  }
+}
+
+export const dashboardCompletionRate = (completed: number, eligible: number) =>
+  eligible > 0 ? completed / eligible * 100 : null
+export const dashboardAverageTransaction = (sales: number, transactions: number) =>
+  transactions > 0 ? sales / transactions : null
+
 export type DashboardMovementCost = {
   qty_base: number | null
   unit_cost: number | null
