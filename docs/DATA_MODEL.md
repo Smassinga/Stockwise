@@ -380,3 +380,11 @@ Operational activity is keyed by distinct Sales Order ID, so POS-generated Sales
 Inventory value remains current weighted-average stock value. Minimum-stock exceptions retain company-level `items.min_stock` semantics and must not be described as warehouse-specific thresholds.
 
 Production contains 46 linked migrations through `20260729143000_add_owner_dashboard_read_model.sql`. The rollout did not add or alter posting, costing, legal-document, settlement, General Ledger, or service-costing authority.
+
+## SVC-1 service execution and cost evidence
+
+Migrations `20260729212931` and `20260729214142` move the linked ledger to 48. Eight company-scoped tables hold the counter, job, Sales Order service-line links, time, direct costs, material evidence, Vendor Bill allocations, and append-only events. All eight enable and force RLS. Authenticated users receive bounded reads and role-governed fixed-search-path RPC execution, not direct mutation grants.
+
+`service_jobs_register` and `service_job_sales_order_readiness` expose bounded operational reads. Job references come from an atomic company counter. Active line ownership is unique; idempotency keys protect stock issue/reversal and finalisation paths. Material and direct-cost corrections append reversals. Vendor allocations lock approved posted bill lines, cannot exceed line or current legal totals, and never create or change AP.
+
+The maintained dashboard contract remains additive: service revenue is completion-dated, finalised service cost becomes COGS, and open service costing increments missing-cost evidence so profit is unavailable rather than invented.

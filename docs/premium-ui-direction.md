@@ -411,3 +411,9 @@ Items, Stock Levels, and Stock Movements use the compact shared search/filter/ac
 Dashboard hierarchy is now: page header, compact period/warehouse toolbar, five primary KPIs, secondary indicators, trend, principal actions, product/customer drivers, and inventory links. The full-width Latest Stock Movements section is removed while maintained movement navigation remains.
 
 The analytics canvas retains the shell-owned `app-page--analytics` wide-screen limits. Primary cards use five columns only where space permits, fall to two columns on tablet/phone, and never force a five-card phone row. Custom dates query only after Apply; invalid or empty ranges cannot read. All controls have visible labels and accessible names, unavailable states remain textual, and chart meaning is also summarised in text.
+
+## SVC-1 service workspace
+
+Service Jobs uses the maintained page header, four summary metrics, filterable register, and a full-height detail sheet. The sheet keeps service scope, time, company/customer materials, direct costs, supplier allocations, actual-cost summary, and audit timeline visibly separated. Destructive corrections require a typed reason and remain reversal actions.
+
+Customer-supplied material uses a canonical UoM selector and displays the readable UoM code. Dashboard chart meaning is explicit in both legend and text: Operational sales retains primary colour, COGS uses destructive red, and Gross profit uses success green. Gross margin remains a percentage and is never labelled Gross profit.

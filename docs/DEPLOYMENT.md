@@ -419,3 +419,13 @@ Implementation `f559f253c70823786c2ebd388bab3b26c02262b7` passed Validation `295
 The linked production project moved from 44 to 45 migrations when `20260716130533_add_pos_tax_applicability_mode.sql` applied from `2026-07-16T18:50:00.1970891+02:00` to `2026-07-16T18:50:14.1313258+02:00` with exit zero. Preflight and post-rollout dry runs showed exactly that migration pending and then the remote database up to date. Hosted catalog checks confirmed the new constraints, authenticated-only public RPCs, internal-helper denial, restricted search paths, retained RLS/FORCE RLS, and the active invoice-prohibition trigger.
 
 Vercel production deployment `dpl_CjTsDV2YWENiX6JkHJ3uiMxWnLBA` reached Ready for commit `046d4500ed58e57711460f0d517a1995bf6cbe4f`, served `stockwiseapp.com` and `www.stockwiseapp.com`, and uploaded Sentry source maps successfully without exposing credentials. Read-only production QA covered Point of Sale and commercial-tax Settings at `1440`, `1200`, `820`, and `390` in light/dark and EN/PT. The single hosted company remained visibly unconfigured; no company mode was changed and no production sale was posted. Cash, bank, posting-request, stock, and item-price aggregates remained unchanged.
+
+## SVC-1 rollout (2026-07-30)
+
+The linked project remained `ogzhwoqqumkuqhbvuzzp`. Preflight found 46 matched migrations and exactly two pending files. `db push --linked --dry-run` listed only `20260729212931_add_service_job_actual_costing_foundation.sql` and `20260729214142_integrate_service_actuals_into_owner_dashboard.sql`; the live push succeeded in-session and the post-push dry run reported the remote database up to date.
+
+Hosted verification reports 48 migrations through `20260729214142`, eight forced-RLS service tables, two service views, 15 authenticated service RPC grants, and retained authenticated dashboard execution. No Edge Function or secret deployment was required.
+
+GitHub mapped implementation SHA `2ea2d2768d7d84bfd43164d46c8604bce5216fb1` to successful Production deployment `dpl_DdSwN1t59ZnNhZksA1AL48TUPUQf`. Production smoke used only prefixed service fixtures; it created no accounting journal, payment, POS-mode change, stock movement, or Vendor Bill allocation.
+
+The final smoke presentation correction `7a8b2e6a3f70dd285b26055d390cce9ffad94a62` passed Validation `30497408465` and GitHub/Vercel mapped it to successful Production deployment `https://stockwise-6nbqknk7v-honeythiefs-projects.vercel.app`.

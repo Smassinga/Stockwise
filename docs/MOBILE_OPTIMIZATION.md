@@ -196,3 +196,7 @@ The maintained page rhythm remains 16px phone, 20px tablet, and 24px desktop top
 The owner cockpit keeps one decision hierarchy across desktop, tablet, and phone: scope controls, five primary KPIs, secondary indicators, trend, attention items, and performance drivers. Primary metrics collapse without creating a five-card phone row, custom-date controls remain labelled, and secondary labels have explicit top padding so text never touches the panel edge.
 
 Production checks passed at `820x1180` and `390x844` with one page heading, no horizontal overflow, and no clipped metric labels. The wider local matrix also passed at `2560x1440`, `1920x1080`, `1440x900`, `1366x768`, `1200x800`, and `1024x768`.
+
+## SVC-1 responsive service operations
+
+The Service Jobs register collapses from three-column rows to stacked mobile cards. The four metrics use a two-column phone grid and the job detail uses the maintained full-width mobile Sheet with wrapping actions and two-column forms only from the small breakpoint. Service scope, evidence lists, cost totals, and audit events stay readable without fixed-width layouts. Labels remain separated from panel edges and customer/company material sections cannot be confused by proximity.

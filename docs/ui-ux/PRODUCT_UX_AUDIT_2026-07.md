@@ -504,3 +504,13 @@ Implementation `97c8b2e0bc1b9b2a891b082970b82bf0d56316ae` passed exact Validatio
 Migration `20260729143000_add_owner_dashboard_read_model.sql` was the only linked dry-run candidate and was applied successfully; linked verification reports 46/46. Deployment `dpl_Eg1GkqxuA6YbQJh2GjPeJa4LgHz5` built `e573c2a` and reached Production/Ready. Authenticated read-only QA covered Today, month-to-date, a custom inclusive range, the daily-details sheet, EN/PT, raw-code leakage, canonical alias behavior, maintained stock-movement navigation, `820x1180`, and `390x844`. It found no horizontal overflow, clipped metric text, or captured console error and performed no business mutation.
 
 The package remains operational-only. It does not begin service costing, General Ledger work, legal documents, or UX-10.
+
+## SVC-1 Service Jobs and actual costing
+
+SVC-1 adds a Sales-navigation Service Jobs register and detail workspace, plus a Sales Order handoff available only when a service-role line exists. Execution state and costing state are visibly distinct. Time is labelled as work evidence rather than labour cost; company-stock and customer-supplied materials occupy separate sections; direct costs, supplier allocations, finalisation, reopen, reversals, and the audit timeline remain explicit.
+
+Production smoke created prefixed item/order/job evidence in the authorised testing company, completed the job, added 45 minutes, customer material, and MZN 120 labour cost, then finalised, reopened, verified dashboard withholding, and refinalised. Weekly dashboard truth was MZN 500 Operational sales, MZN 120 COGS, MZN 380 Gross profit, and 76.0% Gross margin. The chart legend preserved primary/red/green series semantics. No console, React, or CSP error was captured.
+
+The smoke exposed and closed one UoM presentation path: customer material now selects a maintained canonical unit and displays `EA` instead of an internal ID. Fixes `63b67a9` and `7a8b2e6` passed exact Validation and reached Production before closeout.
+
+The package does not begin General Ledger, legal documents, payroll, broader service-cost estimation, or UX-10.

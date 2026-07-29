@@ -175,3 +175,9 @@ Use the existing `framer-motion` package and CSS media queries for these effects
 ## UX-9B presentation boundary
 
 UX-9B is frontend presentation and copy only. It adds no migration, RPC, view, Edge Function, dependency, pricing/plan calculation, dashboard calculation, currency calculation, onboarding authority, finance authority, or POS-mode change. Desktop sidebar scrolling is CSS-owned; production QA remains read-only.
+
+## SVC-1 development rules
+
+Service Jobs must start from eligible service-role Sales Order lines. Do not bypass RPC-only mutation, active-line uniqueness, fixed search paths, RLS/FORCE RLS, posting-request idempotency, immutable events, or reversal-based corrections. Time entries must never become labour cost automatically. Customer-supplied material must use a maintained canonical UoM and remain outside stock and COGS.
+
+Run `npm run lint:js`, `npm run build`, `npm run check:migrations`, `npm run test:finance-regression`, `npm run test:dashboard`, and `npm run test:service-jobs` for service workflow changes. Preserve UTF-8 Portuguese strings and keep `dist` out of commits.

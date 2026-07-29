@@ -464,3 +464,11 @@ Cost presentation must not blur authority:
 Recipe Specification, Production Run Cost Sheet, and Growth Batch Activity & Cost Report are company-branded internal operational outputs in Excel, PDF, and Print. They use canonical displayed values and include scope disclaimers; they do not create finance evidence, individual animal/plant records, fair-value valuation, COGS, or accounting postings.
 
 Local regression passed `393/393` against loopback Supabase, and the isolated workflow repeated `393/393` after replaying all 45 migrations. Production QA was read-only and created or changed no Recipe, assembly, Production Run, Growth Batch, stock movement, cost event, finance row, selling price, or POS setting.
+
+## Service Job actual costing
+
+SVC-1 anchors service execution to eligible `items.primary_role = 'service'` Sales Order lines. One active Service Job owns a line; cancelled work preserves evidence and releases the active link. Mixed orders keep goods fulfilment in the stock workflow while service lines move through planned, in-progress, completed, and cancelled execution independently.
+
+Worked time is operational evidence, not labour cost. Actual cost is company-issued material at canonical WAC plus frozen direct labour, subcontractor, other-direct-cost, and approved Vendor Bill line allocations. Customer-supplied material carries zero stock and zero COGS. Finalisation is owner/admin-only, server-calculated, fingerprinted, idempotent, and requires an explicit reason for zero cost. Reopening clears current cost truth while retaining immutable evidence and requires a reason; corrections use reversals.
+
+The owner dashboard recognises service revenue on actual completion. Service COGS is recognised only after finalisation; while costing is open, operational sales remain visible and gross profit/margin are withheld. Gross profit is a currency amount and Gross margin is its percentage. The chart-only presentation keeps Operational sales primary, labels cost as COGS in destructive red, and renders Gross profit in success green.

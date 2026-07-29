@@ -342,3 +342,9 @@ Today compares with the prior day; Monday-through-today compares with the equiva
 Completion rate uses eligible Sales Orders created in the selected period (`submitted`, `confirmed`, `allocated`, `shipped`, `closed`), with only `shipped` and `closed` complete. Draft and cancelled orders are excluded. Named-customer analysis excludes `is_cash` rows and determines new/repeat status from completed purchases, not customer creation. Product ranking supports operational revenue, base quantity, and complete supported gross profit.
 
 The production rollout applied migration `20260729143000` after the linked dry run identified it as the only pending file. The hosted ledger now contains 46 migrations. No dashboard QA action writes business data.
+
+## Service operations boundary
+
+`/service-jobs` is the operational workspace for Sales Order-backed service work. The UI reads company-scoped tables/views and sends every lifecycle or cost mutation through governed RPCs. Execution and costing are separate state machines: completion establishes service revenue timing, while owner/admin finalisation establishes actual-cost truth. Reopen actions require reasons and preserve event/evidence history.
+
+The service package reuses canonical stock movements, WAC, UoMs, posting requests, Sales Orders, Vendor Bill legal totals, company membership, and the existing owner-dashboard JSON contract. It does not introduce a General Ledger, payroll, legal-document issuance, payment mutation, or service-cost estimation engine.
