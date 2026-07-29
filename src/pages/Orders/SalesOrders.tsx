@@ -65,7 +65,7 @@ import {
   type CompanyProfile as DBCompanyProfile,
 } from '../../lib/companyProfile'
 
-type Item = { id: string; name: string; sku: string; baseUomId: string }
+type Item = { id: string; name: string; sku: string; baseUomId: string; primaryRole?: string }
 type Uom = { id: string; code: string; name: string; family?: string }
 type Currency = { code: string; name: string; symbol?: string | null; decimals?: number | null }
 type PaymentTerm = { id: string; code: string; name: string; net_days: number }
@@ -880,13 +880,13 @@ export default function SalesOrders() {
         // 2) items scoped to company
         const itRes = await supabase
           .from('items')
-          .select('id,sku,name,base_uom_id')
+          .select('id,sku,name,base_uom_id,primary_role')
           .eq('company_id', companyId)
           .order('name', { ascending: true })
         if (itRes.error) throw itRes.error
         setItems(
           (itRes.data || []).map((x: any) => ({
-            id: x.id, sku: x.sku, name: x.name, baseUomId: x.base_uom_id ?? x.baseUomId ?? '',
+            id: x.id, sku: x.sku, name: x.name, baseUomId: x.base_uom_id ?? x.baseUomId ?? '', primaryRole: x.primary_role,
           }))
         )
 
@@ -2968,6 +2968,11 @@ export default function SalesOrders() {
                 actions={
                   <>
                     <Button variant="outline" onClick={() => printSO(selectedSO)}>{tt('orders.print', 'Print')}</Button>
+                    {selectedSOLines.some(line => itemById.get(line.item_id)?.primaryRole === 'service') ? (
+                      <Button variant="outline" onClick={() => navigate(`/service-jobs?salesOrderId=${selectedSO.id}`)}>
+                        {tt('serviceJobs.create', 'Create Service Job')}
+                      </Button>
+                    ) : null}
                     <Button variant="outline" onClick={() => printSO(selectedSO, true)}>{tt('orders.download', 'Download')}</Button>
                     {String(selectedSO.status).toLowerCase() === 'draft' && (
                       <Button variant="outline" onClick={() => confirmSO(selectedSO.id)}>

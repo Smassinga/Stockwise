@@ -24,6 +24,7 @@ import {
   ShoppingBasket,
   SlidersHorizontal,
   Sprout,
+  Wrench,
   Truck,
   UserRound,
   Users,
@@ -47,6 +48,7 @@ export type NavigationItemId =
   | 'salesOrders'
   | 'salesInvoices'
   | 'customers'
+  | 'serviceJobs'
   | 'purchaseOrders'
   | 'vendorBills'
   | 'suppliers'
@@ -107,6 +109,7 @@ export const navigationDefinitions: NavigationDefinition[] = [
   { id: 'salesOrders', group: 'sales', labelKey: 'nav.salesOrders', fallbackLabel: 'Sales Orders', to: '/orders?tab=sales', icon: ClipboardCheck },
   { id: 'salesInvoices', group: 'sales', labelKey: 'nav.salesInvoices', fallbackLabel: 'Sales Invoices', to: '/sales-invoices', icon: ReceiptText },
   { id: 'customers', group: 'sales', labelKey: 'nav.customers', fallbackLabel: 'Customers', to: '/customers', icon: UserRound },
+  { id: 'serviceJobs', group: 'sales', labelKey: 'nav.serviceJobs', fallbackLabel: 'Service Jobs', to: '/service-jobs', icon: Wrench },
 
   { id: 'purchaseOrders', group: 'purchasing', labelKey: 'nav.purchaseOrders', fallbackLabel: 'Purchase Orders', to: '/orders?tab=purchase', icon: ClipboardList },
   { id: 'vendorBills', group: 'purchasing', labelKey: 'nav.vendorBills', fallbackLabel: 'Vendor Bills', to: '/vendor-bills', icon: FileInput },

@@ -31,6 +31,7 @@ const SuppliersPage = lazy(() => import('./pages/Suppliers'))
 const BOMPage = lazy(() => import('./pages/BOM'))
 const ProductionRunsPage = lazy(() => import('./pages/ProductionRuns'))
 const GrowthBatchesPage = lazy(() => import('./pages/GrowthBatches'))
+const ServiceJobsPage = lazy(() => import('./pages/ServiceJobs'))
 const LandedCostPage = lazy(() => import('./pages/LandedCost'))
 const Auth = lazy(() => import('./pages/Auth'))
 const UomSettings = lazy(() => import('./pages/UomSettings'))
@@ -244,6 +245,7 @@ export default function App() {
             <Route element={<RequireCompanyAccess />}>
               <Route element={<AppShellRoute />}>
                 <Route path="/dashboard" element={<Suspense fallback={<LoadingSplash />}><Dashboard /></Suspense>} />
+                <Route path="/service-jobs" element={<Suspense fallback={<LoadingSplash />}><ServiceJobsPage /></Suspense>} />
                 <Route path="/operator" element={<Suspense fallback={<LoadingSplash />}><Operator /></Suspense>} />
                 <Route path="/items" element={<Suspense fallback={<LoadingSplash />}><Items /></Suspense>} />
                 <Route path="/movements" element={<Suspense fallback={<LoadingSplash />}><StockMovements /></Suspense>} />
