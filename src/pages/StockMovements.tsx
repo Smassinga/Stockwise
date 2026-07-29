@@ -1833,7 +1833,7 @@ export default function StockMovements() {
           }
           summary={
             <div className="flex flex-wrap items-center gap-2">
-              <span>{tt('movements.registerCount', '{count} movements in view', { count: movementRowsFiltered.length })}</span>
+              <span>{tt('movements.registerCount', '{count} movements', { count: movementRowsFiltered.length })}</span>
               {movementBinFilter !== 'ALL' ? <PremiumStatusBadge tone="info">{tt('movements.bin', 'Bin')}</PremiumStatusBadge> : null}
               {movementsError ? <PremiumStatusBadge tone="critical">{tt('movements.historyUnavailable', 'Movement history unavailable')}</PremiumStatusBadge> : null}
             </div>

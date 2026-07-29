@@ -726,7 +726,7 @@ export function StockLevels() {
         }
         summary={
           <div className="flex flex-wrap items-center gap-2">
-            <span>{tt('stock.registerCount', '{count} stock positions in view', { count: rows.length })}</span>
+            <span>{tt('stock.registerCount', '{count} stock positions', { count: rows.length })}</span>
             {totals.attention > 0 ? (
               <PremiumStatusBadge tone="warning" icon={<AlertTriangle />}>
                 {tt('stock.resultsAttention', '{count} positions need attention', { count: totals.attention })}

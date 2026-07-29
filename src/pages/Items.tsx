@@ -1220,7 +1220,7 @@ export default function ItemsPage() {
               </Button>
             </>
           }
-          summary={tt('items.registerCount', '{count} of {total} items in view', {
+          summary={tt('items.registerCount', '{count} of {total} items', {
             count: filteredItems.length,
             total: items.length,
           })}
