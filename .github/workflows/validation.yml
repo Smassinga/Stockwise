@@ -43,5 +43,11 @@ jobs:
       - name: Check CSS classes
         run: npm run check:css-classes
 
+      - name: Run dashboard regression
+        run: npm run test:dashboard
+
+      - name: Run Service Job contract regression
+        run: npm run test:service-jobs
+
       - name: Build production bundle
         run: npm run build
