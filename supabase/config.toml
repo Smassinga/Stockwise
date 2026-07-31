@@ -64,3 +64,8 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/mailer-company-access/index.ts"
 
+[functions.email-template-lab]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/email-template-lab/index.ts"
+

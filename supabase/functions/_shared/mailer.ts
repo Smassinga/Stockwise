@@ -31,7 +31,22 @@ export type MailDispatchMeta = {
   notificationType?: string;
   jobId?: number | string | null;
   workerId?: string | null;
+  templateVersion?: number;
+  language?: "en" | "pt";
+  companyId?: string | null;
+  qa?: boolean;
 };
+
+async function recordDispatch(message: TransactionalMail, recipients: string[], config: MailConfig, meta: MailDispatchMeta, status: "accepted" | "failed", providerMessageId?: string | null, errorCategory?: string | null) {
+  const url = Deno.env.get("SUPABASE_URL")?.trim();
+  const key = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "").trim();
+  if (!url || !key || !meta.workerId || !meta.notificationType) return;
+  await Promise.all(recipients.map((recipient) => fetch(`${url}/rest/v1/rpc/record_mail_dispatch_event`, {
+    method: "POST",
+    headers: { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ p_event: { company_id: meta.companyId || null, worker: meta.workerId, template_key: meta.notificationType, template_version: meta.templateVersion || 1, language: meta.language || "en", recipient, subject: message.subject, status, provider: config.provider, provider_message_id: providerMessageId || null, job_reference: meta.jobId == null ? null : String(meta.jobId), attempt: 1, error_category: errorCategory || null, qa: Boolean(meta.qa) } }),
+  }).catch(() => undefined)));
+}
 
 function envFirst(...names: string[]) {
   for (const name of names) {
@@ -185,8 +200,11 @@ export async function sendTransactionalEmail(
       }),
     );
 
+    await recordDispatch(message, to, ready, meta, "accepted", info.messageId ?? null).catch(() => undefined);
+
     return info;
   } catch (error) {
+    await recordDispatch(message, to, ready, meta, "failed", null, "provider_rejected").catch(() => undefined);
     const messageText = safeErr(error);
     console.error(
       JSON.stringify({

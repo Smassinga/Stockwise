@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   getMailConfig,
@@ -159,6 +160,7 @@ serve(async (req) => {
     const reportPeriod = optionalText(body.report_period, 120) ?? "";
     const downloadUrl = optionalText(body.download_url ?? body.url, 2048) ?? "";
     const message = optionalText(body.message, 2000) ?? "";
+    const language = body.language === "pt" ? "pt" : "en";
 
     if (!to.length) return json({ error: "recipient_required" }, 400);
     if (to.length > 10) return json({ error: "too_many_recipients" }, 400);
@@ -205,9 +207,11 @@ serve(async (req) => {
       company?.legal_name?.trim() ||
       company?.name?.trim() ||
       "Your company";
-    const subject = `${brandName} - ${reportTitle}${reportPeriod ? ` (${reportPeriod})` : ""}`;
-    const html = htmlTemplate({ brandName, companyName, reportTitle, reportPeriod, message, downloadUrl });
-    const text = textTemplate({ brandName, companyName, reportTitle, reportPeriod, message, downloadUrl });
+    const rendered = renderEmailTemplate("report_ready", language, {
+      brand: { companyName, contactEmail: company?.email || MAIL.defaultReplyToEmail },
+      reportName: reportTitle, period: reportPeriod, actionUrl: downloadUrl, metrics: message ? { Message: message } : {},
+    });
+    const { subject, html, text } = rendered;
 
     await sendTransactionalEmail({
       to,
@@ -216,7 +220,7 @@ serve(async (req) => {
       text,
       fromName: brandName,
       replyTo: company?.email || MAIL.defaultReplyToEmail,
-    }, MAIL, { notificationType: "report_email", workerId: "mailer-report" });
+    }, MAIL, { notificationType: "report_ready", templateVersion: 1, language, companyId, workerId: "mailer-report" });
 
     return json({ ok: true, sent: to.length });
   } catch (error) {

@@ -5,6 +5,7 @@ import {
   requireMailConfig,
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
+import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
 
 type QueueRow = {
   id: number;
@@ -939,47 +940,18 @@ serve(async (req) => {
       const dueDateFormatted = formatDate(row.dueDate, lang);
       const viewDocumentUrl = buildAnchorViewUrl(documentBaseUrl, row);
       const previewText = copy.preview(row.documentReference, dueMeta.previewSuffix);
-      const subject = copy.subject(row.documentReference);
       const linkedOrderReference = row.anchorKind === "sales_invoice" ? row.salesOrderReference : null;
-      const html = htmlBody({
+      const rendered = renderEmailTemplate(
+        row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order",
         lang,
-        previewText,
-        companyName: branding.companyName,
-        companyLogoUrl: branding.companyLogoUrl,
-        customerName: row.customerName ?? undefined,
-        anchorKind: row.anchorKind,
-        documentReference: row.documentReference,
-        linkedOrderReference,
-        dueDateFormatted,
-        amountFormatted,
-        statusLabel: dueMeta.statusLabel,
-        dueSentence: dueMeta.dueSentence,
-        viewDocumentUrl,
-        companyPhone: branding.companyPhone,
-        companyWebsite: branding.companyWebsite,
-        companyWebsiteUrl: branding.companyWebsiteUrl,
-        companyAddress: branding.companyAddress,
-        companySupportEmail: branding.companySupportEmail,
-        footerNote: branding.footerNote,
-      });
-      const text = textBody({
-        lang,
-        companyName: branding.companyName,
-        customerName: row.customerName ?? undefined,
-        anchorKind: row.anchorKind,
-        documentReference: row.documentReference,
-        linkedOrderReference,
-        dueDateFormatted,
-        amountFormatted,
-        statusLabel: dueMeta.statusLabel,
-        dueSentence: dueMeta.dueSentence,
-        viewDocumentUrl,
-        companyPhone: branding.companyPhone,
-        companyWebsite: branding.companyWebsite,
-        companyAddress: branding.companyAddress,
-        companySupportEmail: branding.companySupportEmail,
-        footerNote: branding.footerNote,
-      });
+        {
+          brand: { companyName: branding.companyName, logoUrl: branding.companyLogoUrl, contactEmail: branding.companySupportEmail, contactPhone: branding.companyPhone },
+          recipientName: row.customerName ?? undefined, documentReference: row.documentReference,
+          amount: row.amount, currencyCode: row.currencyCode || "MZN", dueDate: dueDateFormatted,
+          actionUrl: viewDocumentUrl, metrics: { Status: dueMeta.statusLabel, [copy.linkedOrderLabel]: linkedOrderReference || undefined },
+        },
+      );
+      const { subject, html, text } = rendered;
 
       if (DRY_RUN) {
         log("[DRY_RUN] would send reminder", { to, subject, anchorKind: row.anchorKind, reference: row.documentReference });
@@ -995,7 +967,7 @@ serve(async (req) => {
             replyTo: branding.companySupportEmail || MAIL.defaultReplyToEmail,
           },
           MAIL,
-          { notificationType: "due_reminder", jobId: job.id, workerId: "due-reminder-worker" },
+          { notificationType: row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order", templateVersion: 1, language: lang, companyId: job.company_id, jobId: job.id, workerId: "due-reminder-worker" },
         );
       }
       sent++;

@@ -2,6 +2,7 @@
 // Sends invite emails via the shared transactional mailer. Requires authenticated MANAGER+ membership.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   getMailConfig,
@@ -230,7 +231,7 @@ ${opts.inviteLink}
 If you cannot click, paste the link above into your browser.`;
 }
 
-async function sendInviteEmail(to: string, subject: string, html: string, text: string) {
+async function sendInviteEmail(to: string, subject: string, html: string, text: string, language: "en" | "pt", companyId: string) {
   if (!MAIL.smtpLogin || !MAIL.smtpKey || !MAIL_FROM) {
     return j(
       { error: "server_misconfigured", details: "BREVO_SMTP_LOGIN/BREVO_SMTP_KEY and/or BREVO_SENDER_EMAIL not set" },
@@ -247,7 +248,7 @@ async function sendInviteEmail(to: string, subject: string, html: string, text: 
       fromEmail: MAIL_FROM,
       fromName: MAIL_FROM_NAME,
       replyTo: MAIL_REPLY_TO,
-    }, MAIL, { notificationType: "invite_email", workerId: "mailer-invite" });
+    }, MAIL, { notificationType: "member_invite", templateVersion: 1, language, companyId, workerId: "mailer-invite" });
     return j({ ok: true });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -272,6 +273,7 @@ serve(async (req) => {
     const companyName = optionalText(body.company_name ?? body.companyName, 160) ?? "Your company";
     const inviterName = optionalText(body.inviter_name ?? body.inviterName, 160);
     const mode = parseMode(body.mode);
+    const language = body.language === "pt" ? "pt" : "en";
 
     if (!isAllowedInviteLink(inviteLink)) return j({ error: "invite_link_not_allowed" }, 400);
 
@@ -311,25 +313,15 @@ serve(async (req) => {
     if (invite.status === "disabled") return j({ error: "invite_disabled" }, 400);
     if (!canInviteRole(actorRole, invite.role)) return j({ error: "role_not_allowed" }, 403);
 
-    const subject = `${MAIL_FROM_NAME} - Invitation to join ${companyName}`;
-    const html = htmlTemplate({
-      companyName,
-      inviteLink,
-      role: invite.role,
-      inviterName,
-      brandName: MAIL_FROM_NAME,
+    const rendered = renderEmailTemplate("member_invite", language, {
+      brand: { companyName, contactEmail: MAIL_REPLY_TO }, actionUrl: inviteLink,
+      role: invite.role, recipientName: inviterName || undefined,
     });
-    const text = textTemplate({
-      companyName,
-      inviteLink,
-      role: invite.role,
-      inviterName,
-      brandName: MAIL_FROM_NAME,
-    });
+    const { subject, html, text } = rendered;
 
     if (mode === "preview") return j({ ok: true, preview: { subject, text, html } });
 
-    return await sendInviteEmail(email, subject, html, text);
+    return await sendInviteEmail(email, subject, html, text, language, companyId);
   } catch (e) {
     if (e instanceof HttpError) {
       return j({ error: e.code, details: e.details }, e.status, { "x-error": e.code });

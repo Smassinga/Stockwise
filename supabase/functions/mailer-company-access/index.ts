@@ -13,6 +13,7 @@ import {
   readJsonBody,
   requireText,
 } from "../_shared/security.ts";
+import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
 
 type Lang = "en" | "pt";
 type Mode = "preview" | "send";
@@ -500,6 +501,24 @@ serve(async (req) => {
     }
 
     const preview = buildPreview(detail as CompanyAccessDetailRow, templateKey);
+    const detailRow = detail as CompanyAccessDetailRow;
+    const language = normalizeLang(detailRow.company_preferred_lang);
+    const registryKey = templateKey === "expiry_warning" ? "company_access_expiry" : templateKey === "purge_warning" ? "company_access_purge" : "company_access_activation";
+    const sharedPrimaryDate = templateKey === "purge_warning"
+      ? detailRow.purge_scheduled_at
+      : templateKey === "activation_confirmation"
+        ? detailRow.access_granted_at
+        : resolveExpiryDate(detailRow);
+    const shared = renderEmailTemplate(registryKey, language, {
+      brand: { companyName: companyLabel(detailRow), contactEmail: SUPPORT_EMAIL },
+      planName: detailRow.plan_name || detailRow.plan_code,
+      primaryDate: sharedPrimaryDate ? formatDate(sharedPrimaryDate, language) : undefined,
+      secondaryDate: detailRow.paid_until ? formatDate(detailRow.paid_until, language) : undefined,
+      actionUrl: PUBLIC_SITE_URL || undefined,
+    });
+    preview.subject = shared.subject;
+    preview.html = shared.html;
+    preview.text = shared.text;
     if (mode === "preview") {
       return json({ ok: true, preview });
     }
@@ -517,7 +536,10 @@ serve(async (req) => {
       },
       MAIL,
       {
-        notificationType: `company_access_${templateKey}`,
+        notificationType: registryKey,
+        templateVersion: 1,
+        language,
+        companyId,
         workerId: "mailer-company-access",
       },
     );

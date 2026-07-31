@@ -8,6 +8,8 @@ import {
   requireMailConfig,
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
+import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
+import { formatEmailMoney } from "../_shared/emailMoney.ts";
 
 type DigestQueueRow = {
   id: number;
@@ -57,6 +59,7 @@ type CompanyRow = {
   state?: string | null;
   postal_code?: string | null;
   print_footer_note?: string | null;
+  preferred_lang?: string | null;
 };
 
 const MAIL = requireMailConfig(getMailConfig());
@@ -431,17 +434,28 @@ serve(async (req: Request) => {
       });
     }
 
-    const { data: payload, error: payloadError } = await supabase.rpc("build_daily_digest_payload", {
+    const previousDay = new Date(`${job.run_for_local_date}T00:00:00Z`);
+    previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+    const previousDate = previousDay.toISOString().slice(0, 10);
+    const { data: dashboardPayload, error: payloadError } = await supabase.rpc("get_owner_dashboard", {
       p_company_id: job.company_id,
-      p_local_day: job.run_for_local_date,
-      p_timezone: job.timezone,
+      p_start_date: job.run_for_local_date,
+      p_end_date: job.run_for_local_date,
+      p_compare_start_date: previousDate,
+      p_compare_end_date: previousDate,
+      p_warehouse_id: null,
     });
     if (payloadError) throw payloadError;
-    const digest = payload as DigestPayload;
+    const summary = dashboardPayload?.summary || {};
+    const digest = {
+      window: { local_day: job.run_for_local_date, timezone: job.timezone, start_utc: "", end_utc: "" },
+      totals: { revenue: Number(summary.sales || 0), cogs: Number(summary.knownCogs || 0), gross_profit: summary.grossProfit == null ? Number.NaN : Number(summary.grossProfit), gross_margin_pct: summary.grossMargin == null ? Number.NaN : Number(summary.grossMargin) },
+      by_product: dashboardPayload?.products || [],
+    } as DigestPayload;
 
     const { data: company } = await supabase
       .from("companies")
-      .select("name,trade_name,legal_name,email_subject_prefix,email,phone,website,address_line1,address_line2,city,state,postal_code,print_footer_note")
+      .select("name,trade_name,legal_name,email_subject_prefix,email,phone,website,address_line1,address_line2,city,state,postal_code,print_footer_note,preferred_lang")
       .eq("id", job.company_id)
       .maybeSingle();
     const companyRow = (company || null) as CompanyRow | null;
@@ -451,9 +465,21 @@ serve(async (req: Request) => {
     const wantsEmail = job.payload?.channels?.email !== false;
     if (!emails.length || !wantsEmail) throw new Error("No email recipients configured for this job");
 
-    const subject = `${brand} - Daily digest (${digest.window.local_day})`;
-    const html = htmlEmail(digest, companyRow);
-    const text = textEmail(digest, companyRow);
+    const language = companyRow?.preferred_lang === "pt" ? "pt" : "en";
+    const rendered = renderEmailTemplate("daily_digest", language, {
+      brand: { companyName: brand, contactEmail: companyRow?.email, contactPhone: companyRow?.phone },
+      period: digest.window.local_day, actionUrl: `${MAIL.publicSiteUrl || "https://app.stockwise.co.mz"}/dashboard`,
+      metrics: {
+        "Operational sales": formatEmailMoney(digest.totals.revenue, "MZN", language),
+        "COGS": formatEmailMoney(digest.totals.cogs, "MZN", language),
+        "Gross profit": Number.isFinite(digest.totals.gross_profit) ? formatEmailMoney(digest.totals.gross_profit, "MZN", language) : null,
+        "Gross margin": Number.isFinite(digest.totals.gross_margin_pct) ? `${digest.totals.gross_margin_pct.toFixed(1)}%` : null,
+        "Transactions": summary.transactions || 0,
+        "Open orders": summary.openOrders || 0,
+        "Missing cost evidence": summary.missingCostCount || 0,
+      },
+    });
+    const { subject, html, text } = rendered;
 
     if (DRY_RUN) {
       log("[DRY_RUN] would send digest", { to: emails, subject });
@@ -468,7 +494,7 @@ serve(async (req: Request) => {
             replyTo: companyRow?.email || MAIL.defaultReplyToEmail,
           },
           MAIL,
-          { notificationType: "daily_digest", jobId: job.id, workerId: "digest-worker" },
+          { notificationType: "daily_digest", templateVersion: 1, language, companyId: job.company_id, jobId: job.id, workerId: "digest-worker" },
         );
     }
 
