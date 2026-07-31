@@ -70,6 +70,10 @@ const moneyFields = new Set([
 ])
 const uomFields = new Set(['baseUom', 'uom'])
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const enumLabels: Record<'en' | 'pt', Record<string, string>> = {
+  en: { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock', open: 'Open', finalised: 'Finalised', reopened: 'Reopened' },
+  pt: { in_stock: 'Em stock', low_stock: 'Stock baixo', out_of_stock: 'Sem stock', open: 'Aberto', finalised: 'Finalizado', reopened: 'Reaberto' },
+}
 
 function isoDaysAgo(days: number) { const date = new Date(); date.setDate(date.getDate() - days); return date.toISOString().slice(0, 10) }
 function today() { return new Date().toISOString().slice(0, 10) }
@@ -125,8 +129,10 @@ export default function Reports() {
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom.code])), [uoms])
   const displayKey = (key: string) => fieldLabels[lang][key] || fallbackDisplayKey(key)
   const resolvedValue = (key: string, value: unknown) => {
-    if (!uomFields.has(key) || typeof value !== 'string') return value
-    return uomById.get(value) || (uuidPattern.test(value) ? null : value)
+    if (typeof value !== 'string') return value
+    if (uomFields.has(key)) return uomById.get(value) || (uuidPattern.test(value) ? null : value)
+    if (key === 'stockStatus' || key === 'costingState') return enumLabels[lang][value] || value
+    return value
   }
   const formatValue = (key: string, value: unknown) => {
     value = resolvedValue(key, value)
