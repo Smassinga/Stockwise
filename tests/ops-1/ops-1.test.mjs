@@ -43,7 +43,7 @@ test('inventory ageing aggregates rows before JSON rendering', () => { assert.ma
 
 test('workbook exports set StockWise identity and print setup', () => { assert.match(excel, /creator\s*=\s*['"]StockWise/); assert.match(excel, /printArea|fitToPage|printTitlesRow/) })
 test('workbook exports support autofilter and frozen headings', () => { assert.match(excel, /autoFilter/); assert.match(excel, /views/) })
-test('currency formatter emits explicit code before locale-aware number', () => { assert.match(currency, /MZN \$\{absolute\}/); assert.match(currency, /\$\{currencyCode\} \$\{new Intl\.NumberFormat/); assert.doesNotMatch(currency, /style:\s*['"]currency['"]/) })
+test('currency formatter emits explicit code with required PT MZN grouping', () => { assert.match(currency, /MZN \$\{absolute\}/); assert.match(currency, /startsWith\('pt'\) \? 'pt-BR' : locale/); assert.match(currency, /\$\{currencyCode\} \$\{new Intl\.NumberFormat/); assert.doesNotMatch(currency, /style:\s*['"]currency['"]/) })
 test('item selling prices use the maintained code-first money formatter', () => { assert.match(itemsPage, /formatMoneyBase/); assert.doesNotMatch(itemsPage, /\.format\(value\)\} \$\{currencyCode\}/) })
 test('order workspaces pass the active EN or PT locale to money formatting', () => { for (const page of [purchaseOrdersPage, salesOrdersPage]) { assert.match(page, /lang === 'pt' \? 'pt-MZ' : 'en-MZ'/); assert.match(page, /formatMoneyBaseRaw\(amount, code, moneyLocale\)/) } })
 

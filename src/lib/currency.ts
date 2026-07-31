@@ -86,7 +86,8 @@ export function formatMoneyBase(
   const value = Number.isFinite(Number(amount)) ? Number(amount) : 0
   const currencyCode = String(code || 'MZN').toUpperCase()
   if (currencyCode === 'MZN') {
-    const absolute = new Intl.NumberFormat(locale, {
+    const mznLocale = locale.toLowerCase().startsWith('pt') ? 'pt-BR' : locale
+    const absolute = new Intl.NumberFormat(mznLocale, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Math.abs(value))
