@@ -1,5 +1,11 @@
 # StockWise Monitoring and Operational Signals
 
+## OPS-1 communications health
+
+Monitor pending/failed queue counts, oldest pending and stuck-processing age, last worker success/failure, dispatch and template-render failures, and notification creation failures. Terminal failures retain attempts and a safe administrative signal; ordinary users never receive SMTP/provider internals. Sentry context must exclude rendered email and customer content.
+
+At rollout verification, mail dispatch pending and failed counts were both zero. New receipt, event-notification, and preference tables were also empty, as expected before controlled production use. Existing Supabase security-advisor warnings remain tracked baseline items; OPS-1 tables were directly verified with RLS and FORCE RLS.
+
 This document records the monitoring sources that actually matter for StockWise today.
 
 ## Current Signal Sources

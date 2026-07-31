@@ -1,5 +1,9 @@
 # StockWise Product UX Audit - July 2026
 
+## OPS-1 closeout scope
+
+The operating experience now connects governed payment evidence to receipt print/PDF actions, replaces legacy report tabs with query-backed authoritative questions, standardises branded XLSX/PDF/print output, and presents MZN code first. Communications use shared EN/PT templates and Platform Control gains a protected synthetic Template Lab. Notifications gain a full mobile-safe history without introducing noisy company-wide broadcasts.
+
 Date: 2026-07-16
 
 Release: `53a36065f39cea971abb9b48f7c7b72a7ab03584`

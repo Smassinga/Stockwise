@@ -1,5 +1,9 @@
 # StockWise Premium UI Direction
 
+## OPS-1 operating surfaces
+
+Receipts use focused completion actions and clean thermal/A4 hierarchy. Reports are navigated as a business-question catalogue rather than a generic tab strip. Branded exports use company identity without empty logo space. The notification bell remains compact while `/notifications` provides accessible filters and mobile cards; it is an operating inbox, not a social feed.
+
 This document records the current UI direction for the authenticated StockWise product. It applies to operational app surfaces, not to marketing pages.
 
 ## Product Standard

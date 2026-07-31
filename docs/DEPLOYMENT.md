@@ -1,5 +1,11 @@
 # StockWise Deployment and Release Position
 
+## OPS-1 deployment order
+
+After clean local replay and regression, compare the linked migration ledger, dry-run the four forward migrations, apply them, and deploy only changed mail workers plus `email-template-lab`. Verify RLS/FORCE RLS, grants, fixed search paths, worker secret names, queue health, and exact function versions. Keep POS `non_fiscal`; do not rotate unrelated secrets. Production report QA is read-only and QA mail uses only the allowlisted recipient and synthetic scenarios.
+
+Rollout evidence: Validation runs `30628283584` and `30628523610` passed. Hosted migration ledger reached 52 at `20260731110051_actionable_notification_events.sql`. The exact implementation/fix deployment for `1f0dadc2e7e1df2a745cfd7acc70bd6acd44c410` reached Vercel Production/Ready as deployment `dpl_7Rwq3Z3snqs4CoYxKg13rxdJKXPA`. Changed workers deployed as due-reminder v39, digest v74, invite v33, report v11, company-access v4, and Template Lab v1.
+
 This document describes the current release posture for StockWise as it exists today.
 
 ## Runtime Shape

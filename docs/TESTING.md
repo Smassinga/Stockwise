@@ -1,5 +1,11 @@
 # StockWise Testing Strategy
 
+## OPS-1 gates
+
+OPS-1 adds `npm run test:ops-1` for receipt authority, report recognition, export identity, MZN formatting, email registry/security, and notification targeting. A zero migration replay must apply 52 migrations. Preserved gates are finance 393, dashboard 25, and Service Jobs 34 (the database integration case requires the isolated loopback environment). Build output is removed before commit.
+
+Final local evidence: Finance 393/393, Dashboard 25/25, Service Jobs 34/34, and OPS-1 26/26. Migration, lint, CSS-variable, CSS-class, build, and diff checks passed.
+
 This document records the current testing baseline that actually exists in the repo.
 
 ## Current Status

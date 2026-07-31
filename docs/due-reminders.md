@@ -1,5 +1,9 @@
 # Due Reminder System
 
+## OPS-1 template authority
+
+The worker selects Sales Invoice versus Sales Order using the active receivable anchor, then renders the versioned `due_reminder_sales_invoice` or `due_reminder_sales_order` template in EN/PT. Paid/settled documents remain excluded, retries and stale-processing recovery remain queue governed, and MZN is displayed code first. Dispatch audit stores template/version/provider metadata rather than rendered HTML.
+
 The Due Reminder System sends AR due reminders from the active legal/commercial anchor for each exposure chain.
 
 ## Reminder Anchor Rule

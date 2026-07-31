@@ -1,5 +1,9 @@
 # StockWise Architecture
 
+## OPS-1 reliability boundaries
+
+Payment receipts are server-issued immutable projections of governed settlements. Operational reports aggregate in company-scoped RPCs and reuse the owner-dashboard recognition contract. Application email rendering is versioned source code shared by workers; private dispatch events retain metadata only. Notifications remain company/user scoped and combine event keys plus safe payloads with legacy-copy fallback.
+
 This document describes the current application shape after the canonical migration reset, schema cleanup, Platform Control hardening, Point of Sale work, and onboarding/import pass.
 
 ## Application Shape

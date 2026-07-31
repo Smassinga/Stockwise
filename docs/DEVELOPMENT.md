@@ -1,5 +1,9 @@
 # StockWise Development Guide
 
+## OPS-1 development checks
+
+Run `npm run test:ops-1` with the maintained static/regression gates. Finance mutation tests must use the loopback Supabase target; never point them at a production `.env`. Serve local Edge Functions when exercising mail preview compatibility. Receipt printing must consume returned receipt evidence and must never repost a sale or settlement.
+
 This guide records the current repository workflow after the canonical Supabase baseline reset.
 
 ## Current migration baseline

@@ -1,5 +1,9 @@
 # StockWise Data Model
 
+## OPS-1 additions
+
+`payment_receipts` and `payment_receipt_sequences` provide immutable settlement evidence and concurrency-safe company references. `app.mail_dispatch_events` is a private provider-status journal without rendered HTML. `notification_preferences` and the event-oriented columns on `notifications` add per-user delivery choices, deduplication, safe action URLs, and resolution evidence. All exposed additions use RLS and FORCE RLS with restricted grants.
+
 This document records the current schema truth after the canonical baseline reset and the first cleanup pass on top of it.
 
 ## What Is Canonical

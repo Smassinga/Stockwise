@@ -1,5 +1,9 @@
 # Android-First UX Position
 
+## OPS-1 mobile behaviour
+
+Receipt completion keeps Print, Save PDF, and Done actions reachable without discarding evidence. Report navigation and notification history collapse to touch-safe cards with no horizontal overflow. Browser printing remains explicit; direct or silent printer control is reserved for future desktop runtime work.
+
 This document records the current mobile direction for StockWise. It is not a generic responsive-design guide.
 
 ## Current Position
