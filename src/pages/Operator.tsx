@@ -1268,11 +1268,11 @@ export default function Operator() {
                         <div className="rounded-[1.15rem] border border-border/60 bg-muted/10 p-3">
                           <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{copy.defaultPrice}</div>
                           <div className="mt-1 text-lg font-semibold">
-                            {round2(row.item.unitPrice ?? 0).toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}{' '}
-                            {baseCurrencyCode}
+                            {formatMoneyBase(
+                              round2(row.item.unitPrice ?? 0),
+                              baseCurrencyCode,
+                              lang === 'pt' ? 'pt-MZ' : 'en-MZ',
+                            )}
                           </div>
                         </div>
                       </div>
