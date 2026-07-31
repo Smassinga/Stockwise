@@ -330,3 +330,11 @@ Production-smoke corrections `63b67a9` and `7a8b2e6` made customer-material UoMs
 Service coverage includes company isolation, eligible-line uniqueness, lifecycle guards, timers/manual time, frozen direct costs, canonical stock/WAC issue and reversal, zero-cost customer material, Vendor Bill caps, explicit-zero finalisation, fingerprinted reopen, RLS/FORCE RLS, grants/search paths, dashboard completion recognition, open-cost withholding, mixed orders, chart semantics, routing, and EN/PT terminology.
 
 Controlled production QA used `SVC-QA-` records in the authorised company. It completed and refinalised `SVC-000001`, confirmed MZN 500 operational sales, MZN 120 Service COGS, MZN 380 Gross profit, 76.0% Gross margin, and verified profit becomes unavailable after costing reopen. Company-stock issue and Vendor Bill allocation were skipped because the smoke did not require altering unrelated fixtures.
+
+## UX-9D verification
+
+UX-9D adds source-contract coverage for the landing outer-gutter breakpoint, fixed decorative-card width, assistive-technology treatment, maintained chart tokens, dashed COGS versus solid Gross profit, `connectNulls={false}`, Daily details profit/unavailable handling, daily-versus-period copy, same-RPC reconciliation, `actual_completion`, and absence of QA-prefix recognition filtering.
+
+Implementation Validation `30592376743` passed migration, lint, CSS-variable, CSS-class, Dashboard, Service Job, and build gates for `1453d3f6b07ddc0b3841e60fc70e5f2fff5c8a31`. Isolated run `30592442221`, job `91037474431`, verified 48 migrations through `20260729214142`, finance `393/393`, Dashboard `25/25`, and Service Jobs `34/34`, with the ephemeral Supabase stack removed afterward. The direct local finance command remained blocked before mutation because `.env` identifies production; the isolated workflow is the authoritative regression evidence.
+
+Read-only production QA on `dpl_J6nfeDZBa6s1uWRfcPKEm7qLjtJj` verified the two public-domain paths, EN/PT landing safe zones, five landing and five Dashboard viewport contracts, light/dark series contrast, six normal chart dots, both daily tooltips, unclipped legend, Daily details, and exact headline/trend reconciliation. No page overflow, console error, React warning, CSP error, or attributable normal-load Sentry signal was observed. No production business mutation occurred.
