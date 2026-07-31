@@ -5,6 +5,7 @@ import test from 'node:test'
 const read = async path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
 const receipts = await read('supabase/migrations/20260731101543_governed_payment_receipts.sql')
 const reports = await read('supabase/migrations/20260731102631_authoritative_operational_reports.sql')
+const reportJoinFix = await read('supabase/migrations/20260731194059_fix_operational_report_text_uuid_joins.sql')
 const dispatch = await read('supabase/migrations/20260731104537_mail_dispatch_audit_and_template_registry.sql')
 const notifications = await read('supabase/migrations/20260731110051_actionable_notification_events.sql')
 const receiptOutput = await read('src/lib/receiptOutput.ts')
@@ -32,6 +33,7 @@ test('report catalogue is query backed and lazy selected', () => { assert.match(
 test('report field labels are localized in English and Portuguese', () => { assert.match(reportPage, /missingCostCount:\s*'Missing cost count'/); assert.match(reportPage, /missingCostCount:\s*'Custos em falta'/); assert.match(reportPage, /fieldLabels\[lang\]\[key\]/) })
 test('missing cost counts remain numeric rather than currency values', () => { assert.match(reportPage, /const moneyFields = new Set/); assert.match(reportPage, /moneyFields\.has\(key\)/); assert.doesNotMatch(reportPage, /\(sales\|cogs\|profit\|cost\|value\|amount\|balance/) })
 test('report UoM labels never expose raw UUIDs on screen or in exports', () => { assert.match(reportPage, /from\(['"]uoms['"]\)\.select\(['"]id,code,name['"]\)/); assert.match(reportPage, /uuidPattern\.test\(value\) \? null : value/); assert.match(reportPage, /resolvedValue\(column, row\[column\]\)/) })
+test('stock movement report safely compares legacy text references to UUID keys', () => { assert.match(reportJoinFix, /so\.id::text=sm\.ref_id/); assert.match(reportJoinFix, /po\.id::text=sm\.ref_id/); assert.match(reportJoinFix, /p\.id::text=sm\.created_by/); assert.doesNotMatch(reportJoinFix, /so\.id=sm\.ref_id|p\.id=sm\.created_by/) })
 
 test('workbook exports set StockWise identity and print setup', () => { assert.match(excel, /creator\s*=\s*['"]StockWise/); assert.match(excel, /printArea|fitToPage|printTitlesRow/) })
 test('workbook exports support autofilter and frozen headings', () => { assert.match(excel, /autoFilter/); assert.match(excel, /views/) })
