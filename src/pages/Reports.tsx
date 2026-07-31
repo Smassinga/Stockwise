@@ -14,6 +14,7 @@ import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
 
 type ReportCode = 'performance' | 'product-profitability' | 'inventory-valuation' | 'stock-movement-ledger' | 'inventory-ageing' | 'customer-location' | 'supplier-payables' | 'service-job-profitability' | 'order-fulfilment'
 type ReportPayload = { rows?: Array<Record<string, unknown>>; summary?: Record<string, unknown>; trend?: Array<Record<string, unknown>>; [key: string]: unknown }
+type UomRow = { id: string; code: string; name: string }
 
 const catalogue: Array<{ group: 'performance' | 'inventory' | 'partners' | 'operations'; reports: ReportCode[] }> = [
   { group: 'performance', reports: ['performance', 'product-profitability'] },
@@ -67,6 +68,8 @@ const moneyFields = new Set([
   'operationalSales', 'outstandingBalance', 'overdueBalance', 'vendorBillValue', 'paidAmount', 'outstandingAmount',
   'overdueAmount', 'purchaseOrderValue', 'materials', 'labour', 'subcontractors', 'supplierAllocations', 'otherDirectCost', 'totalActualCost',
 ])
+const uomFields = new Set(['baseUom', 'uom'])
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function isoDaysAgo(days: number) { const date = new Date(); date.setDate(date.getDate() - days); return date.toISOString().slice(0, 10) }
 function today() { return new Date().toISOString().slice(0, 10) }
@@ -86,6 +89,15 @@ export default function Reports() {
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [exporting, setExporting] = useState(false)
+  const [uoms, setUoms] = useState<UomRow[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.from('uoms').select('id,code,name').order('code').then(({ data }) => {
+      if (!cancelled) setUoms((data || []) as UomRow[])
+    })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     if (!companyId) return
@@ -110,8 +122,14 @@ export default function Reports() {
     return [...keys]
   }, [rows])
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom.code])), [uoms])
   const displayKey = (key: string) => fieldLabels[lang][key] || fallbackDisplayKey(key)
+  const resolvedValue = (key: string, value: unknown) => {
+    if (!uomFields.has(key) || typeof value !== 'string') return value
+    return uomById.get(value) || (uuidPattern.test(value) ? null : value)
+  }
   const formatValue = (key: string, value: unknown) => {
+    value = resolvedValue(key, value)
     if (value == null) return copy.unavailable
     if (typeof value === 'boolean') return value ? (lang === 'pt' ? 'Sim' : 'Yes') : (lang === 'pt' ? 'Não' : 'No')
     if (typeof value === 'number' && moneyFields.has(key)) return formatMoneyBase(value, 'MZN', locale)
@@ -132,7 +150,7 @@ export default function Reports() {
         subtitle: period, reportCode: report, reportingPeriod: period, displayCurrency: 'MZN', company,
         filters: [`Period: ${period}`, 'Currency: MZN'], rows,
         columns: columns.map((column) => ({
-          label: displayKey(column), value: (row) => row[column] as string | number | null | undefined,
+          label: displayKey(column), value: (row) => resolvedValue(column, row[column]) as string | number | null | undefined,
           type: moneyFields.has(column) ? 'currency' : typeof rows[0]?.[column] === 'number' ? 'number' : 'text',
           width: Math.min(38, Math.max(14, displayKey(column).length + 3)),
         })),
@@ -145,7 +163,7 @@ export default function Reports() {
     const escape = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`
     const lines = [
       ['Company', company], ['Report title', reportTitle], ['Period', period], ['Currency', 'MZN'], ['Filters', `Period=${period}`], [],
-      columns, ...rows.map((row) => columns.map((column) => row[column] ?? '')),
+      columns.map(displayKey), ...rows.map((row) => columns.map((column) => resolvedValue(column, row[column]) ?? copy.unavailable)),
     ].map((line) => line.map(escape).join(','))
     const href = URL.createObjectURL(new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a'); link.href = href; link.download = `StockWise_${report}_${startDate}_${endDate}.csv`; link.click(); URL.revokeObjectURL(href)

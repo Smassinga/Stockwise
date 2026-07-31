@@ -31,6 +31,7 @@ test('missing cost remains unavailable', () => assert.match(reports, /cost_evide
 test('report catalogue is query backed and lazy selected', () => { assert.match(reportPage, /params\.get\(['"]report['"]\)/); assert.match(reportPage, /get_operational_report/); assert.match(reportPage, /p_report_code:\s*report/) })
 test('report field labels are localized in English and Portuguese', () => { assert.match(reportPage, /missingCostCount:\s*'Missing cost count'/); assert.match(reportPage, /missingCostCount:\s*'Custos em falta'/); assert.match(reportPage, /fieldLabels\[lang\]\[key\]/) })
 test('missing cost counts remain numeric rather than currency values', () => { assert.match(reportPage, /const moneyFields = new Set/); assert.match(reportPage, /moneyFields\.has\(key\)/); assert.doesNotMatch(reportPage, /\(sales\|cogs\|profit\|cost\|value\|amount\|balance/) })
+test('report UoM labels never expose raw UUIDs on screen or in exports', () => { assert.match(reportPage, /from\(['"]uoms['"]\)\.select\(['"]id,code,name['"]\)/); assert.match(reportPage, /uuidPattern\.test\(value\) \? null : value/); assert.match(reportPage, /resolvedValue\(column, row\[column\]\)/) })
 
 test('workbook exports set StockWise identity and print setup', () => { assert.match(excel, /creator\s*=\s*['"]StockWise/); assert.match(excel, /printArea|fitToPage|printTitlesRow/) })
 test('workbook exports support autofilter and frozen headings', () => { assert.match(excel, /autoFilter/); assert.match(excel, /views/) })
