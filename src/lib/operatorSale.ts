@@ -23,6 +23,27 @@ export type OperatorSaleResult = {
   subtotal?: number
   tax_total?: number
   pos_tax_mode_snapshot?: 'configured' | 'non_fiscal' | null
+  receipt?: PaymentReceipt | null
+}
+
+export type PaymentReceipt = {
+  id: string
+  receipt_reference: string
+  source_kind: 'pos' | 'sales_order' | 'sales_invoice'
+  sales_order_id: string | null
+  sales_invoice_id: string | null
+  customer_snapshot: Record<string, unknown>
+  company_identity_snapshot: Record<string, unknown>
+  currency_code: string
+  amount_received: number
+  remaining_balance: number
+  payment_method: 'cash' | 'bank'
+  destination_snapshot: Record<string, unknown>
+  payment_at: string
+  document_references: Record<string, unknown>
+  line_evidence: Array<Record<string, unknown>>
+  non_fiscal: boolean
+  issued_at: string
 }
 
 export type OperatorSalePreviewLine = {
@@ -191,11 +212,28 @@ export async function createOperatorSaleIssue(input: {
     .single()
   if (orderError) return result
 
+  let receipt: PaymentReceipt | null = null
+  if (result.settlement_id) {
+    const { data: receiptRows } = await supabase.rpc('list_payment_receipts', {
+      p_sales_order_id: result.sales_order_id,
+      p_sales_invoice_id: null,
+    })
+    const matched = (Array.isArray(receiptRows) ? receiptRows : []).find(
+      (row) => row.settlement_id === result.settlement_id,
+    )
+    receipt = matched ? ({
+      ...matched,
+      amount_received: Number(matched.amount_received || 0),
+      remaining_balance: Number(matched.remaining_balance || 0),
+    } as PaymentReceipt) : null
+  }
+
   return {
     ...result,
     subtotal: Number(order.subtotal || 0),
     tax_total: Number(order.tax_total || 0),
     total_amount: Number(order.total_amount || result.total_amount || 0),
     pos_tax_mode_snapshot: order.pos_tax_mode_snapshot as OperatorSaleResult['pos_tax_mode_snapshot'],
+    receipt,
   }
 }

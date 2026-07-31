@@ -18,6 +18,7 @@ import { Textarea } from '../../components/ui/textarea'
 import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
+import { ReceiptActions } from '../../components/receipts/ReceiptActions'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
 import {
@@ -2834,6 +2835,7 @@ export default function SalesOrders() {
                   <div className="mt-1 text-muted-foreground">{tt('commercialTax.pos.notInvoiceEligible', 'Not eligible for fiscal invoice')}</div>
                 </div>
               ) : null}
+              <ReceiptActions salesOrderId={selectedSO.id} />
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>

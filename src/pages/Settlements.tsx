@@ -47,6 +47,7 @@ import {
   toIsoDate,
 } from '../lib/orderFinance'
 import { buildSettlementMemo } from '../lib/orderRefs'
+import { ReceiptActions } from '../components/receipts/ReceiptActions'
 import { financeCan } from '../lib/permissions'
 import {
   clearPostingRequestKey,
@@ -1856,6 +1857,9 @@ export default function SettlementsPage() {
               ) : null}
             </div>
           </div>
+          {lastSettlementResult.activity.ledgerSide === 'AR' ? (
+            <div className="mt-4"><ReceiptActions settlementId={lastSettlementResult.activity.id} compact /></div>
+          ) : null}
         </section>
       ) : null}
 

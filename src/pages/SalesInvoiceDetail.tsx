@@ -16,6 +16,7 @@ import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
+import { ReceiptActions } from '../components/receipts/ReceiptActions'
 import { useOrg } from '../hooks/useOrg'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
@@ -2253,6 +2254,8 @@ export default function SalesInvoiceDetailPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {!isDraft ? <div className="lg:col-span-2"><ReceiptActions salesInvoiceId={invoice.id} /></div> : null}
 
             {reconciliationRow || reconciliationExceptions.length > 0 ? (
               <Card className="border-border/80 shadow-sm lg:col-span-2">

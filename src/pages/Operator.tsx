@@ -29,8 +29,10 @@ import { loadCommercialTaxConfiguration, type CommercialTaxConfiguration } from 
 import toast from 'react-hot-toast'
 import {
   Building2,
+  Download,
   Minus,
   Plus,
+  Printer,
   Search,
   ShoppingBag,
   UserRound,
@@ -38,6 +40,8 @@ import {
   Warehouse,
 } from 'lucide-react'
 import { getBaseCurrencyCode } from '../lib/currency'
+import { formatMoneyBase } from '../lib/currency'
+import { printReceipt, saveReceiptPdf } from '../lib/receiptOutput'
 
 type WarehouseRow = {
   id: string
@@ -188,6 +192,10 @@ const copyByLang = {
     orderReference: 'Order reference',
     taxMode: 'Tax mode',
     totalReceived: 'Total received',
+    printReceipt: 'Print receipt',
+    printLastReceipt: 'Print last receipt',
+    savePdf: 'Save PDF',
+    receiptUnavailable: 'Receipt evidence is not available for this sale.',
     taxNotApplied: 'Tax not applied',
   },
   pt: {
@@ -273,6 +281,10 @@ const copyByLang = {
     orderReference: 'Referência da encomenda',
     taxMode: 'Modo fiscal',
     totalReceived: 'Total recebido',
+    printReceipt: 'Imprimir recibo',
+    printLastReceipt: 'Imprimir último recibo',
+    savePdf: 'Guardar PDF',
+    receiptUnavailable: 'O comprovativo do recibo não está disponível para esta venda.',
     taxNotApplied: 'Imposto não aplicado',
   },
 } as const
@@ -1109,9 +1121,23 @@ export default function Operator() {
           <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
             <div><span className="text-muted-foreground">{copy.orderReference}</span><div className="font-medium">{lastSale.order_no || '—'}</div></div>
             <div><span className="text-muted-foreground">{copy.taxMode}</span><div className="font-medium">{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.nonFiscalShort : copy.configuredTax}</div></div>
-            <div><span className="text-muted-foreground">{copy.subtotal}</span><div className="font-medium">{Number(lastSale.subtotal || 0).toFixed(2)} {baseCurrencyCode}</div></div>
-            <div><span className="text-muted-foreground">{copy.tax}</span><div className="font-medium">{Number(lastSale.tax_total || 0).toFixed(2)} {baseCurrencyCode}</div></div>
-            <div><span className="text-muted-foreground">{copy.totalReceived}</span><div className="font-medium">{Number(lastSale.total_amount || 0).toFixed(2)} {baseCurrencyCode} · {lastSaleDestination}</div></div>
+            <div><span className="text-muted-foreground">{copy.subtotal}</span><div className="font-medium">{formatMoneyBase(Number(lastSale.subtotal || 0), baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div></div>
+            <div><span className="text-muted-foreground">{copy.tax}</span><div className="font-medium">{formatMoneyBase(Number(lastSale.tax_total || 0), baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div></div>
+            <div><span className="text-muted-foreground">{copy.totalReceived}</span><div className="font-medium">{formatMoneyBase(Number(lastSale.total_amount || 0), baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')} · {lastSaleDestination}</div></div>
+            <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-5">
+              <Button type="button" size="sm" disabled={!lastSale.receipt} onClick={() => {
+                if (!lastSale.receipt) return toast.error(copy.receiptUnavailable)
+                try { printReceipt(lastSale.receipt, lang, '80mm') } catch (error) { toast.error(error instanceof Error ? error.message : copy.receiptUnavailable) }
+              }}>
+                <Printer className="mr-2 h-4 w-4" />{copy.printLastReceipt}
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={!lastSale.receipt} onClick={() => {
+                if (!lastSale.receipt) return toast.error(copy.receiptUnavailable)
+                void saveReceiptPdf(lastSale.receipt, lang).catch((error) => toast.error(error instanceof Error ? error.message : copy.receiptUnavailable))
+              }}>
+                <Download className="mr-2 h-4 w-4" />{copy.savePdf}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : null}
