@@ -1026,12 +1026,12 @@ export default function Operator() {
                     <div className="space-y-2 min-w-0">
                       <Label>{copy.lineTotal}</Label>
                       <div className="rounded-[1.15rem] border border-border/70 bg-muted/15 px-4 py-3">
-                        <div className="text-xs text-muted-foreground">{baseCurrencyCode}</div>
                         <div className="text-base font-semibold">
-                          {round2(line.qty * line.unitPrice).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {formatMoneyBase(
+                            round2(line.qty * line.unitPrice),
+                            baseCurrencyCode,
+                            lang === 'pt' ? 'pt-MZ' : 'en-MZ',
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1054,31 +1054,19 @@ export default function Operator() {
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.subtotal}</div>
             <div className="mt-1 text-lg font-semibold">
-              {(previewIsCurrent ? preview?.subtotal ?? cartSubtotal : cartSubtotal).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}{' '}
-              {baseCurrencyCode}
+              {formatMoneyBase(previewIsCurrent ? preview?.subtotal ?? cartSubtotal : cartSubtotal, baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}
             </div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.tax}</div>
             <div className="mt-1 text-lg font-semibold">
-              {(previewIsCurrent ? preview?.tax_total ?? 0 : 0).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}{' '}
-              {baseCurrencyCode}
+              {formatMoneyBase(previewIsCurrent ? preview?.tax_total ?? 0 : 0, baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}
             </div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.totalToReceive}</div>
             <div className="mt-1 text-lg font-semibold">
-              {(previewIsCurrent ? preview?.total ?? cartSubtotal : cartSubtotal).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}{' '}
-              {baseCurrencyCode}
+              {formatMoneyBase(previewIsCurrent ? preview?.total ?? cartSubtotal : cartSubtotal, baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}
             </div>
           </div>
         </div>
@@ -1309,11 +1297,7 @@ export default function Operator() {
             <ShoppingBag className="mr-2 h-4 w-4" />
             {copy.reviewIssue}
             <span className="ml-3 text-xs font-medium opacity-80">
-              {cart.length} • {formatQty(cartQty)} • {(previewIsCurrent ? preview?.total ?? cartSubtotal : cartSubtotal).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}{' '}
-              {baseCurrencyCode}
+              {cart.length} • {formatQty(cartQty)} • {formatMoneyBase(previewIsCurrent ? preview?.total ?? cartSubtotal : cartSubtotal, baseCurrencyCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}
             </span>
           </Button>
         </div>
