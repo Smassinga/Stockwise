@@ -20,7 +20,7 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
 import { ReceiptActions } from '../../components/receipts/ReceiptActions'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
-import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
+import { formatMoneyBase as formatMoneyBaseRaw, getBaseCurrencyCode } from '../../lib/currency'
 import {
   fxCanCreate,
   isValidFxRate,
@@ -362,7 +362,9 @@ const docName = (value: unknown) => {
 }
 
 export default function SalesOrders() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
+  const moneyLocale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const formatMoneyBase = (amount: number, code?: string) => formatMoneyBaseRaw(amount, code, moneyLocale)
   const { companyId, myRole } = useOrg()
   const { user } = useAuth()
   const navigate = useNavigate()

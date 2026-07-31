@@ -15,7 +15,7 @@ import { Trash2 } from 'lucide-react'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
-import { formatMoneyBase, getBaseCurrencyCode } from '../../lib/currency'
+import { formatMoneyBase as formatMoneyBaseRaw, getBaseCurrencyCode } from '../../lib/currency'
 import {
   fxCanCreate,
   isValidFxRate,
@@ -318,7 +318,9 @@ async function fetchDataUrl(src?: string | null): Promise<string | null> {
 }
 
 export default function PurchaseOrders() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
+  const moneyLocale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const formatMoneyBase = (amount: number, code?: string) => formatMoneyBaseRaw(amount, code, moneyLocale)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
