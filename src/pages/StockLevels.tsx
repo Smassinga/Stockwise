@@ -96,7 +96,7 @@ function formatQuantity(value: number) {
 
 export function StockLevels() {
   const { companyId } = useOrg()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const isMobile = useIsMobile()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
@@ -300,7 +300,7 @@ export function StockLevels() {
 
   const activeWarehouse = warehouseFilter === 'all' ? null : warehouses.find((warehouse) => warehouse.id === warehouseFilter)
 
-  const formatCurrency = (value: number) => formatMoneyBase(value, baseCode)
+  const formatCurrency = (value: number) => formatMoneyBase(value, baseCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')
   const statusLabel = (status: StockStatus) => {
     if (status === 'negative') return tt('stock.status.negative', 'Negative stock')
     if (status === 'out') return tt('stock.status.out', 'Out of stock')
