@@ -10,6 +10,7 @@ const reportAgeingFix = await read('supabase/migrations/20260731195222_fix_inven
 const dispatch = await read('supabase/migrations/20260731104537_mail_dispatch_audit_and_template_registry.sql')
 const notifications = await read('supabase/migrations/20260731110051_actionable_notification_events.sql')
 const receiptOutput = await read('src/lib/receiptOutput.ts')
+const receiptActions = await read('src/components/receipts/ReceiptActions.tsx')
 const reportPage = await read('src/pages/Reports.tsx')
 const excel = await read('src/lib/excelExport.ts')
 const currency = await read('src/lib/currency.ts')
@@ -28,6 +29,8 @@ test('one authoritative receipt is unique per settlement', () => assert.match(re
 test('receipt issuance uses fixed search paths and restricted execution', () => { assert.match(receipts, /set search_path\s*=\s*pg_catalog,\s*public/i); assert.match(receipts, /revoke all on function/i) })
 test('receipt evidence is immutable and cannot be deleted', () => { assert.match(receipts, /payment_receipts_immutable/i); assert.match(receipts, /delete/i) })
 test('receipt supports non-fiscal wording and three print formats', () => { assert.match(receiptOutput, /Non-fiscal receipt/); assert.match(receiptOutput, /58mm/); assert.match(receiptOutput, /80mm/); assert.match(receiptOutput, /A4/) })
+test('receipt history exposes separate 58 mm and 80 mm print controls', () => { assert.match(receiptActions, /printReceipt\(receipt, lang, '58mm'\)/); assert.match(receiptActions, /printReceipt\(receipt, lang, '80mm'\)/); assert.match(receiptActions, /Print 58 mm/); assert.match(receiptActions, /Imprimir 80 mm/) })
+test('A4 receipt PDF includes immutable line, identity and payment evidence', () => { assert.match(receiptOutput, /const lines = receipt\.line_evidence/); assert.match(receiptOutput, /refs\.sales_order/); assert.match(receiptOutput, /snapshotValue\(company, 'tax_id'\)/); assert.match(receiptOutput, /print_footer_note/); assert.match(receiptOutput, /formatMoneyBase\(Number\(line\.unit_price/); assert.doesNotMatch(receiptOutput, /amount tendered|change amount/i) })
 test('printing is separate from authoritative receipt creation', () => assert.doesNotMatch(receiptOutput, /operator_sale_post|insert\(/i))
 test('POS completion retains print-last evidence after Done', () => { assert.match(operatorPage, /lastSaleTitle: 'Sale completed'/); assert.match(operatorPage, /lastSaleTitle: 'Venda concluída'/); assert.match(operatorPage, /completionOpen \? copy\.printReceipt : copy\.printLastReceipt/); assert.match(operatorPage, /done: 'Done'/); assert.match(operatorPage, /done: 'Concluir'/); assert.match(operatorPage, /setCompletionOpen\(false\)/) })
 

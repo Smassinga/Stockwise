@@ -20,10 +20,10 @@ export function ReceiptActions({ salesOrderId, salesInvoiceId, settlementId, com
   const [loading, setLoading] = useState(true)
   const copy = lang === 'pt' ? {
     title: 'Histórico de recibos', help: 'Cada pagamento mantém o seu próprio comprovativo.', empty: 'Ainda não existem recibos emitidos.',
-    view: 'Ver recibo', print: 'Imprimir recibo', pdf: 'Guardar PDF', received: 'Recebido', balance: 'Saldo remanescente',
+    view: 'Ver recibo', print58: 'Imprimir 58 mm', print80: 'Imprimir 80 mm', pdf: 'Guardar PDF', received: 'Recebido', balance: 'Saldo remanescente',
   } : {
     title: 'Receipt history', help: 'Each payment keeps its own proof of payment.', empty: 'No receipts have been issued yet.',
-    view: 'View receipt', print: 'Print receipt', pdf: 'Save PDF', received: 'Received', balance: 'Remaining balance',
+    view: 'View receipt', print58: 'Print 58 mm', print80: 'Print 80 mm', pdf: 'Save PDF', received: 'Received', balance: 'Remaining balance',
   }
 
   useEffect(() => {
@@ -56,7 +56,8 @@ export function ReceiptActions({ salesOrderId, salesInvoiceId, settlementId, com
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, 'a4')}><Eye className="mr-2 h-4 w-4" />{copy.view}</Button>
-            <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, '80mm')}><Printer className="mr-2 h-4 w-4" />{copy.print}</Button>
+            <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, '58mm')}><Printer className="mr-2 h-4 w-4" />{copy.print58}</Button>
+            <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, '80mm')}><Printer className="mr-2 h-4 w-4" />{copy.print80}</Button>
             <Button size="sm" variant="outline" onClick={() => void saveReceiptPdf(receipt, lang)}><Download className="mr-2 h-4 w-4" />{copy.pdf}</Button>
           </div>
         </div>
