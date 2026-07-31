@@ -49,6 +49,7 @@ const CompanyAccessStatus = lazy(() => import('./pages/CompanyAccessStatus'))
 const PaymentActivation = lazy(() => import('./pages/PaymentActivation'))
 const PlatformControl = lazy(() => import('./pages/PlatformControl'))
 const OpeningImport = lazy(() => import('./pages/OpeningImport'))
+const NotificationsPage = lazy(() => import('./pages/Notifications'))
 
 function LoadingSplash() {
   return <AppLoadingState />
@@ -245,6 +246,7 @@ export default function App() {
             <Route element={<RequireCompanyAccess />}>
               <Route element={<AppShellRoute />}>
                 <Route path="/dashboard" element={<Suspense fallback={<LoadingSplash />}><Dashboard /></Suspense>} />
+                <Route path="/notifications" element={<Suspense fallback={<LoadingSplash />}><NotificationsPage /></Suspense>} />
                 <Route path="/service-jobs" element={<Suspense fallback={<LoadingSplash />}><ServiceJobsPage /></Suspense>} />
                 <Route path="/operator" element={<Suspense fallback={<LoadingSplash />}><Operator /></Suspense>} />
                 <Route path="/items" element={<Suspense fallback={<LoadingSplash />}><Items /></Suspense>} />

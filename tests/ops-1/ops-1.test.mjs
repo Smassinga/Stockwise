@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const read = async path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
+const receipts = await read('supabase/migrations/20260731101543_governed_payment_receipts.sql')
+const reports = await read('supabase/migrations/20260731102631_authoritative_operational_reports.sql')
+const dispatch = await read('supabase/migrations/20260731104537_mail_dispatch_audit_and_template_registry.sql')
+const notifications = await read('supabase/migrations/20260731110051_actionable_notification_events.sql')
+const receiptOutput = await read('src/lib/receiptOutput.ts')
+const reportPage = await read('src/pages/Reports.tsx')
+const excel = await read('src/lib/excelExport.ts')
+const currency = await read('src/lib/currency.ts')
+const templates = await read('supabase/functions/_shared/emailTemplates.ts')
+const emailLayout = await read('supabase/functions/_shared/emailLayout.ts')
+const templateLab = await read('supabase/functions/email-template-lab/index.ts')
+const notificationPage = await read('src/pages/Notifications.tsx')
+
+test('receipt reference is server generated from a company sequence', () => assert.match(receipts, /payment_receipt_sequences[\s\S]+receipt_reference/))
+test('one authoritative receipt is unique per settlement', () => assert.match(receipts, /payment_receipts_settlement_unique unique \(settlement_channel, settlement_id\)/i))
+test('receipt issuance uses fixed search paths and restricted execution', () => { assert.match(receipts, /set search_path\s*=\s*pg_catalog,\s*public/i); assert.match(receipts, /revoke all on function/i) })
+test('receipt evidence is immutable and cannot be deleted', () => { assert.match(receipts, /payment_receipts_immutable/i); assert.match(receipts, /delete/i) })
+test('receipt supports non-fiscal wording and three print formats', () => { assert.match(receiptOutput, /Non-fiscal receipt/); assert.match(receiptOutput, /58mm/); assert.match(receiptOutput, /80mm/); assert.match(receiptOutput, /A4/) })
+test('printing is separate from authoritative receipt creation', () => assert.doesNotMatch(receiptOutput, /operator_sale_post|insert\(/i))
+
+test('reports use one bounded authoritative RPC', () => { assert.match(reportPage, /get_operational_report/); assert.doesNotMatch(reportPage, /ordersSource|cashSource|cashSalesSource/) })
+test('performance reporting reuses owner dashboard authority', () => assert.match(reports, /get_owner_dashboard/))
+test('report RPC is company scoped with explicit authenticated access checks', () => { assert.match(reports, /current_company_id\(\)/); assert.match(reports, /auth\.uid\(\) is null/); assert.match(reports, /member_has_company_access/) })
+test('service recognition remains actual completion based', () => assert.match(reports, /actual_completion/))
+test('missing cost remains unavailable', () => assert.match(reports, /cost_evidence|missing_cost|gross_profit/i))
+test('report catalogue is query backed and lazy selected', () => { assert.match(reportPage, /params\.get\(['"]report['"]\)/); assert.match(reportPage, /get_operational_report/); assert.match(reportPage, /p_report_code:\s*report/) })
+
+test('workbook exports set StockWise identity and print setup', () => { assert.match(excel, /creator\s*=\s*['"]StockWise/); assert.match(excel, /printArea|fitToPage|printTitlesRow/) })
+test('workbook exports support autofilter and frozen headings', () => { assert.match(excel, /autoFilter/); assert.match(excel, /views/) })
+test('currency formatter emits explicit code before locale-aware number', () => { assert.match(currency, /MZN \$\{absolute\}/); assert.match(currency, /\$\{currencyCode\} \$\{new Intl\.NumberFormat/); assert.doesNotMatch(currency, /style:\s*['"]currency['"]/) })
+
+test('email registry contains every maintained template family', () => ['due_reminder_sales_order','due_reminder_sales_invoice','daily_digest','member_invite','report_ready','company_access_expiry','company_access_purge','company_access_activation'].forEach(key => assert.match(templates, new RegExp(key))))
+test('email templates provide EN and PT renderers with versions', () => { assert.match(templates, /supportedLanguages:\s*\[['"]en['"],\s*['"]pt['"]\]/); assert.match(templates, /version:/) })
+test('shared email layout provides QA banner and plain fallback', () => { assert.match(emailLayout, /StockWise email test/); assert.match(emailLayout, /Teste de email do StockWise/) })
+test('template lab is platform-admin gated and recipient restricted', () => { assert.match(templateLab, /platform.admin|platform_admin/i); assert.match(templateLab, /EMAIL_QA_ALLOWED_RECIPIENTS/) })
+test('dispatch evidence excludes rendered HTML', () => { assert.match(dispatch, /mail_dispatch_events/); assert.doesNotMatch(dispatch, /html\s+text|body_html/i) })
+test('dispatch evidence is force-RLS protected', () => assert.match(dispatch, /force row level security/i))
+
+test('notification events are targeted and deduplicated', () => { assert.match(notifications, /user_id/); assert.match(notifications, /notifications_event_dedup_unique/) })
+test('notification preferences are company and user scoped', () => { assert.match(notifications, /notification_preferences/); assert.match(notifications, /company_id=public\.current_company_id\(\) and user_id=auth\.uid\(\)/) })
+test('notification actions reject external URLs', () => assert.match(notifications, /action_url.*like '\/%'.*not like '\/\/%'/is))
+test('legacy notification title and body remain supported', () => { assert.match(notificationPage, /title/); assert.match(notificationPage, /body/); assert.match(notificationPage, /notificationPresentation/) })
+test('notification page supports read, dismiss and filters', () => { assert.match(notificationPage, /markAll/); assert.match(notificationPage, /dismissed_at/); assert.match(notificationPage, /category/) })

@@ -825,6 +825,7 @@
   "notifications.timezone": "Timezone",
   "notifications.timezone.placeholder": "Africa/Maputo",
   "notifications.title": "Notifications",
+  "notifications.viewAll": "View all notifications",
   "onboarding.already": "Already verified? Refresh this page after clicking the link.",
   "onboarding.companyName": "Company name",
   "onboarding.create": "Create company",

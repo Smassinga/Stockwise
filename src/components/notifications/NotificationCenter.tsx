@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { useI18n } from '../../lib/i18n'
 import { Button } from '../ui/button'
+import { notificationPresentation } from '../../lib/notificationPresentation'
 
 type AnyRow = Record<string, any>
 type Notif = {
@@ -18,11 +19,13 @@ type Notif = {
   readAt: string | null
   url?: string | null
   level: string
+  eventType?: string | null
+  payload?: Record<string, unknown>
 }
 
 type RealtimeStatus = 'off' | 'connecting' | 'on' | 'reconnecting'
 
-const NOTIFICATION_SELECT = 'id,title,body,created_at,read_at,url,level,user_id,company_id'
+const NOTIFICATION_SELECT = 'id,title,body,created_at,occurred_at,read_at,url,action_url,level,severity,event_type,category,payload,user_id,company_id'
 const NOTIFICATION_SELECT_FALLBACK = 'id,title,body,created_at,read_at,url,level'
 const isDev = import.meta.env.DEV
 
@@ -48,7 +51,7 @@ function isUnknownColumnError(error: unknown) {
 function mapRow(r: AnyRow): Notif {
   const title = String(pick(r, ['title', 'subject', 'header', 'name'], '(no title)') ?? '(no title)')
   const body = String(pick(r, ['body', 'message', 'content', 'text'], '') ?? '')
-  const rowTimestamp = ts(r)
+  const rowTimestamp = pick(r, ['occurred_at', 'occurredAt'], null) || ts(r)
   const createdAt = String(rowTimestamp ?? new Date().toISOString())
   const fallbackId = [rowTimestamp, title, body].filter(Boolean).join(':') || 'notification:unknown'
 
@@ -58,8 +61,10 @@ function mapRow(r: AnyRow): Notif {
     body,
     createdAt,
     readAt: pick(r, ['read_at', 'readAt'], null) ? String(pick(r, ['read_at', 'readAt'])) : null,
-    url: pick(r, ['url', 'action_url', 'href'], null),
-    level: String(pick(r, ['level', 'severity'], 'info') ?? 'info'),
+    url: pick(r, ['action_url', 'url', 'href'], null),
+    level: String(pick(r, ['severity', 'level'], 'info') ?? 'info'),
+    eventType: pick(r, ['event_type', 'eventType'], null),
+    payload: pick(r, ['payload'], {}) as Record<string, unknown>,
   }
 }
 
@@ -77,7 +82,7 @@ function mapRows(rows: AnyRow[] | null | undefined): Notif[] {
 
 export function NotificationCenter() {
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
 
@@ -125,6 +130,13 @@ export function NotificationCenter() {
       return
     }
     window.open(notification.url, '_blank', 'noopener,noreferrer')
+  }
+
+  async function markRead(notification: Notif) {
+    if (notification.readAt) return
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('notifications').update({ read_at: now }).eq('id', notification.id)
+    if (!error) setRows((current) => current.map((row) => row.id === notification.id ? { ...row, readAt: now } : row))
   }
 
   useEffect(() => {
@@ -470,6 +482,9 @@ export function NotificationCenter() {
             )}
             <div className="space-y-2.5">
               {rows.map((n) => (
+                (() => {
+                  const presentation = notificationPresentation({ event_type: n.eventType, payload: n.payload, title: n.title, body: n.body }, lang)
+                  return (
                 <div
                   key={n.id}
                   className={`rounded-2xl border px-3.5 py-3.5 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.48)] transition-colors dark:shadow-[0_18px_40px_-30px_rgba(0,0,0,0.9)] ${
@@ -491,8 +506,8 @@ export function NotificationCenter() {
                           </span>
                         )}
                       </div>
-                      <div className="break-words text-sm font-semibold leading-5 text-foreground">{n.title || '(no title)'}</div>
-                      {n.body ? <div className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{n.body}</div> : null}
+                      <div className="break-words text-sm font-semibold leading-5 text-foreground">{presentation.title}</div>
+                      {presentation.body ? <div className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{presentation.body}</div> : null}
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                         <span>{formatStamp(n.createdAt)}</span>
                         <span aria-hidden>|</span>
@@ -505,20 +520,22 @@ export function NotificationCenter() {
                         variant={n.readAt ? 'outline' : 'secondary'}
                         size="sm"
                         className="shrink-0 rounded-xl"
-                        onClick={() => openNotification(n)}
+                        onClick={() => { void markRead(n); openNotification(n) }}
                       >
                         {t('notifications.open')}
                       </Button>
                     ) : null}
                   </div>
                 </div>
+                  )
+                })()
               ))}
             </div>
           </div>
 
           <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-3 text-[11px] text-muted-foreground dark:border-zinc-800 dark:bg-zinc-950">
             <span>{t(`notifications.realtime.${realtimeStatus}`)}</span>
-            <span>{t('notifications.showingLatest', { count: rows.length })}</span>
+            <Button size="sm" variant="ghost" onClick={() => { setOpen(false); navigate('/notifications') }}>{t('notifications.viewAll')}</Button>
           </div>
           </div>
         </>

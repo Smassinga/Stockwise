@@ -19,6 +19,7 @@
     "test:finance-regression:ci": "node --test --test-concurrency=1 tests/finance-regression/**/*.test.mjs",
     "test:dashboard": "node --test --test-concurrency=1 tests/dashboard/**/*.test.mjs",
     "test:service-jobs": "node --test --test-concurrency=1 tests/service-jobs/**/*.test.mjs",
+    "test:ops-1": "node --test --test-concurrency=1 tests/ops-1/**/*.test.mjs",
     "bootstrap:platform-admin": "node --env-file=.env scripts/bootstrap-platform-admin.mjs",
     "tauri:prepare": "node scripts/prepare-tauri-release.mjs",
     "tauri": "tauri",

@@ -52,6 +52,7 @@ import { SetupReadinessPanel } from "../components/setup/SetupReadinessPanel";
 import { useCompanySetupReadiness } from "../hooks/useCompanySetupReadiness";
 import { AdministrationAuthorityBadge } from "../components/administration/AdministrationAuthorityBadge";
 import { AdministrationSectionNav } from "../components/administration/AdministrationSectionNav";
+import { NotificationPreferences } from "../components/notifications/NotificationPreferences";
 
 import {
   Bell,
@@ -2031,6 +2032,7 @@ function Settings() {
               </div>
             </div>
           </div>
+          <NotificationPreferences />
         </CardContent>
       </Card>
 
