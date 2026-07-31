@@ -477,7 +477,7 @@
     grid-template-columns: auto auto minmax(0, 1fr);
     align-items: start;
     gap: 0.65rem;
-    width: min(18rem, 24vw);
+    width: 15rem;
     border: 1px solid hsl(0 0% 100% / 0.16);
     border-radius: 0.85rem;
     background: hsl(var(--landing-dark-surface) / 0.78);
@@ -1113,7 +1113,7 @@
     }
   }
 
-  @media (width >= 1024px) {
+  @media (width >= 1440px) {
     .landing-hero-floating-cards {
       position: absolute;
       inset: 0;
@@ -1123,17 +1123,17 @@
 
     .landing-floating-card--1 {
       top: 18%;
-      left: max(2rem, calc(50% - 36rem));
+      left: max(1.5rem, calc(50% - 43.5rem));
     }
 
     .landing-floating-card--2 {
-      right: max(2rem, calc(50% - 38rem));
-      top: 34%;
+      right: max(1.5rem, calc(50% - 43.5rem));
+      top: 30%;
     }
 
     .landing-floating-card--3 {
-      right: max(3rem, calc(50% - 31rem));
-      bottom: 14%;
+      right: max(1.5rem, calc(50% - 43.5rem));
+      bottom: 16%;
     }
   }
 

@@ -4322,6 +4322,7 @@
   "dashboard.knownCogs": "CMV conhecido",
   "dashboard.chartPartial": "O CMV conhecido é apresentado; o lucro bruto é omitido onde a evidência de custo está incompleta.",
   "dashboard.chartSummary": "Os totais do gráfico reconciliam com os indicadores operacionais principais.",
+  "dashboard.dailyVsPeriodTotals": "O gráfico mostra valores diários. Os cartões principais mostram os totais do período seleccionado.",
   "dashboard.noCompletedActivity": "Sem actividade operacional concluída neste período.",
   "dashboard.stockExceptions": "Excepções de stock",
   "dashboard.missingMinimums": "Definições de stock mínimo em falta",

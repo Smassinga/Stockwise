@@ -1510,7 +1510,7 @@ function StatusPill({ children, tone = 'teal' }: { children: ReactNode; tone?: '
 
 function HeroFloatingCards({ items }: { items: LandingCopy['heroSignals'] }) {
   return (
-    <div className="landing-hero-floating-cards">
+    <div className="landing-hero-floating-cards" aria-hidden="true">
       {items.map((item, index) => (
         <div key={item.title} className={cn('landing-floating-card', `landing-floating-card--${index + 1}`)}>
           <span className={cn('landing-status-dot', `landing-status-dot--${item.tone}`)} aria-hidden="true" />

@@ -3,6 +3,10 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const DAY = 86_400_000
+const dashboardPageUrl = new URL('../../src/pages/Dashboard.tsx', import.meta.url)
+const landingPageUrl = new URL('../../src/pages/LandingPage.tsx', import.meta.url)
+const stylesUrl = new URL('../../src/index.css', import.meta.url)
+const serviceDashboardUrl = new URL('../../supabase/migrations/20260729214142_integrate_service_actuals_into_owner_dashboard.sql', import.meta.url)
 const at = value => new Date(`${value}T12:00:00`)
 const iso = value => value.toISOString().slice(0, 10)
 const shift = (value, days) => new Date(value.getTime() + days * DAY)
@@ -88,4 +92,66 @@ test('cross-company and expired access use the same hard denial gate', async () 
   const sql = await readFile(new URL('../../supabase/migrations/20260729143000_add_owner_dashboard_read_model.sql', import.meta.url), 'utf8')
   assert.match(sql, /p_company_id IS DISTINCT FROM public\.current_company_id\(\)[\s\S]+NOT public\.member_has_company_access/)
   assert.match(sql, /ERRCODE = '42501'/)
+})
+test('dashboard chart uses maintained series tokens and preserves incomplete profit gaps', async () => {
+  const page = await readFile(dashboardPageUrl, 'utf8')
+  assert.doesNotMatch(page, /var\(--success\)/)
+  assert.match(page, /dataKey="sales"[\s\S]+stroke="hsl\(var\(--primary\)\)"/)
+  assert.match(page, /dataKey="knownCogs"[\s\S]+stroke="hsl\(var\(--chart-cogs-line\)\)"[\s\S]+strokeDasharray=/)
+  assert.match(page, /connectNulls=\{false\} dataKey="grossProfit"[\s\S]+stroke="hsl\(var\(--chart-margin-line\)\)"/)
+})
+test('daily details shows supported profit and localises unavailable profit without coercing it to zero', async () => {
+  const page = await readFile(dashboardPageUrl, 'utf8')
+  assert.match(page, /dashboard\.grossProfit[\s\S]+day\.grossProfit == null[\s\S]+dashboard\.unavailableValue[\s\S]+money\(day\.grossProfit\)/)
+  assert.doesNotMatch(page, /money\(number\(day\.grossProfit\)\)/)
+})
+test('chart copy distinguishes daily values from selected-period headline totals', async () => {
+  const [page, en, pt] = await Promise.all([
+    readFile(dashboardPageUrl, 'utf8'),
+    readFile(new URL('../../src/locales/en.json', import.meta.url), 'utf8'),
+    readFile(new URL('../../src/locales/pt.json', import.meta.url), 'utf8'),
+  ])
+  assert.match(page, /dashboard\.dailyVsPeriodTotals/)
+  assert.match(en, /Daily values are shown below\. Headline cards show totals for the selected period\./)
+  assert.match(pt, /O gráfico mostra valores diários\. Os cartões principais mostram os totais do período seleccionado\./)
+})
+test('complete trend totals reconcile to the same RPC summary', () => {
+  const trend = [
+    { sales: 19, knownCogs: 7, grossProfit: 12, missingCostCount: 0 },
+    { sales: 23, knownCogs: 9, grossProfit: 14, missingCostCount: 0 },
+  ]
+  const summary = { sales: 42, knownCogs: 16, grossProfit: 26 }
+  assert.equal(trend.reduce((sum, row) => sum + row.sales, 0), summary.sales)
+  assert.equal(trend.reduce((sum, row) => sum + row.knownCogs, 0), summary.knownCogs)
+  assert.equal(trend.reduce((sum, row) => sum + row.grossProfit, 0), summary.grossProfit)
+})
+test('incomplete daily cost evidence keeps summary and daily gross profit unavailable', () => {
+  const trend = [
+    { sales: 19, knownCogs: 7, grossProfit: 12, missingCostCount: 0 },
+    { sales: 23, knownCogs: 0, grossProfit: null, missingCostCount: 1 },
+  ]
+  const summary = { sales: 42, knownCogs: 7, grossProfit: null }
+  assert.equal(trend.reduce((sum, row) => sum + row.sales, 0), summary.sales)
+  assert.equal(trend.reduce((sum, row) => sum + row.knownCogs, 0), summary.knownCogs)
+  assert.equal(summary.grossProfit, null)
+  assert.equal(trend[1].grossProfit, null)
+})
+test('service activity remains on actual completion with no QA-prefix exclusion', async () => {
+  const sql = await readFile(serviceDashboardUrl, 'utf8')
+  assert.match(sql, /sj\.actual_completion::date/)
+  assert.doesNotMatch(sql, /\b(?:not\s+like|!~\*?)\s*['"](?:QA|qa)/)
+})
+test('floating hero cards stay hidden below the outer-gutter breakpoint', async () => {
+  const css = await readFile(stylesUrl, 'utf8')
+  assert.match(css, /\.landing-hero-floating-cards\s*\{[\s\S]*?display:\s*none;/)
+  assert.doesNotMatch(css, /@media\s*\(width\s*>=\s*1024px\)\s*\{\s*\.landing-hero-floating-cards/)
+  assert.match(css, /@media\s*\(width\s*>=\s*1440px\)[\s\S]*?\.landing-hero-floating-cards[\s\S]*?display:\s*block;/)
+})
+test('floating hero cards use a decorative 15rem outer-gutter safe zone', async () => {
+  const [css, page] = await Promise.all([readFile(stylesUrl, 'utf8'), readFile(landingPageUrl, 'utf8')])
+  assert.match(css, /\.landing-floating-card\s*\{[\s\S]*?width:\s*15rem;/)
+  assert.match(css, /\.landing-floating-card--1[\s\S]*?left:\s*max\(1\.5rem,\s*calc\(50%\s*-\s*43\.5rem\)\)/)
+  assert.match(css, /\.landing-floating-card--2[\s\S]*?right:\s*max\(1\.5rem,\s*calc\(50%\s*-\s*43\.5rem\)\)/)
+  assert.match(css, /\.landing-floating-card--3[\s\S]*?right:\s*max\(1\.5rem,\s*calc\(50%\s*-\s*43\.5rem\)\)/)
+  assert.match(page, /landing-hero-floating-cards" aria-hidden="true"/)
 })

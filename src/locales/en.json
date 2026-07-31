@@ -4335,6 +4335,7 @@
   "dashboard.knownCogs": "Known COGS",
   "dashboard.chartPartial": "Known COGS is shown; gross profit is withheld where cost evidence is incomplete.",
   "dashboard.chartSummary": "Chart totals reconcile to the operational headline values.",
+  "dashboard.dailyVsPeriodTotals": "Daily values are shown below. Headline cards show totals for the selected period.",
   "dashboard.noCompletedActivity": "No completed operating activity in this period.",
   "dashboard.stockExceptions": "Stock exceptions",
   "dashboard.missingMinimums": "Missing minimum-stock settings",
