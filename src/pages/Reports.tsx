@@ -37,9 +37,40 @@ const labels = {
   },
 } as const
 
+const fieldLabels: Record<'en' | 'pt', Record<string, string>> = {
+  en: {
+    date: 'Date', sales: 'Operational sales', knownCogs: 'COGS', grossProfit: 'Gross profit', grossMargin: 'Gross margin', transactions: 'Transactions', missingCostCount: 'Missing cost count',
+    name: 'Product or service', sku: 'SKU', quantity: 'Quantity', baseUom: 'Base UoM', revenue: 'Operational sales',
+    item: 'Item', warehouse: 'Warehouse', bin: 'Bin', uom: 'UoM', weightedAverageCost: 'Weighted-average cost', inventoryValue: 'Inventory value', missingCost: 'Missing cost',
+    occurredAt: 'Date and time', movementKind: 'Movement kind', baseQuantity: 'Base quantity', warehouseFrom: 'Warehouse from', binFrom: 'Bin from', warehouseTo: 'Warehouse to', binTo: 'Bin to', unitCost: 'Unit cost', totalCost: 'Total cost', referenceType: 'Reference type', reference: 'Reference', actor: 'Actor',
+    lastSaleOrIssueAt: 'Last sale or issue', daysWithoutMovement: 'Days without movement', slowMoving: 'Slow-moving', stockStatus: 'Stock status',
+    customer: 'Customer', customerLocation: 'Customer location', operationalLocation: 'Operational location', cashActivity: 'Cash/walk-in activity', operationalSales: 'Operational sales', outstandingBalance: 'Outstanding balance', overdueBalance: 'Overdue balance', lastCompletedPurchase: 'Last completed purchase',
+    supplier: 'Supplier', supplierLocation: 'Supplier location', vendorBillValue: 'Vendor Bill value', paidAmount: 'Paid amount', outstandingAmount: 'Outstanding amount', overdueAmount: 'Overdue amount', lastBillDate: 'Last bill date', purchaseOrderValue: 'Purchase Order value',
+    serviceJob: 'Service Job', service: 'Service', completionDate: 'Completion date', materials: 'Materials', labour: 'Labour', subcontractors: 'Subcontractors', supplierAllocations: 'Supplier allocations', otherDirectCost: 'Other direct cost', totalActualCost: 'Total actual cost', costingState: 'Costing state',
+    submitted: 'Submitted', confirmed: 'Confirmed', allocated: 'Allocated', shippedCompleted: 'Shipped/completed', closed: 'Closed', cancelled: 'Cancelled', openBacklog: 'Open backlog', completionRate: 'Completion rate', averageFulfilmentDays: 'Average fulfilment duration (days)', overdueOrders: 'Overdue orders',
+  },
+  pt: {
+    date: 'Data', sales: 'Vendas operacionais', knownCogs: 'Custo das vendas', grossProfit: 'Lucro bruto', grossMargin: 'Margem bruta', transactions: 'Transacções', missingCostCount: 'Custos em falta',
+    name: 'Produto ou serviço', sku: 'SKU', quantity: 'Quantidade', baseUom: 'UdM base', revenue: 'Vendas operacionais',
+    item: 'Artigo', warehouse: 'Armazém', bin: 'Localização', uom: 'UdM', weightedAverageCost: 'Custo médio ponderado', inventoryValue: 'Valor do inventário', missingCost: 'Custo em falta',
+    occurredAt: 'Data e hora', movementKind: 'Tipo de movimento', baseQuantity: 'Quantidade base', warehouseFrom: 'Armazém de origem', binFrom: 'Localização de origem', warehouseTo: 'Armazém de destino', binTo: 'Localização de destino', unitCost: 'Custo unitário', totalCost: 'Custo total', referenceType: 'Tipo de referência', reference: 'Referência', actor: 'Responsável',
+    lastSaleOrIssueAt: 'Última venda ou saída', daysWithoutMovement: 'Dias sem movimento', slowMoving: 'Baixa rotação', stockStatus: 'Estado do stock',
+    customer: 'Cliente', customerLocation: 'Localização do cliente', operationalLocation: 'Localização operacional', cashActivity: 'Actividade a dinheiro/cliente ocasional', operationalSales: 'Vendas operacionais', outstandingBalance: 'Saldo em aberto', overdueBalance: 'Saldo vencido', lastCompletedPurchase: 'Última compra concluída',
+    supplier: 'Fornecedor', supplierLocation: 'Localização do fornecedor', vendorBillValue: 'Valor das faturas de fornecedor', paidAmount: 'Valor pago', outstandingAmount: 'Valor em aberto', overdueAmount: 'Valor vencido', lastBillDate: 'Data da última fatura', purchaseOrderValue: 'Valor das ordens de compra',
+    serviceJob: 'Trabalho de Serviço', service: 'Serviço', completionDate: 'Data de conclusão', materials: 'Materiais', labour: 'Mão de obra', subcontractors: 'Subcontratados', supplierAllocations: 'Alocações de fornecedores', otherDirectCost: 'Outros custos directos', totalActualCost: 'Custo real total', costingState: 'Estado do custeio',
+    submitted: 'Submetidas', confirmed: 'Confirmadas', allocated: 'Alocadas', shippedCompleted: 'Expedidas/concluídas', closed: 'Encerradas', cancelled: 'Canceladas', openBacklog: 'Pendentes em aberto', completionRate: 'Taxa de conclusão', averageFulfilmentDays: 'Duração média de cumprimento (dias)', overdueOrders: 'Ordens vencidas',
+  },
+}
+
+const moneyFields = new Set([
+  'sales', 'knownCogs', 'grossProfit', 'revenue', 'weightedAverageCost', 'inventoryValue', 'unitCost', 'totalCost',
+  'operationalSales', 'outstandingBalance', 'overdueBalance', 'vendorBillValue', 'paidAmount', 'outstandingAmount',
+  'overdueAmount', 'purchaseOrderValue', 'materials', 'labour', 'subcontractors', 'supplierAllocations', 'otherDirectCost', 'totalActualCost',
+])
+
 function isoDaysAgo(days: number) { const date = new Date(); date.setDate(date.getDate() - days); return date.toISOString().slice(0, 10) }
 function today() { return new Date().toISOString().slice(0, 10) }
-function displayKey(key: string) { return key.replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase()) }
+function fallbackDisplayKey(key: string) { return key.replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase()) }
 
 export default function Reports() {
   const { lang } = useI18n()
@@ -79,10 +110,11 @@ export default function Reports() {
     return [...keys]
   }, [rows])
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const displayKey = (key: string) => fieldLabels[lang][key] || fallbackDisplayKey(key)
   const formatValue = (key: string, value: unknown) => {
     if (value == null) return copy.unavailable
     if (typeof value === 'boolean') return value ? (lang === 'pt' ? 'Sim' : 'Yes') : (lang === 'pt' ? 'Não' : 'No')
-    if (typeof value === 'number' && /(sales|cogs|profit|cost|value|amount|balance|paid|subtotal|tax|price)/i.test(key)) return formatMoneyBase(value, 'MZN', locale)
+    if (typeof value === 'number' && moneyFields.has(key)) return formatMoneyBase(value, 'MZN', locale)
     if (typeof value === 'number') return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value)
     if (typeof value === 'object') return JSON.stringify(value)
     return String(value)
@@ -101,7 +133,7 @@ export default function Reports() {
         filters: [`Period: ${period}`, 'Currency: MZN'], rows,
         columns: columns.map((column) => ({
           label: displayKey(column), value: (row) => row[column] as string | number | null | undefined,
-          type: /(sales|cogs|profit|cost|value|amount|balance|paid|subtotal|tax|price)/i.test(column) ? 'currency' : typeof rows[0]?.[column] === 'number' ? 'number' : 'text',
+          type: moneyFields.has(column) ? 'currency' : typeof rows[0]?.[column] === 'number' ? 'number' : 'text',
           width: Math.min(38, Math.max(14, displayKey(column).length + 3)),
         })),
       })
