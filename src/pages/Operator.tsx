@@ -195,6 +195,7 @@ const copyByLang = {
     printReceipt: 'Print receipt',
     printLastReceipt: 'Print last receipt',
     savePdf: 'Save PDF',
+    done: 'Done',
     receiptUnavailable: 'Receipt evidence is not available for this sale.',
     taxNotApplied: 'Tax not applied',
   },
@@ -284,6 +285,7 @@ const copyByLang = {
     printReceipt: 'Imprimir recibo',
     printLastReceipt: 'Imprimir último recibo',
     savePdf: 'Guardar PDF',
+    done: 'Concluir',
     receiptUnavailable: 'O comprovativo do recibo não está disponível para esta venda.',
     taxNotApplied: 'Imposto não aplicado',
   },
@@ -336,6 +338,7 @@ export default function Operator() {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewFingerprint, setPreviewFingerprint] = useState<string | null>(null)
   const [lastSale, setLastSale] = useState<OperatorSaleResult | null>(null)
+  const [completionOpen, setCompletionOpen] = useState(false)
   const pendingSaleRequestRef = useRef<PendingSaleRequest | null>(null)
 
   const loadData = async () => {
@@ -761,6 +764,7 @@ export default function Operator() {
         total_amount: result.total_amount ?? currentPreview.total,
         pos_tax_mode_snapshot: result.pos_tax_mode_snapshot ?? currentPreview.mode,
       })
+      setCompletionOpen(true)
       await loadData()
       setCart([])
       setNotes('')
@@ -1103,7 +1107,7 @@ export default function Operator() {
       {lastSale ? (
         <Card className="border-primary/25 bg-primary/5">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.nonFiscalTitle : copy.lastSaleTitle}</CardTitle>
+            <CardTitle className="text-lg">{copy.lastSaleTitle}</CardTitle>
             <CardDescription>{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.taxNotApplied : copy.configuredTax}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
@@ -1117,7 +1121,7 @@ export default function Operator() {
                 if (!lastSale.receipt) return toast.error(copy.receiptUnavailable)
                 try { printReceipt(lastSale.receipt, lang, '80mm') } catch (error) { toast.error(error instanceof Error ? error.message : copy.receiptUnavailable) }
               }}>
-                <Printer className="mr-2 h-4 w-4" />{copy.printLastReceipt}
+                <Printer className="mr-2 h-4 w-4" />{completionOpen ? copy.printReceipt : copy.printLastReceipt}
               </Button>
               <Button type="button" size="sm" variant="outline" disabled={!lastSale.receipt} onClick={() => {
                 if (!lastSale.receipt) return toast.error(copy.receiptUnavailable)
@@ -1125,6 +1129,11 @@ export default function Operator() {
               }}>
                 <Download className="mr-2 h-4 w-4" />{copy.savePdf}
               </Button>
+              {completionOpen ? (
+                <Button type="button" size="sm" variant="ghost" onClick={() => setCompletionOpen(false)}>
+                  {copy.done}
+                </Button>
+              ) : null}
             </div>
           </CardContent>
         </Card>

@@ -29,6 +29,7 @@ test('receipt issuance uses fixed search paths and restricted execution', () => 
 test('receipt evidence is immutable and cannot be deleted', () => { assert.match(receipts, /payment_receipts_immutable/i); assert.match(receipts, /delete/i) })
 test('receipt supports non-fiscal wording and three print formats', () => { assert.match(receiptOutput, /Non-fiscal receipt/); assert.match(receiptOutput, /58mm/); assert.match(receiptOutput, /80mm/); assert.match(receiptOutput, /A4/) })
 test('printing is separate from authoritative receipt creation', () => assert.doesNotMatch(receiptOutput, /operator_sale_post|insert\(/i))
+test('POS completion retains print-last evidence after Done', () => { assert.match(operatorPage, /lastSaleTitle: 'Sale completed'/); assert.match(operatorPage, /lastSaleTitle: 'Venda concluída'/); assert.match(operatorPage, /completionOpen \? copy\.printReceipt : copy\.printLastReceipt/); assert.match(operatorPage, /done: 'Done'/); assert.match(operatorPage, /done: 'Concluir'/); assert.match(operatorPage, /setCompletionOpen\(false\)/) })
 
 test('reports use one bounded authoritative RPC', () => { assert.match(reportPage, /get_operational_report/); assert.doesNotMatch(reportPage, /ordersSource|cashSource|cashSalesSource/) })
 test('performance reporting reuses owner dashboard authority', () => assert.match(reports, /get_owner_dashboard/))
