@@ -1,3 +1,5 @@
+import { formatMoneyBase } from './currency'
+
 export type OutputLanguage = 'en' | 'pt' | 'bi'
 
 type OutputCopy = {
@@ -433,10 +435,7 @@ function numberLocale(language: OutputLanguage) {
 }
 
 export function formatOutputCurrency(language: OutputLanguage, amount: number, currencyCode: string) {
-  return new Intl.NumberFormat(numberLocale(language), {
-    style: 'currency',
-    currency: currencyCode || 'MZN',
-  }).format(amount || 0)
+  return formatMoneyBase(amount, currencyCode || 'MZN', numberLocale(language))
 }
 
 export function formatOutputNumber(language: OutputLanguage, value: number, digits = 2) {

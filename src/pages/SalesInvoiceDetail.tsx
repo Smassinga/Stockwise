@@ -21,6 +21,7 @@ import { useOrg } from '../hooks/useOrg'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
+import { formatMoneyBase } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import {
   financeActorLabel,
@@ -266,10 +267,7 @@ export default function SalesInvoiceDetailPage() {
   const [creatingDebit, setCreatingDebit] = useState(false)
 
   const money = (amount: number, currencyCode: string) =>
-    new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currencyCode || 'MZN',
-    }).format(amount || 0)
+    formatMoneyBase(amount, currencyCode || 'MZN', locale)
 
   const joinAddressParts = (...parts: Array<string | null | undefined>) =>
     parts.map((part) => String(part || '').trim()).filter(Boolean).join(', ')

@@ -13,7 +13,7 @@ import { PremiumTableToolbar } from '../components/premium/PremiumTableToolbar'
 import { useOrg } from '../hooks/useOrg'
 import { useVendorBills } from '../hooks/useFinanceDocuments'
 import { type VendorBillStateRow } from '../lib/financeDocuments'
-import { getBaseCurrencyCode } from '../lib/currency'
+import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import {
   approvalPresentation,
   settlementPresentation,
@@ -54,16 +54,10 @@ export default function VendorBillsPage() {
   }, [companyId])
 
   const formatDocumentMoney = (amount: number, code: string) =>
-    new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
-      style: 'currency',
-      currency: code || baseCode || 'MZN',
-    }).format(amount || 0)
+    formatMoneyBase(amount, code || baseCode || 'MZN', lang === 'pt' ? 'pt-MZ' : 'en-MZ')
 
   const formatBaseMoney = (amount: number) =>
-    new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
-      style: 'currency',
-      currency: baseCode || 'MZN',
-    }).format(amount || 0)
+    formatMoneyBase(amount, baseCode || 'MZN', lang === 'pt' ? 'pt-MZ' : 'en-MZ')
 
   const filteredRows = useMemo(() => {
     const needle = search.trim().toLowerCase()

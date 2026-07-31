@@ -187,9 +187,9 @@ function safeErr(error: unknown) {
   }
 }
 
-function formatNumber(value: number) {
+function formatNumber(value: number, lang: Lang = "en") {
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(lang === "pt" ? "pt-MZ" : "en-MZ", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
@@ -199,21 +199,8 @@ function formatNumber(value: number) {
 }
 
 function formatAmount(value: number, currencyCode: string | null | undefined, lang: Lang) {
-  const code = trimText(currencyCode)?.toUpperCase() ?? "";
-  const locale = lang === "pt" ? "pt-PT" : "en-US";
-  if (code) {
-    try {
-      return new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: code,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(value);
-    } catch {
-      // fall through
-    }
-  }
-  return code ? `${formatNumber(value)} ${code}` : formatNumber(value);
+  const code = trimText(currencyCode)?.toUpperCase() || "MZN";
+  return `${value < 0 ? "-" : ""}${code} ${formatNumber(Math.abs(value), lang)}`;
 }
 
 function formatDate(value: string, lang: Lang) {

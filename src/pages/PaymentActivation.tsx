@@ -10,6 +10,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
+import { formatMoneyBase } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg'
 import { getMyCompanyAccessState, type CompanyAccessState } from '../lib/companyAccess'
 import { createPostingRequestKey } from '../lib/postingRequestKeys'
@@ -47,7 +48,7 @@ const copy = {
 } as const
 
 function money(value: number, locale: string) {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'MZN' }).format(value)
+  return formatMoneyBase(value, 'MZN', locale)
 }
 
 function statusTone(status: string) {

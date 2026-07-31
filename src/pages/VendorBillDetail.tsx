@@ -19,7 +19,7 @@ import { CommercialLifecycleStrip } from '../components/commercial/CommercialLif
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { useOrg } from '../hooks/useOrg'
 import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
-import { getBaseCurrencyCode } from '../lib/currency'
+import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { supabase } from '../lib/db'
 import {
   financeActorLabel,
@@ -465,16 +465,10 @@ export default function VendorBillDetailPage() {
   }, [loadWorkspace])
 
   const formatDocumentMoney = (amount: number, code: string) =>
-    new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
-      style: 'currency',
-      currency: code || baseCode || 'MZN',
-    }).format(amount || 0)
+    formatMoneyBase(amount, code || baseCode || 'MZN', lang === 'pt' ? 'pt-MZ' : 'en-MZ')
 
   const formatBaseMoney = (amount: number) =>
-    new Intl.NumberFormat(lang === 'pt' ? 'pt-MZ' : 'en-MZ', {
-      style: 'currency',
-      currency: baseCode || 'MZN',
-    }).format(amount || 0)
+    formatMoneyBase(amount, baseCode || 'MZN', lang === 'pt' ? 'pt-MZ' : 'en-MZ')
 
   const orderLink = useMemo(() => {
     if (!row?.purchase_order_id) return null

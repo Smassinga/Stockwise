@@ -10,6 +10,7 @@ import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Textarea } from '../ui/textarea'
 import { createPostingRequestKey } from '../../lib/postingRequestKeys'
+import { formatMoneyBase } from '../../lib/currency'
 import { paymentActivationApi, type PaymentChannel, type PaymentRequest, type PaymentRequestEvent } from '../../lib/paymentActivation'
 import { isKnownSubscriptionStatus, subscriptionStatusKey } from '../../lib/administrationPresentation'
 
@@ -25,7 +26,7 @@ const emptyChannel = {
 }
 
 function formatMoney(value: number, locale: string) {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'MZN' }).format(Number(value || 0))
+  return formatMoneyBase(Number(value || 0), 'MZN', locale)
 }
 
 export default function PaymentActivationAdmin({ locale, onOpenCompany, tt }: Props) {

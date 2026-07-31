@@ -80,8 +80,20 @@ export function setBaseCurrencyCode(code: string, companyId?: string | null) {
 
 export function formatMoneyBase(
   amount: number,
-  code = localStorage.getItem(LS_KEY) || 'MZN',
+  code = (typeof localStorage !== 'undefined' && localStorage.getItem(LS_KEY)) || 'MZN',
   locale = 'en-MZ'
 ) {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(amount || 0)
+  const value = Number.isFinite(Number(amount)) ? Number(amount) : 0
+  const currencyCode = String(code || 'MZN').toUpperCase()
+  if (currencyCode === 'MZN') {
+    const absolute = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Math.abs(value))
+    return `${value < 0 ? '-' : ''}MZN ${absolute}`
+  }
+  return `${value < 0 ? '-' : ''}${currencyCode} ${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(value))}`
 }

@@ -78,8 +78,8 @@ export const internalPlanOptions = [
 
 export function formatMzn(value: number | null | undefined, locale: string = 'en-MZ') {
   if (value == null || !Number.isFinite(Number(value))) return '--'
-  return `${Number(value).toLocaleString(locale, {
+  return `MZN ${Number(value).toLocaleString(locale, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  })} MZN`
+  })}`
 }
