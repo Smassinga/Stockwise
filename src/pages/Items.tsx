@@ -6,7 +6,7 @@ import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { useI18n, withI18nFallback } from '../lib/i18n'
-import { getBaseCurrencyCode } from '../lib/currency'
+import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useIsMobile } from '../hooks/use-mobile'
 import {
   deriveItemProfileWarnings,
@@ -93,12 +93,9 @@ function formatStockThreshold(value: number | null | undefined) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value)
 }
 
-function formatMoney(value: number | null | undefined, currencyCode: string) {
+function formatMoney(value: number | null | undefined, currencyCode: string, locale: string) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '-'
-  return `${new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)} ${currencyCode}`
+  return formatMoneyBase(value, currencyCode, locale)
 }
 
 function warningVariant(code: ItemProfileWarningCode): 'destructive' | 'secondary' | 'outline' {
@@ -122,7 +119,8 @@ function itemProfileErrorCode(error: unknown) {
 }
 
 export default function ItemsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
+  const moneyLocale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
   const { myRole, companyId } = useOrg()
@@ -718,7 +716,7 @@ export default function ItemsPage() {
     {
       id: 'unitPrice',
       header: tt('items.table.unitPrice', 'Default sell price'),
-      cell: (item) => (item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : tt('common.dash', '-')),
+      cell: (item) => (item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode, moneyLocale) : tt('common.dash', '-')),
       sortValue: (item) => (item.canSell ? Number(item.unitPrice ?? 0) : -1),
       align: 'right',
       minWidth: 150,
@@ -1282,7 +1280,7 @@ export default function ItemsPage() {
                       <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
                         <div className="premium-label">{tt('items.table.unitPrice', 'Default sell price')}</div>
                         <div className="mt-1 text-sm font-medium">
-                          {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode) : tt('common.dash', '-')}
+                          {item.canSell ? formatMoney(item.unitPrice ?? 0, baseCurrencyCode, moneyLocale) : tt('common.dash', '-')}
                         </div>
                       </div>
                       <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
