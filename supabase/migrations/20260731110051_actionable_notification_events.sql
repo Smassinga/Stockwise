@@ -11,18 +11,7 @@ alter table public.notifications
   add column dismissed_at timestamptz,
   add column resolved_at timestamptz;
 
-update public.notifications set
-  category=coalesce(category,'legacy'),severity=coalesce(severity,level,'info'),
-  action_url=coalesce(action_url,url),occurred_at=coalesce(occurred_at,created_at)
-where category is null or severity is null or action_url is null or occurred_at is null;
-
-alter table public.notifications
-  add constraint notifications_category_check check (category is null or category in ('approvals','inventory','orders','service_jobs','receivables','payables','users_access','imports','communications','system','legacy')),
-  add constraint notifications_severity_check check (severity is null or severity in ('info','success','warning','error','critical')),
-  add constraint notifications_action_url_safe check (action_url is null or (action_url like '/%' and action_url not like '//%'));
-
--- Preserve immutable business evidence while allowing the event producer to
--- refresh deduplicated events and users to mark or dismiss their own rows.
+-- Install the OPS-1 lifecycle guard before backfilling hosted legacy rows.
 create or replace function public.only_read_at_changes()
 returns trigger language plpgsql
 set search_path=pg_catalog,public,extensions
@@ -39,6 +28,16 @@ begin
   return new;
 end;
 $$;
+
+update public.notifications set
+  category=coalesce(category,'legacy'),severity=coalesce(severity,level,'info'),
+  action_url=coalesce(action_url,url),occurred_at=coalesce(occurred_at,created_at)
+where category is null or severity is null or action_url is null or occurred_at is null;
+
+alter table public.notifications
+  add constraint notifications_category_check check (category is null or category in ('approvals','inventory','orders','service_jobs','receivables','payables','users_access','imports','communications','system','legacy')),
+  add constraint notifications_severity_check check (severity is null or severity in ('info','success','warning','error','critical')),
+  add constraint notifications_action_url_safe check (action_url is null or (action_url like '/%' and action_url not like '//%'));
 
 create unique index notifications_event_dedup_unique
   on public.notifications(company_id,user_id,deduplication_key)
