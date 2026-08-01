@@ -1,6 +1,8 @@
 # Email template catalogue
 
-All maintained application templates are version 1 and support EN/PT:
+The maintained content and payload rules are defined in [EMAIL_CONTENT_ARCHITECTURE.md](./EMAIL_CONTENT_ARCHITECTURE.md). COMMS-2 versions are invitation v2, report v3, digest v2, both reminders v3, and all company-access templates v2. Each family owns a discriminated payload and template-specific summary; the former universal optional-field payload is retired.
+
+All maintained application templates support EN/PT:
 
 - `due_reminder_sales_order`
 - `due_reminder_sales_invoice`
