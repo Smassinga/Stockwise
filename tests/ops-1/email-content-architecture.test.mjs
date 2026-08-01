@@ -49,14 +49,14 @@ test('reminder families have distinct customer copy and no internal recognition 
 })
 
 test('access families exclude operational and document fields', () => {
-  const source = templates.slice(templates.indexOf('function renderExpiry'), templates.indexOf('export const EMAIL_TEMPLATES'))
+  const source = templates.slice(templates.indexOf('function renderExpiry'), templates.indexOf('function renderAdaptiveReminder'))
   assert.match(source, /will not charge you automatically/); assert.match(source, /não efectua cobranças automáticas/)
   assert.match(source, /cannot be restored through the application/); assert.match(source, /não poderão ser recuperados através da aplicação/)
   assert.doesNotMatch(source, /operationalSales|documentReference|Gross profit|Sales Order/)
 })
 
 test('versions advance with template semantics', () => {
-  for (const pair of ['member_invite: 2','report_ready: 3','daily_digest: 2','due_reminder_sales_order: 3','due_reminder_sales_invoice: 3','company_access_expiry: 2','company_access_purge: 2','company_access_activation: 2']) assert.match(templates, new RegExp(pair))
+  for (const pair of ['member_invite: 3','report_ready: 4','daily_digest: 3','due_reminder_sales_order: 4','due_reminder_sales_invoice: 4','company_access_expiry: 3','company_access_purge: 3','company_access_activation: 3']) assert.match(templates, new RegExp(pair))
 })
 
 test('brand layout is email-safe, green, responsive and semantically restrained', () => {
@@ -73,11 +73,11 @@ test('QA scenarios are isolated per template and expose preview metadata', () =>
 })
 
 test('all production callers pass their own discriminant and current version', () => {
-  assert.match(invite, /templateKey: "member_invite"/); assert.match(invite, /templateVersion: 2/)
-  assert.match(report, /templateKey: "report_ready"/); assert.match(report, /templateVersion: 3/)
-  assert.match(digest, /templateKey: "daily_digest"/); assert.match(digest, /templateVersion: 2/)
-  assert.match(reminders, /outstandingAmount: row\.amount/); assert.match(reminders, /templateVersion: 3/)
-  assert.match(access, /templateVersion: 2/)
+  assert.match(invite, /templateKey: "member_invite"/); assert.match(invite, /templateVersion: 3/)
+  assert.match(report, /templateKey: "report_ready"/); assert.match(report, /templateVersion: 4/)
+  assert.match(digest, /templateKey: "daily_digest"/); assert.match(digest, /templateVersion: 3/)
+  assert.match(reminders, /outstandingAmount: row\.amount/); assert.match(reminders, /templateVersion: 4/)
+  assert.match(access, /templateVersion: shared\.templateVersion/)
 })
 
 test('rendering escapes values and validates action origins', () => {
@@ -87,7 +87,7 @@ test('rendering escapes values and validates action origins', () => {
 
 test('rendered invitation contains no leaked financial or document evidence', () => {
   const rendered = renderDiscriminatedEmail('en', { templateKey: 'member_invite', brand: { companyName: 'QA & Co' }, inviterName: 'Samuel <QA>', role: 'MANAGER', expiresAt: '2026-08-15', actionUrl: 'https://stockwiseapp.com/accept-invite' }, true)
-  assert.match(rendered.subject, /^\[StockWise QA\] You have been invited/)
+  assert.match(rendered.subject, /^\[StockWise QA\] QA & Co — You have been invited/)
   assert.match(rendered.html, /QA &amp; Co/); assert.match(rendered.html, /Samuel &lt;QA&gt;/)
   assert.doesNotMatch(`${rendered.html}\n${rendered.text}`, /Operational sales|Gross profit|Due date|QA-SO-/)
 })
@@ -98,7 +98,7 @@ test('rendered report, digest and reminders keep their semantic fields isolated'
   assert.match(reportMail.text, /Período: Julho de 2026/); assert.doesNotMatch(reportMail.text, /Data de vencimento|Valor em aberto/)
   const digestMail = renderDiscriminatedEmail('pt', { templateKey: 'daily_digest', brand, period: '2026-07-31', actionUrl: 'https://stockwiseapp.com/dashboard', metrics: { operationalSales: 1250, knownCogs: 500, grossProfit: null, grossMargin: null, transactions: 5, openOrders: 2, lowStockItems: 1, outOfStockItems: 0, missingCostEvidence: 1, topProductsServices: ['Serviço QA'], currencyCode: 'MZN' } }, true)
   assert.match(digestMail.text, /MZN 1\.250,00/); assert.match(digestMail.text, /Lucro bruto: Indisponível/); assert.doesNotMatch(digestMail.text, /MZN 1250,00|1\.250,00 MZN/)
-  const reminder = renderDiscriminatedEmail('en', { templateKey: 'due_reminder_sales_invoice', brand, documentReference: 'QA-INV-0001', dueDate: '2026-08-15', outstandingAmount: 1250, currencyCode: 'MZN', actionUrl: 'https://stockwiseapp.com/sales-invoices/qa' }, true)
+  const reminder = renderDiscriminatedEmail('en', { templateKey: 'due_reminder_sales_invoice', brand, documentReference: 'QA-INV-0001', dueDate: '2026-08-15', outstandingAmount: 1250, currencyCode: 'MZN', stageOffsetDays: 3, daysUntilDue: 3, relativeState: 'upcoming', tone: 'gentle_urgency', actionUrl: 'https://stockwiseapp.com/sales-invoices/qa' }, true)
   assert.match(reminder.text, /Outstanding amount: MZN 1,250\.00/); assert.doesNotMatch(reminder.text, /Operational sales|Gross profit|Manager/)
 })
 
