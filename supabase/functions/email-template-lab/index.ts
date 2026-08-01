@@ -52,12 +52,40 @@ serve(async (req) => {
     if (!EMAIL_TEMPLATE_KEYS.includes(key)) return json({ error: "template_not_found" }, 400);
     const language: EmailLanguage = body.language === "pt" ? "pt" : "en";
     const recipient = String(body.recipient || "").trim().toLowerCase();
+    const digestMetrics = language === "pt"
+      ? {
+          "Vendas operacionais": "MZN 1.250,00",
+          "Custo das vendas": "MZN 500,00",
+          "Lucro bruto": "Indisponível",
+          "Margem bruta": "Indisponível",
+          "Transacções": "5",
+          "Ordens abertas": "2",
+          "Itens com stock baixo": "1",
+          "Itens sem stock": "0",
+          "Evidência de custo em falta": "1",
+          "Principais produtos/serviços": "Serviço QA",
+        }
+      : {
+          "Operational sales": "MZN 1,250.00",
+          "COGS": "MZN 500.00",
+          "Gross profit": "Unavailable",
+          "Gross margin": "Unavailable",
+          "Transactions": "5",
+          "Open orders": "2",
+          "Low-stock items": "1",
+          "Out-of-stock items": "0",
+          "Missing cost evidence": "1",
+          "Top products/services": "QA Service",
+        };
+    const summaryMetrics = language === "pt"
+      ? { "Vendas operacionais": "MZN 1.250,00", "Lucro bruto": "Indisponível" }
+      : { "Operational sales": "MZN 1,250.00", "Gross profit": "Unavailable" };
     const scenario = {
       brand: { companyName: "QA Example Company", legalName: "QA Example Company, Lda.", contactEmail: "qa@example.invalid", contactPhone: "+258 84 000 0000" },
       recipientName: "QA Recipient", documentReference: key.includes("invoice") ? "QA-INV-0001" : "QA-SO-0001",
       amount: 1250, currencyCode: "MZN", dueDate: "2026-08-15", role: "MANAGER", reportName: language === "pt" ? "Desempenho operacional" : "Operational performance",
       period: "2026-07-01 – 2026-07-31", planName: "Business", primaryDate: "2026-08-15", secondaryDate: "2027-08-15",
-      actionUrl: "https://app.stockwise.co.mz/qa-email-preview", metrics: { "Operational sales": "MZN 1,250.00", "Gross profit": "Unavailable" },
+      actionUrl: "https://app.stockwise.co.mz/qa-email-preview", metrics: key === "daily_digest" ? digestMetrics : summaryMetrics,
     };
     const rendered = renderEmailTemplate(key, language, scenario, true);
     if (mode === "preview") return json({ rendered });

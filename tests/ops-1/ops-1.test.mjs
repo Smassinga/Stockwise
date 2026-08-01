@@ -32,6 +32,9 @@ assert.match(templateLab, /https:\/\/stockwiseapp\.com/, 'template lab allows th
 assert.match(templateLab, /allowedOrigins\.has\(origin\) \? origin/, 'template lab returns CORS only for maintained origins')
 assert.match(templateLab, /authorization, x-client-info, apikey, content-type/, 'template lab accepts the maintained Supabase browser client headers')
 assert.match(templateLab, /"Vary": "Origin"/, 'template lab varies cached CORS responses by origin')
+assert.match(templateLab, /"Vendas operacionais": "MZN 1\.250,00"/, 'template lab Portuguese scenarios use code-first localized MZN values')
+assert.match(templateLab, /"Evidência de custo em falta": "1"/, 'template lab digest scenario includes localized missing-cost evidence')
+assert.match(templateLab, /"Top products\/services": "QA Service"/, 'template lab digest scenario includes top product and service evidence')
 const notificationPage = await read('src/pages/Notifications.tsx')
 const {
   StaleChunkError,
