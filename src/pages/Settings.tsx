@@ -92,6 +92,11 @@ type CompanyProfile = {
   preferred_lang: 'en' | 'pt' | null;
 };
 
+type CommunicationProfile = {
+  finance_email: string;
+  invitation_reply_to_email: string;
+};
+
 // ---------------- Settings shape (company_settings.data) ------------
 type SettingsData = {
   locale: { language: "en" | "pt" };
@@ -486,12 +491,12 @@ function normalizeLeadDays(values?: number[]) {
     new Set(
       (values || [])
         .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value))
+        .filter((value) => Number.isInteger(value) && value >= -365 && value <= 365)
         .map((value) => Math.trunc(value)),
     ),
   );
 
-  return unique.sort((a, b) => {
+  return unique.slice(0, 24).sort((a, b) => {
     const bucket = (value: number) => (value > 0 ? 0 : value === 0 ? 1 : 2);
     const bucketDiff = bucket(a) - bucket(b);
     if (bucketDiff !== 0) return bucketDiff;
@@ -551,6 +556,7 @@ function Settings() {
 
   const [data, setData] = useState<SettingsData>(DEFAULTS);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
+  const [communicationProfile, setCommunicationProfile] = useState<CommunicationProfile>({ finance_email: "", invitation_reply_to_email: "" });
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [dueReminderTimeInput, setDueReminderTimeInput] = useState(
@@ -895,7 +901,7 @@ function Settings() {
         setProfileUnavailable(false);
         setWarehousesUnavailable(false);
 
-        const [resSettings, resProfile, resWh] = await Promise.all([
+        const [resSettings, resProfile, resWh, resCommunication] = await Promise.all([
           supabase
             .from("company_settings")
             .select("data")
@@ -913,6 +919,11 @@ function Settings() {
             .select("id,name")
             .eq("company_id", companyId)
             .order("name", { ascending: true }),
+          supabase
+            .from("company_communication_profiles")
+            .select("finance_email,invitation_reply_to_email")
+            .eq("company_id", companyId)
+            .maybeSingle(),
         ]);
 
         if (resSettings.error) {
@@ -952,6 +963,11 @@ function Settings() {
           if (!cancelled) setWarehousesUnavailable(true);
         } else if (!cancelled) {
           setWarehouses((resWh.data ?? []) as Warehouse[]);
+        }
+        if (resCommunication.error) {
+          console.error(resCommunication.error);
+        } else if (!cancelled) {
+          setCommunicationProfile({ finance_email: resCommunication.data?.finance_email || "", invitation_reply_to_email: resCommunication.data?.invitation_reply_to_email || "" });
         }
       } catch (e: any) {
         console.error(e);
@@ -1077,6 +1093,24 @@ function Settings() {
         };
       } else {
         delete normalized.dueReminders;
+      }
+
+      const normalizedFinanceEmail = communicationProfile.finance_email.trim().toLowerCase();
+      const normalizedInvitationEmail = communicationProfile.invitation_reply_to_email.trim().toLowerCase();
+      const validEmail = (value: string) => !value || /^\S+@\S+\.\S+$/.test(value);
+      if (!validEmail(normalizedFinanceEmail) || !validEmail(normalizedInvitationEmail)) {
+        toast.error(tt("settings.toast.communicationEmailInvalid", "Enter valid communication email addresses."));
+        return;
+      }
+      if (canEditAll) {
+        const { error: communicationError } = await supabase.from("company_communication_profiles").upsert({
+          company_id: companyId,
+          finance_email: normalizedFinanceEmail || null,
+          invitation_reply_to_email: normalizedInvitationEmail || null,
+          updated_by: (await supabase.auth.getUser()).data.user?.id || null,
+        }, { onConflict: "company_id" });
+        if (communicationError) throw communicationError;
+        setCommunicationProfile({ finance_email: normalizedFinanceEmail, invitation_reply_to_email: normalizedInvitationEmail });
       }
 
       const { data: updated, error } = await supabase.rpc(
@@ -2145,6 +2179,29 @@ function Settings() {
             </div>
           </div>
 
+          <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/15 p-4 space-y-4">
+            <div>
+              <div className="text-sm font-medium">{tt("settings.communicationIdentity.title", "Email identity and replies")}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{tt("settings.communicationIdentity.help", "StockWise uses its verified sending address while the company name and Reply-To identify the business.")}</div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <Label>{tt("settings.communicationIdentity.financeEmail", "Finance and collections email")}</Label>
+                <Input type="email" value={communicationProfile.finance_email} onChange={(event) => setCommunicationProfile((current) => ({ ...current, finance_email: event.target.value }))} placeholder="finance@example.com" disabled={!canEditAll} />
+              </div>
+              <div>
+                <Label>{tt("settings.communicationIdentity.invitationEmail", "Invitation Reply-To email")}</Label>
+                <Input type="email" value={communicationProfile.invitation_reply_to_email} onChange={(event) => setCommunicationProfile((current) => ({ ...current, invitation_reply_to_email: event.target.value }))} placeholder={profile?.email || "team@example.com"} disabled={!canEditAll} />
+              </div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background p-3 text-sm space-y-1">
+              <div><span className="text-muted-foreground">From: </span>{profile?.trade_name || profile?.legal_name || "Company"} &lt;notifications@stockwiseapp.com&gt;</div>
+              <div><span className="text-muted-foreground">Reply-To: </span>{profile?.trade_name || profile?.legal_name || "Company"} — {lang === "pt" ? "Financeiro" : "Finance"} &lt;{communicationProfile.finance_email || profile?.email || "StockWise fallback"}&gt;</div>
+              <div><span className="text-muted-foreground">Subject: </span>{profile?.trade_name || profile?.legal_name || "Company"} — {lang === "pt" ? "A Fatura LEN-INV0004 vence dentro de 3 dias" : "Invoice LEN-INV0004 is due in 3 days"}</div>
+              <div className="pt-1 text-xs text-muted-foreground">{tt("settings.communicationIdentity.technicalSender", "The technical sender remains the verified StockWise address. Empty Reply-To fields fall back to the company email, then StockWise support.")}</div>
+            </div>
+          </div>
+
           <div className="md:col-span-2 space-y-3">
             <div>
               <Label>{t("settings.dueReminders.leadDays")}</Label>
@@ -2154,6 +2211,13 @@ function Settings() {
                   "Choose when reminders should go out before, on, or after the due date."
                 )}
               </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-background p-3">
+              <div className="text-xs text-muted-foreground">{tt("settings.dueReminders.preset.help", "Recommended: 7, 3 and 1 days before; due today; 3, 15 and 30 days overdue.")}</div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setReminderLeadDays([7, 3, 1, 0, -3, -15, -30])} disabled={!canEditDueReminders}>
+                {tt("settings.dueReminders.preset.apply", "Apply recommended preset")}
+              </Button>
             </div>
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)]">
