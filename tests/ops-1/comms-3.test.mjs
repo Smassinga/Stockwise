@@ -80,6 +80,9 @@ test('settings preserve offsets and require explicit preset application', () => 
 
 test('Template Lab exposes identity and all seven lifecycle scenarios', () => {
   assert.match(lab, /identity/); assert.match(lab, /reminderStage/); assert.match(lab, /stage_offset_days/)
+  assert.match(lab, /language === "pt" \? "15 de Agosto de 2026" : "15 August 2026"/)
+  assert.match(lab, /language === "pt" \? "31 de Julho de 2026" : "31 July 2026"/)
+  assert.match(lab, /documentReference: "QA-INV-0002"/)
   for (const offset of [7,3,1,0,-3,-15,-30]) assert.match(labUi, new RegExp(`['\"]?${offset}['\"]?`))
 })
 
