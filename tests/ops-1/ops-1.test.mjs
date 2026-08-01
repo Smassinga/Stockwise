@@ -111,6 +111,7 @@ test('email templates provide EN and PT renderers with versions', () => { assert
 test('report-ready email uses its reporting period instead of a synthetic due date', () => { assert.match(templates, /key === "report_ready" && input\.period/); assert.match(templates, /key !== "report_ready"/); assert.match(templates, /key === "report_ready" \? 2 : 1/) })
 test('shared email layout provides QA banner and plain fallback', () => { assert.match(emailLayout, /StockWise email test/); assert.match(emailLayout, /Teste de email do StockWise/) })
 test('template lab is platform-admin gated and recipient restricted', () => { assert.match(templateLab, /platform.admin|platform_admin/i); assert.match(templateLab, /EMAIL_QA_ALLOWED_RECIPIENTS/) })
+test('template lab records each provider acceptance exactly once through the shared mailer', () => { assert.match(templateLab, /templateVersion:\s*rendered\.templateVersion,\s*language,\s*qa:\s*true/); assert.doesNotMatch(templateLab, /admin\.rpc\(["']record_mail_dispatch_event/); assert.equal((templateLab.match(/sendTransactionalEmail\(/g) || []).length, 1) })
 test('dispatch evidence excludes rendered HTML', () => { assert.match(dispatch, /mail_dispatch_events/); assert.doesNotMatch(dispatch, /html\s+text|body_html/i) })
 test('dispatch evidence is force-RLS protected', () => assert.match(dispatch, /force row level security/i))
 

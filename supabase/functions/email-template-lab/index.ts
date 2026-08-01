@@ -6,7 +6,6 @@ import type { EmailLanguage } from "../_shared/emailMoney.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "";
 const allowedRecipients = new Set((Deno.env.get("EMAIL_QA_ALLOWED_RECIPIENTS") || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean));
 const configuredSiteUrl = (Deno.env.get("PUBLIC_SITE_URL") || "").replace(/\/+$/, "");
 const allowedOrigins = new Set([
@@ -41,7 +40,6 @@ serve(async (req) => {
     if (adminError || !isAdmin) return json({ error: "platform_admin_required" }, 403);
     const body = await req.json();
     const mode = body.mode === "send" ? "send" : body.mode === "recent" ? "recent" : body.mode === "list" ? "list" : "preview";
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     if (mode === "list") return json({ templates: EMAIL_TEMPLATE_KEYS.map((key) => ({ key, version: EMAIL_TEMPLATES[key].version, languages: EMAIL_TEMPLATES[key].supportedLanguages })) });
     if (mode === "recent") {
       const { data, error } = await userClient.rpc("platform_admin_list_mail_dispatches", { p_limit: 100 });
@@ -91,8 +89,11 @@ serve(async (req) => {
     if (mode === "preview") return json({ rendered });
     if (!recipient || !allowedRecipients.has(recipient)) return json({ error: "qa_recipient_not_allowed" }, 403);
     requireMailConfig(getMailConfig());
-    const result = await sendTransactionalEmail({ to: [recipient], subject: rendered.subject, html: rendered.html, text: rendered.text }, getMailConfig(), { notificationType: key, workerId: "email-template-lab" });
-    await admin.rpc("record_mail_dispatch_event", { p_event: { worker: "email-template-lab", template_key: key, template_version: rendered.templateVersion, language, recipient, subject: rendered.subject, status: "accepted", provider: "brevo_smtp", provider_message_id: result.messageId || null, attempt: 1, qa: true } });
+    const result = await sendTransactionalEmail(
+      { to: [recipient], subject: rendered.subject, html: rendered.html, text: rendered.text },
+      getMailConfig(),
+      { notificationType: key, workerId: "email-template-lab", templateVersion: rendered.templateVersion, language, qa: true },
+    );
     return json({ accepted: true, provider: "Brevo SMTP", providerMessageId: result.messageId || null, templateKey: key, templateVersion: rendered.templateVersion, language, subject: rendered.subject, recipient, timestamp: new Date().toISOString() });
   } catch (error) {
     return json({ error: "template_lab_failed", message: error instanceof Error ? error.message : String(error) }, 500);
