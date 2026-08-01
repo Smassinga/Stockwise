@@ -1,6 +1,6 @@
 # Email template catalogue
 
-The maintained content and payload rules are defined in [EMAIL_CONTENT_ARCHITECTURE.md](./EMAIL_CONTENT_ARCHITECTURE.md). COMMS-2 versions are invitation v2, report v3, digest v2, both reminders v3, and all company-access templates v2. Each family owns a discriminated payload and template-specific summary; the former universal optional-field payload is retired.
+The maintained content and payload rules are defined in [EMAIL_CONTENT_ARCHITECTURE.md](./EMAIL_CONTENT_ARCHITECTURE.md). COMMS-3 versions are invitation v3, report v4, digest v3, both reminders v4, and all company-access templates v3. Each family owns a discriminated payload and template-specific summary; the former universal optional-field payload is retired. Historical dispatch rows retain their original versions.
 
 All maintained application templates support EN/PT:
 

@@ -45,3 +45,11 @@ English and Mozambican Portuguese are authored per template. MZN remains ISO-cod
 ## Template Lab
 
 The platform-admin-only lab owns one isolated synthetic scenario per family. Preview metadata exposes the template version, semantic variant, required fields, and scenario label. The existing recipient allowlist, authentication, rate limiting, shared Brevo transport, and private dispatch audit remain authoritative.
+
+## COMMS-3 identity and versions
+
+`resolveEmailIdentity(...)` is the single authority for the visible sender, verified technical sender, Reply-To routing, subject company label, and identity category. Commercial mail uses the company trading name and finance/general Reply-To; internal intelligence uses `StockWise for {company}`; invitations use `{company} via StockWise`; access mail remains `StockWise`. The technical From address always remains the verified StockWise address.
+
+Every company-context subject begins with the company label. QA subjects put `[StockWise QA]` before that label. Company-originated bodies state that StockWise sent the message on the company’s behalf. Private dispatch evidence snapshots the resolved identity without storing rendered HTML.
+
+COMMS-3 versions are invitation v3, report v4, digest v3, both reminder families v4, and access families v3. Older dispatch evidence keeps its historical version.

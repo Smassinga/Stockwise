@@ -101,3 +101,13 @@ curl -i -X POST \
   "https://your-project.supabase.co/functions/v1/due-reminder-worker" \
   -H "X-Webhook-Secret: your-secret-key"
 ```
+
+## COMMS-3 adaptive lifecycle
+
+Configured offsets use positive values before due, zero for due today, and negative values after due. Existing company offsets are preserved. The recommended `7, 3, 1, 0, -3, -15, -30` preset is applied only by an explicit Settings action.
+
+`build_adaptive_due_reminder_batch(...)` retains `build_due_reminder_batch(...)` as the active-anchor and outstanding-balance authority. It selects only the latest crossed configured stage: missed stages never cascade and at most one currently relevant stage is returned for an anchor. The worker rechecks eligibility immediately before send.
+
+`app.due_reminder_stage_dispatches` records one logical stage for company, anchor, due-date snapshot, offset, recipient, and language. Atomic reservation prevents concurrent workers from sending the same stage. Accepted stages cannot be reclaimed; failed or stale processing retries the same row. A due-date change creates a new version and supersedes unfinished stages for the former date.
+
+Tone mapping is friendly at seven or more days before due, gentle urgency before due, action required on the date, overdue through seven days late, and escalated thereafter. EN/PT subjects and body copy use the exact relative state without threats or unsupported legal claims.

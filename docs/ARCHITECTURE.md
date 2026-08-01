@@ -352,3 +352,7 @@ The production rollout applied migration `20260729143000` after the linked dry r
 `/service-jobs` is the operational workspace for Sales Order-backed service work. The UI reads company-scoped tables/views and sends every lifecycle or cost mutation through governed RPCs. Execution and costing are separate state machines: completion establishes service revenue timing, while owner/admin finalisation establishes actual-cost truth. Reopen actions require reasons and preserve event/evidence history.
 
 The service package reuses canonical stock movements, WAC, UoMs, posting requests, Sales Orders, Vendor Bill legal totals, company membership, and the existing owner-dashboard JSON contract. It does not introduce a General Ledger, payroll, legal-document issuance, payment mutation, or service-cost estimation engine.
+
+## Communication lifecycle
+
+Application email identity is resolved centrally: one verified StockWise technical sender, company-aware display names and subjects, governed Reply-To fallbacks, and immutable private dispatch snapshots. Due reminders retain the active receivable anchor and use a durable adaptive-stage ledger so missed schedules select one relevant stage and concurrent workers cannot duplicate accepted mail.

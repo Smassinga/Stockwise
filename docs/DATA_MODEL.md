@@ -392,3 +392,7 @@ Migrations `20260729212931` and `20260729214142` move the linked ledger to 48. E
 `service_jobs_register` and `service_job_sales_order_readiness` expose bounded operational reads. Job references come from an atomic company counter. Active line ownership is unique; idempotency keys protect stock issue/reversal and finalisation paths. Material and direct-cost corrections append reversals. Vendor allocations lock approved posted bill lines, cannot exceed line or current legal totals, and never create or change AP.
 
 The maintained dashboard contract remains additive: service revenue is completion-dated, finalised service cost becomes COGS, and open service costing increments missing-cost evidence so profit is unavailable rather than invented.
+
+## Communication identity and reminder stages
+
+`company_communication_profiles` stores normalized finance and invitation Reply-To routing under company RLS and FORCE RLS. `app.due_reminder_stage_dispatches` privately versions, atomically claims, retries, and audits each reminder stage without storing rendered email HTML. Dispatch audit rows snapshot From, Reply-To, identity category, company ID, and company name while preserving historical rows.
