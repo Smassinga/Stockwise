@@ -28,6 +28,9 @@ const salesOrdersPage = await read('src/pages/Orders/SalesOrders.tsx')
 const templates = await read('supabase/functions/_shared/emailTemplates.ts')
 const emailLayout = await read('supabase/functions/_shared/emailLayout.ts')
 const templateLab = await read('supabase/functions/email-template-lab/index.ts')
+assert.match(templateLab, /https:\/\/stockwiseapp\.com/, 'template lab allows the production StockWise origin')
+assert.match(templateLab, /allowedOrigins\.has\(origin\) \? origin/, 'template lab returns CORS only for maintained origins')
+assert.match(templateLab, /"Vary": "Origin"/, 'template lab varies cached CORS responses by origin')
 const notificationPage = await read('src/pages/Notifications.tsx')
 const {
   StaleChunkError,
