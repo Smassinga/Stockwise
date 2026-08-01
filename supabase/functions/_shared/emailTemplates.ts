@@ -60,5 +60,5 @@ function definition(key: EmailTemplateKey, version: number): EmailTemplateDefini
   }};
 }
 
-export const EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefinition> = Object.fromEntries(EMAIL_TEMPLATE_KEYS.map((key) => [key,definition(key,key === "report_ready" ? 2 : 1)])) as Record<EmailTemplateKey,EmailTemplateDefinition>;
+export const EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefinition> = Object.fromEntries(EMAIL_TEMPLATE_KEYS.map((key) => [key,definition(key,key === "report_ready" || key.startsWith("due_reminder_") ? 2 : 1)])) as Record<EmailTemplateKey,EmailTemplateDefinition>;
 export function renderEmailTemplate(key: EmailTemplateKey, language: EmailLanguage, input: EmailTemplateInput, qa = false) { return EMAIL_TEMPLATES[key].render(language,input,qa); }
