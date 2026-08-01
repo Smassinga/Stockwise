@@ -3,6 +3,13 @@ import type { PaymentReceipt } from './operatorSale'
 import { formatMoneyBase } from './currency'
 
 export type ReceiptPaper = '58mm' | '80mm' | 'a4'
+export type ReceiptPrintResult =
+  | { ok: true }
+  | { ok: false; reason: 'popup_blocked' | 'print_window_failed' }
+
+type ReceiptPrintOptions = {
+  onPrintWindowFailure?: (error: unknown) => void
+}
 
 const escapeHtml = (value: unknown) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -58,13 +65,39 @@ export function receiptHtml(receipt: PaymentReceipt, locale: Locale, paper: Rece
   </main></body></html>`
 }
 
-export function printReceipt(receipt: PaymentReceipt, locale: Locale, paper: ReceiptPaper = '80mm') {
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=520,height=760')
-  if (!popup) throw new Error(locale === 'pt' ? 'Permita janelas pop-up para imprimir o recibo.' : 'Allow pop-ups to print the receipt.')
-  popup.document.open()
-  popup.document.write(receiptHtml(receipt, locale, paper))
-  popup.document.close()
-  popup.addEventListener('load', () => { popup.focus(); popup.print() }, { once: true })
+export function printReceipt(
+  receipt: PaymentReceipt,
+  locale: Locale,
+  paper: ReceiptPaper = '80mm',
+  options: ReceiptPrintOptions = {},
+): ReceiptPrintResult {
+  // This must remain synchronous with the user's click so browsers can make
+  // their normal popup decision before any other work occurs.
+  const popup = window.open('', '_blank', 'width=520,height=760')
+  if (!popup) return { ok: false, reason: 'popup_blocked' }
+
+  try {
+    // Retain a usable WindowProxy while immediately removing access to the
+    // parent browsing context.
+    try { popup.opener = null } catch { /* Browser-enforced isolation is sufficient. */ }
+
+    popup.document.open()
+    popup.document.write(receiptHtml(receipt, locale, paper))
+    popup.document.close()
+    popup.addEventListener('load', () => {
+      try {
+        popup.focus()
+        popup.print()
+      } catch (error) {
+        options.onPrintWindowFailure?.(error)
+      }
+    }, { once: true })
+    return { ok: true }
+  } catch (error) {
+    try { popup.close() } catch { /* Best-effort cleanup only. */ }
+    options.onPrintWindowFailure?.(error)
+    return { ok: false, reason: 'print_window_failed' }
+  }
 }
 
 export async function saveReceiptPdf(receipt: PaymentReceipt, locale: Locale) {

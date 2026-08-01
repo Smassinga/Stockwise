@@ -41,7 +41,7 @@ import {
 } from 'lucide-react'
 import { getBaseCurrencyCode } from '../lib/currency'
 import { formatMoneyBase } from '../lib/currency'
-import { printReceipt, saveReceiptPdf } from '../lib/receiptOutput'
+import { useReceiptOutput } from '../hooks/useReceiptOutput'
 
 type WarehouseRow = {
   id: string
@@ -307,6 +307,7 @@ function formatQty(value: number) {
 export default function Operator() {
   const { companyId, myRole } = useOrg()
   const { lang } = useI18n()
+  const { requestPrint, requestPdf } = useReceiptOutput()
   const copy = copyByLang[lang]
   const canPost = can.createMovement(myRole)
   const canConfigureTax = ['OWNER', 'ADMIN'].includes(String(myRole || '').toUpperCase())
@@ -1119,13 +1120,13 @@ export default function Operator() {
             <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-5">
               <Button type="button" size="sm" disabled={!lastSale.receipt} onClick={() => {
                 if (!lastSale.receipt) return toast.error(copy.receiptUnavailable)
-                try { printReceipt(lastSale.receipt, lang, '80mm') } catch (error) { toast.error(error instanceof Error ? error.message : copy.receiptUnavailable) }
+                requestPrint(lastSale.receipt, '80mm', completionOpen ? 'operator_completion' : 'print_last_receipt')
               }}>
                 <Printer className="mr-2 h-4 w-4" />{completionOpen ? copy.printReceipt : copy.printLastReceipt}
               </Button>
               <Button type="button" size="sm" variant="outline" disabled={!lastSale.receipt} onClick={() => {
                 if (!lastSale.receipt) return toast.error(copy.receiptUnavailable)
-                void saveReceiptPdf(lastSale.receipt, lang).catch((error) => toast.error(error instanceof Error ? error.message : copy.receiptUnavailable))
+                void requestPdf(lastSale.receipt, completionOpen ? 'operator_completion' : 'print_last_receipt')
               }}>
                 <Download className="mr-2 h-4 w-4" />{copy.savePdf}
               </Button>

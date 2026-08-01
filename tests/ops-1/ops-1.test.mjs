@@ -11,6 +11,11 @@ const dispatch = await read('supabase/migrations/20260731104537_mail_dispatch_au
 const notifications = await read('supabase/migrations/20260731110051_actionable_notification_events.sql')
 const receiptOutput = await read('src/lib/receiptOutput.ts')
 const receiptActions = await read('src/components/receipts/ReceiptActions.tsx')
+const receiptHandler = await read('src/hooks/useReceiptOutput.ts')
+const lazyCore = await read('src/lib/lazyRecoveryCore.ts')
+const lazyWrapper = await read('src/lib/lazyWithRecovery.ts')
+const routeBoundary = await read('src/components/RouteErrorBoundary.tsx')
+const app = await read('src/App.tsx')
 const reportPage = await read('src/pages/Reports.tsx')
 const excel = await read('src/lib/excelExport.ts')
 const currency = await read('src/lib/currency.ts')
@@ -23,16 +28,53 @@ const templates = await read('supabase/functions/_shared/emailTemplates.ts')
 const emailLayout = await read('supabase/functions/_shared/emailLayout.ts')
 const templateLab = await read('supabase/functions/email-template-lab/index.ts')
 const notificationPage = await read('src/pages/Notifications.tsx')
+const {
+  StaleChunkError,
+  importWithRecovery,
+  isChunkLoadFailure,
+  lazyRecoveryMarkerKey,
+} = await import('../../src/lib/lazyRecoveryCore.ts')
+
+function memoryStorage() {
+  const values = new Map()
+  return {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+    values,
+  }
+}
 
 test('receipt reference is server generated from a company sequence', () => assert.match(receipts, /payment_receipt_sequences[\s\S]+receipt_reference/))
 test('one authoritative receipt is unique per settlement', () => assert.match(receipts, /payment_receipts_settlement_unique unique \(settlement_channel, settlement_id\)/i))
 test('receipt issuance uses fixed search paths and restricted execution', () => { assert.match(receipts, /set search_path\s*=\s*pg_catalog,\s*public/i); assert.match(receipts, /revoke all on function/i) })
 test('receipt evidence is immutable and cannot be deleted', () => { assert.match(receipts, /payment_receipts_immutable/i); assert.match(receipts, /delete/i) })
 test('receipt supports non-fiscal wording and three print formats', () => { assert.match(receiptOutput, /Non-fiscal receipt/); assert.match(receiptOutput, /58mm/); assert.match(receiptOutput, /80mm/); assert.match(receiptOutput, /A4/) })
-test('receipt history exposes separate 58 mm and 80 mm print controls', () => { assert.match(receiptActions, /printReceipt\(receipt, lang, '58mm'\)/); assert.match(receiptActions, /printReceipt\(receipt, lang, '80mm'\)/); assert.match(receiptActions, /Print 58 mm/); assert.match(receiptActions, /Imprimir 80 mm/) })
+test('receipt history exposes separate handled 58 mm and 80 mm print controls', () => { assert.match(receiptActions, /requestPrint\(receipt, '58mm', 'receipt_history'\)/); assert.match(receiptActions, /requestPrint\(receipt, '80mm', 'receipt_history'\)/); assert.match(receiptActions, /Print 58 mm/); assert.match(receiptActions, /Imprimir 80 mm/) })
 test('A4 receipt PDF includes immutable line, identity and payment evidence', () => { assert.match(receiptOutput, /const lines = receipt\.line_evidence/); assert.match(receiptOutput, /refs\.sales_order/); assert.match(receiptOutput, /snapshotValue\(company, 'tax_id'\)/); assert.match(receiptOutput, /print_footer_note/); assert.match(receiptOutput, /formatMoneyBase\(Number\(line\.unit_price/); assert.doesNotMatch(receiptOutput, /amount tendered|change amount/i) })
 test('printing is separate from authoritative receipt creation', () => assert.doesNotMatch(receiptOutput, /operator_sale_post|insert\(/i))
 test('POS completion retains print-last evidence after Done', () => { assert.match(operatorPage, /lastSaleTitle: 'Sale completed'/); assert.match(operatorPage, /lastSaleTitle: 'Venda concluída'/); assert.match(operatorPage, /completionOpen \? copy\.printReceipt : copy\.printLastReceipt/); assert.match(operatorPage, /done: 'Done'/); assert.match(operatorPage, /done: 'Concluir'/); assert.match(operatorPage, /setCompletionOpen\(false\)/) })
+
+test('blocked receipt popups are a normal result and never throw', () => { assert.match(receiptOutput, /if \(!popup\) return \{ ok: false, reason: 'popup_blocked' \}/); assert.doesNotMatch(receiptOutput, /if \(!popup\) throw/); assert.match(receiptHandler, /result\.reason === 'popup_blocked'/) })
+test('receipt popup clears its opener and prints only after load', () => { assert.match(receiptOutput, /popup\.opener = null/); assert.match(receiptOutput, /addEventListener\('load'/); assert.match(receiptOutput, /\{ once: true \}/); assert.doesNotMatch(receiptOutput, /noopener,noreferrer/) })
+test('receipt print handling provides localized blocked and rendering feedback', () => { assert.match(receiptHandler, /Allow pop-ups to print the receipt\./); assert.match(receiptHandler, /Permita janelas pop-up para imprimir o recibo\./); assert.match(receiptHandler, /The receipt could not be prepared for printing\./); assert.match(receiptHandler, /Não foi possível preparar o recibo para impressão\./) })
+test('receipt output failures report safe context without payment payloads', () => { assert.match(receiptHandler, /receipt_reference/); assert.match(receiptHandler, /receipt_format/); assert.doesNotMatch(receiptHandler, /customer_snapshot|amount_received|destination_snapshot|settlement_id/) })
+test('receipt PDF rejection is caught and localized by every caller', () => { assert.match(receiptHandler, /try[\s\S]*await saveReceiptPdf[\s\S]*catch/); assert.match(receiptHandler, /The receipt PDF could not be generated\./); assert.match(receiptHandler, /Não foi possível gerar o PDF do recibo\./); assert.match(receiptActions, /void requestPdf/); assert.match(operatorPage, /void requestPdf/); assert.doesNotMatch(receiptActions, /void saveReceiptPdf/) })
+test('receipt viewing and printing remain mutation free', () => { for (const source of [receiptOutput, receiptHandler, receiptActions]) assert.doesNotMatch(source, /operator_sale_post|payment_settlements.*insert|stock_movements.*insert|payment_receipts.*insert/i) })
+
+test('lazy recovery recognizes only maintained stale chunk messages', () => { assert.match(lazyCore, /Failed to fetch dynamically imported module/); assert.match(lazyCore, /Importing a module script failed/); assert.match(lazyCore, /ChunkLoadError/); assert.match(lazyCore, /Loading chunk/); assert.match(lazyCore, /if \(!isChunkLoadFailure\(error\)\) throw error/) })
+test('lazy recovery classifier rejects unrelated application errors', () => { assert.equal(isChunkLoadFailure(new Error('Failed to fetch dynamically imported module: /assets/a.js')), true); assert.equal(isChunkLoadFailure(new Error('Application data request failed')), false) })
+test('successful lazy imports avoid reload and clear the scoped marker', async () => { const storage = memoryStorage(); const key = lazyRecoveryMarkerKey('Settlements', '/settlements', 'qa'); storage.setItem(key, JSON.stringify({ attemptedAt: 100 })); let reloads = 0; const loaded = await importWithRecovery('Settlements', async () => ({ default: 'ok' }), { pathname: '/settlements', release: 'qa', storage, reload: () => { reloads += 1 }, now: () => 101 }); assert.equal(loaded.default, 'ok'); assert.equal(reloads, 0); assert.equal(storage.getItem(key), null) })
+test('first stale chunk failure marks and reloads exactly once', async () => { const storage = memoryStorage(); let reloads = 0; void importWithRecovery('Settlements', async () => { throw new TypeError('Failed to fetch dynamically imported module: /assets/old.js') }, { pathname: '/settlements', release: 'qa', storage, reload: () => { reloads += 1 }, now: () => 200 }); await new Promise(resolve => setImmediate(resolve)); assert.equal(reloads, 1); assert.equal(storage.values.size, 1) })
+test('second stale chunk failure is controlled and never reloads', async () => { const storage = memoryStorage(); const key = lazyRecoveryMarkerKey('PlatformControl', '/platform-control', 'qa'); storage.setItem(key, JSON.stringify({ attemptedAt: 300 })); let reloads = 0; await assert.rejects(() => importWithRecovery('PlatformControl', async () => { throw new Error('ChunkLoadError') }, { pathname: '/platform-control', release: 'qa', storage, reload: () => { reloads += 1 }, now: () => 301 }), StaleChunkError); assert.equal(reloads, 0) })
+test('unrelated lazy import failures pass through unchanged', async () => { const storage = memoryStorage(); const original = new Error('Business module failed'); await assert.rejects(() => importWithRecovery('Reports', async () => { throw original }, { pathname: '/reports', release: 'qa', storage, reload: () => assert.fail('must not reload'), now: () => 400 }), error => error === original); assert.equal(storage.values.size, 0) })
+test('lazy recovery stores one short-lived marker before reload', () => { assert.match(lazyCore, /storage\.setItem\(markerKey/); assert.match(lazyCore, /runtime\.reload\(\)/); assert.ok(lazyCore.indexOf('storage.setItem(markerKey') < lazyCore.indexOf('runtime.reload()')); assert.match(lazyCore, /RECOVERY_TTL_MS/) })
+test('lazy recovery clears its marker after a successful import', () => assert.match(lazyCore, /const loaded = await importer\(\)[\s\S]*storage\.removeItem\(markerKey\)[\s\S]*return loaded/))
+test('a second chunk failure reaches the controlled boundary without another reload', () => { assert.match(lazyCore, /if \(readMarker\(runtime, markerKey\)\) throw new StaleChunkError/); assert.match(routeBoundary, /error instanceof StaleChunkError/); assert.match(routeBoundary, /lazy_route_recovery/) })
+test('lazy recovery marker contains no query, token or credential material', () => { assert.match(lazyWrapper, /pathname: window\.location\.pathname/); assert.doesNotMatch(lazyCore, /location\.search|token|credential|localStorage/i) })
+test('named route exports remain compatible with the recovery wrapper', () => { assert.match(app, /lazyWithRecovery\('Warehouses',[\s\S]*default: m\.Warehouses/); assert.match(app, /lazyWithRecovery\('Settings',[\s\S]*default: m\.Settings/) })
+test('every route-level lazy import uses the recovery wrapper', () => { assert.doesNotMatch(app, /\blazy\(\(\) => import/); for (const route of ['Dashboard', 'Operator', 'Reports', 'Orders', 'SalesInvoices', 'VendorBills', 'Settlements', 'PlatformControl', 'NotificationsPage']) assert.match(app, new RegExp(`lazyWithRecovery\\('${route}'`)) })
+test('route recovery screen is localized and accessible without raw asset details', () => { assert.match(routeBoundary, /App update available/); assert.match(routeBoundary, /Actualização da aplicação disponível/); assert.match(routeBoundary, /Reload to continue with the latest version/); assert.match(routeBoundary, /Recarregue para continuar com a versão mais recente/); assert.match(routeBoundary, /<h1/); assert.match(routeBoundary, /Go to dashboard/); assert.match(routeBoundary, /Ir para o dashboard/); assert.doesNotMatch(routeBoundary, /https?:\/\/|assets\//) })
 
 test('reports use one bounded authoritative RPC', () => { assert.match(reportPage, /get_operational_report/); assert.doesNotMatch(reportPage, /ordersSource|cashSource|cashSalesSource/) })
 test('performance reporting reuses owner dashboard authority', () => assert.match(reports, /get_owner_dashboard/))

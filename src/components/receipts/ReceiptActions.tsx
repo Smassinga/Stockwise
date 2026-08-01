@@ -4,9 +4,9 @@ import toast from 'react-hot-toast'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { useI18n } from '../../lib/i18n'
+import { useReceiptOutput } from '../../hooks/useReceiptOutput'
 import { supabase } from '../../lib/supabase'
 import type { PaymentReceipt } from '../../lib/operatorSale'
-import { printReceipt, saveReceiptPdf } from '../../lib/receiptOutput'
 import { formatMoneyBase } from '../../lib/currency'
 
 export function ReceiptActions({ salesOrderId, salesInvoiceId, settlementId, compact = false }: {
@@ -16,6 +16,7 @@ export function ReceiptActions({ salesOrderId, salesInvoiceId, settlementId, com
   compact?: boolean
 }) {
   const { lang } = useI18n()
+  const { requestPrint, requestPdf } = useReceiptOutput()
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([])
   const [loading, setLoading] = useState(true)
   const copy = lang === 'pt' ? {
@@ -55,10 +56,10 @@ export function ReceiptActions({ salesOrderId, salesInvoiceId, settlementId, com
             <div className="text-right text-sm"><div>{copy.received}: {formatMoneyBase(receipt.amount_received, receipt.currency_code, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div><div className="text-muted-foreground">{copy.balance}: {formatMoneyBase(receipt.remaining_balance, receipt.currency_code, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div></div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, 'a4')}><Eye className="mr-2 h-4 w-4" />{copy.view}</Button>
-            <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, '58mm')}><Printer className="mr-2 h-4 w-4" />{copy.print58}</Button>
-            <Button size="sm" variant="outline" onClick={() => printReceipt(receipt, lang, '80mm')}><Printer className="mr-2 h-4 w-4" />{copy.print80}</Button>
-            <Button size="sm" variant="outline" onClick={() => void saveReceiptPdf(receipt, lang)}><Download className="mr-2 h-4 w-4" />{copy.pdf}</Button>
+            <Button size="sm" variant="outline" onClick={() => requestPrint(receipt, 'a4', 'receipt_history')}><Eye className="mr-2 h-4 w-4" />{copy.view}</Button>
+            <Button size="sm" variant="outline" onClick={() => requestPrint(receipt, '58mm', 'receipt_history')}><Printer className="mr-2 h-4 w-4" />{copy.print58}</Button>
+            <Button size="sm" variant="outline" onClick={() => requestPrint(receipt, '80mm', 'receipt_history')}><Printer className="mr-2 h-4 w-4" />{copy.print80}</Button>
+            <Button size="sm" variant="outline" onClick={() => { void requestPdf(receipt, 'receipt_history') }}><Download className="mr-2 h-4 w-4" />{copy.pdf}</Button>
           </div>
         </div>
       ))}

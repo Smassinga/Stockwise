@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import RouteMetadata from './components/RouteMetadata'
 import { AppLayout } from './components/layout/AppLayout'
@@ -7,49 +7,51 @@ import { OrgProvider, useOrg } from './hooks/useOrg'
 import { getMyCompanyAccessState, getPlatformAdminStatus } from './lib/companyAccess'
 import { CanManageUsers } from './lib/roles'
 import { AppLoadingState } from './components/premium/AppLoadingState'
+import { RouteErrorBoundary } from './components/RouteErrorBoundary'
+import { lazyWithRecovery } from './lib/lazyWithRecovery'
 
-const LandingPage = lazy(() => import('./pages/LandingPage'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Items = lazy(() => import('./pages/Items'))
-const Operator = lazy(() => import('./pages/Operator'))
-const StockMovements = lazy(() => import('./pages/StockMovements'))
-const Reports = lazy(() => import('./pages/Reports'))
-const Warehouses = lazy(() => import('./pages/Warehouses').then((m) => ({ default: m.Warehouses })))
-const Users = lazy(() => import('./pages/Users'))
-const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })))
-const Orders = lazy(() => import('./pages/Orders'))
-const SalesInvoices = lazy(() => import('./pages/SalesInvoices'))
-const SalesInvoiceDetail = lazy(() => import('./pages/SalesInvoiceDetail'))
-const MozambiqueCompliance = lazy(() => import('./pages/MozambiqueCompliance'))
-const VendorBills = lazy(() => import('./pages/VendorBills'))
-const VendorBillDetail = lazy(() => import('./pages/VendorBillDetail'))
-const Settlements = lazy(() => import('./pages/Settlements'))
-const StockLevels = lazy(() => import('./pages/StockLevels'))
-const CurrencyPage = lazy(() => import('./pages/Currency'))
-const CustomersPage = lazy(() => import('./pages/Customers'))
-const SuppliersPage = lazy(() => import('./pages/Suppliers'))
-const BOMPage = lazy(() => import('./pages/BOM'))
-const ProductionRunsPage = lazy(() => import('./pages/ProductionRuns'))
-const GrowthBatchesPage = lazy(() => import('./pages/GrowthBatches'))
-const ServiceJobsPage = lazy(() => import('./pages/ServiceJobs'))
-const LandedCostPage = lazy(() => import('./pages/LandedCost'))
-const Auth = lazy(() => import('./pages/Auth'))
-const UomSettings = lazy(() => import('./pages/UomSettings'))
-const AuthCallback = lazy(() => import('./pages/AuthCallback'))
-const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
-const AcceptInvite = lazy(() => import('./pages/AcceptInvite'))
-const Onboarding = lazy(() => import('./pages/Onboarding'))
-const Transactions = lazy(() => import('./pages/Transactions'))
-const Cash = lazy(() => import('./pages/Cash'))
-const Banks = lazy(() => import('./pages/Banks'))
-const BankDetail = lazy(() => import('./pages/BankDetail'))
-const Profile = lazy(() => import('./pages/Profile'))
-const SearchResults = lazy(() => import('./pages/SearchResults'))
-const CompanyAccessStatus = lazy(() => import('./pages/CompanyAccessStatus'))
-const PaymentActivation = lazy(() => import('./pages/PaymentActivation'))
-const PlatformControl = lazy(() => import('./pages/PlatformControl'))
-const OpeningImport = lazy(() => import('./pages/OpeningImport'))
-const NotificationsPage = lazy(() => import('./pages/Notifications'))
+const LandingPage = lazyWithRecovery('LandingPage', () => import('./pages/LandingPage'))
+const Dashboard = lazyWithRecovery('Dashboard', () => import('./pages/Dashboard'))
+const Items = lazyWithRecovery('Items', () => import('./pages/Items'))
+const Operator = lazyWithRecovery('Operator', () => import('./pages/Operator'))
+const StockMovements = lazyWithRecovery('StockMovements', () => import('./pages/StockMovements'))
+const Reports = lazyWithRecovery('Reports', () => import('./pages/Reports'))
+const Warehouses = lazyWithRecovery('Warehouses', () => import('./pages/Warehouses').then((m) => ({ default: m.Warehouses })))
+const Users = lazyWithRecovery('Users', () => import('./pages/Users'))
+const Settings = lazyWithRecovery('Settings', () => import('./pages/Settings').then((m) => ({ default: m.Settings })))
+const Orders = lazyWithRecovery('Orders', () => import('./pages/Orders'))
+const SalesInvoices = lazyWithRecovery('SalesInvoices', () => import('./pages/SalesInvoices'))
+const SalesInvoiceDetail = lazyWithRecovery('SalesInvoiceDetail', () => import('./pages/SalesInvoiceDetail'))
+const MozambiqueCompliance = lazyWithRecovery('MozambiqueCompliance', () => import('./pages/MozambiqueCompliance'))
+const VendorBills = lazyWithRecovery('VendorBills', () => import('./pages/VendorBills'))
+const VendorBillDetail = lazyWithRecovery('VendorBillDetail', () => import('./pages/VendorBillDetail'))
+const Settlements = lazyWithRecovery('Settlements', () => import('./pages/Settlements'))
+const StockLevels = lazyWithRecovery('StockLevels', () => import('./pages/StockLevels'))
+const CurrencyPage = lazyWithRecovery('CurrencyPage', () => import('./pages/Currency'))
+const CustomersPage = lazyWithRecovery('CustomersPage', () => import('./pages/Customers'))
+const SuppliersPage = lazyWithRecovery('SuppliersPage', () => import('./pages/Suppliers'))
+const BOMPage = lazyWithRecovery('BOMPage', () => import('./pages/BOM'))
+const ProductionRunsPage = lazyWithRecovery('ProductionRunsPage', () => import('./pages/ProductionRuns'))
+const GrowthBatchesPage = lazyWithRecovery('GrowthBatchesPage', () => import('./pages/GrowthBatches'))
+const ServiceJobsPage = lazyWithRecovery('ServiceJobsPage', () => import('./pages/ServiceJobs'))
+const LandedCostPage = lazyWithRecovery('LandedCostPage', () => import('./pages/LandedCost'))
+const Auth = lazyWithRecovery('Auth', () => import('./pages/Auth'))
+const UomSettings = lazyWithRecovery('UomSettings', () => import('./pages/UomSettings'))
+const AuthCallback = lazyWithRecovery('AuthCallback', () => import('./pages/AuthCallback'))
+const UpdatePassword = lazyWithRecovery('UpdatePassword', () => import('./pages/UpdatePassword'))
+const AcceptInvite = lazyWithRecovery('AcceptInvite', () => import('./pages/AcceptInvite'))
+const Onboarding = lazyWithRecovery('Onboarding', () => import('./pages/Onboarding'))
+const Transactions = lazyWithRecovery('Transactions', () => import('./pages/Transactions'))
+const Cash = lazyWithRecovery('Cash', () => import('./pages/Cash'))
+const Banks = lazyWithRecovery('Banks', () => import('./pages/Banks'))
+const BankDetail = lazyWithRecovery('BankDetail', () => import('./pages/BankDetail'))
+const Profile = lazyWithRecovery('Profile', () => import('./pages/Profile'))
+const SearchResults = lazyWithRecovery('SearchResults', () => import('./pages/SearchResults'))
+const CompanyAccessStatus = lazyWithRecovery('CompanyAccessStatus', () => import('./pages/CompanyAccessStatus'))
+const PaymentActivation = lazyWithRecovery('PaymentActivation', () => import('./pages/PaymentActivation'))
+const PlatformControl = lazyWithRecovery('PlatformControl', () => import('./pages/PlatformControl'))
+const OpeningImport = lazyWithRecovery('OpeningImport', () => import('./pages/OpeningImport'))
+const NotificationsPage = lazyWithRecovery('NotificationsPage', () => import('./pages/Notifications'))
 
 function LoadingSplash() {
   return <AppLoadingState />
@@ -218,10 +220,12 @@ function LegacyOrderWorkspaceRedirect({ tab }: { tab: 'purchase' | 'sales' }) {
 }
 
 export default function App() {
+  const location = useLocation()
   return (
     <>
       <RouteMetadata />
-      <Routes>
+      <RouteErrorBoundary key={location.pathname}>
+        <Routes>
         <Route path="/" element={<Suspense fallback={<LoadingSplash />}><LandingPage /></Suspense>} />
 
         <Route path="/login" element={<PublicOnly />}>
@@ -292,7 +296,8 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<FallbackRoute />} />
-      </Routes>
+        </Routes>
+      </RouteErrorBoundary>
     </>
   )
 }
