@@ -6,6 +6,7 @@ import {
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
 import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
+import { resolveEmailIdentity } from "../_shared/emailIdentity.ts";
 
 type QueueRow = {
   id: number;
@@ -48,6 +49,9 @@ type BatchReminderRow = {
   sales_invoice_id?: string | null;
   sales_invoice_reference?: string | null;
   language_hint?: Lang | null;
+  stage_offset_days?: number | null;
+  relative_state?: "upcoming" | "due_tomorrow" | "due_today" | "overdue" | null;
+  tone?: "friendly" | "gentle_urgency" | "action_required" | "overdue" | "escalated" | null;
   so_id?: string | null;
   so_code?: string | null;
   _currency?: string | null;
@@ -125,6 +129,9 @@ type NormalizedReminder = {
   salesInvoiceId: string | null;
   salesInvoiceReference: string | null;
   languageHint: Lang | null;
+  stageOffsetDays: number;
+  relativeState: "upcoming" | "due_tomorrow" | "due_today" | "overdue";
+  tone: "friendly" | "gentle_urgency" | "action_required" | "overdue" | "escalated";
 };
 
 const MAIL = requireMailConfig(getMailConfig());
@@ -701,6 +708,9 @@ function normalizeBatchReminder(row: BatchReminderRow): NormalizedReminder | nul
     salesInvoiceId,
     salesInvoiceReference: trimText(row.sales_invoice_reference),
     languageHint: normalizeReminderLang(row.language_hint),
+    stageOffsetDays: Number(row.stage_offset_days ?? row.days_until_due ?? 0),
+    relativeState: row.relative_state || (Number(row.days_until_due) === 1 ? "due_tomorrow" : Number(row.days_until_due) === 0 ? "due_today" : Number(row.days_until_due) < 0 ? "overdue" : "upcoming"),
+    tone: row.tone || (Number(row.days_until_due) >= 7 ? "friendly" : Number(row.days_until_due) > 0 ? "gentle_urgency" : Number(row.days_until_due) === 0 ? "action_required" : Number(row.days_until_due) >= -7 ? "overdue" : "escalated"),
   };
 }
 
@@ -799,13 +809,13 @@ serve(async (req) => {
     claimedAttempts = Number(job.attempts ?? 0);
 
     const leadDays = job.payload?.lead_days?.length ? job.payload.lead_days : [3, 1, 0, -3];
-    const { data: batch, error: batchError } = await sb.rpc("build_due_reminder_batch", {
+    const { data: batch, error: batchError } = await sb.rpc("build_adaptive_due_reminder_batch", {
       p_company_id: job.company_id,
       p_local_day: job.run_for_local_date,
       p_timezone: job.timezone,
-      p_lead_days: leadDays,
+      p_stage_offsets: leadDays,
     });
-    if (batchError) throw new Error(`rpc.build_due_reminder_batch: ${safeErr(batchError)}`);
+    if (batchError) throw new Error(`rpc.build_adaptive_due_reminder_batch: ${safeErr(batchError)}`);
     const reminderBatch = (batch as Batch) ?? { window: {} as Batch["window"], reminders: [] };
     const reminders = (reminderBatch.reminders || [])
       .map(normalizeBatchReminder)
@@ -909,6 +919,15 @@ serve(async (req) => {
     }
     const settingsData = (settingsRow?.data ?? {}) as any;
     const settingsDue = settingsData?.dueReminders ?? {};
+    const currentLeadDays = Array.isArray(settingsDue?.leadDays) && settingsDue.leadDays.length
+      ? settingsDue.leadDays.map(Number).filter(Number.isInteger)
+      : leadDays;
+    const { data: communicationProfile, error: communicationError } = await sb
+      .from("company_communication_profiles")
+      .select("finance_email,invitation_reply_to_email")
+      .eq("company_id", job.company_id)
+      .maybeSingle();
+    if (communicationError) throw new Error(`communication_profile.lookup: ${safeErr(communicationError)}`);
     const defaultLang =
       normalizeReminderLang(job.payload?.lang) ||
       normalizeReminderLang(company.preferred_lang) ||
@@ -926,12 +945,25 @@ serve(async (req) => {
 
     let sent = 0;
     for (const row of reminders) {
+      if (settingsDue.enabled === false || !currentLeadDays.includes(row.stageOffsetDays)) continue;
       const to = overrideRecipients.length
         ? overrideRecipients
         : row.email && /\S+@\S+\.\S+/.test(row.email)
           ? [row.email]
           : [];
       if (!to.length) continue;
+
+      if (!DRY_RUN) {
+        const { data: eligibilityBatch, error: eligibilityError } = await sb.rpc("build_adaptive_due_reminder_batch", {
+          p_company_id: job.company_id, p_local_day: job.run_for_local_date, p_timezone: job.timezone, p_stage_offsets: currentLeadDays,
+        });
+        if (eligibilityError) throw new Error(`eligibility.recheck: ${safeErr(eligibilityError)}`);
+        const eligibleCandidate = ((eligibilityBatch as Batch)?.reminders || []).find((candidate) =>
+          trimText(candidate.anchor_id) === row.anchorId && candidate.due_date === row.dueDate && Number(candidate.stage_offset_days) === row.stageOffsetDays && Number(candidate.amount) > 0
+        );
+        if (!eligibleCandidate) continue;
+        row.amount = Number(eligibleCandidate.amount);
+      }
 
       const lang = row.languageHint || defaultLang;
       const copy = reminderCopy(lang, row.anchorKind);
@@ -941,14 +973,26 @@ serve(async (req) => {
       const viewDocumentUrl = buildAnchorViewUrl(documentBaseUrl, row);
       const previewText = copy.preview(row.documentReference, dueMeta.previewSuffix);
       const linkedOrderReference = row.anchorKind === "sales_invoice" ? row.salesOrderReference : null;
+      const templateKey = row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order";
+      const identity = resolveEmailIdentity({
+        templateKey,
+        company: { name: branding.companyName, email: trimText(company.email) },
+        communicationSettings: { financeEmail: trimText(communicationProfile?.finance_email), invitationReplyToEmail: trimText(communicationProfile?.invitation_reply_to_email) },
+        language: lang,
+        technicalFromEmail: MAIL.defaultFromEmail,
+        stockWiseReplyToEmail: MAIL.defaultReplyToEmail,
+        stockWiseReplyToName: MAIL.defaultReplyToName,
+      });
       const rendered = renderEmailTemplate(
-        row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order",
+        templateKey,
         lang,
         {
-          templateKey: row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order",
-          brand: { companyName: branding.companyName, logoUrl: branding.companyLogoUrl, contactEmail: branding.companySupportEmail, contactPhone: branding.companyPhone },
+          templateKey,
+          brand: { companyName: branding.companyName, logoUrl: branding.companyLogoUrl, contactEmail: branding.companySupportEmail, contactPhone: branding.companyPhone, subjectCompanyLabel: identity.subjectCompanyLabel, sentOnBehalfOf: true },
           recipientName: row.customerName ?? undefined, documentReference: row.documentReference,
           outstandingAmount: row.amount, currencyCode: row.currencyCode || "MZN", dueDate: dueDateFormatted,
+          linkedDocumentReference: linkedOrderReference || undefined,
+          stageOffsetDays: row.stageOffsetDays, daysUntilDue: row.daysUntilDue, relativeState: row.relativeState, tone: row.tone,
           actionUrl: viewDocumentUrl,
         },
       );
@@ -956,22 +1000,44 @@ serve(async (req) => {
 
       if (DRY_RUN) {
         log("[DRY_RUN] would send reminder", { to, subject, anchorKind: row.anchorKind, reference: row.documentReference });
+        sent++;
       } else {
-        await sendTransactionalEmail(
+        for (const recipient of to) {
+        const { data: stageRecord, error: reserveError } = await sb.rpc("reserve_due_reminder_stage", { p_event: {
+          company_id: job.company_id, anchor_kind: row.anchorKind, anchor_id: row.anchorId,
+          exposure_chain_id: row.salesOrderId, document_reference: row.documentReference,
+          due_date: row.dueDate, stage_offset_days: row.stageOffsetDays, relative_state: row.relativeState, tone: row.tone,
+          recipient, language: lang, outstanding_amount: row.amount, currency_code: row.currencyCode || "MZN",
+          from_name: identity.fromName, from_email: identity.fromEmail, reply_to_name: identity.replyToName,
+          reply_to_email: identity.replyToEmail, identity_category: identity.identityCategory, company_name: branding.companyName,
+        } });
+        if (reserveError) throw new Error(`stage.reserve: ${safeErr(reserveError)}`);
+        const stageId = (stageRecord as { id?: string } | null)?.id;
+        if (!stageId) continue;
+        try {
+          const result = await sendTransactionalEmail(
           {
-            to,
+            to: [recipient],
             bcc,
             subject,
             html,
             text,
-            fromName: branding.companyName,
-            replyTo: branding.companySupportEmail || MAIL.defaultReplyToEmail,
+            fromName: identity.fromName,
+            fromEmail: identity.fromEmail,
+            replyTo: identity.replyToEmail,
+            replyToName: identity.replyToName,
           },
           MAIL,
-          { notificationType: row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order", templateVersion: 3, language: lang, companyId: job.company_id, jobId: job.id, workerId: "due-reminder-worker" },
-        );
+          { notificationType: templateKey, templateVersion: 4, language: lang, companyId: job.company_id, companyNameSnapshot: branding.companyName, identityCategory: identity.identityCategory, jobId: stageId, workerId: "due-reminder-worker" },
+          );
+          await sb.rpc("finish_due_reminder_stage", { p_stage_id: stageId, p_status: "accepted", p_provider_message_id: result.messageId || null, p_dispatch_audit_id: result.dispatchIds?.[0] || null, p_reason: null });
+        } catch (sendError) {
+          await sb.rpc("finish_due_reminder_stage", { p_stage_id: stageId, p_status: "failed", p_provider_message_id: null, p_dispatch_audit_id: null, p_reason: "provider_send_failed" });
+          throw sendError;
+        }
+        sent++;
+        }
       }
-      sent++;
     }
 
     await updateDueReminderJob(
