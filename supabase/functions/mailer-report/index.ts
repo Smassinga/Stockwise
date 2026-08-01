@@ -6,6 +6,7 @@ import {
   requireMailConfig,
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
+import { resolveEmailIdentity } from "../_shared/emailIdentity.ts";
 import {
   enforceRateLimit,
   getClientIp,
@@ -195,20 +196,16 @@ serve(async (req) => {
       .maybeSingle();
     if (companyErr) throw companyErr;
 
-    const brandName =
-      company?.email_subject_prefix?.trim() ||
-      company?.trade_name?.trim() ||
-      company?.legal_name?.trim() ||
-      company?.name?.trim() ||
-      MAIL.defaultFromName ||
-      "StockWise";
     const companyName =
       company?.trade_name?.trim() ||
       company?.legal_name?.trim() ||
       company?.name?.trim() ||
       "Your company";
+    const { data: communicationProfile, error: communicationError } = await admin.from("company_communication_profiles").select("finance_email,invitation_reply_to_email").eq("company_id", companyId).maybeSingle();
+    if (communicationError) throw communicationError;
+    const identity = resolveEmailIdentity({ templateKey: "report_ready", reportAudience: "customer", company: { name: companyName, email: company?.email }, communicationSettings: { financeEmail: communicationProfile?.finance_email, invitationReplyToEmail: communicationProfile?.invitation_reply_to_email }, language, technicalFromEmail: MAIL.defaultFromEmail, stockWiseReplyToEmail: MAIL.defaultReplyToEmail, stockWiseReplyToName: MAIL.defaultReplyToName });
     const rendered = renderEmailTemplate("report_ready", language, {
-      templateKey: "report_ready", brand: { companyName, contactEmail: company?.email || MAIL.defaultReplyToEmail },
+      templateKey: "report_ready", brand: { companyName, contactEmail: company?.email || MAIL.defaultReplyToEmail, subjectCompanyLabel: identity.subjectCompanyLabel, sentOnBehalfOf: true },
       reportName: reportTitle, period: reportPeriod, actionUrl: downloadUrl, filters: message ? [message] : undefined,
     });
     const { subject, html, text } = rendered;
@@ -218,9 +215,11 @@ serve(async (req) => {
       subject,
       html,
       text,
-      fromName: brandName,
-      replyTo: company?.email || MAIL.defaultReplyToEmail,
-    }, MAIL, { notificationType: "report_ready", templateVersion: 3, language, companyId, workerId: "mailer-report" });
+      fromName: identity.fromName,
+      fromEmail: identity.fromEmail,
+      replyTo: identity.replyToEmail,
+      replyToName: identity.replyToName,
+    }, MAIL, { notificationType: "report_ready", templateVersion: 4, language, companyId, companyNameSnapshot: companyName, identityCategory: identity.identityCategory, workerId: "mailer-report" });
 
     return json({ ok: true, sent: to.length });
   } catch (error) {

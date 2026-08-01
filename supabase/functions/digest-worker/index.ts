@@ -9,6 +9,7 @@ import {
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
 import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
+import { resolveEmailIdentity } from "../_shared/emailIdentity.ts";
 
 type DigestQueueRow = {
   id: number;
@@ -459,14 +460,17 @@ serve(async (req: Request) => {
       .maybeSingle();
     const companyRow = (company || null) as CompanyRow | null;
     const brand = companyBrand(companyRow);
+    const { data: communicationProfile, error: communicationError } = await supabase.from("company_communication_profiles").select("finance_email,invitation_reply_to_email").eq("company_id", job.company_id).maybeSingle();
+    if (communicationError) throw new Error(`communication_profile.lookup: ${safeErr(communicationError)}`);
 
     const emails = job.payload?.recipients?.emails ?? [];
     const wantsEmail = job.payload?.channels?.email !== false;
     if (!emails.length || !wantsEmail) throw new Error("No email recipients configured for this job");
 
     const language = companyRow?.preferred_lang === "pt" ? "pt" : "en";
+    const identity = resolveEmailIdentity({ templateKey: "daily_digest", company: { name: brand, email: companyRow?.email }, communicationSettings: { financeEmail: communicationProfile?.finance_email, invitationReplyToEmail: communicationProfile?.invitation_reply_to_email }, language, technicalFromEmail: MAIL.defaultFromEmail, stockWiseReplyToEmail: MAIL.defaultReplyToEmail, stockWiseReplyToName: MAIL.defaultReplyToName });
     const rendered = renderEmailTemplate("daily_digest", language, {
-      templateKey: "daily_digest", brand: { companyName: brand, contactEmail: companyRow?.email, contactPhone: companyRow?.phone },
+      templateKey: "daily_digest", brand: { companyName: brand, contactEmail: companyRow?.email, contactPhone: companyRow?.phone, subjectCompanyLabel: identity.subjectCompanyLabel, sentOnBehalfOf: true },
       period: digest.window.local_day, actionUrl: `${MAIL.publicSiteUrl || "https://app.stockwise.co.mz"}/dashboard`,
       metrics: {
         operationalSales: digest.totals.revenue,
@@ -493,11 +497,13 @@ serve(async (req: Request) => {
             subject,
             html,
             text,
-            fromName: brand,
-            replyTo: companyRow?.email || MAIL.defaultReplyToEmail,
+            fromName: identity.fromName,
+            fromEmail: identity.fromEmail,
+            replyTo: identity.replyToEmail,
+            replyToName: identity.replyToName,
           },
           MAIL,
-          { notificationType: "daily_digest", templateVersion: 2, language, companyId: job.company_id, jobId: job.id, workerId: "digest-worker" },
+          { notificationType: "daily_digest", templateVersion: 3, language, companyId: job.company_id, companyNameSnapshot: brand, identityCategory: identity.identityCategory, jobId: job.id, workerId: "digest-worker" },
         );
     }
 

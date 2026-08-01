@@ -3,6 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
+import { resolveEmailIdentity, type ResolvedEmailIdentity } from "../_shared/emailIdentity.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   getMailConfig,
@@ -39,8 +40,6 @@ const ANON_KEY = Deno.env.get("SB_ANON_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY"
 
 const MAIL = requireMailConfig(getMailConfig());
 const MAIL_FROM = MAIL.defaultFromEmail || "no-reply@stockwiseapp.com";
-const MAIL_FROM_NAME = MAIL.defaultFromName || "StockWise";
-const MAIL_REPLY_TO = MAIL.defaultReplyToEmail || MAIL_FROM;
 const PUBLIC_SITE_URL = (MAIL.publicSiteUrl ?? "").replace(/\/+$/, "");
 const MAILER_ALLOWED_ORIGINS = (Deno.env.get("MAILER_ALLOWED_ORIGINS") ?? PUBLIC_SITE_URL)
   .split(",")
@@ -231,7 +230,7 @@ ${opts.inviteLink}
 If you cannot click, paste the link above into your browser.`;
 }
 
-async function sendInviteEmail(to: string, subject: string, html: string, text: string, language: "en" | "pt", companyId: string) {
+async function sendInviteEmail(to: string, subject: string, html: string, text: string, language: "en" | "pt", companyId: string, companyName: string, identity: ResolvedEmailIdentity) {
   if (!MAIL.smtpLogin || !MAIL.smtpKey || !MAIL_FROM) {
     return j(
       { error: "server_misconfigured", details: "BREVO_SMTP_LOGIN/BREVO_SMTP_KEY and/or BREVO_SENDER_EMAIL not set" },
@@ -245,10 +244,11 @@ async function sendInviteEmail(to: string, subject: string, html: string, text: 
       subject,
       html,
       text,
-      fromEmail: MAIL_FROM,
-      fromName: MAIL_FROM_NAME,
-      replyTo: MAIL_REPLY_TO,
-    }, MAIL, { notificationType: "member_invite", templateVersion: 2, language, companyId, workerId: "mailer-invite" });
+      fromEmail: identity.fromEmail,
+      fromName: identity.fromName,
+      replyTo: identity.replyToEmail,
+      replyToName: identity.replyToName,
+    }, MAIL, { notificationType: "member_invite", templateVersion: 3, language, companyId, companyNameSnapshot: companyName, identityCategory: identity.identityCategory, workerId: "mailer-invite" });
     return j({ ok: true });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -313,15 +313,23 @@ serve(async (req) => {
     if (invite.status === "disabled") return j({ error: "invite_disabled" }, 400);
     if (!canInviteRole(actorRole, invite.role)) return j({ error: "role_not_allowed" }, 403);
 
+    const [{ data: company, error: companyError }, { data: communicationProfile, error: communicationError }] = await Promise.all([
+      admin.from("companies").select("name,trade_name,legal_name,email").eq("id", companyId).single(),
+      admin.from("company_communication_profiles").select("finance_email,invitation_reply_to_email").eq("company_id", companyId).maybeSingle(),
+    ]);
+    if (companyError || communicationError) throw companyError || communicationError;
+    const authoritativeCompanyName = company?.trade_name?.trim() || company?.legal_name?.trim() || company?.name?.trim() || companyName;
+    const identity = resolveEmailIdentity({ templateKey: "member_invite", company: { name: authoritativeCompanyName, email: company?.email }, communicationSettings: { financeEmail: communicationProfile?.finance_email, invitationReplyToEmail: communicationProfile?.invitation_reply_to_email }, inviter: { name: inviterName, email: userEmail }, language, technicalFromEmail: MAIL.defaultFromEmail, stockWiseReplyToEmail: MAIL.defaultReplyToEmail, stockWiseReplyToName: MAIL.defaultReplyToName });
+
     const rendered = renderEmailTemplate("member_invite", language, {
-      templateKey: "member_invite", brand: { companyName, contactEmail: MAIL_REPLY_TO }, actionUrl: inviteLink,
+      templateKey: "member_invite", brand: { companyName: authoritativeCompanyName, contactEmail: identity.replyToEmail, subjectCompanyLabel: identity.subjectCompanyLabel, sentOnBehalfOf: true }, actionUrl: inviteLink,
       role: invite.role, inviterName: inviterName || undefined,
     });
     const { subject, html, text } = rendered;
 
     if (mode === "preview") return j({ ok: true, preview: { subject, text, html } });
 
-    return await sendInviteEmail(email, subject, html, text, language, companyId);
+    return await sendInviteEmail(email, subject, html, text, language, companyId, authoritativeCompanyName, identity);
   } catch (e) {
     if (e instanceof HttpError) {
       return j({ error: e.code, details: e.details }, e.status, { "x-error": e.code });

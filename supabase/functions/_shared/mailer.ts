@@ -25,6 +25,7 @@ export type TransactionalMail = {
   fromEmail?: string;
   fromName?: string;
   replyTo?: string | null;
+  replyToName?: string | null;
 };
 
 export type MailDispatchMeta = {
@@ -34,18 +35,26 @@ export type MailDispatchMeta = {
   templateVersion?: number;
   language?: "en" | "pt";
   companyId?: string | null;
+  companyNameSnapshot?: string | null;
+  identityCategory?: string | null;
   qa?: boolean;
 };
 
 async function recordDispatch(message: TransactionalMail, recipients: string[], config: MailConfig, meta: MailDispatchMeta, status: "accepted" | "failed", providerMessageId?: string | null, errorCategory?: string | null) {
   const url = Deno.env.get("SUPABASE_URL")?.trim();
   const key = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "").trim();
-  if (!url || !key || !meta.workerId || !meta.notificationType) return;
-  await Promise.all(recipients.map((recipient) => fetch(`${url}/rest/v1/rpc/record_mail_dispatch_event`, {
+  if (!url || !key || !meta.workerId || !meta.notificationType) return [];
+  const responses = await Promise.all(recipients.map((recipient) => fetch(`${url}/rest/v1/rpc/record_mail_dispatch_event`, {
     method: "POST",
     headers: { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ p_event: { company_id: meta.companyId || null, worker: meta.workerId, template_key: meta.notificationType, template_version: meta.templateVersion || 1, language: meta.language || "en", recipient, subject: message.subject, status, provider: config.provider, provider_message_id: providerMessageId || null, job_reference: meta.jobId == null ? null : String(meta.jobId), attempt: 1, error_category: errorCategory || null, qa: Boolean(meta.qa) } }),
+    body: JSON.stringify({ p_event: { company_id: meta.companyId || null, worker: meta.workerId, template_key: meta.notificationType, template_version: meta.templateVersion || 1, language: meta.language || "en", recipient, subject: message.subject, status, provider: config.provider, provider_message_id: providerMessageId || null, job_reference: meta.jobId == null ? null : String(meta.jobId), attempt: 1, error_category: errorCategory || null, qa: Boolean(meta.qa), from_name: message.fromName || config.defaultFromName, from_email: message.fromEmail || config.defaultFromEmail, reply_to_name: message.replyToName || config.defaultReplyToName || message.fromName || config.defaultFromName, reply_to_email: message.replyTo || config.defaultReplyToEmail, identity_category: meta.identityCategory || null, company_name_snapshot: meta.companyNameSnapshot || null } }),
   }).catch(() => undefined)));
+  const ids = await Promise.all(responses.map(async (response) => {
+    if (!response?.ok) return null;
+    const value = await response.json().catch(() => null);
+    return typeof value === "string" ? value : null;
+  }));
+  return ids.filter((value): value is string => Boolean(value));
 }
 
 function envFirst(...names: string[]) {
@@ -165,6 +174,7 @@ export async function sendTransactionalEmail(
   const bcc = normalizeEmails(message.bcc || []);
   const transporter = getTransporter(ready);
   const replyTo = (message.replyTo || ready.defaultReplyToEmail || "").trim();
+  const replyToName = (message.replyToName || ready.defaultReplyToName || message.fromName || ready.defaultFromName).trim();
 
   try {
     const info = await transporter.sendMail({
@@ -178,7 +188,7 @@ export async function sendTransactionalEmail(
         ? {
             replyTo: {
               address: replyTo,
-              name: ready.defaultReplyToName,
+              name: replyToName,
             },
           }
         : {}),
@@ -200,9 +210,9 @@ export async function sendTransactionalEmail(
       }),
     );
 
-    await recordDispatch(message, to, ready, meta, "accepted", info.messageId ?? null).catch(() => undefined);
+    const dispatchIds = await recordDispatch(message, to, ready, meta, "accepted", info.messageId ?? null).catch(() => [] as string[]);
 
-    return info;
+    return Object.assign(info, { dispatchIds });
   } catch (error) {
     await recordDispatch(message, to, ready, meta, "failed", null, "provider_rejected").catch(() => undefined);
     const messageText = safeErr(error);

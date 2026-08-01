@@ -42,7 +42,10 @@ export function renderEmailLayout(input: {
   const qaLabel = "TEST EMAIL";
   const qaCopy = pt ? "Este é um email de teste do StockWise. Não é necessária qualquer acção." : "This is a StockWise test email. No action is required.";
   const fallback = pt ? "Se o botão não funcionar, copie esta ligação:" : "If the button does not work, copy this link:";
-  const contact = [input.brand.contactEmail, input.brand.contactPhone].filter(Boolean).join(" · ");
+  const behalf = input.brand.sentOnBehalfOf
+    ? (pt ? `Enviado pelo StockWise em nome da ${input.brand.companyName}.` : `Sent by StockWise on behalf of ${input.brand.companyName}.`)
+    : null;
+  const contact = [behalf, input.brand.contactEmail, input.brand.contactPhone].filter(Boolean).join(" · ");
   const identity = input.brand.companyName || STOCKWISE_EMAIL_BRAND.name;
   const logo = input.brand.logoUrl
     ? `<img src="${escapeEmailHtml(input.brand.logoUrl)}" alt="${escapeEmailHtml(identity)} logo" style="display:block;max-width:176px;max-height:58px;width:auto;height:auto;margin:0 0 14px">`

@@ -14,6 +14,7 @@ import {
   requireText,
 } from "../_shared/security.ts";
 import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
+import { resolveEmailIdentity } from "../_shared/emailIdentity.ts";
 
 type Lang = "en" | "pt";
 type Mode = "preview" | "send";
@@ -504,12 +505,14 @@ serve(async (req) => {
     const detailRow = detail as CompanyAccessDetailRow;
     const language = normalizeLang(detailRow.company_preferred_lang);
     const registryKey = templateKey === "expiry_warning" ? "company_access_expiry" : templateKey === "purge_warning" ? "company_access_purge" : "company_access_activation";
+    const companyName = companyLabel(detailRow);
+    const identity = resolveEmailIdentity({ templateKey: registryKey, company: { name: companyName }, language, technicalFromEmail: MAIL.defaultFromEmail, stockWiseReplyToEmail: SUPPORT_EMAIL || MAIL.defaultReplyToEmail, stockWiseReplyToName: MAIL.defaultReplyToName });
     const sharedPrimaryDate = templateKey === "purge_warning"
       ? detailRow.purge_scheduled_at
       : templateKey === "activation_confirmation"
         ? detailRow.access_granted_at
         : resolveExpiryDate(detailRow);
-    const brand = { companyName: companyLabel(detailRow), contactEmail: SUPPORT_EMAIL };
+    const brand = { companyName, contactEmail: SUPPORT_EMAIL, subjectCompanyLabel: identity.subjectCompanyLabel };
     const planName = detailRow.plan_name || detailRow.plan_code;
     const actionUrl = PUBLIC_SITE_URL || undefined;
     const shared = registryKey === "company_access_expiry"
@@ -531,16 +534,19 @@ serve(async (req) => {
         subject: preview.subject,
         html: preview.html,
         text: preview.text,
-        fromEmail: MAIL.defaultFromEmail,
-        fromName: BRAND_NAME,
-        replyTo: SUPPORT_EMAIL,
+        fromEmail: identity.fromEmail,
+        fromName: identity.fromName,
+        replyTo: identity.replyToEmail,
+        replyToName: identity.replyToName,
       },
       MAIL,
       {
         notificationType: registryKey,
-        templateVersion: 2,
+        templateVersion: shared.templateVersion,
         language,
         companyId,
+        companyNameSnapshot: companyName,
+        identityCategory: identity.identityCategory,
         workerId: "mailer-company-access",
       },
     );

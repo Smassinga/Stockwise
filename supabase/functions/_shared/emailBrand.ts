@@ -4,6 +4,8 @@ export type EmailBrand = {
   logoUrl?: string | null;
   contactEmail?: string | null;
   contactPhone?: string | null;
+  subjectCompanyLabel?: string | null;
+  sentOnBehalfOf?: boolean;
 };
 
 export const STOCKWISE_EMAIL_BRAND = {
