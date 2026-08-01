@@ -48,7 +48,8 @@ function definition(key: EmailTemplateKey, version: number): EmailTemplateDefini
     const subject = `${qa ? "[StockWise QA] " : ""}${c.subject}`;
     const summary = Object.entries(input.metrics || {}).map(([label,value]) => ({ label, value: value == null ? (pt ? "Indisponível" : "Unavailable") : String(value) }));
     if (input.documentReference) summary.unshift({ label: pt ? "Referência" : "Reference", value: input.documentReference });
-    if (input.dueDate) summary.push({ label: pt ? "Data de vencimento" : "Due date", value: input.dueDate });
+    if (key === "report_ready" && input.period) summary.push({ label: pt ? "Período" : "Reporting period", value: input.period });
+    if (input.dueDate && key !== "report_ready") summary.push({ label: pt ? "Data de vencimento" : "Due date", value: input.dueDate });
     if (input.primaryDate && key.startsWith("company_access_")) summary.push({ label: key === "company_access_activation" ? (pt ? "Activa desde" : "Active from") : (pt ? "Data principal" : "Primary date"), value: input.primaryDate });
     if (input.secondaryDate && key.startsWith("company_access_")) summary.push({ label: pt ? "Activa até" : "Active until", value: input.secondaryDate });
     const html = renderEmailLayout({ language, brand: input.brand, heading: c.heading, intro: c.intro, body: c.body, summary, actionLabel: c.action, actionUrl: input.actionUrl, qa });
@@ -59,5 +60,5 @@ function definition(key: EmailTemplateKey, version: number): EmailTemplateDefini
   }};
 }
 
-export const EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefinition> = Object.fromEntries(EMAIL_TEMPLATE_KEYS.map((key) => [key,definition(key,1)])) as Record<EmailTemplateKey,EmailTemplateDefinition>;
+export const EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefinition> = Object.fromEntries(EMAIL_TEMPLATE_KEYS.map((key) => [key,definition(key,key === "report_ready" ? 2 : 1)])) as Record<EmailTemplateKey,EmailTemplateDefinition>;
 export function renderEmailTemplate(key: EmailTemplateKey, language: EmailLanguage, input: EmailTemplateInput, qa = false) { return EMAIL_TEMPLATES[key].render(language,input,qa); }

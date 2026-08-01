@@ -108,6 +108,7 @@ test('order workspaces pass the active EN or PT locale to money formatting', () 
 
 test('email registry contains every maintained template family', () => ['due_reminder_sales_order','due_reminder_sales_invoice','daily_digest','member_invite','report_ready','company_access_expiry','company_access_purge','company_access_activation'].forEach(key => assert.match(templates, new RegExp(key))))
 test('email templates provide EN and PT renderers with versions', () => { assert.match(templates, /supportedLanguages:\s*\[['"]en['"],\s*['"]pt['"]\]/); assert.match(templates, /version:/) })
+test('report-ready email uses its reporting period instead of a synthetic due date', () => { assert.match(templates, /key === "report_ready" && input\.period/); assert.match(templates, /key !== "report_ready"/); assert.match(templates, /key === "report_ready" \? 2 : 1/) })
 test('shared email layout provides QA banner and plain fallback', () => { assert.match(emailLayout, /StockWise email test/); assert.match(emailLayout, /Teste de email do StockWise/) })
 test('template lab is platform-admin gated and recipient restricted', () => { assert.match(templateLab, /platform.admin|platform_admin/i); assert.match(templateLab, /EMAIL_QA_ALLOWED_RECIPIENTS/) })
 test('dispatch evidence excludes rendered HTML', () => { assert.match(dispatch, /mail_dispatch_events/); assert.doesNotMatch(dispatch, /html\s+text|body_html/i) })
