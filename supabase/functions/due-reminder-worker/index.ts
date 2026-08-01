@@ -945,10 +945,11 @@ serve(async (req) => {
         row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order",
         lang,
         {
+          templateKey: row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order",
           brand: { companyName: branding.companyName, logoUrl: branding.companyLogoUrl, contactEmail: branding.companySupportEmail, contactPhone: branding.companyPhone },
           recipientName: row.customerName ?? undefined, documentReference: row.documentReference,
-          amount: row.amount, currencyCode: row.currencyCode || "MZN", dueDate: dueDateFormatted,
-          actionUrl: viewDocumentUrl, metrics: { Status: dueMeta.statusLabel, [copy.linkedOrderLabel]: linkedOrderReference || undefined },
+          outstandingAmount: row.amount, currencyCode: row.currencyCode || "MZN", dueDate: dueDateFormatted,
+          actionUrl: viewDocumentUrl,
         },
       );
       const { subject, html, text } = rendered;
@@ -967,7 +968,7 @@ serve(async (req) => {
             replyTo: branding.companySupportEmail || MAIL.defaultReplyToEmail,
           },
           MAIL,
-          { notificationType: row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order", templateVersion: 1, language: lang, companyId: job.company_id, jobId: job.id, workerId: "due-reminder-worker" },
+          { notificationType: row.anchorKind === "sales_invoice" ? "due_reminder_sales_invoice" : "due_reminder_sales_order", templateVersion: 3, language: lang, companyId: job.company_id, jobId: job.id, workerId: "due-reminder-worker" },
         );
       }
       sent++;

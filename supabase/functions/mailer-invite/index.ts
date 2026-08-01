@@ -248,7 +248,7 @@ async function sendInviteEmail(to: string, subject: string, html: string, text: 
       fromEmail: MAIL_FROM,
       fromName: MAIL_FROM_NAME,
       replyTo: MAIL_REPLY_TO,
-    }, MAIL, { notificationType: "member_invite", templateVersion: 1, language, companyId, workerId: "mailer-invite" });
+    }, MAIL, { notificationType: "member_invite", templateVersion: 2, language, companyId, workerId: "mailer-invite" });
     return j({ ok: true });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -314,8 +314,8 @@ serve(async (req) => {
     if (!canInviteRole(actorRole, invite.role)) return j({ error: "role_not_allowed" }, 403);
 
     const rendered = renderEmailTemplate("member_invite", language, {
-      brand: { companyName, contactEmail: MAIL_REPLY_TO }, actionUrl: inviteLink,
-      role: invite.role, recipientName: inviterName || undefined,
+      templateKey: "member_invite", brand: { companyName, contactEmail: MAIL_REPLY_TO }, actionUrl: inviteLink,
+      role: invite.role, inviterName: inviterName || undefined,
     });
     const { subject, html, text } = rendered;
 

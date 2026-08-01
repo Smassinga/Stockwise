@@ -509,13 +509,14 @@ serve(async (req) => {
       : templateKey === "activation_confirmation"
         ? detailRow.access_granted_at
         : resolveExpiryDate(detailRow);
-    const shared = renderEmailTemplate(registryKey, language, {
-      brand: { companyName: companyLabel(detailRow), contactEmail: SUPPORT_EMAIL },
-      planName: detailRow.plan_name || detailRow.plan_code,
-      primaryDate: sharedPrimaryDate ? formatDate(sharedPrimaryDate, language) : undefined,
-      secondaryDate: detailRow.paid_until ? formatDate(detailRow.paid_until, language) : undefined,
-      actionUrl: PUBLIC_SITE_URL || undefined,
-    });
+    const brand = { companyName: companyLabel(detailRow), contactEmail: SUPPORT_EMAIL };
+    const planName = detailRow.plan_name || detailRow.plan_code;
+    const actionUrl = PUBLIC_SITE_URL || undefined;
+    const shared = registryKey === "company_access_expiry"
+      ? renderEmailTemplate(registryKey, language, { templateKey: registryKey, brand, currentPlan: planName, accessEndsAt: formatDate(sharedPrimaryDate!, language), actionUrl, supportEmail: SUPPORT_EMAIL })
+      : registryKey === "company_access_purge"
+        ? renderEmailTemplate(registryKey, language, { templateKey: registryKey, brand, purgeAt: formatDate(sharedPrimaryDate!, language), accessEndedAt: resolveExpiryDate(detailRow) ? formatDate(resolveExpiryDate(detailRow)!, language) : undefined, actionUrl, supportEmail: SUPPORT_EMAIL })
+        : renderEmailTemplate(registryKey, language, { templateKey: registryKey, brand, planName, activeFrom: formatDate(sharedPrimaryDate!, language), activeUntil: formatDate(detailRow.paid_until!, language), actionUrl: PUBLIC_SITE_URL, supportEmail: SUPPORT_EMAIL });
     preview.subject = shared.subject;
     preview.html = shared.html;
     preview.text = shared.text;
@@ -537,7 +538,7 @@ serve(async (req) => {
       MAIL,
       {
         notificationType: registryKey,
-        templateVersion: 1,
+        templateVersion: 2,
         language,
         companyId,
         workerId: "mailer-company-access",

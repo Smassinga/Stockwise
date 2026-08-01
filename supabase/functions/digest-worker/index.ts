@@ -9,7 +9,6 @@ import {
   sendTransactionalEmail,
 } from "../_shared/mailer.ts";
 import { renderEmailTemplate } from "../_shared/emailTemplates.ts";
-import { formatEmailMoney } from "../_shared/emailMoney.ts";
 
 type DigestQueueRow = {
   id: number;
@@ -467,16 +466,20 @@ serve(async (req: Request) => {
 
     const language = companyRow?.preferred_lang === "pt" ? "pt" : "en";
     const rendered = renderEmailTemplate("daily_digest", language, {
-      brand: { companyName: brand, contactEmail: companyRow?.email, contactPhone: companyRow?.phone },
+      templateKey: "daily_digest", brand: { companyName: brand, contactEmail: companyRow?.email, contactPhone: companyRow?.phone },
       period: digest.window.local_day, actionUrl: `${MAIL.publicSiteUrl || "https://app.stockwise.co.mz"}/dashboard`,
       metrics: {
-        "Operational sales": formatEmailMoney(digest.totals.revenue, "MZN", language),
-        "COGS": formatEmailMoney(digest.totals.cogs, "MZN", language),
-        "Gross profit": Number.isFinite(digest.totals.gross_profit) ? formatEmailMoney(digest.totals.gross_profit, "MZN", language) : null,
-        "Gross margin": Number.isFinite(digest.totals.gross_margin_pct) ? `${digest.totals.gross_margin_pct.toFixed(1)}%` : null,
-        "Transactions": summary.transactions || 0,
-        "Open orders": summary.openOrders || 0,
-        "Missing cost evidence": summary.missingCostCount || 0,
+        operationalSales: digest.totals.revenue,
+        knownCogs: digest.totals.cogs,
+        grossProfit: Number.isFinite(digest.totals.gross_profit) ? digest.totals.gross_profit : null,
+        grossMargin: Number.isFinite(digest.totals.gross_margin_pct) ? digest.totals.gross_margin_pct : null,
+        transactions: summary.transactions || 0,
+        openOrders: summary.openOrders || 0,
+        lowStockItems: summary.lowStockItems || 0,
+        outOfStockItems: summary.outOfStockItems || 0,
+        missingCostEvidence: summary.missingCostCount || 0,
+        topProductsServices: digest.by_product.slice(0, 5).map((row) => row.item_label || row.item_name || row.item_sku || "").filter(Boolean),
+        currencyCode: "MZN",
       },
     });
     const { subject, html, text } = rendered;
@@ -494,7 +497,7 @@ serve(async (req: Request) => {
             replyTo: companyRow?.email || MAIL.defaultReplyToEmail,
           },
           MAIL,
-          { notificationType: "daily_digest", templateVersion: 1, language, companyId: job.company_id, jobId: job.id, workerId: "digest-worker" },
+          { notificationType: "daily_digest", templateVersion: 2, language, companyId: job.company_id, jobId: job.id, workerId: "digest-worker" },
         );
     }
 

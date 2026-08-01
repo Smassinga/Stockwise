@@ -208,8 +208,8 @@ serve(async (req) => {
       company?.name?.trim() ||
       "Your company";
     const rendered = renderEmailTemplate("report_ready", language, {
-      brand: { companyName, contactEmail: company?.email || MAIL.defaultReplyToEmail },
-      reportName: reportTitle, period: reportPeriod, actionUrl: downloadUrl, metrics: message ? { Message: message } : {},
+      templateKey: "report_ready", brand: { companyName, contactEmail: company?.email || MAIL.defaultReplyToEmail },
+      reportName: reportTitle, period: reportPeriod, actionUrl: downloadUrl, filters: message ? [message] : undefined,
     });
     const { subject, html, text } = rendered;
 
@@ -220,7 +220,7 @@ serve(async (req) => {
       text,
       fromName: brandName,
       replyTo: company?.email || MAIL.defaultReplyToEmail,
-    }, MAIL, { notificationType: "report_ready", templateVersion: 1, language, companyId, workerId: "mailer-report" });
+    }, MAIL, { notificationType: "report_ready", templateVersion: 3, language, companyId, workerId: "mailer-report" });
 
     return json({ ok: true, sent: to.length });
   } catch (error) {
