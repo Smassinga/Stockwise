@@ -17,6 +17,7 @@ import FinanceChainCard, { type FinanceChainItem } from '../components/finance/F
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { ReceiptActions } from '../components/receipts/ReceiptActions'
+import { CollectionsControlPanel } from '../components/collections/CollectionsControlPanel'
 import { useOrg } from '../hooks/useOrg'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
@@ -2254,6 +2255,16 @@ export default function SalesInvoiceDetailPage() {
             </Card>
 
             {!isDraft ? <div className="lg:col-span-2"><ReceiptActions salesInvoiceId={invoice.id} /></div> : null}
+            {invoice.document_workflow_status === 'issued' && companyId ? (
+              <div className="lg:col-span-2">
+                <CollectionsControlPanel
+                  companyId={companyId}
+                  anchorKind="sales_invoice"
+                  anchorId={invoice.id}
+                  role={myRole}
+                />
+              </div>
+            ) : null}
 
             {reconciliationRow || reconciliationExceptions.length > 0 ? (
               <Card className="border-border/80 shadow-sm lg:col-span-2">

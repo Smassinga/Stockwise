@@ -16,6 +16,7 @@ type PreviewMetadata = {
   scenarioLabel: string
   identity?: { fromName: string; fromEmail: string; replyToName: string; replyToEmail: string; identityCategory: string }
   reminderStage?: { offsetDays: number; dueDateVersion: string } | null
+  collections?: { collectionScenario: string; controlStatus: string; externalSendingAllowed: boolean; skipReason: string | null; activeAnchor: string; nextEligibleAction: string; promiseStatus?: string; disputeCategory?: string } | null
 }
 type Dispatch = { id: string; template_key: string; template_version: number; language: string; recipient: string; subject: string; status: string; created_at: string }
 
@@ -25,6 +26,7 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
   const [previewLanguage, setPreviewLanguage] = useState<'en' | 'pt'>(language)
   const [recipient, setRecipient] = useState('')
   const [stageOffsetDays, setStageOffsetDays] = useState('3')
+  const [collectionScenario, setCollectionScenario] = useState('active')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [previewMetadata, setPreviewMetadata] = useState<PreviewMetadata | null>(null)
   const [dispatches, setDispatches] = useState<Dispatch[]>([])
@@ -47,7 +49,7 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
   async function render() {
     setBusy(true)
     try {
-      const data = await invoke({ mode: 'preview', template_key: templateKey, language: previewLanguage, stage_offset_days: Number(stageOffsetDays) })
+      const data = await invoke({ mode: 'preview', template_key: templateKey, language: previewLanguage, stage_offset_days: Number(stageOffsetDays), collection_scenario: collectionScenario })
       setPreview(data.rendered)
       setPreviewMetadata(data.metadata)
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) } finally { setBusy(false) }
@@ -55,7 +57,7 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
   async function send() {
     setBusy(true)
     try {
-      const data = await invoke({ mode: 'send', template_key: templateKey, language: previewLanguage, recipient, stage_offset_days: Number(stageOffsetDays) })
+      const data = await invoke({ mode: 'send', template_key: templateKey, language: previewLanguage, recipient, stage_offset_days: Number(stageOffsetDays), collection_scenario: collectionScenario })
       toast.success(`${copy.accepted}${data.providerMessageId ? ` · ${data.providerMessageId}` : ''}`)
       await load()
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) } finally { setBusy(false) }
@@ -65,10 +67,11 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
   return <Card>
     <CardHeader><CardTitle className="flex items-center gap-2"><MailCheck className="h-5 w-5" />{copy.title}</CardTitle><CardDescription>{copy.help}</CardDescription></CardHeader>
     <CardContent className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-5 md:items-end">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6 xl:items-end">
         <div><Label>{copy.template}</Label><Select value={templateKey} onValueChange={(value) => { setTemplateKey(value); setPreview(null); setPreviewMetadata(null) }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{templates.map((template) => <SelectItem key={template.key} value={template.key}>{template.key} · v{template.version}</SelectItem>)}</SelectContent></Select></div>
         <div><Label>{copy.lang}</Label><Select value={previewLanguage} onValueChange={(value) => setPreviewLanguage(value as 'en' | 'pt')}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="pt">Português</SelectItem></SelectContent></Select></div>
         <div><Label>{copy.stage}</Label><Select value={stageOffsetDays} onValueChange={setStageOffsetDays} disabled={!isReminder}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['7','3','1','0','-3','-15','-30'].map((offset) => <SelectItem key={offset} value={offset}>{Number(offset) > 0 ? `${offset} before` : Number(offset) === 0 ? 'Due today' : `${Math.abs(Number(offset))} overdue`}</SelectItem>)}</SelectContent></Select></div>
+        <div><Label>{language === 'pt' ? 'Cenário de cobrança' : 'Collections scenario'}</Label><Select value={collectionScenario} onValueChange={setCollectionScenario} disabled={!isReminder}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['active','paused','disputed','promise_open','promise_due_today','promise_kept','promise_partially_kept','promise_broken','manual_follow_up'].map((value) => <SelectItem key={value} value={value}>{value.replaceAll('_', ' ')}</SelectItem>)}</SelectContent></Select></div>
         <div><Label>{copy.recipient}</Label><Input type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="qa@example.com" /></div>
         <div className="flex gap-2"><Button variant="outline" disabled={busy} onClick={() => void render()}>{copy.preview}</Button><Button disabled={busy || !recipient || !preview} onClick={() => void send()}><Send className="mr-2 h-4 w-4" />{copy.send}</Button></div>
       </div>
@@ -77,6 +80,7 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
         <div><span className="font-semibold">Semantic variant</span><br />{previewMetadata.semanticVariant}</div>
         <div><span className="font-semibold">Required payload</span><br />{previewMetadata.requiredFields.join(', ')}</div>
         {previewMetadata.identity ? <><div><span className="font-semibold">From</span><br />{previewMetadata.identity.fromName} &lt;{previewMetadata.identity.fromEmail}&gt;</div><div><span className="font-semibold">Reply-To</span><br />{previewMetadata.identity.replyToName} &lt;{previewMetadata.identity.replyToEmail}&gt;</div><div><span className="font-semibold">Identity / stage</span><br />{previewMetadata.identity.identityCategory}{previewMetadata.reminderStage ? ` · ${previewMetadata.reminderStage.offsetDays} · ${previewMetadata.reminderStage.dueDateVersion}` : ''}</div></> : null}
+        {previewMetadata.collections ? <><div><span className="font-semibold">Collections control</span><br />{previewMetadata.collections.controlStatus}</div><div><span className="font-semibold">External sending</span><br />{previewMetadata.collections.externalSendingAllowed ? 'Allowed' : `Suppressed · ${previewMetadata.collections.skipReason}`}</div><div><span className="font-semibold">Active anchor / next action</span><br />{previewMetadata.collections.activeAnchor} · {previewMetadata.collections.nextEligibleAction}</div></> : null}
       </div> : null}
       {preview ? <div className="grid gap-4 lg:grid-cols-2"><div><h3 className="mb-2 font-semibold">{copy.html}</h3><div className="rounded-xl border bg-white p-2"><iframe title={copy.html} className="h-[520px] w-full" srcDoc={preview.html} sandbox="allow-popups" /></div></div><div><h3 className="mb-2 font-semibold">{copy.plain}</h3><pre className="h-[520px] overflow-auto whitespace-pre-wrap rounded-xl border bg-muted/30 p-4 text-xs">{preview.text}</pre></div></div> : null}
       <div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{copy.recent}</h3><Button size="sm" variant="ghost" onClick={() => void load()}><RefreshCw className="mr-2 h-4 w-4" />{copy.refresh}</Button></div><div className="space-y-2">{dispatches.slice(0, 10).map((row) => <div key={row.id} className="grid gap-1 rounded-lg border p-3 text-xs md:grid-cols-[1fr_auto_auto]"><div><div className="font-semibold">{row.subject}</div><div className="text-muted-foreground">{row.recipient} · {row.template_key} v{row.template_version} · {row.language}</div></div><div>{row.status}</div><div>{new Date(row.created_at).toLocaleString()}</div></div>)}</div></div>

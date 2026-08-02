@@ -19,6 +19,7 @@ import toast from 'react-hot-toast'
 import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
 import { ReceiptActions } from '../../components/receipts/ReceiptActions'
+import { CollectionsControlPanel } from '../../components/collections/CollectionsControlPanel'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase as formatMoneyBaseRaw, getBaseCurrencyCode } from '../../lib/currency'
 import {
@@ -2838,6 +2839,14 @@ export default function SalesOrders() {
                 </div>
               ) : null}
               <ReceiptActions salesOrderId={selectedSO.id} />
+              {companyId && !linkedFiscalInvoice && salesState(selectedSO)?.financial_anchor === 'legacy_order_link' && n(salesState(selectedSO)?.legacy_outstanding_base) > 0.005 ? (
+                <CollectionsControlPanel
+                  companyId={companyId}
+                  anchorKind="sales_order"
+                  anchorId={selectedSO.id}
+                  role={myRole}
+                />
+              ) : null}
               <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
                 <div><Label>{tt('orders.so', 'SO')}</Label><div>{soNo(selectedSO)}</div></div>

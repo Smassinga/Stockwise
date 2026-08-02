@@ -46,6 +46,7 @@ const fieldLabels: Record<'en' | 'pt', Record<string, string>> = {
     occurredAt: 'Date and time', movementKind: 'Movement kind', baseQuantity: 'Base quantity', warehouseFrom: 'Warehouse from', binFrom: 'Bin from', warehouseTo: 'Warehouse to', binTo: 'Bin to', unitCost: 'Unit cost', totalCost: 'Total cost', referenceType: 'Reference type', reference: 'Reference', actor: 'Actor',
     lastSaleOrIssueAt: 'Last sale or issue', daysWithoutMovement: 'Days without movement', slowMoving: 'Slow-moving', stockStatus: 'Stock status',
     customer: 'Customer', customerLocation: 'Customer location', operationalLocation: 'Operational location', cashActivity: 'Cash/walk-in activity', operationalSales: 'Operational sales', outstandingBalance: 'Outstanding balance', overdueBalance: 'Overdue balance', lastCompletedPurchase: 'Last completed purchase',
+    collectionStatus: 'Collection status', collectionOwner: 'Collection owner', nextActionAt: 'Next action', promiseDate: 'Promise date', promisedAmount: 'Promised amount', promiseStatus: 'Promise status', disputeCategory: 'Dispute category', daysOverdue: 'Days overdue', lastReminderStage: 'Last reminder stage', lastReminderAcceptedAt: 'Last reminder accepted',
     supplier: 'Supplier', supplierLocation: 'Supplier location', vendorBillValue: 'Vendor Bill value', paidAmount: 'Paid amount', outstandingAmount: 'Outstanding amount', overdueAmount: 'Overdue amount', lastBillDate: 'Last bill date', purchaseOrderValue: 'Purchase Order value',
     serviceJob: 'Service Job', service: 'Service', completionDate: 'Completion date', materials: 'Materials', labour: 'Labour', subcontractors: 'Subcontractors', supplierAllocations: 'Supplier allocations', otherDirectCost: 'Other direct cost', totalActualCost: 'Total actual cost', costingState: 'Costing state',
     submitted: 'Submitted', confirmed: 'Confirmed', allocated: 'Allocated', shippedCompleted: 'Shipped/completed', closed: 'Closed', cancelled: 'Cancelled', openBacklog: 'Open backlog', completionRate: 'Completion rate', averageFulfilmentDays: 'Average fulfilment duration (days)', overdueOrders: 'Overdue orders',
@@ -57,6 +58,7 @@ const fieldLabels: Record<'en' | 'pt', Record<string, string>> = {
     occurredAt: 'Data e hora', movementKind: 'Tipo de movimento', baseQuantity: 'Quantidade base', warehouseFrom: 'Armazém de origem', binFrom: 'Localização de origem', warehouseTo: 'Armazém de destino', binTo: 'Localização de destino', unitCost: 'Custo unitário', totalCost: 'Custo total', referenceType: 'Tipo de referência', reference: 'Referência', actor: 'Responsável',
     lastSaleOrIssueAt: 'Última venda ou saída', daysWithoutMovement: 'Dias sem movimento', slowMoving: 'Baixa rotação', stockStatus: 'Estado do stock',
     customer: 'Cliente', customerLocation: 'Localização do cliente', operationalLocation: 'Localização operacional', cashActivity: 'Actividade a dinheiro/cliente ocasional', operationalSales: 'Vendas operacionais', outstandingBalance: 'Saldo em aberto', overdueBalance: 'Saldo vencido', lastCompletedPurchase: 'Última compra concluída',
+    collectionStatus: 'Estado da cobrança', collectionOwner: 'Responsável pela cobrança', nextActionAt: 'Próxima acção', promiseDate: 'Data da promessa', promisedAmount: 'Valor prometido', promiseStatus: 'Estado da promessa', disputeCategory: 'Categoria da reclamação', daysOverdue: 'Dias em atraso', lastReminderStage: 'Última etapa do lembrete', lastReminderAcceptedAt: 'Último lembrete aceite',
     supplier: 'Fornecedor', supplierLocation: 'Localização do fornecedor', vendorBillValue: 'Valor das faturas de fornecedor', paidAmount: 'Valor pago', outstandingAmount: 'Valor em aberto', overdueAmount: 'Valor vencido', lastBillDate: 'Data da última fatura', purchaseOrderValue: 'Valor das ordens de compra',
     serviceJob: 'Trabalho de Serviço', service: 'Serviço', completionDate: 'Data de conclusão', materials: 'Materiais', labour: 'Mão de obra', subcontractors: 'Subcontratados', supplierAllocations: 'Alocações de fornecedores', otherDirectCost: 'Outros custos directos', totalActualCost: 'Custo real total', costingState: 'Estado do custeio',
     submitted: 'Submetidas', confirmed: 'Confirmadas', allocated: 'Alocadas', shippedCompleted: 'Expedidas/concluídas', closed: 'Encerradas', cancelled: 'Canceladas', openBacklog: 'Pendentes em aberto', completionRate: 'Taxa de conclusão', averageFulfilmentDays: 'Duração média de cumprimento (dias)', overdueOrders: 'Ordens vencidas',
@@ -67,12 +69,13 @@ const moneyFields = new Set([
   'sales', 'knownCogs', 'grossProfit', 'revenue', 'weightedAverageCost', 'inventoryValue', 'unitCost', 'totalCost',
   'operationalSales', 'outstandingBalance', 'overdueBalance', 'vendorBillValue', 'paidAmount', 'outstandingAmount',
   'overdueAmount', 'purchaseOrderValue', 'materials', 'labour', 'subcontractors', 'supplierAllocations', 'otherDirectCost', 'totalActualCost',
+  'promisedAmount',
 ])
 const uomFields = new Set(['baseUom', 'uom'])
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const enumLabels: Record<'en' | 'pt', Record<string, string>> = {
-  en: { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock', open: 'Open', finalised: 'Finalised', reopened: 'Reopened' },
-  pt: { in_stock: 'Em stock', low_stock: 'Stock baixo', out_of_stock: 'Sem stock', open: 'Aberto', finalised: 'Finalizado', reopened: 'Reaberto' },
+  en: { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock', open: 'Open', finalised: 'Finalised', reopened: 'Reopened', active: 'Automatic reminders active', paused: 'Paused', disputed: 'Disputed', promise_to_pay: 'Promise to pay', manual_follow_up: 'Manual follow-up', closed: 'Closed', kept: 'Kept', partially_kept: 'Partially kept', broken: 'Broken' },
+  pt: { in_stock: 'Em stock', low_stock: 'Stock baixo', out_of_stock: 'Sem stock', open: 'Aberto', finalised: 'Finalizado', reopened: 'Reaberto', active: 'Lembretes automáticos activos', paused: 'Suspenso', disputed: 'Em reclamação', promise_to_pay: 'Promessa de pagamento', manual_follow_up: 'Acompanhamento manual', closed: 'Encerrado', kept: 'Cumprida', partially_kept: 'Parcialmente cumprida', broken: 'Não cumprida' },
 }
 
 function isoDaysAgo(days: number) { const date = new Date(); date.setDate(date.getDate() - days); return date.toISOString().slice(0, 10) }
@@ -94,6 +97,7 @@ export default function Reports() {
   const [reload, setReload] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [uoms, setUoms] = useState<UomRow[]>([])
+  const [collectionFilter, setCollectionFilter] = useState('all')
 
   useEffect(() => {
     let cancelled = false
@@ -119,7 +123,17 @@ export default function Reports() {
     return () => { cancelled = true }
   }, [companyId, endDate, reload, report, startDate])
 
-  const rows = useMemo(() => payload?.rows || (report === 'performance' ? payload?.trend || [] : payload ? [payload] : []), [payload, report])
+  const rows = useMemo(() => {
+    const source = payload?.rows || (report === 'performance' ? payload?.trend || [] : payload ? [payload] : [])
+    if (report !== 'customer-location' || collectionFilter === 'all') return source
+    const currentDay = today()
+    return source.filter((row) => {
+      if (collectionFilter === 'promise_due_today') return row.promiseDate === currentDay && row.promiseStatus === 'open'
+      if (collectionFilter === 'broken_promise') return row.promiseStatus === 'broken'
+      if (collectionFilter === 'follow_up_overdue') return Boolean(row.nextActionAt && String(row.nextActionAt) < new Date().toISOString())
+      return row.collectionStatus === collectionFilter
+    })
+  }, [collectionFilter, payload, report])
   const columns = useMemo(() => {
     const keys = new Set<string>()
     rows.slice(0, 30).forEach((row) => Object.keys(row).forEach((key) => { if (!key.toLowerCase().endsWith('id')) keys.add(key) }))
@@ -131,7 +145,7 @@ export default function Reports() {
   const resolvedValue = (key: string, value: unknown) => {
     if (typeof value !== 'string') return value
     if (uomFields.has(key)) return uomById.get(value) || (uuidPattern.test(value) ? null : value)
-    if (key === 'stockStatus' || key === 'costingState') return enumLabels[lang][value] || value
+    if (key === 'stockStatus' || key === 'costingState' || key === 'collectionStatus' || key === 'promiseStatus') return enumLabels[lang][value] || value
     return value
   }
   const formatValue = (key: string, value: unknown) => {
@@ -202,7 +216,33 @@ export default function Reports() {
         {catalogue.map((group) => <Card key={group.group}><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm">{group.group === 'performance' ? <BarChart3 className="h-4 w-4" /> : group.group === 'inventory' ? <Boxes className="h-4 w-4" /> : group.group === 'partners' ? <UsersRound className="h-4 w-4" /> : <BriefcaseBusiness className="h-4 w-4" />}{copy.groups[group.group]}</CardTitle></CardHeader><CardContent className="grid gap-1">{group.reports.map((code) => <Button key={code} type="button" variant={report === code ? 'default' : 'ghost'} className="h-auto justify-start whitespace-normal py-2 text-left" onClick={() => setParams({ report: code })}>{copy.reports[code]}</Button>)}</CardContent></Card>)}
       </aside>
       <main className="min-w-0 space-y-4">
-        <Card><CardHeader><CardTitle>{copy.reports[report]}</CardTitle><CardDescription>{copy.explanation}</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><div><Label>{copy.start}</Label><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></div><div><Label>{copy.end}</Label><Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></div><Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}><RefreshCw className="mr-2 h-4 w-4" />{copy.refresh}</Button></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={exporting || !rows.length} onClick={() => void exportXlsx()}><Download className="mr-2 h-4 w-4" />XLSX</Button><Button type="button" size="sm" variant="outline" disabled={!rows.length} onClick={exportCsv}><FileText className="mr-2 h-4 w-4" />CSV</Button><Button type="button" size="sm" variant="outline" disabled={exporting || !rows.length} onClick={() => void exportPdf()}><Download className="mr-2 h-4 w-4" />PDF</Button><Button type="button" size="sm" variant="outline" disabled={!rows.length} onClick={printReport}><Printer className="mr-2 h-4 w-4" />Print</Button></div></CardContent></Card>
+        <Card>
+          <CardHeader><CardTitle>{copy.reports[report]}</CardTitle><CardDescription>{copy.explanation}</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <div><Label>{copy.start}</Label><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></div>
+              <div><Label>{copy.end}</Label><Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></div>
+              <Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}><RefreshCw className="mr-2 h-4 w-4" />{copy.refresh}</Button>
+            </div>
+            {report === 'customer-location' ? (
+              <div className="max-w-sm">
+                <Label>{lang === 'pt' ? 'Estado da cobrança' : 'Collection status'}</Label>
+                <Select value={collectionFilter} onValueChange={setCollectionFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[['all',lang === 'pt' ? 'Todos' : 'All'],['active',enumLabels[lang].active],['paused',enumLabels[lang].paused],['disputed',enumLabels[lang].disputed],['promise_to_pay',enumLabels[lang].promise_to_pay],['manual_follow_up',enumLabels[lang].manual_follow_up],['promise_due_today',lang === 'pt' ? 'Promessa vence hoje' : 'Promise due today'],['broken_promise',lang === 'pt' ? 'Promessa não cumprida' : 'Broken promise'],['follow_up_overdue',lang === 'pt' ? 'Acompanhamento em atraso' : 'Follow-up overdue']].map(([value,label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={exporting || !rows.length} onClick={() => void exportXlsx()}><Download className="mr-2 h-4 w-4" />XLSX</Button>
+              <Button type="button" size="sm" variant="outline" disabled={!rows.length} onClick={exportCsv}><FileText className="mr-2 h-4 w-4" />CSV</Button>
+              <Button type="button" size="sm" variant="outline" disabled={exporting || !rows.length} onClick={() => void exportPdf()}><Download className="mr-2 h-4 w-4" />PDF</Button>
+              <Button type="button" size="sm" variant="outline" disabled={!rows.length} onClick={printReport}><Printer className="mr-2 h-4 w-4" />Print</Button>
+            </div>
+          </CardContent>
+        </Card>
         {payload?.summary ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Object.entries(payload.summary).filter(([key]) => ['sales','knownCogs','grossProfit','grossMargin','transactions','missingCostCount'].includes(key)).map(([key,value]) => <Card key={key}><CardHeader className="pb-2"><CardDescription>{displayKey(key)}</CardDescription></CardHeader><CardContent className="text-xl font-semibold">{formatValue(key,value)}</CardContent></Card>)}</div> : null}
         <Card className="overflow-hidden"><CardContent className="p-0">{loading ? <div className="p-8 text-center text-muted-foreground">{copy.loading}</div> : error ? <div className="p-8 text-center text-destructive">{error}</div> : !rows.length ? <div className="flex flex-col items-center gap-2 p-10 text-center text-muted-foreground"><PackageSearch className="h-8 w-8" />{copy.empty}</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-muted/60"><tr>{columns.map((column) => <th key={column} className="px-4 py-3 text-left font-semibold">{displayKey(column)}</th>)}</tr></thead><tbody>{rows.map((row,index) => <tr key={String(row.id || row.itemId || row.serviceJobId || index)} className="border-t border-border/70">{columns.map((column) => <td key={column} className="px-4 py-3 align-top">{formatValue(column,row[column])}</td>)}</tr>)}</tbody></table></div>}</CardContent></Card>
       </main>
