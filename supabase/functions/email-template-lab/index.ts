@@ -73,8 +73,22 @@ serve(async (req) => {
     const rendered = renderDiscriminatedEmail(language, scenario, true);
     const reminderStageOffset = Number(body.stage_offset_days ?? 3);
     const reminderDueDateVersion = new Date(Date.now() + reminderStageOffset * 86_400_000).toISOString().slice(0, 10);
-    const metadata = { requiredFields: EMAIL_TEMPLATES[key].requiredFields, semanticVariant: EMAIL_TEMPLATES[key].semanticVariant, scenarioLabel: `synthetic_${key}`, identity, reminderStage: key.startsWith("due_reminder_") ? { offsetDays: reminderStageOffset, dueDateVersion: reminderDueDateVersion } : null };
+    const collectionScenario = String(body.collection_scenario || "active");
+    const collectionScenarios: Record<string, { controlStatus: string; externalSendingAllowed: boolean; skipReason: string | null; promiseStatus?: string; disputeCategory?: string; nextEligibleAction: string }> = {
+      active: { controlStatus: "active", externalSendingAllowed: true, skipReason: null, nextEligibleAction: "adaptive_reminder_stage" },
+      paused: { controlStatus: "paused", externalSendingAllowed: false, skipReason: "collection_paused", nextEligibleAction: "pause_expiry_or_manual_reactivation" },
+      disputed: { controlStatus: "disputed", externalSendingAllowed: false, skipReason: "collection_disputed", disputeCategory: "pricing", nextEligibleAction: "dispute_resolution" },
+      promise_open: { controlStatus: "promise_to_pay", externalSendingAllowed: false, skipReason: "promise_open", promiseStatus: "open", nextEligibleAction: "promise_evaluation" },
+      promise_due_today: { controlStatus: "promise_to_pay", externalSendingAllowed: false, skipReason: "promise_open", promiseStatus: "open", nextEligibleAction: "evaluate_after_promised_date" },
+      promise_kept: { controlStatus: "closed", externalSendingAllowed: false, skipReason: "collection_closed", promiseStatus: "kept", nextEligibleAction: "none" },
+      promise_partially_kept: { controlStatus: "manual_follow_up", externalSendingAllowed: false, skipReason: "manual_follow_up_required", promiseStatus: "partially_kept", nextEligibleAction: "owner_follow_up" },
+      promise_broken: { controlStatus: "manual_follow_up", externalSendingAllowed: false, skipReason: "manual_follow_up_required", promiseStatus: "broken", nextEligibleAction: "owner_follow_up" },
+      manual_follow_up: { controlStatus: "manual_follow_up", externalSendingAllowed: false, skipReason: "manual_follow_up_required", nextEligibleAction: "owner_follow_up" },
+    };
+    const collections = key.startsWith("due_reminder_") ? (collectionScenarios[collectionScenario] || collectionScenarios.active) : null;
+    const metadata = { requiredFields: EMAIL_TEMPLATES[key].requiredFields, semanticVariant: EMAIL_TEMPLATES[key].semanticVariant, scenarioLabel: `synthetic_${key}`, identity, reminderStage: key.startsWith("due_reminder_") ? { offsetDays: reminderStageOffset, dueDateVersion: reminderDueDateVersion } : null, collections: collections ? { ...collections, activeAnchor: key === "due_reminder_sales_invoice" ? "QA-INV-0002" : "QA-SO-0001", collectionScenario } : null };
     if (mode === "preview") return json({ rendered, metadata });
+    if (collections && !collections.externalSendingAllowed) return json({ error: "collection_state_suppresses_external_send", metadata }, 409);
     if (!recipient || !allowedRecipients.has(recipient)) return json({ error: "qa_recipient_not_allowed" }, 403);
     requireMailConfig(config);
     let stageId: string | null = null;

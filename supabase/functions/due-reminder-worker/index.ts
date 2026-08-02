@@ -1005,7 +1005,7 @@ serve(async (req) => {
         for (const recipient of to) {
         const { data: stageRecord, error: reserveError } = await sb.rpc("reserve_due_reminder_stage", { p_event: {
           company_id: job.company_id, anchor_kind: row.anchorKind, anchor_id: row.anchorId,
-          exposure_chain_id: row.salesOrderId, document_reference: row.documentReference,
+          exposure_chain_id: row.salesOrderId || row.anchorId, document_reference: row.documentReference,
           due_date: row.dueDate, stage_offset_days: row.stageOffsetDays, relative_state: row.relativeState, tone: row.tone,
           recipient, language: lang, outstanding_amount: row.amount, currency_code: row.currencyCode || "MZN",
           from_name: identity.fromName, from_email: identity.fromEmail, reply_to_name: identity.replyToName,
@@ -1014,6 +1014,29 @@ serve(async (req) => {
         if (reserveError) throw new Error(`stage.reserve: ${safeErr(reserveError)}`);
         const stageId = (stageRecord as { id?: string } | null)?.id;
         if (!stageId) continue;
+        // This is deliberately the last operation before provider submission. A manager may
+        // pause, dispute, or record a promise after the batch and stage reservation complete.
+        const { data: collectionEligibility, error: collectionEligibilityError } = await sb.rpc(
+          "check_due_reminder_collection_eligibility",
+          {
+            p_company_id: job.company_id,
+            p_anchor_kind: row.anchorKind,
+            p_anchor_id: row.anchorId,
+            p_due_date: row.dueDate,
+            p_stage_id: stageId,
+          },
+        );
+        if (collectionEligibilityError) {
+          throw new Error(`eligibility.collection_recheck: ${safeErr(collectionEligibilityError)}`);
+        }
+        if (!(collectionEligibility as { allowed?: boolean } | null)?.allowed) {
+          log("reminder suppressed by collections control", {
+            anchorKind: row.anchorKind,
+            reference: row.documentReference,
+            reason: (collectionEligibility as { reason?: string } | null)?.reason,
+          });
+          continue;
+        }
         try {
           const result = await sendTransactionalEmail(
           {
