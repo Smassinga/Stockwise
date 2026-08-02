@@ -5,6 +5,7 @@ import test from 'node:test'
 const read = async path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
 const controls = await read('supabase/migrations/20260801230536_collections_control_and_event_ledger.sql')
 const lifecycle = await read('supabase/migrations/20260801230543_collections_promise_and_reminder_integration.sql')
+const reportNullAnchorFix = await read('supabase/migrations/20260802005533_fix_collections_report_optional_anchor.sql')
 const worker = await read('supabase/functions/due-reminder-worker/index.ts')
 const panel = await read('src/components/collections/CollectionsControlPanel.tsx')
 const invoices = await read('src/pages/SalesInvoiceDetail.tsx')
@@ -132,6 +133,12 @@ test('receivables reporting provides collection fields and all required filters 
   }
   for (const filter of ['promise_due_today', 'broken_promise', 'follow_up_overdue']) assert.match(reports, new RegExp(filter))
   assert.match(reports, /formatMoneyBase/)
+})
+
+test('receivables reporting does not resolve an absent collections anchor', () => {
+  assert.match(reportNullAnchorFix, /when ctrl\.id is null then null::date/i)
+  assert.match(reportNullAnchorFix, /ar_resolve_exposure_anchor\(p_company_id,ctrl\.active_anchor_kind,ctrl\.active_anchor_id\)/)
+  assert.doesNotMatch(reportNullAnchorFix, /\)anchor on ctrl\.id is not null/)
 })
 
 test('evaluated promise evidence remains reportable after the current control link is cleared', () => {
