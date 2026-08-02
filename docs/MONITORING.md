@@ -95,3 +95,6 @@ See [SECURITY_AND_SCALE_BASELINE.md](SECURITY_AND_SCALE_BASELINE.md) for the cur
 ## Payment activation signals (live package)
 
 Monitor submitted/under-review/needs-correction queue age, approval failures, provider-reference uniqueness conflicts, proof authorization rate limits, missing proof objects, and access-audit/request-event reconciliation. The rollout baseline ended with no stuck workflow posting requests and no approved request missing its access audit. Do not treat catalogue recurring value or submitted evidence as collected revenue. Provider webhook and automatic reconciliation observability remain future scope.
+# Collections communication health
+
+Track collection-governed skips by reason (`collection_paused`, `collection_disputed`, `promise_open`, `manual_follow_up_required`) separately from mail failures. Alert on promise evaluation failures, overdue internal follow-up, notification creation failures, and reminder stages stuck in processing. Never expose customer notes or provider secrets in telemetry.

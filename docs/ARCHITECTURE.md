@@ -356,3 +356,6 @@ The service package reuses canonical stock movements, WAC, UoMs, posting request
 ## Communication lifecycle
 
 Application email identity is resolved centrally: one verified StockWise technical sender, company-aware display names and subjects, governed Reply-To fallbacks, and immutable private dispatch snapshots. Due reminders retain the active receivable anchor and use a durable adaptive-stage ledger so missed schedules select one relevant stage and concurrent workers cannot duplicate accepted mail.
+# COMMS-3C collections governance
+
+Receivable communication now has a company-scoped operational control layer keyed by the exposure chain. It sits between the authoritative Sales Order/Sales Invoice finance state and the adaptive reminder worker. RPC-only state, an immutable event ledger, and promise evidence govern suppression without changing finance authority. See `docs/communications/COLLECTIONS_CONTROL_LIFECYCLE.md`.

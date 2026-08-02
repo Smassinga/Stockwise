@@ -396,3 +396,11 @@ The maintained dashboard contract remains additive: service revenue is completio
 ## Communication identity and reminder stages
 
 `company_communication_profiles` stores normalized finance and invitation Reply-To routing under company RLS and FORCE RLS. `app.due_reminder_stage_dispatches` privately versions, atomically claims, retries, and audits each reminder stage without storing rendered email HTML. Dispatch audit rows snapshot From, Reply-To, identity category, company ID, and company name while preserving historical rows.
+# COMMS-3C collections records
+
+- `ar_collection_controls`: one current operational state per company/exposure chain; missing means active.
+- `ar_collection_control_events`: append-only state and anchor evidence with idempotency.
+- `ar_payment_promises`: versioned promise evidence evaluated from authoritative settlement and credit deltas.
+- `due_reminder_stage_dispatches`: retains provider history and now records collection eligibility, skip reason, control version, promise, and evaluation time.
+
+All three collections tables are company scoped with RLS and FORCE RLS. Authenticated users cannot mutate them directly.

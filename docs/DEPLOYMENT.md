@@ -435,3 +435,6 @@ Hosted verification reports 48 migrations through `20260729214142`, eight forced
 GitHub mapped implementation SHA `2ea2d2768d7d84bfd43164d46c8604bce5216fb1` to successful Production deployment `dpl_DdSwN1t59ZnNhZksA1AL48TUPUQf`. Production smoke used only prefixed service fixtures; it created no accounting journal, payment, POS-mode change, stock movement, or Vendor Bill allocation.
 
 The final smoke presentation correction `7a8b2e6a3f70dd285b26055d390cce9ffad94a62` passed Validation `30497408465` and GitHub/Vercel mapped it to successful Production deployment `https://stockwise-6nbqknk7v-honeythiefs-projects.vercel.app`.
+# COMMS-3C rollout
+
+Before deployment, replay migrations from zero, compare local/hosted ledgers, dry-run the linked push, inspect due-reminder secrets by name, and run all static and regression gates. Apply only forward COMMS-3C migrations, then deploy only the changed due-reminder and Template Lab functions. Production QA must use authorised synthetic records and prove suppression, reactivation without cascade, promise evaluation, anchor movement, and immutable audit evidence.
