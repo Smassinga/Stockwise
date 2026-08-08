@@ -114,12 +114,29 @@ export function NotificationCenter() {
   function levelClasses(level: string) {
     const normalized = level.toLowerCase()
     if (normalized === 'warning') {
-      return 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+      return 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
     }
-    if (normalized === 'error') {
-      return 'border-rose-500/35 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+    if (normalized === 'error' || normalized === 'danger' || normalized === 'critical') {
+      return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
     }
-    return 'border-border/70 bg-muted/35 text-muted-foreground'
+    if (normalized === 'success') {
+      return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
+    }
+    return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
+  }
+
+  function levelLabel(level: string) {
+    const normalized = level.toLowerCase()
+    if (lang === 'pt') {
+      if (normalized === 'warning') return 'Aviso'
+      if (normalized === 'error' || normalized === 'danger' || normalized === 'critical') return 'Erro'
+      if (normalized === 'success') return 'Sucesso'
+      return 'Informação'
+    }
+    if (normalized === 'warning') return 'Warning'
+    if (normalized === 'error' || normalized === 'danger' || normalized === 'critical') return 'Error'
+    if (normalized === 'success') return 'Success'
+    return 'Information'
   }
 
   function openNotification(notification: Notif) {
@@ -439,7 +456,10 @@ export function NotificationCenter() {
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 py-1 text-[10px] leading-none text-white shadow-[0_10px_22px_-12px_rgba(220,38,38,0.9)]">
+          <span
+            className="absolute -right-1 -top-1 rounded-full border border-status-danger-border bg-status-danger-muted px-1.5 py-1 text-[10px] font-semibold leading-none text-status-danger-foreground"
+            aria-label={`${unreadCount} ${t('notifications.status.unread')}`}
+          >
             {unreadCount}
           </span>
         )}
@@ -464,10 +484,10 @@ export function NotificationCenter() {
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => void fetchLatest()} title={t('common.refresh')}>
+              <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => void fetchLatest()} aria-label={t('common.refresh')}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => void markAllRead()} title={t('notifications.markAllRead')}>
+              <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => void markAllRead()} aria-label={t('notifications.markAllRead')}>
                 <CheckCheck className="h-4 w-4" />
               </Button>
             </div>
@@ -497,7 +517,7 @@ export function NotificationCenter() {
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] ${levelClasses(n.level)}`}>
-                          {n.level}
+                          {levelLabel(n.level)}
                         </span>
                         {!n.readAt && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-primary/18 bg-primary/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">

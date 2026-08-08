@@ -31,7 +31,7 @@ export default function LocaleToggle({ className, inverse = false }: Props) {
             aria-label={option === 'en' ? t('locale.english') : t('locale.portuguese')}
             aria-pressed={active}
             className={cn(
-              'rounded-full px-3 py-1.5 transition-colors',
+              'min-h-10 rounded-full px-3 py-2 transition-colors',
               active
                 ? inverse
                   ? 'bg-white text-black'

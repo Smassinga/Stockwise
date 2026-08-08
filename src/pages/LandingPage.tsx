@@ -1,46 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { motion, MotionConfig } from 'framer-motion'
-import type { Icon as PhosphorIcon } from '@phosphor-icons/react/dist/lib/types'
-import { BankIcon } from '@phosphor-icons/react/dist/csr/Bank'
-import { BarcodeIcon } from '@phosphor-icons/react/dist/csr/Barcode'
-import { BuildingsIcon } from '@phosphor-icons/react/dist/csr/Buildings'
-import { CashRegisterIcon } from '@phosphor-icons/react/dist/csr/CashRegister'
-import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
-import { DeviceMobileIcon } from '@phosphor-icons/react/dist/csr/DeviceMobile'
-import { FactoryIcon } from '@phosphor-icons/react/dist/csr/Factory'
-import { FileArrowUpIcon } from '@phosphor-icons/react/dist/csr/FileArrowUp'
-import { HandCoinsIcon } from '@phosphor-icons/react/dist/csr/HandCoins'
-import { InvoiceIcon } from '@phosphor-icons/react/dist/csr/Invoice'
-import { KeyIcon } from '@phosphor-icons/react/dist/csr/Key'
-import { LifebuoyIcon } from '@phosphor-icons/react/dist/csr/Lifebuoy'
-import { LinkSimpleIcon } from '@phosphor-icons/react/dist/csr/LinkSimple'
-import { LockKeyIcon } from '@phosphor-icons/react/dist/csr/LockKey'
-import { PlantIcon } from '@phosphor-icons/react/dist/csr/Plant'
-import { PresentationChartIcon } from '@phosphor-icons/react/dist/csr/PresentationChart'
-import { QuestionIcon } from '@phosphor-icons/react/dist/csr/Question'
-import { SealCheckIcon } from '@phosphor-icons/react/dist/csr/SealCheck'
-import { ShieldCheckIcon as PhosphorShieldCheckIcon } from '@phosphor-icons/react/dist/csr/ShieldCheck'
-import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
-import { TruckIcon } from '@phosphor-icons/react/dist/csr/Truck'
-import { WarningDiamondIcon } from '@phosphor-icons/react/dist/csr/WarningDiamond'
-import {
-  ArrowRight,
-  ChevronDown,
-  Menu,
-  X,
-} from 'lucide-react'
-import BrandLockup from '../components/brand/BrandLockup'
+import { ArrowRight, Menu, X } from 'lucide-react'
+import Logo from '../components/brand/Logo'
 import { LandingFaq } from '../components/landing/LandingFaq'
-import { LandingInteractiveCta } from '../components/landing/LandingInteractiveCta'
-import { LandingProductTabs, type LandingProductSurface, type LandingProductTab } from '../components/landing/LandingProductTabs'
-import { LandingPulsatingCta } from '../components/landing/LandingPulsatingCta'
 import LocaleToggle from '../components/LocaleToggle'
 import ThemeToggle from '../components/ThemeToggle'
-import { IconBadge } from '../components/premium/IconBadge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent } from '../components/ui/card'
-import { GlareHover } from '../components/ui/glare-hover'
 import { useAuth } from '../hooks/useAuth'
 import { useI18n } from '../lib/i18n'
 import { buildPublicMailto, PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
@@ -50,69 +15,47 @@ import { cn } from '../lib/utils'
 type Lang = 'en' | 'pt'
 type PricingPeriod = 'monthly' | 'six_month' | 'annual'
 
-const PRICING_PERIOD_STORAGE_KEY = 'stockwise:landing:pricing-period'
-
-const pricingPeriodOptions: PricingPeriod[] = ['monthly', 'six_month', 'annual']
-
-type IconName =
-  | 'stock'
-  | 'checkout'
-  | 'documents'
-  | 'access'
-  | 'reports'
-  | 'records'
-  | 'receiving'
-  | 'settlements'
-  | 'imports'
-  | 'cash'
-  | 'mobile'
-  | 'support'
-  | 'security'
-  | 'growth'
-  | 'production'
-  | 'attention'
-  | 'connected'
-  | 'stockReady'
-  | 'company'
-  | 'activation'
-  | 'question'
+type PlanContent = {
+  headline: string
+  included: string[]
+  support: string[]
+}
 
 type LandingCopy = {
   nav: Array<{ label: string; href: string }>
-  productLabel: string
-  productMenu: Array<{ title: string; body: string; href: string; icon: IconName }>
-  heroEyebrow: string
   heroTitle: string
   heroBody: string
-  heroSignals: Array<{ title: string; body: string; icon: IconName; tone: 'teal' | 'green' | 'amber' }>
+  heroImageAlt: string
+  heroImageCaption: string
   primaryCta: string
   secondaryCta: string
   activationNote: string
-  capabilityRailTitle: string
-  capabilityRailItems: string[]
-  operationTitle: string
-  operationBody: string
-  operationFits: Array<{ title: string; body: string; icon: IconName }>
-  trustSignals: Array<{ title: string; body: string; icon: IconName }>
+  signIn: string
+  openDashboard: string
+  openMenu: string
+  closeMenu: string
+  chainTitle: string
+  chain: string[]
+  fitTitle: string
+  fitBody: string
+  operationFits: Array<{ title: string; body: string }>
+  evidenceTitle: string
+  evidence: Array<{ title: string; body: string }>
   problemTitle: string
   problemBody: string
   problems: Array<{ title: string; body: string }>
   capabilitiesTitle: string
   capabilitiesBody: string
-  capabilities: Array<{ title: string; body: string; icon: IconName }>
-  showcaseTitle: string
-  showcaseBody: string
-  showcaseNote: string
+  capabilityStories: Array<{ number: string; title: string; body: string; points: string[] }>
+  traceTitle: string
+  traceBody: string
+  traces: Array<{ title: string; steps: string[]; note: string }>
   workflowTitle: string
   workflowBody: string
-  workflowSteps: Array<{ title: string; body: string; icon: IconName }>
+  workflowSteps: Array<{ title: string; body: string }>
   useCasesTitle: string
   useCasesBody: string
-  useCases: Array<{ title: string; body: string; icon: IconName }>
-  complianceTitle: string
-  complianceBody: string
-  compliancePoints: string[]
-  complianceCaution: string
+  useCases: Array<{ title: string; body: string }>
   pricingTitle: string
   pricingBody: string
   pricingFootnote: string
@@ -120,89 +63,569 @@ type LandingCopy = {
   faqBody: string
   faqs: Array<{ id: string; question: string; answer: string }>
   teamTitle: string
-  teamBody: string
-  teamMembers: Array<{ name: string; role: string; body: string }>
+  teamMembers: Array<{ name: string; role: string }>
   finalTitle: string
   finalBody: string
-  demoCta: string
-  signIn: string
-  openDashboard: string
-  openMenu: string
-  closeMenu: string
   footerTagline: string
+  pricingContent: Record<string, PlanContent>
   labels: {
-    annual: string
     monthly: string
     sixMonth: string
+    annual: string
     pricingPeriod: string
     perMonth: string
-    billedMonthly: string
     everySixMonths: string
     perYear: string
+    billedMonthly: string
     equivalentMonthly: (amount: string) => string
     saveEverySixMonths: (amount: string) => string
     saveAnnually: (amount: string) => string
     contactUs: string
     billingByProposal: string
     onboarding: string
-    bestFor: string
     includes: string
     support: string
     users: string
     company: string
-    from: string
     recommended: string
     requestActivation: string
     talkToUs: string
-    viewPricing: string
-    productPreview: string
-    sampleOnly: string
-    sectionProduct: string
-    supportEmail: string
-    wiseCore: string
-    builtBy: string
     office: string
+    builtBy: string
   }
-  pricingContent: Record<string, PlanContent>
   mailSubjects: {
-    demo: string
     activation: string
     contact: string
   }
 }
 
-type PlanContent = {
-  headline: string
-  bestFor: string
-  included: string[]
-  support: string[]
+const PRICING_PERIOD_STORAGE_KEY = 'stockwise:landing:pricing-period'
+const pricingPeriodOptions: PricingPeriod[] = ['monthly', 'six_month', 'annual']
+
+const copyByLang: Record<Lang, LandingCopy> = {
+  en: {
+    nav: [
+      { label: 'How it works', href: '#operations' },
+      { label: 'Use cases', href: '#use-cases' },
+      { label: 'Pricing', href: '#pricing' },
+      { label: 'FAQ', href: '#faq' },
+    ],
+    heroTitle: 'Know what you have, what sold, and what needs attention.',
+    heroBody:
+      'Connect purchases, receipts, stock, production or sales, documents and settlements so one operation can be reviewed from end to end.',
+    heroImageAlt:
+      'Illustrative desk with inventory sheets, purchase and sales documents, receipts, payment notes and a calculator.',
+    heroImageCaption: 'Illustrative operating records — not customer or live product data.',
+    primaryCta: 'Start 7-day trial',
+    secondaryCta: 'See how records connect',
+    activationNote: 'Paid access is activated manually after commercial review. There is no instant paid checkout.',
+    signIn: 'Sign in',
+    openDashboard: 'Open dashboard',
+    openMenu: 'Open menu',
+    closeMenu: 'Close menu',
+    chainTitle: 'One operating record should lead to the next',
+    chain: ['Purchase', 'Receive', 'Stock', 'Produce or sell', 'Document', 'Settle', 'Review'],
+    fitTitle: 'Built around the work, not a list of modules.',
+    fitBody:
+      'Different operations use different parts of StockWise. The common need is to keep quantities, documents and follow-up connected.',
+    operationFits: [
+      {
+        title: 'Retail and resale',
+        body: 'Receive items, sell through Point of Sale or orders, and keep stock availability close to the sales record.',
+      },
+      {
+        title: 'Production and transformation',
+        body: 'Record material inputs, production runs and finished output without losing the underlying stock trail.',
+      },
+      {
+        title: 'Growth batches',
+        body: 'Follow active batches, measurements, direct costs, stock inputs and event-specific reversals.',
+      },
+      {
+        title: 'Counter sales and daily review',
+        body: 'Keep Point of Sale activity, stock movement, users, cash and bank context available for management review.',
+      },
+    ],
+    evidenceTitle: 'Concrete product truths',
+    evidence: [
+      {
+        title: 'Connected records',
+        body: 'Purchases, movements, sales, documents and settlements retain their operating context.',
+      },
+      {
+        title: 'Controlled access',
+        body: 'Owners, managers and operators work through defined user roles and company access.',
+      },
+      {
+        title: 'Traceable movements',
+        body: 'Stock changes remain visible as movements rather than unexplained quantity edits.',
+      },
+      {
+        title: 'Portuguese and English',
+        body: 'The interface supports both languages for teams that need them.',
+      },
+    ],
+    problemTitle: 'When records are separate, the answer arrives late.',
+    problemBody:
+      'Not every business has every problem. These are common points where disconnected records make an ordinary decision harder than it should be.',
+    problems: [
+      {
+        title: 'Low stock is discovered after someone calls.',
+        body: 'The quantity in a sheet, a notebook and the actual shelf no longer tells the same story.',
+      },
+      {
+        title: 'Sales, purchases and stock are recorded separately.',
+        body: 'A manager can see activity, but cannot quickly explain how that activity changed availability.',
+      },
+      {
+        title: 'A stock change has no clear reason attached.',
+        body: 'Receipts, issues, corrections and reversals become difficult to distinguish during review.',
+      },
+      {
+        title: 'One operating question requires several sources.',
+        body: 'Documents, messages, spreadsheets and payment notes must be assembled before a decision can be made.',
+      },
+    ],
+    capabilitiesTitle: 'Four operating stories, one connected workspace.',
+    capabilitiesBody:
+      'StockWise is broad, but the value is not the number of screens. It is the relationship between what happened and what management can verify next.',
+    capabilityStories: [
+      {
+        number: '01',
+        title: 'Know what exists and where.',
+        body: 'Review items, warehouses, stock levels, minimum-stock signals and the movements that explain a quantity.',
+        points: ['Items and warehouses', 'On-hand and minimum stock', 'Receipts, issues, transfers and corrections'],
+      },
+      {
+        number: '02',
+        title: 'Connect purchases, stock and sales.',
+        body: 'Follow the operating path from buying and receiving through Point of Sale or sales-order activity.',
+        points: ['Purchase orders and receiving', 'Point of Sale and sales orders', 'Customer and supplier records'],
+      },
+      {
+        number: '03',
+        title: 'Record production and active growth.',
+        body: 'Use production runs or Growth Batches where the operation transforms materials or follows biological activity.',
+        points: ['Materials and finished output', 'Measurements and direct costs', 'Stock inputs and controlled reversals'],
+      },
+      {
+        number: '04',
+        title: 'Keep documents and settlement close to the activity.',
+        body: 'Review invoices, notes, vendor obligations, cash, bank and settlement status with the operating record in view.',
+        points: ['Sales and supplier documents', 'Open, partial and paid status', 'Reports and management review'],
+      },
+    ],
+    traceTitle: 'Significant activity stays explainable.',
+    traceBody:
+      'The exact path depends on the workflow. StockWise keeps the records required to follow selling and purchasing activity without presenting every event as an isolated entry.',
+    traces: [
+      {
+        title: 'Selling path',
+        steps: ['Sale or order', 'Stock movement', 'Sales document', 'Settlement', 'Review'],
+        note: 'See what was sold, what moved, which document carries the obligation and what remains open.',
+      },
+      {
+        title: 'Purchasing path',
+        steps: ['Purchase order', 'Receipt', 'Stock', 'Supplier obligation', 'Payment'],
+        note: 'Follow what was ordered, what arrived, what entered stock and what is still owed.',
+      },
+    ],
+    workflowTitle: 'Implementation follows the first operating cycle.',
+    workflowBody:
+      'Setup is guided and paid activation remains manual. The sequence starts with the current process and ends with a reviewed first cycle.',
+    workflowSteps: [
+      { title: 'Review the current process', body: 'Identify how stock, sales, purchases, documents and payments are handled today.' },
+      { title: 'Configure the workspace', body: 'Set up the company, users, roles, warehouses and operating preferences.' },
+      { title: 'Prepare starting data', body: 'Add or import items, customers, suppliers and opening stock.' },
+      { title: 'Train the team', body: 'Focus each user on the workflows that belong to their role.' },
+      { title: 'Review the first cycle', body: 'Confirm that quantities, documents and follow-up reflect the real operation.' },
+    ],
+    useCasesTitle: 'Useful where the record must follow the work.',
+    useCasesBody: 'The operating model matters more than the industry label.',
+    useCases: [
+      {
+        title: 'Bakery or small producer',
+        body: 'Connect purchasing, material stock, production runs, finished goods and counter sales.',
+      },
+      {
+        title: 'Food retail or butchery',
+        body: 'Keep receiving, stock movements, counter sales and low-stock review in one operating view.',
+      },
+      {
+        title: 'Agro, nursery or biological growth',
+        body: 'Use active Growth Batches for measurements, direct costs, stock inputs and reversal evidence.',
+      },
+      {
+        title: 'Warehouse or distributor',
+        body: 'Control ordering, receiving, movement, sales and stock risk across operating locations.',
+      },
+    ],
+    pricingTitle: 'Published plans. Controlled activation.',
+    pricingBody: 'Choose the operating depth, user scope and implementation support that fit the team.',
+    pricingFootnote:
+      'Every new company can begin with a 7-day trial. Paid access is activated manually after review; self-serve paid checkout is not active.',
+    faqTitle: 'Questions that matter before starting',
+    faqBody: 'Direct answers about access, implementation and daily use.',
+    faqs: [
+      {
+        id: 'trial',
+        question: 'Can I start the trial without paid activation?',
+        answer: 'Yes. A new company can begin with a 7-day trial. Paid access is activated manually after the trial or commercial review.',
+      },
+      {
+        id: 'activation',
+        question: 'What happens when the trial ends?',
+        answer: 'The StockWise team reviews the plan and activation with you. The landing page does not provide instant paid checkout.',
+      },
+      {
+        id: 'implementation',
+        question: 'How is implementation handled?',
+        answer: 'Implementation starts with the current process, workspace configuration and starting data, followed by role-focused training and review of the first operating cycle.',
+      },
+      {
+        id: 'import',
+        question: 'Can I import items and opening stock?',
+        answer: 'Yes. StockWise includes an opening-data workflow for items and starting stock, with validation before the records are accepted.',
+      },
+      {
+        id: 'team',
+        question: 'Can several people use the same company workspace?',
+        answer: 'Yes. Plans define user scope, and the product supports company users with controlled roles for different responsibilities.',
+      },
+      {
+        id: 'mobile',
+        question: 'Can the team work from a phone?',
+        answer: 'The web application is responsive and Android access is supported. The appropriate workflow still depends on the role and task.',
+      },
+      {
+        id: 'accountant',
+        question: 'Does StockWise replace accounting advice?',
+        answer: 'No. StockWise organises operational and finance records for review. Official submissions and accounting decisions should be validated by the appropriate professional.',
+      },
+    ],
+    teamTitle: 'StockWise is built by WiseCore Technologies.',
+    teamMembers: [
+      { name: 'Samuel Massinga', role: 'Founder and CEO' },
+      { name: 'Alda Jofrice', role: 'Co-Founder and Executive Manager' },
+      { name: 'Galileu Gonçalves', role: 'Co-Founder and Chief Operating Officer' },
+    ],
+    finalTitle: 'Start with one operating cycle.',
+    finalBody: 'Use the 7-day trial to see whether StockWise makes the records your team already handles easier to follow.',
+    footerTagline: 'Connected operational records for stock, sales, purchasing, production, documents and settlement review.',
+    pricingContent: {
+      starter: {
+        headline: 'For smaller teams moving stock and orders out of spreadsheets.',
+        included: ['Product and stock management', 'Sales and purchase orders', 'Customer and supplier records', 'Basic dashboards and reporting'],
+        support: ['Initial setup support', 'Up to 1 week of remote training', 'Standard remote business-hours support'],
+      },
+      growth: {
+        headline: 'For growing teams that need stronger visibility and follow-up.',
+        included: ['Everything in Starter', 'Enhanced reporting and dashboard visibility', 'Improved balance and activity follow-up'],
+        support: ['Priority remote support', 'Up to 2 weeks of remote training', 'Additional implementation guidance'],
+      },
+      business: {
+        headline: 'For heavier daily operations with more users and operating complexity.',
+        included: ['Everything in Growth', 'Up to 10 users', 'A better fit for complex daily operations'],
+        support: ['Faster support handling', 'More hands-on onboarding', 'Periodic adoption review and guidance'],
+      },
+      managed_business_plus: {
+        headline: 'For teams that want a closer operating and support relationship.',
+        included: ['Business plan access', 'Managed onboarding approach', 'Refresher training sessions'],
+        support: ['Periodic review meetings', 'Higher support priority', 'Hands-on adoption and stabilisation support'],
+      },
+    },
+    labels: {
+      monthly: 'Monthly',
+      sixMonth: '6 months',
+      annual: 'Annual',
+      pricingPeriod: 'Pricing period',
+      perMonth: 'per month',
+      everySixMonths: 'every 6 months',
+      perYear: 'per year',
+      billedMonthly: 'Billed monthly',
+      equivalentMonthly: (amount) => `${amount} monthly equivalent`,
+      saveEverySixMonths: (amount) => `Save ${amount} every 6 months`,
+      saveAnnually: (amount) => `Save ${amount} annually`,
+      contactUs: 'Contact us',
+      billingByProposal: 'Annual pricing and scope by proposal',
+      onboarding: 'Onboarding',
+      includes: 'Plan scope',
+      support: 'Implementation and support',
+      users: 'Users',
+      company: 'Company',
+      recommended: 'Recommended operating fit',
+      requestActivation: 'Request activation',
+      talkToUs: 'Talk to StockWise',
+      office: 'Beira, Mozambique',
+      builtBy: 'A WiseCore Technologies, Lda. product',
+    },
+    mailSubjects: {
+      activation: 'StockWise activation request',
+      contact: 'StockWise commercial conversation',
+    },
+  },
+  pt: {
+    nav: [
+      { label: 'Como funciona', href: '#operations' },
+      { label: 'Casos de uso', href: '#use-cases' },
+      { label: 'Preços', href: '#pricing' },
+      { label: 'Perguntas', href: '#faq' },
+    ],
+    heroTitle: 'Saiba o que tem, o que vendeu e o que precisa de atenção.',
+    heroBody:
+      'Ligue compras, recepção, stock, produção ou vendas, documentos e liquidações para rever cada operação de princípio ao fim.',
+    heroImageAlt:
+      'Mesa ilustrativa com folhas de inventário, documentos de compra e venda, recibos, notas de pagamento e calculadora.',
+    heroImageCaption: 'Registos operacionais ilustrativos — não são dados de clientes nem dados reais do produto.',
+    primaryCta: 'Começar teste de 7 dias',
+    secondaryCta: 'Ver como os registos se ligam',
+    activationNote: 'O acesso pago é activado manualmente depois da revisão comercial. Não existe checkout pago imediato.',
+    signIn: 'Entrar',
+    openDashboard: 'Abrir dashboard',
+    openMenu: 'Abrir menu',
+    closeMenu: 'Fechar menu',
+    chainTitle: 'Um registo operacional deve levar ao seguinte',
+    chain: ['Comprar', 'Receber', 'Stock', 'Produzir ou vender', 'Documentar', 'Liquidar', 'Rever'],
+    fitTitle: 'Organizado pelo trabalho, não por uma lista de módulos.',
+    fitBody:
+      'Operações diferentes usam partes diferentes do StockWise. A necessidade comum é manter quantidades, documentos e seguimento ligados.',
+    operationFits: [
+      {
+        title: 'Retalho e revenda',
+        body: 'Receba artigos, venda no Ponto de Venda ou por encomenda e mantenha a disponibilidade próxima do registo de venda.',
+      },
+      {
+        title: 'Produção e transformação',
+        body: 'Registe matérias-primas, ordens de produção e produto acabado sem perder o rasto do stock.',
+      },
+      {
+        title: 'Lotes de crescimento',
+        body: 'Acompanhe lotes activos, medições, custos directos, entradas de stock e reversões específicas por evento.',
+      },
+      {
+        title: 'Vendas ao balcão e revisão diária',
+        body: 'Mantenha o Ponto de Venda, movimentos, utilizadores, caixa e banco disponíveis para revisão da gestão.',
+      },
+    ],
+    evidenceTitle: 'Factos concretos do produto',
+    evidence: [
+      {
+        title: 'Registos ligados',
+        body: 'Compras, movimentos, vendas, documentos e liquidações mantêm o seu contexto operacional.',
+      },
+      {
+        title: 'Acesso controlado',
+        body: 'Proprietários, gestores e operadores trabalham com funções e acesso por empresa definidos.',
+      },
+      {
+        title: 'Movimentos rastreáveis',
+        body: 'Alterações de stock permanecem visíveis como movimentos, e não como quantidades sem explicação.',
+      },
+      {
+        title: 'Português e inglês',
+        body: 'A interface suporta os dois idiomas para equipas que precisam deles.',
+      },
+    ],
+    problemTitle: 'Quando os registos estão separados, a resposta chega tarde.',
+    problemBody:
+      'Nem todos os negócios têm todos estes problemas. São pontos comuns onde registos desligados tornam uma decisão normal mais difícil do que deveria.',
+    problems: [
+      {
+        title: 'O stock baixo só é descoberto depois de alguém ligar.',
+        body: 'A quantidade na folha, no caderno e na prateleira deixou de contar a mesma história.',
+      },
+      {
+        title: 'Vendas, compras e stock são registados separadamente.',
+        body: 'O gestor vê actividade, mas não consegue explicar rapidamente como ela alterou a disponibilidade.',
+      },
+      {
+        title: 'Uma alteração de stock não tem motivo claro.',
+        body: 'Recepções, saídas, correcções e reversões tornam-se difíceis de distinguir durante a revisão.',
+      },
+      {
+        title: 'Uma pergunta operacional exige várias fontes.',
+        body: 'Documentos, mensagens, folhas e notas de pagamento precisam de ser reunidos antes de decidir.',
+      },
+    ],
+    capabilitiesTitle: 'Quatro histórias operacionais, um workspace ligado.',
+    capabilitiesBody:
+      'O StockWise é abrangente, mas o valor não está no número de ecrãs. Está na relação entre o que aconteceu e o que a gestão consegue verificar a seguir.',
+    capabilityStories: [
+      {
+        number: '01',
+        title: 'Saiba o que existe e onde está.',
+        body: 'Reveja artigos, armazéns, níveis de stock, mínimos e os movimentos que explicam cada quantidade.',
+        points: ['Artigos e armazéns', 'Stock disponível e mínimo', 'Recepções, saídas, transferências e correcções'],
+      },
+      {
+        number: '02',
+        title: 'Ligue compras, stock e vendas.',
+        body: 'Siga o percurso operacional desde a compra e recepção até ao Ponto de Venda ou encomenda de venda.',
+        points: ['Ordens de compra e recepção', 'Ponto de Venda e encomendas', 'Registos de clientes e fornecedores'],
+      },
+      {
+        number: '03',
+        title: 'Registe produção e crescimento activo.',
+        body: 'Use Produção ou Lotes de Crescimento quando a operação transforma materiais ou acompanha actividade biológica.',
+        points: ['Materiais e produto acabado', 'Medições e custos directos', 'Entradas de stock e reversões controladas'],
+      },
+      {
+        number: '04',
+        title: 'Mantenha documentos e liquidação próximos da actividade.',
+        body: 'Reveja documentos, obrigações a fornecedores, caixa, banco e estado da liquidação com o registo operacional à vista.',
+        points: ['Documentos de venda e fornecedor', 'Estado aberto, parcial e pago', 'Relatórios e revisão da gestão'],
+      },
+    ],
+    traceTitle: 'A actividade importante continua explicável.',
+    traceBody:
+      'O percurso exacto depende do processo. O StockWise mantém os registos necessários para seguir vendas e compras sem apresentar cada evento como uma entrada isolada.',
+    traces: [
+      {
+        title: 'Percurso da venda',
+        steps: ['Venda ou encomenda', 'Movimento de stock', 'Documento de venda', 'Liquidação', 'Revisão'],
+        note: 'Veja o que foi vendido, o que movimentou, qual documento suporta a obrigação e o que permanece aberto.',
+      },
+      {
+        title: 'Percurso da compra',
+        steps: ['Ordem de compra', 'Recepção', 'Stock', 'Obrigação ao fornecedor', 'Pagamento'],
+        note: 'Siga o que foi encomendado, o que chegou, o que entrou em stock e o que ainda falta pagar.',
+      },
+    ],
+    workflowTitle: 'A implementação acompanha o primeiro ciclo operacional.',
+    workflowBody:
+      'A configuração é orientada e a activação paga continua manual. A sequência começa no processo actual e termina com a revisão do primeiro ciclo.',
+    workflowSteps: [
+      { title: 'Rever o processo actual', body: 'Identificar como stock, vendas, compras, documentos e pagamentos são tratados hoje.' },
+      { title: 'Configurar o workspace', body: 'Preparar empresa, utilizadores, funções, armazéns e preferências operacionais.' },
+      { title: 'Preparar os dados iniciais', body: 'Adicionar ou importar artigos, clientes, fornecedores e stock de abertura.' },
+      { title: 'Formar a equipa', body: 'Concentrar cada utilizador nos processos que pertencem à sua função.' },
+      { title: 'Rever o primeiro ciclo', body: 'Confirmar que quantidades, documentos e seguimento representam a operação real.' },
+    ],
+    useCasesTitle: 'Útil onde o registo precisa de acompanhar o trabalho.',
+    useCasesBody: 'O modelo operacional importa mais do que o nome do sector.',
+    useCases: [
+      {
+        title: 'Padaria ou pequena produção',
+        body: 'Ligue compras, matérias-primas, produção, produto acabado e vendas ao balcão.',
+      },
+      {
+        title: 'Retalho alimentar ou talho',
+        body: 'Mantenha recepção, movimentos, vendas ao balcão e revisão de stock baixo no mesmo controlo.',
+      },
+      {
+        title: 'Agro, viveiro ou crescimento biológico',
+        body: 'Use Lotes de Crescimento activos para medições, custos directos, entradas de stock e reversões.',
+      },
+      {
+        title: 'Armazém ou distribuidor',
+        body: 'Controle encomenda, recepção, movimentos, vendas e risco de stock entre locais operacionais.',
+      },
+    ],
+    pricingTitle: 'Planos publicados. Activação controlada.',
+    pricingBody: 'Escolha a profundidade operacional, o número de utilizadores e o apoio de implementação adequados à equipa.',
+    pricingFootnote:
+      'Cada nova empresa pode começar com um teste de 7 dias. O acesso pago é activado manualmente depois da revisão; não existe checkout pago automático.',
+    faqTitle: 'Perguntas importantes antes de começar',
+    faqBody: 'Respostas directas sobre acesso, implementação e uso diário.',
+    faqs: [
+      {
+        id: 'trial',
+        question: 'Posso começar o teste sem activação paga?',
+        answer: 'Sim. Uma nova empresa pode começar com um teste de 7 dias. O acesso pago é activado manualmente depois do teste ou da revisão comercial.',
+      },
+      {
+        id: 'activation',
+        question: 'O que acontece quando o teste termina?',
+        answer: 'A equipa StockWise revê consigo o plano e a activação. A Landing Page não oferece checkout pago imediato.',
+      },
+      {
+        id: 'implementation',
+        question: 'Como é feita a implementação?',
+        answer: 'A implementação começa no processo actual, passa pela configuração e dados iniciais, e continua com formação por função e revisão do primeiro ciclo operacional.',
+      },
+      {
+        id: 'import',
+        question: 'Posso importar artigos e stock de abertura?',
+        answer: 'Sim. O StockWise inclui um processo de dados iniciais para artigos e stock de abertura, com validação antes de aceitar os registos.',
+      },
+      {
+        id: 'team',
+        question: 'Várias pessoas podem usar o mesmo workspace?',
+        answer: 'Sim. Os planos definem o número de utilizadores e o produto suporta utilizadores da empresa com funções controladas para responsabilidades diferentes.',
+      },
+      {
+        id: 'mobile',
+        question: 'A equipa pode trabalhar pelo telefone?',
+        answer: 'A aplicação web é responsiva e existe acesso Android. O processo adequado continua a depender da função e da tarefa.',
+      },
+      {
+        id: 'accountant',
+        question: 'O StockWise substitui o aconselhamento contabilístico?',
+        answer: 'Não. O StockWise organiza registos operacionais e financeiros para revisão. Submissões oficiais e decisões contabilísticas devem ser validadas pelo profissional adequado.',
+      },
+    ],
+    teamTitle: 'O StockWise é desenvolvido pela WiseCore Technologies.',
+    teamMembers: [
+      { name: 'Samuel Massinga', role: 'Fundador e CEO' },
+      { name: 'Alda Jofrice', role: 'Co-Fundadora e Gestora Executiva' },
+      { name: 'Galileu Gonçalves', role: 'Co-Fundador e Director de Operações' },
+    ],
+    finalTitle: 'Comece com um ciclo operacional.',
+    finalBody: 'Use o teste de 7 dias para perceber se o StockWise torna os registos que a sua equipa já trata mais fáceis de seguir.',
+    footerTagline: 'Registos operacionais ligados para stock, vendas, compras, produção, documentos e revisão de liquidações.',
+    pricingContent: {
+      starter: {
+        headline: 'Para equipas pequenas que querem tirar stock e encomendas das folhas soltas.',
+        included: ['Gestão de produtos e stock', 'Encomendas de venda e ordens de compra', 'Clientes e fornecedores', 'Dashboards e relatórios base'],
+        support: ['Suporte inicial de configuração', 'Até 1 semana de formação remota', 'Suporte remoto padrão no horário de trabalho'],
+      },
+      growth: {
+        headline: 'Para equipas em crescimento que precisam de mais visibilidade e seguimento.',
+        included: ['Tudo do Starter', 'Dashboards e relatórios mais completos', 'Melhor seguimento de saldos e actividade'],
+        support: ['Suporte remoto prioritário', 'Até 2 semanas de formação remota', 'Orientação adicional de implementação'],
+      },
+      business: {
+        headline: 'Para operações diárias mais pesadas, com mais utilizadores e complexidade.',
+        included: ['Tudo do Growth', 'Até 10 utilizadores', 'Melhor ajuste para operações diárias complexas'],
+        support: ['Tratamento de suporte mais rápido', 'Onboarding mais acompanhado', 'Revisão e orientação periódica da adopção'],
+      },
+      managed_business_plus: {
+        headline: 'Para equipas que querem uma relação operacional e de suporte mais próxima.',
+        included: ['Acesso ao plano Business', 'Implementação acompanhada', 'Sessões de formação de reforço'],
+        support: ['Reuniões periódicas de revisão', 'Prioridade de suporte mais alta', 'Apoio próximo durante adopção e estabilização'],
+      },
+    },
+    labels: {
+      monthly: 'Mensal',
+      sixMonth: '6 meses',
+      annual: 'Anual',
+      pricingPeriod: 'Período de preço',
+      perMonth: 'por mês',
+      everySixMonths: 'a cada 6 meses',
+      perYear: 'por ano',
+      billedMonthly: 'Facturado mensalmente',
+      equivalentMonthly: (amount) => `Equivalente mensal de ${amount}`,
+      saveEverySixMonths: (amount) => `Poupe ${amount} a cada 6 meses`,
+      saveAnnually: (amount) => `Poupe ${amount} por ano`,
+      contactUs: 'Fale connosco',
+      billingByProposal: 'Preço anual e âmbito por proposta',
+      onboarding: 'Implementação',
+      includes: 'Âmbito do plano',
+      support: 'Implementação e suporte',
+      users: 'Utilizadores',
+      company: 'Empresa',
+      recommended: 'Opção operacional recomendada',
+      requestActivation: 'Pedir activação',
+      talkToUs: 'Falar com StockWise',
+      office: 'Beira, Moçambique',
+      builtBy: 'Um produto da WiseCore Technologies, Lda.',
+    },
+    mailSubjects: {
+      activation: 'Pedido de activação StockWise',
+      contact: 'Conversa comercial StockWise',
+    },
+  },
 }
-
-const iconMap = {
-  stock: StackIcon,
-  checkout: CashRegisterIcon,
-  documents: InvoiceIcon,
-  access: KeyIcon,
-  reports: PresentationChartIcon,
-  records: SealCheckIcon,
-  receiving: TruckIcon,
-  settlements: HandCoinsIcon,
-  imports: FileArrowUpIcon,
-  cash: BankIcon,
-  mobile: DeviceMobileIcon,
-  support: LifebuoyIcon,
-  security: PhosphorShieldCheckIcon,
-  growth: PlantIcon,
-  production: FactoryIcon,
-  attention: WarningDiamondIcon,
-  connected: LinkSimpleIcon,
-  stockReady: BarcodeIcon,
-  company: BuildingsIcon,
-  activation: LockKeyIcon,
-  question: QuestionIcon,
-} satisfies Record<IconName, PhosphorIcon>
-
-const revealEase = [0.22, 1, 0.36, 1] as const
 
 const portuguesePlanCompanyLabels: Record<string, string> = {
   starter: '1 conta de empresa',
@@ -218,1443 +641,6 @@ const portuguesePlanUserLabels: Record<string, string> = {
   managed_business_plus: 'Utilizadores por proposta',
 }
 
-const copyByLang: Record<Lang, LandingCopy> = {
-  en: {
-    nav: [
-      { label: 'How it works', href: '#workflow' },
-      { label: 'Use cases', href: '#use-cases' },
-      { label: 'Pricing', href: '#pricing' },
-      { label: 'Team', href: '#team' },
-      { label: 'FAQ', href: '#faq' },
-    ],
-    productLabel: 'Product',
-    productMenu: [
-      {
-        title: 'Stock control',
-        body: 'Items, stock levels, movements, and low-stock signals.',
-        href: '#capabilities',
-        icon: 'stock',
-      },
-      {
-        title: 'POS and sales',
-        body: 'Daily selling, sales orders, and stock-linked activity.',
-        href: '#capabilities',
-        icon: 'checkout',
-      },
-      {
-        title: 'Finance documents',
-        body: 'Invoices, notes, vendor bills, and settlement follow-up.',
-        href: '#records',
-        icon: 'documents',
-      },
-      {
-        title: 'Growth batches',
-        body: 'Active batches, measurements, direct costs, stock inputs, and reversals.',
-        href: '#operations',
-        icon: 'growth',
-      },
-    ],
-    heroEyebrow: 'Inventory and business control for growing teams',
-    heroTitle: 'Know what you have, what sold, and what needs attention.',
-    heroBody:
-      'StockWise connects stock, sales, purchases, payments and production so you can run the business with fewer surprises.',
-    heroSignals: [
-      {
-        title: 'POS sale recorded',
-        body: 'Counter sale stays linked to stock.',
-        icon: 'checkout',
-        tone: 'green',
-      },
-      {
-        title: 'Production run posted',
-        body: 'Materials and output stay traceable.',
-        icon: 'production',
-        tone: 'teal',
-      },
-      {
-        title: 'Stock attention visible',
-        body: 'The team can see what needs review.',
-        icon: 'growth',
-        tone: 'amber',
-      },
-    ],
-    primaryCta: 'Start 7-day trial',
-    secondaryCta: 'View pricing',
-    activationNote:
-      'Every new company starts with a 7-day trial. Paid activation is handled manually by the StockWise team.',
-    capabilityRailTitle: 'Connected tools for daily operations',
-    capabilityRailItems: [
-      'Stock control',
-      'Point of Sale',
-      'Purchases',
-      'Sales documents',
-      'Production Runs',
-      'Growth Batches',
-      'Settlements',
-      'Android access',
-    ],
-    operationTitle: 'Built around how the business actually works.',
-    operationBody:
-      'StockWise is organised around operating flows first, then modules. That makes the product easier to understand for owners, managers, and teams moving away from spreadsheets.',
-    operationFits: [
-      {
-        title: 'For buying and reselling',
-        body: 'Receive stock, sell through POS or orders, and keep availability, documents, and settlement follow-up connected.',
-        icon: 'stockReady',
-      },
-      {
-        title: 'For production and transformation',
-        body: 'Track materials, production runs, finished goods, cost context, and the records that support daily control.',
-        icon: 'production',
-      },
-      {
-        title: 'For growth batches',
-        body: 'Follow active batches with measurements, direct costs, stock-input material cost, and event-specific reversals.',
-        icon: 'growth',
-      },
-      {
-        title: 'For counter sales and cash control',
-        body: 'Keep selling, stock movement, users, cash, bank, and owner visibility in the same operating picture.',
-        icon: 'checkout',
-      },
-    ],
-    trustSignals: [
-      {
-        title: 'Stock control',
-        body: 'Know what is available before selling or purchasing.',
-        icon: 'stock',
-      },
-      {
-        title: 'POS-ready',
-        body: 'Keep counter sales connected to items and stock movement.',
-        icon: 'checkout',
-      },
-      {
-        title: 'Finance documents',
-        body: 'Organise invoices, notes, vendor bills, and settlements.',
-        icon: 'documents',
-      },
-      {
-        title: 'User roles',
-        body: 'Give owners, managers, and operators controlled access.',
-        icon: 'access',
-      },
-      {
-        title: 'Growth Batches',
-        body: 'Track active batches, measurements, direct costs, stock inputs, and reversal evidence.',
-        icon: 'growth',
-      },
-      {
-        title: 'Mozambique-ready records',
-        body: 'Prepare structured NUIT, IVA, MZN, and fiscal document data.',
-        icon: 'records',
-      },
-    ],
-    problemTitle: 'Small daily gaps become expensive business problems.',
-    problemBody:
-      'When stock, sales, purchases and payments live in different places, owners discover problems late—after an item is missing, a reorder was missed or a balance no longer makes sense.',
-    problems: [
-      {
-        title: 'Stock tracked in Excel or manual books',
-        body: 'Quantity on hand becomes a debate when receipts, sales, and adjustments are not tied to one ledger.',
-      },
-      {
-        title: 'Sales are not linked to stock movement',
-        body: 'Revenue looks useful, but owners cannot always see whether stock and cost records support it.',
-      },
-      {
-        title: 'Invoices and receipts saved in different places',
-        body: 'Documents, folders, paper copies, and message threads do not tell one story.',
-      },
-      {
-        title: 'Hard to see what is owed, paid, or still pending',
-        body: 'Paid, partially paid, and pending records sit outside the daily operating picture.',
-      },
-      {
-        title: 'Managers do not know what needs attention',
-        body: 'Open balances, pending documents, and low-stock items stay hidden until they become urgent.',
-      },
-    ],
-    capabilitiesTitle: 'A serious workspace for daily business control.',
-    capabilitiesBody:
-      'StockWise connects stock, selling, purchasing, finance documents, settlement follow-up, and reports without forcing the team into separate tools.',
-    capabilities: [
-      {
-        title: 'Items and stock levels',
-        body: 'Create items, set minimum stock, review on-hand quantities, and see stock risk before it becomes a sales problem.',
-        icon: 'stock',
-      },
-      {
-        title: 'POS and sales',
-        body: 'Use POS and sales workflows with stock-linked operating records and practical order follow-up.',
-        icon: 'checkout',
-      },
-      {
-        title: 'Purchases and vendor bills',
-        body: 'Track purchase orders, receiving, supplier obligations, and cost visibility in one operational flow.',
-        icon: 'receiving',
-      },
-      {
-        title: 'Growth batches and inputs',
-        body: 'Manage active batches, measurements, direct costs, stock-input material cost, and controlled reversals.',
-        icon: 'growth',
-      },
-      {
-        title: 'Invoices and notes',
-        body: 'Organise invoices, credit notes, debit notes, NUIT, IVA/VAT, currency, and document status.',
-        icon: 'documents',
-      },
-      {
-        title: 'Settlements, cash, and bank',
-        body: 'Review paid, partially paid, and open balances with cash and bank context.',
-        icon: 'settlements',
-      },
-      {
-        title: 'Reports and dashboards',
-        body: 'See operational revenue, cost signals, inventory value, and activity from the dashboard.',
-        icon: 'reports',
-      },
-      {
-        title: 'Users and roles',
-        body: 'Invite users and give controlled access to operational and administrative workspaces.',
-        icon: 'access',
-      },
-      {
-        title: 'Import and export',
-        body: 'Bring in opening stock and work with exportable records for review, preparation, and reporting.',
-        icon: 'imports',
-      },
-    ],
-    showcaseTitle: 'From scattered records to organised operating control.',
-    showcaseBody:
-      'StockWise connects the operational pieces so owners can see what exists, what moved, what was sold, what is owed, and what needs attention.',
-    showcaseNote: 'Illustrative preview based on current StockWise workflows. Values shown are sample operating data.',
-    workflowTitle: 'A guided path from scattered records to daily control.',
-    workflowBody:
-      'A practical rollout starts with the way your team works today and ends with a reviewed first operating cycle.',
-    workflowSteps: [
-      {
-        title: 'Review your current process',
-        body: 'We identify how stock, sales, purchases and payments are currently handled.',
-        icon: 'security',
-      },
-      {
-        title: 'Configure the workspace',
-        body: 'We set up the company, users, roles, warehouses and operating preferences.',
-        icon: 'imports',
-      },
-      {
-        title: 'Prepare the starting data',
-        body: 'Add or import items, suppliers, customers and opening stock.',
-        icon: 'connected',
-      },
-      {
-        title: 'Train the team',
-        body: 'Users learn the workflows relevant to their daily responsibilities.',
-        icon: 'production',
-      },
-      {
-        title: 'Review the first operating cycle',
-        body: 'We help confirm that stock, documents and follow-up are working as expected.',
-        icon: 'documents',
-      },
-    ],
-    useCasesTitle: 'Built for businesses where records need to line up.',
-    useCasesBody:
-      'Keep stock, sales, purchases, documents, payments, and operating costs connected in one organised workspace.',
-    useCases: [
-      {
-        title: 'Bakery or small producer',
-        body: 'Connect materials, production runs, counter sales, purchasing, and stock visibility without losing the cost trail.',
-        icon: 'production',
-      },
-      {
-        title: 'Butchery or food retail',
-        body: 'Keep receiving, stock movement, sales, and low-stock signals visible for items where freshness and rotation matter.',
-        icon: 'stockReady',
-      },
-      {
-        title: 'Agro, nursery, or biological growth',
-        body: 'Use active Growth Batches for measurements, direct costs, stock inputs, and reversal evidence.',
-        icon: 'growth',
-      },
-      {
-        title: 'Warehouse or distributor',
-        body: 'Control purchasing, receiving, movements, role-based work, and stock risk across operating locations.',
-        icon: 'stock',
-      },
-    ],
-    complianceTitle: 'Prepare cleaner fiscal and business records.',
-    complianceBody:
-      'StockWise supports structured records for review and preparation, with Mozambique-relevant business details kept close to the transaction history.',
-    compliancePoints: [
-      'Organise invoices, credit notes, debit notes, NUIT, IVA/VAT, currency, settlements, and exportable fiscal document data.',
-      'Keep document status, customer and supplier records, MZN values, and operational context in the same workspace.',
-      'Use exportable data and reports to support internal review and accountant preparation.',
-    ],
-    complianceCaution:
-      'Official submissions should be validated by your accountant or fiscal advisor.',
-    pricingTitle: 'Published pricing with a controlled trial path.',
-    pricingBody:
-      'Choose the plan that fits the operating depth and support level your business needs. Paid activation remains handled by StockWise.',
-    pricingFootnote:
-      'The 7-day trial can start from the app. Self-serve checkout is not active; activation, onboarding, and rollout support are handled directly.',
-    faqTitle: 'Questions before starting',
-    faqBody: 'Straight answers about trial access, records, mobile use, and rollout.',
-    faqs: [
-      {
-        id: 'trial-automatic',
-        question: 'Is the trial automatic?',
-        answer:
-          'A new company can start with a 7-day trial. Paid access is activated manually by the StockWise team after the trial or commercial review.',
-      },
-      {
-        id: 'after-trial',
-        question: 'What happens after the trial?',
-        answer:
-          'StockWise can review the right plan with you and activate paid access once the commercial arrangement is confirmed.',
-      },
-      {
-        id: 'import-opening-stock',
-        question: 'Can I import items and opening stock?',
-        answer:
-          'Yes. StockWise includes opening-data import workflows so a company can move from spreadsheets into a structured item and stock baseline.',
-      },
-      {
-        id: 'growth-batches',
-        question: 'Can I track active Growth Batches?',
-        answer:
-          'Yes. StockWise supports active batch records, measurements, direct costs, stock inputs, and event-specific reversals.',
-      },
-      {
-        id: 'mobile',
-        question: 'Does it work on mobile?',
-        answer:
-          'Yes. Core public and authenticated surfaces are responsive, and operational screens are being polished around mobile workflows.',
-      },
-      {
-        id: 'accountant',
-        question: 'Does StockWise replace my accountant?',
-        answer:
-          'No. StockWise helps prepare cleaner records, but official submissions and fiscal decisions should be validated by your accountant or fiscal advisor.',
-      },
-      {
-        id: 'mozambique-records',
-        question: 'Does it support Mozambique records?',
-        answer:
-          'StockWise supports Mozambique-relevant records such as NUIT, IVA/VAT context, MZN values, invoices, notes, settlements, and exportable fiscal document data.',
-      },
-      {
-        id: 'invite-users',
-        question: 'Can I invite users?',
-        answer:
-          'Yes. Company workspaces support user invitations and roles so each person has access appropriate to their work.',
-      },
-      {
-        id: 'point-of-sale',
-        question: 'Does StockWise include a Point of Sale workspace?',
-        answer:
-          'Yes. StockWise includes a Point of Sale workspace designed for fast counter sales. Each completed sale remains connected to the related stock movement and business records.',
-      },
-    ],
-    teamTitle: 'Built by WiseCore Technologies, Lda.',
-    teamBody:
-      'WiseCore Technologies, Lda. gives StockWise a visible legal and operating identity. The product is built from Beira for businesses that need accountable rollout, support, and practical control.',
-    teamMembers: [
-      {
-        name: 'Samuel Massinga',
-        role: 'Founder and CEO',
-        body: 'Product direction, operating workflow design, rollout discipline, and StockWise delivery.',
-      },
-      {
-        name: 'Alda Jofrice',
-        role: 'Co-Founder and Executive Manager',
-        body: 'Customer operations, implementation follow-up, business controls, and executive coordination.',
-      },
-      {
-        name: 'Galileu Gonçalves',
-        role: 'Co-founder and Chief Operating Officer',
-        body: 'Sales and customer acquisition.',
-      },
-    ],
-    finalTitle: 'Ready to bring stock, operations, and records into one workspace?',
-    finalBody:
-      'Start the 7-day trial or contact StockWise for a controlled activation and rollout conversation.',
-    demoCta: 'Book a demo',
-    signIn: 'Sign in',
-    openDashboard: 'Open dashboard',
-    openMenu: 'Open menu',
-    closeMenu: 'Close menu',
-    footerTagline:
-      'Inventory, sales, purchases, documents, settlements, reports, users, and Mozambique-ready records in one serious workspace.',
-    labels: {
-      annual: 'Annual',
-      monthly: 'Monthly',
-      sixMonth: '6 months',
-      pricingPeriod: 'Pricing period',
-      perMonth: 'per month',
-      billedMonthly: 'Billed monthly',
-      everySixMonths: 'every 6 months',
-      perYear: 'per year',
-      equivalentMonthly: (amount: string) => `Equivalent to ${amount} per month`,
-      saveEverySixMonths: (amount: string) => `Save ${amount} every 6 months`,
-      saveAnnually: (amount: string) => `Save ${amount} annually`,
-      contactUs: 'Contact us',
-      billingByProposal: 'Billing by proposal',
-      onboarding: 'Onboarding',
-      bestFor: 'Best for',
-      includes: 'What is included',
-      support: 'Implementation and support',
-      users: 'Users',
-      company: 'Company account',
-      from: 'From',
-      recommended: 'Recommended',
-      requestActivation: 'Request activation',
-      talkToUs: 'Talk to us',
-      viewPricing: 'View pricing',
-      productPreview: 'Product preview',
-      sampleOnly: 'Sample operating data',
-      sectionProduct: 'Product areas',
-      supportEmail: 'Contact email',
-      wiseCore: 'WiseCore Technologies, Lda.',
-      builtBy: 'Built by',
-      office: 'Beira, Mozambique',
-    },
-    pricingContent: {
-      starter: {
-        headline: 'A clean entry point for businesses leaving spreadsheets behind.',
-        bestFor: 'Smaller businesses that need stock, orders, customers, and suppliers under control.',
-        included: [
-          '1 company account',
-          'Up to 2 users',
-          'Product and stock management',
-          'Sales order management',
-          'Purchase order management',
-          'Customer and supplier records',
-          'Basic dashboards and reporting',
-        ],
-        support: [
-          'Initial setup support',
-          'Up to 1 week of remote user training',
-          'Standard remote support during business hours',
-        ],
-      },
-      growth: {
-        headline: 'Balanced visibility for growing operating teams.',
-        bestFor:
-          'Growing companies that need stronger reporting, follow-up, and implementation guidance.',
-        included: [
-          'Includes everything in Starter',
-          'Up to 5 users',
-          'Enhanced reporting and dashboard visibility',
-          'Improved follow-up on customer balances and operational activity',
-        ],
-        support: [
-          'Priority remote support',
-          'Up to 2 weeks of remote user training',
-          'Additional setup guidance during implementation',
-        ],
-      },
-      business: {
-        headline: 'For heavier daily operations that need tighter handling.',
-        bestFor:
-          'Established teams with more users, more follow-up needs, and more complex day-to-day execution.',
-        included: [
-          'Includes everything in Growth',
-          'Up to 10 users',
-          'Better fit for more complex daily operations',
-        ],
-        support: [
-          'Faster support handling',
-          'More hands-on onboarding support',
-          'Periodic review and guidance during adoption',
-        ],
-      },
-      managed_business_plus: {
-        headline: 'A higher-touch operating relationship.',
-        bestFor:
-          'Businesses that want the Business plan plus more direct rollout support, refresher training, and periodic guidance.',
-        included: [
-          'Business plan access',
-          'Premium onboarding approach',
-          'Refresher training sessions',
-        ],
-        support: [
-          'Periodic review meetings',
-          'Higher support priority',
-          'More hands-on assistance during adoption and stabilisation',
-        ],
-      },
-    },
-    mailSubjects: {
-      demo: 'StockWise demo request',
-      activation: 'StockWise activation request',
-      contact: 'StockWise commercial contact',
-    },
-  },
-  pt: {
-    nav: [
-      { label: 'Como funciona', href: '#workflow' },
-      { label: 'Casos de uso', href: '#use-cases' },
-      { label: 'Preços', href: '#pricing' },
-      { label: 'Equipa', href: '#team' },
-      { label: 'FAQ', href: '#faq' },
-    ],
-    productLabel: 'Produto',
-    productMenu: [
-      {
-        title: 'Controlo de stock',
-        body: 'Itens, níveis de stock, movimentos e alertas de baixo stock.',
-        href: '#capabilities',
-        icon: 'stock',
-      },
-      {
-        title: 'POS e vendas',
-        body: 'Vendas diárias, encomendas e atividade ligada ao stock.',
-        href: '#capabilities',
-        icon: 'checkout',
-      },
-      {
-        title: 'Documentos financeiros',
-        body: 'Faturas, notas, vendor bills e seguimento de liquidações.',
-        href: '#records',
-        icon: 'documents',
-      },
-      {
-        title: 'Growth Batches',
-        body: 'Lotes ativos, medições, custos diretos, inputs de stock e reversões.',
-        href: '#operations',
-        icon: 'growth',
-      },
-    ],
-    heroEyebrow: 'Controlo de stock e do negócio para equipas em crescimento',
-    heroTitle: 'Saiba o que tem, o que vendeu e o que precisa de atenção.',
-    heroBody:
-      'O StockWise liga stock, vendas, compras, pagamentos e produção para ajudar a gerir o negócio com menos surpresas.',
-    heroSignals: [
-      {
-        title: 'Venda no Ponto de Venda registada',
-        body: 'A venda ao balcão fica ligada ao stock.',
-        icon: 'checkout',
-        tone: 'green',
-      },
-      {
-        title: 'Ordem de Produção lançada',
-        body: 'Materiais e saída ficam rastreáveis.',
-        icon: 'production',
-        tone: 'teal',
-      },
-      {
-        title: 'Atenção ao stock visível',
-        body: 'A equipa vê o que precisa de revisão.',
-        icon: 'growth',
-        tone: 'amber',
-      },
-    ],
-    primaryCta: 'Iniciar teste de 7 dias',
-    secondaryCta: 'Ver preços',
-    activationNote:
-      'Cada nova empresa começa com um teste de 7 dias. A ativação paga é tratada manualmente pela equipa StockWise.',
-    capabilityRailTitle: 'Ferramentas ligadas para a operação diária',
-    capabilityRailItems: [
-      'Controlo de stock',
-      'Ponto de Venda',
-      'Compras',
-      'Documentos de venda',
-      'Ordens de Produção',
-      'Lotes de Crescimento',
-      'Liquidações',
-      'Acesso Android',
-    ],
-    operationTitle: 'Construído à volta da forma como o negócio trabalha.',
-    operationBody:
-      'O StockWise organiza primeiro os fluxos operacionais e só depois os módulos. Isso torna o produto mais claro para donos, gestores e equipas que estão a sair das folhas soltas.',
-    operationFits: [
-      {
-        title: 'Para quem compra e revende',
-        body: 'Receba stock, venda por POS ou encomendas e mantenha disponibilidade, documentos e liquidações ligados.',
-        icon: 'stockReady',
-      },
-      {
-        title: 'Para produção e transformação',
-        body: 'Acompanhe materiais, produções, produto acabado, contexto de custo e registos de controlo diário.',
-        icon: 'production',
-      },
-      {
-        title: 'Para lotes em crescimento',
-        body: 'Siga lotes ativos com medições, custos diretos, custo material de inputs e reversões por evento.',
-        icon: 'growth',
-      },
-      {
-        title: 'Para balcão e controlo de caixa',
-        body: 'Mantenha vendas, movimento de stock, utilizadores, caixa, bancos e visibilidade do dono na mesma operação.',
-        icon: 'checkout',
-      },
-    ],
-    trustSignals: [
-      {
-        title: 'Controlo de stock',
-        body: 'Saiba o que está disponível antes de vender ou comprar.',
-        icon: 'stock',
-      },
-      {
-        title: 'Pronto para POS',
-        body: 'Ligue vendas de balcão a itens e movimentos de stock.',
-        icon: 'checkout',
-      },
-      {
-        title: 'Documentos financeiros',
-        body: 'Organize faturas, notas, vendor bills e liquidações.',
-        icon: 'documents',
-      },
-      {
-        title: 'Funções de utilizador',
-        body: 'Dê acesso controlado a donos, gestores e operadores.',
-        icon: 'access',
-      },
-      {
-        title: 'Growth Batches',
-        body: 'Acompanhe lotes ativos, medições, custos diretos, inputs de stock e evidência de reversão.',
-        icon: 'growth',
-      },
-      {
-        title: 'Registos para Moçambique',
-        body: 'Prepare dados estruturados de NUIT, IVA, MZN e documentos fiscais.',
-        icon: 'records',
-      },
-    ],
-    problemTitle: 'Pequenas falhas diárias tornam-se problemas caros para o negócio.',
-    problemBody:
-      'Quando stock, vendas, compras e pagamentos ficam separados, os problemas aparecem tarde—depois de faltar um artigo, perder uma reposição ou deixar de fazer sentido um saldo.',
-    problems: [
-      {
-        title: 'Stock controlado em Excel ou livros manuais',
-        body: 'A quantidade disponível vira debate quando receções, vendas e ajustes não estão ligados a um único registo.',
-      },
-      {
-        title: 'Vendas não ligadas ao movimento de stock',
-        body: 'A receita parece útil, mas o dono nem sempre vê se o stock e o custo sustentam a venda.',
-      },
-      {
-        title: 'Faturas e recibos guardados em lugares diferentes',
-        body: 'Documentos, pastas, cópias em papel e mensagens não contam uma história única.',
-      },
-      {
-        title: 'Difícil ver o que está em dívida, pago ou pendente',
-        body: 'Registos pagos, parciais e pendentes ficam fora da visão operacional diária.',
-      },
-      {
-        title: 'Gestores não sabem o que precisa de atenção',
-        body: 'Saldos em aberto, documentos pendentes e itens com baixo stock ficam escondidos até virarem urgência.',
-      },
-    ],
-    capabilitiesTitle: 'Um workspace sério para o controlo diário do negócio.',
-    capabilitiesBody:
-      'O StockWise liga stock, vendas, compras, documentos financeiros, liquidações e relatórios sem obrigar a equipa a saltar entre ferramentas.',
-    capabilities: [
-      {
-        title: 'Itens e níveis de stock',
-        body: 'Crie itens, defina stock mínimo, reveja quantidades disponíveis e veja riscos antes de afetarem vendas.',
-        icon: 'stock',
-      },
-      {
-        title: 'POS e vendas',
-        body: 'Use POS e fluxos de venda com registos operacionais ligados ao stock e ao seguimento de encomendas.',
-        icon: 'checkout',
-      },
-      {
-        title: 'Compras e vendor bills',
-        body: 'Acompanhe ordens de compra, receções, obrigações de fornecedores e visibilidade de custo.',
-        icon: 'receiving',
-      },
-      {
-        title: 'Growth Batches e inputs',
-        body: 'Gira lotes ativos, medições, custos diretos, custo material de inputs de stock e reversões controladas.',
-        icon: 'growth',
-      },
-      {
-        title: 'Faturas e notas',
-        body: 'Organize faturas, notas de crédito, notas de débito, NUIT, IVA, moeda e estado documental.',
-        icon: 'documents',
-      },
-      {
-        title: 'Liquidações, caixa e bancos',
-        body: 'Reveja saldos pagos, parciais e em aberto com contexto de caixa e banco.',
-        icon: 'settlements',
-      },
-      {
-        title: 'Relatórios e dashboards',
-        body: 'Veja receita operacional, sinais de custo, valor de stock e atividade no dashboard.',
-        icon: 'reports',
-      },
-      {
-        title: 'Utilizadores e funções',
-        body: 'Convide utilizadores e dê acesso controlado a áreas operacionais e administrativas.',
-        icon: 'access',
-      },
-      {
-        title: 'Importação e exportação',
-        body: 'Carregue stock inicial e trabalhe com registos exportáveis para revisão, preparação e reporting.',
-        icon: 'imports',
-      },
-    ],
-    showcaseTitle: 'De registos espalhados para controlo operacional organizado.',
-    showcaseBody:
-      'O StockWise liga as peças operacionais para que os donos vejam o que existe, o que mexeu, o que foi vendido, o que está por pagar e o que precisa de atenção.',
-    showcaseNote: 'Pré-visualização ilustrativa baseada nos fluxos atuais do StockWise. Os valores são exemplos.',
-    workflowTitle: 'Um caminho acompanhado, de registos dispersos ao controlo diário.',
-    workflowBody:
-      'Uma implementação prática começa na forma como a equipa trabalha hoje e termina com a revisão do primeiro ciclo operacional.',
-    workflowSteps: [
-      {
-        title: 'Rever o processo actual',
-        body: 'Identificamos como a empresa gere stock, vendas, compras e pagamentos.',
-        icon: 'security',
-      },
-      {
-        title: 'Configurar o workspace',
-        body: 'Configuramos a empresa, utilizadores, funções, armazéns e preferências operacionais.',
-        icon: 'imports',
-      },
-      {
-        title: 'Preparar os dados iniciais',
-        body: 'Adicione ou importe artigos, fornecedores, clientes e stock inicial.',
-        icon: 'connected',
-      },
-      {
-        title: 'Formar a equipa',
-        body: 'Cada utilizador aprende os fluxos relevantes para o seu trabalho diário.',
-        icon: 'production',
-      },
-      {
-        title: 'Rever o primeiro ciclo operacional',
-        body: 'Ajudamos a confirmar que stock, documentos e seguimento funcionam como esperado.',
-        icon: 'documents',
-      },
-    ],
-    useCasesTitle: 'Criado para negócios onde os registos precisam de alinhar.',
-    useCasesBody:
-      'Mantenha stock, vendas, compras, documentos, pagamentos e custos operacionais ligados num workspace organizado.',
-    useCases: [
-      {
-        title: 'Pastelaria ou pequena produção',
-        body: 'Ligue materiais, produções, vendas ao balcão, compras e visibilidade de stock sem perder o rasto de custo.',
-        icon: 'production',
-      },
-      {
-        title: 'Talho ou retalho alimentar',
-        body: 'Mantenha receções, movimento de stock, vendas e sinais de reposição visíveis para itens onde frescura e rotação importam.',
-        icon: 'stockReady',
-      },
-      {
-        title: 'Agro, viveiro ou crescimento biológico',
-        body: 'Use Growth Batches ativos para medições, custos diretos, histórico de inputs e evidência de reversão.',
-        icon: 'growth',
-      },
-      {
-        title: 'Armazém ou distribuidor',
-        body: 'Controle compras, receções, movimentos, funções da equipa e risco de stock entre locais operacionais.',
-        icon: 'stock',
-      },
-    ],
-    complianceTitle: 'Prepare registos fiscais e comerciais mais limpos.',
-    complianceBody:
-      'O StockWise apoia registos estruturados para revisão e preparação, mantendo detalhes relevantes para Moçambique junto do histórico da transação.',
-    compliancePoints: [
-      'Organize faturas, notas de crédito, notas de débito, NUIT, IVA, moeda, liquidações e dados fiscais exportáveis.',
-      'Mantenha estado documental, clientes, fornecedores, valores em MZN e contexto operacional no mesmo workspace.',
-      'Use dados exportáveis e relatórios para apoiar revisão interna e preparação pelo contabilista.',
-    ],
-    complianceCaution:
-      'Submissões oficiais devem ser validadas pelo seu contabilista ou consultor fiscal.',
-    pricingTitle: 'Preços publicados com um caminho de teste controlado.',
-    pricingBody:
-      'Escolha o plano que combina com a profundidade operacional e o suporte de que o negócio precisa. A ativação paga continua a ser tratada pela StockWise.',
-    pricingFootnote:
-      'O teste de 7 dias pode começar na aplicação. O checkout self-service não está ativo; ativação, onboarding e rollout são tratados diretamente.',
-    faqTitle: 'Perguntas antes de começar',
-    faqBody: 'Respostas diretas sobre teste, registos, mobile e implementação.',
-    faqs: [
-      {
-        id: 'trial-automatic',
-        question: 'O teste é automático?',
-        answer:
-          'Uma nova empresa pode começar com um teste de 7 dias. O acesso pago é ativado manualmente pela equipa StockWise depois da revisão comercial.',
-      },
-      {
-        id: 'after-trial',
-        question: 'O que acontece depois do teste?',
-        answer:
-          'A StockWise pode rever consigo o plano adequado e ativar o acesso pago quando o acordo comercial estiver confirmado.',
-      },
-      {
-        id: 'import-opening-stock',
-        question: 'Posso importar itens e stock inicial?',
-        answer:
-          'Sim. O StockWise inclui fluxos de importação inicial para passar de folhas para uma base estruturada de itens e stock.',
-      },
-      {
-        id: 'growth-batches',
-        question: 'Posso acompanhar Growth Batches ativos?',
-        answer:
-          'Sim. O StockWise suporta lotes ativos, medições, custos diretos, inputs de stock e reversões por evento.',
-      },
-      {
-        id: 'mobile',
-        question: 'Funciona no telemóvel?',
-        answer:
-          'Sim. As áreas públicas e autenticadas são responsivas, e os ecrãs operacionais estão a ser polidos para fluxos mobile.',
-      },
-      {
-        id: 'accountant',
-        question: 'Substitui o meu contabilista?',
-        answer:
-          'Não. O StockWise ajuda a preparar registos mais limpos, mas submissões oficiais e decisões fiscais devem ser validadas pelo contabilista ou consultor fiscal.',
-      },
-      {
-        id: 'mozambique-records',
-        question: 'Suporta registos de Moçambique?',
-        answer:
-          'O StockWise suporta registos relevantes como NUIT, IVA, valores em MZN, faturas, notas, liquidações e dados fiscais exportáveis.',
-      },
-      {
-        id: 'invite-users',
-        question: 'Posso convidar utilizadores?',
-        answer:
-          'Sim. Os workspaces de empresa suportam convites e funções para ajustar o acesso ao trabalho de cada pessoa.',
-      },
-      {
-        id: 'point-of-sale',
-        question: 'O StockWise inclui um espaço de Ponto de Venda?',
-        answer:
-          'Sim. O StockWise inclui um espaço de Ponto de Venda concebido para registar vendas ao balcão com rapidez. Cada venda concluída permanece ligada ao respectivo movimento de stock e aos registos comerciais.',
-      },
-    ],
-    teamTitle: 'Criado pela WiseCore Technologies, Lda.',
-    teamBody:
-      'A WiseCore Technologies, Lda. dá ao StockWise uma identidade legal e operacional visível. O produto é construído a partir da Beira para negócios que precisam de rollout responsável, suporte e controlo prático.',
-    teamMembers: [
-      {
-        name: 'Samuel Massinga',
-        role: 'Founder and CEO',
-        body: 'Direção de produto, desenho de fluxos operacionais, disciplina de rollout e entrega do StockWise.',
-      },
-      {
-        name: 'Alda Jofrice',
-        role: 'Co-Founder and Executive Manager',
-        body: 'Operações com clientes, seguimento de implementação, controlos de negócio e coordenação executiva.',
-      },
-      {
-        name: 'Galileu Gonçalves',
-        role: 'Co-founder and Chief Operating Officer',
-        body: 'Vendas e aquisição de clientes.',
-      },
-    ],
-    finalTitle: 'Pronto para juntar stock, operações e registos no mesmo workspace?',
-    finalBody:
-      'Inicie o teste de 7 dias ou contacte a StockWise para uma conversa controlada de ativação e rollout.',
-    demoCta: 'Marcar demonstração',
-    signIn: 'Iniciar sessão',
-    openDashboard: 'Abrir dashboard',
-    openMenu: 'Abrir menu',
-    closeMenu: 'Fechar menu',
-    footerTagline:
-      'Inventário, vendas, compras, documentos, liquidações, relatórios, utilizadores e registos para Moçambique num workspace sério.',
-    labels: {
-      annual: 'Anual',
-      monthly: 'Mensal',
-      sixMonth: '6 meses',
-      pricingPeriod: 'Período de preço',
-      perMonth: 'por mês',
-      billedMonthly: 'Cobrado mensalmente',
-      everySixMonths: 'a cada 6 meses',
-      perYear: 'por ano',
-      equivalentMonthly: (amount: string) => `Equivalente a ${amount} por mês`,
-      saveEverySixMonths: (amount: string) => `Poupe ${amount} em 6 meses`,
-      saveAnnually: (amount: string) => `Poupe ${amount} por ano`,
-      contactUs: 'Fale connosco',
-      billingByProposal: 'Cobrança por proposta',
-      onboarding: 'Onboarding',
-      bestFor: 'Mais indicado para',
-      includes: 'O que inclui',
-      support: 'Implementação e suporte',
-      users: 'Utilizadores',
-      company: 'Conta da empresa',
-      from: 'Desde',
-      recommended: 'Recomendado',
-      requestActivation: 'Pedir ativação',
-      talkToUs: 'Falar connosco',
-      viewPricing: 'Ver preços',
-      productPreview: 'Pré-visualização do produto',
-      sampleOnly: 'Dados operacionais de exemplo',
-      sectionProduct: 'Áreas do produto',
-      supportEmail: 'Email de contacto',
-      wiseCore: 'WiseCore Technologies, Lda.',
-      builtBy: 'Criado por',
-      office: 'Beira, Moçambique',
-    },
-    pricingContent: {
-      starter: {
-        headline: 'Ponto de entrada limpo para empresas que saem das folhas soltas.',
-        bestFor:
-          'Negócios menores que precisam de stock, encomendas, clientes e fornecedores sob controlo.',
-        included: [
-          '1 conta de empresa',
-          'Até 2 utilizadores',
-          'Gestão de produtos e stock',
-          'Gestão de encomendas de venda',
-          'Gestão de ordens de compra',
-          'Registos de clientes e fornecedores',
-          'Dashboards e reporting base',
-        ],
-        support: [
-          'Suporte inicial de configuração',
-          'Até 1 semana de formação remota de utilizadores',
-          'Suporte remoto padrão durante o horário de trabalho',
-        ],
-      },
-      growth: {
-        headline: 'Visibilidade equilibrada para equipas em crescimento.',
-        bestFor:
-          'Empresas em crescimento que precisam de mais reporting, seguimento e apoio de implementação.',
-        included: [
-          'Inclui tudo do Starter',
-          'Até 5 utilizadores',
-          'Reporting e dashboards mais completos',
-          'Melhor acompanhamento de saldos de clientes e atividade operacional',
-        ],
-        support: [
-          'Suporte remoto prioritário',
-          'Até 2 semanas de formação remota de utilizadores',
-          'Orientação adicional durante a implementação',
-        ],
-      },
-      business: {
-        headline: 'Para operações diárias mais pesadas que exigem mais controlo.',
-        bestFor:
-          'Equipas estabelecidas com mais utilizadores, mais seguimento e operação diária mais complexa.',
-        included: [
-          'Inclui tudo do Growth',
-          'Até 10 utilizadores',
-          'Melhor ajuste para operações diárias mais complexas',
-        ],
-        support: [
-          'Tratamento de suporte mais rápido',
-          'Onboarding mais acompanhado',
-          'Revisões periódicas e orientação durante a adoção',
-        ],
-      },
-      managed_business_plus: {
-        headline: 'Uma relação operacional mais acompanhada.',
-        bestFor:
-          'Empresas que querem o plano Business com mais apoio de rollout, formação de reforço e orientação periódica.',
-        included: [
-          'Acesso ao plano Business',
-          'Abordagem premium de onboarding',
-          'Sessões de formação de reforço',
-        ],
-        support: [
-          'Reuniões periódicas de revisão',
-          'Prioridade de suporte mais alta',
-          'Apoio mais próximo durante adoção e estabilização',
-        ],
-      },
-    },
-    mailSubjects: {
-      demo: 'Pedido de demonstração StockWise',
-      activation: 'Pedido de ativação StockWise',
-      contact: 'Contacto comercial StockWise',
-    },
-  },
-}
-
-function landingProductTabsFor(lang: Lang): LandingProductTab[] {
-  if (lang === 'pt') {
-    return [
-      {
-        id: 'dashboard',
-        label: 'Dashboard',
-        eyebrow: 'Visibilidade do dono',
-        title: 'Veja sinais operacionais sem perseguir ficheiros.',
-        body: 'O StockWise junta valor de stock, receita, sinais de custo, estado documental e atenção necessária numa superfície de revisão.',
-        points: [
-          'Valor de stock e receita operacional ficam visíveis.',
-          'Sinais de baixo stock e documentos ficam ligados aos registos.',
-          'Os valores são ilustrativos e não substituem revisão contabilística formal.',
-        ],
-        surface: 'dashboard',
-      },
-      {
-        id: 'stock-pos',
-        label: 'Stock e Ponto de Venda',
-        eyebrow: 'Balcão e stock',
-        title: 'Venda num workspace que continua ligado ao stock.',
-        body: 'A atividade de balcão fica próxima de itens, movimento de stock, seguimento de encomendas e verificação da quantidade disponível.',
-        points: [
-          'A disponibilidade de stock é visível antes da venda.',
-          'Ponto de Venda significa venda operacional ao balcão, não processamento de pagamentos.',
-          'Itens e movimentos permanecem ligados.',
-        ],
-        surface: 'stock',
-      },
-      {
-        id: 'documents',
-        label: 'Documentos',
-        eyebrow: 'Registos comerciais',
-        title: 'Mantenha faturas, notas, bills e liquidações ligados.',
-        body: 'Os fluxos documentais mantêm clientes, fornecedores, NUIT, contexto de IVA, valores em MZN e seguimento de pagamentos no mesmo lugar.',
-        points: [
-          'Faturas, notas, vendor bills e liquidações ficam organizados.',
-          'Estados em aberto, parciais e pagos continuam revistos.',
-          'Registos exportáveis apoiam a preparação com o contabilista.',
-        ],
-        surface: 'documents',
-      },
-      {
-        id: 'production',
-        label: 'Produção',
-        eyebrow: 'Transformação operacional',
-        title: 'Acompanhe produção sem a separar do stock.',
-        body: 'Os registos de produção ajudam a equipa a manter materiais, outputs e contexto operacional próximos do mesmo workspace.',
-        points: [
-          'Materiais e outputs ficam no registo operacional.',
-          'O controlo diário continua claro para gestores.',
-          'Materiais, outputs e contexto operacional ficam no mesmo fluxo.',
-        ],
-        surface: 'production',
-      },
-      {
-        id: 'growth',
-        label: 'Growth Batches',
-        eyebrow: 'Registos de ciclo biológico',
-        title: 'Registe atividade de lotes ativos com evidência controlada.',
-        body: 'Growth Batches suportam medições, custos diretos, inputs de stock, mortalidade, quebra e evidência de reversão por evento.',
-        points: [
-          'Perdas e reversões são governadas por função e request key.',
-          'Custos continuam separados dos preços de venda.',
-          'Perdas, custos e evidência operacional continuam claros para revisão.',
-        ],
-        surface: 'growth',
-      },
-      {
-        id: 'mobile',
-        label: 'Mobile',
-        eyebrow: 'Operação responsiva',
-        title: 'Use as superfícies públicas e operacionais em vários ecrãs.',
-        body: 'O StockWise foi desenhado para manter rotas centrais usáveis em desktop, laptop, tablet e telefone.',
-        points: [
-          'Navegação e cartões adaptam-se a ecrãs compactos.',
-          'As páginas operacionais estão a ser polidas para fluxos mobile.',
-          'Nenhuma ação pública obrigatória depende de hover.',
-        ],
-        surface: 'mobile',
-      },
-    ]
-  }
-
-  return [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      eyebrow: 'Owner visibility',
-      title: 'See operating signals without chasing files.',
-      body: 'StockWise brings stock value, revenue, cost signals, document status, and required attention into one review surface.',
-      points: [
-        'Inventory value and operational revenue stay visible.',
-        'Low-stock and document signals are connected to records.',
-        'Figures are illustrative and do not replace formal accounting review.',
-      ],
-      surface: 'dashboard',
-    },
-    {
-      id: 'stock-pos',
-      label: 'Stock and Point of Sale',
-      eyebrow: 'Counter sales and stock',
-      title: 'Sell from a workspace that remains tied to stock.',
-      body: 'Counter-sale activity stays close to items, stock movement, order follow-up, and available quantity checks.',
-      points: [
-        'Stock availability is visible before sale.',
-        'Point of Sale means operational counter sales, not payment processing.',
-        'Item and movement records stay connected.',
-      ],
-      surface: 'stock',
-    },
-    {
-      id: 'documents',
-      label: 'Documents',
-      eyebrow: 'Commercial records',
-      title: 'Keep invoices, notes, bills, and settlements connected.',
-      body: 'Document workflows keep customers, suppliers, NUIT, IVA/VAT context, MZN values, and payment follow-up in one place.',
-      points: [
-        'Invoices, notes, vendor bills, and settlements are organised.',
-        'Open, partial, and paid states remain reviewable.',
-        'Exportable records support preparation with an accountant.',
-      ],
-      surface: 'documents',
-    },
-    {
-      id: 'production',
-      label: 'Production',
-      eyebrow: 'Operational transformation',
-      title: 'Track production activity without separating it from stock.',
-      body: 'Production records help teams keep materials, outputs, and operating context close to the same business workspace.',
-      points: [
-        'Materials and outputs stay in the operating record.',
-        'Daily control remains understandable for managers.',
-        'Materials, outputs, and operating context stay in the same flow.',
-      ],
-      surface: 'production',
-    },
-    {
-      id: 'growth',
-      label: 'Growth Batches',
-      eyebrow: 'Biological lifecycle records',
-      title: 'Record active batch activity with controlled evidence.',
-      body: 'Growth Batches support measurements, direct costs, stock inputs, mortality, shrinkage, and event-specific reversal evidence.',
-      points: [
-        'Losses and reversals are governed by role and request keys.',
-        'Costs stay separated from selling prices.',
-        'Losses, costs, and operating evidence stay clear for review.',
-      ],
-      surface: 'growth',
-    },
-    {
-      id: 'mobile',
-      label: 'Mobile',
-      eyebrow: 'Responsive operations',
-      title: 'Use the public and operational surfaces across screen sizes.',
-      body: 'StockWise is designed to keep core routes usable on desktop, laptop, tablet, and phone screens.',
-      points: [
-        'Navigation and cards adapt to compact screens.',
-        'Operational pages are being polished around mobile flows.',
-        'No required public action depends on hover.',
-      ],
-      surface: 'mobile',
-    },
-  ]
-}
-
-function landingProductSurfaceLabels(lang: Lang) {
-  if (lang === 'pt') {
-    return {
-      tabListLabel: 'Áreas do produto StockWise',
-      sampleOnly: 'Dados operacionais de exemplo',
-      preview: 'Pré-visualização do produto',
-      rows: {
-        dashboard: [
-          { label: 'Valor de stock', value: 'MZN 128K' },
-          { label: 'Receita operacional', value: 'MZN 42K' },
-          { label: 'Lucro bruto', value: 'MZN 24K' },
-        ],
-        stock: [
-          { label: 'BK-001', value: 'Atual' },
-          { label: 'Ponto de Venda', value: 'Pronto' },
-          { label: 'Atenção', value: 'Requer atenção' },
-        ],
-        documents: [
-          { label: 'FAT-1042', value: 'Ligado' },
-          { label: 'LIQ-211', value: 'Revisão' },
-          { label: 'Nota de crédito', value: 'Atual' },
-        ],
-        production: [
-          { label: 'Materiais', value: 'Ligado' },
-          { label: 'Ordem', value: 'Atual' },
-          { label: 'Saída', value: 'Revisão' },
-        ],
-        growth: [
-          { label: 'Lote', value: 'Atual' },
-          { label: 'Perda', value: 'Ligado' },
-          { label: 'Reversão', value: 'Revisão' },
-        ],
-        mobile: [
-          { label: 'Balcão', value: 'Pronto' },
-          { label: 'Stock', value: 'Atual' },
-          { label: 'Revisão', value: 'Ligado' },
-        ],
-      } satisfies Record<LandingProductSurface, Array<{ label: string; value: string }>>,
-    }
-  }
-
-  return {
-    tabListLabel: 'StockWise product areas',
-    sampleOnly: 'Sample operating data',
-    preview: 'Product preview',
-    rows: {
-      dashboard: [
-        { label: 'Inventory value', value: 'MZN 128K' },
-        { label: 'Operational revenue', value: 'MZN 42K' },
-        { label: 'Gross profit', value: 'MZN 24K' },
-      ],
-      stock: [
-        { label: 'BK-001', value: 'Current' },
-        { label: 'Point of Sale', value: 'Ready' },
-        { label: 'Attention', value: 'Needs attention' },
-      ],
-      documents: [
-        { label: 'INV-1042', value: 'Linked' },
-        { label: 'SET-211', value: 'Review' },
-        { label: 'Credit note', value: 'Current' },
-      ],
-      production: [
-        { label: 'Materials', value: 'Linked' },
-        { label: 'Run', value: 'Current' },
-        { label: 'Output', value: 'Review' },
-      ],
-      growth: [
-        { label: 'Batch', value: 'Current' },
-        { label: 'Loss', value: 'Linked' },
-        { label: 'Reversal', value: 'Review' },
-      ],
-      mobile: [
-        { label: 'Counter', value: 'Ready' },
-        { label: 'Stock', value: 'Current' },
-        { label: 'Review', value: 'Linked' },
-      ],
-    } satisfies Record<LandingProductSurface, Array<{ label: string; value: string }>>,
-  }
-}
-
-function Icon({ name, className }: { name: IconName; className?: string }) {
-  const Component = iconMap[name]
-  return <Component className={className} weight="duotone" aria-hidden="true" />
-}
-
-type LandingIconTone = 'neutral' | 'positive' | 'negative' | 'warning' | 'critical' | 'info' | 'primary' | 'inverse'
-type LandingIconSize = 'compact' | 'card' | 'feature' | 'empty'
-
-function SectionIntro({
-  title,
-  body,
-  align = 'left',
-  inverse = false,
-}: {
-  title: string
-  body: string
-  align?: 'left' | 'center'
-  inverse?: boolean
-}) {
-  return (
-    <div className={cn('max-w-3xl', align === 'center' ? 'mx-auto text-center' : '')}>
-      <h2
-        className={cn(
-          'text-3xl font-semibold leading-tight text-foreground sm:text-4xl',
-          inverse ? 'text-white' : '',
-        )}
-      >
-        {title}
-      </h2>
-      <p
-        className={cn(
-          'mt-4 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8',
-          inverse ? 'text-zinc-300' : '',
-        )}
-      >
-        {body}
-      </p>
-    </div>
-  )
-}
-
-function SurfaceIcon({
-  name,
-  dark = false,
-  tone,
-  size = 'feature',
-  className,
-}: {
-  name: IconName
-  dark?: boolean
-  tone?: LandingIconTone
-  size?: LandingIconSize
-  className?: string
-}) {
-  return (
-    <IconBadge tone={tone ?? (dark ? 'inverse' : 'primary')} size={size} className={className}>
-      <Icon name={name} className="h-5 w-5" />
-    </IconBadge>
-  )
-}
-
-function InlineSurfaceIcon({
-  name,
-  dark = false,
-  className,
-}: {
-  name: IconName
-  dark?: boolean
-  className?: string
-}) {
-  return (
-    <Icon
-      name={name}
-      className={cn('h-5 w-5 shrink-0 text-primary', className)}
-    />
-  )
-}
-
-function StatusPill({ children, tone = 'teal' }: { children: ReactNode; tone?: 'teal' | 'green' | 'amber' | 'neutral' }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold leading-none',
-        tone === 'teal' ? 'border-primary/30 bg-primary/10 text-primary dark:border-primary/35 dark:bg-primary/15 dark:text-primary' : '',
-        tone === 'green' ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-700 dark:text-emerald-100' : '',
-        tone === 'amber' ? 'border-amber-300/50 bg-amber-300/10 text-amber-800 dark:text-amber-100' : '',
-        tone === 'neutral' ? 'border-border bg-muted text-muted-foreground dark:border-white/15 dark:bg-white/10 dark:text-zinc-100' : '',
-      )}
-    >
-      {children}
-    </span>
-  )
-}
-
-function HeroFloatingCards({ items }: { items: LandingCopy['heroSignals'] }) {
-  return (
-    <div className="landing-hero-floating-cards" aria-hidden="true">
-      {items.map((item, index) => (
-        <div key={item.title} className={cn('landing-floating-card', `landing-floating-card--${index + 1}`)}>
-          <span className={cn('landing-status-dot', `landing-status-dot--${item.tone}`)} aria-hidden="true" />
-          <InlineSurfaceIcon name={item.icon} dark className="h-4 w-4" />
-          <div>
-            <div className="landing-floating-card__title">{item.title}</div>
-            <div className="landing-floating-card__body">{item.body}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function CapabilityRail({ title, items }: { title: string; items: string[] }) {
-  const renderTrack = (duplicate = false) => (
-    <ul className="landing-capability-track" aria-hidden={duplicate ? 'true' : undefined}>
-      {items.map((item) => (
-        <li key={`${duplicate ? 'duplicate' : 'primary'}-${item}`} className="landing-capability-pill">
-          <CheckCircleIcon className="h-4 w-4" weight="duotone" aria-hidden="true" />
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  )
-
-  return (
-    <section className="landing-capability-rail-section" aria-labelledby="landing-capability-rail-title">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <h2 id="landing-capability-rail-title" className="landing-capability-rail-title">
-          {title}
-        </h2>
-        <div className="landing-capability-rail">
-          <div className="landing-capability-marquee">
-            {renderTrack()}
-            {renderTrack(true)}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function Reveal({
-  children,
-  className,
-  delay = 0,
-}: {
-  children: ReactNode
-  className?: string
-  delay?: number
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.16 }}
-      transition={{ duration: 0.52, delay, ease: revealEase }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  )
-}
-
-function updateLandingPointer(event: PointerEvent<HTMLElement>) {
-  const bounds = event.currentTarget.getBoundingClientRect()
-  event.currentTarget.style.setProperty('--landing-pointer-x', `${event.clientX - bounds.left}px`)
-  event.currentTarget.style.setProperty('--landing-pointer-y', `${event.clientY - bounds.top}px`)
-}
-
-function ProblemRecordsImage({ lang }: { lang: Lang }) {
-  const altText =
-    lang === 'pt'
-      ? 'Mesa com folhas de inventário, faturas, recibos, calculadora e registos manuais do negócio.'
-      : 'Desk with inventory sheets, invoices, receipts, calculator, and manual business records.'
-
-  return (
-    <figure className="landing-hover-lift overflow-hidden rounded-xl border border-border bg-card p-2 shadow-xl shadow-black/10 dark:border-zinc-700 dark:bg-black/80 dark:shadow-black/35">
-      <img
-        src="/landing/stockwise-records-desk.png"
-        alt={altText}
-        loading="eager"
-        fetchPriority="high"
-        decoding="async"
-        className="h-72 w-full rounded-lg object-cover object-center sm:h-[420px] lg:h-[540px]"
-      />
-    </figure>
-  )
-}
-
-function StructuredData({ lang }: { lang: Lang }) {
-  const description =
-    lang === 'pt'
-      ? 'StockWise controla stock, vendas, compras, pagamentos, produção e lotes em crescimento para empresas em Moçambique.'
-      : 'StockWise controls stock, sales, purchases, payments, production activity, and growth batches for Mozambican businesses.'
-
-  const data = {
-    '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'Organization',
-        '@id': 'https://stockwiseapp.com/#organization',
-        name: 'WiseCore Technologies, Lda.',
-        legalName: 'WiseCore Technologies, Lda.',
-        url: 'https://stockwiseapp.com/',
-        logo: 'https://stockwiseapp.com/brand/wisecore-logo-light.png',
-        email: PUBLIC_CONTACT_EMAIL,
-        address: {
-          '@type': 'PostalAddress',
-          addressLocality: 'Beira',
-          addressCountry: 'MZ',
-        },
-      },
-      {
-        '@type': 'WebApplication',
-        '@id': 'https://stockwiseapp.com/#stockwise',
-        name: 'StockWise',
-        applicationCategory: 'BusinessApplication',
-        operatingSystem: 'Web',
-        url: 'https://stockwiseapp.com/',
-        image: 'https://stockwiseapp.com/landing/stockwise-records-desk.png',
-        description,
-        publisher: {
-          '@id': 'https://stockwiseapp.com/#organization',
-        },
-        offers: {
-          '@type': 'Offer',
-          priceCurrency: 'MZN',
-          availability: 'https://schema.org/InStock',
-          url: 'https://stockwiseapp.com/#pricing',
-        },
-      },
-    ],
-  }
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
-    />
-  )
-}
-
 function isPricingPeriod(value: string | null): value is PricingPeriod {
   return value === 'monthly' || value === 'six_month' || value === 'annual'
 }
@@ -1663,12 +649,6 @@ function getStoredPricingPeriod(): PricingPeriod {
   if (typeof window === 'undefined') return 'monthly'
   const stored = window.sessionStorage.getItem(PRICING_PERIOD_STORAGE_KEY)
   return isPricingPeriod(stored) ? stored : 'monthly'
-}
-
-function formatLandingMzn(value: number | null | undefined, locale: string) {
-  const formatted = formatMzn(value, locale)
-  if (formatted === '--') return formatted
-  return `MZN ${formatted.replace(/\s*MZN$/, '')}`
 }
 
 function pricingPeriodLabel(copy: LandingCopy, period: PricingPeriod) {
@@ -1680,204 +660,189 @@ function pricingPeriodLabel(copy: LandingCopy, period: PricingPeriod) {
 function pricingDisplayFor(plan: PublicPricingPlan, period: PricingPeriod, locale: string, copy: LandingCopy) {
   if (period === 'monthly') {
     if (plan.monthlyMzn == null) {
-      return {
-        from: false,
-        price: copy.labels.contactUs,
-        cadence: '',
-        note: copy.labels.billingByProposal,
-        savings: null,
-      }
+      return { price: copy.labels.contactUs, cadence: '', note: copy.labels.billingByProposal, saving: null }
     }
-
     return {
-      from: false,
-      price: formatLandingMzn(plan.monthlyMzn, locale),
+      price: formatMzn(plan.monthlyMzn, locale),
       cadence: copy.labels.perMonth,
       note: copy.labels.billedMonthly,
-      savings: null,
+      saving: null,
     }
   }
 
   if (period === 'six_month') {
     const amount = plan.sixMonthMzn ?? (plan.monthlyMzn != null ? plan.monthlyMzn * 6 : null)
     if (amount == null) {
-      return {
-        from: false,
-        price: copy.labels.contactUs,
-        cadence: '',
-        note: copy.labels.billingByProposal,
-        savings: null,
-      }
+      return { price: copy.labels.contactUs, cadence: '', note: copy.labels.billingByProposal, saving: null }
     }
-
-    const saving =
-      plan.sixMonthMzn != null && plan.monthlyMzn != null
-        ? Math.max(0, plan.monthlyMzn * 6 - plan.sixMonthMzn)
-        : 0
-
+    const saving = plan.sixMonthMzn != null && plan.monthlyMzn != null
+      ? Math.max(0, plan.monthlyMzn * 6 - plan.sixMonthMzn)
+      : 0
     return {
-      from: false,
-      price: formatLandingMzn(amount, locale),
+      price: formatMzn(amount, locale),
       cadence: copy.labels.everySixMonths,
-      note: copy.labels.equivalentMonthly(formatLandingMzn(amount / 6, locale)),
-      savings: saving > 0 ? copy.labels.saveEverySixMonths(formatLandingMzn(saving, locale)) : null,
+      note: copy.labels.equivalentMonthly(formatMzn(amount / 6, locale)),
+      saving: saving > 0 ? copy.labels.saveEverySixMonths(formatMzn(saving, locale)) : null,
     }
   }
 
-  const variableStartingPrice = plan.startingAnnualMzn != null && plan.startingAnnualMzn < plan.annualMzn
-  const annualAmount =
-    variableStartingPrice && plan.startingAnnualMzn != null ? plan.startingAnnualMzn : plan.annualMzn
-  const saving =
-    plan.annualSavingMzn ??
-    (plan.monthlyMzn != null ? Math.max(0, plan.monthlyMzn * 12 - annualAmount) : 0)
-
+  const annualAmount = plan.startingAnnualMzn ?? plan.annualMzn
+  const saving = plan.annualSavingMzn
+    ?? (plan.monthlyMzn != null ? Math.max(0, plan.monthlyMzn * 12 - annualAmount) : 0)
   return {
-    from: variableStartingPrice,
-    price: formatLandingMzn(annualAmount, locale),
+    price: formatMzn(annualAmount, locale),
     cadence: copy.labels.perYear,
-    note: copy.labels.equivalentMonthly(formatLandingMzn(annualAmount / 12, locale)),
-    savings: saving > 0 ? copy.labels.saveAnnually(formatLandingMzn(saving, locale)) : null,
+    note: copy.labels.equivalentMonthly(formatMzn(annualAmount / 12, locale)),
+    saving: saving > 0 ? copy.labels.saveAnnually(formatMzn(saving, locale)) : null,
   }
+}
+
+function StructuredData({ lang }: { lang: Lang }) {
+  const description = lang === 'pt'
+    ? 'O StockWise liga compras, stock, vendas, produção, documentos e liquidações num workspace operacional.'
+    : 'StockWise connects purchases, stock, sales, production, documents, and settlements in one operating workspace.'
+  const data = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': 'https://stockwiseapp.com/#organization',
+        name: 'WiseCore Technologies, Lda.',
+        url: 'https://stockwiseapp.com/',
+        logo: 'https://stockwiseapp.com/brand/wisecore-logo-light.png',
+        address: { '@type': 'PostalAddress', addressLocality: 'Beira', addressCountry: 'MZ' },
+      },
+      {
+        '@type': 'SoftwareApplication',
+        name: 'StockWise',
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web, Android',
+        description,
+        url: 'https://stockwiseapp.com/',
+        offers: publicPricingPlans.map((plan) => ({
+          '@type': 'Offer',
+          name: plan.name,
+          priceCurrency: 'MZN',
+          price: plan.monthlyMzn ?? plan.annualMzn,
+        })),
+      },
+    ],
+  }
+
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />
+}
+
+function SectionHeading({ title, body, inverse = false }: { title: string; body?: string; inverse?: boolean }) {
+  return (
+    <div className="max-w-3xl">
+      <h2 className={cn('text-balance text-3xl font-semibold tracking-tight sm:text-4xl', inverse ? 'text-white' : 'text-foreground')}>
+        {title}
+      </h2>
+      {body ? <p className={cn('mt-4 max-w-2xl text-base leading-7 sm:text-lg', inverse ? 'text-zinc-300' : 'text-muted-foreground')}>{body}</p> : null}
+    </div>
+  )
+}
+
+function FlowSteps({ steps, inverse = false }: { steps: string[]; inverse?: boolean }) {
+  return (
+    <ol className="grid gap-0 sm:grid-cols-2 lg:grid-cols-[repeat(5,minmax(0,1fr))]">
+      {steps.map((step, index) => (
+        <li
+          key={step}
+          className={cn(
+            'relative flex min-h-20 items-center border-t py-4 pr-8 text-sm font-semibold sm:border-t-0 sm:border-l sm:px-5 lg:min-h-24',
+            inverse ? 'border-zinc-700 text-white' : 'border-border text-foreground',
+          )}
+        >
+          <span className={cn('mr-3 text-xs tabular-nums', inverse ? 'text-zinc-500' : 'text-muted-foreground')}>
+            {String(index + 1).padStart(2, '0')}
+          </span>
+          {step}
+          {index < steps.length - 1 ? (
+            <ArrowRight className={cn('absolute right-3 h-4 w-4', inverse ? 'text-zinc-600' : 'text-border')} aria-hidden="true" />
+          ) : null}
+        </li>
+      ))}
+    </ol>
+  )
 }
 
 function PricingCard({
   plan,
-  content,
-  copy,
-  locale,
   period,
+  locale,
+  lang,
+  copy,
   trialHref,
   activationHref,
-  ctaLabel,
 }: {
   plan: PublicPricingPlan
-  content: PlanContent
-  copy: LandingCopy
-  locale: string
   period: PricingPeriod
+  locale: string
+  lang: Lang
+  copy: LandingCopy
   trialHref: string
   activationHref: string
-  ctaLabel: string
 }) {
+  const content = copy.pricingContent[plan.code]
   const pricing = pricingDisplayFor(plan, period, locale, copy)
-  const periodLabel = pricingPeriodLabel(copy, period)
-  const isPortuguese = locale.startsWith('pt')
-  const companyAccountLabel =
-    isPortuguese
-      ? (portuguesePlanCompanyLabels[plan.code] ?? plan.companyAccountLabel)
-      : plan.companyAccountLabel
-  const userLimitLabel =
-    isPortuguese
-      ? (portuguesePlanUserLabels[plan.code] ?? plan.userLimitLabel)
-      : plan.userLimitLabel
-  const onboardingPrice = plan.onboardingMzn != null ? formatLandingMzn(plan.onboardingMzn, locale) : null
+  const companyLabel = lang === 'pt'
+    ? portuguesePlanCompanyLabels[plan.code] ?? plan.companyAccountLabel
+    : plan.companyAccountLabel
+  const userLabel = lang === 'pt'
+    ? portuguesePlanUserLabels[plan.code] ?? plan.userLimitLabel
+    : plan.userLimitLabel
 
   return (
-    <GlareHover
-      className="h-full w-full cursor-default rounded-xl overflow-hidden"
-      opacity={plan.highlight ? 0.17 : 0.11}
-      duration={plan.highlight ? 750 : 800}
-      playOnce
-    >
-      <Card
-        className={cn(
-          'landing-pricing-card group flex h-full flex-col border-border/70 bg-card shadow-sm',
-          plan.highlight ? 'border-primary/45 shadow-md ring-1 ring-primary/25' : '',
-        )}
-      >
-        <CardContent className="flex h-full flex-col p-5">
-        <div className="flex min-h-8 flex-wrap items-center gap-2">
-          {plan.highlight ? <StatusPill tone="teal">{copy.labels.recommended}</StatusPill> : null}
-          {pricing.from ? <StatusPill tone="neutral">{copy.labels.from}</StatusPill> : null}
+    <article className={cn('flex h-full flex-col border-t-2 bg-background py-7', plan.highlight ? 'border-primary' : 'border-border')}>
+      {plan.highlight ? <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-primary">{copy.labels.recommended}</div> : null}
+      <h3 className="text-2xl font-semibold tracking-tight">{plan.name}</h3>
+      <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">{content.headline}</p>
+
+      <div className="mt-6 border-y border-border py-5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="break-words text-3xl font-semibold tracking-tight">{pricing.price}</span>
+          {pricing.cadence ? <span className="text-sm text-muted-foreground">{pricing.cadence}</span> : null}
         </div>
+        <div className="mt-2 text-sm text-muted-foreground">{pricing.note}</div>
+        {pricing.saving ? <div className="mt-2 text-sm font-medium text-status-success-foreground">{pricing.saving}</div> : null}
+      </div>
 
-        <div className="mt-4">
-          <h3 className="text-2xl font-semibold">{plan.name}</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{content.headline}</p>
+      <dl className="grid grid-cols-2 gap-x-4 border-b border-border py-4 text-sm">
+        <div>
+          <dt className="text-muted-foreground">{copy.labels.company}</dt>
+          <dd className="mt-1 font-medium">{companyLabel}</dd>
         </div>
-
-        <div className="landing-pricing-price mt-5 min-h-40 rounded-lg border border-border bg-background p-4">
-          <div className="flex min-h-6 flex-wrap items-center gap-2">
-            <div className="text-xs font-semibold uppercase text-muted-foreground">{periodLabel}</div>
-            {pricing.savings ? <StatusPill tone="green">{pricing.savings}</StatusPill> : null}
-          </div>
-          <div className="mt-2 break-words text-3xl font-semibold">{pricing.price}</div>
-          {pricing.cadence ? <div className="mt-1 text-sm font-medium text-foreground">{pricing.cadence}</div> : null}
-          <div className="mt-2 text-sm leading-5 text-muted-foreground">{pricing.note}</div>
+        <div>
+          <dt className="text-muted-foreground">{copy.labels.users}</dt>
+          <dd className="mt-1 font-medium">{userLabel}</dd>
         </div>
+      </dl>
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <div className="rounded-lg border border-border bg-background p-3">
-            <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.company}</div>
-            <div className="mt-1 text-sm font-medium">{companyAccountLabel || '-'}</div>
-          </div>
-          <div className="rounded-lg border border-border bg-background p-3">
-            <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.users}</div>
-            <div className="mt-1 text-sm font-medium">{userLimitLabel || '-'}</div>
-          </div>
+      <div className="grid flex-1 gap-5 py-5 text-sm sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <div>
+          <h4 className="font-semibold">{copy.labels.includes}</h4>
+          <ul className="mt-3 list-disc space-y-2 pl-4 leading-5 text-muted-foreground">
+            {content.included.map((item) => <li key={item}>{item}</li>)}
+          </ul>
         </div>
-
-        {onboardingPrice ? (
-          <div className="mt-3 grid gap-2">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2">
-              <span className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.onboarding}</span>
-              <span className="text-sm font-semibold">{onboardingPrice}</span>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-5 rounded-lg border border-border/70 bg-muted/25 p-4">
-          <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.bestFor}</div>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{content.bestFor}</p>
+        <div>
+          <h4 className="font-semibold">{copy.labels.support}</h4>
+          <ul className="mt-3 list-disc space-y-2 pl-4 leading-5 text-muted-foreground">
+            {content.support.map((item) => <li key={item}>{item}</li>)}
+          </ul>
         </div>
+      </div>
 
-        <div className="mt-5 grid gap-5">
-          <div>
-            <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.includes}</div>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-              {content.included.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" weight="duotone" aria-hidden="true" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold uppercase text-muted-foreground">{copy.labels.support}</div>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-              {content.support.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-primary" weight="duotone" aria-hidden="true" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-          <div className="mt-auto grid gap-3 pt-6">
-          <LandingInteractiveCta
-            to={trialHref}
-            className="landing-pricing-primary-cta w-full"
-          >
-            {ctaLabel}
-          </LandingInteractiveCta>
-          <Button
-            variant="outline"
-            asChild
-            className="landing-pricing-secondary-cta"
-          >
-            <a href={activationHref}>
-              {copy.labels.requestActivation}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </a>
-          </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </GlareHover>
+      <div className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <Button asChild className="shadow-none">
+          <Link to={trialHref}>{copy.primaryCta}</Link>
+        </Button>
+        <Button asChild variant="outline" className="shadow-none">
+          <a href={activationHref}>{copy.labels.requestActivation}</a>
+        </Button>
+      </div>
+    </article>
   )
 }
 
@@ -1896,581 +861,347 @@ export default function LandingPage() {
   const signInLabel = user ? copy.openDashboard : copy.signIn
   const activationHref = useMemo(() => buildPublicMailto(copy.mailSubjects.activation), [copy.mailSubjects.activation])
   const contactHref = useMemo(() => buildPublicMailto(copy.mailSubjects.contact), [copy.mailSubjects.contact])
-  const demoHref = useMemo(() => buildPublicMailto(copy.mailSubjects.demo), [copy.mailSubjects.demo])
-  const productTabs = useMemo(() => landingProductTabsFor(lang), [lang])
-  const productSurfaceLabels = useMemo(() => landingProductSurfaceLabels(lang), [lang])
-
-  const selectPricingPeriod = (period: PricingPeriod) => {
-    setPricingPeriod(period)
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem(PRICING_PERIOD_STORAGE_KEY, period)
-    }
-  }
 
   const closeMenu = () => setMenuOpen(false)
+  const selectPricingPeriod = (period: PricingPeriod) => {
+    setPricingPeriod(period)
+    if (typeof window !== 'undefined') window.sessionStorage.setItem(PRICING_PERIOD_STORAGE_KEY, period)
+  }
 
   useEffect(() => {
     if (!menuOpen || typeof window === 'undefined') return undefined
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setMenuOpen(false)
       window.requestAnimationFrame(() => menuButtonRef.current?.focus())
     }
-
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [menuOpen])
 
   return (
-    <MotionConfig reducedMotion="user">
-      <div className="min-h-screen bg-background text-foreground">
-        <StructuredData lang={lang} />
-        <header className="landing-header sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur-xl">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-            <Link to="/" className="min-w-0" aria-label="StockWise home">
-              <BrandLockup compact />
-            </Link>
+    <div className="min-h-screen bg-background text-foreground">
+      <StructuredData lang={lang} />
+      <header className="sticky top-0 z-40 border-b border-border bg-background">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <Link to="/" className="inline-flex min-h-11 items-center" aria-label="StockWise home">
+            <span className="inline-flex bg-white px-1.5 py-1">
+              <Logo h={31} alt="StockWise" />
+            </span>
+          </Link>
 
-            <nav className="hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
-              <div className="group/nav relative">
-                <button
-                  type="button"
-                  aria-haspopup="true"
-                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  {copy.productLabel}
-                  <ChevronDown className="h-4 w-4 transition-transform group-hover/nav:rotate-180 group-focus-within/nav:rotate-180" aria-hidden="true" />
-                </button>
-                <div className="pointer-events-none invisible absolute left-1/2 top-full z-50 mt-3 w-[620px] -translate-x-1/2 translate-y-1 opacity-0 transition-[opacity,transform] duration-200 group-hover/nav:visible group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:opacity-100 group-focus-within/nav:visible group-focus-within/nav:pointer-events-auto group-focus-within/nav:translate-y-0 group-focus-within/nav:opacity-100">
-                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-xl">
-                    {copy.productMenu.map((item) => (
-                      <a
-                        key={item.title}
-                        href={item.href}
-                        className="group/item flex gap-3 rounded-lg border border-transparent p-3 transition-colors hover:border-primary/25 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <SurfaceIcon name={item.icon} size="compact" tone="neutral" />
-                        <span className="min-w-0">
-                          <span className="block text-sm font-semibold text-foreground">{item.title}</span>
-                          <span className="mt-1 block text-sm leading-5 text-muted-foreground">{item.body}</span>
-                        </span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          <nav className="hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
+            {copy.nav.map((item) => (
+              <a key={item.href} href={item.href} className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+                {item.label}
+              </a>
+            ))}
+          </nav>
 
+          <div className="hidden items-center gap-2 lg:flex">
+            <LocaleToggle />
+            <ThemeToggle />
+            <Button variant="ghost" asChild className="shadow-none"><Link to={signInHref}>{signInLabel}</Link></Button>
+            <Button asChild className="shadow-none"><Link to={trialHref}>{primaryCtaLabel}</Link></Button>
+          </div>
+
+          <div className="flex items-center gap-1 lg:hidden">
+            <LocaleToggle className="[&_button]:min-h-11" />
+            <div className="[&_button]:!h-11 [&_button]:!w-11">
+              <ThemeToggle compact />
+            </div>
+            <Button
+              ref={menuButtonRef}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shadow-none"
+              aria-label={menuOpen ? copy.closeMenu : copy.openMenu}
+              aria-expanded={menuOpen}
+              aria-controls="landing-mobile-menu"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+            </Button>
+          </div>
+        </div>
+
+        {menuOpen ? (
+          <div id="landing-mobile-menu" className="border-t border-border bg-background px-4 py-4 lg:hidden">
+            <nav className="mx-auto grid max-w-7xl gap-1" aria-label="Mobile navigation">
               {copy.nav.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
+                <a key={item.href} href={item.href} onClick={closeMenu} className="min-h-11 rounded-lg px-3 py-3 text-sm font-medium hover:bg-muted/60">
                   {item.label}
                 </a>
               ))}
+              <div className="mt-3 grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
+                <Button variant="outline" asChild className="shadow-none"><Link to={signInHref} onClick={closeMenu}>{signInLabel}</Link></Button>
+                <Button asChild className="shadow-none"><Link to={trialHref} onClick={closeMenu}>{primaryCtaLabel}</Link></Button>
+              </div>
             </nav>
+          </div>
+        ) : null}
+      </header>
 
-            <div className="hidden items-center gap-2 lg:flex">
-              <LocaleToggle />
-              <ThemeToggle />
-              <Button variant="ghost" asChild>
-                <Link to={signInHref}>{signInLabel}</Link>
-              </Button>
-              <Button asChild>
-                <Link to={trialHref}>{primaryCtaLabel}</Link>
-              </Button>
+      <main>
+        <section className="border-b border-border">
+          <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[minmax(0,0.92fr)_minmax(28rem,1.08fr)] lg:gap-16 lg:px-8 lg:py-24">
+            <div>
+              <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-[-0.035em] sm:text-5xl lg:text-6xl">
+                {copy.heroTitle}
+              </h1>
+              <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">{copy.heroBody}</p>
+              <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+                <Button size="lg" asChild className="min-h-12 shadow-none"><Link to={trialHref}>{primaryCtaLabel}<ArrowRight aria-hidden="true" /></Link></Button>
+                <a href="#operations" className="inline-flex min-h-12 items-center justify-center gap-2 px-4 text-sm font-semibold text-foreground underline decoration-border underline-offset-4 hover:decoration-primary">
+                  {copy.secondaryCta}<ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </a>
+              </div>
+              <p className="mt-5 max-w-xl border-l-2 border-primary pl-4 text-sm leading-6 text-muted-foreground">{copy.activationNote}</p>
             </div>
 
-            <div className="flex items-center gap-2 lg:hidden">
-              <LocaleToggle />
-              <ThemeToggle compact />
-              <Button
-                ref={menuButtonRef}
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={menuOpen ? copy.closeMenu : copy.openMenu}
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen((value) => !value)}
-              >
-                {menuOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
-              </Button>
+            <figure className="overflow-hidden border border-border bg-black">
+              <img
+                src="/landing/stockwise-records-desk.png"
+                alt={copy.heroImageAlt}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+                className="aspect-[4/3] h-full w-full object-cover"
+              />
+              <figcaption className="border-t border-zinc-800 bg-black px-4 py-3 text-xs leading-5 text-zinc-400">{copy.heroImageCaption}</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section id="operations" className="scroll-mt-24 border-b border-border bg-card">
+          <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{copy.chainTitle}</h2>
+            <div className="mt-5 overflow-x-auto pb-2">
+              <ol className="flex min-w-max items-center" aria-label={copy.chainTitle}>
+                {copy.chain.map((step, index) => (
+                  <li key={step} className="flex items-center">
+                    <span className="py-2 text-base font-semibold">{step}</span>
+                    {index < copy.chain.length - 1 ? <ArrowRight className="mx-4 h-4 w-4 text-muted-foreground" aria-hidden="true" /> : null}
+                  </li>
+                ))}
+              </ol>
             </div>
           </div>
+        </section>
 
-          {menuOpen ? (
-            <div className="border-t border-border/70 bg-background px-4 py-4 lg:hidden">
-              <div className="grid gap-3">
-                <div className="rounded-lg border border-border bg-muted/20 p-2">
-                  <div className="px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
-                    {copy.labels.sectionProduct}
-                  </div>
-                  <div className="grid gap-1">
-                    {copy.productMenu.map((item) => (
-                      <a
-                        key={item.title}
-                        href={item.href}
-                        onClick={closeMenu}
-                        className="flex gap-3 rounded-lg px-3 py-2 text-sm hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <Icon name={item.icon} className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        <span>
-                          <span className="block font-medium">{item.title}</span>
-                          <span className="mt-0.5 block text-muted-foreground">{item.body}</span>
-                        </span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-
-                {copy.nav.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    onClick={closeMenu}
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {item.label}
-                  </a>
-                ))}
-
-                <div className="grid gap-2 pt-2">
-                  <Button variant="outline" asChild>
-                    <Link to={signInHref} onClick={closeMenu}>
-                      {signInLabel}
-                    </Link>
-                  </Button>
-                  <Button asChild>
-                    <Link to={trialHref} onClick={closeMenu}>
-                      {primaryCtaLabel}
-                    </Link>
-                  </Button>
-                </div>
-              </div>
+        <section className="border-b border-border py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20 lg:px-8">
+            <SectionHeading title={copy.fitTitle} body={copy.fitBody} />
+            <div className="divide-y divide-border border-y border-border">
+              {copy.operationFits.map((fit) => (
+                <article key={fit.title} className="grid gap-2 py-6 sm:grid-cols-[12rem_1fr] sm:gap-8">
+                  <h3 className="font-semibold">{fit.title}</h3>
+                  <p className="leading-7 text-muted-foreground">{fit.body}</p>
+                </article>
+              ))}
             </div>
-          ) : null}
-        </header>
+          </div>
+        </section>
 
-        <main className="landing-page overflow-hidden">
-          <section className="landing-hero relative isolate overflow-hidden border-b border-black/25 bg-black text-white">
-            <img
-              src="/landing/stockwise-records-desk.png"
-              alt=""
-              aria-hidden="true"
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-              className="absolute inset-0 -z-20 h-full w-full object-cover object-center opacity-80"
-            />
-            <div className="absolute inset-0 -z-10 bg-black/75" />
-            <div className="landing-grid-field" aria-hidden="true" />
-            <div className="landing-orb landing-orb--teal landing-orb--hero-a" aria-hidden="true" />
-            <div className="landing-orb landing-orb--deep landing-orb--hero-b" aria-hidden="true" />
-            <HeroFloatingCards items={copy.heroSignals} />
-
-            <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16 xl:py-20">
-              <motion.div
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.55, ease: revealEase }}
-                className="mx-auto max-w-4xl text-center"
-              >
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-white backdrop-blur">
-                  <InlineSurfaceIcon name="company" dark className="h-3.5 w-3.5" />
-                  <span>{copy.heroEyebrow}</span>
-                </div>
-
-                <h1 className="mt-5 text-4xl font-semibold leading-[1.05] text-white sm:text-5xl lg:text-6xl">
-                  {copy.heroTitle}
-                </h1>
-                <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-zinc-100 sm:text-xl sm:leading-9">{copy.heroBody}</p>
-
-                <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                  {user ? (
-                    <LandingInteractiveCta to={trialHref} className="min-h-12 px-8">
-                      {primaryCtaLabel}
-                    </LandingInteractiveCta>
-                  ) : (
-                    <LandingPulsatingCta to={trialHref} className="min-h-12">
-                      {primaryCtaLabel}
-                    </LandingPulsatingCta>
-                  )}
-                  <Button size="lg" variant="outline" asChild>
-                    <a href="#pricing">
-                      {copy.secondaryCta}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </a>
-                  </Button>
-                </div>
-
-                <div className="mx-auto mt-5 flex max-w-2xl justify-center gap-3 text-sm leading-6 text-zinc-200">
-                  <InlineSurfaceIcon name="activation" dark className="mt-0.5 h-4 w-4" />
-                  <span>{copy.activationNote}</span>
-                </div>
-
-                <div className="mx-auto mt-8 grid max-w-3xl grid-cols-3 gap-2 sm:gap-3" data-landing-stagger>
-                  {[
-                    ['4', lang === 'pt' ? 'planos publicados' : 'published plans'],
-                    ['7', lang === 'pt' ? 'dias de teste' : 'trial days'],
-                    ['PT/EN', lang === 'pt' ? 'operação bilingue' : 'bilingual workspace'],
-                  ].map(([value, label]) => (
-                    <div key={value} className="rounded-lg border border-white/15 bg-white/10 p-3 backdrop-blur sm:p-4">
-                      <div className="text-xl font-semibold text-white sm:text-2xl">{value}</div>
-                      <div className="mt-1 text-xs leading-5 text-zinc-200 sm:text-sm">{label}</div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            </div>
-          </section>
-
-          <CapabilityRail title={copy.capabilityRailTitle} items={copy.capabilityRailItems} />
-
-          <section id="operations" className="landing-section-soft scroll-mt-24 border-b border-border/70 bg-background pb-14 pt-8 lg:py-20">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <SectionIntro title={copy.operationTitle} body={copy.operationBody} align="center" />
-              <div className="landing-bento mt-9 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
-                {copy.operationFits.map((fit, index) => (
-                  <div
-                    key={fit.title}
-                    onPointerMove={updateLandingPointer}
-                    className={cn(
-                      'landing-bento-card landing-hover-lift rounded-lg border border-border bg-card p-5 shadow-sm',
-                      index === 0 ? 'xl:col-span-2 xl:row-span-2 xl:p-7' : '',
-                    )}
-                  >
-                    <SurfaceIcon name={fit.icon} size="card" tone="info" />
-                    <h2 className={cn('mt-4 font-semibold leading-tight', index === 0 ? 'text-2xl' : 'text-lg')}>
-                      {fit.title}
-                    </h2>
-                    <p className={cn('mt-2 leading-6 text-muted-foreground', index === 0 ? 'text-base' : 'text-sm')}>
-                      {fit.body}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="border-b border-border/70 bg-card">
-            <div className="mx-auto grid max-w-7xl gap-3 px-4 py-8 sm:px-6 md:grid-cols-2 lg:grid-cols-3 lg:px-8" data-landing-stagger>
-              {copy.trustSignals.map((signal) => (
-                <div key={signal.title} className="landing-hover-lift flex gap-3 rounded-lg border border-border bg-background p-4">
-                  <InlineSurfaceIcon name={signal.icon} className="mt-0.5 h-5 w-5" />
-                  <div>
-                    <h2 className="text-sm font-semibold">{signal.title}</h2>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">{signal.body}</p>
-                  </div>
+        <section className="border-b border-border bg-muted/25 py-12">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{copy.evidenceTitle}</h2>
+            <div className="mt-6 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+              {copy.evidence.map((item) => (
+                <div key={item.title} className="border-l border-primary pl-4">
+                  <h3 className="font-semibold">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
                 </div>
               ))}
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="bg-background py-16 lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.82fr_1.18fr] lg:items-center lg:px-8">
-              <div>
-                <SectionIntro title={copy.problemTitle} body={copy.problemBody} />
-                <div className="mt-8 grid gap-3" data-landing-stagger>
-                  {copy.problems.map((problem, index) => (
-                    <div key={problem.title} className="landing-hover-lift flex gap-3 rounded-lg border border-border bg-card p-4 shadow-sm">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-sm font-semibold text-primary">
-                        {String(index + 1).padStart(2, '0')}
-                      </div>
-                      <div>
-                        <h3 className="text-base font-semibold leading-tight">{problem.title}</h3>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{problem.body}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <ProblemRecordsImage lang={lang} />
-            </div>
-          </section>
+        <section className="border-b border-border py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading title={copy.problemTitle} body={copy.problemBody} />
+            <ol className="mt-10 border-t border-border">
+              {copy.problems.map((problem, index) => (
+                <li key={problem.title} className="grid gap-3 border-b border-border py-7 sm:grid-cols-[4rem_minmax(16rem,0.7fr)_1fr] sm:gap-8">
+                  <span className="text-sm tabular-nums text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
+                  <h3 className="text-xl font-semibold leading-7">{problem.title}</h3>
+                  <p className="leading-7 text-muted-foreground">{problem.body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
 
-          <section id="capabilities" className="scroll-mt-24 border-y border-border/70 bg-muted/25 py-16 lg:py-24">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <SectionIntro title={copy.capabilitiesTitle} body={copy.capabilitiesBody} align="center" />
-
-              <div className="landing-bento mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
-                {copy.capabilities.map((capability, index) => (
-                  <Card
-                    key={capability.title}
-                    onPointerMove={updateLandingPointer}
-                    className={cn(
-                      'landing-bento-card group border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl',
-                      index === 0 || index === 3 ? 'xl:col-span-2' : '',
-                    )}
-                  >
-                    <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
-                      <SurfaceIcon name={capability.icon} size="feature" tone="primary" />
-                      <h3 className="mt-4 text-lg font-semibold leading-tight">{capability.title}</h3>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{capability.body}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section id="showcase" className="landing-dark-section scroll-mt-24 py-16 text-white lg:py-24">
-            <div className="landing-orb landing-orb--teal" aria-hidden="true" />
-            <div className="landing-orb landing-orb--deep" aria-hidden="true" />
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <Reveal>
-                <SectionIntro title={copy.showcaseTitle} body={copy.showcaseBody} inverse align="center" />
-              </Reveal>
-              <Reveal delay={0.08} className="mt-10">
-                <LandingProductTabs tabs={productTabs} copy={productSurfaceLabels} />
-              </Reveal>
-            </div>
-          </section>
-
-          <section id="workflow" className="scroll-mt-24 bg-background py-16 lg:py-24">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <SectionIntro title={copy.workflowTitle} body={copy.workflowBody} align="center" />
-
-              <div className="mt-10 grid gap-4 lg:grid-cols-5" data-landing-stagger>
-                {copy.workflowSteps.map((step, index) => (
-                  <Card key={step.title} className="landing-hover-lift border-border/70 bg-card shadow-sm">
-                    <CardContent className="p-5 pt-5 sm:p-6 sm:pt-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <InlineSurfaceIcon name={step.icon} className="h-6 w-6" />
-                        <span className="font-mono text-sm font-semibold text-muted-foreground">
-                          {String(index + 1).padStart(2, '0')}
-                        </span>
-                      </div>
-                      <h3 className="mt-4 text-lg font-semibold leading-tight">{step.title}</h3>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.body}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section id="use-cases" className="scroll-mt-24 border-y border-border/70 bg-card py-16 lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
-              <SectionIntro title={copy.useCasesTitle} body={copy.useCasesBody} />
-              <div className="grid gap-4 sm:grid-cols-2" data-landing-stagger>
-                {copy.useCases.map((useCase) => (
-                  <div key={useCase.title} className="landing-hover-lift rounded-lg border border-border bg-background p-5 shadow-sm sm:p-6">
-                    <div className="border-l-2 border-primary/35 pl-4">
-                      <h3 className="text-lg font-semibold">{useCase.title}</h3>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{useCase.body}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section id="records" className="scroll-mt-24 bg-background py-16 lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:px-8">
-              <SectionIntro title={copy.complianceTitle} body={copy.complianceBody} />
-              <Card className="border-primary/20 bg-card shadow-sm">
-                <CardContent className="p-5 sm:p-6">
-                  <div className="flex gap-3">
-                    <SurfaceIcon name="records" size="card" tone="info" />
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        {lang === 'pt' ? 'Registos preparados para revisão' : 'Records prepared for review'}
-                      </h3>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.complianceCaution}</p>
-                    </div>
-                  </div>
-                  <ul className="mt-6 grid gap-3" data-landing-stagger>
-                    {copy.compliancePoints.map((point) => (
-                      <li key={point} className="flex gap-3 rounded-lg border border-border bg-background p-4 text-sm leading-6 text-muted-foreground">
-                        <CheckCircleIcon className="mt-1 h-4 w-4 shrink-0 text-primary" weight="duotone" aria-hidden="true" />
-                        <span>{point}</span>
-                      </li>
-                    ))}
+        <section id="capabilities" className="scroll-mt-24 border-b border-border bg-card py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading title={copy.capabilitiesTitle} body={copy.capabilitiesBody} />
+            <div className="mt-12 grid border-t border-border lg:grid-cols-2">
+              {copy.capabilityStories.map((story, index) => (
+                <article key={story.number} className={cn('border-b border-border py-8 lg:px-8', index % 2 === 0 ? 'lg:border-r lg:pl-0' : 'lg:pr-0')}>
+                  <div className="text-sm tabular-nums text-primary">{story.number}</div>
+                  <h3 className="mt-3 text-2xl font-semibold tracking-tight">{story.title}</h3>
+                  <p className="mt-3 max-w-xl leading-7 text-muted-foreground">{story.body}</p>
+                  <ul className="mt-5 grid gap-2 text-sm font-medium">
+                    {story.points.map((point) => <li key={point} className="border-l border-border pl-3">{point}</li>)}
                   </ul>
-                </CardContent>
-              </Card>
+                </article>
+              ))}
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section id="pricing" className="scroll-mt-24 border-y border-border/70 bg-muted/25 py-16 lg:py-24">
-            <div className="mx-auto max-w-[1560px] px-4 sm:px-6 lg:px-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <SectionIntro title={copy.pricingTitle} body={copy.pricingBody} />
-                <div className="rounded-lg border border-border bg-card p-4 text-sm leading-6 text-muted-foreground shadow-sm lg:max-w-sm">
-                  {copy.pricingFootnote}
-                </div>
-              </div>
-
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div
-                  className="inline-flex w-full rounded-lg border border-border bg-card p-1 shadow-sm sm:w-auto"
-                  role="group"
-                  aria-label={copy.labels.pricingPeriod}
-                >
-                  {pricingPeriodOptions.map((period) => {
-                    const selected = pricingPeriod === period
-                    return (
-                      <button
-                        key={period}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => selectPricingPeriod(period)}
-                        className={cn(
-                          'min-h-10 flex-1 rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:min-w-28',
-                          selected
-                            ? 'bg-primary text-primary-foreground shadow-sm'
-                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                        )}
-                      >
-                        {pricingPeriodLabel(copy, period)}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4" data-landing-stagger>
-                {publicPricingPlans.map((plan) => (
-                  <PricingCard
-                    key={plan.code}
-                    plan={plan}
-                    content={copy.pricingContent[plan.code]}
-                    copy={copy}
-                    locale={locale}
-                    period={pricingPeriod}
-                    trialHref={trialHref}
-                    activationHref={activationHref}
-                    ctaLabel={primaryCtaLabel}
-                  />
-                ))}
-              </div>
+        <section className="bg-black py-16 text-white sm:py-20 lg:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading title={copy.traceTitle} body={copy.traceBody} inverse />
+            <div className="mt-12 grid gap-12">
+              {copy.traces.map((trace) => (
+                <article key={trace.title}>
+                  <div className="mb-5 grid gap-2 lg:grid-cols-[14rem_1fr] lg:items-end">
+                    <h3 className="text-xl font-semibold">{trace.title}</h3>
+                    <p className="max-w-3xl text-sm leading-6 text-zinc-400">{trace.note}</p>
+                  </div>
+                  <FlowSteps steps={trace.steps} inverse />
+                </article>
+              ))}
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section id="faq" className="scroll-mt-24 bg-background py-16 lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
-              <Reveal>
-                <SectionIntro title={copy.faqTitle} body={copy.faqBody} />
-              </Reveal>
-              <Reveal delay={0.08}>
-                <LandingFaq items={copy.faqs} />
-              </Reveal>
+        <section id="workflow" className="scroll-mt-24 border-b border-border py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.72fr_1.28fr] lg:gap-20 lg:px-8">
+            <SectionHeading title={copy.workflowTitle} body={copy.workflowBody} />
+            <ol className="border-t border-border">
+              {copy.workflowSteps.map((step, index) => (
+                <li key={step.title} className="grid gap-3 border-b border-border py-6 sm:grid-cols-[3rem_13rem_1fr] sm:gap-6">
+                  <span className="text-sm tabular-nums text-primary">{String(index + 1).padStart(2, '0')}</span>
+                  <h3 className="font-semibold">{step.title}</h3>
+                  <p className="text-sm leading-6 text-muted-foreground">{step.body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section id="use-cases" className="scroll-mt-24 border-b border-border bg-muted/25 py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading title={copy.useCasesTitle} body={copy.useCasesBody} />
+            <div className="mt-10 grid border-t border-border sm:grid-cols-2">
+              {copy.useCases.map((useCase, index) => (
+                <article key={useCase.title} className={cn('border-b border-border py-7 sm:px-6', index % 2 === 0 ? 'sm:border-r sm:pl-0' : 'sm:pr-0')}>
+                  <h3 className="text-lg font-semibold">{useCase.title}</h3>
+                  <p className="mt-3 max-w-xl leading-7 text-muted-foreground">{useCase.body}</p>
+                </article>
+              ))}
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section id="team" className="scroll-mt-24 border-y border-border/70 bg-card py-16 lg:py-24">
-            <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-start lg:px-8">
+        <section id="pricing" className="scroll-mt-24 border-b border-border py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
               <div>
-                <SectionIntro title={copy.teamTitle} body={copy.teamBody} />
-                <div className="mt-6 rounded-lg border border-border bg-background p-4 shadow-sm sm:p-5">
-                  <div className="grid gap-4">
-                    <div className="flex h-28 w-full items-center justify-center rounded-lg border border-border bg-white px-4 py-3 dark:border-white/10 dark:bg-black sm:h-32">
-                      <img
-                        src="/brand/wisecore-logo-light.png"
-                        alt="WiseCore Technologies, Lda."
-                        loading="lazy"
-                        decoding="async"
-                        className="h-full w-full object-contain dark:hidden"
-                      />
-                      <img
-                        src="/brand/wisecore-logo-dark.png"
-                        alt="WiseCore Technologies, Lda."
-                        loading="lazy"
-                        decoding="async"
-                        className="hidden h-full w-full object-contain dark:block"
-                      />
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-primary">{copy.labels.builtBy}</div>
-                      <div className="mt-1 text-lg font-semibold">{copy.labels.wiseCore}</div>
-                      <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                        <InlineSurfaceIcon name="company" className="h-4 w-4" />
-                        <span>{copy.labels.office}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <SectionHeading title={copy.pricingTitle} body={copy.pricingBody} />
+                <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.pricingFootnote}</p>
               </div>
-
-              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3" data-landing-stagger>
-                {copy.teamMembers.map((member) => (
-                  <div key={member.name} className="landing-hover-lift rounded-lg border border-border bg-background p-5 shadow-sm">
-                    <h3 className="text-xl font-semibold leading-tight">{member.name}</h3>
-                    <p className="mt-1 text-sm font-semibold text-primary">{member.role}</p>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{member.body}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="border-t border-zinc-800 bg-black py-16 text-white lg:py-20">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <GlareHover
-                className="w-full cursor-default rounded-xl overflow-hidden border border-white/15 bg-zinc-950"
-                opacity={0.1}
-                duration={850}
-                playOnce
-              >
-                <div className="flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between lg:p-10">
-                  <div className="max-w-2xl">
-                    <h2 className="text-3xl font-semibold leading-tight sm:text-4xl">{copy.finalTitle}</h2>
-                    <p className="mt-4 text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">{copy.finalBody}</p>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <LandingInteractiveCta to={trialHref} className="min-h-12 px-7">
-                      {primaryCtaLabel}
-                    </LandingInteractiveCta>
-                    <LandingInteractiveCta
-                      href={demoHref}
-                      tone="light-outline"
-                      className="min-h-12 px-7"
+              <div className="flex flex-wrap border-b border-border" role="group" aria-label={copy.labels.pricingPeriod}>
+                {pricingPeriodOptions.map((period) => {
+                  const selected = pricingPeriod === period
+                  return (
+                    <button
+                      key={period}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => selectPricingPeriod(period)}
+                      className={cn('min-h-11 border-b-2 px-4 py-2 text-sm font-medium', selected ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}
                     >
-                      {copy.demoCta}
-                    </LandingInteractiveCta>
-                  </div>
+                      {pricingPeriodLabel(copy, period)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-10 grid gap-x-7 gap-y-10 lg:grid-cols-2">
+              {publicPricingPlans.map((plan) => (
+                <PricingCard
+                  key={plan.code}
+                  plan={plan}
+                  period={pricingPeriod}
+                  locale={locale}
+                  lang={lang}
+                  copy={copy}
+                  trialHref={trialHref}
+                  activationHref={activationHref}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="faq" className="scroll-mt-24 border-b border-border bg-card py-16 sm:py-20 lg:py-24">
+          <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.72fr_1.28fr] lg:gap-20 lg:px-8">
+            <SectionHeading title={copy.faqTitle} body={copy.faqBody} />
+            <LandingFaq items={copy.faqs} />
+          </div>
+        </section>
+
+        <section id="team" className="scroll-mt-24 border-b border-border py-16 sm:py-20">
+          <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20 lg:px-8">
+            <div>
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcSet="/brand/wisecore-logo-dark.png" />
+                <img src="/brand/wisecore-logo-light.png" alt="WiseCore Technologies" className="h-12 w-auto dark:hidden" loading="lazy" />
+                <img src="/brand/wisecore-logo-dark.png" alt="" aria-hidden="true" className="hidden h-12 w-auto dark:block" loading="lazy" />
+              </picture>
+              <h2 className="mt-8 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{copy.teamTitle}</h2>
+            </div>
+            <div className="divide-y divide-border border-y border-border">
+              {copy.teamMembers.map((member) => (
+                <div key={member.name} className="grid gap-1 py-5 sm:grid-cols-[1fr_1fr] sm:gap-6">
+                  <div className="font-semibold">{member.name}</div>
+                  <div className="text-sm text-muted-foreground">{member.role}</div>
                 </div>
-              </GlareHover>
-            </div>
-          </section>
-        </main>
-
-        <footer className="border-t border-border/70 bg-background">
-          <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-8">
-            <div className="max-w-md">
-              <BrandLockup subtitle={copy.footerTagline} />
-              <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                <InlineSurfaceIcon name="company" className="h-4 w-4" />
-                <span>{copy.labels.wiseCore}</span>
-              </div>
-            </div>
-
-            <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:text-right">
-              <div className="flex flex-wrap gap-x-5 gap-y-2 lg:justify-end">
-                {copy.nav.map((item) => (
-                  <a key={item.href} href={item.href} className="transition-colors hover:text-foreground">
-                    {item.label}
-                  </a>
-                ))}
-                <Link to={signInHref} className="transition-colors hover:text-foreground">
-                  {signInLabel}
-                </Link>
-              </div>
-              <div className="flex flex-wrap gap-x-5 gap-y-2 lg:justify-end">
-                <span>
-                  {copy.labels.supportEmail}: {PUBLIC_CONTACT_EMAIL}
-                </span>
-                <a href={contactHref} className="transition-colors hover:text-foreground">
-                  {copy.labels.talkToUs}
-                </a>
+              ))}
+              <div className="grid gap-1 py-5 sm:grid-cols-[1fr_1fr] sm:gap-6">
+                <div className="font-semibold">{copy.labels.office}</div>
+                <a href={contactHref} className="text-sm font-medium text-primary underline underline-offset-4">{PUBLIC_CONTACT_EMAIL}</a>
               </div>
             </div>
           </div>
-        </footer>
-      </div>
-    </MotionConfig>
+        </section>
+
+        <section className="bg-black py-16 text-white sm:py-20">
+          <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-4 sm:px-6 lg:flex-row lg:items-end lg:px-8">
+            <div>
+              <h2 className="max-w-3xl text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{copy.finalTitle}</h2>
+              <p className="mt-4 max-w-2xl leading-7 text-zinc-300">{copy.finalBody}</p>
+            </div>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <Button size="lg" asChild className="min-h-12 shadow-none"><Link to={trialHref}>{primaryCtaLabel}<ArrowRight aria-hidden="true" /></Link></Button>
+              <Button size="lg" variant="outline" asChild className="min-h-12 border-zinc-600 bg-transparent text-white shadow-none hover:bg-zinc-900 hover:text-white"><a href={contactHref}>{copy.labels.talkToUs}</a></Button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-border bg-background">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_auto] lg:items-end lg:px-8">
+          <div>
+            <span className="inline-flex bg-white px-1.5 py-1">
+              <Logo h={28} alt="StockWise" />
+            </span>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">{copy.footerTagline}</p>
+            <p className="mt-3 text-xs text-muted-foreground">{copy.labels.builtBy} · {copy.labels.office}</p>
+          </div>
+          <nav className="flex flex-wrap gap-x-5 gap-y-3 text-sm" aria-label="Footer navigation">
+            <a href="#operations" className="text-muted-foreground hover:text-foreground">{copy.nav[0].label}</a>
+            <a href="#pricing" className="text-muted-foreground hover:text-foreground">{copy.nav[2].label}</a>
+            <a href="#faq" className="text-muted-foreground hover:text-foreground">{copy.nav[3].label}</a>
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} className="text-muted-foreground hover:text-foreground">{PUBLIC_CONTACT_EMAIL}</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
   )
 }

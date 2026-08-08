@@ -4,11 +4,13 @@ import type { PremiumTone } from './PremiumStatusBadge'
 
 const actionToneClasses: Record<PremiumTone, string> = {
   neutral: 'border-card-border bg-card text-foreground',
-  positive: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-300/25 dark:bg-emerald-300/10 dark:text-emerald-100',
-  negative: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-300/25 dark:bg-rose-300/10 dark:text-rose-100',
-  warning: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-100',
-  critical: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-100',
-  info: 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10 dark:text-informational',
+  positive: 'border-status-success-border bg-status-success-muted text-status-success-foreground',
+  success: 'border-status-success-border bg-status-success-muted text-status-success-foreground',
+  negative: 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  danger: 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  warning: 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground',
+  critical: 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  info: 'border-status-info-border bg-status-info-muted text-status-info-foreground',
 }
 
 export type MobileQuickAction = {

@@ -21,7 +21,7 @@ export function PremiumPageHeader({
   return (
     <div
       className={cn(
-        'flex flex-col gap-5 rounded-[calc(var(--radius)+0.35rem)] border border-card-border bg-surface-elevated p-5 shadow-[0_24px_56px_-42px_hsl(var(--foreground)/0.32)] sm:p-6 xl:flex-row xl:items-start xl:justify-between xl:p-7',
+        'flex flex-col gap-5 border-b border-border pb-5 sm:pb-6 xl:flex-row xl:items-start xl:justify-between',
         className,
       )}
     >

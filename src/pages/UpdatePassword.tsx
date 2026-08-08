@@ -239,17 +239,16 @@ export default function UpdatePassword() {
   return (
     <PublicAuthShell
       subtitle={copy.subtitle}
-      heroTitle={copy.heroTitle}
-      heroBody={copy.heroBody}
-      highlights={copy.highlights}
+      contextTitle={copy.heroTitle}
+      contextBody={copy.heroBody}
     >
-      <Card className="border-border/70 bg-card/95 shadow-xl">
+      <Card className="border-border bg-card shadow-none">
         <CardHeader className="space-y-3 pb-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+          <div className="flex items-center gap-2 text-sm font-medium text-primary" aria-hidden="true">
             {success ? <CheckCircle2 className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
           </div>
-          <CardTitle className="text-2xl font-semibold tracking-tight">
-            {success ? copy.successTitle : copy.title}
+          <CardTitle>
+            <h1 className="text-2xl font-semibold tracking-tight">{success ? copy.successTitle : copy.title}</h1>
           </CardTitle>
           <p className="text-sm leading-6 text-muted-foreground">
             {success ? copy.successBody : copy.body}

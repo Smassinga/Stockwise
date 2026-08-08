@@ -1,9 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Inbox } from 'lucide-react'
-import { Button } from '../ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 import { cn } from '../../lib/utils'
-import { PremiumEmptyState } from './PremiumEmptyState'
+import { PremiumEmptyState, PremiumStatePanel } from './PremiumEmptyState'
 import { PremiumPagination, getPremiumPageRows, type PremiumPaginationLabels } from './PremiumPagination'
 
 export type PremiumDataTableSortDirection = 'asc' | 'desc'
@@ -94,6 +93,7 @@ export function PremiumDataTable<T>({
   rowClassName,
   ariaLabel,
   skeletonRows = 5,
+  loadingLabel = 'Loading rows',
   className,
 }: {
   rows: T[]
@@ -116,6 +116,7 @@ export function PremiumDataTable<T>({
   rowClassName?: (row: T) => string | undefined
   ariaLabel?: string
   skeletonRows?: number
+  loadingLabel?: string
   className?: string
 }) {
   const visibleColumns = getVisiblePremiumColumns(columns, columnVisibility)
@@ -131,7 +132,8 @@ export function PremiumDataTable<T>({
 
   if (error) {
     return (
-      <PremiumEmptyState
+      <PremiumStatePanel
+        kind="error"
         icon={<AlertCircle />}
         title={error}
         compact
@@ -145,7 +147,8 @@ export function PremiumDataTable<T>({
   }
 
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn('space-y-3', className)} aria-busy={loading || undefined}>
+      {loading ? <span className="sr-only" role="status" aria-live="polite">{loadingLabel}</span> : null}
       <Table aria-label={ariaLabel}>
         <TableHeader>
           <TableRow>

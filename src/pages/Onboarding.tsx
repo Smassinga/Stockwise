@@ -1,19 +1,13 @@
 import {
   AlertCircle,
   ArrowRight,
-  Building2,
   ChevronRight,
-  Info,
   Loader2,
   Mail,
   Search,
   Settings2,
-  UserPlus,
 } from 'lucide-react'
 import { BuildingsIcon } from '@phosphor-icons/react/dist/csr/Buildings'
-import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
-import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
-import { UserPlusIcon as PhosphorUserPlusIcon } from '@phosphor-icons/react/dist/csr/UserPlus'
 import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
@@ -29,10 +23,7 @@ import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Progress } from '../components/ui/progress'
 import { ScrollArea } from '../components/ui/scroll-area'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip'
-import { IconBadge } from '../components/premium/IconBadge'
 import { runAdminUserSyncIfNeeded } from '../lib/adminSync'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { rememberCompanyLocally } from '../lib/companySelectionMemory'
@@ -66,25 +57,16 @@ type BootstrapCompanyResult = {
 type CompletionState = {
   companyId: string
   companyName: string
-  role: string
+  role: MemberRole
   source: 'created' | 'invitation'
 }
 
 const copyByLang = {
   en: {
-    subtitle: 'Company workspace setup',
     heroTitle: 'Create or join your company workspace',
     heroBody:
       'Start with the company access decision. Tax, bank, stock, and team setup can be completed after the workspace exists.',
-    highlights: [
-      'Join an invited company or create a separate workspace',
-      'Create with only a company name first',
-      'Finish fiscal, stock, and team setup from the guided next steps',
-    ],
-    progressLabel: 'Workspace entry',
-    progressChoose: 'Choose your workspace path',
-    progressCreate: 'Add the minimum company details',
-    progressReady: 'Workspace ready for next steps',
+    steps: ['Account confirmed', 'Company access', 'Choose the first operating task'],
     unverifiedBody: (email: string) =>
       `We sent a verification link to ${email}. Open it in the same browser to finish signing in.`,
     verifyTitle: 'Verify your email',
@@ -143,39 +125,16 @@ const copyByLang = {
       'Tax, bank, stock, and team setup can be completed from Settings and setup pages.',
     createCompanyCta: 'Create company',
     creatingCompany: 'Creating company...',
-    readyTitle: 'Your workspace is ready',
+    readyTitle: 'Company access is ready',
     readyBody:
-      'Continue to the dashboard, or finish the setup areas that matter before posting live activity.',
-    readySummaryLabel: 'Company created',
-    readinessTitle: 'Continue company setup',
-    readinessBody:
-      'Settings shows evidence-backed readiness for the capabilities your company uses. Optional areas remain separate from blockers.',
+      'Choose where to continue. Company access is active, but the operation may still need items, opening data, team access, or company settings.',
+    readySummaryLabel: 'Active company',
+    readinessTitle: 'Choose the first operating task',
+    readinessBody: 'This choice is not saved as company data. It only opens the next workspace.',
     roleLabel: 'Company role',
     createdSummary: 'Company workspace created',
     joinedSummary: 'Invitation accepted',
     setupHub: 'Review company setup',
-    readinessItems: [
-      {
-        title: 'Company shell',
-        body: 'Created and selected as the active workspace.',
-        status: 'Done',
-      },
-      {
-        title: 'Fiscal and legal profile',
-        body: 'Add legal name, NUIT, address, logo, and document defaults.',
-        status: 'Next',
-      },
-      {
-        title: 'Team access',
-        body: 'Invite users and assign roles.',
-        status: 'Next',
-      },
-      {
-        title: 'Opening data',
-        body: 'Import items, warehouses, stock, and opening balances.',
-        status: 'Next',
-      },
-    ],
     continueDashboard: 'Continue to dashboard',
     completeProfile: 'Complete company profile',
     importOpeningData: 'Import opening data',
@@ -196,19 +155,10 @@ const copyByLang = {
       'You can switch back to the invite path later. Creating a company does not delete your pending invitations.',
   },
   pt: {
-    subtitle: 'Configuração do workspace da empresa',
     heroTitle: 'Crie ou entre no workspace da sua empresa',
     heroBody:
       'Comece pela decisão de acesso à empresa. Impostos, bancos, stock e equipa podem ser configurados depois do workspace existir.',
-    highlights: [
-      'Entre numa empresa convidada ou crie um workspace separado',
-      'Crie primeiro apenas com o nome da empresa',
-      'Conclua fiscalidade, stock e equipa a partir dos próximos passos',
-    ],
-    progressLabel: 'Entrada no workspace',
-    progressChoose: 'Escolha o caminho do seu workspace',
-    progressCreate: 'Adicione os dados mínimos da empresa',
-    progressReady: 'Workspace pronto para os próximos passos',
+    steps: ['Conta confirmada', 'Acesso à empresa', 'Escolher a primeira tarefa operacional'],
     unverifiedBody: (email: string) =>
       `Enviámos um link de verificação para ${email}. Abra-o no mesmo navegador para concluir o início de sessão.`,
     verifyTitle: 'Verifique o seu email',
@@ -267,39 +217,16 @@ const copyByLang = {
       'Impostos, bancos, stock e equipa podem ser completados nas Definições e páginas de configuração.',
     createCompanyCta: 'Criar empresa',
     creatingCompany: 'A criar empresa...',
-    readyTitle: 'O seu workspace está pronto',
+    readyTitle: 'O acesso à empresa está pronto',
     readyBody:
-      'Continue para o dashboard ou conclua as áreas de configuração necessárias antes de registar atividade real.',
-    readySummaryLabel: 'Empresa criada',
-    readinessTitle: 'Continuar a configuração da empresa',
-    readinessBody:
-      'As Definições mostram a prontidão comprovada para as capacidades usadas pela empresa. As áreas opcionais ficam separadas dos bloqueios.',
+      'Escolha onde continuar. O acesso está ativo, mas a operação pode ainda precisar de itens, dados iniciais, equipa ou definições da empresa.',
+    readySummaryLabel: 'Empresa ativa',
+    readinessTitle: 'Escolha a primeira tarefa operacional',
+    readinessBody: 'Esta escolha não é guardada como dado da empresa. Apenas abre o próximo workspace.',
     roleLabel: 'Função na empresa',
     createdSummary: 'Workspace da empresa criado',
     joinedSummary: 'Convite aceite',
     setupHub: 'Rever configuração da empresa',
-    readinessItems: [
-      {
-        title: 'Estrutura da empresa',
-        body: 'Criada e seleccionada como workspace activo.',
-        status: 'Concluído',
-      },
-      {
-        title: 'Perfil fiscal e legal',
-        body: 'Adicione nome legal, NUIT, morada, logótipo e padrões documentais.',
-        status: 'Próximo',
-      },
-      {
-        title: 'Acesso da equipa',
-        body: 'Convide utilizadores e atribua funções.',
-        status: 'Próximo',
-      },
-      {
-        title: 'Dados iniciais',
-        body: 'Importe artigos, armazéns, stock e saldos iniciais.',
-        status: 'Próximo',
-      },
-    ],
     continueDashboard: 'Continuar para o dashboard',
     completeProfile: 'Completar perfil da empresa',
     importOpeningData: 'Importar dados iniciais',
@@ -332,7 +259,7 @@ function unwrapBootstrapCompany(payload: unknown): BootstrapCompanyResult | null
 }
 
 function getFriendlyStartupError(
-  copy: (typeof copyByLang)['en'],
+  copy: { startupBody: string; createCompanySessionExpired: string },
   error: { message?: string } | null | undefined,
 ) {
   const message = (error?.message || '').toLowerCase()
@@ -342,7 +269,12 @@ function getFriendlyStartupError(
 }
 
 function getFriendlyCreateCompanyError(
-  copy: (typeof copyByLang)['en'],
+  copy: {
+    createCompanyTimeout: string
+    createCompanySessionExpired: string
+    createCompanyRateLimited: string
+    createCompanyFailed: string
+  },
   error: { message?: string; code?: string } | null | undefined,
 ) {
   const message = (error?.message || '').toLowerCase()
@@ -354,7 +286,13 @@ function getFriendlyCreateCompanyError(
 }
 
 function getFriendlyInviteError(
-  copy: (typeof copyByLang)['en'],
+  copy: {
+    inviteInvalidOrExpired: string
+    inviteWrongEmail: string
+    inviteNotFound: string
+    createCompanySessionExpired: string
+    inviteGenericError: string
+  },
   error: { message?: string } | null | undefined,
 ) {
   const code = getInviteErrorCode(error)
@@ -420,6 +358,12 @@ function roleLabel(role: MemberRole, lang: 'en' | 'pt') {
   return map[role]?.[lang] || role
 }
 
+function normalizeMemberRole(role: string | null | undefined): MemberRole {
+  return ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'].includes(String(role))
+    ? (role as MemberRole)
+    : 'OWNER'
+}
+
 function PathCard({
   title,
   body,
@@ -439,31 +383,30 @@ function PathCard({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-          'group w-full rounded-3xl border bg-background/80 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md sm:p-5',
+          'group w-full border-l-2 bg-background p-4 text-left transition-colors sm:p-5',
         active
-          ? 'border-primary/50 bg-primary/5 shadow-sm ring-1 ring-primary/20'
-          : 'border-border/70 hover:border-primary/20',
+          ? 'border-primary bg-primary/5'
+          : 'border-border hover:border-primary/50 hover:bg-muted/30',
       )}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-2">
           <div className="flex min-w-0 flex-col gap-3 text-base font-semibold text-foreground sm:flex-row sm:items-center">
-            <IconBadge tone={active ? 'primary' : 'neutral'} size="card">
-              {icon}
-            </IconBadge>
+            <span className={cn('mt-0.5 h-5 w-5 shrink-0', active ? 'text-primary' : 'text-muted-foreground')} aria-hidden="true">{icon}</span>
             <span>{title}</span>
           </div>
             <p className="hidden text-sm leading-6 text-muted-foreground sm:block">{body}</p>
           </div>
         <ChevronRight
           className={cn(
-            'mt-1 h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200',
-            active ? 'translate-x-0.5 text-primary' : 'group-hover:translate-x-0.5',
+            'mt-1 h-5 w-5 shrink-0 text-muted-foreground',
+            active ? 'text-primary' : '',
           )}
         />
       </div>
-        <div className="mt-4 hidden text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground sm:block">
+        <div className="mt-4 hidden text-xs text-muted-foreground sm:block">
           {hint}
         </div>
     </button>
@@ -500,22 +443,6 @@ export default function Onboarding() {
       return company.includes(query) || inviter.includes(query) || role.includes(query)
     })
   }, [inviteSearch, invites, lang])
-
-  const progressValue = completion
-    ? 100
-    : hasInvites
-      ? path === 'join'
-        ? 48
-        : 66
-      : companyName.trim()
-        ? 68
-        : 44
-
-  const progressText = completion
-    ? copy.progressReady
-    : path === 'create'
-      ? copy.progressCreate
-      : copy.progressChoose
 
   async function loadPendingInvites() {
     const pendingInvites = await listMyPendingCompanyInvitations()
@@ -709,7 +636,7 @@ export default function Onboarding() {
       setCompletion({
         companyId: visibleCompanyId,
         companyName: bootstrap?.company_name?.trim() || name,
-        role: bootstrap?.out_role || 'OWNER',
+        role: normalizeMemberRole(bootstrap?.out_role),
         source: 'created',
       })
       toast.success(copy.companyCreatedToast)
@@ -753,12 +680,10 @@ export default function Onboarding() {
   if (loading) {
     return (
       <PublicAuthShell
-        subtitle={copy.subtitle}
-        heroTitle={copy.heroTitle}
-        heroBody={copy.heroBody}
-        highlights={copy.highlights}
+        contextTitle={copy.heroTitle}
+        contextBody={copy.heroBody}
       >
-          <Card className="border-border/70 bg-card/95 shadow-xl">
+          <Card className="border-border bg-card shadow-none">
           <CardContent className="p-0">
             <WorkspaceSetupLoader step="checking-account" size="lg" />
           </CardContent>
@@ -770,14 +695,12 @@ export default function Onboarding() {
   if (startupError) {
     return (
       <PublicAuthShell
-        subtitle={copy.subtitle}
-        heroTitle={copy.heroTitle}
-        heroBody={copy.heroBody}
-        highlights={copy.highlights}
+        contextTitle={copy.heroTitle}
+        contextBody={copy.heroBody}
       >
-        <Card className="border-border/70 bg-card/95 shadow-xl">
+        <Card className="border-border bg-card shadow-none">
           <CardHeader className="space-y-3">
-            <CardTitle>{copy.startupTitle}</CardTitle>
+            <CardTitle><h1>{copy.startupTitle}</h1></CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">{startupError}</p>
@@ -797,14 +720,12 @@ export default function Onboarding() {
   if (unverifiedEmail) {
     return (
       <PublicAuthShell
-        subtitle={copy.subtitle}
-        heroTitle={copy.heroTitle}
-        heroBody={copy.heroBody}
-        highlights={copy.highlights}
+        contextTitle={copy.heroTitle}
+        contextBody={copy.heroBody}
       >
-        <Card className="border-border/70 bg-card/95 shadow-xl">
+        <Card className="border-border bg-card shadow-none">
           <CardHeader className="space-y-3">
-            <CardTitle>{copy.verifyTitle}</CardTitle>
+            <CardTitle><h1>{copy.verifyTitle}</h1></CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">{copy.unverifiedBody(unverifiedEmail)}</p>
@@ -826,50 +747,49 @@ export default function Onboarding() {
 
   return (
     <PublicAuthShell
-      subtitle={copy.subtitle}
-      heroTitle={copy.heroTitle}
-      heroBody={copy.heroBody}
-      highlights={copy.highlights}
+      contextTitle={copy.heroTitle}
+      contextBody={copy.heroBody}
     >
-      <TooltipProvider delayDuration={350}>
-        <Card className="border-border/70 bg-card/95 shadow-xl">
+        <Card className="border-border bg-card shadow-none">
           <CardHeader className="space-y-4 pb-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <CardTitle>
-                    {creating || acceptingCompanyId
-                      ? copy.subtitle
-                      : completion
-                        ? copy.readyTitle
-                        : hasInvites
-                          ? copy.choiceTitle
-                          : copy.noInvitesTitle}
+                    <h1>
+                      {creating || acceptingCompanyId
+                        ? creating ? copy.creatingCompany : copy.acceptInvite
+                        : completion
+                          ? copy.readyTitle
+                          : hasInvites
+                            ? copy.choiceTitle
+                            : copy.noInvitesTitle}
+                    </h1>
                   </CardTitle>
-                  <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
-                    {creating || acceptingCompanyId
-                      ? copy.subtitle
-                      : completion
+                  {!creating && !acceptingCompanyId ? <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
+                    {completion
                         ? copy.readyBody
                         : hasInvites
                           ? copy.choiceBody
                           : copy.noInvitesBody}
-                  </p>
+                  </p> : null}
                 </div>
-                {!creating && !acceptingCompanyId ? (
-                  <Badge variant="secondary" className="hidden rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em] sm:inline-flex">
-                    {progressText}
-                  </Badge>
-                ) : null}
               </div>
               {!creating && !acceptingCompanyId ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    <span>{copy.progressLabel}</span>
-                    <span>{progressValue}%</span>
-                  </div>
-                  <Progress value={progressValue} className="h-2" />
-                </div>
+                <ol className="grid gap-2 border-t border-border pt-4 sm:grid-cols-3" aria-label={copy.heroTitle}>
+                  {copy.steps.map((step, index) => {
+                    const currentStep = completion ? 2 : 1
+                    const status = index < currentStep ? 'complete' : index === currentStep ? 'current' : 'upcoming'
+                    return (
+                      <li key={step} className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+                        <span className={cn('font-semibold', status === 'current' ? 'text-primary' : 'text-foreground')}>
+                          {index + 1}.
+                        </span>
+                        <span aria-current={status === 'current' ? 'step' : undefined}>{step}</span>
+                      </li>
+                    )
+                  })}
+                </ol>
               ) : null}
             </div>
           </CardHeader>
@@ -887,59 +807,52 @@ export default function Onboarding() {
                 companyName={
                   creating
                     ? companyName.trim()
-                    : invites.find((invite) => invite.company_id === acceptingCompanyId)?.company_name
+                    : invites.find((invite) => invite.company_id === acceptingCompanyId)?.company_name || undefined
                 }
                 size="lg"
               />
             ) : completion ? (
               <div className="space-y-6">
-                <div className="rounded-3xl border border-primary/15 bg-primary/5 p-5">
-                  <div className="flex items-start gap-3">
-                    <IconBadge tone="positive" size="feature" className="mt-0.5 bg-background">
-                      <CheckCircleIcon weight="duotone" />
-                    </IconBadge>
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-muted-foreground">{copy.readySummaryLabel}</div>
-                      <div className="text-xl font-semibold tracking-tight text-foreground">{completion.companyName}</div>
-                      <p className="text-sm leading-6 text-muted-foreground">
-                        {copy.finishLaterTooltip}
-                      </p>
-                    </div>
+                <div className="border-l-2 border-primary pl-4">
+                  <div className="text-sm font-medium text-muted-foreground">{copy.readySummaryLabel}</div>
+                  <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">{completion.companyName}</div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {completion.source === 'created' ? copy.createdSummary : copy.joinedSummary}
+                    {' · '}{copy.roleLabel}: {roleLabel(completion.role, lang)}
+                  </p>
+                </div>
+
+                <div>
+                  <div className="text-base font-semibold text-foreground">{copy.readinessTitle}</div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.readinessBody}</p>
+                  <div className="mt-4 divide-y divide-border border-y border-border">
+                    {[
+                      { label: copy.addItems, route: '/items?view=create' },
+                      { label: copy.importOpeningData, route: '/setup/import?dataset=opening_stock' },
+                      { label: copy.completeProfile, route: '/settings?view=setup' },
+                      ...(['OWNER', 'ADMIN'].includes(completion.role)
+                        ? [{ label: copy.inviteUsers, route: '/users' }]
+                        : []),
+                    ].map((action) => (
+                      <button
+                        key={action.route}
+                        type="button"
+                        onClick={() => nav(action.route, { replace: true })}
+                        className="flex min-h-12 w-full items-center justify-between gap-4 px-1 py-3 text-left text-sm font-medium text-foreground transition-colors hover:text-primary"
+                      >
+                        <span>{action.label}</span>
+                        <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-border/70 bg-background/70 p-5 sm:p-6">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="text-base font-semibold text-foreground">{copy.readinessTitle}</div>
-                      <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted-foreground sm:block">
-                        {copy.readinessBody}
-                      </p>
-                    </div>
-                    <Badge variant="secondary" className="w-fit rounded-full px-3 py-1">
-                      {copy.progressReady}
-                    </Badge>
-                  </div>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
-                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                        {completion.source === 'created' ? copy.createdSummary : copy.joinedSummary}
-                      </div>
-                      <div className="mt-2 font-semibold text-foreground">{completion.companyName}</div>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
-                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{copy.roleLabel}</div>
-                      <div className="mt-2 font-semibold text-foreground">{roleLabel(completion.role, lang)}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Button onClick={() => nav('/dashboard', { replace: true })} className="justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button onClick={() => nav('/dashboard', { replace: true })} className="justify-between sm:flex-1">
                     <span>{copy.continueDashboard}</span>
                     <ArrowRight className="h-4 w-4" />
                   </Button>
-                  <Button variant="secondary" onClick={() => nav('/settings?view=setup', { replace: true })} className="justify-between">
+                  <Button variant="secondary" onClick={() => nav('/settings?view=setup', { replace: true })} className="justify-between sm:flex-1">
                     <span>{copy.setupHub}</span>
                     <Settings2 className="h-4 w-4" />
                   </Button>
@@ -969,7 +882,7 @@ export default function Onboarding() {
                     </div>
 
                     {path === 'join' ? (
-                      <div className="rounded-3xl border border-border/70 bg-background/70 p-4 sm:p-5">
+                      <section className="border-t border-border pt-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                           <div>
                             <div className="text-base font-semibold text-foreground">{copy.invitationsTitle}</div>
@@ -1001,7 +914,7 @@ export default function Onboarding() {
                                   return (
                                     <div
                                       key={`${invite.company_id}:${invite.source}`}
-                        className="rounded-3xl border border-border/70 bg-card/80 p-3 transition-all duration-200 hover:border-primary/20 hover:shadow-sm sm:p-4"
+                        className="border-b border-border p-3 sm:p-4"
                                     >
                                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                                         <div className="space-y-3">
@@ -1057,16 +970,16 @@ export default function Onboarding() {
                                   )
                                 })
                               ) : (
-                                <div className="rounded-2xl border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                                <div className="border-y border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                                   {copy.noInviteSearchResults}
                                 </div>
                               )}
                             </div>
                           </ScrollArea>
                         </div>
-                      </div>
+                      </section>
                     ) : (
-                      <div className="rounded-3xl border border-border/70 bg-background/70 p-4 text-sm leading-6 text-muted-foreground">
+                      <div className="border-l-2 border-border pl-4 text-sm leading-6 text-muted-foreground">
                         {copy.returningInviteHint}
                       </div>
                     )}
@@ -1074,25 +987,15 @@ export default function Onboarding() {
                 ) : null}
 
                 {path === 'create' ? (
-                  <div className="rounded-3xl border border-border/70 bg-background/70 p-4 sm:p-5">
+                  <section className="border-t border-border pt-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <div className="text-base font-semibold text-foreground">{copy.createTitle}</div>
                             <p className="mt-1 hidden text-sm leading-6 text-muted-foreground sm:block">{copy.createBody}</p>
                           </div>
-                          <div className="hidden items-center gap-2 rounded-full border border-border/70 bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground sm:inline-flex">
-                        <span>{copy.finishLaterLabel}</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button type="button" className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground">
-                              <Info className="h-3.5 w-3.5" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs text-xs leading-5">
-                            {copy.finishLaterTooltip}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
+                          <p className="hidden max-w-xs text-right text-xs leading-5 text-muted-foreground sm:block">
+                            {copy.finishLaterLabel}: {copy.finishLaterTooltip}
+                          </p>
                     </div>
 
                     <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
@@ -1123,13 +1026,12 @@ export default function Onboarding() {
                         {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                       </Button>
                     </div>
-                  </div>
+                  </section>
                 ) : null}
               </>
             )}
           </CardContent>
         </Card>
-      </TooltipProvider>
     </PublicAuthShell>
   )
 }

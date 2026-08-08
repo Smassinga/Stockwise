@@ -5,11 +5,13 @@ import type { PremiumTone } from './PremiumStatusBadge'
 
 const toneText: Record<PremiumTone, string> = {
   neutral: 'text-financial-neutral dark:text-panel-premium-muted',
-  positive: 'text-financial-positive dark:text-emerald-200',
-  negative: 'text-financial-negative dark:text-rose-200',
-  warning: 'text-financial-warning dark:text-amber-200',
-  critical: 'text-financial-critical dark:text-rose-200',
-  info: 'text-informational',
+  positive: 'text-status-success-foreground',
+  success: 'text-status-success-foreground',
+  negative: 'text-status-danger-foreground',
+  danger: 'text-status-danger-foreground',
+  warning: 'text-status-warning-foreground',
+  critical: 'text-status-danger-foreground',
+  info: 'text-status-info-foreground',
 }
 
 export function PremiumMetricCard({
@@ -45,7 +47,7 @@ export function PremiumMetricCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className={cn('premium-label truncate', panel && 'text-muted-foreground dark:text-panel-premium-muted')}>{label}</div>
+          <div className={cn('premium-label break-words', panel && 'text-muted-foreground dark:text-panel-premium-muted')}>{label}</div>
           <div className={cn('mt-2 premium-kpi-value min-w-0 break-words', panel ? 'text-foreground dark:text-panel-premium-foreground' : toneText[tone])}>
             {value}
           </div>

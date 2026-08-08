@@ -172,13 +172,12 @@ export default function AcceptInvite() {
   return (
     <PublicAuthShell
       subtitle={copy.subtitle}
-      heroTitle={copy.heroTitle}
-      heroBody={copy.heroBody}
-      highlights={copy.highlights}
+      contextTitle={copy.heroTitle}
+      contextBody={copy.heroBody}
     >
-      <Card className="border-border/70 bg-card/95 shadow-xl">
+      <Card className="border-border bg-card shadow-none">
         <CardHeader className="space-y-3 pb-4">
-          <CardTitle>{title}</CardTitle>
+          <CardTitle><h1>{title}</h1></CardTitle>
           <p className="text-sm leading-6 text-muted-foreground">{body}</p>
         </CardHeader>
         <CardContent className="space-y-5">

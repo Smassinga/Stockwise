@@ -18,18 +18,12 @@ const RESEND_COOLDOWN_SECONDS = 60
 const SUPPORT_EMAIL = 'geral@stockwiseapp.com'
 
 type Copy = {
-  subtitle: string
   signInTitle: string
   signUpTitle: string
-  signInBody: string
   signUpBody: string
   name: string
   namePlaceholder: string
   nameRequired: string
-  phone: string
-  phonePlaceholder: string
-  phoneHint: string
-  phoneInvalid: string
   email: string
   emailPlaceholder: string
   emailRequired: string
@@ -76,30 +70,22 @@ type Copy = {
   genericLoginError: string
   genericSignUpError: string
   genericUnexpected: string
-  signUpSupport: string
   supportHint: string
   wrongBrowserHint: string
-  heroTitle: string
-  heroBody: string
-  highlights: string[]
+  contextTitle: string
+  contextBody: string
   showPasswordLabel: string
   hidePasswordLabel: string
 }
 
 const copyByLang: Record<'en' | 'pt', Copy> = {
   en: {
-    subtitle: 'Stock, invoices, settlements, and records in one workspace.',
     signInTitle: 'Sign in to StockWise',
     signUpTitle: 'Create your StockWise account',
-    signInBody: 'Access your dashboard, stock, invoices, settlements, vendor bills, cash, and reports.',
     signUpBody: 'Create your login first, confirm your email, then choose company setup or an invitation.',
     name: 'Full name',
     namePlaceholder: 'Full name',
     nameRequired: 'Enter your full name.',
-    phone: 'Phone',
-    phonePlaceholder: '+258 ...',
-    phoneHint: 'Optional. Used only as profile contact information.',
-    phoneInvalid: 'Enter a valid phone number or leave it blank.',
     email: 'Email',
     emailPlaceholder: 'name@company.com',
     emailRequired: 'Enter your email address.',
@@ -107,7 +93,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     password: 'Password',
     passwordPlaceholder: 'Enter your password',
     passwordRequired: 'Enter your password.',
-    passwordHint: 'Use at least 6 characters. You can change it later from your profile.',
+    passwordHint: 'Use at least 6 characters. A secure change link is available from your profile later.',
     passwordTooShort: 'Use at least 6 characters for your password.',
     confirmPassword: 'Confirm password',
     confirmPasswordPlaceholder: 'Re-enter your password',
@@ -147,34 +133,20 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     genericLoginError: 'We could not sign you in right now. Please try again.',
     genericSignUpError: 'We could not create your account right now. Please try again shortly.',
     genericUnexpected: 'An unexpected error occurred. Please try again.',
-    signUpSupport:
-      'After confirming your email, you can create your company or accept a company invitation.',
     supportHint: 'Need help?',
     wrongBrowserHint: 'Open verification and reset links in the same browser session you used here.',
-    heroTitle: 'See stock, cash, and open balances before the next decision.',
-    heroBody:
-      'StockWise keeps inventory movement, finance documents, vendor bills, and settlements connected so the workspace you enter is ready for action.',
-    highlights: [
-      'Stock and warehouse signals stay beside sales and purchases',
-      'Invoices, vendor bills, and settlements keep balances visible',
-      'PT/EN output and records in MZN carry into the workspace',
-    ],
+    contextTitle: 'Return to the records your operation needs.',
+    contextBody: 'Sign in to review connected purchases, stock, sales, documents, settlements, and the items that need attention.',
     showPasswordLabel: 'Show password',
     hidePasswordLabel: 'Hide password',
   },
   pt: {
-    subtitle: 'Stock, faturas, liquidações e registos no mesmo workspace.',
     signInTitle: 'Iniciar sessão no StockWise',
     signUpTitle: 'Criar a sua conta no StockWise',
-    signInBody: 'Aceda ao dashboard, stock, faturas, liquidações, vendor bills, caixa e relatórios.',
     signUpBody: 'Crie o seu acesso, confirme o email e depois escolha configurar a empresa ou aceitar um convite.',
     name: 'Nome completo',
     namePlaceholder: 'Nome completo',
     nameRequired: 'Introduza o seu nome completo.',
-    phone: 'Telefone',
-    phonePlaceholder: '+258 ...',
-    phoneHint: 'Opcional. Usado apenas como contacto do perfil.',
-    phoneInvalid: 'Introduza um telefone válido ou deixe o campo em branco.',
     email: 'Email',
     emailPlaceholder: 'nome@empresa.com',
     emailRequired: 'Introduza o seu e-mail.',
@@ -182,7 +154,7 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     password: 'Palavra-passe',
     passwordPlaceholder: 'Introduza a sua palavra-passe',
     passwordRequired: 'Introduza a sua palavra-passe.',
-    passwordHint: 'Use pelo menos 6 caracteres. Depois pode alterar a palavra-passe no perfil.',
+    passwordHint: 'Use pelo menos 6 caracteres. Mais tarde, pode pedir no perfil um link seguro de alteração.',
     passwordTooShort: 'Use pelo menos 6 caracteres na palavra-passe.',
     confirmPassword: 'Confirmar palavra-passe',
     confirmPasswordPlaceholder: 'Repita a sua palavra-passe',
@@ -222,18 +194,10 @@ const copyByLang: Record<'en' | 'pt', Copy> = {
     genericLoginError: 'Não foi possível iniciar sessão agora. Tente novamente.',
     genericSignUpError: 'Não foi possível criar a conta agora. Tente novamente em instantes.',
     genericUnexpected: 'Ocorreu um erro inesperado. Tente novamente.',
-    signUpSupport:
-      'Depois de confirmar o email, pode criar a sua empresa ou aceitar um convite de empresa.',
     supportHint: 'Precisa de ajuda?',
     wrongBrowserHint: 'Abra links de verificação e recuperação no mesmo navegador usado aqui.',
-    heroTitle: 'Veja stock, caixa e saldos em aberto antes da próxima decisão.',
-    heroBody:
-      'O StockWise mantém movimento de inventário, documentos financeiros, vendor bills e liquidações ligados para que o workspace esteja pronto para ação.',
-    highlights: [
-      'Sinais de stock e armazém ficam próximos de vendas e compras',
-      'Faturas, vendor bills e liquidações mantêm saldos visíveis',
-      'Saída PT/EN e registos em MZN seguem para o workspace',
-    ],
+    contextTitle: 'Volte aos registos de que a operação precisa.',
+    contextBody: 'Inicie sessão para rever compras, stock, vendas, documentos, liquidações e os pontos que precisam de atenção.',
     showPasswordLabel: 'Mostrar palavra-passe',
     hidePasswordLabel: 'Ocultar palavra-passe',
   },
@@ -243,17 +207,8 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase()
 }
 
-function normalizePhone(value: string) {
-  return value.trim().replace(/\s+/g, ' ')
-}
-
 function isValidEmail(value: string) {
   return /^\S+@\S+\.\S+$/.test(value)
-}
-
-function isValidOptionalPhone(value: string) {
-  const phone = normalizePhone(value)
-  return !phone || /^[+()0-9.\-\s]{6,32}$/.test(phone)
 }
 
 function getFriendlyAuthError(copy: Copy, rawError: string | undefined, mode: 'login' | 'signup' | 'reset') {
@@ -288,7 +243,6 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
-    phone: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -334,7 +288,6 @@ export default function Auth() {
     if (!isValidEmail(email)) return copy.emailInvalid
     if (!formData.password) return copy.passwordRequired
     if (!isLogin && !formData.name.trim()) return copy.nameRequired
-    if (!isLogin && !isValidOptionalPhone(formData.phone)) return copy.phoneInvalid
     if (!isLogin && formData.password.length < MIN_PASSWORD_LENGTH) return copy.passwordTooShort
     if (!isLogin && !formData.confirmPassword) return copy.confirmPasswordRequired
     if (!isLogin && formData.password !== formData.confirmPassword) return copy.passwordsDontMatch
@@ -348,7 +301,7 @@ export default function Auth() {
     setVerificationMessage('')
     setResendAvailableAt(0)
     setShowPassword(false)
-    setFormData({ name: '', phone: '', email: '', password: '', confirmPassword: '' })
+    setFormData({ name: '', email: '', password: '', confirmPassword: '' })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -361,7 +314,6 @@ export default function Auth() {
 
     const email = normalizeEmail(formData.email)
     const name = formData.name.trim()
-    const phone = normalizePhone(formData.phone)
 
     setError('')
     setResetMessage('')
@@ -387,7 +339,7 @@ export default function Auth() {
         return
       }
 
-      const result = await register(name, email, formData.password, phone || undefined)
+      const result = await register(name, email, formData.password)
       if (!result.success) {
         setError(getFriendlyAuthError(copy, result.error, 'signup'))
         return
@@ -469,7 +421,7 @@ export default function Auth() {
   const cardBody = awaitingVerification
     ? copy.verifyBody(awaitingVerification.email)
     : isLogin
-      ? copy.signInBody
+      ? null
       : copy.signUpBody
 
   const resendRemainingSeconds = Math.max(0, Math.ceil((resendAvailableAt - nowMs) / 1000))
@@ -479,22 +431,21 @@ export default function Auth() {
     ? !!normalizeEmail(formData.email) && !!formData.password && !loading
     : !!formData.name.trim() &&
       !!normalizeEmail(formData.email) &&
-      isValidOptionalPhone(formData.phone) &&
       formData.password.length >= MIN_PASSWORD_LENGTH &&
       formData.password === formData.confirmPassword &&
       !loading
 
   return (
     <PublicAuthShell
-      subtitle={copy.subtitle}
-      heroTitle={copy.heroTitle}
-      heroBody={copy.heroBody}
-      highlights={copy.highlights}
+      contextTitle={copy.contextTitle}
+      contextBody={copy.contextBody}
     >
-      <Card className="border-border/70 bg-card/95 shadow-xl">
+      <Card className="border-border bg-card shadow-none">
         <CardHeader className="space-y-3 pb-4">
-          <CardTitle className="text-2xl font-semibold tracking-tight">{cardTitle}</CardTitle>
-          <p className="text-sm leading-6 text-muted-foreground">{cardBody}</p>
+          <CardTitle>
+            <h1 className="text-2xl font-semibold tracking-tight">{cardTitle}</h1>
+          </CardTitle>
+          {cardBody ? <p className="text-sm leading-6 text-muted-foreground">{cardBody}</p> : null}
         </CardHeader>
         <CardContent className="space-y-5">
           {awaitingVerification ? (
@@ -578,15 +529,8 @@ export default function Auth() {
             </div>
           ) : (
             <>
-              {!isLogin ? (
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
-                  {copy.signUpSupport}
-                </div>
-              ) : null}
-
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-                <div className="rounded-2xl border border-border/70 bg-background/70 p-4 sm:p-5">
-                  <div className="space-y-4">
+                <div className="space-y-4">
                     {!isLogin ? (
                       <div className="space-y-2">
                         <Label htmlFor="name">{copy.name}</Label>
@@ -599,21 +543,6 @@ export default function Auth() {
                           required
                           autoComplete="name"
                         />
-                      </div>
-                    ) : null}
-
-                    {!isLogin ? (
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">{copy.phone}</Label>
-                        <Input
-                          id="phone"
-                          type="tel"
-                          value={formData.phone}
-                          onChange={(e) => handleInputChange('phone', e.target.value)}
-                          placeholder={copy.phonePlaceholder}
-                          autoComplete="tel"
-                        />
-                        <p className="text-xs leading-5 text-muted-foreground">{copy.phoneHint}</p>
                       </div>
                     ) : null}
 
@@ -675,7 +604,6 @@ export default function Auth() {
                         />
                       </div>
                     ) : null}
-                  </div>
                 </div>
 
                 {error ? (

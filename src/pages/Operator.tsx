@@ -758,6 +758,7 @@ export default function Operator() {
       })
 
       pendingSaleRequestRef.current = null
+      if (!result) throw new Error(copy.couldNotPost)
       setLastSale({
         ...result,
         subtotal: result.subtotal ?? currentPreview.subtotal,
@@ -864,7 +865,7 @@ export default function Operator() {
                 </p>
               )}
             </div>
-            <Badge variant="outline" className={displayedPosMode ? 'rounded-full' : 'rounded-full border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'}>
+            <Badge variant="outline" className={displayedPosMode ? 'rounded-full' : 'rounded-full border-status-warning-border bg-status-warning-muted text-status-warning-foreground'}>
               {displayedPosMode === 'configured'
                 ? copy.configuredTax
                 : displayedPosMode === 'non_fiscal'
@@ -1139,21 +1140,15 @@ export default function Operator() {
           </CardContent>
         </Card>
       ) : null}
-      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-[0_24px_54px_-36px_hsl(var(--foreground)/0.24)]">
+      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-none">
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="screen-intro max-w-3xl">
-              <div className="inline-flex items-center rounded-full border border-primary/15 bg-primary/8 px-3 py-1 text-xs font-medium text-primary">
-                <ShoppingBag className="mr-2 h-3.5 w-3.5" />
-                {copy.title}
-              </div>
-              <CardTitle className="text-2xl md:text-3xl">{copy.subtitle}</CardTitle>
-              <CardDescription className="max-w-3xl text-sm leading-6">
-                {copy.headerHelp}
-              </CardDescription>
+              <h1>{copy.title}</h1>
+              <p>{copy.subtitle}</p>
             </div>
             {!canPost ? (
-              <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-amber-700">
+              <Badge variant="outline" className="border-status-warning-border bg-status-warning-muted text-status-warning-foreground">
                 {copy.readOnly}
               </Badge>
             ) : null}

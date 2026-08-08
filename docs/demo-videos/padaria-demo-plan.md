@@ -25,7 +25,7 @@ Bakery owners, managers, and operators in Mozambique who need practical control 
 - The video panels are video-only recreations aligned with the StockWise visual system; they do not execute authenticated app workflows.
 - It must visually follow the real StockWise app and landing page design system.
 - Use the official StockWise logo from `public/brand/stockwise-logo.png`, copied into the demo as `assets/stockwise-logo.png`.
-- Use the app tokens from `src/index.css`: light app background, navy foreground, card and border tokens, StockWise primary blue, financial-positive, financial-warning, and dashboard premium panel tokens.
+- Use the app tokens from `src/index.css`: light app background, black/charcoal foreground, neutral card and border tokens, WiseCore green brand primary, the semantic `status-*` state family, and dashboard premium panel tokens.
 - Recreate lightweight video-only panels inspired by `PremiumRegisterHeader`, `PremiumMetricCard`, `PremiumStatusBadge`, dashboard cockpit cards, Items register cards, Stock Levels risk badges, and POS sale panels.
 - Do not invent alternate logos, random blues, generic SaaS gradients, or visual language that would make the demo look separate from StockWise.
 
@@ -70,7 +70,7 @@ Comece o teste grátis de 7 dias.
 
 ## Animation Notes
 
-- Use StockWise blue/navy branding with light-first SaaS surfaces.
+- Use StockWise/WiseCore green, black, charcoal, white, and neutral branding with light-first operational surfaces; do not use generic blue/navy as the environmental identity.
 - Keep motion subtle: fade, slight upward movement, and light UI slide-ins.
 - Use calm warning styling for low-stock alerts.
 - Avoid heavy 3D, flashy effects, fake testimonials, batch/expiry workflows, and unsupported feature claims.

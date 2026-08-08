@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CheckCheck, ExternalLink, Filter, X } from 'lucide-react'
+import { AlertTriangle, Bell, Check, CheckCheck, CircleAlert, ExternalLink, Info, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
+import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
@@ -10,17 +13,240 @@ import { useI18n } from '../lib/i18n'
 import { notificationPresentation } from '../lib/notificationPresentation'
 import { supabase } from '../lib/supabase'
 
-type Row = { id: string; title: string | null; body: string | null; event_type: string | null; category: string | null; payload: Record<string, unknown>; severity: string | null; action_url: string | null; url: string | null; occurred_at: string | null; created_at: string; read_at: string | null; dismissed_at: string | null }
+type Row = {
+  id: string
+  title: string | null
+  body: string | null
+  event_type: string | null
+  category: string | null
+  payload: Record<string, unknown>
+  severity: string | null
+  action_url: string | null
+  url: string | null
+  occurred_at: string | null
+  created_at: string
+  read_at: string | null
+  dismissed_at: string | null
+}
+
+function severityTone(severity: string | null): PremiumTone {
+  if (severity === 'success') return 'success'
+  if (severity === 'warning') return 'warning'
+  if (severity === 'error' || severity === 'danger' || severity === 'critical') return 'danger'
+  return 'info'
+}
+
+function SeverityIcon({ severity }: { severity: string | null }) {
+  if (severity === 'success') return <Check />
+  if (severity === 'warning') return <AlertTriangle />
+  if (severity === 'error' || severity === 'danger' || severity === 'critical') return <CircleAlert />
+  return <Info />
+}
 
 export default function NotificationsPage() {
-  const navigate = useNavigate(); const { lang } = useI18n(); const { companyId } = useOrg(); const { user } = useAuth()
-  const [rows,setRows] = useState<Row[]>([]); const [category,setCategory] = useState('all'); const [unread,setUnread] = useState('all'); const [loading,setLoading] = useState(false)
-  const copy = lang === 'pt' ? { title:'Notificações',all:'Todas as categorias',unread:'Não lidas',allStates:'Todas',markAll:'Marcar todas como lidas',empty:'Nenhuma notificação corresponde aos filtros.',open:'Abrir',dismiss:'Dispensar' } : { title:'Notifications',all:'All categories',unread:'Unread',allStates:'All',markAll:'Mark all read',empty:'No notifications match these filters.',open:'Open',dismiss:'Dismiss' }
-  async function load() { if(!companyId||!user?.id)return; setLoading(true); const {data}=await supabase.from('notifications').select('id,title,body,event_type,category,payload,severity,action_url,url,occurred_at,created_at,read_at,dismissed_at').eq('company_id',companyId).or(`user_id.eq.${user.id},user_id.is.null`).is('dismissed_at',null).order('occurred_at',{ascending:false,nullsFirst:false}).range(0,99); setRows((data||[]) as Row[]); setLoading(false) }
-  useEffect(()=>{void load()},[companyId,user?.id])
-  const visible=useMemo(()=>rows.filter((row)=>(category==='all'||row.category===category)&&(unread==='all'||!row.read_at)),[category,rows,unread])
-  async function mark(id:string, patch:Record<string,string>){await supabase.from('notifications').update(patch).eq('id',id);setRows((current)=>current.map((row)=>row.id===id?{...row,...patch}:row))}
-  async function markAll(){if(!companyId)return;const now=new Date().toISOString();await supabase.from('notifications').update({read_at:now}).eq('company_id',companyId).is('read_at',null);setRows((current)=>current.map((row)=>({...row,read_at:row.read_at||now})))}
-  const categories=[...new Set(rows.map((row)=>row.category).filter(Boolean))] as string[]
-  return <div className="app-page space-y-6"><div className="flex flex-wrap items-start justify-between gap-3"><div className="screen-intro"><div className="premium-label">StockWise</div><h1 className="flex items-center gap-2"><Bell className="h-7 w-7" />{copy.title}</h1></div><Button variant="outline" onClick={()=>void markAll()}><CheckCheck className="mr-2 h-4 w-4" />{copy.markAll}</Button></div><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4" />{copy.title}</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2"><Select value={category} onValueChange={setCategory}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{copy.all}</SelectItem>{categories.map((value)=><SelectItem key={value} value={value}>{value.replaceAll('_',' ')}</SelectItem>)}</SelectContent></Select><Select value={unread} onValueChange={setUnread}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{copy.allStates}</SelectItem><SelectItem value="unread">{copy.unread}</SelectItem></SelectContent></Select></CardContent></Card><div className="grid gap-3">{!loading&&!visible.length?<Card><CardContent className="p-8 text-center text-muted-foreground">{copy.empty}</CardContent></Card>:visible.map((row)=>{const presentation=notificationPresentation(row,lang);const action=row.action_url||row.url;return <Card key={row.id} className={!row.read_at?'border-primary/35 bg-primary/5':''}><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><span className="rounded-full border px-2 py-1 text-[10px] uppercase">{row.severity||'info'}</span>{!row.read_at?<span className="h-2 w-2 rounded-full bg-primary"/>:null}</div><h2 className="mt-2 font-semibold">{presentation.title}</h2>{presentation.body?<p className="mt-1 text-sm text-muted-foreground">{presentation.body}</p>:null}<div className="mt-2 text-xs text-muted-foreground">{new Date(row.occurred_at||row.created_at).toLocaleString(lang==='pt'?'pt-MZ':'en-MZ')}</div></div><div className="flex shrink-0 flex-wrap gap-2">{!row.read_at?<Button size="sm" variant="outline" onClick={()=>void mark(row.id,{read_at:new Date().toISOString()})}>{copy.unread}</Button>:null}{action?<Button size="sm" onClick={()=>navigate(action)}><ExternalLink className="mr-2 h-4 w-4" />{copy.open}</Button>:null}<Button size="sm" variant="ghost" onClick={()=>void mark(row.id,{dismissed_at:new Date().toISOString()})}><X className="mr-2 h-4 w-4" />{copy.dismiss}</Button></div></CardContent></Card>})}</div></div>
+  const navigate = useNavigate()
+  const { lang } = useI18n()
+  const { companyId } = useOrg()
+  const { user } = useAuth()
+  const [rows, setRows] = useState<Row[]>([])
+  const [category, setCategory] = useState('all')
+  const [unread, setUnread] = useState('all')
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [actionError, setActionError] = useState(false)
+  const copy = lang === 'pt'
+    ? {
+        title: 'Notificações',
+        allCategories: 'Todas as categorias',
+        categoryLabel: 'Filtrar por categoria',
+        unread: 'Não lida',
+        unreadOnly: 'Apenas não lidas',
+        stateLabel: 'Filtrar por estado de leitura',
+        allStates: 'Todas',
+        markRead: 'Marcar como lida',
+        markAll: 'Marcar todas como lidas',
+        empty: 'Nenhuma notificação corresponde aos filtros.',
+        emptyHelp: 'Altere os filtros ou volte mais tarde.',
+        open: 'Abrir',
+        dismiss: 'Dispensar',
+        loading: 'A carregar notificações',
+        unavailable: 'Não foi possível carregar as notificações.',
+        unavailableHelp: 'Tente novamente. Nenhuma notificação foi alterada.',
+        actionFailed: 'Não foi possível atualizar a notificação. Tente novamente.',
+        retry: 'Tentar novamente',
+        severity: { success: 'Sucesso', warning: 'Aviso', danger: 'Erro', info: 'Informação' },
+      }
+    : {
+        title: 'Notifications',
+        allCategories: 'All categories',
+        categoryLabel: 'Filter by category',
+        unread: 'Unread',
+        unreadOnly: 'Unread only',
+        stateLabel: 'Filter by read state',
+        allStates: 'All',
+        markRead: 'Mark as read',
+        markAll: 'Mark all read',
+        empty: 'No notifications match these filters.',
+        emptyHelp: 'Change the filters or check again later.',
+        open: 'Open',
+        dismiss: 'Dismiss',
+        loading: 'Loading notifications',
+        unavailable: 'Notifications could not be loaded.',
+        unavailableHelp: 'Try again. No notifications were changed.',
+        actionFailed: 'The notification could not be updated. Try again.',
+        retry: 'Try again',
+        severity: { success: 'Success', warning: 'Warning', danger: 'Error', info: 'Information' },
+      }
+
+  async function load() {
+    if (!companyId || !user?.id) return
+    setLoading(true)
+    setLoadError(false)
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id,title,body,event_type,category,payload,severity,action_url,url,occurred_at,created_at,read_at,dismissed_at')
+      .eq('company_id', companyId)
+      .or(`user_id.eq.${user.id},user_id.is.null`)
+      .is('dismissed_at', null)
+      .order('occurred_at', { ascending: false, nullsFirst: false })
+      .range(0, 99)
+    if (error) {
+      console.error('Notification load error:', error)
+      setLoadError(true)
+      setRows([])
+    } else {
+      setRows((data || []) as Row[])
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    void load()
+  }, [companyId, user?.id])
+
+  const visible = useMemo(
+    () => rows.filter((row) => (category === 'all' || row.category === category) && (unread === 'all' || !row.read_at)),
+    [category, rows, unread],
+  )
+  const categories = [...new Set(rows.map((row) => row.category).filter(Boolean))] as string[]
+  const unreadIds = rows.filter((row) => !row.read_at).map((row) => row.id)
+
+  async function updateNotification(id: string, patch: { read_at?: string; dismissed_at?: string }) {
+    setActionError(false)
+    const { error } = await supabase.from('notifications').update(patch).eq('id', id)
+    if (error) {
+      console.error('Notification update error:', error)
+      setActionError(true)
+      return
+    }
+    if (patch.dismissed_at) {
+      setRows((current) => current.filter((row) => row.id !== id))
+    } else {
+      setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row))
+    }
+  }
+
+  async function markAll() {
+    if (!unreadIds.length) return
+    setActionError(false)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('notifications').update({ read_at: now }).in('id', unreadIds)
+    if (error) {
+      console.error('Notification mark-all error:', error)
+      setActionError(true)
+      return
+    }
+    const changed = new Set(unreadIds)
+    setRows((current) => current.map((row) => changed.has(row.id) ? { ...row, read_at: now } : row))
+  }
+
+  function categoryLabel(value: string) {
+    return value.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+  }
+
+  return (
+    <div className="app-page space-y-6">
+      <PremiumPageHeader
+        title={copy.title}
+        actions={(
+          <Button variant="outline" disabled={loading || unreadIds.length === 0} onClick={() => void markAll()}>
+            <CheckCheck className="mr-2 h-4 w-4" />
+            {copy.markAll}
+          </Button>
+        )}
+      />
+
+      <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger aria-label={copy.categoryLabel}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{copy.allCategories}</SelectItem>
+            {categories.map((value) => <SelectItem key={value} value={value}>{categoryLabel(value)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={unread} onValueChange={setUnread}>
+          <SelectTrigger aria-label={copy.stateLabel}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{copy.allStates}</SelectItem>
+            <SelectItem value="unread">{copy.unreadOnly}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {actionError ? <PremiumStatePanel kind="error" compact title={copy.actionFailed} /> : null}
+
+      {loading ? (
+        <PremiumSkeleton variant="list" rows={5} label={copy.loading} />
+      ) : loadError ? (
+        <PremiumStatePanel
+          kind="error"
+          title={copy.unavailable}
+          description={copy.unavailableHelp}
+          action={<Button type="button" variant="outline" onClick={() => void load()}>{copy.retry}</Button>}
+        />
+      ) : visible.length === 0 ? (
+        <PremiumEmptyState icon={<Bell />} title={copy.empty} description={copy.emptyHelp} />
+      ) : (
+        <section aria-label={copy.title} className="divide-y divide-border border-y border-border">
+          {visible.map((row) => {
+            const presentation = notificationPresentation(row, lang)
+            const action = row.action_url || row.url
+            const tone = severityTone(row.severity)
+            return (
+              <article key={row.id} className="flex flex-col gap-4 py-5 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <PremiumStatusBadge tone={tone} icon={<SeverityIcon severity={row.severity} />}>
+                      {copy.severity[tone === 'danger' ? 'danger' : tone === 'success' ? 'success' : tone === 'warning' ? 'warning' : 'info']}
+                    </PremiumStatusBadge>
+                    {!row.read_at ? <PremiumStatusBadge tone="neutral">{copy.unread}</PremiumStatusBadge> : null}
+                  </div>
+                  <h2 className="mt-3 font-semibold text-foreground">{presentation.title}</h2>
+                  {presentation.body ? <p className="mt-1 max-w-3xl break-words text-sm leading-6 text-muted-foreground">{presentation.body}</p> : null}
+                  <time className="mt-2 block text-xs text-muted-foreground" dateTime={row.occurred_at || row.created_at}>
+                    {new Date(row.occurred_at || row.created_at).toLocaleString(lang === 'pt' ? 'pt-MZ' : 'en-MZ')}
+                  </time>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {!row.read_at ? (
+                    <Button size="sm" variant="outline" onClick={() => void updateNotification(row.id, { read_at: new Date().toISOString() })}>
+                      <Check className="mr-2 h-4 w-4" />{copy.markRead}
+                    </Button>
+                  ) : null}
+                  {action ? (
+                    <Button size="sm" onClick={() => navigate(action)}>
+                      <ExternalLink className="mr-2 h-4 w-4" />{copy.open}
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="ghost" onClick={() => void updateNotification(row.id, { dismissed_at: new Date().toISOString() })}>
+                    <X className="mr-2 h-4 w-4" />{copy.dismiss}
+                  </Button>
+                </div>
+              </article>
+            )
+          })}
+        </section>
+      )}
+    </div>
+  )
 }

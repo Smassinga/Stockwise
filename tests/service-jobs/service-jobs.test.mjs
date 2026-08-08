@@ -135,7 +135,7 @@ test('owner dashboard withholds gross profit while service costing is open', () 
 test('mixed orders remove embedded service sales before adding completed service evidence', () =>
   assert.match(dashboard, /v_goods_sales-v_embedded_service_sales\+v_service_sales/))
 test('dashboard chart keeps sales primary and uses maintained COGS and profit tokens', () => {
-  assert.match(dashboardPage, /dataKey="sales"[\s\S]+stroke="hsl\(var\(--primary\)\)"/)
+  assert.match(dashboardPage, /dataKey="sales"[\s\S]+stroke="hsl\(var\(--chart-revenue-line\)\)"/)
   assert.match(dashboardPage, /dataKey="knownCogs"[\s\S]+dashboard\.cogs[\s\S]+stroke="hsl\(var\(--chart-cogs-line\)\)"/)
   assert.match(dashboardPage, /dataKey="grossProfit"[\s\S]+stroke="hsl\(var\(--chart-margin-line\)\)"/)
   assert.doesNotMatch(dashboardPage, /var\(--success\)/)

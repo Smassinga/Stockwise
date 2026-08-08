@@ -20,6 +20,7 @@ Not yet implemented as first-class repo tooling:
 
 - dedicated Jest unit-test suite
 - dedicated Cypress or Playwright browser E2E suite
+- authenticated browser axe coverage and a maintained manual screen-reader protocol
 - CI isolation for every finance mutation scenario
 
 ## Automated CI Validation
@@ -34,8 +35,13 @@ npm run check:migrations
 npm run lint:js
 npm run check:css-vars
 npm run check:css-classes
+npm run check:ui-foundations
 npm run build
 ```
+
+`npm run lint:js` includes static accessibility rules for high-confidence JSX, ARIA, heading, focusability, and native-interaction defects. This is not browser accessibility testing and does not prove WCAG 2.2 AA conformance. UI validation uses three layers: automated checks, manual keyboard QA, and human UX/accessibility review. Where a surface warrants browser automation, axe or an equivalent maintained engine should fail on critical and serious findings only after the route, authentication, fixtures, and false-positive policy are reliable.
+
+Lighthouse is not a merge gate in the current repository. If introduced later, it should report regressions and diagnostic evidence; a score is not a compliance claim. Full TypeScript validation is also not an always-on gate yet because the existing repository diagnostic has pre-existing errors outside UX-10A/10B. Enabling it remains follow-up work after that debt is corrected without blanket exclusions.
 
 Normal CI does not receive Supabase service-role credentials and does not run `npx supabase db push`. The workflow uses non-secret Vite placeholder values for Supabase compile-time variables so the production bundle check does not require real Supabase keys.
 

@@ -7,11 +7,13 @@ type IconBadgeSize = 'compact' | 'card' | 'feature' | 'empty'
 
 const toneClass: Record<IconBadgeTone, string> = {
   neutral: 'border-border/70 bg-surface-muted text-financial-neutral dark:border-panel-border dark:bg-white/5 dark:text-panel-premium-muted',
-  positive: 'border-emerald-200 bg-emerald-50 text-financial-positive dark:border-emerald-300/25 dark:bg-emerald-300/10 dark:text-emerald-200',
-  negative: 'border-rose-200 bg-rose-50 text-financial-negative dark:border-rose-300/25 dark:bg-rose-300/10 dark:text-rose-200',
-  warning: 'border-amber-200 bg-amber-50 text-financial-warning dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-200',
-  critical: 'border-rose-200 bg-rose-50 text-financial-critical dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-200',
-  info: 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10 dark:text-informational',
+  positive: 'border-status-success-border bg-status-success-muted text-status-success-foreground',
+  success: 'border-status-success-border bg-status-success-muted text-status-success-foreground',
+  negative: 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  danger: 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  warning: 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground',
+  critical: 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  info: 'border-status-info-border bg-status-info-muted text-status-info-foreground',
   primary: 'border-primary/20 bg-primary/10 text-primary dark:border-primary/30 dark:bg-primary/15 dark:text-primary',
   inverse: 'border-white/20 bg-white/10 text-white',
 }

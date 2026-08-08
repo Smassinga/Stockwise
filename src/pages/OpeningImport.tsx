@@ -1,13 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useRef } from 'react'
-import { AlertTriangle, ArrowLeft, CheckCircle2, FileSpreadsheet, PackagePlus, Upload, Warehouse } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
@@ -817,24 +816,19 @@ export default function OpeningImport() {
 
   return (
     <div className="app-page app-page--workspace">
-      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-[0_22px_50px_-34px_hsl(var(--foreground)/0.24)]">
+      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-none">
         <CardHeader className="space-y-4">
           <div className="screen-intro max-w-4xl">
-            <div className="inline-flex items-center rounded-full border border-primary/15 bg-primary/8 px-3 py-1 text-xs font-medium text-primary">
-              <PackagePlus className="mr-2 h-3.5 w-3.5" />
-              {copy.title}
-            </div>
-            <CardTitle className="text-2xl md:text-3xl">{copy.subtitle}</CardTitle>
-            <CardDescription className="hidden max-w-4xl text-sm leading-6 sm:block">{copy.body}</CardDescription>
+            <h1>{copy.title}</h1>
+            <p>{copy.subtitle}</p>
           </div>
-          <div className="hidden flex-wrap gap-2 sm:flex">
-            <Badge variant="outline" className="rounded-full">{copy.historicalNote}</Badge>
-            {!canImport ? (
-              <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-amber-700">
+          {!canImport ? (
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="border-status-warning-border bg-status-warning-muted text-status-warning-foreground">
                 {copy.permissions}
               </Badge>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           <Button asChild variant="outline" className="w-full sm:w-fit">
             <Link to="/settings?view=setup">
               <ArrowLeft className="mr-2 h-4 w-4" />

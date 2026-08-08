@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Mail, Pencil, Phone, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/db'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
@@ -318,12 +319,13 @@ export default function Suppliers() {
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
 
+  const [searchParams] = useSearchParams()
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [paymentTermsList, setPaymentTermsList] = useState<PaymentTerm[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(searchParams.get('q') || '')
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm, setCreateForm] = useState<SupplierForm>(EMPTY_FORM)
   const [editing, setEditing] = useState<Supplier | null>(null)

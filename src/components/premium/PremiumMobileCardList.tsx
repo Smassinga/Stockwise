@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { AlertCircle, Inbox } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { PremiumEmptyState } from './PremiumEmptyState'
+import { PremiumEmptyState, PremiumStatePanel } from './PremiumEmptyState'
 import { PremiumPagination, type PremiumPaginationLabels } from './PremiumPagination'
 import { PremiumSkeleton } from './PremiumSkeleton'
 
@@ -33,14 +33,14 @@ export function PremiumMobileCardList<T>({
   className?: string
 }) {
   if (error) {
-    return <PremiumEmptyState icon={<AlertCircle />} title={error} compact className={className} />
+    return <PremiumStatePanel kind="error" icon={<AlertCircle />} title={error} compact className={className} />
   }
 
   if (loading) {
     return (
       <div className={cn('mobile-register-list space-y-3', className)}>
         {Array.from({ length: 3 }).map((_, index) => (
-          <PremiumSkeleton key={index} lines={4} />
+          <PremiumSkeleton key={index} rows={3} variant="list" />
         ))}
       </div>
     )

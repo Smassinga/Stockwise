@@ -2,67 +2,55 @@
 
 ## Goal
 
-The public landing page should convert visitors into trial users or activation requests by making StockWise feel credible, useful, and premium. It must explain the product quickly, show business outcomes, build trust in stock and finance control, and make the 7-day trial clear.
+The public Landing Page should help an owner or manager decide whether StockWise can connect the operating records their team already handles. It should lead to a 7-day trial or a commercial activation conversation without generic SaaS claims or fabricated proof.
 
-## Product Positioning
+## Positioning
 
-StockWise helps businesses control stock, sales, purchases, documents, payments, production activity, and active Growth Batches in one organised workspace.
+StockWise connects the operating relationship between:
+
+`Purchase / Receive -> Stock -> Produce or Sell -> Document -> Settlement -> Review`
+
+The exact path depends on the workflow. The message is connected operational visibility: what happened, which record followed, and what management needs to review next.
 
 Primary message:
 
-> StockWise
+> Know what you have, what sold, and what needs attention.
 
-Supporting message:
+Portuguese:
 
-> Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.
+> Saiba o que tem, o que vendeu e o que precisa de atenção.
 
-## Target Audience
+## Audience
 
-- Small and medium businesses in Mozambique.
-- Shops and points of sale.
-- Warehouses and distributors.
-- Businesses using Excel, manual books, or fragmented records.
-- Owners and managers who need visibility over stock, sales, purchases, cash/bank, users, and documents.
+- Owners and managers moving away from disconnected spreadsheets, notebooks, documents, and payment notes.
+- Retail, resale, Point of Sale, warehouse, distribution, production, and supported Growth Batch operations.
+- Teams that need controlled user access and traceable stock movement.
 
-## Tone
+The operating model matters more than a decorative industry label.
 
-Use direct, professional, confident, practical, finance-aware, operational copy.
+## Conversion Truth
 
-Avoid exaggerated AI/startup language, fake enterprise claims, fake regulatory certification, and internal product jargon that only makes sense inside the app.
+- Primary CTA: `Start 7-day trial` / `Começar teste de 7 dias`.
+- Secondary action: explain how records connect.
+- Login remains available.
+- Commercial contact uses the maintained public StockWise email route.
+- Paid activation is manual. The page must not imply instant paid checkout.
+- Pricing comes from `src/lib/pricingPlans.ts`; MZN appears naturally in actual prices.
 
-## Conversion Model
+## Market And Institutional Context
 
-- Primary CTA: `Start 7-day trial`.
-- Secondary CTA: `View pricing` or `See how it works`.
-- Login CTA: `Sign in`.
-- Contact CTA: `mailto:geral@stockwiseapp.com` for commercial activation or rollout discussion.
+Mozambique remains discreet market and institutional context. Beira belongs in the WiseCore/footer context. MZN, NUIT, and IVA are not product-positioning claims. NUIT and IVA may appear only where a real document workflow requires them; the Landing has no standalone fiscal-marketing section.
 
-Paid activation is currently controlled manually by the StockWise team. The landing page must not imply instant paid checkout.
+## Evidence Rules
 
-## Compliance Guardrails
+- The desk image at `/landing/stockwise-records-desk.png` is an approved illustration of operating records, not a customer screenshot or live product evidence.
+- No suitable current product screenshot is maintained in the repository as of UX-10C. Do not replace that gap with coded pseudo-dashboards, fake charts, companies, quantities, revenue, testimonials, certifications, or adoption claims.
+- Product truth comes from supported workflow relationships, canonical pricing, controlled access, traceable movement, and maintained EN/PT support.
 
-Approved wording:
+## Content Rule
 
-- Prepare cleaner fiscal and business records.
-- Organise invoices, credit notes, debit notes, NUIT, VAT/IVA, currency, settlements, and exportable fiscal document data.
-- StockWise supports structured records for review and preparation. Official submissions should be validated by your accountant or fiscal advisor.
+Copy must explain an outcome, describe real operating friction, guide a purchase decision, explain implementation, provide genuine evidence, or lead to an appropriate action. Avoid generic claims such as powerful, seamless, all-in-one, next-generation, or everything you need.
 
-Do not claim:
+## Scope
 
-- certified fiscal system
-- official SAF-T generator
-- official SAF-T/XML implemented
-- instant paid checkout
-- unverified costing policies as live product behavior
-- unverified Growth Batch lifecycle or finance-posting behavior as live product behavior
-- unverified capabilities as public product features
-- repetitive currency-positioning copy outside the actual price values
-
-## Non-Goals
-
-- Do not redesign authenticated dashboard, POS, Android, Platform Control, onboarding logic, finance, stock, invoice, settlement, or database logic.
-- Do not add heavy 3D or animation dependencies.
-- Do not create a separate design system unrelated to the authenticated premium UI direction.
-## UX-9B conversion direction
-
-Lead with the owner's need to know what exists, what sold, and what needs attention. Progress from immediate product proof to business problems, connected control, product preview, guided implementation, use cases, pricing, FAQ, WiseCore team, and one dominant final action. Do not fabricate customer proof or promise support beyond plan-specific pricing copy.
+The Landing is public presentation only. It must not change authentication, onboarding, Dashboard, Profile, subscriptions, payment activation, finance, inventory, Production Runs, Growth Batches, Supabase, authorization, RLS, RPCs, migrations, or business logic.

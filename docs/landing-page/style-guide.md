@@ -1,91 +1,58 @@
 # StockWise Landing Page Style Guide
 
-## Visual Mood
+This document applies the canonical rules in `docs/premium-ui-direction.md` to the public Landing Page.
 
-The landing page is a premium business SaaS website. It should feel serious enough for business records, stock control, and finance review, while remaining clear and approachable for small and medium businesses.
+## Visual Direction
 
-Design attributes:
+- Use WiseCore green, black, charcoal, white, and neutral grayscale.
+- Keep the current Inter stack until the separate typography comparison; IBM Plex Sans remains the first candidate.
+- Prefer open editorial layouts, dividers, whitespace, strong headings, operating sequences, and real product truth.
+- Use cards only for meaningful commercial grouping, such as pricing. Do not turn every problem, capability, trust signal, step, or use case into a card.
+- Do not add gradients, glows, blurred orbs, glass, pointer effects, floating objects, marquees, decorative pills, large shadows, or animation to make the page feel modern.
 
-- light-first credibility with true white and pale blue-gray surfaces
-- navy/slate text for trust and readability
-- restrained blue and teal accents
-- controlled dark sections for product showcase and operational contrast
-- precise 8px to 12px radii for most surfaces
-- thin borders and measured shadows
-- compact enterprise typography
-- no flashy neon, bokeh blobs, generic 3D, or decorative AI-looking cards
+## Hero
 
-## Layout Rules
+The hero is a calm split composition: one specific headline, one concise explanation, one primary CTA, one restrained text action, a truthful manual-activation note, and the approved operating-records illustration. It has no eyebrow pill, floating notices, stat cards, pulse, grid texture, gradient, or overlay stack.
 
-- The first viewport must show the StockWise brand, clear headline, CTA, login path, WiseCore proof, and product signal.
-- A hint of the next section should be visible on normal desktop viewports.
-- Sections should vary rhythm: image-backed hero, operation-fit bento, trust strip, problem block, capabilities bento, dark tabbed product showcase, process, use cases, compliance, pricing, FAQ accordion, team proof, final CTA.
-- Cards are used for repeated capabilities, pricing, FAQ, and product notes. Avoid nested cards and decorative section wrappers.
-- Product visuals must be realistic and must not fabricate impossible product features. The product showcase may use tabbed, illustrative operating surfaces for current areas only: dashboard review, stock and Point of Sale operations, documents, production, Growth Batches, and mobile responsiveness.
-- The hero uses `/landing/stockwise-records-desk.png` as a full-bleed business-records background, with the StockWise message over the image instead of a split text/mockup layout.
-- Keep only one dashboard-style product preview on the page. It belongs in the dark product showcase. If another section needs a visual, use a distinct problem-to-solution or operating-control treatment instead of repeating the same preview.
-- The retained product preview must support public light mode and dark mode.
-- The everyday-challenges section may reuse the local `/landing/stockwise-records-desk.png` illustrative asset in a framed image card. It should feel like a realistic business-records composition: spreadsheet rows, count sheets, invoices, receipts, payment notes, and calculator context.
-- Do not restore the coded collage as the primary visual; it was replaced because it looked too artificial. Do not use external image URLs.
+The image caption must identify the desk asset as illustrative rather than customer or live product evidence.
 
-## Typography
+## Information Structure
 
-- Use the existing Inter stack.
-- Hero headline should be confident and direct, not oversized beyond the content.
-- Section headings should be smaller than the hero and fit comfortably on mobile.
-- Labels may use uppercase only where they act as compact operational labels.
-- Letter spacing should stay neutral or modest; avoid exaggerated tracking.
+- Present the purchase-to-review relationship as a static operating chain, never a ticker or row of pills.
+- Operation fit uses editorial rows.
+- Trust/value uses restrained evidence statements with dividers.
+- Problems use numbered statements.
+- Capabilities use four larger operating stories instead of a module-card grid.
+- Connected traceability uses static selling and purchasing paths, not a coded dashboard preview.
+- Implementation uses a five-step timeline.
+- Use cases explain how control changes, rather than claiming generic industry fit.
+- Pricing may use four plan surfaces because each is a genuine commercial grouping.
+- FAQ uses a divider-based disclosure list.
 
-## Interaction
+## Interaction And Motion
 
-- Navigation links should point to real landing sections.
-- Mobile nav must be usable without hover.
-- CTA buttons must have visible focus states.
-- Product menu hover is acceptable on desktop only if mobile has a direct expanded alternative.
-- Pricing cards should have visibly stronger hover and focus-within states than normal cards, while keeping recommended-plan styling distinct from temporary inspection state.
-- Pricing-period controls must be keyboard accessible, visible in light and dark mode, and default to monthly.
-- Motion must respect reduced motion and stay subtle: React/Framer section reveal, upward fade-in, card stagger, hover lift, pointer glow on fine pointers, product-tab panel transitions, slow hero-card drift, restrained atmospheric movement, and fast transitions are acceptable.
-- The capability rail is a product-capability rail, not customer proof. It may move with CSS transform, pause on hover/focus, and become static under reduced motion.
-- Bento pointer glow must use scoped landing CSS variables, not React state per pointer frame.
-- FAQ questions should use an accordion with adequate top padding, visible focus states, and no card text crowding on mobile or desktop.
-- Do not add heavy 3D, physics effects, shader backgrounds, or extra animation dependencies.
-- Do not use autoplaying product tabs, animated pricing numbers, fake business counters, customer/logo marquees, or constant distracting object motion. The page should feel fluid while users scroll, not like an animation demo.
+- Navigation, mobile menu, pricing-period selection, FAQ, language, theme, login, trial, activation, and contact controls must work with keyboard and touch.
+- Escape closes the mobile menu and restores focus to its trigger.
+- There is no page-level or decorative motion in UX-10C. Shared control transitions must remain non-essential and reduced-motion safe.
+- Focus must remain visible in light and dark mode.
 
-## Growth And Costing Claims
+## Responsive Behaviour
 
-Growth Batches copy may describe active lifecycle records, measurements, direct costs, stock inputs, reversals, and audit evidence. Public landing-page copy should describe only verified Growth Batch and costing behavior. Do not state that unverified lifecycle, costing, valuation, or finance-posting behavior is live unless those flows are implemented and verified end to end.
+- Design mobile as a reading sequence, not a compressed desktop arrangement.
+- Hero actions become full-width on narrow phones.
+- Long operating chains may use contained horizontal scrolling; the page itself must never overflow.
+- Editorial rows become a single reading column on phones.
+- Prices, document/workflow labels, errors, plan limits, and other decision-critical text must wrap rather than truncate.
+- Header language, theme, and menu controls retain at least 44px targets.
 
-## Icon System
+## Icons
 
-- Use Phosphor Icons for marketing, capability, operational, and decorative landing-page icons.
-- Use Lucide only for functional interface affordances such as menu, close, chevrons, and CTA arrows.
-- Import only the icons used by the page.
-- Avoid one repeated blue rounded-square badge across every card.
-- Use smaller inline icons for compact trust-strip, workflow, FAQ, and proof details.
-- Reserve larger duotone `IconBadge` treatment for primary capability cards and selected operational cards.
-- Use text-led cards with no icon when the icon would only fill space.
-- Choose semantic icons: stock visibility, checkout/POS, linked finance documents, governed access, active growth batches, structured records, attention signals, connected records, and stock-before-selling should have distinct silhouettes.
+Lucide is used only for navigation and action affordances such as menu, close, chevron, and directional arrows. The page does not add decorative icon badges. If future marketing illustration needs an icon, use a direct Phosphor import and a clear information-design reason.
 
-## WiseCore Logo
+## Product Evidence Gap
 
-Use the supplied WiseCore brand source to provide theme-appropriate public assets:
+The repository currently has no suitable maintained current StockWise product screenshot. The Landing therefore uses truthful operating relationships and the labelled desk illustration; it does not fabricate a dashboard. Add a real screenshot only after the asset is captured from an approved environment, reviewed for sensitive data, current product accuracy, locale/theme quality, and mobile crop behaviour.
 
-- `/brand/wisecore-logo-light.png` for light mode and structured-data logo references.
-- `/brand/wisecore-logo-dark.png` for dark mode.
+## Dependencies
 
-The logo container should be compact, balanced, and high-contrast. Do not place a tiny logo inside an oversized empty card.
-
-## Public Theme And Language
-
-Public light mode is the primary design target. Dark mode must remain readable and deliberate when the user toggles the public theme.
-
-The public language toggle must keep English and Portuguese copy professional and UTF-8 clean.
-
-Mobile animation should be simplified: no strong atmospheric movement, no floating hero cards, no required hover state, and no content hidden when reduced motion is enabled.
-
-## Dependency Position
-
-No new dependencies are planned. The landing page should use the existing React, Tailwind, shadcn-style primitives, approved Phosphor/Lucide icon boundary, and framer-motion dependency already present in the app.
-## UX-9B copy rules
-
-Prefer plain buyer language over internal evidence terminology in high-level sections. Keep technical terms in product previews, use cases, FAQ, or maintained documentation where context makes them useful. Preserve one dominant CTA per section, factual sample-data labels, EN/PT wrapping, light/dark contrast, touch behavior, and reduced-motion completeness.
+UX-10C adds no dependency. The page uses existing React, Tailwind, shared controls, pricing data, brand assets, locale/theme controls, and the maintained FAQ component.

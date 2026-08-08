@@ -1,21 +1,25 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 
-export type PremiumTone = 'neutral' | 'positive' | 'negative' | 'warning' | 'critical' | 'info'
+export type PremiumTone = 'neutral' | 'positive' | 'success' | 'negative' | 'danger' | 'warning' | 'critical' | 'info'
 
 const toneClasses: Record<PremiumTone, string> = {
   neutral:
-    'border-border/80 bg-surface-muted text-financial-neutral dark:border-panel-border dark:bg-surface-muted/70 dark:text-panel-premium-muted',
+    'border-status-neutral-border bg-status-neutral-muted text-status-neutral-foreground',
   positive:
-    'border-emerald-200 bg-emerald-50 text-financial-positive dark:border-emerald-300/30 dark:bg-emerald-300/10 dark:text-emerald-200',
+    'border-status-success-border bg-status-success-muted text-status-success-foreground',
+  success:
+    'border-status-success-border bg-status-success-muted text-status-success-foreground',
   negative:
-    'border-rose-200 bg-rose-50 text-financial-negative dark:border-rose-300/30 dark:bg-rose-300/10 dark:text-rose-200',
+    'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
+  danger:
+    'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
   warning:
-    'border-amber-200 bg-amber-50 text-financial-warning dark:border-amber-300/30 dark:bg-amber-300/10 dark:text-amber-200',
+    'border-status-warning-border bg-status-warning-muted text-status-warning-foreground',
   critical:
-    'border-rose-200 bg-rose-50 text-financial-critical dark:border-rose-300/30 dark:bg-rose-300/20 dark:text-rose-200',
+    'border-status-danger-border bg-status-danger-muted text-status-danger-foreground',
   info:
-    'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10 dark:text-informational',
+    'border-status-info-border bg-status-info-muted text-status-info-foreground',
 }
 
 export function premiumToneClass(tone: PremiumTone) {
@@ -42,7 +46,7 @@ export function PremiumStatusBadge({
       )}
     >
       {icon ? <span className="shrink-0 [&_svg]:h-3.5 [&_svg]:w-3.5">{icon}</span> : null}
-      <span className="truncate">{children}</span>
+      <span className="min-w-0 break-words">{children}</span>
     </span>
   )
 }

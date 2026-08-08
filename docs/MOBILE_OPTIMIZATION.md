@@ -136,9 +136,9 @@ Production validation on 2026-07-16 covered `820` and `390` in Portuguese/dark a
 
 ## UX-2 Mobile Dashboard Contract
 
-The mobile dashboard follows a decision-first sequence: current day/scope, operating answer, action needed, quick actions, performance snapshot, performance drivers, latest stock movements, and detailed product performance. The sequence is responsive reordering of the same read-only evidence used on desktop, not a second calculation path.
+The mobile Dashboard follows one decision-first sequence: current company and scope, attention or first-use actions, the latest three stock movements, a grouped current-position summary, and only then supported trends or performance drivers. This is responsive presentation of the same read-only evidence used on desktop, not a second calculation path. It deliberately avoids carrying every desktop KPI or empty chart down a long phone page.
 
-At `390` and `820`, metric values and Portuguese labels wrap inside their own surfaces, the performance chart stays contained, and the latest-movement list remains capped at three entries with a route to the full register. Loading, partial-cost, stale-read, negative-margin, supported-cost, and explicit-zero-cost states were exercised locally without widening the page or hiding the mobile dock. Production checks at both widths confirmed the live EN/PT cockpit order, mobile navigation reachability, and no visible fallback or missing translation. Existing safe-area and fixed-dock allowances remain unchanged.
+At `360`, `390`, `430`, and `820`, amounts, item names, Portuguese labels, and action copy must wrap without hiding critical information or colliding with the mobile dock. Attention and setup actions use native buttons with visible focus and practical touch targets. A trend is absent when there are fewer than two truthful daily points; where present it stays contained and is paired with accessible daily values. Existing safe-area and fixed-dock allowances remain unchanged.
 
 ## UX-3 Mobile Setup Contract
 

@@ -20,6 +20,7 @@ Use `app-main-content` in the authenticated shell for first-content clearance an
 npm install
 npm run dev
 npm run lint:js
+npm run check:ui-foundations
 npm run build
 npm run test:finance-regression
 ```
@@ -90,8 +91,13 @@ After app changes:
 
 ```bash
 npm run lint:js
+npm run check:ui-foundations
 npm run build
 ```
+
+`lint:js` includes high-confidence JSX accessibility checks. `check:ui-foundations` rejects increases in legacy direct Tailwind status-colour utilities by path. The baseline is a debt ceiling, not an approved colour catalogue: reduce it when a surface is migrated to the canonical `status-*` tokens. The canonical UI, loading, content, accessibility, mobile, and Definition of Done contract is [Premium UI Direction](premium-ui-direction.md).
+
+The full repository TypeScript diagnostic currently exposes pre-existing debt and is not yet a safe merge gate. Do not hide or expand that debt. New or changed code must remain type-safe, and a dedicated full typecheck gate should be enabled only after the existing baseline is remediated rather than suppressing errors globally.
 
 After finance, control-plane, or workflow changes:
 

@@ -2,195 +2,101 @@
 
 ## 1. Navigation
 
-- Brand lockup links to `/`.
-- Desktop links: Product, How it works, Pricing, FAQ.
-- Actions: language toggle, theme toggle, Sign in, Start 7-day trial.
-- Mobile menu exposes the same links and actions without requiring hover.
+- StockWise logo links to `/`.
+- Desktop links: How it works, Use cases, Pricing, FAQ.
+- Controls: EN/PT, theme, Sign in, Start 7-day trial.
+- Mobile exposes the same destinations and actions. Escape closes the menu and restores focus.
 
 ## 2. Hero
 
-Headline:
+- Specific EN/PT headline about what exists, what sold, and what needs attention.
+- Concise connected-records explanation.
+- Primary 7-day-trial CTA and restrained link to the operating chain.
+- Manual paid-activation truth.
+- `/landing/stockwise-records-desk.png` in a bordered figure with an explicit illustrative-data caption.
+- No floating notices, stat cards, pulse, eyebrow pill, gradient, grid texture, or decorative overlay.
 
-> StockWise
+## 3. Connected Operating Chain
 
-Subtitle:
+Static sequence:
 
-> Control stock, purchases, sales, payments, production activity, and growth batches in one serious workspace built for real Mozambican operations.
+`Purchase -> Receive -> Stock -> Produce or sell -> Document -> Settle -> Review`
 
-Primary CTA: `Start 7-day trial`.
+Portuguese uses natural equivalent terminology. The chain may scroll inside its own container on narrow phones; it never animates or becomes a pill marquee.
 
-Secondary CTA: `View pricing`.
+## 4. Operation Fit
 
-Hero visual: use the local `/landing/stockwise-records-desk.png` image as a full-bleed business-records background with the StockWise value proposition over it. Keep the hero brand-led and avoid a split text/mockup composition.
+Editorial rows for supported operating contexts:
 
-Large screens may add small floating operational cards around the hero to give the page motion and product signal. These cards must use truthful illustrative StockWise activities only, such as Point of Sale activity, production posting, or Growth Batch loss reversal. They are not testimonials, customer evidence, or live production data.
-
-## 2.0 Capability Rail
-
-Place a truthful capability rail near the top of the page. The rail lists current StockWise capabilities, not customers or social proof:
-
-- Stock control
-- Point of Sale
-- Purchases
-- Sales documents
-- Production Runs
-- Growth Batches
-- Settlements
-- Android access
-
-The visual track may move slowly, pause on hover/focus, and repeat only for seamless motion. Duplicate visual tracks must be hidden from assistive technology. Under reduced motion the rail becomes a static wrapped list.
-
-## 2.1 Operation Fit
-
-Show who the product is for before listing modules:
-
-- buying and reselling;
+- retail and resale;
 - production and transformation;
 - active Growth Batches;
-- counter sales and cash control.
+- counter sales and daily review.
 
-Growth Batches may mention active batches, measurements, direct costs, stock inputs, and event-specific reversals. Do not claim unverified Growth Batch lifecycle, costing, valuation, or finance-posting behavior as live.
+## 5. Concrete Product Truths
 
-## 3. Trust/Value Strip
+Restrained evidence band:
 
-Signals:
+- connected records;
+- controlled access;
+- traceable movements;
+- Portuguese and English.
 
-- Stock control
-- POS-ready
-- Finance documents
-- User roles
-- Growth Batches
-- Mozambique-ready records
+These are product truths, not badges, customer proof, or compliance claims.
 
-## 4. Problem Section
+## 6. Operating Problems
 
-Show practical operating problems:
+Four numbered statements cover late low-stock discovery, separated sales/purchase/stock records, unexplained quantity changes, and management review across several sources. They are presented as common friction, not universal customer claims.
 
-- stock managed in Excel or manual books
-- sales not linked to stock movement
-- documents scattered across people and files
-- weak visibility over receivables and payables
-- owners cannot see what needs attention first
+## 7. Operational Stories
 
-Visual treatment:
+Four larger groups replace the former nine-card feature grid:
 
-- Use the local illustrative desk/documents asset at `/landing/stockwise-records-desk.png` beside the problem statement.
-- The asset shows Excel-like stock sheets, inventory count sheets, invoice copies, receipts, payment notes, calculator context, and paper/manual records.
-- The previous coded document collage was replaced because it looked too artificial and did not make the daily paperwork problem immediately clear.
-- The section should transition textually or visually to: `StockWise connects these records into one organised workspace.`
-- Keep this visual lightweight with the existing stack. Do not add external image URLs, random copyrighted images, heavy 3D, or animation dependencies.
+1. Know what exists and where.
+2. Connect purchases, stock, and sales.
+3. Record production and active growth.
+4. Keep documents and settlement close to the activity.
 
-## 5. Product Capabilities
+## 8. Connected Traceability
 
-Capabilities:
+The former coded product preview and fiscal-marketing section are removed. A quiet dark section shows truthful selling and purchasing record paths. It is a conceptual relationship, not a live screenshot or automatic-workflow claim.
 
-- Items and stock levels
-- POS and sales
-- Purchases and vendor bills
-- Growth batches and inputs
-- Invoices, credit notes, and debit notes
-- Settlements, cash, and bank
-- Reports and dashboards
-- Users and roles
-- Import/export
+## 9. Implementation
 
-## 6. Dashboard/Product Showcase
+Five-step timeline:
 
-Use only one realistic product preview on the page. The retained preview lives in the dark showcase section, remains illustrative, and must support both public light and dark modes.
+1. Review the current process.
+2. Configure the workspace.
+3. Prepare starting data.
+4. Train the team.
+5. Review the first operating cycle.
 
-The showcase uses a tabbed operating-control visual rather than repeating a second dashboard preview. Tabs should cover current StockWise surfaces only: dashboard review, stock and Point of Sale operations, documents, production, Growth Batches, and mobile responsiveness.
+Paid activation remains manually controlled.
 
-Avoid fake metrics that look like financial claims.
+## 10. Use Cases
 
-## 6.1 Page Animation
+Editorial operating examples for small production, food retail, supported biological growth, and warehouse/distribution. Copy explains how control changes and avoids unsupported vertical claims.
 
-Use page-level animation to make the ShadCN/Tailwind landing page feel more fluid and premium:
+## 11. Pricing
 
-- React/Framer section reveal on scroll
-- subtle upward fade-in for text blocks and cards
-- gentle stagger for repeated capability, workflow, pricing, and FAQ cards
-- fast business-like hover lift on cards and buttons
-- restrained atmospheric background movement on larger screens
-- slow hero operational-card drift on large screens only
-- product-preview bar/chart animation when panels enter
-- fine-pointer bento pointer glow through scoped CSS custom properties
-- user-controlled product-tab panel transitions
-- truthful capability rail movement, never a fake customer marquee
-- full `prefers-reduced-motion` support
+- Data comes only from `src/lib/pricingPlans.ts`.
+- Period controls: Monthly, 6 months, Annual.
+- MZN appears in actual formatted prices.
+- Four plan surfaces retain names, canonical amounts, user/company scope, implementation support, 7-day trial and manual activation truth.
+- Recommended treatment is a restrained text label and top border; no glare, glow, lift, or animation.
 
-Avoid constant distracting object motion, bouncing UI, autoplaying tabs, fake counters, fake customer marquees, shader backgrounds, GSAP, Unicorn Studio, heavy 3D, and cinematic effects unless explicitly approved.
+## 12. FAQ
 
-## 7. How StockWise Works
+Divider-based, keyboard-accessible disclosure list. Questions cover trial, post-trial activation, implementation, opening-data import, multi-user operation, mobile use, and accounting boundaries. There is no generic Mozambique-records marketing question.
 
-Steps:
+## 13. WiseCore
 
-1. Create company workspace.
-2. Add/import items and opening stock.
-3. Record sales, purchases, POS, and movements.
-4. Control production and active batches.
-5. Issue documents and track settlements.
+Compact institutional section with the approved WiseCore logo, intentionally public founder names/roles, support route, and Beira, Mozambique context.
 
-## 8. Use Cases
+## 14. Final Action And Footer
 
-- Bakery or small producer
-- Butchery or food retail
-- Agro, nursery, or biological growth
-- Warehouse/distributor
+One quiet black CTA section leads to trial or commercial contact. The compact footer identifies StockWise, WiseCore Technologies, Lda., Beira, Mozambique, approved anchors, and the public support email.
 
-Use cases should read like business contexts, not generic module lists. Public copy should mention only live, verified workflows; do not market unverified lifecycle, costing, valuation, or finance-posting behavior as product capabilities.
+## Product Screenshot Follow-Up
 
-## 9. Mozambique-Ready Records
-
-Mention NUIT, VAT/IVA, MZN, currency support, invoices, credit notes, debit notes, settlements, and exportable fiscal document data.
-
-Required caution:
-
-> Official submissions should be validated by your accountant or fiscal advisor.
-
-## 10. Pricing/Trial
-
-- Show public prices from the existing pricing source; the price values retain their currency code.
-- Provide a visible pricing-period selector above the cards: Monthly, 6 months, Annual. Monthly is the default.
-- Use approved six-month and annual values from the pricing source. If a six-month value is missing, show monthly x 6 without claiming a discount.
-- Make the 7-day trial clear.
-- State that paid activation is handled manually.
-- Avoid instant-checkout language and avoid extra marketing copy that explains the currency already shown in the price values.
-
-## 11. FAQ
-
-Use a keyboard-accessible accordion. FAQ card text should have enough internal top padding that the question, answer, icon, and interactive control do not crowd the card edge at desktop, tablet, or mobile widths.
-
-Questions:
-
-- Is the trial automatic?
-- What happens after the trial?
-- Can I import items and opening stock?
-- Can I track active Growth Batches?
-- Does it work on mobile?
-- Does it replace my accountant?
-- Does it support Mozambique records?
-- Can I invite users?
-- Does StockWise include a Point of Sale workspace?
-
-## 12. Team And Proof
-
-Show WiseCore Technologies, Lda., Beira, Mozambique, and the founder roles currently supported by supplied assets:
-
-- Samuel Massinga, Founder and CEO;
-- Alda Jofrice, Co-Founder and Executive Manager;
-- Galileu Gonçalves, Co-founder and Chief Operating Officer.
-
-Use the cropped WiseCore logo assets from `/brand/wisecore-logo-light.png` and `/brand/wisecore-logo-dark.png` so the logo is visible in both public themes.
-
-Use company support/contact routes rather than exposing personal contact details on the landing page.
-
-## 13. Final CTA
-
-Short, confident prompt to start the trial or contact StockWise.
-
-## 14. Footer
-
-Include StockWise, WiseCore Technologies, Lda., support email, and only real routes/anchors.
-## UX-9B maintained sequence
-
-The hero uses the business-control eyebrow and “Know what you have, what sold, and what needs attention.” headline, followed by genuine product signals. The problem section explains late discovery caused by scattered records. The implementation section contains five steps: review the current process, configure the workspace, prepare starting data, train the team, and review the first operating cycle. Portuguese uses natural Mozambican wording.
+No suitable current product screenshot exists in the repository. Capture and approve a real, current, non-sensitive product asset before adding a product-evidence visual. Do not recreate a dashboard in code merely to fill the space.

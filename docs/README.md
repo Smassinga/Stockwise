@@ -29,6 +29,7 @@ This folder is the maintained current-truth layer for StockWise. Documents that 
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Android-First UX Position](MOBILE_OPTIMIZATION.md)
 - [Premium UI Direction](premium-ui-direction.md)
+- [UX-10A/10B Legacy Remediation Inventory](ui-ux/UX-10A-10B-LEGACY-REMEDIATION.md)
 - [Icon System](icon-system.md)
 - [Landing Page Brief](landing-page/brief.md)
 - [Landing Page Style Guide](landing-page/style-guide.md)

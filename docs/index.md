@@ -1,5 +1,7 @@
 # StockWise Documentation
 
+The canonical frontend quality contract is [Premium UI Direction](premium-ui-direction.md). The [UX-10A/10B remediation inventory](ui-ux/UX-10A-10B-LEGACY-REMEDIATION.md) records legacy debt without redefining the active design direction.
+
 See [README](README.md) for the maintained documentation index.
 
 Key current docs:

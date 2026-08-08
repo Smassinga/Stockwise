@@ -17,11 +17,11 @@ function getRouteMeta(
   tt: (key: string, fallback: string) => string,
 ): RouteMeta {
   const landingTitle = lang === 'pt'
-    ? 'StockWise - Stock, vendas, lotes e registos do negócio'
-    : 'StockWise - Inventory, Sales, Growth Batches, and Business Records'
+    ? 'StockWise - Stock, vendas e registos operacionais ligados'
+    : 'StockWise - Connected Stock, Sales, and Operating Records'
   const landingDescription = lang === 'pt'
-    ? 'Controle stock, compras, vendas, pagamentos, produção, lotes de crescimento e registos comerciais num workspace sério para empresas em Moçambique.'
-    : 'Control stock, purchases, sales, payments, production activity, Growth Batches, and business records in one serious workspace for Mozambican businesses.'
+    ? 'Ligue compras, recepção, stock, produção ou vendas, documentos, liquidações e revisão da gestão num workspace operacional.'
+    : 'Connect purchases, receiving, stock, production or sales, documents, settlements, and management review in one operating workspace.'
   const appDescription = lang === 'pt'
     ? 'Workspace autenticado do StockWise para stock, vendas, compras, caixa, bancos e relatórios.'
     : 'Authenticated StockWise workspace for inventory, sales, purchasing, cash, banks, and reporting.'

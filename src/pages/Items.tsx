@@ -145,7 +145,7 @@ export default function ItemsPage() {
   const [minStock, setMinStock] = useState('')
   const [unitPrice, setUnitPrice] = useState('')
   const [draftProfile, setDraftProfile] = useState<ItemProfileState>(EMPTY_PROFILE)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(searchParams.get('q') || '')
   const [roleFilter, setRoleFilter] = useState<'all' | ItemPrimaryRole>('all')
   const [stockFilter, setStockFilter] = useState<'all' | 'assembly' | 'stocked' | 'service'>('all')
   const [itemSort, setItemSort] = useState<PremiumDataTableSortState>({ columnId: 'name', direction: 'asc' })
@@ -159,10 +159,16 @@ export default function ItemsPage() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editMinStock, setEditMinStock] = useState('0')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const editingItem = useMemo(
     () => items.find((item) => item.id === editingItemId) ?? null,
     [editingItemId, items],
+  )
+  const deletingItem = useMemo(
+    () => items.find((item) => item.id === deletingItemId) ?? null,
+    [deletingItemId, items],
   )
 
   const uomById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms])
@@ -305,7 +311,7 @@ export default function ItemsPage() {
     let result = await safeSelect('uoms', 'id, code, name, family')
     if (result?.data?.length) {
       rows = result.data
-    } else if (result?.error && result.error.status === 400) {
+    } else if (result?.error && (result.error.code === '42703' || /family/i.test(result.error.message))) {
       const noFamily = await safeSelect('uoms', 'id, code, name')
       if (noFamily?.data?.length) rows = noFamily.data.map((row: any) => ({ ...row, family: 'unspecified' }))
     }
@@ -314,7 +320,7 @@ export default function ItemsPage() {
       result = await safeSelect('uom', 'id, code, name, family')
       if (result?.data?.length) {
         rows = result.data
-      } else if (result?.error && result.error.status === 400) {
+      } else if (result?.error && (result.error.code === '42703' || /family/i.test(result.error.message))) {
         const noFamily = await safeSelect('uom', 'id, code, name')
         if (noFamily?.data?.length) rows = noFamily.data.map((row: any) => ({ ...row, family: 'unspecified' }))
       }
@@ -531,18 +537,23 @@ export default function ItemsPage() {
     }
   }
 
-  async function handleDelete(itemId: string) {
+  async function handleDelete() {
+    if (!deletingItem) return
     if (!can.deleteItem(role)) {
       return toast.error(tt('items.toast.deletePermission', 'Only Manager and above can delete items'))
     }
+    setDeleting(true)
     try {
-      const result = await supabase.from('items').delete().eq('id', itemId)
+      const result = await supabase.from('items').delete().eq('id', deletingItem.id)
       if (result.error) throw result.error
       toast.success(tt('items.toast.deleted', 'Item deleted'))
+      setDeletingItemId(null)
       await reloadItems()
     } catch (error: any) {
       console.error(error)
       toast.error(error?.message || tt('items.toast.deleteFailed', 'Failed to delete item'))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -758,7 +769,7 @@ export default function ItemsPage() {
             <Pencil className="h-4 w-4" />
             {tt('items.actions.minStock', 'Edit minimum')}
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} disabled={!can.deleteItem(role)}>
+          <Button variant="destructive" size="sm" onClick={() => setDeletingItemId(item.id)} disabled={!can.deleteItem(role)}>
             <Trash2 className="h-4 w-4" />
             {tt('common.delete', 'Delete')}
           </Button>
@@ -1312,7 +1323,7 @@ export default function ItemsPage() {
                         <Pencil className="h-4 w-4" />
                         {tt('items.actions.minStock', 'Edit minimum')}
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} disabled={!can.deleteItem(role)}>
+                      <Button variant="destructive" size="sm" onClick={() => setDeletingItemId(item.id)} disabled={!can.deleteItem(role)}>
                         <Trash2 className="h-4 w-4" />
                         {tt('common.delete', 'Delete')}
                       </Button>
@@ -1387,6 +1398,34 @@ export default function ItemsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingItem)} onOpenChange={(open) => { if (!open && !deleting) setDeletingItemId(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tt('items.deleteTitle', 'Delete item?')}</DialogTitle>
+            <DialogDescription>
+              {tt(
+                'items.deleteHelp',
+                'This action cannot be undone. StockWise will refuse the deletion if dependent operational records still use this item.',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div className="rounded-2xl border border-status-danger-border bg-status-danger-muted p-4">
+              <div className="font-medium text-foreground">{deletingItem?.name}</div>
+              <div className="mt-1 text-sm text-status-danger-foreground">{deletingItem?.sku}</div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeletingItemId(null)} disabled={deleting}>
+              {tt('common.cancel', 'Cancel')}
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void handleDelete()} disabled={deleting}>
+              {deleting ? tt('actions.deleting', 'Deleting...') : tt('common.delete', 'Delete')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

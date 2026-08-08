@@ -55,6 +55,8 @@ We welcome suggestions for new features or improvements to existing functionalit
 4. Ensure all tests pass
 5. Submit a pull request with a clear description of your changes
 
+Frontend changes must follow the canonical [StockWise Premium UI Direction](premium-ui-direction.md) and complete the maintained PR template. Treat its UI/accessibility items as applicable checks, not a demand to fabricate states on static screens.
+
 #### Code Style
 
 - Follow the existing code style in the project
@@ -161,6 +163,8 @@ All pull requests must be reviewed before merging:
 - Follow existing class naming conventions
 - Ensure responsive design
 - Maintain accessibility standards
+- Use semantic `status-*` tokens for state and never rely on colour alone
+- Prefer native HTML, visible focus, responsive task order, and complete critical text
 
 ### Error Handling
 
