@@ -23,6 +23,7 @@
     "test:ops-1": "node --test --test-concurrency=1 tests/ops-1/**/*.test.mjs",
     "test:ux11e": "node --test --test-concurrency=1 tests/ux11e/**/*.test.mjs",
     "test:opening-quantity": "node --test --test-concurrency=1 tests/opening-quantity/**/*.test.mjs",
+    "test:uom-integrity": "node --test --test-concurrency=1 tests/uom-integrity/**/*.test.mjs",
     "test:comms-email-types": "tsc --noEmit --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --skipLibCheck tests/types/email-template-contracts.ts",
     "bootstrap:platform-admin": "node --env-file=.env scripts/bootstrap-platform-admin.mjs",
     "tauri:prepare": "node scripts/prepare-tauri-release.mjs",

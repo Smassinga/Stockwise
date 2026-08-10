@@ -32,7 +32,7 @@ The generated IDs do not appear in migrations or current source. Their creation 
 
 Classification: **C — product allows semantic duplicate creation**. The administration page previously rejected only an exact code; it could accept the same name/family under another code. UX-11E adds a visible same-name/family warning and a frontend block, expands generated-code detection to the observed prefix form, excludes generated codes from new conversion choices and exposes them as historical governance evidence. This is not a database integrity guarantee.
 
-Recommended follow-up: a dedicated `UOM-INTEGRITY-1` package should audit cross-company references and creation authority, define canonical equivalence, then consider an RPC/database uniqueness contract and governed merge or retirement workflow. That work requires separate schema/migration approval.
+Resolved follow-up: `UOM-INTEGRITY-1` completed the cross-company audit, retained canonical `EA / Each`, deleted only the two globally unreferenced generated duplicates through a guarded migration, and replaced direct authenticated catalogue writes with governed canonical reuse. See `docs/data-integrity/UOM-INTEGRITY-1.md` for the authority, reference and rollout evidence.
 
 ## Global Search
 
@@ -94,7 +94,7 @@ The repository has static `eslint-plugin-jsx-a11y` checks but no maintained auth
 ## Deferred items
 
 - **RESOLVED:** `OPENING-QTY-1` corrected and proved opening-stock operational quantity precision; the UX-11 correctness blocker is closed.
-- **HIGH:** `UOM-INTEGRITY-1` should define and enforce canonical uniqueness after a cross-company reference audit and separately approved migration/RPC design.
+- **RESOLVED:** `UOM-INTEGRITY-1` now enforces canonical UOM identity while preserving all historical references and conversion semantics.
 - **MEDIUM:** cold authenticated application bootstrap still dominates Search route readiness even after the seven search-domain requests were made concurrent.
 - **LOW:** lower-authority role presentation requires a normally authenticated Manager/Operator/Viewer fixture; current QA covered Admin plus pending Manager state only.
 - **LOW:** authenticated axe coverage remains unavailable until a maintained browser/E2E harness exists.

@@ -4465,7 +4465,12 @@
   "uom.summary.label": "Unit catalogue summary",
   "uom.summary.legacy": "Legacy generated codes",
   "uom.legacyTitle": "Legacy generated unit codes",
-  "uom.legacyHelp": "These historical global records are excluded from new conversion choices. StockWise has not merged or deleted them because references must be governed before any data cleanup.",
-  "uom.similarTitle": "Review the existing unit before saving",
-  "uom.duplicateName": "A unit with this name and family already exists. Review the existing catalogue before creating another code."
+  "uom.legacyHelp": "These historical global records are excluded from new conversion choices until their references have been reviewed.",
+  "uom.similarTitle": "An equivalent unit already exists",
+  "uom.similarHelp": "Saving will reuse the existing catalogue unit rather than create a duplicate.",
+  "uom.equivalentReused": "Existing equivalent reused: {code} — {name}",
+  "uom.codeConflict": "This code belongs to a different unit. Choose another code.",
+  "uom.identityConflict": "The code and name identify different canonical units. Review both values.",
+  "uom.createFailed": "The unit could not be saved. Try again.",
+  "uom.savingUnit": "Saving unit"
 }

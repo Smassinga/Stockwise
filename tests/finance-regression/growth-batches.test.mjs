@@ -365,11 +365,14 @@ test('Growth Batches G1-G5.2 authority, lifecycle, idempotency, stock inputs, lo
   async function ensureUom(code, family, name) {
     const existing = existingUoms.find((row) => row.code === code)
     if (existing) return existing.id
-    const id = `${PREFIX}_${code.toLowerCase()}`
-    created.uomIds.add(id)
-    const inserted = await ownerClient.from('uoms').insert({ id, code, name, family }).select('id').single()
-    throwSupabaseError(inserted.error, `UOM ${code} setup failed`)
-    return inserted.data.id
+    const createdUom = await ownerClient.rpc('create_uom', {
+      p_code: code,
+      p_name: name,
+      p_family: family,
+    }).single()
+    throwSupabaseError(createdUom.error, `UOM ${code} setup failed`)
+    if (createdUom.data.was_created) created.uomIds.add(createdUom.data.id)
+    return createdUom.data.id
   }
   const eachUomId = await ensureUom('EA', 'count', 'Each')
   const kgUomId = await ensureUom('KG', 'mass', 'Kilogram')

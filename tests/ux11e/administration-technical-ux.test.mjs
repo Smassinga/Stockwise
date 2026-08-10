@@ -22,7 +22,7 @@ test('Settings and Users use direct headings, structural loading, and open summa
   assert.match(users, /<PremiumStatusBadge tone=\{statusTone\(member\.status\)\}>/)
 })
 
-test('UOM administration identifies generated codes and warns before semantic duplicates', async () => {
+test('UOM administration delegates creation to the governed RPC and reuses equivalents', async () => {
   const [uomPage, uomLib] = await Promise.all([
     read('src/pages/UomSettings.tsx'),
     read('src/lib/uom.ts'),
@@ -32,7 +32,9 @@ test('UOM administration identifies generated codes and warns before semantic du
   assert.match(uomPage, /uomCodeLooksGenerated/)
   assert.match(uomPage, /tryConvertQty/)
   assert.match(uomPage, /Legacy generated unit codes/)
-  assert.match(uomPage, /Review the existing unit before saving/)
+  assert.match(uomPage, /supabase\.rpc\('create_uom'/)
+  assert.match(uomPage, /Existing equivalent reused/)
+  assert.doesNotMatch(uomPage, /\.from\('uoms'\)[\s\S]{0,120}\.upsert\(/)
   assert.doesNotMatch(uomPage, /from\('uoms'\)[\s\S]{0,100}\.delete\(/)
 })
 

@@ -4449,10 +4449,18 @@
   "users.loadingMembers": "A carregar membros",
   "users.summary.label": "Resumo do acesso à empresa",
   "uom.loading": "A carregar unidades e conversões",
+  "uom.addUnitHelp": "Crie primeiro o código de unidade reutilizável. Use a família apenas para agrupar unidades relacionadas e reduzir conversões incorrectas entre famílias.",
+  "uom.conversionHelp": "Defina como uma unidade se converte noutra para esta empresa. O StockWise interpreta a regra como: 1 × DE × factor = PARA.",
+  "uom.quickTestHelp": "Confirme se o grafo actual consegue converter entre duas unidades antes de usar a regra em compras, artigos, fichas técnicas ou encomendas.",
   "uom.summary.label": "Resumo do catálogo de unidades",
   "uom.summary.legacy": "Códigos históricos gerados",
   "uom.legacyTitle": "Códigos históricos de unidade gerados",
-  "uom.legacyHelp": "Estes registos globais históricos não aparecem nas novas opções de conversão. O StockWise não os fundiu nem removeu porque as referências têm de ser verificadas antes de qualquer limpeza de dados.",
-  "uom.similarTitle": "Reveja a unidade existente antes de guardar",
-  "uom.duplicateName": "Já existe uma unidade com este nome e família. Reveja o catálogo existente antes de criar outro código."
+  "uom.legacyHelp": "Estes registos globais históricos não aparecem nas novas opções de conversão até que as suas referências sejam verificadas.",
+  "uom.similarTitle": "Já existe uma unidade equivalente",
+  "uom.similarHelp": "Ao guardar, o StockWise reutiliza a unidade existente no catálogo em vez de criar um duplicado.",
+  "uom.equivalentReused": "Unidade equivalente reutilizada: {code} — {name}",
+  "uom.codeConflict": "Este código pertence a outra unidade. Escolha outro código.",
+  "uom.identityConflict": "O código e o nome identificam unidades canónicas diferentes. Reveja os dois valores.",
+  "uom.createFailed": "Não foi possível guardar a unidade. Tente novamente.",
+  "uom.savingUnit": "A guardar unidade"
 }

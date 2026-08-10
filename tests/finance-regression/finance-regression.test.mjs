@@ -591,8 +591,12 @@ test('Phase 4/5 finance hardening suite', async (t) => {
       { id: 'uom_ea', code: 'EA', name: 'Each', family: 'count' },
       { id: 'uom_box', code: 'BOX', name: 'Box', family: 'count' },
     ].filter((row) => !existingDefaultCodes.has(row.code))
-    if (missingDefaultUoms.length) {
-      const missingInsert = await ownerClient.from('uoms').insert(missingDefaultUoms)
+    for (const missingUom of missingDefaultUoms) {
+      const missingInsert = await ownerClient.rpc('create_uom', {
+        p_code: missingUom.code,
+        p_name: missingUom.name,
+        p_family: missingUom.family,
+      })
       if (missingInsert.error) throw missingInsert.error
     }
 
@@ -7309,13 +7313,11 @@ test('Phase 4/5 finance hardening suite', async (t) => {
     assert.equal(reactivatedDetail.reset_allowed, false)
 
     const { data: reactivatedUom, error: reactivatedUomError } = await ownerClient
-      .from('uoms')
-      .insert({
-        code: `${PREFIX.toUpperCase()}REA`,
-        name: 'Reactivated unit',
-        family: 'count',
+      .rpc('create_uom', {
+        p_code: `${PREFIX.toUpperCase()}REA`,
+        p_name: 'Reactivated unit',
+        p_family: 'count',
       })
-      .select('id')
       .single()
     if (reactivatedUomError) throw reactivatedUomError
     created.uomIds.add(reactivatedUom.id)

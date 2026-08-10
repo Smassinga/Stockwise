@@ -18,6 +18,7 @@ import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 
 type Uom = { id: string; code: string; name: string; family?: string; created_at?: string | null }
 type Conv = { from_uom_id: string; to_uom_id: string; factor: number; company_id: string | null }
+type UomCreationResult = Uom & { was_created: boolean }
 
 const FAMILIES = ['mass', 'volume', 'length', 'area', 'time', 'count', 'other'] as const
 type Family = typeof FAMILIES[number]
@@ -35,6 +36,7 @@ export default function UomSettings() {
   const [convs, setConvs] = useState<Conv[]>([])
   const [graph, setGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
   const [loading, setLoading] = useState(true)
+  const [savingUnit, setSavingUnit] = useState(false)
 
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
@@ -139,29 +141,45 @@ export default function UomSettings() {
       toast.error(tt('uom.invalidGeneratedCode', 'Use a reusable unit code such as EA, KG, L, BOX, or PACK. Item-specific generated codes are not allowed.'))
       return
     }
-    if (uoms.some((uom) => uom.code.toUpperCase() === normalizedCode)) {
-      toast.error(tt('uom.duplicateCode', 'This unit code already exists. Use the existing catalogue entry instead of creating a duplicate.'))
-      return
-    }
-    if (uoms.some((uom) => uom.name.trim().toLocaleLowerCase() === normalizedName.toLocaleLowerCase() && (uom.family || 'other') === family)) {
-      toast.error(tt('uom.duplicateName', 'A unit with this name and family already exists. Review the existing catalogue before creating another code.'))
-      return
-    }
-
-    const id = `uom_${normalizedCode.toLowerCase()}`
+    setSavingUnit(true)
     try {
-      const { error } = await supabase
-        .from('uoms')
-        .upsert([{ id, code: normalizedCode, name: normalizedName, family }], { onConflict: 'id' })
+      const { data, error } = await supabase.rpc('create_uom', {
+        p_code: normalizedCode,
+        p_name: normalizedName,
+        p_family: family,
+      })
       if (error) throw error
-      toast.success(tt('uom.unitSaved', 'Unit saved'))
+      const result = (Array.isArray(data) ? data[0] : data) as UomCreationResult | null
+      if (!result) throw new Error('uom_create_no_result')
+
+      if (result.was_created) {
+        toast.success(tt('uom.unitSaved', 'Unit saved'))
+      } else {
+        toast.success(tt('uom.equivalentReused', 'Existing equivalent reused: {code} — {name}', {
+          code: result.code,
+          name: result.name,
+        }))
+      }
       setCode('')
       setName('')
       setFamily('count')
       await loadAll()
     } catch (error: any) {
-      console.error(error)
-      toast.error(error?.message || tt('errors.title', 'Error'))
+      const message = String(error?.message || '')
+      if (message.includes('uom_code_exists:')) {
+        toast.error(tt('uom.codeConflict', 'This code belongs to a different unit. Choose another code.'))
+      } else if (message.includes('uom_code_looks_item_specific')) {
+        toast.error(tt('uom.invalidGeneratedCode', 'Use a reusable unit code such as EA, KG, L, BOX, or PACK. Item-specific generated codes are not allowed.'))
+      } else if (message.includes('uom_canonical_identity_conflict')) {
+        toast.error(tt('uom.identityConflict', 'The code and name identify different canonical units. Review both values.'))
+      } else if (message.includes('uom_create_forbidden') || message.includes('not_authenticated')) {
+        toast.error(tt('uom.toast.noUnitPermission', 'You do not have permission to manage units'))
+      } else {
+        console.error(error)
+        toast.error(tt('uom.createFailed', 'The unit could not be saved. Try again.'))
+      }
+    } finally {
+      setSavingUnit(false)
     }
   }
 
@@ -397,13 +415,16 @@ export default function UomSettings() {
               </div>
               {similarUoms.length > 0 ? (
                 <div role="status" className="border border-status-warning-border bg-status-warning-muted px-3 py-2 text-sm text-status-warning-foreground">
-                  <div className="font-medium">{tt('uom.similarTitle', 'Review the existing unit before saving')}</div>
+                  <div className="font-medium">{tt('uom.similarTitle', 'An equivalent unit already exists')}</div>
                   <div className="mt-1 text-xs">
                     {similarUoms.map((uom) => `${uom.code} — ${uom.name}`).join(', ')}
                   </div>
+                  <div className="mt-1 text-xs">{tt('uom.similarHelp', 'Saving will reuse the existing catalogue unit rather than create a duplicate.')}</div>
                 </div>
               ) : null}
-              <Button type="submit" disabled={!canEdit}>{tt('uom.saveUnit', 'Save unit')}</Button>
+              <Button type="submit" disabled={!canEdit || savingUnit}>
+                {savingUnit ? tt('uom.savingUnit', 'Saving unit') : tt('uom.saveUnit', 'Save unit')}
+              </Button>
             </form>
           </CardContent>
         </Card>
