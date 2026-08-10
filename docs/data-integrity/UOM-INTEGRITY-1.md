@@ -30,7 +30,7 @@ Migration `20260810051808_enforce_canonical_uom_integrity.sql`:
 - returns the existing canonical/equivalent record instead of creating a duplicate;
 - records provenance when a legitimate distinct global unit is created.
 
-The function is `SECURITY DEFINER` only because authenticated roles no longer write the global table directly. It uses a fixed `search_path`, checks `auth.uid()`, the active company, and the existing company-role helper. No role hierarchy, RLS authority, UOM conversion, quantity, stock, order, production, or finance logic changes.
+The function is `SECURITY DEFINER` only because authenticated roles no longer write the global table directly. It uses a fixed `search_path`, checks `auth.uid()`, the active company, and the existing company-role helper. RLS remains enabled; the three broad direct-write policies were removed together with direct authenticated DML grants. No role hierarchy, UOM conversion, quantity, stock, order, production, or finance logic changes.
 
 ## Local proof
 
@@ -64,4 +64,4 @@ The linked project was re-confirmed as `ogzhwoqqumkuqhbvuzzp`. Immediately befor
 - security and performance advisors reported no unexpected UOM table/index finding. The advisor warning that authenticated users can execute `create_uom` is intentional because the function performs the active-company and role checks before the privileged write;
 - authenticated application QA in the existing hosted test company showed 31 unit codes and zero legacy generated codes. Saving `EA / Each` reused the canonical row in English and Portuguese, while `KG / Each` was rejected as a conflicting canonical identity. Neither action produced browser warnings/errors or changed the catalogue count.
 
-No quantity, conversion, stock, document, production, service, finance, role hierarchy, RLS policy, or company-membership rule was changed.
+No quantity, conversion, stock, document, production, service, finance, role hierarchy, or company-membership rule was changed. UOM RLS write policy changed only by removing the obsolete direct-write policies; no access boundary was weakened.
