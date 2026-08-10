@@ -10,7 +10,6 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   Dialog,
   DialogBody,
@@ -23,6 +22,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 
 type Currency = { code: string; name: string }
 
@@ -367,7 +367,7 @@ export default function Customers() {
         await reloadCustomers()
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || tt('customers.toast.loadFailed', 'Failed to load customers'))
+        toast.error(tt('customers.toast.loadFailed', 'Failed to load customers'))
       } finally {
         setLoading(false)
       }
@@ -390,7 +390,8 @@ export default function Customers() {
       .order('name', { ascending: true })
 
     if (res.error) {
-      toast.error(res.error.message)
+      console.error(res.error)
+      toast.error(tt('customers.toast.loadFailed', 'Failed to load customers'))
       return
     }
 
@@ -451,7 +452,7 @@ export default function Customers() {
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('customers.toast.createFailed', 'Failed to create customer'))
+      toast.error(tt('customers.toast.createFailed', 'Failed to create customer'))
     } finally {
       setSaving(false)
     }
@@ -501,7 +502,7 @@ export default function Customers() {
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('customers.toast.updateFailed', 'Failed to update customer'))
+      toast.error(tt('customers.toast.updateFailed', 'Failed to update customer'))
     } finally {
       setSaving(false)
     }
@@ -518,7 +519,7 @@ export default function Customers() {
       await reloadCustomers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('customers.toast.deleteFailed', 'Failed to delete customer'))
+      toast.error(tt('customers.toast.deleteFailed', 'Failed to delete customer'))
     }
   }
 
@@ -542,46 +543,22 @@ export default function Customers() {
     )
   }, [customers, paymentTermById, search])
 
-  const stats = useMemo(() => {
-    const withContact = customers.filter((customer) => customer.email || customer.phone).length
-    const withTerms = customers.filter(
-      (customer) => customer.paymentTermsId || customer.paymentTerms
-    ).length
-    return {
-      total: customers.length,
-      withContact,
-      withTerms,
-    }
-  }, [customers])
-
   if (!user) return <div className="p-6 text-muted-foreground">{t('auth.title.signIn')}</div>
-  if (loading) return <div className="p-6">{t('loading')}</div>
+  if (loading) return <div className="app-page app-page--workspace space-y-4"><PremiumSkeleton lines={2} label={tt('customers.loading', 'Loading customer register')} /><PremiumSkeleton lines={6} label={tt('customers.loadingRows', 'Loading customer rows')} /></div>
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-2">
+        <div>
           <h1 className="text-3xl font-bold">{t('customers.title')}</h1>
-          <p className="text-muted-foreground">
-            {tt('customers.subtitle', 'Maintain commercial defaults, billing details, and settlement-ready customer records.')}
-          </p>
-          <div className="text-sm text-muted-foreground">
-            {stats.total} {tt('customers.summary.total', 'Customers')} • {stats.withContact} {tt('customers.summary.contactReady', 'Contact ready')} • {stats.withTerms} {tt('customers.summary.defaults', 'Commercial defaults')}
-          </div>
         </div>
         <Button disabled={!can.createMaster(role)} onClick={() => setCreateOpen(true)}>
           {t('customers.create')}
         </Button>
       </div>
 
-      <Card>
-        <CardHeader className="gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <CardTitle>{t('customers.list')}</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {tt('customers.listHelp', 'Search by code, name, contact, or payment terms and keep existing accounts up to date.')}
-            </p>
-          </div>
+      <section aria-label={t('customers.list')} className="space-y-4">
+        <header className="flex justify-end">
           <div className="relative w-full sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -591,8 +568,8 @@ export default function Customers() {
               className="pl-10"
             />
           </div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
+        </header>
+        <div className="overflow-x-auto border-y border-border">
           {filteredCustomers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
               <div className="text-lg font-medium">{search ? tt('customers.empty.filteredTitle', 'No customers match this search.') : t('customers.empty')}</div>
@@ -716,8 +693,8 @@ export default function Customers() {
               </tbody>
             </table>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <Dialog
         open={createOpen}

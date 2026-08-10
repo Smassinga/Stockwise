@@ -42,6 +42,12 @@ import {
 import { getBaseCurrencyCode } from '../lib/currency'
 import { formatMoneyBase } from '../lib/currency'
 import { useReceiptOutput } from '../hooks/useReceiptOutput'
+import {
+  clampOperationalQuantity,
+  MIN_OPERATIONAL_QUANTITY,
+  normalizeOperationalQuantity,
+  sumOperationalQuantities,
+} from '../lib/operationalQuantity'
 
 type WarehouseRow = {
   id: string
@@ -291,7 +297,7 @@ const copyByLang = {
   },
 } as const
 
-const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
 const toNumber = (value: number | string | null | undefined, fallback = 0) => {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
@@ -299,8 +305,8 @@ const toNumber = (value: number | string | null | undefined, fallback = 0) => {
 
 function formatQty(value: number) {
   return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
   }).format(value)
 }
 
@@ -473,7 +479,6 @@ export default function Operator() {
 
   useEffect(() => {
     void loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
   const binsForWarehouse = useMemo(
@@ -516,9 +521,9 @@ export default function Operator() {
         if (!item || !item.trackInventory || !item.canSell) return null
         return {
           item,
-          availableQty: Math.max(round2(row.qty - row.allocatedQty), 0),
-          onHandQty: round2(row.qty),
-          avgCost: round2(row.avgCost),
+          availableQty: Math.max(normalizeOperationalQuantity(row.qty - row.allocatedQty), 0),
+          onHandQty: normalizeOperationalQuantity(row.qty),
+          avgCost: roundMoney(row.avgCost),
           baseUomCode: uomCodeById.get(item.baseUomId || '') || 'EA',
         }
       })
@@ -536,10 +541,10 @@ export default function Operator() {
   }, [search, stockRows])
 
   const cartSubtotal = useMemo(
-    () => round2(cart.reduce((sum, line) => sum + round2(line.qty * line.unitPrice), 0)),
+    () => roundMoney(cart.reduce((sum, line) => sum + roundMoney(line.qty * line.unitPrice), 0)),
     [cart],
   )
-  const cartQty = useMemo(() => round2(cart.reduce((sum, line) => sum + line.qty, 0)), [cart])
+  const cartQty = useMemo(() => sumOperationalQuantities(cart.map((line) => line.qty)), [cart])
   const selectedBin = bins.find((row) => row.id === binId) || null
   const selectedWarehouse = warehouses.find((row) => row.id === warehouseId) || null
   const saleOrderDate = new Date().toISOString().slice(0, 10)
@@ -664,7 +669,7 @@ export default function Operator() {
         if (existing.qty >= stockRow.availableQty) return current
         return current.map((row) =>
           row.itemId === itemId
-            ? { ...row, qty: round2(Math.min(row.qty + 1, stockRow.availableQty)) }
+            ? { ...row, qty: clampOperationalQuantity(row.qty + 1, stockRow.availableQty) }
             : row,
         )
       }
@@ -677,7 +682,7 @@ export default function Operator() {
           sku: stockRow.item.sku,
           qty: 1,
           availableQty: stockRow.availableQty,
-          unitPrice: round2(stockRow.item.unitPrice ?? 0),
+          unitPrice: roundMoney(stockRow.item.unitPrice ?? 0),
           baseUomCode: stockRow.baseUomCode,
         },
       ]
@@ -689,7 +694,7 @@ export default function Operator() {
       current
         .map((row) => {
           if (row.itemId !== itemId) return row
-          const clamped = Math.max(0, Math.min(round2(nextQty), row.availableQty))
+          const clamped = clampOperationalQuantity(nextQty, row.availableQty)
           return { ...row, qty: clamped }
         })
         .filter((row) => row.qty > 0),
@@ -700,7 +705,7 @@ export default function Operator() {
     setCart((current) =>
       current.map((row) =>
         row.itemId === itemId
-          ? { ...row, unitPrice: Math.max(0, round2(nextPrice)) }
+          ? { ...row, unitPrice: Math.max(0, roundMoney(nextPrice)) }
           : row,
       ),
     )
@@ -788,13 +793,12 @@ export default function Operator() {
     }
   }
 
-  const renderSaleSummary = (mobile = false) => (
-    <Card className={mobile ? 'border-border/70 bg-card/98 shadow-[0_26px_52px_-34px_hsl(var(--foreground)/0.32)]' : 'border-border/70 bg-card/96 shadow-[0_20px_44px_-34px_hsl(var(--foreground)/0.24)]'}>
+  const renderSaleSummary = () => (
+    <Card className="border-border/70 bg-card shadow-none">
       <CardHeader className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle>{copy.currentTitle}</CardTitle>
-            <CardDescription>{copy.currentBody}</CardDescription>
           </div>
           <Badge variant="outline" className="rounded-full">
             <UserRound className="mr-1 h-3.5 w-3.5" />
@@ -843,10 +847,6 @@ export default function Operator() {
           </div>
         ) : null}
 
-        <div className="rounded-[1.2rem] border border-border/70 bg-muted/15 p-3 text-xs leading-5 text-muted-foreground">
-          {copy.pricingHelp}
-        </div>
-
         <div className="space-y-3 rounded-[1.25rem] border border-border/70 bg-background/88 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
@@ -860,7 +860,7 @@ export default function Operator() {
               ) : displayedPosMode === 'non_fiscal' ? (
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.nonFiscalBody}</p>
               ) : (
-                <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                <p className="mt-1 text-xs leading-5 text-status-warning-foreground">
                   {canConfigureTax ? copy.unconfiguredAdmin : `${copy.unconfiguredTax} ${copy.unconfiguredOperator}`}
                 </p>
               )}
@@ -874,7 +874,7 @@ export default function Operator() {
             </Badge>
           </div>
           {displayedPosMode === 'non_fiscal' ? (
-            <div className="rounded-lg border border-amber-500/35 bg-amber-500/8 p-3 text-sm">
+            <div className="rounded-lg border border-status-warning-border bg-status-warning-muted p-3 text-sm">
               <div className="font-medium">{copy.nonFiscalTitle}</div>
               <div className="mt-1 text-xs leading-5 text-muted-foreground">{copy.nonFiscalBody}</div>
             </div>
@@ -887,7 +887,7 @@ export default function Operator() {
           {previewLoading ? <p className="text-xs text-muted-foreground">{copy.previewing}</p> : null}
           {previewError ? <p role="alert" className="text-xs text-destructive">{previewError}</p> : null}
           {previewBlockerMessage ? (
-            <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">
+            <p role="alert" className="text-xs text-status-warning-foreground">
               {preview?.blockers.includes('commercial_tax_pos_mode_unconfigured') && canConfigureTax
                 ? copy.unconfiguredAdmin
                 : previewBlockerMessage}
@@ -984,22 +984,25 @@ export default function Operator() {
 
                 <div className="mt-4 grid gap-3">
                   <div className="space-y-2">
-                    <Label>{copy.summaryQty}</Label>
+                    <Label htmlFor={`pos-quantity-${line.itemId}`}>{copy.summaryQty}</Label>
                     <div className="flex min-w-0 items-center gap-2 rounded-[1.15rem] border border-border/70 bg-muted/15 p-1">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
                         className="h-10 w-10 shrink-0 rounded-xl"
-                        onClick={() => updateLineQty(line.itemId, round2(line.qty - 1))}
+                        aria-label={`${copy.summaryQty}: -1 ${line.baseUomCode}`}
+                        onClick={() => updateLineQty(line.itemId, line.qty - 1)}
                       >
                         <Minus className="h-4 w-4" />
                       </Button>
                       <Input
+                        id={`pos-quantity-${line.itemId}`}
                         type="number"
-                        min="0"
+                        inputMode="decimal"
+                        min={MIN_OPERATIONAL_QUANTITY}
                         max={line.availableQty}
-                        step="0.01"
+                        step={MIN_OPERATIONAL_QUANTITY}
                         value={String(line.qty)}
                         className="h-10 min-w-0 flex-1 border-0 bg-transparent text-center shadow-none"
                         onChange={(event) => updateLineQty(line.itemId, toNumber(event.target.value))}
@@ -1010,7 +1013,8 @@ export default function Operator() {
                         variant="ghost"
                         size="icon"
                         className="h-10 w-10 shrink-0 rounded-xl"
-                        onClick={() => updateLineQty(line.itemId, round2(line.qty + 1))}
+                        aria-label={`${copy.summaryQty}: +1 ${line.baseUomCode}`}
+                        onClick={() => updateLineQty(line.itemId, line.qty + 1)}
                       >
                         <Plus className="h-4 w-4" />
                       </Button>
@@ -1019,9 +1023,11 @@ export default function Operator() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2 min-w-0">
-                      <Label>{copy.unitPrice}</Label>
+                      <Label htmlFor={`pos-unit-price-${line.itemId}`}>{copy.unitPrice}</Label>
                       <Input
+                        id={`pos-unit-price-${line.itemId}`}
                         type="number"
+                        inputMode="decimal"
                         min="0"
                         step="0.01"
                         value={String(line.unitPrice)}
@@ -1034,7 +1040,7 @@ export default function Operator() {
                       <div className="rounded-[1.15rem] border border-border/70 bg-muted/15 px-4 py-3">
                         <div className="text-base font-semibold">
                           {formatMoneyBase(
-                            round2(line.qty * line.unitPrice),
+                            roundMoney(line.qty * line.unitPrice),
                             baseCurrencyCode,
                             lang === 'pt' ? 'pt-MZ' : 'en-MZ',
                           )}
@@ -1107,7 +1113,7 @@ export default function Operator() {
   return (
     <div className="app-page app-page--workspace">
       {lastSale ? (
-        <Card className="border-primary/25 bg-primary/5">
+        <Card className="border-status-success-border bg-status-success-muted shadow-none">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">{copy.lastSaleTitle}</CardTitle>
             <CardDescription>{lastSale.pos_tax_mode_snapshot === 'non_fiscal' ? copy.taxNotApplied : copy.configuredTax}</CardDescription>
@@ -1140,13 +1146,9 @@ export default function Operator() {
           </CardContent>
         </Card>
       ) : null}
-      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-none">
-        <CardHeader className="space-y-4">
+      <section className="space-y-4 border-b border-border pb-5 sm:pb-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="screen-intro max-w-3xl">
-              <h1>{copy.title}</h1>
-              <p>{copy.subtitle}</p>
-            </div>
+            <h1 className="screen-title">{copy.title}</h1>
             {!canPost ? (
               <Badge variant="outline" className="border-status-warning-border bg-status-warning-muted text-status-warning-foreground">
                 {copy.readOnly}
@@ -1154,15 +1156,11 @@ export default function Operator() {
             ) : null}
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.15fr)]">
-            <div className="rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
-              <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{copy.sourceTitle}</div>
-              <div className="mt-1 text-sm text-muted-foreground">{copy.sourceBody}</div>
-            </div>
-            <div className="space-y-2 rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
               <Label>{copy.warehouse}</Label>
               <Select value={warehouseId} onValueChange={(value) => { setWarehouseId(value); setCart([]) }}>
-                <SelectTrigger className="rounded-2xl">
+                <SelectTrigger className="rounded-2xl" aria-label={copy.warehouse}>
                   <SelectValue placeholder={copy.warehouse} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1174,10 +1172,10 @@ export default function Operator() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 rounded-[1.4rem] border border-border/70 bg-background/88 p-4 shadow-[0_16px_32px_-30px_hsl(var(--foreground)/0.25)]">
+            <div className="space-y-2">
               <Label>{copy.bin}</Label>
               <Select value={binId} onValueChange={(value) => { setBinId(value); setCart([]) }}>
-                <SelectTrigger className="rounded-2xl">
+                <SelectTrigger className="rounded-2xl" aria-label={copy.bin}>
                   <SelectValue placeholder={copy.bin} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1200,16 +1198,14 @@ export default function Operator() {
               className="h-12 rounded-2xl pl-11"
             />
           </div>
-        </CardHeader>
-      </Card>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(25rem,0.95fr)] 2xl:grid-cols-[minmax(0,1.08fr)_minmax(29rem,0.92fr)]">
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader className="space-y-2">
+        <section className="min-w-0 space-y-4">
+          <header>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle>{copy.itemsTitle}</CardTitle>
-                <CardDescription>{copy.itemsBody}</CardDescription>
+                <h2 className="text-lg font-semibold">{copy.itemsTitle}</h2>
               </div>
               {selectedWarehouse && selectedBin ? (
                 <Badge variant="outline" className="rounded-full">
@@ -1218,8 +1214,8 @@ export default function Operator() {
                 </Badge>
               ) : null}
             </div>
-          </CardHeader>
-          <CardContent>
+          </header>
+          <div>
             {loading ? (
               <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-10 text-center text-sm text-muted-foreground">
                 {copy.loading}
@@ -1262,7 +1258,7 @@ export default function Operator() {
                           <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{copy.defaultPrice}</div>
                           <div className="mt-1 text-lg font-semibold">
                             {formatMoneyBase(
-                              round2(row.item.unitPrice ?? 0),
+                              roundMoney(row.item.unitPrice ?? 0),
                               baseCurrencyCode,
                               lang === 'pt' ? 'pt-MZ' : 'en-MZ',
                             )}
@@ -1284,11 +1280,11 @@ export default function Operator() {
                 })}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
-          {renderSaleSummary(false)}
+          {renderSaleSummary()}
         </div>
       </div>
 
@@ -1315,7 +1311,7 @@ export default function Operator() {
             <DrawerDescription>{copy.drawerBody}</DrawerDescription>
           </DrawerHeader>
           <div className="overflow-y-auto px-4 pb-8">
-            {renderSaleSummary(true)}
+            {renderSaleSummary()}
           </div>
         </DrawerContent>
       </Drawer>

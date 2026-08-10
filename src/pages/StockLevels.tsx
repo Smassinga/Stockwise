@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, CircleDollarSign, ExternalLink, FileDown, FilterX, Package, PackageSearch, RefreshCw, Warehouse as WarehouseIcon } from 'lucide-react'
+import { AlertTriangle, ExternalLink, FileDown, FilterX, Package, PackageSearch, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
@@ -9,6 +9,7 @@ import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useIsMobile } from '../hooks/use-mobile'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
+import { cn } from '../lib/utils'
 import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
 import { PremiumColumnVisibilityMenu } from '../components/premium/PremiumColumnVisibilityMenu'
 import {
@@ -20,7 +21,6 @@ import {
 } from '../components/premium/PremiumDataTable'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { PremiumImportExportActions } from '../components/premium/PremiumImportExportActions'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
@@ -89,8 +89,8 @@ type StockRow = {
 
 function formatQuantity(value: number) {
   return value.toLocaleString(undefined, {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
   })
 }
 
@@ -573,21 +573,7 @@ export function StockLevels() {
   return (
     <div className="app-page app-page--workspace space-y-6">
       <PremiumRegisterHeader
-        eyebrow={tt('stock.eyebrow', 'Inventory valuation')}
         title={t('nav.stockLevels')}
-        description={tt('stock.description', 'Read-only inventory position by warehouse. Quantities remain in each item base unit and value uses weighted average cost.')}
-        badges={
-          <>
-            <PremiumStatusBadge tone="info" icon={<CircleDollarSign />}>
-              {tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}
-            </PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral" icon={<WarehouseIcon />}>
-              {activeWarehouse
-                ? `${tt('warehouses.warehouse', 'Warehouse')}: ${activeWarehouse.name}`
-                : tt('filters.warehouse.all', 'All warehouses')}
-            </PremiumStatusBadge>
-          </>
-        }
         actions={
           <>
             <Button variant="outline" onClick={() => void loadData()}>
@@ -597,38 +583,27 @@ export function StockLevels() {
             {stockExportActions}
           </>
         }
-        metrics={
-          <>
-            <PremiumMetricCard
-              label={tt('stock.summary.value', 'Inventory value')}
-              value={formatCurrency(totals.totalValue)}
-              description={tt('stock.summary.valueHelp', 'Value of the filtered stock position using average cost.')}
-              icon={<CircleDollarSign />}
-              tone="positive"
-            />
-            <PremiumMetricCard
-              label={tt('stock.summary.positions', 'Stock positions')}
-              value={totals.positions}
-              description={tt('stock.summary.positionsHelp', 'Item and warehouse positions in the current filtered result; mixed units are not added together.')}
-              icon={<Boxes />}
-            />
-            <PremiumMetricCard
-              label={tt('stock.summary.attention', 'Positions needing attention')}
-              value={totals.attention}
-              description={tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}
-              icon={<AlertTriangle />}
-              tone={totals.attention > 0 ? 'warning' : 'positive'}
-            />
-            <PremiumMetricCard
-              label={tt('stock.summary.coverage', 'Warehouse coverage')}
-              value={totals.warehouseCount}
-              description={tt('stock.summary.coverageHelp', 'Warehouses represented in the current filtered result.')}
-              icon={<WarehouseIcon />}
-              tone="info"
-            />
-          </>
-        }
       />
+
+      <section aria-label={tt('stock.summary.label', 'Current stock scope')} className="border-y border-border">
+        <dl className="grid sm:grid-cols-3">
+          <div className="border-b border-border py-4 sm:border-b-0 sm:pr-5">
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</dt>
+            <dd className="mt-2 text-xl font-semibold tabular-nums">{formatCurrency(totals.totalValue)}</dd>
+            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}</dd>
+          </div>
+          <div className="border-b border-border py-4 sm:border-b-0 sm:border-l sm:px-5">
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.attention', 'Positions needing attention')}</dt>
+            <dd className={cn('mt-2 text-xl font-semibold tabular-nums', totals.attention > 0 && 'text-status-warning-foreground')}>{totals.attention}</dd>
+            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}</dd>
+          </div>
+          <div className="py-4 sm:border-l sm:pl-5">
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.scope', 'Scope')}</dt>
+            <dd className="mt-2 text-base font-semibold">{activeWarehouse ? activeWarehouse.name : tt('filters.warehouse.all', 'All warehouses')}</dd>
+            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.summary.positionsCount', '{count} item and warehouse positions', { count: totals.positions })}</dd>
+          </div>
+        </dl>
+      </section>
 
       <PremiumTableToolbar
         searchValue={search}
@@ -822,7 +797,7 @@ export function StockLevels() {
             ariaLabel={t('nav.stockLevels')}
             emptyState={stockEmptyState}
             rowClassName={(row) =>
-              row.status === 'out' || row.status === 'negative' ? 'bg-destructive/5' : row.status === 'low' || row.status === 'threshold_unconfigured' ? 'bg-amber-500/5' : undefined
+              row.status === 'out' || row.status === 'negative' ? 'bg-status-danger-muted' : row.status === 'low' || row.status === 'threshold_unconfigured' ? 'bg-status-warning-muted' : undefined
             }
             pagination={{
               page: stockPage,

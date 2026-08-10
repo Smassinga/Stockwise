@@ -18,6 +18,7 @@ import { useOrg } from '../hooks/useOrg'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { dashboardPeriodRange, resolveMovementCost, type DashboardPeriodPreset } from '../lib/dashboardMetrics'
 import { useI18n, withI18nFallback } from '../lib/i18n'
+import { formatOperationalQuantity } from '../lib/operationalQuantity'
 import { can } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
 
@@ -414,7 +415,7 @@ export default function Dashboard() {
                           <p className="font-medium break-words">{item?.name || tt('dashboard.unknownItem', 'Unknown item')}</p>
                           <p className="mt-1 text-sm text-muted-foreground">{dateTimeLabel(movement.created_at)} · {tt(`movements.type.${movement.type}`, movement.type || '—')}</p>
                         </div>
-                        <p className="text-sm tabular-nums"><span className="text-muted-foreground">{tt('table.qtyBase', 'Quantity')}:</span> {count(number(movement.qty_base))}</p>
+                        <p className="text-sm tabular-nums"><span className="text-muted-foreground">{tt('table.qtyBase', 'Quantity')}:</span> {formatOperationalQuantity(number(movement.qty_base), locale)}</p>
                         <p className="text-sm tabular-nums"><span className="text-muted-foreground">{tt('table.value', 'Value')}:</span> {movementValue.available ? money(movementValue.amount) : tt('dashboard.unavailableValue', 'Unavailable')}</p>
                       </div>
                     )

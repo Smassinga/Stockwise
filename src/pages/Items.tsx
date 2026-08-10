@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, ArrowLeft, Download, ExternalLink, Package, PackageCheck, Pencil, Plus, Settings2, Tags, Trash2, Upload, Warehouse } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download, ExternalLink, Package, Pencil, Plus, Settings2, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
@@ -43,7 +43,6 @@ import {
 } from '../components/premium/PremiumDataTable'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { PremiumImportExportActions } from '../components/premium/PremiumImportExportActions'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
@@ -85,7 +84,7 @@ function sortByName<T extends { name?: string }>(arr: T[]) {
 
 function formatQty(value: number | null | undefined, fallback = '-') {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value)
 }
 
 function formatStockThreshold(value: number | null | undefined) {
@@ -259,16 +258,6 @@ export default function ItemsPage() {
       return matchesSearch && matchesRole && matchesStock
     })
   }, [items, roleFilter, search, stockFilter])
-
-  const summary = useMemo(() => {
-    const warningCount = items.reduce((acc, item) => acc + deriveItemProfileWarnings(item).length, 0)
-    return {
-      total: items.length,
-      stocked: items.filter((item) => item.trackInventory).length,
-      nonStock: items.filter((item) => !item.trackInventory).length,
-      warnings: warningCount,
-    }
-  }, [items])
 
   useEffect(() => {
     setItemPage(1)
@@ -833,18 +822,7 @@ export default function ItemsPage() {
   return (
     <div className="app-page app-page--workspace">
       <PremiumRegisterHeader
-        eyebrow={tt('items.eyebrow', 'Master data clarity')}
         title={tt('items.title', 'Items')}
-        description={tt(
-          'items.subtitle',
-          'Set up each item once with a clear operational role. Stock, purchasing, selling, and assembly should be obvious before anyone uses the item in orders, builds, or finance documents.',
-        )}
-        badges={
-          <>
-            <PremiumStatusBadge tone="info" icon={<Tags />}>{tt('items.registerTitle', 'Item register')}</PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral">{baseCurrencyCode}</PremiumStatusBadge>
-          </>
-        }
         actions={
           <>
             {view === 'create' || canCreateItem ? (
@@ -856,37 +834,6 @@ export default function ItemsPage() {
               </Button>
             ) : null}
             {itemImportExportActions}
-          </>
-        }
-        metrics={
-          <>
-            <PremiumMetricCard
-              label={tt('items.summary.total', 'Total items')}
-              value={summary.total}
-              description={tt('items.summary.totalHelp', 'All item masters in the active company.')}
-              icon={<Package />}
-            />
-            <PremiumMetricCard
-              label={tt('items.summary.stocked', 'Stock-tracked')}
-              value={summary.stocked}
-              description={tt('items.summary.stockedHelp', 'Items that participate in inventory balances and minimum-stock alerts.')}
-              icon={<Warehouse />}
-              tone="positive"
-            />
-            <PremiumMetricCard
-              label={tt('items.summary.nonStock', 'Non-stock / services')}
-              value={summary.nonStock}
-              description={tt('items.summary.nonStockHelp', 'Services and other item masters that do not participate in inventory balances.')}
-              icon={<PackageCheck />}
-              tone="neutral"
-            />
-            <PremiumMetricCard
-              label={tt('items.summary.attention', 'Needs attention')}
-              value={summary.warnings}
-              description={tt('items.summary.attentionHelp', 'Profile mismatches that can confuse stock or assembly workflows.')}
-              icon={<AlertTriangle />}
-              tone={summary.warnings > 0 ? 'warning' : 'positive'}
-            />
           </>
         }
       />
@@ -913,9 +860,9 @@ export default function ItemsPage() {
           </CardHeader>
           <CardContent className="space-y-4 p-4 pt-3 sm:space-y-6 sm:p-6">
             {!profileFieldsSupported && (
-              <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-sm">
+              <div className="rounded-lg border border-status-warning-border bg-status-warning-muted p-4 text-sm">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-warning-foreground" />
                   <div className="space-y-3">
                     <div>
                       <div className="font-medium">{tt('items.profileCompatibility.title', 'Item profile fields are unavailable')}</div>
@@ -1102,7 +1049,7 @@ export default function ItemsPage() {
                       )}
                     </div>
                   </div> : (
-                    <div className="rounded-2xl border border-dashed border-amber-500/50 bg-background/80 p-4 text-sm text-muted-foreground">
+                    <div className="rounded-2xl border border-dashed border-status-warning-border bg-status-warning-muted p-4 text-sm text-muted-foreground">
                       {tt('items.profileCompatibility.previewHidden', 'Profile preview is hidden in compatibility mode because no profile selection will be persisted.')}
                     </div>
                   )}

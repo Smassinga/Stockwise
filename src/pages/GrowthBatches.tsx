@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Activity,
   AlertTriangle,
   ArrowRightLeft,
   Ban,
@@ -61,10 +60,11 @@ import {
   type PremiumDataTableSortState,
 } from '../components/premium/PremiumDataTable'
 import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import {
   DropdownMenu,
@@ -2239,7 +2239,7 @@ function labelize(value: string) {
 
 function eventSummaryLabel(
   event: Pick<GrowthBatchEventRow, 'event_type' | 'event_summary'>,
-  lang: Language,
+  lang: Locale,
   eventTypeLabel: (eventType: string | null | undefined) => string,
 ) {
   const summary = event.event_summary?.trim()
@@ -4876,12 +4876,6 @@ export default function GrowthBatches() {
         eyebrow={tt('productionUx.growth.eyebrow', 'Group-level agricultural production')}
         title={tt('productionUx.growth.title', 'Growth Batches')}
         description={tt('productionUx.growth.description', 'Track group-level measurements, materials, losses, location, harvest and completion without implying individual records or finance posting.')}
-        badges={
-          <>
-            <PremiumStatusBadge tone="info">{completionCopy.page.appendOnlyLedger}</PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral">{completionCopy.page.noFifoOrCogs}</PremiumStatusBadge>
-          </>
-        }
         actions={
           <>
             <Button type="button" variant="outline" onClick={() => void refreshAll()} disabled={loading || saving}>
@@ -4901,17 +4895,21 @@ export default function GrowthBatches() {
             ) : null}
           </>
         }
-        metrics={
-          <>
-            <PremiumMetricCard label={tt('productionUx.growth.metrics.active', 'Active batches')} value={metricValues.active} description={tt('productionUx.growth.metrics.activeHelp', 'Open for governed lifecycle activity')} icon={<Sprout />} tone="positive" variant="panel" />
-            <PremiumMetricCard label={tt('productionUx.growth.metrics.drafts', 'Draft batches')} value={metricValues.draft} description={tt('productionUx.growth.metrics.draftsHelp', 'Prepared but not activated')} icon={<ClipboardList />} tone="info" variant="panel" />
-            <PremiumMetricCard label={tt('productionUx.growth.metrics.awaiting', 'Awaiting completion')} value={metricValues.awaitingCompletion} description={tt('productionUx.growth.metrics.awaitingHelp', 'Fully harvested with completion still required')} icon={<AlertTriangle />} tone="warning" variant="panel" />
-            <PremiumMetricCard label={tt('productionUx.growth.metrics.completed', 'Completed batches')} value={metricValues.completed} description={tt('productionUx.growth.metrics.completedHelp', 'Lifecycle closed with immutable history')} icon={<CheckCircle2 />} tone="neutral" variant="panel" />
-          </>
-        }
       />
 
-      <ProductionPathGuide active="growth" />
+      {view === 'register' ? (
+        <OperationalSummaryBand
+          label={tt('productionUx.growth.summaryLabel', 'Growth Batch register summary')}
+          items={[
+            { label: tt('productionUx.growth.metrics.active', 'Active batches'), value: metricValues.active, tone: 'success' },
+            { label: tt('productionUx.growth.metrics.drafts', 'Draft batches'), value: metricValues.draft, tone: 'info' },
+            { label: tt('productionUx.growth.metrics.awaiting', 'Awaiting completion'), value: metricValues.awaitingCompletion, tone: 'warning' },
+            { label: tt('productionUx.growth.metrics.completed', 'Completed batches'), value: metricValues.completed },
+          ]}
+        />
+      ) : null}
+
+      {view === 'register' ? <ProductionPathGuide /> : null}
 
       {view === 'register' ? <Card className="border-card-border bg-card">
         <CardContent className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[minmax(16rem,1fr)_12rem_12rem_12rem_11rem_11rem]">
@@ -5113,8 +5111,8 @@ export default function GrowthBatches() {
               </Card>
 
               {Object.keys(detailErrors).length > 0 ? (
-                <div className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-4 text-sm" role="status">
-                  <div className="font-medium text-amber-800 dark:text-amber-200">
+                <div className="rounded-lg border border-status-warning-border bg-status-warning-muted p-4 text-sm" role="status">
+                  <div className="font-medium text-status-warning-foreground">
                     {detailErrors.core
                       ? tt('productionUx.growth.detailUnavailable', 'Growth Batch detail is unavailable')
                       : tt('productionUx.growth.partialUnavailable', 'Some Growth Batch evidence is unavailable')}
@@ -5126,9 +5124,14 @@ export default function GrowthBatches() {
               ) : null}
 
               {detailLoading ? (
-                <Card className="border-card-border bg-card">
-                  <CardContent className="p-5 text-sm text-muted-foreground">{tt('productionUx.growth.loadingDetail', 'Loading Growth Batch detail...')}</CardContent>
-                </Card>
+                <section aria-label={tt('productionUx.growth.loadingDetail', 'Loading Growth Batch detail')} className="space-y-4 border-y border-border py-5">
+                  <PremiumSkeleton lines={3} />
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <PremiumSkeleton lines={2} />
+                    <PremiumSkeleton lines={2} />
+                    <PremiumSkeleton lines={2} />
+                  </div>
+                </section>
               ) : (
                 <Tabs
                   value={section}
@@ -5322,8 +5325,8 @@ export default function GrowthBatches() {
                         <SummaryItem label={harvestCopy.labels.stockReceipt} value={harvestCopy.preview.noSaleNoFinance} />
                       </div>
                       {detailBatch.fully_harvested_awaiting_completion ? (
-                        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
-                          <div className="font-medium text-emerald-700 dark:text-emerald-300">{harvestCopy.labels.fullyHarvested}</div>
+                        <div className="mb-4 rounded-xl border border-status-success-border bg-status-success-muted p-4 text-sm">
+                          <div className="font-medium text-status-success-foreground">{harvestCopy.labels.fullyHarvested}</div>
                           <div className="mt-1 text-muted-foreground">{harvestCopy.labels.awaitingCompletion}</div>
                         </div>
                       ) : null}
@@ -5418,8 +5421,8 @@ export default function GrowthBatches() {
                         <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
                       </div>
                       {detailBatch.fully_harvested_awaiting_completion ? (
-                        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
-                          <div className="font-medium text-emerald-700 dark:text-emerald-300">{harvestCopy.labels.fullyHarvested}</div>
+                        <div className="mb-4 rounded-xl border border-status-success-border bg-status-success-muted p-4 text-sm">
+                          <div className="font-medium text-status-success-foreground">{harvestCopy.labels.fullyHarvested}</div>
                           <div className="mt-1 text-muted-foreground">{completionCopy.dialog.lifecycleNote}</div>
                         </div>
                       ) : null}
@@ -6038,7 +6041,7 @@ export default function GrowthBatches() {
               </Button>
 
               {stockInputPreview ? (
-                <div className={cn('rounded-xl border p-4 text-sm', stockInputPreview.ready && !stockInputPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                <div className={cn('rounded-xl border p-4 text-sm', stockInputPreview.ready && !stockInputPreviewStale ? 'border-status-success-border bg-status-success-muted' : 'border-status-warning-border bg-status-warning-muted')}>
                   <div className="font-medium">{stockInputPreviewStale
                     ? tt('productionUx.forms.previewStale', 'Preview is stale')
                     : stockInputPreview.ready
@@ -6182,7 +6185,7 @@ export default function GrowthBatches() {
               </div>
 
               {transferPreview ? (
-                <div className={cn('rounded-xl border p-4 text-sm', transferPreview.ready && !transferPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                <div className={cn('rounded-xl border p-4 text-sm', transferPreview.ready && !transferPreviewStale ? 'border-status-success-border bg-status-success-muted' : 'border-status-warning-border bg-status-warning-muted')}>
                   <div className="font-medium">{transferPreviewStale ? transferCopy.preview.stale : transferPreview.ready ? transferCopy.preview.ready : transferCopy.preview.blockers}</div>
                   {transferPreview.blocking_reasons?.length ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
@@ -6405,7 +6408,7 @@ export default function GrowthBatches() {
               </div>
 
               {harvestPreview ? (
-                <div className={cn('rounded-xl border p-4 text-sm', harvestPreview.ready && !harvestPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                <div className={cn('rounded-xl border p-4 text-sm', harvestPreview.ready && !harvestPreviewStale ? 'border-status-success-border bg-status-success-muted' : 'border-status-warning-border bg-status-warning-muted')}>
                   <div className="font-medium">{harvestPreviewStale ? harvestCopy.preview.stale : harvestPreview.ready ? harvestCopy.preview.ready : harvestCopy.preview.blockers}</div>
                   {harvestPreview.blocking_reasons?.length ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
@@ -6547,7 +6550,7 @@ export default function GrowthBatches() {
               </Field>
 
               {completionPreview ? (
-                <div className={cn('rounded-xl border p-4 text-sm', completionPreview.ready && !completionPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                <div className={cn('rounded-xl border p-4 text-sm', completionPreview.ready && !completionPreviewStale ? 'border-status-success-border bg-status-success-muted' : 'border-status-warning-border bg-status-warning-muted')}>
                   <div className="font-medium">{completionPreviewStale ? completionCopy.preview.stale : completionPreview.ready ? completionCopy.preview.ready : completionCopy.preview.blockers}</div>
                   {completionPreview.blockers?.length ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
@@ -6730,7 +6733,7 @@ export default function GrowthBatches() {
               </div>
 
               {lossPreview ? (
-                <div className={cn('rounded-xl border p-4 text-sm', lossPreview.ready && !lossPreviewStale ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5')}>
+                <div className={cn('rounded-xl border p-4 text-sm', lossPreview.ready && !lossPreviewStale ? 'border-status-success-border bg-status-success-muted' : 'border-status-warning-border bg-status-warning-muted')}>
                   <div className="font-medium">{lossPreviewStale
                     ? tt('productionUx.forms.previewStale', 'Preview is stale')
                     : lossPreview.ready

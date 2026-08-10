@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowRightLeft,
-  Boxes,
   ClipboardList,
   FilterX,
   Inbox,
@@ -11,7 +10,6 @@ import {
   Receipt,
   RefreshCw,
   Send,
-  Warehouse as WarehouseIcon,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -39,7 +37,6 @@ import {
   type PremiumDataTableSortState,
 } from '../components/premium/PremiumDataTable'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
@@ -110,6 +107,7 @@ const fmtAcct = (v: number) => {
   const n = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return v < 0 ? `(${n})` : n
 }
+const fmtQty = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 4 })
 
 const DEFAULT_REF_BY_MOVE: Record<MovementType, RefType> = {
   receive: 'ADJUST',
@@ -122,7 +120,7 @@ export default function StockMovements() {
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
-  const { companyId, companyName, myRole } = useOrg()
+  const { companyId, myRole } = useOrg()
   const isMobile = useIsMobile()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canPostMovement = can.createMovement(role)
@@ -1028,14 +1026,6 @@ export default function StockMovements() {
         : ''
   )
 
-  const movementSummary = useMemo(() => ({
-    total: movementRowsFiltered.length,
-    receive: movementRowsFiltered.filter(row => row.type === 'receive').length,
-    issue: movementRowsFiltered.filter(row => row.type === 'issue').length,
-    transfer: movementRowsFiltered.filter(row => row.type === 'transfer').length,
-    adjust: movementRowsFiltered.filter(row => row.type === 'adjust').length,
-  }), [movementRowsFiltered])
-
   const movementEmptyState = (
     <PremiumEmptyState
       icon={<Inbox />}
@@ -1126,7 +1116,7 @@ export default function StockMovements() {
     {
       id: 'qty',
       header: tt('movements.quantity', 'Quantity'),
-      cell: (row) => <span className="font-mono tabular-nums">{fmtAcct(num(row.qty_base, 0))}</span>,
+      cell: (row) => <span className="font-mono tabular-nums">{fmtQty(num(row.qty_base, 0))}</span>,
       sortValue: (row) => num(row.qty_base, 0),
       align: 'right',
       minWidth: 130,
@@ -1180,22 +1170,7 @@ export default function StockMovements() {
   return (
     <div className="app-page app-page--workspace space-y-6">
       <PremiumRegisterHeader
-        eyebrow={tt('movements.eyebrow', 'Warehouse control')}
         title={tt('nav.movements', 'Stock movements')}
-        description={tt('movements.subtitle', 'Review stock history first, then record controlled receipts, issues, transfers, or adjustments when authorized.')}
-        badges={
-          <>
-            <PremiumStatusBadge tone="info" icon={<ClipboardList />}>
-              {tt('movements.ledgerBadge', 'Stock movement ledger')}
-            </PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral" icon={<WarehouseIcon />}>
-              {companyName || tt('common.currentCompany', 'Current company')}
-            </PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral">
-              {movementDateFrom} - {movementDateTo}
-            </PremiumStatusBadge>
-          </>
-        }
         actions={
           <>
             {workspaceView === 'history' && canPostMovement ? (
@@ -1216,44 +1191,6 @@ export default function StockMovements() {
             </Button>
           </>
         }
-        metrics={movementRows.length > 0 ? (
-          <>
-            <PremiumMetricCard
-              label={tt('movements.summary.total', 'Total movements')}
-              value={movementSummary.total}
-              description={tt('movements.summary.totalHelp', 'Movements in the current filtered register view.')}
-              icon={<ClipboardList />}
-            />
-            <PremiumMetricCard
-              label={movementTypePresentation('receive').plural}
-              value={movementSummary.receive}
-              description={tt('movements.summary.receiptsHelp', 'Stock received into warehouses or bins.')}
-              icon={<Receipt />}
-              tone="positive"
-            />
-            <PremiumMetricCard
-              label={movementTypePresentation('issue').plural}
-              value={movementSummary.issue}
-              description={tt('movements.summary.issuesHelp', 'Stock issued for sales, internal use, or write-offs.')}
-              icon={<Send />}
-              tone="critical"
-            />
-            <PremiumMetricCard
-              label={movementTypePresentation('transfer').plural}
-              value={movementSummary.transfer}
-              description={tt('movements.summary.transfersHelp', 'Stock moved between warehouses or bins.')}
-              icon={<ArrowRightLeft />}
-              tone="info"
-            />
-            <PremiumMetricCard
-              label={movementTypePresentation('adjust').plural}
-              value={movementSummary.adjust}
-              description={tt('movements.summary.adjustmentsHelp', 'Physical-count corrections recorded through stock movements.')}
-              icon={<Boxes />}
-              tone="warning"
-            />
-          </>
-        ) : undefined}
       />
 
       {masterDataError ? (
@@ -1330,7 +1267,7 @@ export default function StockMovements() {
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{tt('movements.quantityPreview', 'Quantity preview')}</div>
             <div className="mt-2 text-sm text-muted-foreground">
               {preview
-                ? `${fmtAcct(preview.entered)} ${(uomById.get(preview.uomEntered)?.code || '').toUpperCase()} -> ${fmtAcct(preview.base)} ${(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}`
+                ? `${fmtQty(preview.entered)} ${(uomById.get(preview.uomEntered)?.code || '').toUpperCase()} -> ${fmtQty(preview.base)} ${(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}`
                 : tt('movements.enterQtyToPreview', 'Enter a quantity to preview the base-unit impact')}
             </div>
           </div>
@@ -1481,7 +1418,7 @@ export default function StockMovements() {
                         <Fragment key={group.key}>
                           <tr className="bg-muted/40">
                             <td colSpan={4} className="py-1 px-2 text-[11px] font-semibold uppercase">
-                              {group.label} - {tt('movements.total', 'Total')}: {fmtAcct(group.totalQty)}
+                              {group.label} - {tt('movements.total', 'Total')}: {fmtQty(group.totalQty)}
                             </td>
                           </tr>
 
@@ -1489,7 +1426,7 @@ export default function StockMovements() {
                             <tr key={row.item.id} className="border-b">
                               <td className="py-2 pr-2 truncate">{row.item.name}</td>
                               <td className="py-2 pr-2">{row.item.sku ?? ''}</td>
-                              <td className="py-2 pr-2 text-right">{fmtAcct(row.onHandQty)}</td>
+                              <td className="py-2 pr-2 text-right">{fmtQty(row.onHandQty)}</td>
                               <td className="py-2 pr-2 text-right">{fmtAcct(num(row.avgCost, 0))}</td>
                             </tr>
                           ))}
@@ -1536,7 +1473,7 @@ export default function StockMovements() {
 
             {movementType !== 'issue' && (
               <div>
-                <Label>{tt('orders.toBin', 'To Bin')}</Label>
+                <Label htmlFor="movement-to-bin">{tt('orders.toBin', 'To Bin')}</Label>
                 <Select
                   value={toBin}
                   onValueChange={(v) => {
@@ -1544,7 +1481,7 @@ export default function StockMovements() {
                     if (movementType !== 'transfer') setFromBin('')
                   }}
                 >
-                  <SelectTrigger><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
+                  <SelectTrigger id="movement-to-bin"><SelectValue placeholder={tt('orders.selectBin', 'Select bin')} /></SelectTrigger>
                   <SelectContent>
                     {binsTo.map(b => <SelectItem key={b.id} value={b.id}>{b.code} - {b.name}</SelectItem>)}
                   </SelectContent>
@@ -1553,14 +1490,14 @@ export default function StockMovements() {
             )}
 
             <div>
-              <Label>{tt('orders.item', 'Item')}</Label>
+              <Label htmlFor="movement-item">{tt('orders.item', 'Item')}</Label>
               <Select
                 value={itemId}
                 onValueChange={(v) => { setItemId(v); setQtyEntered('') }}
                 // In transfer & issue, require FROM bin; in receive/adjust, require TO bin
                 disabled={(movementType === 'issue' || movementType === 'transfer') ? !fromBin : !toBin}
               >
-                <SelectTrigger><SelectValue placeholder={
+                <SelectTrigger id="movement-item"><SelectValue placeholder={
                   (movementType === 'issue' || movementType === 'transfer')
                     ? (fromBin ? tt('movements.selectItem', 'Select item') : tt('movements.pickFromBinFirst', 'Pick a source bin first'))
                     : (toBin ? tt('movements.selectItem', 'Select item') : tt('movements.pickToBinFirst', 'Pick a destination bin first'))
@@ -1578,26 +1515,26 @@ export default function StockMovements() {
             </div>
 
             <div>
-              <Label>{movementType === 'adjust' ? tt('movements.newOnHand', 'New On-hand') : tt('movements.quantity', 'Quantity')}</Label>
-              <Input type="number" min="0" step="0.0001" value={qtyEntered} onChange={e => setQtyEntered(e.target.value)} placeholder="0" />
+              <Label htmlFor="movement-quantity">{movementType === 'adjust' ? tt('movements.newOnHand', 'New On-hand') : tt('movements.quantity', 'Quantity')}</Label>
+              <Input id="movement-quantity" type="number" inputMode="decimal" min="0" step="0.0001" value={qtyEntered} onChange={e => setQtyEntered(e.target.value)} placeholder="0" />
               {!!currentItem && preview && (
-                <div className={`text-xs mt-1 ${preview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
+                <div className={`text-xs mt-1 ${preview.invalid ? 'text-status-danger-foreground' : 'text-muted-foreground'}`}>
                   {(movementType === 'adjust' ? tt('movements.preview.target', 'Target') : tt('movements.preview.entered', 'Entered'))}
-                  {' '}{fmtAcct(preview.entered)} {(uomById.get(preview.uomEntered)?.code || '').toUpperCase()}
-                  {' -> '}{fmtAcct(preview.base)} {(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}
+                  {' '}{fmtQty(preview.entered)} {(uomById.get(preview.uomEntered)?.code || '').toUpperCase()}
+                  {' -> '}{fmtQty(preview.base)} {(uomById.get(preview.baseUom)?.code || 'BASE').toUpperCase()}
                   {preview.invalid && tt('movements.preview.noPath', ' (no conversion path)')}
                 </div>
               )}
             </div>
 
             <div>
-              <Label>{tt('movements.movementUom', 'Movement UoM')}</Label>
+              <Label htmlFor="movement-uom">{tt('movements.movementUom', 'Movement UoM')}</Label>
               <Select
                 value={currentItem ? (movementUomId || itemBaseUomId || '') : ''}
                 onValueChange={(v) => setMovementUomId(v)}
                 disabled={!currentItem}
               >
-                <SelectTrigger><SelectValue placeholder={currentItem ? tt('movements.selectUom', 'Select UoM') : tt('movements.pickItemFirst', 'Pick item first')} /></SelectTrigger>
+                <SelectTrigger id="movement-uom"><SelectValue placeholder={currentItem ? tt('movements.selectUom', 'Select UoM') : tt('movements.pickItemFirst', 'Pick item first')} /></SelectTrigger>
 
                 {/* Grouped by family */}
                 <SelectContent className="max-h-64 overflow-auto">
@@ -1626,11 +1563,11 @@ export default function StockMovements() {
 
             {(movementType === 'receive' || movementType === 'adjust') && (
               <div>
-                <Label>
+                <Label htmlFor="movement-unit-cost">
                   {tt('movements.unitCost', 'Unit Cost')}
                   {movementType === 'adjust' ? ` ${tt('movements.unitCost.requiredIfIncreasing', '(required if increasing)')}` : ''}
                 </Label>
-                <Input type="number" min="0" step="0.0001" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00" />
+                <Input id="movement-unit-cost" type="number" inputMode="decimal" min="0" step="0.0001" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00" />
               </div>
             )}
           </div>
@@ -1724,12 +1661,7 @@ export default function StockMovements() {
 
       <section className="space-y-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h2 className="text-[1.05rem] font-semibold leading-7 tracking-tight">{tt('movements.logTitle', 'Registo de movimentos de stock')}</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              {tt('movements.registerHelp', 'Review stock history by date, movement type, warehouse, bin, item, and reference.')}
-            </p>
-          </div>
+          <h2 className="text-[1.05rem] font-semibold leading-7 tracking-tight">{tt('movements.logTitle', 'Stock movement history')}</h2>
         </div>
 
         <PremiumTableToolbar
@@ -1885,7 +1817,7 @@ export default function StockMovements() {
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
                         <div className="premium-label">{tt('movements.quantity', 'Quantity')}</div>
-                        <div className="mt-1 text-sm font-semibold">{fmtAcct(num(row.qty_base, 0))}</div>
+                        <div className="mt-1 text-sm font-semibold">{fmtQty(num(row.qty_base, 0))}</div>
                       </div>
                       <div className="rounded-xl border border-card-border bg-surface-muted/35 p-3">
                         <div className="premium-label">{tt('table.value', 'Valor')}</div>

@@ -8,7 +8,6 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import toast from 'react-hot-toast'
 import {
-  getBankTransactionWriteMessage,
   getBankTransactionRefSupport,
   isMissingBankTransactionRefColumns,
   setBankTransactionRefSupport,
@@ -1314,7 +1313,7 @@ export default function BankDetail() {
               <p className="mt-1">{tf('financeUx.bankImportContract', 'CSV rows require date, memo, and amount. Validation is all-or-nothing, limited to 500 rows, and preserves idempotent replay.')}</p>
               <p className="mt-1">{tf('financeUx.bankImportCurrency', 'The CSV currency must match the account operating currency. Posted ledger values remain company-base-currency evidence.')}</p>
               {currency !== baseCurrency ? (
-                <p className="mt-2 font-medium text-amber-700 dark:text-amber-300">{tf('financeUx.multiCurrencyImportBlocked', 'Import is unavailable because this account currency differs from the company base currency and no authoritative conversion amount is available.')}</p>
+                <p className="mt-2 font-medium text-status-warning-foreground">{tf('financeUx.multiCurrencyImportBlocked', 'Import is unavailable because this account currency differs from the company base currency and no authoritative conversion amount is available.')}</p>
               ) : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">

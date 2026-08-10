@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download, FileWarning, Landmark, ReceiptText } from 'lucide-react'
+import { Download, FileWarning, ReceiptText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
 import { FinanceExportDialog, type FinanceExportFormat } from '../components/finance/FinanceExportDialog'
+import { FinanceSummaryBand } from '../components/finance/FinanceSummaryBand'
 import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import {
   exportFinanceExcel,
@@ -205,15 +206,15 @@ const emptyRows = { receive: [] as SettlementRow[], pay: [] as SettlementRow[] }
 const isCancelled = (status?: string | null) => ['cancelled', 'canceled'].includes(String(status || '').toLowerCase())
 
 const statusTone = (row: SettlementRow) => {
-  if (normalizeMoneyValue(row.outstandingBase) <= 0) return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
-  if (row.agingDays > 0) return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
-  if (row.settledBase > 0) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-  return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
+  if (normalizeMoneyValue(row.outstandingBase) <= 0) return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
+  if (row.agingDays > 0) return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
+  if (row.settledBase > 0) return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
+  return 'border-status-neutral-border bg-status-neutral-muted text-status-neutral-foreground'
 }
 
 const dueTone = (row: SettlementRow) => {
   if (!row.dueDate) return 'text-muted-foreground'
-  if (row.agingDays > 0) return 'text-rose-600 dark:text-rose-300'
+  if (row.agingDays > 0) return 'text-status-danger-foreground'
   return 'text-foreground'
 }
 
@@ -222,13 +223,13 @@ const isFinanceDocumentRow = (row: SettlementRow) => row.kind === 'SI' || row.ki
 const reviewTone = (state: FinanceReviewState) => {
   switch (state) {
     case 'exception':
-      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+      return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
     case 'overdue':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+      return 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
     case 'attention':
-      return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
+      return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
     case 'resolved':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+      return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
     default:
       return 'border-border/70 bg-muted/30 text-muted-foreground'
   }
@@ -236,8 +237,8 @@ const reviewTone = (state: FinanceReviewState) => {
 
 const exceptionSeverityTone = (severity: FinanceReconciliationExceptionRow['severity']) =>
   severity === 'critical'
-    ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
-    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    ? 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
+    : 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
 
 export default function SettlementsPage() {
   const { companyId, companyName, myRole } = useOrg()
@@ -1086,11 +1087,12 @@ export default function SettlementsPage() {
     setSaving(true)
 
     try {
-      let postingResult: {
+      type SettlementPostingResult = {
         transaction_id?: string
         replayed?: boolean
         amount_base?: number
-      } | null = null
+      } | null
+      let postingResult: SettlementPostingResult = null
       if (settleMethod === 'cash') {
         const { data, error } = await supabase.rpc('post_cash_settlement', {
           p_company_id: companyId,
@@ -1102,7 +1104,7 @@ export default function SettlementsPage() {
           p_request_key: requestKey,
         })
         if (error) throw error
-        postingResult = (Array.isArray(data) ? data[0] : data) as typeof postingResult
+        postingResult = (Array.isArray(data) ? data[0] : data) as SettlementPostingResult
         if (postingResult?.replayed) {
           toast.success(tt('settlements.replaySaved', 'The earlier settlement was already posted. Its original result has been restored.'))
         }
@@ -1137,7 +1139,7 @@ export default function SettlementsPage() {
 
         setBankTransactionRefSupport(true)
         setBankRefsSupported(true)
-        postingResult = (Array.isArray(data) ? data[0] : data) as typeof postingResult
+        postingResult = (Array.isArray(data) ? data[0] : data) as SettlementPostingResult
         if (postingResult?.replayed) {
           toast.success(tt('settlements.replaySaved', 'The earlier settlement was already posted. Its original result has been restored.'))
         }
@@ -1762,24 +1764,19 @@ export default function SettlementsPage() {
   return (
     <div className="app-page app-page--workspace space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('settlements.eyebrow', 'Settlement workflow')}
-          </div>
-          <div>
+        <div>
             <h1 className="text-3xl font-bold tracking-tight">{tt('settlements.title', 'Receivables & Payables')}</h1>
             <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
               {tt('settlements.subtitle', 'Track receivables and payables from the current settlement truth. Orders remain temporary placeholders only until a sales invoice or vendor bill becomes the anchor.')}
             </p>
-          </div>
         </div>
 
-        <Badge variant="outline" className="w-fit px-3 py-1 text-xs">
+        <span className="w-fit text-sm text-muted-foreground">
           {companyName || tt('company.selectCompany', 'Select company')}
-        </Badge>
+        </span>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 sm:p-4">
+      <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
         <p className="font-medium">{tt('settlements.transitionTitle', 'Settlement anchor policy')}</p>
         <p className="mt-1 hidden leading-6 sm:block">
           {tt(
@@ -1790,21 +1787,21 @@ export default function SettlementsPage() {
       </div>
 
       {!canManageSettlement ? (
-        <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+        <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
           {tt('settlements.financeAuthorityNotice', 'Settlement history remains visible, but only finance-authority users can post settlement entries from this workspace.')}
         </div>
       ) : null}
 
       {lastSettlementResult ? (
         <section
-          className="rounded-[calc(var(--radius)+0.35rem)] border border-emerald-300/35 bg-emerald-300/5 p-4 sm:p-5"
+          className="border border-status-success-border bg-status-success-muted p-4 sm:p-5"
           role="status"
           aria-live="polite"
           tabIndex={-1}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="premium-label text-emerald-700 dark:text-emerald-300">
+              <div className="premium-label text-status-success-foreground">
                 {lastSettlementResult.activity.ledgerSide === 'AR'
                   ? tt('financeUx.receiptRecorded', 'Receipt recorded')
                   : tt('financeUx.paymentRecorded', 'Payment recorded')}
@@ -1864,12 +1861,9 @@ export default function SettlementsPage() {
       ) : null}
 
       <Tabs value={workspaceView} onValueChange={(value) => updateWorkspaceQuery({ view: value as FinanceWorkspaceView })} className="space-y-6">
-        <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.04] p-4 shadow-[0_28px_80px_-54px_rgba(0,0,0,0.52)]">
+        <div className="border-y border-border py-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
-                {tt('financeUx.workspaceEyebrow', 'Finance control workspace')}
-              </div>
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight">
                   {tt('financeUx.workspaceTitle', 'Exposure, settlement activity, and reconciliation')}
@@ -1897,55 +1891,29 @@ export default function SettlementsPage() {
         </div>
 
         <TabsContent value="exposure" className="mt-0 space-y-6">
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.pendingReceive', 'Pending to receive')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">
-              {loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : money(receiveTotal)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {stateViewsUnavailable
-                ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')
-                : tt('settlements.pendingReceiveHelp', '{count} receivable anchors are open across sales orders awaiting issue and issued sales invoices.', { count: rows.receive.length })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.pendingPay', 'Pending to pay')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">
-              {loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : money(payTotal)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {stateViewsUnavailable
-                ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')
-                : tt('settlements.pendingPayHelp', '{count} payable anchors are open across purchase orders awaiting booking and posted vendor bills.', { count: rows.pay.length })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('settlements.overdue', 'Overdue balances')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">
-              {loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : overdueCount}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {stateViewsUnavailable
-                ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.')
-                : tt('settlements.overdueHelp', 'Overdue rows are ranked using the due date of the active settlement anchor, whether that anchor is still an order or already a finance document.')}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <FinanceSummaryBand
+        label={tt('financeUx.exposureSummary', 'Exposure summary')}
+        items={[
+          {
+            label: tt('settlements.pendingReceive', 'Pending to receive'),
+            value: loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : money(receiveTotal),
+            detail: stateViewsUnavailable ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.') : tt('settlements.pendingReceiveHelp', '{count} receivable anchors are open across sales orders awaiting issue and issued sales invoices.', { count: rows.receive.length }),
+          },
+          {
+            label: tt('settlements.pendingPay', 'Pending to pay'),
+            value: loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : money(payTotal),
+            detail: stateViewsUnavailable ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.') : tt('settlements.pendingPayHelp', '{count} payable anchors are open across purchase orders awaiting booking and posted vendor bills.', { count: rows.pay.length }),
+          },
+          {
+            label: tt('settlements.overdue', 'Overdue balances'),
+            value: loading ? tt('common.loading', 'Loading...') : stateViewsUnavailable ? tt('common.unavailable', 'Unavailable') : overdueCount,
+            detail: stateViewsUnavailable ? tt('settlements.stateViewsUnavailable', 'Settlement evidence is unavailable. Refresh the page or contact support if the problem continues.') : tt('settlements.overdueHelp', 'Overdue rows are ranked using the due date of the active settlement anchor, whether that anchor is still an order or already a finance document.'),
+            tone: overdueCount > 0 && !loading && !stateViewsUnavailable ? 'warning' : 'neutral',
+          },
+        ]}
+      />
 
-      <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(0,0,0,0.45)]">
+      <Card className="border-border/80 shadow-none">
         <CardHeader className="pb-3">
           <CardTitle>{tt('settlements.filters', 'Filters')}</CardTitle>
           <CardDescription className="hidden sm:block">{tt('settlements.filtersHelp', 'Filter by counterparty, anchor type, workflow, anchor date, or due state without leaving the active company context.')}</CardDescription>
@@ -2098,11 +2066,11 @@ export default function SettlementsPage() {
                   <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                     <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div className="flex items-center justify-between gap-3 text-rose-700 dark:text-rose-300">
+                      <div className="flex items-center justify-between gap-3 text-status-danger-foreground">
                         <span>{tt('settlements.creditedAmount', 'Credited')}</span>
                         <span className="font-mono font-semibold tabular-nums">{money(filteredBridgeTotals.creditedBase)}</span>
                       </div>
-                      <div className="flex items-center justify-between gap-3 text-informational">
+                      <div className="flex items-center justify-between gap-3 text-status-info-foreground">
                         <span>{tt('settlements.debitedAmount', 'Debited')}</span>
                         <span className="font-mono font-semibold tabular-nums">{money(filteredBridgeTotals.debitedBase)}</span>
                       </div>
@@ -2172,11 +2140,11 @@ export default function SettlementsPage() {
                       <div className="min-w-[180px] rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3 text-xs">
                           <span className="text-muted-foreground">{tt('settlements.creditedAmount', 'Credited')}</span>
-                          <span className="font-mono tabular-nums text-rose-700 dark:text-rose-300">{money(row.creditedBase)}</span>
+                          <span className="font-mono tabular-nums text-status-danger-foreground">{money(row.creditedBase)}</span>
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-3 text-xs">
                           <span className="text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</span>
-                          <span className="font-mono tabular-nums text-informational">{money(row.debitedBase)}</span>
+                          <span className="font-mono tabular-nums text-status-info-foreground">{money(row.debitedBase)}</span>
                         </div>
                         <div className="mt-2 text-[11px] text-muted-foreground">
                           {isFinanceDocumentRow(row)
@@ -2209,13 +2177,13 @@ export default function SettlementsPage() {
                         {row.balanceLabel}
                       </span>
                     </td>
-                    <td className={`px-4 py-4 text-right font-mono tabular-nums ${row.agingDays > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-muted-foreground'}`}>
+                    <td className={`px-4 py-4 text-right font-mono tabular-nums ${row.agingDays > 0 ? 'text-status-danger-foreground' : 'text-muted-foreground'}`}>
                       {row.agingDays > 0 ? `${row.agingDays}d` : tt('common.dash', '-')}
                     </td>
                     <td className="px-4 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         {canManageSettlement ? (
-                          <Button size="sm" className="shadow-sm transition-transform duration-200 hover:-translate-y-0.5" onClick={() => openSettlement(row, 'settle')}>
+                          <Button size="sm" onClick={() => openSettlement(row, 'settle')}>
                             {settlementActionLabel(row.kind)}
                           </Button>
                         ) : null}
@@ -2537,7 +2505,7 @@ export default function SettlementsPage() {
             </Card>
           </div>
 
-          <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-48px_rgba(0,0,0,0.45)]">
+          <Card className="border-border/80 shadow-none">
             <CardHeader className="pb-3">
               <CardTitle>{tt('financeDocs.reconciliation.filters', 'Review filters')}</CardTitle>
               <CardDescription className="hidden sm:block">{tt('financeDocs.reconciliation.filtersHelp', 'Switch between AR and AP, then filter by counterparty, due position, review state, currency, or document date without leaving the active company.')}</CardDescription>
@@ -2652,7 +2620,7 @@ export default function SettlementsPage() {
           </Card>
 
           {reconciliationViewsUnavailable ? (
-            <Card className="border-amber-200 bg-amber-50/80 text-amber-900 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <Card className="border-status-warning-border bg-status-warning-muted text-status-warning-foreground shadow-none">
               <CardContent className="pt-6 text-sm">
                 {tt('financeDocs.reconciliation.viewsUnavailable', 'Reconciliation evidence is unavailable. No zero or all-clear result has been inferred. Refresh the page or contact support if the problem continues.')}
               </CardContent>
@@ -2676,7 +2644,7 @@ export default function SettlementsPage() {
                           key={`${row.anchor_id}:${row.exception_code}`}
                           type="button"
                           onClick={() => viewReconciliationAnchor(row.anchor_kind, row.anchor_id)}
-                          className="rounded-2xl border border-border/70 bg-background/95 p-4 text-left shadow-[0_18px_48px_-34px_rgba(0,0,0,0.45)] transition-transform duration-200 hover:-translate-y-0.5 hover:border-primary/30"
+                          className="rounded-xl border border-border/70 bg-background p-4 text-left hover:border-primary/30"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="font-semibold tracking-tight">{row.anchor_reference}</div>
@@ -2723,7 +2691,7 @@ export default function SettlementsPage() {
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-[0_16px_40px_-30px_rgba(0,0,0,0.45)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('settlements.adjustmentsAmount', 'Adjustments')}</div>
-                        <div className={`mt-2 font-mono text-lg font-semibold tabular-nums ${reviewTotals.netAdjustments < 0 ? 'text-rose-700 dark:text-rose-300' : reviewTotals.netAdjustments > 0 ? 'text-informational' : ''}`}>{money(reviewTotals.netAdjustments)}</div>
+                        <div className={`mt-2 font-mono text-lg font-semibold tabular-nums ${reviewTotals.netAdjustments < 0 ? 'text-status-danger-foreground' : reviewTotals.netAdjustments > 0 ? 'text-status-info-foreground' : ''}`}>{money(reviewTotals.netAdjustments)}</div>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/95 p-4 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.52)]">
                         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</div>
@@ -2791,13 +2759,13 @@ export default function SettlementsPage() {
                               <td className="px-4 py-4 whitespace-nowrap">{row.document_date || tt('common.dash', '-')}</td>
                               <td className="px-4 py-4 whitespace-nowrap">{row.due_date || tt('common.dash', '-')}</td>
                               <td className="px-4 py-4 text-right font-mono tabular-nums">{money(n(row.original_total_base))}</td>
-                              <td className={`px-4 py-4 text-right font-mono tabular-nums ${n(row.net_adjustment_base) < 0 ? 'text-rose-700 dark:text-rose-300' : n(row.net_adjustment_base) > 0 ? 'text-informational' : ''}`}>{money(n(row.net_adjustment_base))}</td>
+                              <td className={`px-4 py-4 text-right font-mono tabular-nums ${n(row.net_adjustment_base) < 0 ? 'text-status-danger-foreground' : n(row.net_adjustment_base) > 0 ? 'text-status-info-foreground' : ''}`}>{money(n(row.net_adjustment_base))}</td>
                               <td className="px-4 py-4 text-right font-mono tabular-nums font-semibold">{money(n(row.current_legal_total_base))}</td>
                               <td className="px-4 py-4 text-right font-mono tabular-nums">{money(n(row.settled_base))}</td>
                               <td className="px-4 py-4 text-right">
                                 <div className="font-mono tabular-nums font-semibold">{money(n(row.outstanding_base))}</div>
                                 {n(row.over_settled_base) > 0.005 ? (
-                                  <div className="mt-1 text-xs text-rose-700 dark:text-rose-300">
+                                  <div className="mt-1 text-xs text-status-danger-foreground">
                                     {tt('financeDocs.reconciliation.overSettledShort', 'Over-settled')}: <span className="font-mono tabular-nums">{money(n(row.over_settled_base))}</span>
                                   </div>
                                 ) : null}
@@ -2884,7 +2852,7 @@ export default function SettlementsPage() {
           <DialogBody className="pr-1">
             {activeRow && (
               <div className="space-y-4">
-                <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-5 shadow-[0_28px_80px_-52px_rgba(0,0,0,0.55)]">
+                <div className="border-y border-border py-5">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-3">
                       <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/75">
@@ -2935,14 +2903,14 @@ export default function SettlementsPage() {
                   <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(0,0,0,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.creditedAmount', 'Credited')}</CardTitle></CardHeader>
                     <CardContent>
-                      <div className="font-mono tabular-nums text-rose-700 dark:text-rose-300">{money(activeRow.creditedBase)}</div>
+                      <div className="font-mono tabular-nums text-status-danger-foreground">{money(activeRow.creditedBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.creditedHelp', 'Reductions from issued or posted credit notes')}</div>
                     </CardContent>
                   </Card>
                   <Card className="border-border/70 bg-background/90 shadow-[0_16px_40px_-32px_rgba(0,0,0,0.5)]">
                     <CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.debitedAmount', 'Debited')}</CardTitle></CardHeader>
                     <CardContent>
-                      <div className="font-mono tabular-nums text-informational">{money(activeRow.debitedBase)}</div>
+                      <div className="font-mono tabular-nums text-status-info-foreground">{money(activeRow.debitedBase)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{tt('settlements.debitedHelp', 'Increases from issued or posted debit notes')}</div>
                     </CardContent>
                   </Card>

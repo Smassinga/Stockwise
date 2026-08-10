@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import toast from 'react-hot-toast'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   Boxes,
@@ -18,7 +18,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import { buildConvGraph, convertQty, type ConvRow } from '../lib/uom'
@@ -38,6 +38,7 @@ import { ProductionPathGuide } from '../components/production/ProductionPathGuid
 import { ProductionExportDialog } from '../components/production/ProductionExportDialog'
 import { loadFinanceExportCompany } from '../lib/financeExportData'
 import { buildRecipeExportModel } from '../lib/productionExport'
+import { formatOperationalQuantity } from '../lib/operationalQuantity'
 
 type Item = {
   id: string
@@ -1259,9 +1260,6 @@ export default function BOMPage() {
         ? tt('bom.readiness.stockShort', 'Stock insufficient')
         : tt('bom.readiness.blocked', 'Needs setup')
 
-  const limitingComponentLabel = limitingComponent?.item?.name
-    || (limitingComponent ? tt('productionUx.itemUnavailable', 'Item unavailable') : tt('bom.summary.noLimiter', 'No limiting component yet'))
-
   const buildDestinationLabel = useMemo(() => {
     if (advanced && splits.length) return tt('bom.destination.multiple', 'Multiple destination bins')
     const warehouse = warehouses.find((row) => row.id === warehouseToId)
@@ -1345,15 +1343,12 @@ export default function BOMPage() {
           'bom.subtitlePhase3b',
           'Turn ingredients and components into finished stock with a clear recipe / BOM, source stock check, material-cost estimate, and existing assembly posting flow.',
         )}
-        badges={(
+        badges={view !== 'register' ? (
           <>
             <PremiumStatusBadge tone={readinessTone}>{readinessLabel}</PremiumStatusBadge>
-            <PremiumStatusBadge tone="info">
-              {companyId ? tt('bom.context.companyActive', 'Company workspace active') : tt('bom.context.noCompany', 'No company selected')}
-            </PremiumStatusBadge>
             {selectedBom ? <PremiumStatusBadge tone="neutral">{tt('bom.recipeVersion', 'Version')}: {selectedBom.version}</PremiumStatusBadge> : null}
           </>
-        )}
+        ) : null}
         actions={(
           <>
             {view !== 'register' ? (
@@ -1382,45 +1377,21 @@ export default function BOMPage() {
             ) : null}
           </>
         )}
-        metrics={view === 'register' ? (
-          <>
-            <PremiumMetricCard
-              label={tt('bom.summary.recipes', 'Active recipes')}
-              value={`${activeRecipeCount}/${boms.length}`}
-              description={tt('bom.summary.recipesHelp', 'Active recipe / BOM versions available for finished items.')}
-              icon={<Layers3 />}
-              tone="info"
-              variant="panel"
-            />
-            <PremiumMetricCard
-              label={tt('productionUx.recipe.inactiveVersions', 'Inactive versions')}
-              value={boms.length - activeRecipeCount}
-              description={tt('productionUx.recipe.inactiveHelp', 'Versions retained for controlled history and comparison.')}
-              icon={<Layers3 />}
-              tone="neutral"
-              variant="panel"
-            />
-            <PremiumMetricCard
-              label={tt('productionUx.recipe.finishedItems', 'Finished items with Recipes')}
-              value={new Set(boms.map((bom) => bom.product_id)).size}
-              description={tt('productionUx.recipe.finishedItemsHelp', 'Distinct finished items covered by maintained Recipe versions.')}
-              icon={<PackageCheck />}
-              tone="neutral"
-              variant="panel"
-            />
-            <PremiumMetricCard
-              label={tt('productionUx.recipe.needingReview', 'Recipes needing review')}
-              value={boms.filter((bom) => !bom.is_active || !componentCounts[bom.id]).length}
-              description={tt('productionUx.recipe.needingReviewHelp', 'Inactive versions or Recipes without components.')}
-              icon={<AlertTriangle />}
-              tone="warning"
-              variant="panel"
-            />
-          </>
-        ) : null}
       />
 
-      <ProductionPathGuide />
+      {view === 'register' ? (
+        <OperationalSummaryBand
+          label={tt('productionUx.recipe.summaryLabel', 'Recipe register summary')}
+          items={[
+            { label: tt('bom.summary.recipes', 'Active recipes'), value: `${activeRecipeCount}/${boms.length}`, tone: 'info' },
+            { label: tt('productionUx.recipe.inactiveVersions', 'Inactive versions'), value: boms.length - activeRecipeCount },
+            { label: tt('productionUx.recipe.finishedItems', 'Finished items with Recipes'), value: new Set(boms.map((bom) => bom.product_id)).size },
+            { label: tt('productionUx.recipe.needingReview', 'Recipes needing review'), value: boms.filter((bom) => !bom.is_active || !componentCounts[bom.id]).length, tone: 'warning' },
+          ]}
+        />
+      ) : null}
+
+      {view === 'register' ? <ProductionPathGuide /> : null}
 
       {loadError ? (
         <PremiumEmptyState
@@ -1462,7 +1433,7 @@ export default function BOMPage() {
           </div>
 
           {filteredRecipes.length ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="divide-y border-y border-card-border">
               {filteredRecipes.map((bom) => {
                 const product = itemById.get(bom.product_id)
                 const componentsForBom = componentCounts[bom.id] || 0
@@ -1479,8 +1450,8 @@ export default function BOMPage() {
                     })
                   : []
                 return (
-                  <article key={bom.id} className="rounded-md border border-card-border bg-card p-4">
-                    <div className="flex items-start justify-between gap-3">
+                  <article key={bom.id} className="grid gap-4 py-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)_auto] lg:items-center">
+                    <div className="flex min-w-0 items-start justify-between gap-3 lg:block">
                       <div className="min-w-0">
                         <p className="truncate text-sm text-muted-foreground">{product?.sku || tt('productionUx.noSku', 'No SKU')}</p>
                         <h3 className="mt-1 text-base font-semibold">{product?.name || tt('productionUx.finishedItem', 'Finished item')}</h3>
@@ -1490,7 +1461,7 @@ export default function BOMPage() {
                         {bom.is_active ? tt('common.active', 'Active') : tt('common.inactive', 'Inactive')}
                       </PremiumStatusBadge>
                     </div>
-                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <dt className="text-xs text-muted-foreground">{tt('productionUx.components', 'Components')}</dt>
                         <dd className="mt-1 font-medium">{componentsForBom}</dd>
@@ -1503,21 +1474,15 @@ export default function BOMPage() {
                             : tt('productionUx.timeNotConfigured', 'Not configured')}
                         </dd>
                       </div>
-                      <div className="col-span-2">
-                        <dt className="text-xs text-muted-foreground">{tt('productionUx.currentEstimatedCost', 'Current estimated material cost')}</dt>
-                        <dd className="mt-1 font-medium text-muted-foreground">
-                          {tt('productionUx.openToCalculate', 'Open the Recipe to calculate from current stock WAC')}
-                        </dd>
-                      </div>
                     </dl>
                     {warnings.length || componentsForBom === 0 ? (
-                      <p className="mt-3 text-xs text-amber-700 dark:text-amber-200">
+                      <p className="text-xs text-status-warning-foreground">
                         {componentsForBom === 0
                           ? tt('productionUx.recipe.noComponents', 'Add at least one component before assembly.')
                           : tt('productionUx.recipe.profileWarning', 'Review the finished-item profile before assembly.')}
                       </p>
                     ) : null}
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-card-border pt-3">
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
                       <Button size="sm" onClick={() => openRecipe(bom.id)}>
                         {tt('productionUx.viewRecipe', 'View Recipe')}
                       </Button>
@@ -1591,7 +1556,7 @@ export default function BOMPage() {
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.targetCurrentAvailability', 'Current availability')}</div>
                   <div className="mt-1 text-sm">
                     {profileFieldsSupported
-                      ? `${num(selectedProduct?.available_qty, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${uomById.get(selectedProduct?.base_uom_id || '')?.code || ''}`.trim()
+                      ? `${formatOperationalQuantity(num(selectedProduct?.available_qty, 0), lang === 'pt' ? 'pt-MZ' : 'en-MZ')} ${uomById.get(selectedProduct?.base_uom_id || '')?.code || ''}`.trim()
                       : tt('bom.targetAvailabilityPending', 'Available after item-profile migration')}
                   </div>
                 </div>
@@ -2102,7 +2067,7 @@ export default function BOMPage() {
 
               {/* Preview conversion */}
               {compItemId && addPreview && (
-                <div className={`md:col-span-6 text-xs ${addPreview.invalid ? 'text-red-600' : 'text-muted-foreground'}`}>
+                <div className={`md:col-span-6 text-xs ${addPreview.invalid ? 'text-status-danger-foreground' : 'text-muted-foreground'}`}>
                   {`Entered: ${addPreview.entered} ${(uomById.get(addPreview.enteredId)?.code || '').toUpperCase()} → Base: ${addPreview.base} ${(uomById.get(addPreview.baseId)?.code || '').toUpperCase()}`}
                   {addPreview.invalid ? ' (no conversion path)' : ''}
                 </div>
@@ -2424,11 +2389,11 @@ export default function BOMPage() {
                   <div
                     role="status"
                     aria-live="polite"
-                    className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-50"
+                    className="mt-4 rounded-xl border border-status-success-border bg-status-success-muted p-4 text-sm text-status-success-foreground"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex min-w-0 gap-3">
-                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />
+                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                         <div className="min-w-0">
                           <div className="font-medium">
                             {tt(
@@ -2443,7 +2408,7 @@ export default function BOMPage() {
                             })}
                           </p>
                           {buildSuccess.buildIds.length > 0 ? (
-                            <div className="mt-2 break-words text-xs text-emerald-800 dark:text-emerald-200">
+                            <div className="mt-2 break-words text-xs">
                               {tt(
                                 buildSuccess.buildIds.length > 1 ? 'bom.success.references' : 'bom.success.reference',
                                 buildSuccess.buildIds.length > 1 ? 'Build references: {refs}' : 'Build reference: {refs}',
@@ -2457,7 +2422,7 @@ export default function BOMPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="w-full shrink-0 text-emerald-950 hover:bg-emerald-100/80 sm:w-auto dark:text-emerald-50 dark:hover:bg-emerald-900/60"
+                        className="w-full shrink-0 sm:w-auto"
                         aria-label={tt('bom.success.dismissLabel', 'Dismiss assembly confirmation')}
                         onClick={() => setBuildSuccess(null)}
                       >
@@ -2496,7 +2461,7 @@ export default function BOMPage() {
                         <div className="flex flex-wrap gap-2">
                           {row.shortage > 0 ? (
                             <Badge variant="destructive">
-                              {tt('bom.sufficiency.shortage', 'Short by {qty}', { qty: row.shortage.toLocaleString(undefined, { maximumFractionDigits: 2 }) })}
+                              {tt('bom.sufficiency.shortage', 'Short by {qty}', { qty: formatOperationalQuantity(row.shortage, lang === 'pt' ? 'pt-MZ' : 'en-MZ') })}
                             </Badge>
                           ) : (
                             <Badge>{tt('bom.sufficiency.enough', 'Sufficient for current plan')}</Badge>
@@ -2507,15 +2472,15 @@ export default function BOMPage() {
                       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.required', 'Required')}</div>
-                          <div className="mt-1 text-sm">{row.required.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                          <div className="mt-1 text-sm">{formatOperationalQuantity(row.required, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div>
                         </div>
                         <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.available', 'Available')}</div>
-                          <div className="mt-1 text-sm">{row.available.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                          <div className="mt-1 text-sm">{formatOperationalQuantity(row.available, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div>
                         </div>
                         <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.onHand', 'On hand')}</div>
-                          <div className="mt-1 text-sm">{row.availableOnHand.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                          <div className="mt-1 text-sm">{formatOperationalQuantity(row.availableOnHand, lang === 'pt' ? 'pt-MZ' : 'en-MZ')}</div>
                         </div>
                         <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.cost.sourceUnitCost', 'Current stock cost')}</div>
@@ -2536,7 +2501,7 @@ export default function BOMPage() {
                         <div>
                           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tt('bom.sufficiency.maxBuildable', 'Buildable')}</div>
                           <div className="mt-1 text-sm">
-                            {row.maxBuildable != null ? row.maxBuildable.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                            {row.maxBuildable != null ? formatOperationalQuantity(row.maxBuildable, lang === 'pt' ? 'pt-MZ' : 'en-MZ') : '—'}
                           </div>
                         </div>
                       </div>

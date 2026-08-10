@@ -516,3 +516,18 @@ Authenticated pages use an open heading region by default. `PremiumPageHeader` a
 Shared table and mobile-register failures are error states, not empty states. Structural reads use the maintained skeleton architecture; an empty state appears only after a successful read with no applicable records. Global Search and Notifications use labelled controls, explicit loading/empty/error states, semantic status text plus icons, valid destinations, and row/divider composition instead of a card per result.
 
 The full route-by-route audit, safe fixes, and deferred domain inventory are maintained in [`docs/ui-ux/UX-10H-AUTHENTICATED-PRODUCT-AUDIT.md`](ui-ux/UX-10H-AUTHENTICATED-PRODUCT-AUDIT.md). Finance, settlement, production, Growth Batch, Service Job, Landed Cost, subscription, and access-control changes require their own domain-authority package; visual simplification must never erase authoritative state or posting evidence.
+
+## UX-11A finance documents and settlements
+
+Finance screens preserve professional information density while making the governing record and amount unambiguous.
+
+- Lead document detail with its real reference, counterparty context, lifecycle state, total, open or settled amount, and operational dates. Generic headings and decorative finance eyebrows do not replace document identity.
+- Draft invoices and vendor bills are preparation records. They must not be presented as issued or posted settlement anchors, overdue balances, or open receivables or payables. Settlement state begins only after the existing issue or post workflow establishes the finance document as the anchor.
+- Show one strong lifecycle treatment in the primary viewport. Repeat state only where it is required to interpret a distinct section or action; never use colour alone.
+- Preserve backend-authoritative currency, precision, totals, adjustments, settled amounts, and outstanding amounts. Presentation code must not recreate accounting calculations.
+- Align financial numbers with tabular numerals and keep critical references and amounts fully available on mobile. Registers may use tables on larger screens but need a deliberate compact mobile representation.
+- Use open summary bands, definition lists, rows, and dividers before adding metric cards. Complex audit evidence may retain containers where the boundary is meaningful.
+- Issue, post, settle, void, reverse, and delete actions retain governed authority and explain real consequences before completion. Output actions such as print and download remain secondary.
+- Structural document and register loading uses the shared skeleton contract. Empty and error states distinguish no records, filtered results, unavailable evidence, and insufficient access without inventing zero values.
+
+The implementation record and scoped QA evidence are maintained in [`docs/ui-ux/UX-11A-FINANCE-DOCUMENTS-SETTLEMENTS.md`](ui-ux/UX-11A-FINANCE-DOCUMENTS-SETTLEMENTS.md).

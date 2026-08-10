@@ -1,11 +1,8 @@
 import { supabase } from './supabase'
 import type { Locale } from './i18n'
+import { toOperatorSaleRpcLines, type OperatorSalePayloadLine } from './operatorSalePayload'
 
-export type OperatorSaleLineInput = {
-  itemId: string
-  qty: number
-  unitPrice?: number | null
-}
+export type OperatorSaleLineInput = OperatorSalePayloadLine
 
 export type OperatorSettlementMethod = 'cash' | 'bank'
 
@@ -152,11 +149,7 @@ export async function previewOperatorSale(input: {
     p_order_date: input.orderDate ?? new Date().toISOString().slice(0, 10),
     p_currency_code: input.currencyCode ?? 'MZN',
     p_fx_to_base: input.fxToBase ?? 1,
-    p_lines: input.lines.map((line) => ({
-      item_id: line.itemId,
-      qty: line.qty,
-      unit_price: line.unitPrice ?? null,
-    })),
+    p_lines: toOperatorSaleRpcLines(input.lines),
     p_settlement_method: settlementMethod,
     p_bank_account_id: settlementMethod === 'bank' ? input.bankAccountId ?? null : null,
   })
@@ -189,11 +182,7 @@ export async function createOperatorSaleIssue(input: {
     p_fx_to_base: input.fxToBase ?? 1,
     p_reference_no: input.referenceNo ?? null,
     p_notes: input.notes ?? null,
-    p_lines: input.lines.map((line) => ({
-      item_id: line.itemId,
-      qty: line.qty,
-      unit_price: line.unitPrice ?? null,
-    })),
+    p_lines: toOperatorSaleRpcLines(input.lines),
     p_settlement_method: settlementMethod,
     p_bank_account_id: settlementMethod === 'bank' ? input.bankAccountId ?? null : null,
     p_request_key: input.requestKey,

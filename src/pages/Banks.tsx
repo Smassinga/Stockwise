@@ -21,6 +21,7 @@ import {
   SheetTrigger,
 } from '../components/ui/sheet'
 import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
+import { FinanceSummaryBand } from '../components/finance/FinanceSummaryBand'
 
 type BankAccount = {
   id: string
@@ -218,12 +219,9 @@ export default function Banks() {
 
   return (
     <div className="app-page app-page--workspace space-y-6 overflow-x-hidden">
-      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-4 shadow-[0_30px_80px_-56px_rgba(0,0,0,0.48)] sm:p-6">
+      <header className="border-b border-border/70 pb-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2">
-            <div className="text-xs font-medium uppercase tracking-[0.22em] text-primary/75">
-              {tf('banks.eyebrow', 'Finance setup')}
-            </div>
+          <div>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight">
                 {tf('banks.title', 'Bank accounts')}
@@ -238,9 +236,9 @@ export default function Banks() {
           </div>
 
           <div className="flex w-full flex-col items-start gap-3 sm:w-auto lg:items-end">
-            <Badge variant="outline" className="px-3 py-1 text-xs">
+            <span className="text-sm text-muted-foreground">
               {companyName || tf('company.selectCompany', 'Select company')}
-            </Badge>
+            </span>
             <Sheet open={openAdd} onOpenChange={setOpenAdd}>
               <SheetTrigger asChild>
                 <Button className="w-full sm:w-auto" disabled={!canManageBanks}>+ {tf('banks.new', 'New bank account')}</Button>
@@ -336,59 +334,35 @@ export default function Banks() {
             </Sheet>
           </div>
         </div>
-      </div>
+      </header>
 
       {!canManageBanks ? (
-        <div className="rounded-2xl border border-informational/25 bg-informational/8 px-4 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+        <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
           {tf('banks.readOnly', 'Read-only: only users with bank-account management authority can add or update company bank accounts.')}
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tf('banks.summary.accounts', 'Bank accounts')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">
-              {accountsLoading
-                ? tf('common.loading', 'Loading...')
-                : accountsError
-                  ? tf('common.unavailable', 'Unavailable')
-                  : rows.length}
-            </div>
-            <div className="text-xs text-muted-foreground">{tf('banks.summary.accountsHelp', 'Live bank settlement and statement accounts configured for this company.')}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tf('banks.summary.balance', 'Combined bank position')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">
-              {balancesLoading
-                ? tf('common.loading', 'Loading...')
-                : balancesError || totalBalance === null
-                  ? tf('common.unavailable', 'Unavailable')
-                  : formatMoneyBase(totalBalance, baseCurrency)}
-            </div>
-            <div className="text-xs text-muted-foreground">{tf('banks.summary.balanceHelp', 'Current book balance across every configured bank account in base currency.')}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tf('banks.summary.currencies', 'Currencies covered')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {currencies.length > 0 ? currencies.map((code) => (
-                <Badge key={code} variant="secondary">{code}</Badge>
-              )) : <span className="text-sm text-muted-foreground">{baseCurrency}</span>}
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">{tf('banks.summary.currenciesHelp', 'Use separate accounts when settlement or statement reconciliation needs distinct bank currencies.')}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <FinanceSummaryBand
+        label={tf('financeUx.bankPosition', 'Bank position')}
+        items={[
+          {
+            label: tf('banks.summary.accounts', 'Bank accounts'),
+            value: accountsLoading ? tf('common.loading', 'Loading...') : accountsError ? tf('common.unavailable', 'Unavailable') : rows.length,
+            detail: tf('banks.summary.accountsHelp', 'Live bank settlement and statement accounts configured for this company.'),
+          },
+          {
+            label: tf('banks.summary.balance', 'Combined bank position'),
+            value: balancesLoading ? tf('common.loading', 'Loading...') : balancesError || totalBalance === null ? tf('common.unavailable', 'Unavailable') : formatMoneyBase(totalBalance, baseCurrency),
+            detail: tf('banks.summary.balanceHelp', 'Current book balance across every configured bank account in base currency.'),
+            tone: 'info',
+          },
+          {
+            label: tf('banks.summary.currencies', 'Currencies covered'),
+            value: currencies.length > 0 ? currencies.join(' · ') : baseCurrency,
+            detail: tf('banks.summary.currenciesHelp', 'Use separate accounts when settlement or statement reconciliation needs distinct bank currencies.'),
+          },
+        ]}
+      />
 
       {accountsError ? (
         <PremiumStatePanel
@@ -432,7 +406,7 @@ export default function Banks() {
               {rows.map((row) => (
                 <Card
                   key={row.id}
-                  className="border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.03] shadow-[0_24px_70px_-56px_rgba(0,0,0,0.48)] transition-transform duration-200 hover:-translate-y-0.5"
+                  className="border-border/70 shadow-none"
                 >
                   <CardHeader className="space-y-3 pb-3">
                     <div className="flex items-start justify-between gap-3">

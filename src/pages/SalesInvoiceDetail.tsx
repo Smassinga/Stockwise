@@ -16,6 +16,7 @@ import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { ReceiptActions } from '../components/receipts/ReceiptActions'
 import { CollectionsControlPanel } from '../components/collections/CollectionsControlPanel'
 import { useOrg } from '../hooks/useOrg'
@@ -39,7 +40,6 @@ import {
   type FinanceTimelineEntry,
 } from '../lib/financeAudit'
 import {
-  financeDocumentApprovalLabelKey,
   salesInvoiceAdjustmentLabelKey,
   salesInvoiceResolutionLabelKey,
   type SalesInvoiceStateRow,
@@ -103,44 +103,21 @@ import {
   downloadSalesInvoicePdf,
   printFinanceDocument,
   printSalesInvoiceDocument,
-  shareFinanceDocument,
   shareSalesInvoiceDocument,
   type OutputBankAccountInput,
 } from '../lib/financeDocumentOutput'
 import { formatOutputDate, getOutputCopy } from '../lib/financeDocumentOutputLanguage'
 
-function workflowTone(status: SalesInvoiceDocumentRow['document_workflow_status']) {
-  switch (status) {
-    case 'issued':
-      return 'default'
-    case 'voided':
-      return 'destructive'
-    default:
-      return 'secondary'
-  }
-}
-
-function approvalTone(status: SalesInvoiceDocumentRow['approval_status']) {
-  switch (status) {
-    case 'approved':
-      return 'default'
-    case 'pending_approval':
-      return 'secondary'
-    default:
-      return 'outline'
-  }
-}
-
 function reviewTone(status?: FinanceReviewState | null) {
   switch (status) {
     case 'exception':
-      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+      return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
     case 'overdue':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+      return 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
     case 'attention':
-      return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
+      return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
     case 'resolved':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+      return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
     default:
       return 'border-border/70 bg-muted/30 text-muted-foreground'
   }
@@ -636,10 +613,6 @@ export default function SalesInvoiceDetailPage() {
   const adjustmentStatusLabel = invoiceState?.adjustment_status
     ? tt(salesInvoiceAdjustmentLabelKey(invoiceState.adjustment_status), invoiceState.adjustment_status)
     : tt('financeDocs.adjustments.none', 'No adjustments')
-  const approvalStatusLabel = tt(
-    financeDocumentApprovalLabelKey(approvalStatus),
-    approvalStatus,
-  )
   const reconciliationDuePositionLabel = (position?: FinanceReconciliationRow['due_position'] | null) => {
     switch (position) {
       case 'resolved':
@@ -1281,14 +1254,23 @@ export default function SalesInvoiceDetailPage() {
       id: `invoice:${invoice.id}`,
       eyebrow: tt('financeDocs.salesInvoices.title', 'Sales Invoices'),
       title: invoice.internal_reference,
-      description: tt('financeDocs.audit.invoiceChainHelp', 'This issued invoice is the active AR anchor for settlements, reminders, credits, debits, and residual exposure.'),
-      status: resolutionStatusLabel,
-      metrics: [
-        { label: tt('financeDocs.mz.originalAmount', 'Original total'), value: money(invoiceState?.total_amount_base || invoice.total_amount_mzn, 'MZN') },
-        { label: tt('financeDocs.mz.currentLegalTotal', 'Current legal'), value: money(invoiceState?.current_legal_total_base || 0, 'MZN') },
-        { label: tt('settlements.settledAmount', 'Settled'), value: money(invoiceState?.settled_base || 0, 'MZN') },
-        { label: tt('settlements.outstandingAmount', 'Outstanding'), value: money(invoiceState?.outstanding_base || 0, 'MZN') },
-      ],
+      description: invoice.document_workflow_status === 'issued'
+        ? tt('financeDocs.audit.invoiceChainHelp', 'This issued invoice is the active AR anchor for settlements, reminders, credits, debits, and residual exposure.')
+        : tt('financeDocs.audit.invoiceDraftChainHelp', 'This draft is preparation evidence. The linked sales order remains the active operational anchor until issue.'),
+      status: invoice.document_workflow_status === 'issued'
+        ? resolutionStatusLabel
+        : tt('financeDocs.workflow.draft', 'Draft'),
+      metrics: invoice.document_workflow_status === 'issued'
+        ? [
+            { label: tt('financeDocs.mz.originalAmount', 'Original total'), value: money(invoiceState?.total_amount_base || invoice.total_amount_mzn, 'MZN') },
+            { label: tt('financeDocs.mz.currentLegalTotal', 'Current legal'), value: money(invoiceState?.current_legal_total_base || 0, 'MZN') },
+            { label: tt('settlements.settledAmount', 'Settled'), value: money(invoiceState?.settled_base || 0, 'MZN') },
+            { label: tt('settlements.outstandingAmount', 'Outstanding'), value: money(invoiceState?.outstanding_base || 0, 'MZN') },
+          ]
+        : [
+            { label: tt('financeDocs.mz.documentTotal', 'Draft total'), value: money(mznPreview?.total || invoice.total_amount_mzn, 'MZN') },
+            { label: tt('orders.anchorStatus', 'Active anchor'), value: tt('financeDocs.audit.salesOrderAnchor', 'Sales order until issue') },
+          ],
     })
 
     creditNotes.forEach((note) => {
@@ -1324,7 +1306,7 @@ export default function SalesInvoiceDetailPage() {
     })
 
     return items
-  }, [creditNotes, debitNotes, invoice, invoiceState, lang, money, orderLink, resolutionStatusLabel, tt])
+  }, [creditNotes, debitNotes, invoice, invoiceState, lang, money, mznPreview?.total, orderLink, resolutionStatusLabel, tt])
 
   function resolutionTone(status?: SalesInvoiceStateRow['resolution_status'] | null) {
     switch (status) {
@@ -1440,6 +1422,11 @@ export default function SalesInvoiceDetailPage() {
       toast.error(tt('financeDocs.mz.vatExemptionReasonRequired', 'A VAT exemption reason is required for exempt lines.'))
       return
     }
+    if (!window.confirm(tt(
+      'financeDocs.mz.confirmIssue',
+      'Issue invoice {reference}? Once issued, it becomes immutable legal evidence and the active receivable settlement anchor.',
+      { reference: invoice.internal_reference },
+    ))) return
     try {
       setIssuing(true)
       if (canEditDraft) {
@@ -1455,7 +1442,7 @@ export default function SalesInvoiceDetailPage() {
       const nextIssueReadiness = await getSalesInvoiceIssueReadiness(invoice.id)
       setIssueReadiness(nextIssueReadiness)
       if (!nextIssueReadiness.can_issue) {
-        const readinessMessages = nextIssueReadiness.blockers.map((code) => describeIssueBlocker(code))
+        const readinessMessages = nextIssueReadiness.blockers.map((code: string) => describeIssueBlocker(code))
         /*
           switch (code) {
             case 'sales_invoice_issue_requires_approved_status':
@@ -1726,17 +1713,6 @@ export default function SalesInvoiceDetailPage() {
     }
   }
 
-  async function handleShareAdjustment(model: ReturnType<typeof buildSalesCreditNoteOutputModel> | ReturnType<typeof buildSalesDebitNoteOutputModel>) {
-    try {
-      await shareFinanceDocument(model)
-    } catch (error: any) {
-      reportRuntimeError('shareAdjustment', error, {
-        internalReference: model.legalReference,
-      })
-      toast.error(error?.message || tt('financeDocs.mz.shareFailed', 'Sharing is not available for this invoice on the current device'))
-    }
-  }
-
   async function openArtifact(artifact: FiscalDocumentArtifactRow) {
     if (!artifact.storage_bucket || !artifact.storage_path) {
       toast.error(tt('financeDocs.mz.archiveNotReady', 'This archive entry has no retrievable storage file yet'))
@@ -1779,7 +1755,7 @@ export default function SalesInvoiceDetailPage() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+        <PremiumSkeleton variant="detail" rows={4} label={tt('loading', 'Loading invoice')} />
       ) : !invoice ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
@@ -1790,10 +1766,7 @@ export default function SalesInvoiceDetailPage() {
         <>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-                {tt('financeDocs.eyebrow', 'Finance documents')}
-              </div>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{invoice.internal_reference}</h1>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{invoice.internal_reference}</h1>
               <p className="mt-2 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                 {isIssued
                   ? tt('financeDocs.mz.issuedHelper', 'Issued invoices are immutable. Corrections must be issued as credit notes or debit notes.')
@@ -1806,12 +1779,6 @@ export default function SalesInvoiceDetailPage() {
             </div>
 
             <div className="mobile-primary-actions">
-              <Badge variant={workflowTone(invoice.document_workflow_status)}>
-                {invoice.document_workflow_status.toUpperCase()}
-              </Badge>
-              <Badge variant={approvalTone(approvalStatus)}>
-                {approvalStatusLabel}
-              </Badge>
               {outputModel ? (
                 <>
                   <Button variant="outline" onClick={() => void handlePrint()}>
@@ -1854,22 +1821,24 @@ export default function SalesInvoiceDetailPage() {
                 id: 'anchor',
                 eyebrowKey: 'commercial.lifecycle.activeAnchor',
                 eyebrowFallback: 'Active anchor',
-                labelKey: 'commercial.lifecycle.salesInvoiceAnchor',
+                labelKey: isIssued ? 'commercial.lifecycle.salesInvoiceAnchor' : 'commercial.lifecycle.salesOrderAnchor',
                 fallback: isIssued ? 'Sales Invoice' : 'Sales Order until issue',
                 tone: isIssued ? 'positive' : 'neutral',
-                descriptionKey: 'commercial.lifecycle.salesAnchorHelp',
-                descriptionFallback: 'Issue transfers the collectible balance to this invoice.',
+                descriptionKey: isIssued ? 'commercial.lifecycle.salesAnchorHelp' : 'commercial.lifecycle.salesOrderAnchorHelp',
+                descriptionFallback: isIssued
+                  ? 'Issue transfers the collectible balance to this invoice.'
+                  : 'The linked sales order remains the active operational anchor until issue.',
               },
               {
                 id: 'settlement',
                 eyebrowKey: 'commercial.lifecycle.settlement',
                 eyebrowFallback: 'Settlement',
-                ...(invoiceState
+                ...(isIssued && invoiceState
                   ? settlementPresentation(invoiceState.settlement_status)
                   : {
-                      labelKey: 'commercial.statusUnavailable',
-                      fallback: 'Status unavailable',
-                      tone: 'warning' as const,
+                      labelKey: 'commercial.settlementAfterIssue',
+                      fallback: 'Available after issue',
+                      tone: 'neutral' as const,
                     }),
                 descriptionKey: 'commercial.lifecycle.settlementHelp',
                 descriptionFallback: 'Collections follow the currently active financial anchor.',
@@ -2063,9 +2032,9 @@ export default function SalesInvoiceDetailPage() {
 
                 {isDraft && issueReadiness ? (
                   <div>
-                    <div className={`rounded-2xl border px-4 py-4 shadow-sm transition-shadow ${issueReadinessReady ? 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20' : 'border-amber-200/80 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/20'}`}>
+                    <div className={`rounded-xl border px-4 py-4 ${issueReadinessReady ? 'border-status-success-border bg-status-success-muted' : 'border-status-warning-border bg-status-warning-muted'}`}>
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 rounded-full p-2 ${issueReadinessReady ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}`}>
+                        <div className={`mt-0.5 rounded-md p-2 ${issueReadinessReady ? 'bg-status-success-muted text-status-success-foreground' : 'bg-status-warning-muted text-status-warning-foreground'}`}>
                           <AlertTriangle className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1 space-y-2">
@@ -2085,7 +2054,7 @@ export default function SalesInvoiceDetailPage() {
                           {!issueReadinessReady ? (
                             <div className="space-y-2">
                               {issueReadinessMessages.map((message, index) => (
-                                <div key={`${message}:${index}`} className="rounded-xl border border-amber-200/70 bg-background/70 px-3 py-2 text-sm text-foreground/90">
+                                <div key={`${message}:${index}`} className="rounded-lg border border-status-warning-border bg-background/70 px-3 py-2 text-sm text-foreground/90">
                                   {message}
                                 </div>
                               ))}
@@ -2107,14 +2076,6 @@ export default function SalesInvoiceDetailPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant={workflowTone(invoice.document_workflow_status)}>
-                    {invoice.document_workflow_status.toUpperCase()}
-                  </Badge>
-                  <Badge variant={approvalTone(approvalStatus)}>
-                    {approvalStatusLabel}
-                  </Badge>
-                </div>
                 <div className="flex items-center justify-between gap-3">
                   <span>{documentCopy.totals.subtotal}</span>
                   <span className="font-mono tabular-nums">{money(invoice.subtotal, invoice.currency_code)}</span>
@@ -2161,6 +2122,12 @@ export default function SalesInvoiceDetailPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {!isIssued ? (
+                  <div className="border-l-2 border-status-neutral-border bg-status-neutral-muted px-4 py-3 text-sm text-status-neutral-foreground">
+                    {tt('financeDocs.mz.settlementAfterIssue', 'Settlement begins after this draft is issued. Until then, the linked sales order remains the active operational anchor.')}
+                  </div>
+                ) : (
+                  <>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant={resolutionTone(invoiceState?.resolution_status)}>{resolutionStatusLabel}</Badge>
                   <Badge variant={invoiceState?.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
@@ -2251,6 +2218,8 @@ export default function SalesInvoiceDetailPage() {
                       ? tt('financeDocs.mz.invoiceResolvedPartiallyCredited', 'This invoice has already been partially credited. The remaining balance reflects receipts and issued credit notes together.')
                       : tt('financeDocs.mz.invoiceResolvedOpen', 'Outstanding exposure now belongs to this invoice, not to the linked sales order.')}
                 </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -2355,7 +2324,7 @@ export default function SalesInvoiceDetailPage() {
                       {reconciliationExceptions.map((exception) => (
                         <div key={`${exception.anchor_id}:${exception.exception_code}`} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exception.severity === 'critical' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'}`}>
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exception.severity === 'critical' ? 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground' : 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'}`}>
                               {exception.severity === 'critical' ? tt('financeDocs.reconciliation.severityCritical', 'Critical') : tt('financeDocs.reconciliation.severityWarning', 'Warning')}
                             </span>
                             <Badge variant="outline">{reconciliationExceptionGroupLabel(exception.exception_group)}</Badge>
@@ -2378,7 +2347,9 @@ export default function SalesInvoiceDetailPage() {
 
           <FinanceChainCard
             title={tt('financeDocs.audit.chainTitle', 'Document chain')}
-            description={tt('financeDocs.audit.chainHelp', 'See the operational source, the active legal invoice, and every linked credit, debit, and settlement-sensitive adjustment in the same AR chain.')}
+            description={isIssued
+              ? tt('financeDocs.audit.chainHelp', 'See the operational source, the active legal invoice, and every linked credit, debit, and settlement-sensitive adjustment in the same AR chain.')
+              : tt('financeDocs.audit.draftChainHelp', 'The draft remains linked to its operational source. Settlement and legal adjustment evidence begins only after issue.')}
             items={chainItems}
           />
 
@@ -2445,7 +2416,7 @@ export default function SalesInvoiceDetailPage() {
                     {tt('financeDocs.mz.issueCreditNote', 'Issue credit note')}
                   </Button>
                 ) : (
-                  <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
                     {!canIssueSalesAdjustments
                       ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
                       : invoiceState?.credit_status === 'fully_credited'
@@ -2454,7 +2425,7 @@ export default function SalesInvoiceDetailPage() {
                   </div>
                 )
               ) : (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   {tt('financeDocs.mz.creditNotesIssueOnly', 'Credit notes can only be created from issued invoices.')}
                 </div>
               )}
@@ -2566,12 +2537,12 @@ export default function SalesInvoiceDetailPage() {
                     {tt('financeDocs.mz.issueDebitNote', 'Issue debit note')}
                   </Button>
                 ) : (
-                  <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
                     {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
                   </div>
                 )
               ) : (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   {tt('financeDocs.mz.debitNotesIssueOnly', 'Debit notes can only be created from issued invoices.')}
                 </div>
               )}

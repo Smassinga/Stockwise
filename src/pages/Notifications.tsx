@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
-import { notificationPresentation } from '../lib/notificationPresentation'
+import { notificationPresentation, safeNotificationActionUrl } from '../lib/notificationPresentation'
 import { supabase } from '../lib/supabase'
 
 type Row = {
@@ -210,7 +210,7 @@ export default function NotificationsPage() {
         <section aria-label={copy.title} className="divide-y divide-border border-y border-border">
           {visible.map((row) => {
             const presentation = notificationPresentation(row, lang)
-            const action = row.action_url || row.url
+            const action = safeNotificationActionUrl(row.action_url || row.url)
             const tone = severityTone(row.severity)
             return (
               <article key={row.id} className="flex flex-col gap-4 py-5 sm:flex-row sm:items-start sm:justify-between">

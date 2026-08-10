@@ -6,7 +6,6 @@ import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -27,7 +26,6 @@ import {
 import { AlertTriangle, FileUp, Warehouse as WarehouseIcon, Plus, Search, Edit, Trash2, MapPin, Package } from 'lucide-react'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useIsMobile } from '../hooks/use-mobile'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
@@ -429,15 +427,7 @@ export function Warehouses() {
   return (
     <div className="app-page app-page--workspace space-y-6 w-full max-w-full overflow-x-hidden">
       <PremiumRegisterHeader
-        eyebrow={tt('warehouses.eyebrow', 'Inventory locations')}
         title={t('nav.warehouses')}
-        description={tt('warehouses.workspaceDescription', 'Maintain company warehouses and bin locations while preserving stock-history safeguards.')}
-        badges={
-          <>
-            <PremiumStatusBadge tone="neutral">{tt('warehouses.companyScoped', 'Company scoped')}</PremiumStatusBadge>
-            <PremiumStatusBadge tone={canManage ? 'positive' : 'neutral'}>{canManage ? tt('warehouses.manageAccess', 'Manager access') : tt('warehouses.readOnlyBadge', 'Read-only')}</PremiumStatusBadge>
-          </>
-        }
       />
       <div className="flex flex-wrap justify-end gap-2">
           <Dialog
@@ -574,12 +564,14 @@ export function Warehouses() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <PremiumMetricCard label={tt('warehouses.summary.total', 'Warehouses')} value={summary.total} description={tt('warehouses.summary.totalHelp', 'Configured locations in this company.')} icon={<WarehouseIcon />} />
-        <PremiumMetricCard label={tt('warehouses.summary.active', 'Active')} value={summary.active} description={tt('warehouses.summary.activeHelp', 'Ready for receiving, picking, and transfers.')} icon={<WarehouseIcon />} tone="positive" />
-        <PremiumMetricCard label={tt('warehouses.summary.inactive', 'Inactive')} value={summary.inactive} description={tt('warehouses.summary.inactiveHelp', 'Kept for history but not currently active.')} icon={<WarehouseIcon />} tone="neutral" />
-        <PremiumMetricCard label={tt('warehouses.summary.bins', 'Bins')} value={binLoadFailed ? tt('common.unavailable', 'Unavailable') : summary.bins} description={binLoadFailed ? tt('warehouses.summary.binsUnverified', 'Bin data could not be verified; this is not a confirmed zero.') : tt('warehouses.summary.binsHelp', 'Storage locations distributed across warehouses.')} icon={<Package />} tone={binLoadFailed ? 'warning' : 'info'} />
-      </div>
+      <section aria-label={tt('warehouses.summary.label', 'Warehouse summary')} className="border-y border-border">
+        <dl className="grid grid-cols-2 sm:grid-cols-4">
+          <div className="border-b border-border py-3 sm:border-b-0"><dt className="text-xs text-muted-foreground">{tt('warehouses.summary.total', 'Warehouses')}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{summary.total}</dd></div>
+          <div className="border-b border-l border-border py-3 pl-4 sm:border-b-0"><dt className="text-xs text-muted-foreground">{tt('warehouses.summary.active', 'Active')}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{summary.active}</dd></div>
+          <div className="py-3 sm:border-l sm:border-border sm:pl-4"><dt className="text-xs text-muted-foreground">{tt('warehouses.summary.inactive', 'Inactive')}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{summary.inactive}</dd></div>
+          <div className="border-l border-border py-3 pl-4"><dt className="text-xs text-muted-foreground">{tt('warehouses.summary.bins', 'Bins')}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{binLoadFailed ? tt('common.unavailable', 'Unavailable') : summary.bins}</dd></div>
+        </dl>
+      </section>
 
       {binLoadFailed ? (
         <PremiumStatePanel
@@ -620,26 +612,15 @@ export function Warehouses() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <WarehouseIcon className="w-5 h-5" />
-            <span>{t('nav.warehouses')} ({filtered.length})</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <section aria-label={t('nav.warehouses')}>
           {filtered.length > 0 ? (
-            <div className="space-y-4">
+            <div className="divide-y divide-border border-y border-border">
               {filtered.map(wh => {
                 const wBins = binsFor(wh.id)
                 return (
-                  <div key={wh.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                  <article key={wh.id} className="py-4">
                     <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <WarehouseIcon className="w-6 h-6 text-primary" />
-                        </div>
-                        <div>
+                      <div className="min-w-0">
                           <h3 className="font-medium">{wh.name}</h3>
                           <p className="text-sm text-muted-foreground">{t('users.code') ?? 'Code'}: {wh.code}</p>
                           {wh.address && (
@@ -648,7 +629,6 @@ export function Warehouses() {
                               {wh.address}
                             </p>
                           )}
-                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-4">
@@ -756,7 +736,7 @@ export function Warehouses() {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </article>
                 )
               })}
             </div>
@@ -777,8 +757,7 @@ export function Warehouses() {
               </Dialog>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </section>
     </div>
   )
 }

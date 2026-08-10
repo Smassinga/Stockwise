@@ -7,11 +7,13 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
 import { downloadImportTemplate, readImportWorkbook, type ParsedImportRow } from '../lib/importWorkbook'
 import { profileFromRole, type ItemPrimaryRole } from '../lib/itemProfiles'
+import { toOpeningStockPostingRow, type OpeningStockPostingRow } from '../lib/openingStockImport'
 import { can } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
 import {
@@ -21,6 +23,8 @@ import {
   type PostingRequestKeyRef,
 } from '../lib/postingRequestKeys'
 import { buildConvGraph, normalizeUomCodeInput, tryConvertQty } from '../lib/uom'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
 
 type DatasetKey = 'items' | 'customers' | 'suppliers' | 'locations' | 'opening_stock'
 
@@ -105,17 +109,7 @@ type LocationPayload = {
   }>
 }
 
-type OpeningStockPayload = {
-  item_id: string
-  uom_id: string
-  qty: number
-  qty_base: number
-  unit_cost: number
-  total_value: number
-  warehouse_to_id: string
-  bin_to_id: string
-  notes: string | null
-}
+type OpeningStockPayload = OpeningStockPostingRow
 
 const DATASETS: DatasetDefinition[] = [
   {
@@ -274,10 +268,6 @@ const copyByLang = {
 function normalizeBoolean(value: string) {
   const normalized = value.trim().toLowerCase()
   return ['1', 'true', 'yes', 'sim', 'y'].includes(normalized)
-}
-
-function round2(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 function toNumber(value: string, fallback = 0) {
@@ -662,17 +652,16 @@ export default function OpeningImport() {
           }
 
           if (!issues.some((issue) => issue.row === rowNo) && item && enteredUom && bin && qtyBase != null) {
-            payload.push({
-              item_id: item.id,
-              uom_id: enteredUom.id,
-              qty,
-              qty_base: round2(qtyBase),
-              unit_cost: unitCost,
-              total_value: round2(qtyBase * unitCost),
-              warehouse_to_id: warehouse!.id,
-              bin_to_id: bin.id,
+            payload.push(toOpeningStockPostingRow({
+              itemId: item.id,
+              uomId: enteredUom.id,
+              quantity: qty,
+              baseQuantity: qtyBase,
+              unitCost,
+              warehouseId: warehouse!.id,
+              binId: bin.id,
               notes: row.notes?.trim() || copy.openingStockNote,
-            })
+            }))
           }
         })
 
@@ -816,32 +805,28 @@ export default function OpeningImport() {
 
   return (
     <div className="app-page app-page--workspace">
-      <Card className="overflow-hidden border-border/70 bg-card/96 shadow-none">
-        <CardHeader className="space-y-4">
-          <div className="screen-intro max-w-4xl">
-            <h1>{copy.title}</h1>
-            <p>{copy.subtitle}</p>
-          </div>
-          {!canImport ? (
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="border-status-warning-border bg-status-warning-muted text-status-warning-foreground">
-                {copy.permissions}
-              </Badge>
-            </div>
-          ) : null}
+      <PremiumPageHeader
+        title={copy.title}
+        description={copy.subtitle}
+        context={!canImport ? (
+          <Badge variant="outline" className="border-status-warning-border bg-status-warning-muted text-status-warning-foreground">
+            {copy.permissions}
+          </Badge>
+        ) : undefined}
+        actions={
           <Button asChild variant="outline" className="w-full sm:w-fit">
             <Link to="/settings?view=setup">
               <ArrowLeft className="mr-2 h-4 w-4" />
               {copy.returnToSetup}
             </Link>
           </Button>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       {importResult ? (
-        <div role="status" aria-live="polite" className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4">
+        <div role="status" aria-live="polite" className="rounded-[var(--radius)] border border-status-success-border bg-status-success-muted p-4 text-status-success-foreground">
           <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
               <div className="font-semibold">{copy.resultTitle}</div>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -880,8 +865,10 @@ export default function OpeningImport() {
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                     {copy.downloadTemplate}
                   </Button>
-                  <div className="relative">
+                  <div className="space-y-2">
+                    <Label htmlFor={`opening-import-file-${dataset.key}`}>{copy.fileHint}</Label>
                     <Input
+                      id={`opening-import-file-${dataset.key}`}
                       type="file"
                       accept=".csv,.xlsx,.xls"
                       onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
@@ -891,39 +878,19 @@ export default function OpeningImport() {
                   </div>
                   {fileName ? <Badge variant="secondary">{fileName}</Badge> : null}
                 </div>
-                <div className="hidden text-sm text-muted-foreground sm:block">{copy.fileHint}</div>
               </CardContent>
             </Card>
 
-            <div className="grid grid-cols-3 gap-3 md:gap-4">
-              <Card className="border-border/70">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{copy.review}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 sm:p-6 sm:pt-0">
-                  <div className="text-2xl font-semibold sm:text-3xl">{preview?.rows.length || 0}</div>
-                  <div className="hidden text-xs text-muted-foreground sm:block">{copy.previewRows}</div>
-                </CardContent>
-              </Card>
-              <Card className="border-border/70">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{copy.ready}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 sm:p-6 sm:pt-0">
-                  <div className="text-2xl font-semibold sm:text-3xl">{readyCount}</div>
-                  <div className="hidden text-xs text-muted-foreground sm:block">{copy.readyHelp}</div>
-                </CardContent>
-              </Card>
-              <Card className="border-border/70">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{copy.blocked}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 sm:p-6 sm:pt-0">
-                  <div className="text-2xl font-semibold sm:text-3xl">{blockedCount}</div>
-                  <div className="hidden text-xs text-muted-foreground sm:block">{copy.issues}</div>
-                </CardContent>
-              </Card>
-            </div>
+            {preview ? (
+              <OperationalSummaryBand
+                label={copy.review}
+                items={[
+                  { label: copy.review, value: preview.rows.length },
+                  { label: copy.ready, value: readyCount, tone: readyCount ? 'success' : 'neutral' },
+                  { label: copy.blocked, value: blockedCount, tone: blockedCount ? 'danger' : 'neutral' },
+                ]}
+              />
+            ) : null}
 
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="space-y-2">
@@ -946,8 +913,8 @@ export default function OpeningImport() {
                 ) : (
                   <>
                     {preview.issues.length ? (
-                      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
-                        <div className="flex items-center gap-2 text-sm font-medium text-amber-800">
+                      <div className="rounded-2xl border border-status-warning-border bg-status-warning-muted p-4">
+                        <div className="flex items-center gap-2 text-sm font-medium text-status-warning-foreground">
                           <AlertTriangle className="h-4 w-4" />
                           {copy.issues}
                         </div>

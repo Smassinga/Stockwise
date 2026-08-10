@@ -20,10 +20,11 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
 import { IconBadge } from '../components/premium/IconBadge'
 import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
 import { hasMinRole, canAssignRole, canInviteRole } from '../lib/roles'
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER'
@@ -268,7 +269,7 @@ export default function Users() {
 
   const roleLabel = (role: Role) => tt(`users.roles.${role.toLowerCase()}`, role)
   const statusLabel = (status: Status) => tt(`users.statuses.${status}`, tt('administration.statusUnavailable', 'Status unavailable'))
-  const statusVariant = (status: Status) => (status === 'active' ? 'default' : status === 'invited' ? 'secondary' : 'outline')
+  const statusTone = (status: Status) => status === 'active' ? 'success' : status === 'invited' ? 'info' : 'neutral'
 
   const higherThanMe = (role: Role) => (myRole ? roleRank(role) < roleRank(myRole) : false)
 
@@ -570,7 +571,6 @@ export default function Users() {
     <div className="space-y-6 overflow-x-hidden">
       <PremiumPageHeader
         title={t('sections.users.title')}
-        description={tt('users.subtitle', 'Invite teammates, track pending access, and manage company roles from one page.')}
         context={
           <PremiumStatusBadge tone="info" icon={<PhosphorShieldCheckIcon className="h-3.5 w-3.5" weight="duotone" />}>
             {myRole ? `${t('users.yourRole')}: ${roleLabel(myRole as Role)}` : roleCopy.canonicalTitle}
@@ -617,36 +617,19 @@ export default function Users() {
 
       {!isRolesView ? (
         <>
-          <div className="grid gap-4 md:grid-cols-4">
-            <PremiumMetricCard
-              label={tt('users.summary.active', 'Active')}
-              value={memberStats.active}
-              description={tt('users.summary.activeHelp', 'Members currently able to access the company')}
-              icon={<CheckCircleIcon weight="duotone" />}
-              tone="positive"
+          {loading ? (
+            <PremiumSkeleton variant="summary" rows={2} label={tt('users.loadingMembers', 'Loading members')} />
+          ) : (
+            <OperationalSummaryBand
+              label={tt('users.summary.label', 'Company access summary')}
+              items={[
+                { label: tt('users.summary.active', 'Active'), value: memberStats.active, tone: 'success' },
+                { label: tt('users.summary.invited', 'Invited'), value: memberStats.invited, tone: memberStats.invited ? 'info' : 'neutral' },
+                { label: tt('users.summary.disabled', 'Disabled'), value: memberStats.disabled, tone: memberStats.disabled ? 'warning' : 'neutral' },
+                { label: tt('users.summary.sensitive', 'Sensitive roles'), value: memberStats.sensitive, tone: memberStats.sensitive ? 'info' : 'neutral' },
+              ]}
             />
-            <PremiumMetricCard
-              label={tt('users.summary.invited', 'Invited')}
-              value={memberStats.invited}
-              description={tt('users.summary.invitedHelp', 'Pending acceptances you may need to follow up')}
-              icon={<UserPlusIcon weight="duotone" />}
-              tone={memberStats.invited ? 'info' : 'neutral'}
-            />
-            <PremiumMetricCard
-              label={tt('users.summary.disabled', 'Disabled')}
-              value={memberStats.disabled}
-              description={tt('users.summary.disabledHelp', 'Historical users kept without active access')}
-              icon={<XCircleIcon weight="duotone" />}
-              tone={memberStats.disabled ? 'warning' : 'neutral'}
-            />
-            <PremiumMetricCard
-              label={tt('users.summary.sensitive', 'Sensitive roles')}
-              value={memberStats.sensitive}
-              description={tt('users.summary.sensitiveHelp', 'Active Owners and Admins with elevated company authority')}
-              icon={<CrownIcon weight="duotone" />}
-              tone={memberStats.sensitive ? 'info' : 'neutral'}
-            />
-          </div>
+          )}
 
           <div className="rounded-[var(--radius)] border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
             {memberStats.invited > 0
@@ -692,9 +675,9 @@ export default function Users() {
                           ) : null}
                         </div>
                         {powerful ? (
-                          <Badge variant="outline" className="w-fit border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-300/40 dark:bg-amber-300/15 dark:text-amber-100">
+                          <PremiumStatusBadge tone="warning">
                             {roleCopy.powerfulRole}
-                          </Badge>
+                          </PremiumStatusBadge>
                         ) : null}
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -704,7 +687,7 @@ export default function Users() {
                         </div>
                         <div>
                           <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                            <CheckCircleIcon className="h-4 w-4 text-emerald-600" weight="duotone" />
+                            <CheckCircleIcon className="h-4 w-4 text-status-success-foreground" weight="duotone" />
                             {roleCopy.canDo}
                           </div>
                           <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
@@ -910,12 +893,9 @@ export default function Users() {
                         <div className="truncate font-medium">{member.email || t('common.dash')}</div>
                         <div className="mt-1 flex flex-wrap gap-2">
                           <Badge variant="outline">{roleLabel(member.role)}</Badge>
-                          <Badge
-                            variant={statusVariant(member.status)}
-                            className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
-                          >
+                          <PremiumStatusBadge tone={statusTone(member.status)}>
                             {statusLabel(member.status)}
-                          </Badge>
+                          </PremiumStatusBadge>
                         </div>
                       </div>
                       {isSelf ? <Badge variant="secondary">{tt('users.thisIsYou', 'This is you')}</Badge> : null}
@@ -964,12 +944,9 @@ export default function Users() {
                         <Badge variant="outline">{roleLabel(member.role)}</Badge>
                       </td>
                       <td className="py-2 pr-2">
-                        <Badge
-                          variant={statusVariant(member.status)}
-                          className={member.status === 'disabled' ? 'border-destructive/30 text-destructive' : ''}
-                        >
+                        <PremiumStatusBadge tone={statusTone(member.status)}>
                           {statusLabel(member.status)}
-                        </Badge>
+                        </PremiumStatusBadge>
                       </td>
                       <td className="py-2 pr-2">
                         {member.email_confirmed_at ? new Date(member.email_confirmed_at).toLocaleString() : t('common.dash')}
@@ -1072,7 +1049,7 @@ export default function Users() {
               </div>
 
               {higherThanMe(selectedMember.role) ? (
-                <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+                <div role="status" className="rounded-lg border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   {tt('users.cannotModifyHigherRole', 'You cannot modify a member with a higher role than yours.')}
                 </div>
               ) : null}

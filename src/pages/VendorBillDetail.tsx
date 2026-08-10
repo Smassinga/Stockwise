@@ -16,6 +16,7 @@ import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { useOrg } from '../hooks/useOrg'
 import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
@@ -40,7 +41,6 @@ import {
   VENDOR_BILL_STATE_VIEW,
   financeDocumentApprovalLabelKey,
   isMissingFinanceViewError,
-  vendorBillAdjustmentLabelKey,
   vendorBillResolutionLabelKey,
   vendorBillWorkflowLabelKey,
   type VendorBillLineRow,
@@ -88,7 +88,6 @@ import {
   type VendorDebitNoteRow,
   voidVendorBill,
 } from '../lib/mzFinance'
-import { settlementLabelKey } from '../lib/orderState'
 import {
   approvalPresentation,
   settlementPresentation,
@@ -141,28 +140,16 @@ function approvalTone(status: VendorBillStateRow['approval_status']) {
   }
 }
 
-function resolutionTone(status: VendorBillStateRow['resolution_status']) {
-  switch (status) {
-    case 'posted_settled':
-    case 'posted_fully_credited':
-      return 'default'
-    case 'posted_overdue':
-      return 'destructive'
-    default:
-      return 'secondary'
-  }
-}
-
 function reviewTone(status?: FinanceReviewState | null) {
   switch (status) {
     case 'exception':
-      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300'
+      return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
     case 'overdue':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+      return 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
     case 'attention':
-      return 'border-informational/25 bg-informational/8 text-informational dark:border-informational/30 dark:bg-informational/10'
+      return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
     case 'resolved':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+      return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
     default:
       return 'border-border/70 bg-muted/30 text-muted-foreground'
   }
@@ -857,22 +844,11 @@ export default function VendorBillDetailPage() {
     }
   }, [debitLineDrafts, debitMode, lines, postedCreditedDocumentTotal, postedDebitedDocumentTotal, row?.settled_base, row?.total_amount, tt])
 
-  const adjustmentStatusLabel = row?.adjustment_status
-    ? tt(vendorBillAdjustmentLabelKey(row.adjustment_status), row.adjustment_status)
-    : tt('financeDocs.adjustments.none', 'No adjustments')
   const approvalStatus = row?.approval_status || 'draft'
   const approvalStatusLabel = tt(
     financeDocumentApprovalLabelKey(approvalStatus),
     approvalStatus,
   )
-  const creditStatusLabel = row?.credit_status === 'fully_credited'
-    ? tt('financeDocs.mz.creditStatus.fullyCredited', 'Fully credited')
-    : row?.credit_status === 'partially_credited'
-      ? tt('financeDocs.mz.creditStatus.partiallyCredited', 'Partially credited')
-      : tt('financeDocs.mz.creditStatus.notCredited', 'Not credited')
-  const settlementStatusLabel = row?.settlement_status
-    ? tt(settlementLabelKey(row.settlement_status), row.settlement_status)
-    : tt('common.dash', '-')
   const resolutionStatusLabel = row?.resolution_status
     ? tt(vendorBillResolutionLabelKey(row.resolution_status), row.resolution_status)
     : tt('common.dash', '-')
@@ -1167,7 +1143,9 @@ export default function VendorBillDetailPage() {
 
   async function handleVoidBill() {
     if (!row || !canVoidBill) return
-    if (!window.confirm(tt('financeDocs.vendorBills.confirmVoid', 'Void this vendor bill?'))) return
+    if (!window.confirm(row.document_workflow_status === 'posted'
+      ? tt('financeDocs.vendorBills.confirmVoidPosted', 'Void vendor bill {reference}? It will no longer remain an active payable document.', { reference: row.primary_reference })
+      : tt('financeDocs.vendorBills.confirmVoidDraft', 'Void draft vendor bill {reference}? This ends the draft workflow without posting it.', { reference: row.primary_reference }))) return
 
     try {
       setVoiding(true)
@@ -1337,7 +1315,7 @@ export default function VendorBillDetailPage() {
       tone: financeEventTone(event.event_type),
     }))
 
-    const source = billAuditRow || row
+    const source = (billAuditRow || row) as VendorBillRowLike & VendorBillStateRow
     const hasEvent = (type: string) => events.some((event) => event.event_type === type)
 
     if (!hasEvent('draft_created') && source.created_at) {
@@ -1520,14 +1498,23 @@ export default function VendorBillDetailPage() {
       id: `bill:${row.id}`,
       eyebrow: tt('financeDocs.vendorBills.title', 'Vendor Bills'),
       title: row.primary_reference,
-      description: tt('financeDocs.audit.vendorBillChainHelp', 'This posted vendor bill is the active AP anchor for payments, supplier credit notes, supplier debit notes, and residual liability.'),
-      status: resolutionStatusLabel,
-      metrics: [
-        { label: tt('financeDocs.vendorBills.originalTotal', 'Original total'), value: formatBaseMoney(row.total_amount_base) },
-        { label: tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total'), value: formatBaseMoney(row.current_legal_total_base) },
-        { label: tt('settlements.settledAmount', 'Settled'), value: formatBaseMoney(row.settled_base) },
-        { label: tt('settlements.outstandingAmount', 'Outstanding'), value: formatBaseMoney(row.outstanding_base) },
-      ],
+      description: row.document_workflow_status === 'posted'
+        ? tt('financeDocs.audit.vendorBillChainHelp', 'This posted vendor bill is the active AP anchor for payments, supplier credit notes, supplier debit notes, and residual liability.')
+        : tt('financeDocs.audit.vendorBillDraftChainHelp', 'This draft is preparation evidence. The linked purchase order remains the active operational anchor until posting.'),
+      status: row.document_workflow_status === 'posted'
+        ? resolutionStatusLabel
+        : tt('financeDocs.workflow.draft', 'Draft'),
+      metrics: row.document_workflow_status === 'posted'
+        ? [
+            { label: tt('financeDocs.vendorBills.originalTotal', 'Original total'), value: formatBaseMoney(row.total_amount_base) },
+            { label: tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total'), value: formatBaseMoney(row.current_legal_total_base) },
+            { label: tt('settlements.settledAmount', 'Settled'), value: formatBaseMoney(row.settled_base) },
+            { label: tt('settlements.outstandingAmount', 'Outstanding'), value: formatBaseMoney(row.outstanding_base) },
+          ]
+        : [
+            { label: tt('financeDocs.vendorBills.draftTotal', 'Draft total'), value: formatBaseMoney(row.total_amount_base) },
+            { label: tt('orders.anchorStatus', 'Active anchor'), value: tt('financeDocs.audit.purchaseOrderAnchor', 'Purchase order until posting') },
+          ],
     })
 
     creditNotes.forEach((note) => {
@@ -1586,11 +1573,11 @@ export default function VendorBillDetailPage() {
       </div>
 
       {missingView ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
           {tt('financeDocs.stateViewsUnavailable', 'The governed finance-document state is temporarily unavailable. Retry after deployment verification.')}
         </div>
       ) : loading ? (
-        <p className="text-sm text-muted-foreground">{tt('loading', 'Loading')}</p>
+        <PremiumSkeleton variant="detail" rows={4} label={tt('loading', 'Loading vendor bill')} />
       ) : !row ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
@@ -1601,10 +1588,7 @@ export default function VendorBillDetailPage() {
         <>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-                  {tt('financeDocs.eyebrow', 'Finance documents')}
-                </div>
-                <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{row.primary_reference}</h1>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{row.primary_reference}</h1>
                 <p className="mt-2 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                   {row.document_workflow_status === 'posted'
                     ? tt('financeDocs.vendorBills.postedHelper', 'Posted vendor bills are the AP settlement anchor. Supplier credit notes, supplier debit notes, payments, and outstanding exposure all resolve against this document chain instead of the original purchase order.')
@@ -1617,20 +1601,6 @@ export default function VendorBillDetailPage() {
               </div>
 
               <div className="mobile-primary-actions">
-                <Badge variant={workflowTone(row.document_workflow_status)}>
-                  {tt(vendorBillWorkflowLabelKey(row.document_workflow_status), row.document_workflow_status)}
-                </Badge>
-                <Badge variant={approvalTone(approvalStatus)}>
-                  {approvalStatusLabel}
-                </Badge>
-                <Badge variant={resolutionTone(row.resolution_status)}>{resolutionStatusLabel}</Badge>
-                <Badge variant={row.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
-                <Badge variant={row.adjustment_status === 'debited' || row.adjustment_status === 'credited_and_debited' ? 'outline' : 'secondary'}>
-                  {adjustmentStatusLabel}
-                </Badge>
-              <Badge variant={row.settlement_status === 'overdue' ? 'destructive' : 'secondary'}>
-                {settlementStatusLabel}
-              </Badge>
               {outputModel ? (
                 <>
                   <Button variant="outline" onClick={() => void handlePrintDocument(outputModel)}>
@@ -1683,7 +1653,7 @@ export default function VendorBillDetailPage() {
                 </>
               ) : null}
               {canVoidBill ? (
-                <Button variant="outline" onClick={() => void handleVoidBill()} disabled={posting || voiding}>
+                <Button variant="destructive" onClick={() => void handleVoidBill()} disabled={posting || voiding}>
                   {voiding ? tt('financeDocs.vendorBills.voiding', 'Voiding...') : tt('financeDocs.vendorBills.voidBill', 'Void bill')}
                 </Button>
               ) : null}
@@ -1713,17 +1683,25 @@ export default function VendorBillDetailPage() {
                 id: 'anchor',
                 eyebrowKey: 'commercial.lifecycle.activeAnchor',
                 eyebrowFallback: 'Active anchor',
-                labelKey: 'commercial.lifecycle.vendorBillAnchor',
+                labelKey: row.document_workflow_status === 'posted' ? 'commercial.lifecycle.vendorBillAnchor' : 'commercial.lifecycle.purchaseOrderAnchor',
                 fallback: row.document_workflow_status === 'posted' ? 'Vendor Bill' : 'Purchase Order until posting',
                 tone: row.document_workflow_status === 'posted' ? 'positive' : 'neutral',
-                descriptionKey: 'commercial.lifecycle.purchaseAnchorHelp',
-                descriptionFallback: 'Posting transfers the payable balance to this bill.',
+                descriptionKey: row.document_workflow_status === 'posted' ? 'commercial.lifecycle.purchaseAnchorHelp' : 'commercial.lifecycle.purchaseOrderAnchorHelp',
+                descriptionFallback: row.document_workflow_status === 'posted'
+                  ? 'Posting transfers the payable balance to this bill.'
+                  : 'The linked purchase order remains the active operational anchor until posting.',
               },
               {
                 id: 'settlement',
                 eyebrowKey: 'commercial.lifecycle.settlement',
                 eyebrowFallback: 'Settlement',
-                ...settlementPresentation(row.settlement_status),
+                ...(row.document_workflow_status === 'posted'
+                  ? settlementPresentation(row.settlement_status)
+                  : {
+                      labelKey: 'commercial.settlementAfterPosting',
+                      fallback: 'Available after posting',
+                      tone: 'neutral' as const,
+                    }),
                 descriptionKey: 'commercial.lifecycle.settlementHelp',
                 descriptionFallback: 'Payments follow the currently active financial anchor.',
               },
@@ -1769,7 +1747,7 @@ export default function VendorBillDetailPage() {
                   </div>
                 </div>
                 {row.duplicate_supplier_reference_exists ? (
-                  <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  <div className="md:col-span-2 rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                       <div>
@@ -1867,6 +1845,12 @@ export default function VendorBillDetailPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {row.document_workflow_status !== 'posted' ? (
+                  <div className="border-l-2 border-status-neutral-border bg-status-neutral-muted px-4 py-3 text-sm text-status-neutral-foreground">
+                    {tt('financeDocs.vendorBills.settlementAfterPosting', 'Settlement begins after this draft is posted. Until then, the linked purchase order remains the active operational anchor.')}
+                  </div>
+                ) : (
+                  <>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <Card className="border-border/70 shadow-none">
                     <CardHeader className="pb-2">
@@ -1940,6 +1924,8 @@ export default function VendorBillDetailPage() {
                           ? tt('financeDocs.vendorBills.adjustmentSummaryFullyCredited', 'This vendor bill has been fully credited. It no longer carries an open supplier liability.')
                           : tt('financeDocs.vendorBills.adjustmentSummaryOpen', 'No AP adjustment documents have changed this vendor bill yet.')}
                 </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -2032,7 +2018,7 @@ export default function VendorBillDetailPage() {
                       {reconciliationExceptions.map((exception) => (
                         <div key={`${exception.anchor_id}:${exception.exception_code}`} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exception.severity === 'critical' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'}`}>
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exception.severity === 'critical' ? 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground' : 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'}`}>
                               {exception.severity === 'critical' ? tt('financeDocs.reconciliation.severityCritical', 'Critical') : tt('financeDocs.reconciliation.severityWarning', 'Warning')}
                             </span>
                             <Badge variant="outline">{reconciliationExceptionGroupLabel(exception.exception_group)}</Badge>
@@ -2055,7 +2041,9 @@ export default function VendorBillDetailPage() {
 
           <FinanceChainCard
             title={tt('financeDocs.audit.chainTitle', 'Document chain')}
-            description={tt('financeDocs.audit.apChainHelp', 'See the operational source, the active vendor bill, and every linked supplier adjustment in the same AP chain.')}
+            description={row.document_workflow_status === 'posted'
+              ? tt('financeDocs.audit.apChainHelp', 'See the operational source, the active vendor bill, and every linked supplier adjustment in the same AP chain.')
+              : tt('financeDocs.audit.apDraftChainHelp', 'The draft remains linked to its operational source. Settlement and supplier adjustment evidence begins only after posting.')}
             items={chainItems}
           />
 
@@ -2113,14 +2101,14 @@ export default function VendorBillDetailPage() {
                     {tt('financeDocs.vendorBills.issueCreditNote', 'Issue supplier credit note')}
                   </Button>
                 ) : (
-                  <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
                     {!canPostVendorAdjustments
                       ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
                       : tt('financeDocs.vendorBills.creditNotesResolved', 'This vendor bill is already fully credited. No further supplier credit note can be posted against it.')}
                   </div>
                 )
               ) : (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   {tt('financeDocs.vendorBills.creditNotesPostedOnly', 'Supplier credit notes can only be created from posted vendor bills.')}
                 </div>
               )}
@@ -2208,12 +2196,12 @@ export default function VendorBillDetailPage() {
                     {tt('financeDocs.vendorBills.issueDebitNote', 'Issue supplier debit note')}
                   </Button>
                 ) : (
-                  <div className="rounded-xl border border-informational/25 bg-informational/8 p-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
                     {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
                   </div>
                 )
               ) : (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   {tt('financeDocs.vendorBills.debitNotesPostedOnly', 'Supplier debit notes can only be created from posted vendor bills.')}
                 </div>
               )}

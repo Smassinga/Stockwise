@@ -26,10 +26,10 @@ import {
   SelectLabel,
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
-import { PremiumMetricCard } from "../components/premium/PremiumMetricCard";
 import { PremiumPageHeader } from "../components/premium/PremiumPageHeader";
 import { PremiumStatusBadge, type PremiumTone } from "../components/premium/PremiumStatusBadge";
-import { IconBadge } from "../components/premium/IconBadge";
+import { PremiumSkeleton } from "../components/premium/PremiumSkeleton";
+import { OperationalSummaryBand } from "../components/premium/OperationalSummaryBand";
 import { BankIcon } from "@phosphor-icons/react/dist/csr/Bank";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { BuildingsIcon } from "@phosphor-icons/react/dist/csr/Buildings";
@@ -57,7 +57,6 @@ import { NotificationPreferences } from "../components/notifications/Notificatio
 import {
   Bell,
   Building,
-  ChevronRight,
   ArrowLeft,
   Clock,
   FileText,
@@ -181,9 +180,7 @@ const settingsViewSections: Record<Exclude<SettingsView, "overview">, SettingsSe
 const settingsGuideCopy = {
   en: {
     eyebrow: "Company setup",
-    headerTitle: "Settings command centre",
-    headerBody:
-      "Open only the setup area you need, then return to this map without scrolling through every company control.",
+    headerTitle: "Settings",
     saveCompany: "Save company",
     saveChanges: "Save changes",
     backToSettings: "Back to settings",
@@ -277,9 +274,7 @@ const settingsGuideCopy = {
   },
   pt: {
     eyebrow: "Configuração da empresa",
-    headerTitle: "Centro de comando das definições",
-    headerBody:
-      "Abra apenas a área de configuração necessária e volte a este mapa sem percorrer todos os controlos da empresa.",
+    headerTitle: "Definições",
     saveCompany: "Guardar empresa",
     saveChanges: "Guardar alterações",
     backToSettings: "Voltar às definições",
@@ -373,6 +368,17 @@ const settingsGuideCopy = {
   },
 } as const;
 
+const DEFAULT_DUE_REMINDERS: NonNullable<SettingsData["dueReminders"]> = {
+  enabled: true,
+  leadDays: [3, 1, 0, -3],
+  recipients: [],
+  bcc: [],
+  timezone: "Africa/Maputo",
+  invoiceBaseUrl: "https://stockwiseapp.com",
+  hours: [9],
+  sendAt: "09:00",
+};
+
 const DEFAULTS: SettingsData = {
   locale: { language: "en" },
   dashboard: {
@@ -410,16 +416,7 @@ const DEFAULTS: SettingsData = {
     lowStock: { channel: "email" },
   },
   // Due Reminder Worker defaults
-  dueReminders: {
-    enabled: true,
-    leadDays: [3, 1, 0, -3],
-    recipients: [],
-    bcc: [],
-    timezone: "Africa/Maputo",
-    invoiceBaseUrl: "https://stockwiseapp.com",
-    hours: [9],
-    sendAt: "09:00",
-  },
+  dueReminders: DEFAULT_DUE_REMINDERS,
 };
 
 function deepMerge<T extends Record<string, any>>(a: T, b: Partial<T>): T {
@@ -461,9 +458,9 @@ function formatDueReminderTime(settings?: SettingsData["dueReminders"]) {
 
   const hoursValue = settings?.hours?.length
     ? Number(settings.hours[0])
-    : Number(DEFAULTS.dueReminders.hours?.[0] ?? 9);
+    : Number(DEFAULT_DUE_REMINDERS.hours?.[0] ?? 9);
 
-  if (!Number.isFinite(hoursValue)) return DEFAULTS.dueReminders.sendAt || "09:00";
+  if (!Number.isFinite(hoursValue)) return DEFAULT_DUE_REMINDERS.sendAt || "09:00";
 
   const hours = Math.max(0, Math.min(23, Math.floor(hoursValue)));
   const minutes = Math.max(0, Math.min(59, Math.round((hoursValue - hours) * 60)));
@@ -1172,9 +1169,7 @@ function Settings() {
             <p className="hidden text-muted-foreground sm:block">{t("settings.subtitle")}</p>
           </div>
         </div>
-        <Card>
-          <CardContent className="p-6 animate-pulse h-40" />
-        </Card>
+        <PremiumSkeleton variant="detail" rows={4} label={tt("settings.loading", "Loading settings")} />
       </div>
     );
   }
@@ -1183,7 +1178,6 @@ function Settings() {
     <div className="space-y-6">
       <PremiumPageHeader
         title={copy.headerTitle}
-        description={copy.headerBody}
         context={
           <PremiumStatusBadge tone={canEditOps ? "positive" : "neutral"} icon={<ShieldCheck className="h-3.5 w-3.5" />}>
             {canEditOps ? tt("settings.editableStatus", "Editable setup") : tt("settings.readOnlyShort", "Read-only")}
@@ -1256,7 +1250,7 @@ function Settings() {
       )}
 
       {settingsUnavailable || profileUnavailable || warehousesUnavailable ? (
-        <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+        <div role="alert" className="rounded-lg border border-status-warning-border bg-status-warning-muted px-4 py-3 text-status-warning-foreground">
           <div className="font-medium">{tt("administration.settings.partialUnavailable", "Some settings evidence is unavailable")}</div>
           <div className="mt-1 text-sm text-muted-foreground">
             {[
@@ -1293,38 +1287,27 @@ function Settings() {
         />
       ) : null}
 
-      {!activeSection ? <div className="grid gap-4 md:grid-cols-3">
-        <PremiumMetricCard
-          label={tt("settings.summary.companyTitle", "Company profile")}
-          value={settingsSummary.companyLabel}
-          description={tt(
-            "settings.summary.companyHelp",
-            "Maintained from the live company profile used in onboarding, exports, and printed documents."
-          )}
-          icon={<BuildingsIcon weight="duotone" />}
-          tone={profileReady ? "positive" : "warning"}
+      {!activeSection ? (
+        <OperationalSummaryBand
+          label={tt("settings.summary.label", "Current company settings")}
+          items={[
+            {
+              label: tt("settings.summary.companyTitle", "Company profile"),
+              value: settingsSummary.companyLabel,
+              tone: profileReady ? "success" : "warning",
+            },
+            {
+              label: tt("settings.summary.warehouseTitle", "Default warehouse"),
+              value: settingsSummary.defaultWarehouse,
+              tone: warehouses.length ? "info" : "neutral",
+            },
+            {
+              label: tt("settings.summary.valuationTitle", "Inventory valuation"),
+              value: settingsSummary.valuationMethod,
+            },
+          ]}
         />
-        <PremiumMetricCard
-          label={tt("settings.summary.warehouseTitle", "Default warehouse")}
-          value={settingsSummary.defaultWarehouse}
-          description={tt(
-            "settings.summary.warehouseHelp",
-            "Used as the default operational context for the dashboard and sales defaults."
-          )}
-          icon={<WarehouseIcon weight="duotone" />}
-          tone={warehouses.length ? "info" : "neutral"}
-        />
-        <PremiumMetricCard
-          label={tt("settings.summary.valuationTitle", "Inventory valuation")}
-          value={settingsSummary.valuationMethod}
-          description={tt(
-            "settings.summary.valuationHelp",
-            "Live inventory, stock levels, and landed cost revaluations currently use weighted average costing."
-          )}
-          icon={<ScalesIcon weight="duotone" />}
-          tone="neutral"
-        />
-      </div> : null}
+      ) : null}
 
       {!activeSection ? (
         <div className="flex flex-col gap-4 rounded-lg border border-border/70 bg-card p-5 sm:flex-row sm:items-center sm:justify-between">

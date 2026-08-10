@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, FileCheck2, FileClock, Landmark, ReceiptText } from 'lucide-react'
+import { AlertTriangle, ReceiptText } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { FinanceSummaryBand } from '../components/finance/FinanceSummaryBand'
 import { PremiumDataTable, type PremiumDataTableColumn } from '../components/premium/PremiumDataTable'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
 import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
@@ -16,7 +16,6 @@ import { type SalesInvoiceStateRow } from '../lib/financeDocuments'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import {
   approvalPresentation,
-  salesInvoiceResolutionPresentation,
   salesInvoiceWorkflowPresentation,
   settlementPresentation,
 } from '../lib/commercialWorkflowPresentation'
@@ -87,7 +86,9 @@ export default function SalesInvoicesPage() {
     drafts: rows.filter((row) => row.document_workflow_status === 'draft').length,
     awaitingApproval: rows.filter((row) => row.approval_status === 'pending_approval').length,
     issued: rows.filter((row) => row.document_workflow_status === 'issued').length,
-    outstanding: rows.reduce((sum, row) => sum + Number(row.outstanding_base || 0), 0),
+    outstanding: rows
+      .filter((row) => row.document_workflow_status === 'issued')
+      .reduce((sum, row) => sum + Number(row.outstanding_base || 0), 0),
   }), [rows])
 
   const columns = useMemo<PremiumDataTableColumn<SalesInvoiceStateRow>[]>(() => [
@@ -131,22 +132,22 @@ export default function SalesInvoicesPage() {
     {
       id: 'state',
       header: tt('commercial.register.lifecycle', 'Lifecycle'),
-      minWidth: 230,
+      minWidth: 190,
       cell: (row) => {
         const workflow = salesInvoiceWorkflowPresentation(row.document_workflow_status)
         const approval = approvalPresentation(row.approval_status)
         const settlement = settlementPresentation(row.settlement_status)
-        const resolution = salesInvoiceResolutionPresentation(row.resolution_status)
         return (
           <div className="space-y-2">
             <PremiumStatusBadge tone={workflow.tone}>{tt(workflow.labelKey, workflow.fallback)}</PremiumStatusBadge>
-            <div className="flex flex-wrap gap-1.5">
-              <PremiumStatusBadge tone={approval.tone}>{tt(approval.labelKey, approval.fallback)}</PremiumStatusBadge>
-              <PremiumStatusBadge tone={settlement.tone}>{tt(settlement.labelKey, settlement.fallback)}</PremiumStatusBadge>
-            </div>
             <div className="text-xs text-muted-foreground">
-              {tt(resolution.labelKey, resolution.fallback)}
+              {tt('financeDocs.fields.approval', 'Approval')}: {tt(approval.labelKey, approval.fallback)}
             </div>
+            {row.document_workflow_status === 'issued' ? (
+              <div className="text-xs font-medium text-foreground">
+                {tt('commercial.lifecycle.settlement', 'Settlement')}: {tt(settlement.labelKey, settlement.fallback)}
+              </div>
+            ) : null}
           </div>
         )
       },
@@ -160,12 +161,20 @@ export default function SalesInvoicesPage() {
       cell: (row) => (
         <div className="space-y-1 font-mono tabular-nums">
           <div>{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
-          <div className="text-xs text-muted-foreground">
-            {tt('financeDocs.currentLegalAmount', 'Current legal')}: {formatBaseMoney(row.current_legal_total_base)}
-          </div>
-          <div className="text-xs font-semibold">
-            {tt('settlements.outstandingAmount', 'Outstanding')}: {formatBaseMoney(row.outstanding_base)}
-          </div>
+          {row.document_workflow_status === 'issued' ? (
+            <>
+              <div className="text-xs text-muted-foreground">
+                {tt('financeDocs.currentLegalAmount', 'Current legal')}: {formatBaseMoney(row.current_legal_total_base)}
+              </div>
+              <div className="text-xs font-semibold">
+                {tt('settlements.outstandingAmount', 'Outstanding')}: {formatBaseMoney(row.outstanding_base)}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              {tt('financeDocs.salesInvoices.settlementAfterIssue', 'Settlement begins after issue')}
+            </div>
+          )}
         </div>
       ),
     },
@@ -173,7 +182,7 @@ export default function SalesInvoicesPage() {
       id: 'action',
       header: tt('commercial.register.nextAction', 'Next action'),
       align: 'right',
-      minWidth: 150,
+      minWidth: 135,
       enableHiding: false,
       cell: (row) => (
         <Button asChild size="sm" variant={row.document_workflow_status === 'draft' ? 'default' : 'outline'}>
@@ -214,13 +223,12 @@ export default function SalesInvoicesPage() {
         title={tt('financeDocs.salesInvoices.title', 'Sales Invoices')}
         description={tt(
           'financeDocs.salesInvoices.subtitle',
-          'Sales Orders remain operational. Issued Sales Invoices are the legal fiscal sales document and active financial anchor.',
+          'Review draft readiness and issued receivables without mixing operational orders with legal finance documents.',
         )}
         badges={
-          <>
-            <PremiumStatusBadge tone="info">{companyName || tt('orders.activeCompanyUnavailable', 'Active company unavailable')}</PremiumStatusBadge>
-            <PremiumStatusBadge tone="neutral">{baseCode}</PremiumStatusBadge>
-          </>
+          <span className="text-sm text-muted-foreground">
+            {companyName || tt('orders.activeCompanyUnavailable', 'Active company unavailable')} · {baseCode}
+          </span>
         }
         actions={
           <>
@@ -228,21 +236,20 @@ export default function SalesInvoicesPage() {
               <Link to="/orders?tab=sales&view=register">{tt('financeDocs.salesInvoices.ordersLink', 'View sales orders')}</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link to="/compliance/mz">{tt('nav.complianceMz', 'Mozambique compliance')}</Link>
-            </Button>
-            <Button asChild variant="ghost">
               <Link to="/settlements">{tt('financeDocs.salesInvoices.settlementsLink', 'Settlement workspace')}</Link>
             </Button>
           </>
         }
-        metrics={
-          <>
-            <PremiumMetricCard label={tt('commercial.metrics.drafts', 'Drafts')} value={metrics.drafts} icon={<FileClock />} />
-            <PremiumMetricCard label={tt('commercial.metrics.awaitingApproval', 'Awaiting approval')} value={metrics.awaitingApproval} tone="warning" icon={<FileClock />} />
-            <PremiumMetricCard label={tt('commercial.metrics.issuedInvoices', 'Issued invoices')} value={metrics.issued} tone="positive" icon={<FileCheck2 />} />
-            <PremiumMetricCard label={tt('settlements.outstandingAmount', 'Outstanding')} value={formatBaseMoney(metrics.outstanding)} icon={<Landmark />} />
-          </>
-        }
+      />
+
+      <FinanceSummaryBand
+        label={tt('financeDocs.salesInvoices.summaryLabel', 'Sales invoice summary')}
+        items={[
+          { label: tt('commercial.metrics.drafts', 'Drafts'), value: metrics.drafts },
+          { label: tt('commercial.metrics.awaitingApproval', 'Awaiting approval'), value: metrics.awaitingApproval, tone: metrics.awaitingApproval ? 'warning' : 'neutral' },
+          { label: tt('commercial.metrics.issuedInvoices', 'Issued invoices'), value: metrics.issued },
+          { label: tt('financeDocs.salesInvoices.issuedOutstanding', 'Open issued amount'), value: formatBaseMoney(metrics.outstanding), detail: tt('financeDocs.salesInvoices.issuedOutstandingHelp', 'Draft values are excluded until issue.') },
+        ]}
       />
 
       {missingView ? (
@@ -314,17 +321,28 @@ export default function SalesInvoicesPage() {
                   <article className="rounded-[calc(var(--radius)+0.15rem)] border border-card-border bg-card p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h2 className="truncate text-base font-semibold">{row.internal_reference}</h2>
-                        <p className="mt-1 truncate text-sm text-muted-foreground">{row.counterparty_name || tt('common.none', 'None')}</p>
+                        <h2 className="break-words text-base font-semibold">{row.internal_reference}</h2>
+                        <p className="mt-1 break-words text-sm text-muted-foreground">{row.counterparty_name || tt('common.none', 'None')}</p>
                       </div>
                       <PremiumStatusBadge tone={workflow.tone}>{tt(workflow.labelKey, workflow.fallback)}</PremiumStatusBadge>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                       <div><div className="premium-label">{tt('financeDocs.fields.total', 'Total')}</div><div className="mt-1 font-mono">{formatDocumentMoney(row.total_amount, row.currency_code)}</div></div>
-                      <div className="text-right"><div className="premium-label">{tt('settlements.outstandingAmount', 'Outstanding')}</div><div className="mt-1 font-mono">{formatBaseMoney(row.outstanding_base)}</div></div>
+                      <div className="text-right">
+                        <div className="premium-label">
+                          {row.document_workflow_status === 'issued'
+                            ? tt('settlements.outstandingAmount', 'Outstanding')
+                            : tt('financeDocs.fields.dueDate', 'Due date')}
+                        </div>
+                        <div className="mt-1 font-mono">
+                          {row.document_workflow_status === 'issued' ? formatBaseMoney(row.outstanding_base) : row.due_date}
+                        </div>
+                      </div>
                     </div>
                     <div className="mt-4 flex items-center justify-between gap-3">
-                      <PremiumStatusBadge tone={settlement.tone}>{tt(settlement.labelKey, settlement.fallback)}</PremiumStatusBadge>
+                      {row.document_workflow_status === 'issued' ? (
+                        <PremiumStatusBadge tone={settlement.tone}>{tt(settlement.labelKey, settlement.fallback)}</PremiumStatusBadge>
+                      ) : <span className="text-xs text-muted-foreground">{tt('financeDocs.salesInvoices.settlementAfterIssue', 'Settlement begins after issue')}</span>}
                       <Button asChild size="sm">
                         <Link to={`/sales-invoices/${row.id}`}>{tt('commercial.actions.reviewDocument', 'Review document')}</Link>
                       </Button>

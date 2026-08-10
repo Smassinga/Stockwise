@@ -986,15 +986,6 @@ export default function PurchaseOrders() {
     }
   }
 
-  async function cancelPO(poId: string) {
-    try {
-      const updated = await tryUpdateStatus(poId, ['cancelled', 'canceled'])
-      if (updated) setPOs(prev => prev.map(p => (p.id === poId ? { ...p, status: updated } : p)))
-      purchaseOrderState.refresh()
-      toast.success(tt('orders.poCancelled', 'PO cancelled'))
-    } catch (err: any) { console.error(err); toast.error(err?.message || tt('orders.poCancelFailed', 'Failed to cancel PO')) }
-  }
-
   async function saveSelectedPOMeta() {
     if (!selectedPO || !companyId) return
     try {
@@ -2033,35 +2024,15 @@ export default function PurchaseOrders() {
 
   return (
     <div className="mobile-container w-full max-w-full space-y-6 overflow-x-hidden">
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchases', 'Purchase orders in workflow')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{poOutstanding.length}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openPurchasesHelp', 'Draft, approved, and partially received orders stay visible until operationally complete.')}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openPurchaseValue', 'Purchase workflow value')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{formatMoneyBase(openPurchaseBase, baseCode)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openPurchaseValueHelp', 'Gross value of purchase orders still moving through approval or receipt.')}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.purchaseReadiness', 'Receiving readiness')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <div className="text-sm font-medium">{tt('orders.purchaseReadyCount', '{count} orders are approved or in receiving.', { count: receivingPurchaseCount })}</div>
-            <p className="text-xs text-muted-foreground">{tt('orders.purchaseDrafts', '{count} drafts still need review before stock can be received.', { count: draftPurchaseCount })}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {poOutstanding.length > 0 ? (
+        <section aria-label={tt('orders.purchaseWorkflowSummary', 'Purchase workflow summary')} className="border-y border-border">
+          <dl className="grid sm:grid-cols-3">
+            <div className="border-b border-border py-4 sm:border-b-0 sm:pr-5"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.openPurchases', 'In workflow')}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{poOutstanding.length}</dd></div>
+            <div className="border-b border-border py-4 sm:border-b-0 sm:border-l sm:px-5"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.openPurchaseValue', 'Workflow value')}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{formatMoneyBase(openPurchaseBase, baseCode)}</dd></div>
+            <div className="py-4 sm:border-l sm:pl-5"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.purchaseReadiness', 'Ready to receive')}</dt><dd className="mt-2 text-base font-semibold">{tt('orders.purchaseReadyCount', '{count} approved or receiving', { count: receivingPurchaseCount })}</dd><dd className="mt-1 text-xs text-muted-foreground">{tt('orders.purchaseDrafts', '{count} drafts need review.', { count: draftPurchaseCount })}</dd></div>
+          </dl>
+        </section>
+      ) : null}
 
       {/* Outstanding + Create PO */}
       <Card className="border-dashed">
@@ -2811,7 +2782,7 @@ export default function PurchaseOrders() {
                     <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
                     <div>
                       {formatMoneyBase(
-                        n(selectedPOVendorBill?.outstanding_base, selectedPOState?.legacy_outstanding_base),
+                        n(selectedPOVendorBill?.outstanding_base, n(selectedPOState?.legacy_outstanding_base)),
                         baseCode,
                       )}
                     </div>

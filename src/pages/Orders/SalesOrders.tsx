@@ -1,6 +1,6 @@
 // src/pages/Orders/SalesOrders.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { db, supabase } from '../../lib/db'
+import { supabase } from '../../lib/db'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 
@@ -1429,18 +1429,6 @@ export default function SalesOrders() {
     }
   }
 
-  async function cancelSO(soId: string) {
-    try {
-      const updated = await tryUpdateStatus(soId, ['cancelled'])
-      if (updated) setSOs(prev => prev.map(s => (s.id === soId ? { ...s, status: updated } : s)))
-      salesOrderState.refresh()
-      toast.success(tt('orders.soCancelled', 'SO cancelled'))
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err?.message || tt('orders.soCancelFailed', 'Failed to cancel SO'))
-    }
-  }
-
   async function saveSelectedSOMeta() {
     if (!selectedSO || !companyId) return
     try {
@@ -2150,35 +2138,15 @@ export default function SalesOrders() {
 
   return (
     <div className="mobile-container w-full max-w-full space-y-6 overflow-x-hidden">
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSales', 'Sales orders in workflow')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{soOutstanding.length}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesHelp', 'Draft, confirmed, approved, and allocated orders still need operational attention.')}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.openSalesValue', 'Sales workflow value')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tracking-tight">{formatMoneyBase(openSalesBase, baseCode)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{tt('orders.openSalesValueHelp', 'Gross value of sales orders still moving through review, approval, allocation, or shipment.')}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('orders.salesReadiness', 'Order readiness')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <div className="text-sm font-medium">{tt('orders.confirmedReady', '{count} approved or allocated', { count: confirmedSalesCount })}</div>
-            <p className="text-xs text-muted-foreground">{tt('orders.salesApprovalPending', '{count} confirmed orders are waiting for approval and {drafts} drafts still need review.', { count: submittedSalesCount, drafts: draftSalesCount })}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {soOutstanding.length > 0 ? (
+        <section aria-label={tt('orders.salesWorkflowSummary', 'Sales workflow summary')} className="border-y border-border">
+          <dl className="grid sm:grid-cols-3">
+            <div className="border-b border-border py-4 sm:border-b-0 sm:pr-5"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.openSales', 'In workflow')}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{soOutstanding.length}</dd></div>
+            <div className="border-b border-border py-4 sm:border-b-0 sm:border-l sm:px-5"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.openSalesValue', 'Workflow value')}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{formatMoneyBase(openSalesBase, baseCode)}</dd></div>
+            <div className="py-4 sm:border-l sm:pl-5"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('orders.salesReadiness', 'Ready for action')}</dt><dd className="mt-2 text-base font-semibold">{tt('orders.confirmedReady', '{count} approved or allocated', { count: confirmedSalesCount })}</dd><dd className="mt-1 text-xs text-muted-foreground">{tt('orders.salesApprovalPending', '{count} confirmed; {drafts} drafts need review.', { count: submittedSalesCount, drafts: draftSalesCount })}</dd></div>
+          </dl>
+        </section>
+      ) : null}
 
       {/* Outstanding + Create SO */}
       <Card className="border-dashed">
@@ -3072,7 +3040,7 @@ export default function SalesOrders() {
                   </div>
                   <div>
                     <Label>{tt('settlements.outstandingAmount', 'Outstanding')}</Label>
-                    <div>{formatMoneyBase(n(linkedFiscalInvoice?.outstanding_base, salesState(selectedSO)?.legacy_outstanding_base), baseCode)}</div>
+                    <div>{formatMoneyBase(n(linkedFiscalInvoice?.outstanding_base, n(salesState(selectedSO)?.legacy_outstanding_base)), baseCode)}</div>
                   </div>
                 </div>
                 {linkedFiscalInvoice ? (

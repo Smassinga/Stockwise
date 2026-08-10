@@ -73,8 +73,8 @@ test('POS, opening import, reports, and Dashboard expose direct user language', 
     read('src/pages/Dashboard.tsx'),
   ])
 
-  assert.match(operator, /<h1>\{copy\.title\}<\/h1>/)
-  assert.match(openingImport, /<h1>\{copy\.title\}<\/h1>/)
+  assert.match(operator, /<h1(?:\s+[^>]*)?>\{copy\.title\}<\/h1>/)
+  assert.match(openingImport, /<PremiumPageHeader[\s\S]{0,200}title=\{copy\.title\}/)
   assert.doesNotMatch(reports, /premium-label">OPS-1/)
   assert.match(dashboard, /`movements\.type\.\$\{movement\.type\}`/)
   assert.doesNotMatch(dashboard, /`movement\.\$\{movement\.type\}`/)

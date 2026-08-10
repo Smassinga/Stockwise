@@ -10,7 +10,6 @@ import { useI18n, withI18nFallback } from '../lib/i18n'
 
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   Dialog,
   DialogBody,
@@ -23,6 +22,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 
 type Currency = { id: string; code: string; name: string }
 
@@ -360,7 +360,7 @@ export default function Suppliers() {
         await reloadSuppliers()
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || tt('suppliers.toast.loadFailed', 'Failed to load suppliers'))
+        toast.error(tt('suppliers.toast.loadFailed', 'Failed to load suppliers'))
       } finally {
         setLoading(false)
       }
@@ -383,7 +383,8 @@ export default function Suppliers() {
       .order('name', { ascending: true })
 
     if (result.error) {
-      toast.error(result.error.message)
+      console.error(result.error)
+      toast.error(tt('suppliers.toast.loadFailed', 'Failed to load suppliers'))
       setSuppliers([])
       return
     }
@@ -445,7 +446,7 @@ export default function Suppliers() {
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('suppliers.toast.createFailed', 'Failed to create supplier'))
+      toast.error(tt('suppliers.toast.createFailed', 'Failed to create supplier'))
     } finally {
       setSaving(false)
     }
@@ -495,7 +496,7 @@ export default function Suppliers() {
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('suppliers.toast.updateFailed', 'Failed to update supplier'))
+      toast.error(tt('suppliers.toast.updateFailed', 'Failed to update supplier'))
     } finally {
       setSaving(false)
     }
@@ -512,7 +513,7 @@ export default function Suppliers() {
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('suppliers.toast.deleteFailed', 'Failed to delete supplier'))
+      toast.error(tt('suppliers.toast.deleteFailed', 'Failed to delete supplier'))
     }
   }
 
@@ -531,7 +532,7 @@ export default function Suppliers() {
       await reloadSuppliers()
     } catch (e: any) {
       console.error(e)
-      toast.error(e?.message || tt('suppliers.toast.updateFailed', 'Failed to update supplier'))
+      toast.error(tt('suppliers.toast.updateFailed', 'Failed to update supplier'))
     }
   }
 
@@ -554,45 +555,22 @@ export default function Suppliers() {
     )
   }, [paymentTermById, search, suppliers])
 
-  const stats = useMemo(() => {
-    const active = suppliers.filter((supplier) => supplier.isActive).length
-    const withTerms = suppliers.filter((supplier) => supplier.paymentTermsId || supplier.paymentTerms).length
-    return {
-      total: suppliers.length,
-      active,
-      inactive: suppliers.length - active,
-      withTerms,
-    }
-  }, [suppliers])
-
   if (!user) return <div className="p-6 text-muted-foreground">{t('auth.title.signIn')}</div>
-  if (loading) return <div className="p-6">{t('loading')}</div>
+  if (loading) return <div className="app-page app-page--workspace space-y-4"><PremiumSkeleton lines={2} label={tt('suppliers.loading', 'Loading supplier register')} /><PremiumSkeleton lines={6} label={tt('suppliers.loadingRows', 'Loading supplier rows')} /></div>
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-2">
+        <div>
           <h1 className="text-3xl font-bold">{t('suppliers.title')}</h1>
-          <p className="text-muted-foreground">
-            {tt('suppliers.subtitle', 'Maintain supplier defaults, commercial terms, and contact details used across purchasing and landed cost workflows.')}
-          </p>
-          <div className="text-sm text-muted-foreground">
-            {stats.total} {tt('suppliers.summary.total', 'Suppliers')} • {stats.active} {tt('suppliers.summary.active', 'Active')} • {stats.withTerms} {tt('suppliers.summary.terms', 'Terms captured')}
-          </div>
         </div>
         <Button disabled={!can.createMaster(role)} onClick={() => setCreateOpen(true)}>
           {t('suppliers.create')}
         </Button>
       </div>
 
-      <Card>
-        <CardHeader className="gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <CardTitle>{t('suppliers.list')}</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {tt('suppliers.listHelp', 'Search by supplier, contact, or terms and update existing records without recreating them.')}
-            </p>
-          </div>
+      <section aria-label={t('suppliers.list')} className="space-y-4">
+        <header className="flex justify-end">
           <div className="relative w-full sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -602,8 +580,8 @@ export default function Suppliers() {
               className="pl-10"
             />
           </div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
+        </header>
+        <div className="overflow-x-auto border-y border-border">
           {filteredSuppliers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 px-6 py-12 text-center">
               <div className="text-lg font-medium">{search ? tt('suppliers.empty.filteredTitle', 'No suppliers match this search.') : tt('suppliers.empty.title', 'No suppliers yet.')}</div>
@@ -723,8 +701,8 @@ export default function Suppliers() {
               </tbody>
             </table>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <Dialog
         open={createOpen}

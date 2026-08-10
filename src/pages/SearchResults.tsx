@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FileText, Package, Receipt, Search, ShoppingCart, Truck, Users } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
@@ -32,6 +32,9 @@ export default function SearchResults() {
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const [partialFailure, setPartialFailure] = useState(false)
+  const requestSequence = useRef(0)
+  const searchAbortRef = useRef<AbortController | null>(null)
   const copy = lang === 'pt'
     ? {
         inputLabel: 'Pesquisar no StockWise',
@@ -40,6 +43,7 @@ export default function SearchResults() {
         unavailable: 'Não foi possível concluir a pesquisa.',
         unavailableHelp: 'Tente novamente. Os registos existentes não foram alterados.',
         retry: 'Tentar novamente',
+        partial: 'Algumas categorias não puderam ser pesquisadas. Os resultados disponíveis continuam apresentados.',
       }
     : {
         inputLabel: 'Search StockWise',
@@ -48,6 +52,7 @@ export default function SearchResults() {
         unavailable: 'The search could not be completed.',
         unavailableHelp: 'Try again. Existing records were not changed.',
         retry: 'Try again',
+        partial: 'Some categories could not be searched. Available results are still shown.',
       }
   const orderWorkspaceUrl = (tab: 'purchase' | 'sales', orderId: string) =>
     `/orders?tab=${tab}&orderId=${encodeURIComponent(orderId)}`
@@ -58,28 +63,53 @@ export default function SearchResults() {
     setQuery(q)
     if (q && companyId) void performSearch(q)
     if (!q) {
+      requestSequence.current += 1
+      searchAbortRef.current?.abort()
       setResults([])
       setLoadError(false)
+      setPartialFailure(false)
+    }
+    return () => {
+      requestSequence.current += 1
+      searchAbortRef.current?.abort()
     }
   }, [location.search, companyId])
 
   async function performSearch(searchQuery: string) {
     if (!companyId || !searchQuery.trim()) return
 
+    searchAbortRef.current?.abort()
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+    const requestId = ++requestSequence.current
     setLoading(true)
     setLoadError(false)
+    setPartialFailure(false)
     try {
       const term = searchQuery.trim().toLowerCase()
       const allResults: SearchResult[] = []
 
-      const { data: items, error: itemsError } = await supabase
-        .from('items')
-        .select('id, name, sku')
-        .eq('company_id', companyId)
-        .ilike('name', `%${term}%`)
-        .limit(10)
-      if (itemsError) throw itemsError
-      items?.forEach((item) => allResults.push({
+      const [itemsResult, customersResult, suppliersResult, purchaseOrdersResult, salesOrdersResult, salesInvoicesResult, vendorBillsResult] = await Promise.all([
+        supabase.from('items').select('id, name, sku').eq('company_id', companyId).ilike('name', `%${term}%`).limit(10).abortSignal(controller.signal),
+        supabase.from('customers').select('id, name, code').eq('company_id', companyId).ilike('name', `%${term}%`).limit(10).abortSignal(controller.signal),
+        supabase.from('suppliers').select('id, name, code').eq('company_id', companyId).ilike('name', `%${term}%`).limit(10).abortSignal(controller.signal),
+        supabase.from('purchase_orders').select('id, order_no, supplier_name').eq('company_id', companyId).or(`order_no.ilike.%${term}%,supplier_name.ilike.%${term}%`).limit(10).abortSignal(controller.signal),
+        supabase.from('sales_orders').select('id, order_no, bill_to_name').eq('company_id', companyId).or(`order_no.ilike.%${term}%,bill_to_name.ilike.%${term}%`).limit(10).abortSignal(controller.signal),
+        supabase.from(SALES_INVOICE_STATE_VIEW).select('id, internal_reference, counterparty_name, order_no').eq('company_id', companyId).or(`internal_reference.ilike.%${term}%,counterparty_name.ilike.%${term}%,order_no.ilike.%${term}%`).limit(10).abortSignal(controller.signal),
+        supabase.from(VENDOR_BILL_STATE_VIEW).select('id, internal_reference, supplier_invoice_reference, primary_reference, counterparty_name, order_no').eq('company_id', companyId).or(`internal_reference.ilike.%${term}%,supplier_invoice_reference.ilike.%${term}%,counterparty_name.ilike.%${term}%,order_no.ilike.%${term}%`).limit(10).abortSignal(controller.signal),
+      ])
+
+      const errors = [
+        itemsResult.error,
+        customersResult.error,
+        suppliersResult.error,
+        purchaseOrdersResult.error,
+        salesOrdersResult.error,
+        salesInvoicesResult.error && !isMissingFinanceViewError(salesInvoicesResult.error, SALES_INVOICE_STATE_VIEW) ? salesInvoicesResult.error : null,
+        vendorBillsResult.error && !isMissingFinanceViewError(vendorBillsResult.error, VENDOR_BILL_STATE_VIEW) ? vendorBillsResult.error : null,
+      ].filter(Boolean)
+
+      itemsResult.data?.forEach((item) => allResults.push({
         id: item.id,
         type: 'item',
         name: item.name,
@@ -87,14 +117,7 @@ export default function SearchResults() {
         url: `/items?q=${encodeURIComponent(item.name)}`,
       }))
 
-      const { data: customers, error: customersError } = await supabase
-        .from('customers')
-        .select('id, name, code')
-        .eq('company_id', companyId)
-        .ilike('name', `%${term}%`)
-        .limit(10)
-      if (customersError) throw customersError
-      customers?.forEach((customer) => allResults.push({
+      customersResult.data?.forEach((customer) => allResults.push({
         id: customer.id,
         type: 'customer',
         name: customer.name,
@@ -102,14 +125,7 @@ export default function SearchResults() {
         url: `/customers?q=${encodeURIComponent(customer.name)}`,
       }))
 
-      const { data: suppliers, error: suppliersError } = await supabase
-        .from('suppliers')
-        .select('id, name, code')
-        .eq('company_id', companyId)
-        .ilike('name', `%${term}%`)
-        .limit(10)
-      if (suppliersError) throw suppliersError
-      suppliers?.forEach((supplier) => allResults.push({
+      suppliersResult.data?.forEach((supplier) => allResults.push({
         id: supplier.id,
         type: 'supplier',
         name: supplier.name,
@@ -117,14 +133,7 @@ export default function SearchResults() {
         url: `/suppliers?q=${encodeURIComponent(supplier.name)}`,
       }))
 
-      const { data: purchaseOrders, error: purchaseOrdersError } = await supabase
-        .from('purchase_orders')
-        .select('id, order_no, supplier_name')
-        .eq('company_id', companyId)
-        .or(`order_no.ilike.%${term}%,supplier_name.ilike.%${term}%`)
-        .limit(10)
-      if (purchaseOrdersError) throw purchaseOrdersError
-      purchaseOrders?.forEach((order) => allResults.push({
+      purchaseOrdersResult.data?.forEach((order) => allResults.push({
         id: order.id,
         type: 'purchase_order',
         name: `PO #${order.order_no}`,
@@ -132,14 +141,7 @@ export default function SearchResults() {
         url: orderWorkspaceUrl('purchase', order.id),
       }))
 
-      const { data: salesOrders, error: salesOrdersError } = await supabase
-        .from('sales_orders')
-        .select('id, order_no, bill_to_name')
-        .eq('company_id', companyId)
-        .or(`order_no.ilike.%${term}%,bill_to_name.ilike.%${term}%`)
-        .limit(10)
-      if (salesOrdersError) throw salesOrdersError
-      salesOrders?.forEach((order) => allResults.push({
+      salesOrdersResult.data?.forEach((order) => allResults.push({
         id: order.id,
         type: 'sales_order',
         name: `SO #${order.order_no}`,
@@ -147,16 +149,8 @@ export default function SearchResults() {
         url: orderWorkspaceUrl('sales', order.id),
       }))
 
-      const { data: salesInvoices, error: salesInvoicesError } = await supabase
-        .from(SALES_INVOICE_STATE_VIEW)
-        .select('id, internal_reference, counterparty_name, order_no')
-        .eq('company_id', companyId)
-        .or(`internal_reference.ilike.%${term}%,counterparty_name.ilike.%${term}%,order_no.ilike.%${term}%`)
-        .limit(10)
-      if (salesInvoicesError) {
-        if (!isMissingFinanceViewError(salesInvoicesError, SALES_INVOICE_STATE_VIEW)) throw salesInvoicesError
-      } else {
-        salesInvoices?.forEach((invoice) => allResults.push({
+      if (!salesInvoicesResult.error) {
+        salesInvoicesResult.data?.forEach((invoice) => allResults.push({
           id: invoice.id,
           type: 'sales_invoice',
           name: invoice.internal_reference,
@@ -165,16 +159,8 @@ export default function SearchResults() {
         }))
       }
 
-      const { data: vendorBills, error: vendorBillsError } = await supabase
-        .from(VENDOR_BILL_STATE_VIEW)
-        .select('id, internal_reference, supplier_invoice_reference, primary_reference, counterparty_name, order_no')
-        .eq('company_id', companyId)
-        .or(`internal_reference.ilike.%${term}%,supplier_invoice_reference.ilike.%${term}%,counterparty_name.ilike.%${term}%,order_no.ilike.%${term}%`)
-        .limit(10)
-      if (vendorBillsError) {
-        if (!isMissingFinanceViewError(vendorBillsError, VENDOR_BILL_STATE_VIEW)) throw vendorBillsError
-      } else {
-        vendorBills?.forEach((bill) => {
+      if (!vendorBillsResult.error) {
+        vendorBillsResult.data?.forEach((bill) => {
           const secondary = bill.internal_reference !== bill.primary_reference ? `Internal: ${bill.internal_reference}` : undefined
           allResults.push({
             id: bill.id,
@@ -186,13 +172,21 @@ export default function SearchResults() {
         })
       }
 
+      if (requestId !== requestSequence.current) return
+      if (errors.length === 7) throw errors[0]
       setResults(allResults)
+      setPartialFailure(errors.length > 0)
     } catch (error) {
+      if (controller.signal.aborted) return
+      if (requestId !== requestSequence.current) return
       console.error('Search error:', error)
       setResults([])
       setLoadError(true)
     } finally {
-      setLoading(false)
+      if (requestId === requestSequence.current) {
+        setLoading(false)
+        if (searchAbortRef.current === controller) searchAbortRef.current = null
+      }
     }
   }
 
@@ -255,6 +249,12 @@ export default function SearchResults() {
       ) : results.length === 0 ? (
         <PremiumEmptyState icon={<Search />} title={t('search.noResults')} description={t('search.tryDifferent')} />
       ) : (
+        <>
+        {partialFailure ? (
+          <div role="status" className="border border-status-warning-border bg-status-warning-muted px-4 py-3 text-sm text-status-warning-foreground">
+            {copy.partial}
+          </div>
+        ) : null}
         <section aria-label={t('search.results')} className="divide-y divide-border border-y border-border">
           {results.map((result) => (
             <Link
@@ -273,6 +273,7 @@ export default function SearchResults() {
             </Link>
           ))}
         </section>
+        </>
       )}
     </div>
   )

@@ -25,7 +25,7 @@ import {
 } from '../lib/financeExport'
 import { loadFinanceExportCompany } from '../lib/financeExportData'
 import { FinanceExportDialog, type FinanceExportFormat } from '../components/finance/FinanceExportDialog'
-import { Badge } from '../components/ui/badge'
+import { FinanceSummaryBand } from '../components/finance/FinanceSummaryBand'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -451,14 +451,13 @@ export default function CashPage() {
     <div className="app-page app-page--workspace space-y-6">
       <header className="flex flex-col gap-4 border-b border-border/70 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="premium-label">{tf('cash.eyebrow', 'Treasury workspace')}</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{tf('cash.title', 'Cash Book')}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{tf('cash.title', 'Cash Book')}</h1>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
             {tf('financeUx.cashSubtitle', 'Review company-base-currency cash evidence, record controlled adjustments, and route customer or supplier settlements through the active finance anchor.')}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{companyName || tf('company.selectCompany', 'Select company')}</Badge>
+          <span className="text-sm text-muted-foreground">{companyName || tf('company.selectCompany', 'Select company')}</span>
           <Button asChild variant="outline"><Link to="/settlements">{tf('nav.settlements', 'Settlements')}</Link></Button>
           <Button variant="outline" disabled={ledgerError || summaryError} onClick={() => setExportOpen(true)}>
             <Download className="mr-2 h-4 w-4" />{tf('financeUx.exportCashBook', 'Export current Cash Book')}
@@ -509,14 +508,14 @@ export default function CashPage() {
             />
           ) : null}
           {!summaryLoading && !summaryError ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              {summaryCards.map((card) => (
-                <Card key={card.key}>
-                  <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{card.label}</CardTitle></CardHeader>
-                  <CardContent className="text-2xl font-semibold">{formatMoneyBase(card.value, baseCurrency)}</CardContent>
-                </Card>
-              ))}
-            </div>
+            <FinanceSummaryBand
+              label={tf('financeUx.cashPosition', 'Cash position')}
+              items={summaryCards.map((item) => ({
+                label: item.label,
+                value: formatMoneyBase(item.value, baseCurrency),
+                tone: item.key === 'ending' ? 'info' : 'neutral',
+              }))}
+            />
           ) : null}
 
           {ledgerLoading ? <PremiumStatePanel variant="loading" title={tf('financeUx.loadingLedger', 'Loading Cash ledger')} /> : null}
@@ -606,7 +605,7 @@ export default function CashPage() {
       ) : null}
 
       {(summaryError || ledgerError || bookError) ? (
-        <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />{tf('financeUx.partialEvidence', 'Some finance evidence is unavailable. Available sections remain visible and no missing value is treated as zero.')}</div>
+        <div className="flex items-center gap-2 text-sm text-status-warning-foreground"><AlertTriangle className="h-4 w-4" />{tf('financeUx.partialEvidence', 'Some finance evidence is unavailable. Available sections remain visible and no missing value is treated as zero.')}</div>
       ) : null}
 
       <FinanceExportDialog

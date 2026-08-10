@@ -7,6 +7,22 @@ export type NotificationEventRow = {
   body?: string | null
 }
 
+const LEGACY_DECIMAL_RE = /(-?\d+\.\d*?[1-9])0+\b|(-?\d+)\.0+\b/g
+
+export function formatLegacyNotificationBody(value: string | null | undefined) {
+  return String(value || '').replace(
+    LEGACY_DECIMAL_RE,
+    (match, fractional: string | undefined, integer: string | undefined) => fractional || integer || match,
+  )
+}
+
+export function safeNotificationActionUrl(value: string | null | undefined) {
+  const url = String(value || '').trim()
+  if (!url.startsWith('/') || url.startsWith('//')) return null
+  if (url === '/cash/approvals' || url.startsWith('/cash/approvals?')) return null
+  return url
+}
+
 export function notificationPresentation(row: NotificationEventRow, language: Locale) {
   const payload = row.payload || {}
   const reference = String(payload.reference || payload.item || payload.documentReference || '')
@@ -30,5 +46,8 @@ export function notificationPresentation(row: NotificationEventRow, language: Lo
     'collections.control_closed': [pt ? 'Cobrança encerrada' : 'Collections control closed', pt ? `${reference} foi encerrado após liquidação ou crédito autorizado.` : `${reference} closed after authoritative settlement or credit evidence.`],
   }
   const resolved = row.event_type ? catalogue[row.event_type] : null
-  return { title: resolved?.[0] || row.title || (pt ? 'Notificação' : 'Notification'), body: resolved?.[1] || row.body || '' }
+  return {
+    title: resolved?.[0] || row.title || (pt ? 'Notificação' : 'Notification'),
+    body: formatLegacyNotificationBody(resolved?.[1] || row.body || ''),
+  }
 }

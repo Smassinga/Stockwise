@@ -13,6 +13,8 @@ import { getBaseCurrencyCode } from '../lib/currency'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { buildLandedCostPreview, type LandedCostMethod, type LandedCostReceiptBucket } from '../lib/landedCost'
 import { supabase } from '../lib/supabase'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 
 type Supplier = { id: string; code?: string | null; name: string }
 type Item = { id: string; sku?: string | null; name: string }
@@ -173,7 +175,8 @@ export default function LandedCostPage() {
         }).catch(() => {})
       } catch (error: any) {
         console.error(error)
-        if (!cancelled) toast.error(error?.message || tt('landedCost.loadFailed', 'Failed to load landed cost workspace'))
+        console.error('Landed Cost workspace load failed', error)
+        if (!cancelled) toast.error(tt('landedCost.loadFailed', 'Failed to load landed cost workspace'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -300,7 +303,8 @@ export default function LandedCostPage() {
       } catch (error: any) {
         console.error(error)
         if (!cancelled) {
-          const message = error?.message || tt('landedCost.prefillFailed', 'Failed to load the purchase order receipts')
+          console.error('Landed Cost source evidence load failed', error)
+          const message = tt('landedCost.prefillFailed', 'Failed to load the purchase order receipts')
           setDetailError(message)
           setReceiptBuckets([])
           setHistoryRuns([])
@@ -405,7 +409,7 @@ export default function LandedCostPage() {
         setSchemaReady(false)
         toast.error(tt('landedCost.migrationNeeded', 'Apply the landed cost migration before posting revaluation runs'))
       } else {
-        toast.error(error?.message || tt('landedCost.applyFailed', 'Failed to apply landed cost'))
+        toast.error(tt('landedCost.applyFailed', 'Failed to apply landed cost'))
       }
     } finally {
       setApplying(false)
@@ -414,31 +418,20 @@ export default function LandedCostPage() {
 
   return (
     <div className="space-y-6 overflow-x-hidden">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">
-            {tt('landedCost.eyebrow', 'Purchase valuation')}
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{tt('landedCost.title', 'Landed Cost')}</h1>
-            <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground sm:block">
-              {tt('landedCost.subtitle', 'Attach extra freight, customs, and handling to a received purchase order. The posted run revalues on-hand inventory through the same weighted-average stock logic used by PO receipts.')}
-            </p>
-          </div>
-        </div>
-
-        <div className="mobile-primary-actions">
+      <PremiumPageHeader
+        title={tt('landedCost.title', 'Landed Cost')}
+        actions={<div className="mobile-primary-actions">
           <Button asChild variant="outline">
             <Link to="/orders?tab=purchase">{tt('orders.title', 'Orders')}</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/bom">{tt('nav.bom', 'Assembly')}</Link>
           </Button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {!schemaReady && (
-        <Card className="border-dashed border-amber-400/60 bg-amber-50/40 shadow-none dark:bg-amber-500/10">
+        <Card className="border-status-warning-border bg-status-warning-muted shadow-none">
           <CardContent className="p-4 text-sm text-muted-foreground">
             {tt('landedCost.migrationHint', 'Posting is disabled until the landed cost migration is applied. Preview remains available, but inventory revaluation will not post yet.')}
           </CardContent>
@@ -446,7 +439,7 @@ export default function LandedCostPage() {
       )}
 
       {detailError && (
-        <Card className="border-dashed border-rose-400/60 bg-rose-50/40 shadow-none dark:bg-rose-500/10">
+        <Card className="border-status-danger-border bg-status-danger-muted shadow-none">
           <CardContent className="p-4 text-sm text-muted-foreground">
             {detailError}
           </CardContent>
@@ -475,7 +468,7 @@ export default function LandedCostPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              {selectedOrder ? <div>
                 <Label>{tt('landedCost.allocationMethod', 'Allocation method')}</Label>
                 <Select value={allocationMethod} onValueChange={(value) => setAllocationMethod(value as LandedCostMethod)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -485,7 +478,7 @@ export default function LandedCostPage() {
                     <SelectItem value="equal">{tt('landedCost.equalSplit', 'Equal distribution')}</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </div> : null}
 
               {selectedOrder && (
                 <>
@@ -506,7 +499,7 @@ export default function LandedCostPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/80 shadow-sm">
+          {selectedOrder ? <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.extraCosts', 'Additional landed costs')}</CardTitle>
               <CardDescription className="hidden sm:block">{tt('landedCost.extraCostsHelp', 'Enter the extra charges in the PO currency. Stock revaluation is posted in base value using the purchase order FX rate.')}</CardDescription>
@@ -537,10 +530,17 @@ export default function LandedCostPage() {
                 <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={tt('landedCost.notesPlaceholder', 'Optional note for this landed cost run')} />
               </div>
             </CardContent>
-          </Card>
+          </Card> : null}
         </div>
 
         <div className="space-y-4">
+          {!selectedOrder ? (
+            <PremiumStatePanel
+              tone="neutral"
+              title={tt('landedCost.noSourceTitle', 'Select a purchase order')}
+              description={tt('landedCost.noSourceDescription', 'Select a received purchase order to review eligible stock and allocation evidence.')}
+            />
+          ) : <>
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
               <CardTitle>{tt('landedCost.summary', 'Revaluation summary')}</CardTitle>
@@ -576,7 +576,7 @@ export default function LandedCostPage() {
 
                 <div className="mt-3 overflow-x-auto">
                   {valueAllocationUnavailable && (
-                    <div className="mb-3 rounded-xl border border-amber-400/60 bg-amber-50/70 p-3 text-sm text-amber-900 dark:bg-amber-500/12 dark:text-amber-100">
+                    <div className="mb-3 rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                       {tt('landedCost.valueAllocationUnavailable', 'By item value requires receipt values. Choose quantity or equal distribution.')}
                     </div>
                   )}
@@ -640,7 +640,7 @@ export default function LandedCostPage() {
             </CardHeader>
             <CardContent className="overflow-x-auto">
               {historyAccessDenied && (
-                <div className="mb-4 rounded-xl border border-dashed border-amber-400/60 bg-amber-50/40 p-3 text-sm text-muted-foreground dark:bg-amber-500/10">
+                <div className="mb-4 rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   {tt('landedCost.historyAccessDenied', 'Applied-run history is temporarily unavailable for this company account. Posting still uses company-scoped permissions once the landed cost access migration is in place.')}
                 </div>
               )}
@@ -673,6 +673,7 @@ export default function LandedCostPage() {
               </table>
             </CardContent>
           </Card>
+          </>}
         </div>
       </div>
     </div>

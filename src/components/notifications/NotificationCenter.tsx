@@ -8,7 +8,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { useI18n } from '../../lib/i18n'
 import { Button } from '../ui/button'
-import { notificationPresentation } from '../../lib/notificationPresentation'
+import { notificationPresentation, safeNotificationActionUrl } from '../../lib/notificationPresentation'
 
 type AnyRow = Record<string, any>
 type Notif = {
@@ -140,13 +140,10 @@ export function NotificationCenter() {
   }
 
   function openNotification(notification: Notif) {
-    if (!notification.url) return
+    const actionUrl = safeNotificationActionUrl(notification.url)
+    if (!actionUrl) return
     setOpen(false)
-    if (notification.url.startsWith('/')) {
-      navigate(notification.url)
-      return
-    }
-    window.open(notification.url, '_blank', 'noopener,noreferrer')
+    navigate(actionUrl)
   }
 
   async function markRead(notification: Notif) {
@@ -504,6 +501,7 @@ export function NotificationCenter() {
               {rows.map((n) => (
                 (() => {
                   const presentation = notificationPresentation({ event_type: n.eventType, payload: n.payload, title: n.title, body: n.body }, lang)
+                  const actionUrl = safeNotificationActionUrl(n.url)
                   return (
                 <div
                   key={n.id}
@@ -534,7 +532,7 @@ export function NotificationCenter() {
                         <span>{n.readAt ? t('notifications.status.read') : t('notifications.status.unread')}</span>
                       </div>
                     </div>
-                    {n.url ? (
+                    {actionUrl ? (
                       <Button
                         type="button"
                         variant={n.readAt ? 'outline' : 'secondary'}

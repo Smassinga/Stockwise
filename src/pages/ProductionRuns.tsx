@@ -2,12 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
-  ArrowLeftRight,
   CheckCircle2,
   Download,
   Factory,
-  FileClock,
-  PackageCheck,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -36,6 +33,7 @@ import {
 } from '../components/premium/PremiumDataTable'
 import { PremiumEmptyState } from '../components/premium/PremiumEmptyState'
 import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
@@ -872,12 +870,6 @@ export default function ProductionRuns() {
         eyebrow={tt('productionUx.eyebrow', 'Production control')}
         title={tt('productionUx.run.title', 'Production Runs')}
         description={tt('productionUx.run.description', 'Plan actual production, preserve frozen cost evidence, and keep posting and reversal traceable.')}
-        badges={
-          <>
-            <PremiumStatusBadge tone="neutral">{tt('productionUx.appendOnly', 'Append-only stock evidence')}</PremiumStatusBadge>
-            <PremiumStatusBadge tone="info">{tt('productionUx.frozenSnapshots', 'Frozen cost snapshots')}</PremiumStatusBadge>
-          </>
-        }
         actions={
           <>
             <Button asChild variant="outline">
@@ -909,24 +901,26 @@ export default function ProductionRuns() {
             ) : null}
           </>
         }
-        metrics={view === 'register' ? (
-          <>
-            <PremiumMetricCard label={tt('productionUx.status.draft', 'Drafts')} value={runs.filter((run) => run.status === 'draft').length} icon={<FileClock />} tone="info" />
-            <PremiumMetricCard label={tt('productionUx.status.posted', 'Posted')} value={runs.filter((run) => run.status === 'posted').length} icon={<PackageCheck />} tone="positive" />
-            <PremiumMetricCard label={tt('productionUx.status.reversed', 'Reversed')} value={runs.filter((run) => run.status === 'reversed').length} icon={<RotateCcw />} tone="warning" />
-            <PremiumMetricCard
-              label={tt('productionUx.run.filteredCost', 'Posted production cost')}
-              value={filteredCurrency
-                ? money(filteredRuns.filter((run) => run.status === 'posted').reduce((sum, run) => sum + num(run.total_cost), 0), filteredCurrency)
-                : tt('productionUx.currencyUnavailable', 'Currency evidence unavailable or mixed')}
-              icon={<Factory />}
-              tone="neutral"
-            />
-          </>
-        ) : null}
       />
 
-      <ProductionPathGuide />
+      {view === 'register' ? (
+        <OperationalSummaryBand
+          label={tt('productionUx.run.summaryLabel', 'Production Run register summary')}
+          items={[
+            { label: tt('productionUx.status.draft', 'Drafts'), value: runs.filter((run) => run.status === 'draft').length, tone: 'info' },
+            { label: tt('productionUx.status.posted', 'Posted'), value: runs.filter((run) => run.status === 'posted').length, tone: 'success' },
+            { label: tt('productionUx.status.reversed', 'Reversed'), value: runs.filter((run) => run.status === 'reversed').length, tone: 'warning' },
+            {
+              label: tt('productionUx.run.filteredCost', 'Posted production cost'),
+              value: filteredCurrency
+                ? money(filteredRuns.filter((run) => run.status === 'posted').reduce((sum, run) => sum + num(run.total_cost), 0), filteredCurrency)
+                : tt('productionUx.currencyUnavailable', 'Currency evidence unavailable or mixed'),
+            },
+          ]}
+        />
+      ) : null}
+
+      {view === 'register' ? <ProductionPathGuide /> : null}
 
       {loadError ? (
         <PremiumEmptyState
@@ -1276,7 +1270,7 @@ export default function ProductionRuns() {
               ) : null}
 
               {activePreview && !activePreview.ready ? (
-                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-300/30 dark:bg-amber-300/10 dark:text-amber-100">
+                <div role="status" className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
                   <div className="flex gap-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>{tt('productionUx.run.previewBlocked', 'Resolve the listed source, quantity, and destination blockers before posting.')}</span>

@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
-import { buildConvGraph, familySortIndex, isReusableUomCode, normalizeUomCodeInput, type ConvRow } from '../lib/uom'
+import { buildConvGraph, familySortIndex, isReusableUomCode, normalizeUomCodeInput, tryConvertQty, uomCodeLooksGenerated, type ConvRow } from '../lib/uom'
 import { can, type CompanyRole } from '../lib/permissions'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -11,8 +11,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 
-type Uom = { id: string; code: string; name: string; family?: string }
+type Uom = { id: string; code: string; name: string; family?: string; created_at?: string | null }
 type Conv = { from_uom_id: string; to_uom_id: string; factor: number; company_id: string | null }
 
 const FAMILIES = ['mass', 'volume', 'length', 'area', 'time', 'count', 'other'] as const
@@ -27,6 +31,7 @@ export default function UomSettings() {
   const canEdit = can.updateMaster(role)
 
   const [uoms, setUoms] = useState<Uom[]>([])
+  const [legacyUoms, setLegacyUoms] = useState<Uom[]>([])
   const [convs, setConvs] = useState<Conv[]>([])
   const [graph, setGraph] = useState<ReturnType<typeof buildConvGraph> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -41,16 +46,27 @@ export default function UomSettings() {
   const [testTo, setTestTo] = useState('')
   const [testQty, setTestQty] = useState('')
 
-  const byId = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom])), [uoms])
+  const byId = useMemo(() => new Map([...uoms, ...legacyUoms].map((uom) => [uom.id, uom])), [legacyUoms, uoms])
 
   const summary = useMemo(() => {
     const companyConversions = convs.filter((conv) => !!conv.company_id).length
     return {
       units: uoms.length,
+      legacyUnits: legacyUoms.length,
       companyConversions,
       globalConversions: convs.length - companyConversions,
     }
-  }, [convs, uoms.length])
+  }, [convs, legacyUoms.length, uoms.length])
+
+  const similarUoms = useMemo(() => {
+    const normalizedCode = normalizeUomCodeInput(code)
+    const normalizedName = name.trim().toLocaleLowerCase()
+    if (!normalizedCode && !normalizedName) return []
+    return uoms.filter((uom) => (
+      (!!normalizedCode && uom.code.toUpperCase() === normalizedCode)
+      || (!!normalizedName && uom.name.trim().toLocaleLowerCase() === normalizedName && (uom.family || 'other') === family)
+    ))
+  }, [code, family, name, uoms])
 
   const groupedUoms = useMemo(() => {
     const groups = new Map<string, Uom[]>()
@@ -77,13 +93,14 @@ export default function UomSettings() {
   async function loadAll() {
     setLoading(true)
     try {
-      const units = await supabase.from('uoms').select('id,code,name,family').order('name', { ascending: true })
+      const units = await supabase.from('uoms').select('id,code,name,family,created_at').order('name', { ascending: true })
       if (units.error) throw units.error
       const normalizedUnits = (units.data || []).map((row: any) => ({
         ...row,
         code: String(row.code || '').toUpperCase(),
-      })).filter((row: Uom) => isReusableUomCode(row.code)) as Uom[]
-      setUoms(normalizedUnits)
+      })) as Uom[]
+      setUoms(normalizedUnits.filter((row) => isReusableUomCode(row.code)))
+      setLegacyUoms(normalizedUnits.filter((row) => uomCodeLooksGenerated(row.code)))
 
       let convQuery = supabase.from('uom_conversions').select('from_uom_id,to_uom_id,factor,company_id')
       convQuery = companyId
@@ -124,6 +141,10 @@ export default function UomSettings() {
     }
     if (uoms.some((uom) => uom.code.toUpperCase() === normalizedCode)) {
       toast.error(tt('uom.duplicateCode', 'This unit code already exists. Use the existing catalogue entry instead of creating a duplicate.'))
+      return
+    }
+    if (uoms.some((uom) => uom.name.trim().toLocaleLowerCase() === normalizedName.toLocaleLowerCase() && (uom.family || 'other') === family)) {
+      toast.error(tt('uom.duplicateName', 'A unit with this name and family already exists. Review the existing catalogue before creating another code.'))
       return
     }
 
@@ -265,7 +286,9 @@ export default function UomSettings() {
     return map[key] || value || tt('uom.family.other', 'Other')
   }
 
-  if (orgLoading || loading) return <div className="p-6">{tt('loading', 'Loading...')}</div>
+  if (orgLoading || loading) {
+    return <PremiumSkeleton variant="detail" rows={5} label={tt('uom.loading', 'Loading units and conversions')} />
+  }
 
   if (!companyId) {
     return (
@@ -280,63 +303,26 @@ export default function UomSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-background via-background to-primary/[0.05] p-6 shadow-[0_30px_80px_-56px_rgba(0,0,0,0.48)]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2">
-            <div className="text-xs font-medium uppercase tracking-[0.22em] text-primary/75">
-              {tt('uom.eyebrow', 'Master data clarity')}
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">{tt('uom.title', 'Units of measure')}</h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                {tt(
-                  'uom.subtitleRefined',
-                  'Keep the global unit master clean, then add only the company-specific conversion rules your purchasing, stock, and order-entry flows actually need.',
-                )}
-              </p>
-            </div>
-          </div>
-          <Badge variant="outline" className="w-fit px-3 py-1 text-xs">
-            {companyName || companyId}
-          </Badge>
-        </div>
-      </div>
+      <PremiumPageHeader
+        title={tt('uom.title', 'Units of measure')}
+        context={<PremiumStatusBadge tone="neutral">{companyName || companyId}</PremiumStatusBadge>}
+      />
 
       {!canEdit ? (
-        <div className="rounded-2xl border border-informational/25 bg-informational/8 px-4 py-3 text-sm text-informational dark:border-informational/30 dark:bg-informational/10">
+        <div className="rounded-2xl border border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
           {tt('uom.readOnly', 'Read-only: only operational roles can add units or maintain company conversion rules.')}
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('uom.summary.units', 'Unit codes')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.units}</div>
-            <div className="text-xs text-muted-foreground">{tt('uom.summary.unitsHelp', 'Global unit codes shared across the whole app.')}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('uom.summary.companyConversions', 'Company conversions')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.companyConversions}</div>
-            <div className="text-xs text-muted-foreground">{tt('uom.summary.companyConversionsHelp', 'Conversion rules owned and maintained by this company.')}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tt('uom.summary.globalDefaults', 'Global defaults')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{summary.globalConversions}</div>
-            <div className="text-xs text-muted-foreground">{tt('uom.summary.globalDefaultsHelp', 'Fallback conversions loaded globally when the company has not overridden them.')}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <OperationalSummaryBand
+        label={tt('uom.summary.label', 'Unit catalogue summary')}
+        items={[
+          { label: tt('uom.summary.units', 'Reusable units'), value: summary.units },
+          { label: tt('uom.summary.companyConversions', 'Company conversions'), value: summary.companyConversions },
+          { label: tt('uom.summary.globalDefaults', 'Global defaults'), value: summary.globalConversions },
+          { label: tt('uom.summary.legacy', 'Legacy generated codes'), value: summary.legacyUnits, tone: summary.legacyUnits ? 'warning' : 'neutral' },
+        ]}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <Card className="border-border/70">
@@ -409,11 +395,46 @@ export default function UomSettings() {
                   </SelectContent>
                 </Select>
               </div>
+              {similarUoms.length > 0 ? (
+                <div role="status" className="border border-status-warning-border bg-status-warning-muted px-3 py-2 text-sm text-status-warning-foreground">
+                  <div className="font-medium">{tt('uom.similarTitle', 'Review the existing unit before saving')}</div>
+                  <div className="mt-1 text-xs">
+                    {similarUoms.map((uom) => `${uom.code} — ${uom.name}`).join(', ')}
+                  </div>
+                </div>
+              ) : null}
               <Button type="submit" disabled={!canEdit}>{tt('uom.saveUnit', 'Save unit')}</Button>
             </form>
           </CardContent>
         </Card>
       </div>
+
+      {legacyUoms.length > 0 ? (
+        <section aria-labelledby="legacy-uom-heading" className="border-y border-status-warning-border bg-status-warning-muted/40 py-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 id="legacy-uom-heading" className="text-base font-semibold text-foreground">
+                {tt('uom.legacyTitle', 'Legacy generated unit codes')}
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+                {tt('uom.legacyHelp', 'These historical global records are excluded from new conversion choices. StockWise has not merged or deleted them because references must be governed before any data cleanup.')}
+              </p>
+            </div>
+            <PremiumStatusBadge tone="warning">{legacyUoms.length}</PremiumStatusBadge>
+          </div>
+          <div className="mt-4 divide-y divide-status-warning-border border-y border-status-warning-border">
+            {legacyUoms.map((uom) => (
+              <div key={uom.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4">
+                <div className="font-semibold text-status-warning-foreground">{uom.code}</div>
+                <div className="min-w-0">
+                  <div className="text-foreground">{uom.name} · {familyLabel(uom.family)}</div>
+                  <div className="break-all text-xs text-muted-foreground">{uom.id}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card className="border-border/70">

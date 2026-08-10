@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Clock3, Plus, RefreshCw, Wrench } from 'lucide-react'
+import { Clock3, Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
-import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -15,10 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import { Textarea } from '../components/ui/textarea'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
-import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
+import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
 import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
 import { PremiumSection } from '../components/premium/PremiumSection'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
+import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
+import { formatOperationalQuantity } from '../lib/operationalQuantity'
 
 type Job = {
   id: string
@@ -67,21 +68,21 @@ type CostSummary = {
   otherDirectCosts: number; totalActualCost: number
 }
 
-const statusTone = (status: Job['execution_status']) =>
-  status === 'completed' ? 'default' : status === 'cancelled' ? 'destructive' : 'secondary'
+const statusTone = (status: Job['execution_status']): PremiumTone =>
+  status === 'completed' ? 'success' : status === 'cancelled' ? 'danger' : status === 'in_progress' ? 'info' : 'neutral'
 const requestKey = (prefix: string) => `${prefix}-${crypto.randomUUID()}`
 
 export default function ServiceJobs() {
   const { t, lang } = useI18n()
   const tt = (key: string, fallback: string) => withI18nFallback(t, key, fallback)
-  const { companyId, companyName, myRole } = useOrg()
+  const { companyId, myRole } = useOrg()
   const [params, setParams] = useSearchParams()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [revision, setRevision] = useState(0)
   const [baseCode, setBaseCode] = useState('MZN')
-  const [filter, setFilter] = useState('active')
+  const [filter, setFilter] = useState('all')
   const selectedId = params.get('jobId')
   const salesOrderId = params.get('salesOrderId')
   const selected = jobs.find(job => job.id === selectedId) || null
@@ -98,7 +99,8 @@ export default function ServiceJobs() {
     supabase.from('service_jobs_register').select('*').eq('company_id', companyId)
       .order('created_at', { ascending: false }).then(({ data, error: readError }) => {
         if (!active) return
-        setError(readError?.message || null)
+        if (readError) console.error('Service Job register load failed', readError)
+        setError(readError ? tt('serviceJobs.loadFailed', 'Service Jobs could not be loaded. Try again.') : null)
         if (!readError) setJobs((data || []) as Job[])
         setLoading(false)
       })
@@ -127,16 +129,14 @@ export default function ServiceJobs() {
     <div className="app-page space-y-6">
       <PremiumPageHeader
         title={tt('serviceJobs.title', 'Service Jobs')}
-        description={tt('serviceJobs.subtitle', 'Plan service work, capture execution evidence and finalise actual cost.')}
-        context={<Badge variant="outline">{companyName}</Badge>}
         actions={<Button variant="outline" onClick={refresh}><RefreshCw className="mr-2 h-4 w-4" />{tt('common.refresh', 'Refresh')}</Button>}
       />
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <PremiumMetricCard label={tt('serviceJobs.active', 'Active jobs')} value={String(metrics.active)} icon={<Wrench />} />
-        <PremiumMetricCard label={tt('serviceJobs.completedOpen', 'Completed, costing open')} value={String(metrics.completedOpen)} />
-        <PremiumMetricCard label={tt('serviceJobs.finalised', 'Costing finalised')} value={String(metrics.finalised)} />
-        <PremiumMetricCard className="col-span-2 xl:col-span-1" label={tt('serviceJobs.finalisedCost', 'Finalised actual cost')} value={money(metrics.actualCost)} />
-      </div>
+      <OperationalSummaryBand label={tt('serviceJobs.summaryLabel', 'Service Job register summary')} items={[
+        { label: tt('serviceJobs.active', 'Active jobs'), value: String(metrics.active), tone: 'info' },
+        { label: tt('serviceJobs.completedOpen', 'Completed, costing open'), value: String(metrics.completedOpen), tone: metrics.completedOpen ? 'warning' : 'neutral' },
+        { label: tt('serviceJobs.finalised', 'Costing finalised'), value: String(metrics.finalised) },
+        { label: tt('serviceJobs.finalisedCost', 'Finalised actual cost'), value: money(metrics.actualCost) },
+      ]} />
       {salesOrderId && canOperate ? <CreateFromOrder companyId={companyId!} salesOrderId={salesOrderId} tt={tt}
         onCreated={id => { const copy = new URLSearchParams(params); copy.delete('salesOrderId'); copy.set('jobId', id); setParams(copy); refresh() }}
         onCancel={() => { const copy = new URLSearchParams(params); copy.delete('salesOrderId'); setParams(copy) }} /> : null}
@@ -162,16 +162,19 @@ export default function ServiceJobs() {
               {visible.map(job => <button key={job.id} type="button" onClick={() => openJob(job.id)}
                 className="grid w-full gap-3 p-4 text-left transition hover:bg-muted/50 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] sm:items-center">
                 <span className="min-w-0"><span className="block font-semibold">{job.job_reference} · {job.title}</span><span className="block truncate text-sm text-muted-foreground">{job.customer_name} · {job.order_no || '—'}</span></span>
-                <span className="text-sm text-muted-foreground">{job.service_line_count} {tt('serviceJobs.lines', 'service lines')} · {Math.round(Number(job.worked_minutes || 0) / 60 * 10) / 10}h</span>
-                <span className="flex flex-wrap gap-2"><Badge variant={statusTone(job.execution_status)}>{statusLabel(job.execution_status, tt)}</Badge><Badge variant="outline">{job.costing_status === 'finalised' ? tt('serviceJobs.costing.finalised', 'Costing finalised') : tt('serviceJobs.costing.open', 'Costing open')}</Badge></span>
+                <span className="text-sm text-muted-foreground">{job.service_line_count} {tt('serviceJobs.lines', 'service lines')} · {(Math.round(Number(job.worked_minutes || 0) / 60 * 10) / 10).toLocaleString(locale, { maximumFractionDigits: 1 })}h</span>
+                <span className="flex flex-wrap gap-2"><PremiumStatusBadge tone={statusTone(job.execution_status)}>{statusLabel(job.execution_status, tt)}</PremiumStatusBadge><PremiumStatusBadge tone={job.costing_status === 'finalised' ? 'success' : 'neutral'}>{job.costing_status === 'finalised' ? tt('serviceJobs.costing.finalised', 'Costing finalised') : tt('serviceJobs.costing.open', 'Costing open')}</PremiumStatusBadge></span>
               </button>)}
-            </div> : <PremiumEmptyState title={tt('serviceJobs.empty', 'No Service Jobs yet')} description={tt('serviceJobs.emptyHelp', 'Open an eligible Sales Order and create a job from its service lines.')} />}
+            </div> : <PremiumEmptyState
+              title={jobs.length ? tt('serviceJobs.filteredEmpty', 'No Service Jobs match this filter') : tt('serviceJobs.empty', 'No Service Jobs yet')}
+              description={jobs.length ? tt('serviceJobs.filteredEmptyHelp', 'Choose another status to review the full register.') : tt('serviceJobs.emptyHelp', 'Open an eligible Sales Order and create a job from its service lines.')}
+            />}
         </CardContent>
       </Card>
       <Sheet open={Boolean(selected)} onOpenChange={open => { if (!open) openJob(null) }}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
+        <SheetContent className="w-full overflow-x-hidden overflow-y-auto sm:max-w-3xl">
           {selected ? <JobDetail job={selected} companyId={companyId!} canOperate={canOperate} canAdmin={canAdmin}
-            money={money} tt={tt} refresh={refresh} /> : null}
+            money={money} locale={locale} tt={tt} refresh={refresh} /> : null}
         </SheetContent>
       </Sheet>
     </div>
@@ -195,12 +198,12 @@ function CreateFromOrder({ companyId, salesOrderId, tt, onCreated, onCancel }: {
     ;(async () => {
       const { data: orderLines, error } = await supabase.from('sales_order_lines')
         .select('id,item_id,description,qty').eq('company_id', companyId).eq('so_id', salesOrderId)
-      if (error) { toast.error(error.message); return }
+      if (error) { console.error('Service line load failed', error); toast.error(tt('serviceJobs.createLoadFailed', 'Eligible service lines could not be loaded.')); return }
       const itemIds = [...new Set((orderLines || []).map(line => line.item_id))]
       const { data: items, error: itemError } = await supabase.from('items').select('id,name,primary_role')
         .eq('company_id', companyId).in('id', itemIds)
       if (!active) return
-      if (itemError) { toast.error(itemError.message); return }
+      if (itemError) { console.error('Service item load failed', itemError); toast.error(tt('serviceJobs.createLoadFailed', 'Eligible service lines could not be loaded.')); return }
       const serviceItems = new Map((items || []).filter(item => item.primary_role === 'service').map(item => [item.id, item.name]))
       const eligible = (orderLines || []).filter(line => serviceItems.has(line.item_id))
         .map(line => ({ ...line, name: serviceItems.get(line.item_id)! }))
@@ -219,7 +222,7 @@ function CreateFromOrder({ companyId, salesOrderId, tt, onCreated, onCancel }: {
       p_scheduled_end: scheduledEnd ? new Date(scheduledEnd).toISOString() : null, p_billing_basis: billing,
     })
     setBusy(false)
-    if (error) { toast.error(error.message); return }
+    if (error) { console.error('Service Job creation failed', error); toast.error(tt('serviceJobs.createFailed', 'The Service Job was not created. Review the order and try again.')); return }
     toast.success(tt('serviceJobs.created', 'Service Job created')); onCreated(data as string)
   }
   return <Card>
@@ -235,9 +238,9 @@ function CreateFromOrder({ companyId, salesOrderId, tt, onCreated, onCancel }: {
   </Card>
 }
 
-function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }: {
+function JobDetail({ job, companyId, canOperate, canAdmin, money, locale, tt, refresh }: {
   job: Job; companyId: string; canOperate: boolean; canAdmin: boolean
-  money: (value: number) => string; tt: (key: string, fallback: string) => string; refresh: () => void
+  money: (value: number) => string; locale: string; tt: (key: string, fallback: string) => string; refresh: () => void
 }) {
   const [lines, setLines] = useState<JobLine[]>([])
   const [times, setTimes] = useState<TimeEntry[]>([])
@@ -246,6 +249,8 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
   const [allocations, setAllocations] = useState<Allocation[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [summary, setSummary] = useState<CostSummary | null>(null)
+  const [detailLoading, setDetailLoading] = useState(true)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
   const [manualMinutes, setManualMinutes] = useState('60')
@@ -269,6 +274,8 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
   const [correctionReason, setCorrectionReason] = useState('')
 
   const load = useCallback(async () => {
+    setDetailLoading(true)
+    setDetailError(null)
     const [lineRead, timeRead, materialRead, costRead, allocationRead, eventRead, costSummary, itemRead, uomRead, warehouseRead, binRead, billRead] = await Promise.all([
       supabase.from('service_job_lines').select('*').eq('service_job_id', job.id).order('created_at'),
       supabase.from('service_job_time_entries').select('*').eq('service_job_id', job.id).order('created_at', { ascending: false }),
@@ -284,7 +291,12 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
       supabase.from('vendor_bills').select('id,internal_reference').eq('company_id', companyId).eq('document_workflow_status', 'posted').eq('approval_status', 'approved'),
     ])
     const firstError = [lineRead, timeRead, materialRead, costRead, allocationRead, eventRead, costSummary, itemRead, uomRead, warehouseRead, binRead, billRead].find(result => result.error)?.error
-    if (firstError) { toast.error(firstError.message); return }
+    if (firstError) {
+      console.error('Service Job detail load failed', firstError)
+      setDetailError(tt('serviceJobs.detailLoadFailed', 'Service Job evidence could not be loaded. Try again.'))
+      setDetailLoading(false)
+      return
+    }
     setLines((lineRead.data || []) as JobLine[])
     setTimes((timeRead.data || []) as TimeEntry[])
     setMaterials((materialRead.data || []) as Material[])
@@ -304,30 +316,41 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
     if (billIds.length) {
       const lineResult = await supabase.from('vendor_bill_lines').select('id,description,line_total,vendor_bill_id')
         .eq('company_id', companyId).in('vendor_bill_id', billIds).gt('line_total', 0)
-      if (lineResult.error) toast.error(lineResult.error.message)
+      if (lineResult.error) {
+        console.error('Service Job vendor evidence load failed', lineResult.error)
+        setDetailError(tt('serviceJobs.detailLoadFailed', 'Service Job evidence could not be loaded. Try again.'))
+      }
       else {
         const references = new Map((billRead.data || []).map(bill => [bill.id, bill.internal_reference]))
         setVendorLines((lineResult.data || []).map(line => ({ ...line, reference: references.get(line.vendor_bill_id) || '—' })))
       }
     } else setVendorLines([])
+    setDetailLoading(false)
   }, [companyId, job.id])
   useEffect(() => { void load() }, [load])
   const mutate = async (name: string, args: Record<string, unknown>, success: string) => {
     setBusy(true)
     const { error } = await supabase.rpc(name, args)
     setBusy(false)
-    if (error) { toast.error(error.message); return }
+    if (error) {
+      console.error(`Service Job action failed: ${name}`, error)
+      toast.error(tt('serviceJobs.actionFailed', 'The action did not complete. Review the current job state and try again.'))
+      return
+    }
     toast.success(success); setReason(''); await load(); refresh()
   }
   const openTimer = times.find(entry => entry.source === 'timer' && !entry.stopped_at)
 
   return <>
     <SheetHeader>
-      <div className="flex flex-wrap items-center gap-2"><Badge variant={statusTone(job.execution_status)}>{statusLabel(job.execution_status, tt)}</Badge><Badge variant="outline">{job.costing_status === 'finalised' ? tt('serviceJobs.costing.finalised', 'Costing finalised') : tt('serviceJobs.costing.open', 'Costing open')}</Badge></div>
+      <div className="flex flex-wrap items-center gap-2"><PremiumStatusBadge tone={statusTone(job.execution_status)}>{statusLabel(job.execution_status, tt)}</PremiumStatusBadge><PremiumStatusBadge tone={job.costing_status === 'finalised' ? 'success' : 'neutral'}>{job.costing_status === 'finalised' ? tt('serviceJobs.costing.finalised', 'Costing finalised') : tt('serviceJobs.costing.open', 'Costing open')}</PremiumStatusBadge></div>
       <SheetTitle>{job.job_reference} · {job.title}</SheetTitle>
       <SheetDescription>{job.customer_name} · {job.order_no || '—'}</SheetDescription>
     </SheetHeader>
     <SheetBody className="space-y-6 pb-10">
+      {detailLoading ? <PremiumSkeleton lines={8} /> : detailError ? (
+        <PremiumStatePanel tone="danger" title={tt('serviceJobs.unavailable', 'Service Jobs unavailable')} description={detailError} action={<Button variant="outline" onClick={() => void load()}>{tt('common.retry', 'Try again')}</Button>} />
+      ) : <>
       <div className="flex flex-wrap gap-2">
         {canOperate && job.execution_status === 'planned' ? <Button disabled={busy} onClick={() => mutate('transition_service_job', { p_company_id: companyId, p_service_job_id: job.id, p_action: 'start', p_reason: null }, tt('serviceJobs.started', 'Job started'))}>{tt('serviceJobs.start', 'Start job')}</Button> : null}
         {canOperate && job.execution_status === 'in_progress' ? <Button disabled={busy || Boolean(openTimer)} onClick={() => mutate('transition_service_job', { p_company_id: companyId, p_service_job_id: job.id, p_action: 'complete', p_reason: null }, tt('serviceJobs.completed', 'Job completed'))}>{tt('serviceJobs.complete', 'Complete job')}</Button> : null}
@@ -364,7 +387,7 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
             return mutate('issue_service_job_material', { p_company_id: companyId, p_service_job_id: job.id, p_item_id: stockItemId, p_warehouse_id: warehouseId, p_bin_id: binId, p_quantity: Number(stockQuantity), p_uom_id: item?.base_uom_id, p_posting_request_key: requestKey('service-material'), p_note: null }, tt('serviceJobs.materialIssued', 'Company material issued'))
           }}>{tt('serviceJobs.issueMaterial', 'Issue company material')}</Button>
         </div> : null}
-        <div className="divide-y rounded-xl border">{materials.filter(item => item.supply_type === 'company').length ? materials.filter(item => item.supply_type === 'company').map(item => <div key={item.id} className="flex items-center justify-between gap-3 p-3"><div><p className="font-medium">{item.description} · {item.quantity} {item.uom_id}</p><p className="text-xs text-muted-foreground">{item.reverses_id ? tt('serviceJobs.reversal', 'Reversal') : money(item.base_amount)}</p></div>{canOperate && job.costing_status === 'open' && !item.reverses_id && !item.reversed_by_id ? <Button size="sm" variant="outline" disabled={busy || !correctionReason.trim()} onClick={() => mutate('reverse_service_job_material', { p_company_id: companyId, p_material_id: item.id, p_reason: correctionReason, p_posting_request_key: requestKey('service-material-reversal') }, tt('serviceJobs.materialReversed', 'Material issue reversed'))}>{tt('serviceJobs.reverse', 'Reverse')}</Button> : null}</div>) : <p className="p-4 text-sm text-muted-foreground">{tt('serviceJobs.noCompanyMaterials', 'No company-stock materials issued.')}</p>}</div>
+        <div className="divide-y rounded-xl border">{materials.filter(item => item.supply_type === 'company').length ? materials.filter(item => item.supply_type === 'company').map(item => <div key={item.id} className="flex items-center justify-between gap-3 p-3"><div><p className="font-medium">{item.description} · {formatOperationalQuantity(Number(item.quantity), locale)} {uoms.find(uom => uom.id === item.uom_id)?.code || tt('serviceJobs.uomUnavailable', 'Unit unavailable')}</p><p className="text-xs text-muted-foreground">{item.reverses_id ? tt('serviceJobs.reversal', 'Reversal') : money(item.base_amount)}</p></div>{canOperate && job.costing_status === 'open' && !item.reverses_id && !item.reversed_by_id ? <Button size="sm" variant="outline" disabled={busy || !correctionReason.trim()} onClick={() => mutate('reverse_service_job_material', { p_company_id: companyId, p_material_id: item.id, p_reason: correctionReason, p_posting_request_key: requestKey('service-material-reversal') }, tt('serviceJobs.materialReversed', 'Material issue reversed'))}>{tt('serviceJobs.reverse', 'Reverse')}</Button> : null}</div>) : <p className="p-4 text-sm text-muted-foreground">{tt('serviceJobs.noCompanyMaterials', 'No company-stock materials issued.')}</p>}</div>
         <h3 className="mb-2 mt-5 font-semibold">{tt('serviceJobs.customerMaterials', 'Customer supplied')}</h3>
         {canOperate && job.costing_status === 'open' ? <div className="mb-3 grid gap-3 rounded-xl border p-4 sm:grid-cols-2">
           <label className="space-y-1 sm:col-span-2"><Label>{tt('common.description', 'Description')}</Label><Input value={customerMaterial} onChange={event => setCustomerMaterial(event.target.value)} /></label>
@@ -372,7 +395,7 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
           <label className="space-y-1"><Label>{tt('serviceJobs.uom', 'Unit')}</Label><Select value={customerUom} onValueChange={setCustomerUom}><SelectTrigger><SelectValue placeholder={tt('serviceJobs.chooseUom', 'Choose unit')} /></SelectTrigger><SelectContent>{uoms.map(uom => <SelectItem key={uom.id} value={uom.id}>{uom.code} · {uom.name}</SelectItem>)}</SelectContent></Select></label>
           <Button className="sm:col-span-2" variant="outline" disabled={busy || !customerMaterial.trim() || Number(customerQuantity) <= 0 || !customerUom} onClick={() => mutate('add_customer_service_job_material', { p_company_id: companyId, p_service_job_id: job.id, p_description: customerMaterial, p_quantity: Number(customerQuantity), p_uom_id: customerUom, p_occurred_on: new Date().toISOString().slice(0, 10), p_item_id: null, p_notes: null }, tt('serviceJobs.customerMaterialAdded', 'Customer-supplied material recorded'))}>{tt('serviceJobs.addCustomerMaterial', 'Record customer-supplied material')}</Button>
         </div> : null}
-        <EvidenceList empty={tt('serviceJobs.noCustomerMaterials', 'No customer-supplied materials recorded.')} rows={materials.filter(item => item.supply_type === 'customer').map(item => ({ id: item.id, title: `${item.description} · ${item.quantity} ${uoms.find(uom => uom.id === item.uom_id)?.code || item.uom_id}`, detail: tt('serviceJobs.customerSupplied', 'Customer supplied') }))} />
+        <EvidenceList empty={tt('serviceJobs.noCustomerMaterials', 'No customer-supplied materials recorded.')} rows={materials.filter(item => item.supply_type === 'customer').map(item => ({ id: item.id, title: `${item.description} · ${formatOperationalQuantity(Number(item.quantity), locale)} ${uoms.find(uom => uom.id === item.uom_id)?.code || tt('serviceJobs.uomUnavailable', 'Unit unavailable')}`, detail: tt('serviceJobs.customerSupplied', 'Customer supplied') }))} />
       </PremiumSection>
 
       <PremiumSection title={tt('serviceJobs.directCosts', 'Direct costs')}>
@@ -395,20 +418,21 @@ function JobDetail({ job, companyId, canOperate, canAdmin, money, tt, refresh }:
       </PremiumSection>
 
       <PremiumSection title={tt('serviceJobs.costSummary', 'Actual cost summary')}>
-        <Card><CardContent className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-3">
-          <Cost label={tt('serviceJobs.materialCost', 'Materials')} value={money(summary?.materials || 0)} />
-          <Cost label={tt('serviceJobs.labour', 'Labour')} value={money(summary?.labour || 0)} />
-          <Cost label={tt('serviceJobs.subcontractors', 'Subcontractors')} value={money(summary?.subcontractors || 0)} />
-          <Cost label={tt('serviceJobs.suppliers', 'Suppliers')} value={money(summary?.suppliers || 0)} />
-          <Cost label={tt('serviceJobs.otherDirectCosts', 'Other direct costs')} value={money(summary?.otherDirectCosts || 0)} />
-          <Cost label={tt('serviceJobs.totalActualCost', 'Total actual cost')} value={money(summary?.totalActualCost || 0)} strong />
-        </CardContent></Card>
-        {canAdmin && job.execution_status === 'completed' && job.costing_status === 'open' ? <Button className="mt-3 w-full sm:w-auto" disabled={busy || ((summary?.totalActualCost || 0) === 0 && !reason.trim())} onClick={() => mutate('finalise_service_job_costing', { p_company_id: companyId, p_service_job_id: job.id, p_posting_request_key: requestKey('service-cost'), p_confirm_zero: (summary?.totalActualCost || 0) === 0, p_zero_cost_reason: (summary?.totalActualCost || 0) === 0 ? reason : null }, tt('serviceJobs.costingFinalised', 'Actual costing finalised'))}>{tt('serviceJobs.finaliseCosting', 'Finalise costing')}</Button> : null}
+        {summary ? <Card><CardContent className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-3">
+          <Cost label={tt('serviceJobs.materialCost', 'Materials')} value={money(summary.materials)} />
+          <Cost label={tt('serviceJobs.labour', 'Labour')} value={money(summary.labour)} />
+          <Cost label={tt('serviceJobs.subcontractors', 'Subcontractors')} value={money(summary.subcontractors)} />
+          <Cost label={tt('serviceJobs.suppliers', 'Suppliers')} value={money(summary.suppliers)} />
+          <Cost label={tt('serviceJobs.otherDirectCosts', 'Other direct costs')} value={money(summary.otherDirectCosts)} />
+          <Cost label={tt('serviceJobs.totalActualCost', 'Total actual cost')} value={money(summary.totalActualCost)} strong />
+        </CardContent></Card> : <PremiumStatePanel tone="neutral" title={tt('serviceJobs.costUnavailable', 'Actual cost is not available')} description={tt('serviceJobs.costUnavailableHelp', 'No missing cost evidence is presented as zero.')} />}
+        {canAdmin && summary && job.execution_status === 'completed' && job.costing_status === 'open' ? <Button className="mt-3 w-full sm:w-auto" disabled={busy || (summary.totalActualCost === 0 && !reason.trim())} onClick={() => mutate('finalise_service_job_costing', { p_company_id: companyId, p_service_job_id: job.id, p_posting_request_key: requestKey('service-cost'), p_confirm_zero: summary.totalActualCost === 0, p_zero_cost_reason: summary.totalActualCost === 0 ? reason : null }, tt('serviceJobs.costingFinalised', 'Actual costing finalised'))}>{tt('serviceJobs.finaliseCosting', 'Finalise costing')}</Button> : null}
         {canAdmin && job.costing_status === 'finalised' ? <Button className="mt-3" variant="outline" disabled={busy || !reason.trim()} onClick={() => mutate('reopen_service_job_costing', { p_company_id: companyId, p_service_job_id: job.id, p_current_fingerprint: job.cost_fingerprint, p_reason: reason }, tt('serviceJobs.costingReopened', 'Costing reopened'))}>{tt('serviceJobs.reopenCosting', 'Reopen costing')}</Button> : null}
       </PremiumSection>
       <PremiumSection title={tt('serviceJobs.timeline', 'Audit timeline')}>
         <EvidenceList empty={tt('serviceJobs.noEvents', 'No events.')} rows={events.map(event => ({ id: event.id, title: eventLabel(event.event_type, tt), detail: `${new Date(event.occurred_at).toLocaleString()}${event.reason ? ` · ${event.reason}` : ''}` }))} />
       </PremiumSection>
+      </>}
     </SheetBody>
   </>
 }
