@@ -2,6 +2,7 @@ import { Factory, Layers3, Sprout } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useI18n, withI18nFallback } from '../../lib/i18n'
 import { cn } from '../../lib/utils'
+import { ProductionMaintenancePanel } from './ProductionMaintenancePanel'
 
 const paths = [
   {
@@ -83,6 +84,7 @@ export function ProductionPathGuide() {
           )
         })}
       </div>
+      {pathname === '/bom' ? <ProductionMaintenancePanel /> : null}
     </section>
   )
 }
