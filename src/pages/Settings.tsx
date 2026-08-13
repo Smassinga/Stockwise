@@ -536,7 +536,7 @@ function Settings() {
   const copy = settingsGuideCopy[lang];
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars);
-  const { companyId, myRole } = useOrg();
+  const { companyId, myRole, authorityMode } = useOrg();
   const [searchParams, setSearchParams] = useSearchParams();
   const setupReadiness = useCompanySetupReadiness(companyId, myRole);
 
@@ -1111,7 +1111,9 @@ function Settings() {
       }
 
       const { data: updated, error } = await supabase.rpc(
-        "update_company_settings",
+        authorityMode === "platform_workspace"
+          ? "platform_admin_update_assisted_company_settings"
+          : "update_company_settings",
         {
           p_company_id: companyId,
           p_patch: normalized,
@@ -1146,10 +1148,15 @@ function Settings() {
       const upd = { ...profile };
       // Ensure only writable cols are sent (id is used in filter, not payload)
       delete (upd as any).id;
-      const { error } = await supabase
-        .from("companies")
-        .update(upd)
-        .eq("id", companyId);
+      const { error } = authorityMode === "platform_workspace"
+        ? await supabase.rpc("platform_admin_update_assisted_company_profile", {
+            p_company_id: companyId,
+            p_patch: upd,
+          })
+        : await supabase
+            .from("companies")
+            .update(upd)
+            .eq("id", companyId);
       if (error) throw error;
       toast.success(tt("settings.toast.companySaved", "Company profile saved"));
     } catch (e: any) {

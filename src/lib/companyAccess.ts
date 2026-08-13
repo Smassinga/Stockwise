@@ -22,6 +22,44 @@ export type PlatformAdminStatus = {
   is_admin: boolean
 }
 
+export type AssistedCompanyState = {
+  company_id: string
+  company_name: string
+  provisioned_by: string
+  provisioned_at: string
+  intended_owner_email: string | null
+  owner_state: 'unassigned' | 'pending' | 'active'
+  owner_user_id: string | null
+  owner_invited_at: string | null
+  owner_activated_at: string | null
+  subscription_status: SubscriptionStatus
+  trial_started_at: string | null
+  trial_expires_at: string | null
+  workspace_open: boolean
+}
+
+export type AssistedWorkspaceContext = {
+  company_id: string
+  company_name: string
+  expires_at: string
+}
+
+export type AssistedOwnerInvitation = {
+  invite_id: string
+  invite_token: string
+  company_id: string
+  owner_email: string
+  expires_at: string
+}
+
+export type AssistedTrialResult = {
+  company_id: string
+  trial_started_at: string
+  trial_expires_at: string
+  purge_scheduled_at: string
+  started_now: boolean
+}
+
 export type CompanyAccessRow = {
   company_id: string
   company_name: string | null
@@ -205,6 +243,33 @@ function toFriendlyAccessError(error: any, fallback: string) {
   if (message.includes('company_subscription_state_missing')) {
     return 'This company is missing subscription state and cannot be managed until that is repaired.'
   }
+  if (message.includes('assisted_company_not_found')) {
+    return 'This company was not created through assisted provisioning.'
+  }
+  if (message.includes('assisted_company_owner_already_active')) {
+    return 'This company already has an active customer owner.'
+  }
+  if (message.includes('assisted_company_handed_over_or_not_found')) {
+    return 'This setup workspace is no longer available because owner handover has completed.'
+  }
+  if (message.includes('assisted_owner_activation_required_before_trial')) {
+    return 'The intended customer owner must explicitly accept the invitation before the 7-day trial can start.'
+  }
+  if (message.includes('assisted_trial_requires_disabled_access_state')) {
+    return 'The assisted trial can start only while access is still disabled; existing paid or other access state was preserved.'
+  }
+  if (message.includes('platform_workspace_required')) {
+    return 'Open this assisted company from Platform Control before changing its setup.'
+  }
+  if (message.includes('assisted_trial_requires_explicit_start')) {
+    return 'Use the assisted-company trial action. The general access control cannot start this trial.'
+  }
+  if (message.includes('assisted_trial_cannot_be_restarted')) {
+    return 'The assisted 7-day trial has already been used and cannot be restarted.'
+  }
+  if (message.includes('idempotency_key_payload_mismatch')) {
+    return 'This request identifier was already used with different company details.'
+  }
   if (message.includes('invalid_plan_code')) {
     return 'The selected plan code is no longer valid.'
   }
@@ -250,6 +315,75 @@ export async function getPlatformAdminStatus() {
   const { data, error } = await supabase.rpc('get_platform_admin_status')
   if (error) throw new Error(toFriendlyAccessError(error, 'Failed to load platform admin status.'))
   return unwrapSingle<PlatformAdminStatus>(data) || { is_admin: false }
+}
+
+export async function provisionAssistedCustomerCompany(input: {
+  name: string
+  intendedOwnerEmail?: string | null
+  companyEmail?: string | null
+  phone?: string | null
+  preferredLanguage?: 'pt' | 'en'
+  countryCode?: string
+  requestKey: string
+}) {
+  const { data, error } = await supabase.rpc('platform_admin_provision_customer_company', {
+    p_name: input.name,
+    p_intended_owner_email: input.intendedOwnerEmail?.trim().toLowerCase() || null,
+    p_company_email: input.companyEmail?.trim().toLowerCase() || null,
+    p_phone: input.phone?.trim() || null,
+    p_preferred_lang: input.preferredLanguage || 'pt',
+    p_country_code: input.countryCode?.trim().toUpperCase() || 'MZ',
+    p_request_key: input.requestKey,
+  })
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to provision the customer company.'))
+  return unwrapSingle<{
+    company_id: string
+    company_name: string
+    owner_state: 'unassigned' | 'pending' | 'active'
+    subscription_status: SubscriptionStatus
+    trial_started_at: string | null
+    provisioned_at: string
+  }>(data)
+}
+
+export async function getAssistedCompanyState(companyId: string) {
+  const { data, error } = await supabase.rpc('platform_admin_get_assisted_company_state', {
+    p_company_id: companyId,
+  })
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to load assisted provisioning state.'))
+  return unwrapSingle<AssistedCompanyState>(data)
+}
+
+export async function openAssistedCustomerWorkspace(companyId: string) {
+  const { data, error } = await supabase.rpc('platform_admin_open_customer_workspace', {
+    p_company_id: companyId,
+  })
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to open the customer workspace.'))
+  return unwrapSingle<AssistedWorkspaceContext>(data)
+}
+
+export async function closeAssistedCustomerWorkspace() {
+  const { data, error } = await supabase.rpc('platform_admin_close_customer_workspace')
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to close the customer workspace.'))
+  return Boolean(data)
+}
+
+export async function inviteAssistedCustomerOwner(companyId: string, email: string) {
+  const { data, error } = await supabase.rpc('platform_admin_invite_assisted_owner', {
+    p_company_id: companyId,
+    p_email: email.trim().toLowerCase(),
+    p_expires_at: null,
+  })
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to create the customer owner invitation.'))
+  return unwrapSingle<AssistedOwnerInvitation>(data)
+}
+
+export async function startAssistedCustomerTrial(companyId: string) {
+  const { data, error } = await supabase.rpc('platform_admin_start_assisted_trial', {
+    p_company_id: companyId,
+  })
+  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to start the assisted customer trial.'))
+  return unwrapSingle<AssistedTrialResult>(data)
 }
 
 export async function listCompanyAccess(search?: string) {

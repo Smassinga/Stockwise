@@ -118,8 +118,7 @@ function pickBestMembership(rows: MemberRow[]): MemberRow | null {
 async function loadActorMembership(
   admin: ReturnType<typeof createClient>,
   companyId: string,
-  userId: string,
-  userEmail: string
+  userId: string
 ): Promise<MemberRow | null> {
   const { data: byUser, error: byUserErr } = await admin
     .from("company_members")
@@ -136,18 +135,10 @@ async function loadActorMembership(
     if (chosen) return chosen;
   }
 
-  if (!userEmail) return null;
-
-  const { data: byEmail, error: byEmailErr } = await admin
-    .from("company_members")
-    .select("email,user_id,role,status,created_at")
-    .eq("company_id", companyId)
-    .eq("email", userEmail)
-    .in("status", ["active", "invited"]);
-
-  if (byEmailErr) throw byEmailErr;
-
-  return pickBestMembership((byEmail ?? []) as MemberRow[]);
+  // Active tenant authority is bound to the authenticated subject, never to an
+  // email-only match. Pending invitations are linked by the governed self-only
+  // database flow before they can become active memberships.
+  return null;
 }
 
 async function loadTargetMembership(
@@ -183,6 +174,9 @@ serve(async (req) => {
     const userEmail = normalizeEmail(userData.user.email);
 
     const admin = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!);
+    const actor = createClient(SUPABASE_URL!, ANON_KEY!, {
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+    });
     const url = new URL(req.url);
     const pathname = url.pathname;
     const companyId = (url.searchParams.get("company_id") ?? "").trim();
@@ -198,11 +192,30 @@ serve(async (req) => {
     }
 
     async function assertPrivileged(company_id: string) {
-      const me = await loadActorMembership(admin, company_id, userId, userEmail);
-      if (!me) return { error: "not_member" as const };
+      const me = await loadActorMembership(admin, company_id, userId);
+      if (!me) {
+        const { data: platformWorkspace, error: platformWorkspaceError } = await actor.rpc(
+          "platform_admin_has_workspace_company",
+          { p_company_id: company_id },
+        );
+        if (platformWorkspaceError || platformWorkspace !== true) {
+          return { error: "not_member" as const };
+        }
+        return {
+          role: "ADMIN" as Role,
+          email: userEmail,
+          userId,
+          authority: "platform_workspace" as const,
+        };
+      }
       if (me.status !== "active") return { error: "inactive" as const };
       if (!["OWNER", "ADMIN", "MANAGER"].includes(me.role)) return { error: "not_privileged" as const };
-      return { role: me.role as Role, email: normalizeEmail(me.email), userId: me.user_id };
+      return {
+        role: me.role as Role,
+        email: normalizeEmail(me.email),
+        userId: me.user_id,
+        authority: "membership" as const,
+      };
     }
 
     if (req.method === "GET") {
@@ -258,6 +271,9 @@ serve(async (req) => {
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
+      if (guard.authority === "platform_workspace") {
+        return json({ error: "platform_workspace_member_mutation_not_allowed" }, 403);
+      }
 
       const lower = email;
       const existing = await loadTargetMembership(admin, company_id, lower);
@@ -305,6 +321,9 @@ serve(async (req) => {
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
+      if (guard.authority === "platform_workspace") {
+        return json({ error: "platform_workspace_member_mutation_not_allowed" }, 403);
+      }
 
       const lower = email;
       const existing = await loadTargetMembership(admin, company_id, lower);
@@ -359,6 +378,9 @@ serve(async (req) => {
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
+      if (guard.authority === "platform_workspace") {
+        return json({ error: "platform_workspace_member_mutation_not_allowed" }, 403);
+      }
 
       const target = await loadTargetMembership(admin, company_id, email);
       if (!target) return json({ error: "member_not_found" }, 404);
@@ -386,6 +408,9 @@ serve(async (req) => {
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
+      if (guard.authority === "platform_workspace") {
+        return json({ error: "platform_workspace_member_mutation_not_allowed" }, 403);
+      }
 
       const lower = email;
       const target = await loadTargetMembership(admin, company_id, lower);
@@ -418,6 +443,9 @@ serve(async (req) => {
 
       const guard = await assertPrivileged(company_id);
       if ("error" in guard) return json({ error: guard.error }, 403);
+      if (guard.authority === "platform_workspace") {
+        return json({ error: "platform_workspace_member_mutation_not_allowed" }, 403);
+      }
 
       const lower = email;
       const target = await loadTargetMembership(admin, company_id, lower);

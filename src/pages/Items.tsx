@@ -122,7 +122,7 @@ export default function ItemsPage() {
   const moneyLocale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
-  const { myRole, companyId } = useOrg()
+  const { myRole, companyId, authorityMode } = useOrg()
   const isMobile = useIsMobile()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canCreateItem = can.createItem(role)
@@ -346,6 +346,19 @@ export default function ItemsPage() {
   }
 
   async function loadItems() {
+    if (authorityMode === 'platform_workspace') {
+      const platformResult = await supabase
+        .from('items')
+        .select('id,sku,name,base_uom_id,unit_price,min_stock,created_at,updated_at,primary_role,track_inventory,can_buy,can_sell,is_assembled')
+        .eq('company_id', companyId)
+        .order('name', { ascending: true })
+      if (platformResult.error) throw platformResult.error
+      setProfileFieldsSupported(true)
+      setBasicOnlyAcknowledged(false)
+      setItems(sortByName((platformResult.data || []).map((row) => normalizeItem(row))))
+      return
+    }
+
     const extendedFields = [
       'id',
       'sku',
@@ -450,7 +463,7 @@ export default function ItemsPage() {
         unit_price: draftProfile.canSell ? nextUnitPrice : null,
       }
 
-      const insert = profileFieldsSupported
+      const insert: { data: any; error: any } = profileFieldsSupported
         ? await supabase.rpc('create_item_with_profile', {
             p_company_id: companyId,
             p_sku: payload.sku,
@@ -464,6 +477,8 @@ export default function ItemsPage() {
             p_can_sell: draftProfile.canSell,
             p_is_assembled: draftProfile.isAssembled,
           })
+        : authorityMode === 'platform_workspace'
+        ? { data: null, error: new Error('item_profile_support_required') }
         : await supabase.from('items').insert(payload).select('id').single()
       if (insert.error) {
         const msg = String(insert.error.message || '')
@@ -577,11 +592,17 @@ export default function ItemsPage() {
 
     try {
       setSavingEdit(true)
-      const update = await supabase
-        .from('items')
-        .update({ min_stock: nextMinStock })
-        .eq('id', editingItem.id)
-        .eq('company_id', companyId)
+      const update = authorityMode === 'platform_workspace'
+        ? await supabase.rpc('platform_admin_update_assisted_item_min_stock', {
+            p_company_id: companyId,
+            p_item_id: editingItem.id,
+            p_min_stock: nextMinStock,
+          })
+        : await supabase
+            .from('items')
+            .update({ min_stock: nextMinStock })
+            .eq('id', editingItem.id)
+            .eq('company_id', companyId)
       if (update.error) throw update.error
 
       toast.success(tt('items.toast.updated', 'Minimum stock updated'))

@@ -40,7 +40,7 @@ const DEFAULT_CURRENCIES: Currency[] = [
 ]
 
 export default function CurrencyPage() {
-  const { companyId, companyName, myRole } = useOrg()
+  const { companyId, companyName, myRole, authorityMode } = useOrg()
   const { t } = useI18n()
   const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
     withI18nFallback(t, key, fallback, vars)
@@ -98,46 +98,81 @@ export default function CurrencyPage() {
         setAllCurrencies((all || []) as Currency[])
 
         // 2) Allowed currencies – company scoped via view/RLS
-        const { data: ac, error: acErr } = await supabase
-          .from('company_currencies_view')
-          .select('code,name,symbol,decimals')
-          .order('code', { ascending: true })
+        const { data: ac, error: acErr } = authorityMode === 'platform_workspace'
+          ? await supabase
+              .from('company_currencies')
+              .select('currency_code')
+              .eq('company_id', companyId)
+              .order('currency_code', { ascending: true })
+          : await supabase
+              .from('company_currencies_view')
+              .select('code,name,symbol,decimals')
+              .order('code', { ascending: true })
         if (acErr) throw acErr
 
-        let allowedList = (ac || []) as Currency[]
+        let allowedList = authorityMode === 'platform_workspace'
+          ? ((ac || []) as Array<{ currency_code: string }>).flatMap((entry) => {
+              const currency = ((all || []) as Currency[]).find((candidate) => candidate.code === entry.currency_code)
+              return currency ? [currency] : []
+            })
+          : (ac || []) as Currency[]
         // first time: enable DEFAULT_CURRENCIES for this company
         if (!allowedList.length) {
           const ins = await supabase
             .from('company_currencies')
-            .upsert(DEFAULT_CURRENCIES.map(c => ({ currency_code: c.code })))
+            .upsert(DEFAULT_CURRENCIES.map(c => ({ company_id: companyId, currency_code: c.code })))
           if (ins.error) throw ins.error
 
-          const { data: seeded, error: seededErr } = await supabase
-            .from('company_currencies_view')
-            .select('code,name,symbol,decimals')
-            .order('code', { ascending: true })
+          const { data: seeded, error: seededErr } = authorityMode === 'platform_workspace'
+            ? await supabase
+                .from('company_currencies')
+                .select('currency_code')
+                .eq('company_id', companyId)
+                .order('currency_code', { ascending: true })
+            : await supabase
+                .from('company_currencies_view')
+                .select('code,name,symbol,decimals')
+                .order('code', { ascending: true })
           if (seededErr) throw seededErr
-          allowedList = (seeded || []) as Currency[]
+          allowedList = authorityMode === 'platform_workspace'
+            ? ((seeded || []) as Array<{ currency_code: string }>).flatMap((entry) => {
+                const currency = ((all || []) as Currency[]).find((candidate) => candidate.code === entry.currency_code)
+                return currency ? [currency] : []
+              })
+            : (seeded || []) as Currency[]
         }
         setAllowed(allowedList)
 
         // 3) Base currency – company scoped
-        const { data: s, error: sErr } = await supabase
-          .from('company_settings_view')
-          .select('base_currency_code')
-          .limit(1)
-          .maybeSingle()
+        const { data: s, error: sErr } = authorityMode === 'platform_workspace'
+          ? await supabase
+              .from('company_settings')
+              .select('base_currency_code')
+              .eq('company_id', companyId)
+              .maybeSingle()
+          : await supabase
+              .from('company_settings_view')
+              .select('base_currency_code')
+              .limit(1)
+              .maybeSingle()
         if (sErr) throw sErr
         const currentBase = s?.base_currency_code || 'MZN'
         setBase(currentBase)
         setBaseCurrencyCode(currentBase, companyId)
 
         // 4) FX rates – company scoped
-        const { data: fxRows, error: fxErr } = await supabase
-          .from('fx_rates_view')
-          .select('id,date,from_code,to_code,rate,fromCode,toCode')
-          .order('date', { ascending: false })
-          .limit(200)
+        const { data: fxRows, error: fxErr } = authorityMode === 'platform_workspace'
+          ? await supabase
+              .from('fx_rates')
+              .select('id,date,from_code,to_code,rate')
+              .eq('company_id', companyId)
+              .order('date', { ascending: false })
+              .limit(200)
+          : await supabase
+              .from('fx_rates_view')
+              .select('id,date,from_code,to_code,rate,fromCode,toCode')
+              .order('date', { ascending: false })
+              .limit(200)
         if (fxErr) throw fxErr
         setFx((fxRows || []) as FxRate[])
 
@@ -161,7 +196,14 @@ export default function CurrencyPage() {
     try {
       if (!canEdit) return toast.error(tt('currency.toast.noPermission', 'You do not have permission to change currency settings'))
       if (!allowedCodes.has(base)) return toast.error(tt('currency.toast.baseMustBeEnabled', 'Base currency must be enabled for this company'))
-      const { error } = await supabase.rpc('set_base_currency_for_current_company', { p_code: base })
+      const { error } = await supabase.rpc(
+        authorityMode === 'platform_workspace'
+          ? 'platform_admin_set_assisted_base_currency'
+          : 'set_base_currency_for_current_company',
+        authorityMode === 'platform_workspace'
+          ? { p_company_id: companyId, p_code: base }
+          : { p_code: base },
+      )
       if (error) throw error
       setBaseCurrencyCode(base, companyId)
       toast.success(tt('currency.toast.baseSaved', 'Base currency saved for this company'))
@@ -172,18 +214,29 @@ export default function CurrencyPage() {
   }
 
   async function refreshAllowed() {
-    const { data, error } = await supabase
-      .from('company_currencies_view')
-      .select('code,name,symbol,decimals')
-      .order('code', { ascending: true })
+    const { data, error } = authorityMode === 'platform_workspace'
+      ? await supabase
+          .from('company_currencies')
+          .select('currency_code')
+          .eq('company_id', companyId)
+          .order('currency_code', { ascending: true })
+      : await supabase
+          .from('company_currencies_view')
+          .select('code,name,symbol,decimals')
+          .order('code', { ascending: true })
     if (error) throw error
-    setAllowed((data || []) as Currency[])
+    if (authorityMode === 'platform_workspace') {
+      const codes = new Set(((data || []) as Array<{ currency_code: string }>).map((entry) => entry.currency_code))
+      setAllowed(allCurrencies.filter((currency) => codes.has(currency.code)))
+    } else {
+      setAllowed((data || []) as Currency[])
+    }
   }
 
   async function addAllowed(code: string) {
     try {
       if (!canEdit) return toast.error(tt('currency.toast.noPermission', 'You do not have permission to change currency settings'))
-      const { error } = await supabase.from('company_currencies').insert({ currency_code: code })
+      const { error } = await supabase.from('company_currencies').insert({ company_id: companyId, currency_code: code })
       if (error) throw error
       await refreshAllowed()
       toast.success(tt('currency.toast.enabled', 'Enabled {code} for this company', { code }))
@@ -197,7 +250,7 @@ export default function CurrencyPage() {
     try {
       if (!canEdit) return toast.error(tt('currency.toast.noPermission', 'You do not have permission to change currency settings'))
       if (code === base) return toast.error(tt('currency.toast.cannotRemoveBase', 'You cannot remove the current base currency'))
-      const { error } = await supabase.from('company_currencies').delete().eq('currency_code', code)
+      const { error } = await supabase.from('company_currencies').delete().eq('company_id', companyId).eq('currency_code', code)
       if (error) throw error
       await refreshAllowed()
       toast.success(tt('currency.toast.disabled', 'Disabled {code} for this company', { code }))
@@ -220,17 +273,24 @@ export default function CurrencyPage() {
         return
       }
       setSavedFxRate(null)
-      const payload = { date: fxDate, from_code: from, to_code: to, rate: r }
+      const payload = { company_id: companyId, date: fxDate, from_code: from, to_code: to, rate: r }
       const { error } = await supabase
         .from('fx_rates')
         .upsert(payload, { onConflict: 'company_id,date,from_code,to_code' })
       if (error) throw error
 
-      const { data, error: rErr } = await supabase
-        .from('fx_rates_view')
-        .select('id,date,from_code,to_code,rate,fromCode,toCode')
-        .order('date', { ascending: false })
-        .limit(200)
+      const { data, error: rErr } = authorityMode === 'platform_workspace'
+        ? await supabase
+            .from('fx_rates')
+            .select('id,date,from_code,to_code,rate')
+            .eq('company_id', companyId)
+            .order('date', { ascending: false })
+            .limit(200)
+        : await supabase
+            .from('fx_rates_view')
+            .select('id,date,from_code,to_code,rate,fromCode,toCode')
+            .order('date', { ascending: false })
+            .limit(200)
       if (rErr) throw rErr
       setFx((data || []) as FxRate[])
       setSavedFxRate({ date: fxDate, from, to, rate: r })

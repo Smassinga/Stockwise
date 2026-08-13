@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import toast from 'react-hot-toast'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -12,6 +12,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Plus,
   Trash2,
   UserRound,
 } from 'lucide-react'
@@ -38,23 +39,30 @@ import {
   listCompanySubscriptionDashboard,
   listCompanyControlActions,
   previewCompanyAccessEmail,
+  provisionAssistedCustomerCompany,
   resetCompanyOperationalData,
   sendCompanyAccessEmail,
   setCompanyAccess,
+  getAssistedCompanyState,
+  inviteAssistedCustomerOwner,
+  startAssistedCustomerTrial,
   type CompanyAccessAuditRow,
   type CompanyAccessDetail,
   type CompanyAccessEmailPreview,
   type CompanyAccessEmailTemplateType,
   type CompanyAccessRow,
   type CompanyControlActionRow,
+  type AssistedCompanyState,
   type SubscriptionStatus,
 } from '../lib/companyAccess'
+import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { internalPlanOptions } from '../lib/pricingPlans'
 import { PUBLIC_CONTACT_EMAIL } from '../lib/publicContact'
 import SubscriptionAnalyticsDashboard from '../components/platform/SubscriptionAnalyticsDashboard'
 import PaymentActivationAdmin from '../components/platform/PaymentActivationAdmin'
 import { PremiumPageHeader } from '../components/premium/PremiumPageHeader'
+import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 import { AdministrationSectionNav } from '../components/administration/AdministrationSectionNav'
 import { AdministrationAuthorityBadge } from '../components/administration/AdministrationAuthorityBadge'
 import { isKnownSubscriptionStatus, subscriptionStatusKey } from '../lib/administrationPresentation'
@@ -141,7 +149,7 @@ function controlActionLabel(
 
 function countDeletedRows(summary: Record<string, unknown> | null | undefined) {
   if (!summary || typeof summary !== 'object') return 0
-  return Object.values(summary).reduce((total, value) => total + (typeof value === 'number' ? value : 0), 0)
+  return Object.values(summary).reduce<number>((total, value) => total + (typeof value === 'number' ? value : 0), 0)
 }
 
 function resolveStoredExpiryDate(detail: CompanyAccessDetail | null) {
@@ -175,6 +183,7 @@ function MetadataCard({
 }
 
 export default function PlatformControlPage() {
+  const navigate = useNavigate()
   const { lang, t } = useI18n()
   const tt = useCallback(
     (key: string, fallback: string, vars?: Record<string, string | number>) =>
@@ -220,6 +229,19 @@ export default function PlatformControlPage() {
   const [auditUnavailable, setAuditUnavailable] = useState(false)
   const [controlUnavailable, setControlUnavailable] = useState(false)
   const [durableResult, setDurableResult] = useState<string | null>(null)
+  const [assistedState, setAssistedState] = useState<AssistedCompanyState | null>(null)
+  const [provisioning, setProvisioning] = useState(false)
+  const [assistedAction, setAssistedAction] = useState<'invite' | 'trial' | null>(null)
+  const [ownerEmail, setOwnerEmail] = useState('')
+  const [provisionRequestKey, setProvisionRequestKey] = useState(() => crypto.randomUUID())
+  const [provisionForm, setProvisionForm] = useState({
+    name: '',
+    intendedOwnerEmail: '',
+    companyEmail: '',
+    phone: '',
+    preferredLanguage: 'pt' as 'pt' | 'en',
+    countryCode: 'MZ',
+  })
 
   const subscriptionLabel = useCallback(
     (value: string | null | undefined, fallback = '-') =>
@@ -353,16 +375,18 @@ export default function PlatformControlPage() {
   )
 
   const fetchSelectedCompanyData = useCallback(async (companyId: string) => {
-    const [detailResult, eventsResult, controlResult] = await Promise.allSettled([
+    const [detailResult, eventsResult, controlResult, assistedResult] = await Promise.allSettled([
       getCompanyAccessDetail(companyId),
       listCompanyAccessEvents(companyId),
       listCompanyControlActions(companyId),
+      getAssistedCompanyState(companyId),
     ])
     if (detailResult.status === 'rejected') throw detailResult.reason
     return {
       detailRow: detailResult.value,
       events: eventsResult.status === 'fulfilled' ? eventsResult.value : [],
       controlEvents: controlResult.status === 'fulfilled' ? controlResult.value : [],
+      assisted: assistedResult.status === 'fulfilled' ? assistedResult.value : null,
       auditUnavailable: eventsResult.status === 'rejected',
       controlUnavailable: controlResult.status === 'rejected',
     }
@@ -377,6 +401,7 @@ export default function PlatformControlPage() {
       setDetail(null)
       setAuditRows([])
       setControlRows([])
+      setAssistedState(null)
       setAuditUnavailable(false)
       setControlUnavailable(false)
       return
@@ -386,6 +411,7 @@ export default function PlatformControlPage() {
     setDetail(null)
     setAuditRows([])
     setControlRows([])
+    setAssistedState(null)
     setAuditUnavailable(false)
     setControlUnavailable(false)
     setDetailLoading(true)
@@ -398,6 +424,7 @@ export default function PlatformControlPage() {
         setDetail(result.detailRow)
         setAuditRows(result.events)
         setControlRows(result.controlEvents)
+        setAssistedState(result.assisted)
         setAuditUnavailable(result.auditUnavailable)
         setControlUnavailable(result.controlUnavailable)
       } catch (error) {
@@ -427,6 +454,7 @@ export default function PlatformControlPage() {
       setEmailPreview(null)
       setResetReason('')
       setResetConfirmation('')
+      setOwnerEmail('')
       return
     }
 
@@ -440,13 +468,15 @@ export default function PlatformControlPage() {
     setEmailPreview(null)
     setResetReason('')
     setResetConfirmation('')
-  }, [detail])
+    setOwnerEmail(assistedState?.intended_owner_email || '')
+  }, [assistedState?.intended_owner_email, detail])
 
   async function refreshSelectedCompany(companyId: string) {
     const result = await fetchSelectedCompanyData(companyId)
     setDetail(result.detailRow)
     setAuditRows(result.events)
     setControlRows(result.controlEvents)
+    setAssistedState(result.assisted)
     setAuditUnavailable(result.auditUnavailable)
     setControlUnavailable(result.controlUnavailable)
   }
@@ -472,6 +502,133 @@ export default function PlatformControlPage() {
       toast.error(error?.message || tt('platform.saveFailed', 'Failed to update company access.'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  function updateProvisionField<K extends keyof typeof provisionForm>(
+    key: K,
+    value: (typeof provisionForm)[K],
+  ) {
+    setProvisionForm((current) => ({ ...current, [key]: value }))
+    setProvisionRequestKey(crypto.randomUUID())
+  }
+
+  async function handleProvisionCompany(event: FormEvent) {
+    event.preventDefault()
+    if (!provisionForm.name.trim()) {
+      toast.error(tt('platform.assisted.companyNameRequired', 'Enter the customer company name.'))
+      return
+    }
+
+    try {
+      setProvisioning(true)
+      const provisioned = await provisionAssistedCustomerCompany({
+        name: provisionForm.name,
+        intendedOwnerEmail: provisionForm.intendedOwnerEmail || null,
+        companyEmail: provisionForm.companyEmail || null,
+        phone: provisionForm.phone || null,
+        preferredLanguage: provisionForm.preferredLanguage,
+        countryCode: provisionForm.countryCode,
+        requestKey: provisionRequestKey,
+      })
+      if (!provisioned?.company_id) throw new Error('assisted_company_provision_result_missing')
+
+      await loadCompanies(provisioned.company_id)
+      setSelectedCompanyId(provisioned.company_id)
+      setSearchParams({ view: 'company', companyId: provisioned.company_id, section: 'overview' })
+      setProvisionForm({
+        name: '',
+        intendedOwnerEmail: '',
+        companyEmail: '',
+        phone: '',
+        preferredLanguage: 'pt',
+        countryCode: 'MZ',
+      })
+      setProvisionRequestKey(crypto.randomUUID())
+      setDurableResult(tt(
+        'platform.assisted.provisionedResult',
+        'Customer company provisioned without an owner membership or active trial.',
+      ))
+      toast.success(tt('platform.assisted.provisioned', 'Customer company provisioned.'))
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('platform.assisted.provisionFailed', 'Failed to provision the customer company.'))
+    } finally {
+      setProvisioning(false)
+    }
+  }
+
+  async function handleInviteOwner() {
+    if (!assistedState) return
+    const email = ownerEmail.trim().toLowerCase()
+    if (!email) {
+      toast.error(tt('platform.assisted.ownerEmailRequired', 'Enter the intended owner email.'))
+      return
+    }
+
+    try {
+      setAssistedAction('invite')
+      const invitation = await inviteAssistedCustomerOwner(assistedState.company_id, email)
+      if (!invitation?.invite_token) throw new Error('assisted_owner_invitation_result_missing')
+
+      const inviteLink = `${window.location.origin}/accept-invite?token=${invitation.invite_token}`
+      const { error: mailError } = await supabase.functions.invoke('mailer-invite', {
+        body: {
+          company_id: assistedState.company_id,
+          company_name: assistedState.company_name,
+          invite_link: inviteLink,
+          email,
+          role: 'OWNER',
+          mode: 'email',
+        },
+      })
+
+      await refreshSelectedCompany(assistedState.company_id)
+      if (mailError) {
+        try {
+          await navigator.clipboard.writeText(inviteLink)
+          toast.error(tt('platform.assisted.ownerInviteEmailFailedCopied', 'Owner invitation created, but email failed; the link was copied.'))
+        } catch {
+          toast.error(tt('platform.assisted.ownerInviteEmailFailed', 'Owner invitation created, but the email could not be sent.'))
+        }
+      } else {
+        toast.success(tt('platform.assisted.ownerInviteSent', 'Owner invitation sent.'))
+      }
+      setDurableResult(tt(
+        'platform.assisted.ownerInviteRecorded',
+        'The exact intended owner email and pending invitation are recorded in Platform Control.',
+      ))
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('platform.assisted.ownerInviteFailed', 'Failed to invite the customer owner.'))
+    } finally {
+      setAssistedAction(null)
+    }
+  }
+
+  async function handleStartTrial() {
+    if (!assistedState) return
+    try {
+      setAssistedAction('trial')
+      const trial = await startAssistedCustomerTrial(assistedState.company_id)
+      await Promise.all([
+        loadCompanies(assistedState.company_id),
+        refreshSelectedCompany(assistedState.company_id),
+      ])
+      setDurableResult(tt(
+        'platform.assisted.trialStartedResult',
+        'The one-time 7-day trial window is stored from {start} to {end}.',
+        {
+          start: formatDateTime(trial?.trial_started_at, locale),
+          end: formatDateTime(trial?.trial_expires_at, locale),
+        },
+      ))
+      toast.success(tt('platform.assisted.trialStarted', 'The 7-day trial has started.'))
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || tt('platform.assisted.trialStartFailed', 'Failed to start the 7-day trial.'))
+    } finally {
+      setAssistedAction(null)
     }
   }
 
@@ -618,6 +775,89 @@ export default function PlatformControlPage() {
             </div>
           ) : null}
 
+          {platformView === 'portfolio' && !portfolioError ? (
+            <Card className="border-border/70 bg-card">
+              <CardHeader>
+                <CardTitle>{tt('platform.assisted.createTitle', 'Create customer company')}</CardTitle>
+                <CardDescription>
+                  {tt(
+                    'platform.assisted.createDescription',
+                    'Provision an ownerless company shell for assisted setup. Provisioning does not start the customer trial.',
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="grid gap-4 lg:grid-cols-6" onSubmit={handleProvisionCompany}>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label htmlFor="assisted-company-name">{tt('platform.assisted.companyName', 'Company / trading name')}</Label>
+                    <Input
+                      id="assisted-company-name"
+                      required
+                      value={provisionForm.name}
+                      onChange={(event) => updateProvisionField('name', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label htmlFor="assisted-owner-email">{tt('platform.assisted.intendedOwnerEmail', 'Intended owner email (optional)')}</Label>
+                    <Input
+                      id="assisted-owner-email"
+                      type="email"
+                      value={provisionForm.intendedOwnerEmail}
+                      onChange={(event) => updateProvisionField('intendedOwnerEmail', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label htmlFor="assisted-company-email">{tt('platform.assisted.companyEmail', 'Company email (optional)')}</Label>
+                    <Input
+                      id="assisted-company-email"
+                      type="email"
+                      value={provisionForm.companyEmail}
+                      onChange={(event) => updateProvisionField('companyEmail', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label htmlFor="assisted-company-phone">{tt('platform.assisted.phone', 'Phone (optional)')}</Label>
+                    <Input
+                      id="assisted-company-phone"
+                      value={provisionForm.phone}
+                      onChange={(event) => updateProvisionField('phone', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="assisted-language">{tt('platform.assisted.language', 'Preferred language')}</Label>
+                    <Select
+                      value={provisionForm.preferredLanguage}
+                      onValueChange={(value) => updateProvisionField('preferredLanguage', value as 'pt' | 'en')}
+                    >
+                      <SelectTrigger id="assisted-language"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pt">Português</SelectItem>
+                        <SelectItem value="en">English</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="assisted-country">{tt('platform.assisted.country', 'Country code')}</Label>
+                    <Input
+                      id="assisted-country"
+                      maxLength={2}
+                      value={provisionForm.countryCode}
+                      onChange={(event) => updateProvisionField('countryCode', event.target.value.toUpperCase())}
+                    />
+                  </div>
+                  <div className="flex items-end lg:col-span-2">
+                    <Button type="submit" disabled={provisioning} className="min-h-11 w-full sm:w-auto">
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      {provisioning
+                        ? tt('platform.assisted.provisioning', 'Provisioning')
+                        : tt('platform.assisted.createAction', 'Create customer company')}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
+
           {platformView === 'portfolio' && !portfolioError ? <SubscriptionAnalyticsDashboard
             rows={rows}
             loading={loading}
@@ -669,6 +909,114 @@ export default function PlatformControlPage() {
                     </div>
                   ) : detail ? (
                     <>
+                      {companySection === 'overview' && assistedState ? (
+                        <section className="border-y border-border py-5" aria-labelledby="assisted-company-heading">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                              <h2 id="assisted-company-heading" className="text-lg font-semibold">
+                                {tt('platform.assisted.detailTitle', 'Assisted customer provisioning')}
+                              </h2>
+                              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+                                {tt(
+                                  'platform.assisted.detailDescription',
+                                  'Setup authority is temporary platform administration. It is not customer membership or ownership.',
+                                )}
+                              </p>
+                            </div>
+                            <PremiumStatusBadge
+                              tone={assistedState.owner_state === 'active' ? 'positive' : 'neutral'}
+                            >
+                              {assistedState.owner_state === 'active'
+                                ? tt('platform.assisted.ownerActive', 'Owner active')
+                                : assistedState.owner_state === 'pending'
+                                  ? tt('platform.assisted.ownerPending', 'Owner invitation pending')
+                                  : tt('platform.assisted.ownerUnassigned', 'Owner not assigned')}
+                            </PremiumStatusBadge>
+                          </div>
+
+                          <dl className="mt-5 grid gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <div>
+                              <dt className="text-xs font-medium text-muted-foreground">{tt('platform.assisted.provisionedBy', 'Provisioned by')}</dt>
+                              <dd className="mt-1 break-all text-sm font-medium">{assistedState.provisioned_by}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium text-muted-foreground">{tt('platform.assisted.provisionedAt', 'Provisioned at')}</dt>
+                              <dd className="mt-1 text-sm font-medium">{formatDateTime(assistedState.provisioned_at, locale)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium text-muted-foreground">{tt('platform.assisted.ownerEmail', 'Owner email')}</dt>
+                              <dd className="mt-1 break-all text-sm font-medium">{assistedState.intended_owner_email || tt('platform.notCaptured', 'Not captured')}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium text-muted-foreground">{tt('platform.assisted.trialState', 'Trial')}</dt>
+                              <dd className="mt-1 text-sm font-medium">
+                                {!assistedState.trial_started_at
+                                  ? tt('platform.assisted.trialNotStarted', 'Not started')
+                                  : assistedState.trial_expires_at && new Date(assistedState.trial_expires_at).getTime() > Date.now()
+                                    ? tt('platform.assisted.trialActive', 'Active until {date}', { date: formatDateTime(assistedState.trial_expires_at, locale) })
+                                    : tt('platform.assisted.trialExpired', 'Expired')}
+                              </dd>
+                            </div>
+                          </dl>
+
+                          {assistedState.owner_state !== 'active' ? (
+                            <div className="mt-5 max-w-xl space-y-2">
+                              <Label htmlFor="assisted-detail-owner-email">{tt('platform.assisted.ownerEmail', 'Owner email')}</Label>
+                              <Input
+                                id="assisted-detail-owner-email"
+                                type="email"
+                                value={ownerEmail}
+                                onChange={(event) => setOwnerEmail(event.target.value)}
+                              />
+                            </div>
+                          ) : null}
+
+                          <div className="mt-5 flex flex-wrap gap-2">
+                            {assistedState.owner_state !== 'active' ? (
+                              <Button
+                                type="button"
+                                onClick={() => navigate(`/platform-workspace/${assistedState.company_id}/settings`)}
+                              >
+                                {tt('platform.assisted.openWorkspace', 'Open customer workspace')}
+                              </Button>
+                            ) : null}
+                            {assistedState.owner_state !== 'active' ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={assistedAction !== null || !ownerEmail.trim()}
+                                onClick={() => void handleInviteOwner()}
+                              >
+                                {assistedAction === 'invite'
+                                  ? tt('platform.assisted.invitingOwner', 'Inviting owner')
+                                  : tt('platform.assisted.inviteOwner', 'Invite owner')}
+                              </Button>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={
+                                assistedAction !== null
+                                || assistedState.owner_state !== 'active'
+                                || Boolean(assistedState.trial_started_at)
+                                || assistedState.subscription_status !== 'disabled'
+                              }
+                              onClick={() => void handleStartTrial()}
+                            >
+                              {assistedAction === 'trial'
+                                ? tt('platform.assisted.startingTrial', 'Starting trial')
+                                : tt('platform.assisted.startTrial', 'Start 7-day trial')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => setSearchParams({ view: 'company', companyId: assistedState.company_id, section: 'access' })}
+                            >
+                              {tt('platform.assisted.manageAccess', 'Manage access')}
+                            </Button>
+                          </div>
+                        </section>
+                      ) : null}
                       <div className={companySection === 'overview' ? 'grid gap-4 xl:grid-cols-[1.05fr_0.95fr]' : 'hidden'}>
                         <div className="rounded-2xl border border-border/70 bg-muted/10 p-5">
                           <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">

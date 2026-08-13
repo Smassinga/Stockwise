@@ -112,8 +112,7 @@ function isAllowedInviteLink(inviteLink: string): boolean {
 async function getActorRole(
   admin: ReturnType<typeof createClient>,
   companyId: string,
-  userId: string,
-  userEmail: string
+  userId: string
 ): Promise<Role | null> {
   const { data: byUser, error: byUserErr } = await admin
     .from("company_members")
@@ -129,21 +128,10 @@ async function getActorRole(
     .sort((a, b) => roleRank(a) - roleRank(b))[0];
   if (activeUserRole) return activeUserRole;
 
-  if (!userEmail) return null;
-
-  const { data: byEmail, error: byEmailErr } = await admin
-    .from("company_members")
-    .select("role,status")
-    .eq("company_id", companyId)
-    .eq("email", userEmail)
-    .in("status", ["active", "invited"]);
-
-  if (byEmailErr) throw byEmailErr;
-  const activeEmailRole = (byEmail ?? [])
-    .filter((r) => r.status === "active")
-    .map((r) => r.role as Role)
-    .sort((a, b) => roleRank(a) - roleRank(b))[0];
-  return activeEmailRole ?? null;
+  // Invitation email identity is not tenant authority. The caller must already
+  // have an active membership bound to this authenticated user id, or pass the
+  // separate live platform-workspace authority check below.
+  return null;
 }
 
 async function getInviteRow(
@@ -289,9 +277,23 @@ serve(async (req) => {
     const clientIp = getClientIp(req) ?? "unknown";
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const actor = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+    });
 
-    const actorRole = await getActorRole(admin, companyId, userId, userEmail);
-    if (!actorRole || roleRank(actorRole) > roleRank("MANAGER")) {
+    const actorRole = await getActorRole(admin, companyId, userId);
+    const [{ data: platformStatus }, { data: platformWorkspace }] = await Promise.all([
+      actor.rpc("get_platform_admin_status"),
+      actor.rpc("platform_admin_has_workspace_company", { p_company_id: companyId }),
+    ]);
+    const isPlatformAdmin = Array.isArray(platformStatus)
+      ? platformStatus.some((row) => row?.is_admin === true)
+      : platformStatus?.is_admin === true;
+
+    if (
+      (!actorRole || roleRank(actorRole) > roleRank("MANAGER"))
+      && !isPlatformAdmin
+    ) {
       return j({ error: "not_privileged" }, 403);
     }
 
@@ -311,7 +313,30 @@ serve(async (req) => {
     const invite = await getInviteRow(admin, companyId, email);
     if (!invite) return j({ error: "invite_not_found" }, 404);
     if (invite.status === "disabled") return j({ error: "invite_disabled" }, 400);
-    if (!canInviteRole(actorRole, invite.role)) return j({ error: "role_not_allowed" }, 403);
+
+    let assistedOwnerInvite = false;
+    if (isPlatformAdmin && invite.role === "OWNER") {
+      const { data: assisted, error: assistedError } = await admin
+        .from("assisted_company_provisioning")
+        .select("intended_owner_email,owner_activated_at")
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (assistedError) throw assistedError;
+      assistedOwnerInvite = Boolean(
+        assisted
+        && !assisted.owner_activated_at
+        && normalizeEmail(assisted.intended_owner_email) === email,
+      );
+    }
+
+    const effectiveActorRole: Role | null = actorRole
+      ?? (platformWorkspace === true ? "ADMIN" : null);
+    if (
+      !assistedOwnerInvite
+      && (!effectiveActorRole || !canInviteRole(effectiveActorRole, invite.role))
+    ) {
+      return j({ error: "role_not_allowed" }, 403);
+    }
 
     const [{ data: company, error: companyError }, { data: communicationProfile, error: communicationError }] = await Promise.all([
       admin.from("companies").select("name,trade_name,legal_name,email").eq("id", companyId).single(),

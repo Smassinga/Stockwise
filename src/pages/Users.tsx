@@ -235,7 +235,7 @@ function extractFnErr(error: any): string {
 }
 
 export default function Users() {
-  const { companyId, companyName, myRole } = useOrg()
+  const { companyId, companyName, myRole, authorityMode } = useOrg()
   const { t, lang } = useI18n()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -373,11 +373,14 @@ export default function Users() {
 
     try {
       setSendingInvite(true)
-      const { data: token, error } = await supabase.rpc('invite_company_member', {
-        p_company: companyId,
-        p_email: email,
-        p_role: inviteRole,
-      })
+      const { data: token, error } = await supabase.rpc(
+        authorityMode === 'platform_workspace'
+          ? 'platform_admin_invite_assisted_member'
+          : 'invite_company_member',
+        authorityMode === 'platform_workspace'
+          ? { p_company_id: companyId, p_email: email, p_role: inviteRole }
+          : { p_company: companyId, p_email: email, p_role: inviteRole },
+      )
       if (error) throw error
 
       const link = `${window.location.origin}/accept-invite?token=${token}`
@@ -434,10 +437,14 @@ export default function Users() {
     if (!companyId) return
     if (!canManageUsers) return toast.error(tt('users.toast.noPermissionReinvite', 'You do not have permission to reinvite.'))
     try {
-      const { data: token, error } = await supabase.rpc('reinvite_company_member', {
-        p_company: companyId,
-        p_email: email,
-      })
+      const { data: token, error } = await supabase.rpc(
+        authorityMode === 'platform_workspace'
+          ? 'platform_admin_invite_assisted_member'
+          : 'reinvite_company_member',
+        authorityMode === 'platform_workspace'
+          ? { p_company_id: companyId, p_email: email, p_role: role }
+          : { p_company: companyId, p_email: email },
+      )
       if (error) throw error
 
       const link = `${window.location.origin}/accept-invite?token=${token}`

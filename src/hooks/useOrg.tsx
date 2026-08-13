@@ -12,6 +12,10 @@ import { setActiveCompanyRpc } from "../lib/setActiveCompanyRpc";
 import type { CompanyRole } from "../lib/roles";
 import type { MemberRole, MemberStatus } from "../lib/enums";
 import { withTimeout } from "../lib/withTimeout";
+import {
+  closeAssistedCustomerWorkspace,
+  openAssistedCustomerWorkspace,
+} from "../lib/companyAccess";
 import { useToast } from "./use-toast";
 
 type OrgCompany = { id: string; name: string | null };
@@ -24,8 +28,9 @@ type OrgState = {
   memberStatus: MemberStatus | null;
   companies: OrgCompany[];
   refresh: () => Promise<void>;
-  setActiveCompany: (id: string) => void;
+  setActiveCompany: (id: string) => Promise<boolean>;
   switching: boolean;
+  authorityMode: 'membership' | 'platform_workspace';
 };
 
 const OrgContext = createContext<OrgState>({
@@ -36,8 +41,9 @@ const OrgContext = createContext<OrgState>({
   memberStatus: null,
   companies: [],
   refresh: async () => {},
-  setActiveCompany: () => {},
+  setActiveCompany: async () => false,
   switching: false,
+  authorityMode: 'membership',
 });
 
 const LAST_COMPANY_KEY = (userId: string | undefined) =>
@@ -103,7 +109,13 @@ async function syncActiveCompanyContext(id: string) {
   return true;
 }
 
-export function OrgProvider({ children }: { children: ReactNode }) {
+export function OrgProvider({
+  children,
+  platformWorkspaceCompanyId = null,
+}: {
+  children: ReactNode
+  platformWorkspaceCompanyId?: string | null
+}) {
   const [loading, setLoading] = useState(true);
   const [companies, setCompanies] = useState<OrgCompany[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -222,6 +234,28 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (platformWorkspaceCompanyId) {
+      const workspace = await withTimeout(
+        openAssistedCustomerWorkspace(platformWorkspaceCompanyId),
+        ORG_QUERY_TIMEOUT_MS,
+        'assisted customer workspace',
+      )
+      if (!workspace || workspace.company_id !== platformWorkspaceCompanyId) {
+        throw new Error('assisted_workspace_context_unavailable')
+      }
+
+      const workspaceCompany = {
+        id: workspace.company_id,
+        name: workspace.company_name || null,
+      }
+      setCompanies([workspaceCompany])
+      setCompanyId(workspaceCompany.id)
+      setCompanyName(workspaceCompany.name)
+      setMyRole('ADMIN')
+      setMemberStatus('active')
+      return
+    }
+
     if (lastResolvedUserRef.current !== user.id) {
       lastResolvedUserRef.current = user.id;
       lastSyncedContextRef.current = null;
@@ -237,7 +271,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
           .from("company_members")
           .select("company_id, role, status, created_at, user_id")
           .eq("user_id", user.id)
-          .in("status", ["active", "invited"] as MemberStatus[])
+          .eq("status", "active" as MemberStatus)
           .order("created_at", { ascending: true }),
         ORG_QUERY_TIMEOUT_MS,
         "company membership lookup by user"
@@ -253,7 +287,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
             .select("company_id, role, status, created_at, user_id")
             .is("user_id", null)
             .eq("email", user.email)
-            .in("status", ["active", "invited"] as MemberStatus[])
+            .eq("status", "active" as MemberStatus)
             .order("created_at", { ascending: true }),
           ORG_QUERY_TIMEOUT_MS,
           "company membership lookup by email"
@@ -424,6 +458,14 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     }
     
     (async () => {
+      if (!platformWorkspaceCompanyId) {
+        try {
+          await closeAssistedCustomerWorkspace()
+        } catch {
+          // Normal company resolution must remain available even if this user
+          // has no platform-administration context to close.
+        }
+      }
       if (mounted) await refresh();
     })();
 
@@ -457,11 +499,17 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       if (isBrowser) {
         window.removeEventListener("storage", onStorage);
       }
+      if (platformWorkspaceCompanyId) {
+        void closeAssistedCustomerWorkspace().catch((error) => {
+          console.warn('[Org] assisted workspace close failed:', error)
+        })
+      }
     };
   }, []); // eslint-disable-line
 
-  const setActiveCompany = (id: string) => {
-    if (!id || id === companyId) return;
+  const setActiveCompany = async (id: string): Promise<boolean> => {
+    if (platformWorkspaceCompanyId) return id === companyId
+    if (!id || id === companyId) return Boolean(id && id === companyId);
 
     const prev = { companyId, companyName };
     
@@ -478,18 +526,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
     // Sync JWT and DB; then soft refresh
     setSwitching(true);
-    (async () => {
-      try {
-        // Promote invited/email membership before switching active company.
-        const { error: acceptErr } = await withTimeout(
-          supabase.rpc('accept_my_invite', {
-            p_company_id: id,
-          }),
-          ACTIVE_COMPANY_SYNC_TIMEOUT_MS,
-          'accept_my_invite'
-        );
-        if (acceptErr) console.warn('[Org] accept_my_invite failed:', acceptErr);
-
+    try {
         // Existing DB session context
         const { error: rpcErr } = await withTimeout(
           setActiveCompanyRpc(id),
@@ -510,6 +547,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         }
         
         await refresh(); // only after success
+        return true
       } catch (e) {
         console.warn("[Org] setActiveCompany rollback due to:", e);
         // rollback optimistic update
@@ -531,13 +569,10 @@ export function OrgProvider({ children }: { children: ReactNode }) {
           description: "Failed to switch company",
           variant: "destructive",
         });
+        return false
       } finally {
         setSwitching(false);
       }
-    })().catch((e) => {
-      console.warn("[Org] setActiveCompany error:", e);
-      setSwitching(false);
-    });
   };
 
   const value = useMemo<OrgState>(
@@ -551,8 +586,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       refresh,
       setActiveCompany,
       switching,
+      authorityMode: platformWorkspaceCompanyId ? 'platform_workspace' : 'membership',
     }),
-    [loading, companyId, companyName, myRole, memberStatus, companies, switching]
+    [loading, companyId, companyName, myRole, memberStatus, companies, switching, platformWorkspaceCompanyId]
   );
 
   return <OrgContext.Provider value={value}>{children}</OrgContext.Provider>;

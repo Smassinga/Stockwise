@@ -303,7 +303,7 @@ function uniqueIssues(issues: ImportIssue[]) {
 }
 
 export default function OpeningImport() {
-  const { companyId, myRole } = useOrg()
+  const { companyId, myRole, authorityMode } = useOrg()
   const { lang } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const canImport = can.createMaster(myRole)
@@ -777,7 +777,10 @@ export default function OpeningImport() {
           rows: openingStockRows,
         })
         const requestKey = getPostingRequestKeyForFingerprint(openingStockRequestRef, fingerprint)
-        const { error } = await supabase.rpc('post_opening_stock_import', {
+        const openingStockRpc = authorityMode === 'platform_workspace'
+          ? 'platform_admin_post_opening_stock_import'
+          : 'post_opening_stock_import'
+        const { error } = await supabase.rpc(openingStockRpc, {
           p_company_id: companyId,
           p_rows: openingStockRows,
           p_request_key: requestKey,

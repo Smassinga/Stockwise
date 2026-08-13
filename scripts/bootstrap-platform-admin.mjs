@@ -49,6 +49,13 @@ const adminClient = createClient(url, serviceRoleKey, {
 const normalizedEmail = email.trim().toLowerCase()
 const userId = await findUserIdByEmail(adminClient, normalizedEmail)
 
+if (!userId) {
+  console.error(
+    `No authenticated user exists for ${normalizedEmail}. Create and verify the Auth user before granting platform administration.`,
+  )
+  process.exit(1)
+}
+
 const { error } = await adminClient
   .from('platform_admins')
   .upsert(

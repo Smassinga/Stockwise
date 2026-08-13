@@ -9,6 +9,7 @@ import { CanManageUsers } from './lib/roles'
 import { AppLoadingState } from './components/premium/AppLoadingState'
 import { RouteErrorBoundary } from './components/RouteErrorBoundary'
 import { lazyWithRecovery } from './lib/lazyWithRecovery'
+import { AssistedWorkspaceShell } from './components/platform/AssistedWorkspaceShell'
 
 const LandingPage = lazyWithRecovery('LandingPage', () => import('./pages/LandingPage'))
 const Dashboard = lazyWithRecovery('Dashboard', () => import('./pages/Dashboard'))
@@ -188,6 +189,20 @@ function ProtectedOrgArea() {
   )
 }
 
+function PlatformWorkspaceArea() {
+  const { companyId } = useParams()
+
+  if (!companyId) return <Navigate to="/platform-control" replace />
+
+  return (
+    <OrgProvider key={companyId} platformWorkspaceCompanyId={companyId}>
+      <AssistedWorkspaceShell>
+        <Outlet />
+      </AssistedWorkspaceShell>
+    </OrgProvider>
+  )
+}
+
 function AppShellRoute() {
   const { user } = useAuth()
 
@@ -241,6 +256,18 @@ export default function App() {
           <Route path="/onboarding" element={<Suspense fallback={<LoadingSplash />}><Onboarding /></Suspense>} />
           <Route element={<RequirePlatformAdmin />}>
             <Route path="/platform-control" element={<Suspense fallback={<LoadingSplash />}><PlatformControl /></Suspense>} />
+            <Route path="/platform-workspace/:companyId" element={<PlatformWorkspaceArea />}>
+              <Route index element={<Navigate to="settings" replace />} />
+              <Route path="settings" element={<Suspense fallback={<LoadingSplash />}><Settings /></Suspense>} />
+              <Route path="warehouses" element={<Suspense fallback={<LoadingSplash />}><Warehouses /></Suspense>} />
+              <Route path="items" element={<Suspense fallback={<LoadingSplash />}><Items /></Suspense>} />
+              <Route path="customers" element={<Suspense fallback={<LoadingSplash />}><CustomersPage /></Suspense>} />
+              <Route path="suppliers" element={<Suspense fallback={<LoadingSplash />}><SuppliersPage /></Suspense>} />
+              <Route path="setup/import" element={<Suspense fallback={<LoadingSplash />}><OpeningImport /></Suspense>} />
+              <Route path="users" element={<Suspense fallback={<LoadingSplash />}><Users /></Suspense>} />
+              <Route path="users/roles" element={<Suspense fallback={<LoadingSplash />}><Users /></Suspense>} />
+              <Route path="currency" element={<Suspense fallback={<LoadingSplash />}><CurrencyPage /></Suspense>} />
+            </Route>
           </Route>
 
           <Route element={<ProtectedOrgArea />}>

@@ -351,6 +351,7 @@ export function Warehouses() {
       }
       const payload = {
         id: `bin_${globalThis.crypto?.randomUUID?.() ?? Date.now()}`, // bins.id is TEXT
+        company_id: companyId,
         warehouseId: binForm.warehouseId, // camelCase column
         code,
         name,
