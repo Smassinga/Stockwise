@@ -1,7 +1,22 @@
+import uomPt from '../locales/uom.pt.json'
+
 export type ConvRow = { from_uom_id: string; to_uom_id: string; factor: number }
 export type ConvEdge = { to: string; factor: number }
 
 export const DEFAULT_UOM_FAMILY_ORDER = ['count', 'mass', 'length', 'area', 'volume', 'time', 'other', 'unspecified'] as const
+
+const PT_UOM_NAMES = uomPt as Record<string, string>
+
+export function localizedUomName(
+  code: string | null | undefined,
+  fallbackName: string | null | undefined,
+  lang: 'en' | 'pt',
+): string {
+  const normalizedCode = String(code ?? '').trim().toUpperCase()
+  const fallback = String(fallbackName ?? '').trim()
+  if (lang === 'pt') return PT_UOM_NAMES[normalizedCode] || fallback || normalizedCode
+  return fallback || normalizedCode
+}
 
 const UOM_ALIASES: Record<string, string> = {
   EA: 'EA',
