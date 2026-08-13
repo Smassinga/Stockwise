@@ -11,6 +11,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n } from '../lib/i18n'
 import { notificationPresentation, safeNotificationActionUrl } from '../lib/notificationPresentation'
+import { prepareNotificationNavigation } from '../lib/notificationNavigation'
 import { supabase } from '../lib/supabase'
 
 type Row = {
@@ -27,6 +28,7 @@ type Row = {
   created_at: string
   read_at: string | null
   dismissed_at: string | null
+  company_id: string
 }
 
 function severityTone(severity: string | null): PremiumTone {
@@ -46,7 +48,7 @@ function SeverityIcon({ severity }: { severity: string | null }) {
 export default function NotificationsPage() {
   const navigate = useNavigate()
   const { lang } = useI18n()
-  const { companyId } = useOrg()
+  const { companyId, setActiveCompany } = useOrg()
   const { user } = useAuth()
   const [rows, setRows] = useState<Row[]>([])
   const [category, setCategory] = useState('all')
@@ -104,7 +106,7 @@ export default function NotificationsPage() {
     setLoadError(false)
     const { data, error } = await supabase
       .from('notifications')
-      .select('id,title,body,event_type,category,payload,severity,action_url,url,occurred_at,created_at,read_at,dismissed_at')
+      .select('id,title,body,event_type,category,payload,severity,action_url,url,occurred_at,created_at,read_at,dismissed_at,company_id')
       .eq('company_id', companyId)
       .or(`user_id.eq.${user.id},user_id.is.null`)
       .is('dismissed_at', null)
@@ -162,6 +164,25 @@ export default function NotificationsPage() {
 
   function categoryLabel(value: string) {
     return value.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+  }
+
+  async function openNotification(row: Row, actionUrl: string) {
+    setActionError(false)
+    const prepared = await prepareNotificationNavigation({
+      actionUrl,
+      notificationCompanyId: row.company_id,
+      currentCompanyId: companyId,
+      userId: user?.id,
+      setActiveCompany,
+    })
+    if (!prepared) {
+      setActionError(true)
+      return
+    }
+    if (!row.read_at) {
+      await updateNotification(row.id, { read_at: new Date().toISOString() })
+    }
+    navigate(prepared)
   }
 
   return (
@@ -234,7 +255,7 @@ export default function NotificationsPage() {
                     </Button>
                   ) : null}
                   {action ? (
-                    <Button size="sm" onClick={() => navigate(action)}>
+                    <Button size="sm" onClick={() => void openNotification(row, action)}>
                       <ExternalLink className="mr-2 h-4 w-4" />{copy.open}
                     </Button>
                   ) : null}

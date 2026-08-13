@@ -136,6 +136,7 @@ type SettingsData = {
   // Due Reminder Worker settings
   dueReminders?: {
     enabled?: boolean;
+    internalAlertsEnabled?: boolean;
     leadDays?: number[];
     recipients?: string[];
     bcc?: string[];
@@ -231,9 +232,9 @@ const settingsGuideCopy = {
           "Review the current weighted-average valuation policy used by stock levels and landed-cost revaluations.",
       },
       dueReminders: {
-        title: "Due Reminders",
+        title: "Receivables Alerts & Reminders",
         description:
-          "Configure receivable reminder timing, offsets, timezone, and internal BCC controls.",
+          "Choose in-app receivables alerts and customer email reminders separately, with one company warning schedule.",
       },
       documents: {
         title: "Documents & Branding",
@@ -325,9 +326,9 @@ const settingsGuideCopy = {
           "Reveja a política atual de média ponderada usada por stock e revalorizações de custo landed.",
       },
       dueReminders: {
-        title: "Lembretes de Vencimento",
+        title: "Alertas & Lembretes de Recebimentos",
         description:
-          "Configure hora, intervalos, timezone e BCC interno para lembretes de contas a receber.",
+          "Escolha separadamente os alertas internos e os emails ao cliente, com um calendário comum da empresa.",
       },
       documents: {
         title: "Documentos & Marca",
@@ -370,6 +371,7 @@ const settingsGuideCopy = {
 
 const DEFAULT_DUE_REMINDERS: NonNullable<SettingsData["dueReminders"]> = {
   enabled: true,
+  internalAlertsEnabled: false,
   leadDays: [3, 1, 0, -3],
   recipients: [],
   bcc: [],
@@ -2068,10 +2070,10 @@ function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="hidden text-sm text-muted-foreground sm:block md:col-span-2">
+          <div className="hidden text-sm text-muted-foreground sm:block md:col-span-2">
             {tt(
               "settings.dueReminders.help",
-              "Due reminders run on your company timezone, follow the active AR anchor, and use the billing email on the active order or invoice chain by default."
+              "In-app receivables alerts and customer email reminders are separate. Both follow authoritative outstanding and the company warning schedule below."
             )}
           </div>
           {!canEditDueReminders ? (
@@ -2082,17 +2084,48 @@ function Settings() {
               )}
             </div>
           ) : null}
-          <div className="flex items-center gap-3">
-            <Switch
-              checked={
-                data.dueReminders?.enabled ??
-                DEFAULTS.dueReminders?.enabled ??
-                true
-              }
-              onCheckedChange={(v) => setField("dueReminders.enabled", v)}
-              disabled={!canEditDueReminders}
-            />
-            <Label>{t("settings.dueReminders.enable")}</Label>
+          <div className="md:col-span-2 divide-y divide-border/70 border-y border-border/70">
+            <div className="flex items-start justify-between gap-4 py-4">
+              <div>
+                <Label htmlFor="receivables-internal-alerts">{t("settings.dueReminders.internalAlertsEnable")}</Label>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t("settings.dueReminders.internalAlertsHelp")}
+                </p>
+              </div>
+              <Switch
+                id="receivables-internal-alerts"
+                checked={
+                  data.dueReminders?.internalAlertsEnabled ??
+                  DEFAULTS.dueReminders?.internalAlertsEnabled ??
+                  false
+                }
+                onCheckedChange={(v) => setField("dueReminders.internalAlertsEnabled", v)}
+                disabled={!canEditDueReminders}
+              />
+            </div>
+            <div className="flex items-start justify-between gap-4 py-4">
+              <div>
+                <Label htmlFor="customer-email-reminders">{t("settings.dueReminders.enable")}</Label>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t("settings.dueReminders.emailHelp")}
+                </p>
+              </div>
+              <Switch
+                id="customer-email-reminders"
+                checked={
+                  data.dueReminders?.enabled ??
+                  DEFAULTS.dueReminders?.enabled ??
+                  true
+                }
+                onCheckedChange={(v) => setField("dueReminders.enabled", v)}
+                disabled={!canEditDueReminders}
+              />
+            </div>
+          </div>
+
+          <div className="md:col-span-2">
+            <h3 className="text-sm font-semibold">{t("settings.dueReminders.companySchedule")}</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("settings.dueReminders.companyScheduleHelp")}</p>
           </div>
 
           <div>

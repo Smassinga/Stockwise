@@ -19,14 +19,86 @@ export function formatLegacyNotificationBody(value: string | null | undefined) {
 export function safeNotificationActionUrl(value: string | null | undefined) {
   const url = String(value || '').trim()
   if (!url.startsWith('/') || url.startsWith('//')) return null
+  try {
+    const parsed = new URL(url, 'https://stockwise.local')
+    if (parsed.origin !== 'https://stockwise.local') return null
+  } catch {
+    return null
+  }
   if (url === '/cash/approvals' || url.startsWith('/cash/approvals?')) return null
   return url
+}
+
+function payloadNumber(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function payloadText(value: unknown, fallback = '') {
+  const text = String(value ?? '').trim()
+  return text || fallback
+}
+
+function formatReceivableAmount(amount: number, currencyCode: string, language: Locale) {
+  const locale = language === 'pt' ? 'pt-MZ' : 'en-MZ'
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(amount)
+  return language === 'pt' ? `${formatted} ${currencyCode}` : `${currencyCode} ${formatted}`
+}
+
+function receivableAlertPresentation(payload: Record<string, unknown>, language: Locale) {
+  const pt = language === 'pt'
+  const customer = payloadText(payload.customerName, pt ? 'Cliente' : 'Customer')
+  const count = Math.max(0, Math.trunc(payloadNumber(payload.documentCount)))
+  const amount = payloadNumber(payload.outstandingAmount)
+  const credit = Math.max(0, payloadNumber(payload.unallocatedCustomerCredit))
+  const currency = payloadText(payload.currencyCode, 'MZN')
+  const offset = Math.trunc(payloadNumber(payload.bucketOffsetDays))
+  const documentLabel = pt
+    ? count === 1 ? '1 documento' : `${count} documentos`
+    : count === 1 ? '1 document' : `${count} documents`
+  const total = formatReceivableAmount(amount, currency, language)
+
+  let title: string
+  let body: string
+  if (offset > 0) {
+    title = pt ? 'Pagamentos a vencer' : 'Payments due soon'
+    body = pt
+      ? `${customer} tem ${documentLabel} no valor total de ${total} a vencer dentro de ${offset} ${offset === 1 ? 'dia' : 'dias'}.`
+      : `${customer} has ${documentLabel} totalling ${total} due in ${offset} ${offset === 1 ? 'day' : 'days'}.`
+  } else if (offset === 0) {
+    title = pt ? 'Vence hoje' : 'Due today'
+    body = pt
+      ? `${customer} tem ${documentLabel} no valor total de ${total} com vencimento hoje.`
+      : `${customer} has ${documentLabel} totalling ${total} due today.`
+  } else {
+    const overdueDays = Math.abs(offset)
+    const severe = overdueDays >= 15
+    title = pt ? (severe ? 'Cliente com atraso prolongado' : 'Cliente em atraso') : (severe ? 'Customer severely overdue' : 'Customer overdue')
+    body = pt
+      ? `${customer} tem ${documentLabel} no valor total de ${total} em atraso há ${overdueDays} ${overdueDays === 1 ? 'dia' : 'dias'}.`
+      : `${customer} has ${documentLabel} totalling ${total} overdue by ${overdueDays} ${overdueDays === 1 ? 'day' : 'days'}.`
+  }
+
+  if (credit > 0) {
+    const creditValue = formatReceivableAmount(credit, currency, language)
+    body += pt
+      ? ` Crédito de cliente não alocado: ${creditValue}.`
+      : ` Unallocated customer credit: ${creditValue}.`
+  }
+
+  return [title, body] as const
 }
 
 export function notificationPresentation(row: NotificationEventRow, language: Locale) {
   const payload = row.payload || {}
   const reference = String(payload.reference || payload.item || payload.documentReference || '')
   const pt = language === 'pt'
+  const receivableAlert = row.event_type?.startsWith('receivables.')
+    ? receivableAlertPresentation(payload, language)
+    : null
   const catalogue: Record<string, [string, string]> = {
     'inventory.low_stock': [pt ? 'Stock baixo' : 'Low stock', pt ? `${reference} atingiu o nível mínimo.` : `${reference} reached its minimum stock level.`],
     'inventory.out_of_stock': [pt ? 'Sem stock' : 'Out of stock', pt ? `${reference} está sem stock.` : `${reference} is out of stock.`],
@@ -44,6 +116,10 @@ export function notificationPresentation(row: NotificationEventRow, language: Lo
     'collections.dispute_follow_up_due': [pt ? 'Acompanhamento de reclamação' : 'Dispute follow-up due', pt ? `A reclamação de ${reference} requer revisão.` : `The dispute for ${reference} is due for review.`],
     'collections.manual_follow_up_due': [pt ? 'Acompanhamento manual pendente' : 'Manual follow-up due', pt ? `${reference} requer a acção do responsável atribuído.` : `${reference} needs action from the assigned owner.`],
     'collections.control_closed': [pt ? 'Cobrança encerrada' : 'Collections control closed', pt ? `${reference} foi encerrado após liquidação ou crédito autorizado.` : `${reference} closed after authoritative settlement or credit evidence.`],
+    'receivables.due_soon': receivableAlert ? [...receivableAlert] : ['', ''],
+    'receivables.due_today': receivableAlert ? [...receivableAlert] : ['', ''],
+    'receivables.overdue': receivableAlert ? [...receivableAlert] : ['', ''],
+    'receivables.severely_overdue': receivableAlert ? [...receivableAlert] : ['', ''],
   }
   const resolved = row.event_type ? catalogue[row.event_type] : null
   return {

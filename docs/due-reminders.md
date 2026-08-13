@@ -41,7 +41,7 @@ The system consists of:
 1. `due_reminder_queue` for queued jobs
 2. `build_due_reminder_batch(...)` to emit one active AR reminder anchor per exposure chain
 3. `due-reminder-worker` to process queued jobs and send email reminders
-4. the Settings page for scheduling and notification configuration
+4. the Settings page for the shared company warning schedule and separate delivery-channel controls
 
 ## Current Behavior
 
@@ -74,11 +74,16 @@ Issued sales invoices become eligible when they are the active legal anchor and 
 
 The Settings page controls:
 
-- enable/disable
+- internal receivables alerts enable/disable
+- customer-facing email reminders enable/disable
 - timezone
 - send time
 - lead days before/on/after due date
 - internal BCC recipients
+
+Internal receivables alerts are evaluated by PostgreSQL Cron and write only to the StockWise notification feed. They do not call the due-reminder Edge Function, Brevo, SMTP, or another external provider. Customer-facing reminder email remains a distinct worker/channel. Both channels reuse the same company timezone and configured due offsets, while each user controls the Receivables in-app category through notification preferences.
+
+Malformed company offset data falls back to the maintained default for that company only; it cannot abort evaluation for other companies. A configured stage creates one alert per eligible recipient. Subsequent company evaluations refresh that active cohort from authoritative receipt allocations even on a non-stage day, without generating a daily duplicate.
 
 Reminder links follow product document routing automatically. Legacy base URL settings remain only as fallback compatibility for older configurations.
 

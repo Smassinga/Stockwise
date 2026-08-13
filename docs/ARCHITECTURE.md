@@ -304,6 +304,9 @@ The authorised rollout applied migration 39 from `2026-07-10T23:46:23.8149856Z` 
 - `public.notifications` remains the company-scoped notification feed consumed by the shell
 - notifications should stay high-signal; approval requests, finance issue/post milestones, critical treasury approvals, and company-access events are in scope, while low-value draft churn is not
 - finance lifecycle notifications now fan out from `finance_document_events` instead of duplicating logic inside every frontend page
+- internal receivables alerts read only from `v_customer_receivable_exposures`; unapplied customer credit is context and never nets authoritative outstanding
+- a timezone-aware PostgreSQL Cron evaluator writes user-targeted Owner/Admin/Manager alerts independently of customer email delivery, refreshes partial-allocation amounts in place, and resolves settled or collection-suppressed cohorts
+- notification deep links revalidate active membership and subscription access, await the target company switch, and then open the customer Accounts Receivable context
 
 ## Guardrails
 

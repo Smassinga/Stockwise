@@ -49,8 +49,9 @@ test('global search runs independent domains concurrently and protects stale req
 })
 
 test('legacy notifications are normalised without exposing invalid destinations', async () => {
-  const [presentation, page, centre] = await Promise.all([
+  const [presentation, navigation, page, centre] = await Promise.all([
     read('src/lib/notificationPresentation.ts'),
+    read('src/lib/notificationNavigation.ts'),
     read('src/pages/Notifications.tsx'),
     read('src/components/notifications/NotificationCenter.tsx'),
   ])
@@ -59,7 +60,12 @@ test('legacy notifications are normalised without exposing invalid destinations'
   assert.match(presentation, /safeNotificationActionUrl/)
   assert.match(presentation, /\/cash\/approvals/)
   assert.match(page, /safeNotificationActionUrl\(row\.action_url \|\| row\.url\)/)
-  assert.match(centre, /safeNotificationActionUrl\(notification\.url\)/)
+  assert.match(page, /prepareNotificationNavigation\(/)
+  assert.match(centre, /safeNotificationActionUrl\(n\.url\)/)
+  assert.match(centre, /prepareNotificationNavigation\(/)
+  assert.match(navigation, /const safeUrl = safeNotificationActionUrl\(actionUrl\)/)
+  assert.match(navigation, /await verifyCompanyAccess\(targetCompanyId, activeUserId\)/)
+  assert.match(navigation, /await setActiveCompany\(targetCompanyId\)/)
 })
 
 test('Opening Import labels the file control and avoids zero summaries before preview', async () => {

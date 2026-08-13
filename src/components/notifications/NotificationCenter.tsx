@@ -9,6 +9,8 @@ import { useOrg } from '../../hooks/useOrg'
 import { useI18n } from '../../lib/i18n'
 import { Button } from '../ui/button'
 import { notificationPresentation, safeNotificationActionUrl } from '../../lib/notificationPresentation'
+import { prepareNotificationNavigation } from '../../lib/notificationNavigation'
+import { useToast } from '../../hooks/use-toast'
 
 type AnyRow = Record<string, any>
 type Notif = {
@@ -21,6 +23,7 @@ type Notif = {
   level: string
   eventType?: string | null
   payload?: Record<string, unknown>
+  companyId?: string | null
 }
 
 type RealtimeStatus = 'off' | 'connecting' | 'on' | 'reconnecting'
@@ -65,6 +68,7 @@ function mapRow(r: AnyRow): Notif {
     level: String(pick(r, ['severity', 'level'], 'info') ?? 'info'),
     eventType: pick(r, ['event_type', 'eventType'], null),
     payload: pick(r, ['payload'], {}) as Record<string, unknown>,
+    companyId: pick(r, ['company_id', 'companyId'], null),
   }
 }
 
@@ -88,7 +92,8 @@ export function NotificationCenter() {
 
   const { user } = useAuth()
   const userId: string | null = user?.id ?? null
-  const { companyId } = useOrg()
+  const { companyId, setActiveCompany } = useOrg()
+  const { toast } = useToast()
 
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<Notif[]>([])
@@ -139,9 +144,25 @@ export function NotificationCenter() {
     return 'Information'
   }
 
-  function openNotification(notification: Notif) {
-    const actionUrl = safeNotificationActionUrl(notification.url)
-    if (!actionUrl) return
+  async function openNotification(notification: Notif) {
+    const actionUrl = await prepareNotificationNavigation({
+      actionUrl: notification.url,
+      notificationCompanyId: notification.companyId || companyId,
+      currentCompanyId: companyId,
+      userId,
+      setActiveCompany,
+    })
+    if (!actionUrl) {
+      toast({
+        title: lang === 'pt' ? 'Não foi possível abrir a notificação' : 'Notification could not be opened',
+        description: lang === 'pt'
+          ? 'Confirme que ainda tem acesso activo à empresa.'
+          : 'Confirm that you still have active access to the company.',
+        variant: 'destructive',
+      })
+      return
+    }
+    await markRead(notification)
     setOpen(false)
     navigate(actionUrl)
   }
@@ -538,7 +559,7 @@ export function NotificationCenter() {
                         variant={n.readAt ? 'outline' : 'secondary'}
                         size="sm"
                         className="shrink-0 rounded-xl"
-                        onClick={() => { void markRead(n); openNotification(n) }}
+                        onClick={() => { void openNotification(n) }}
                       >
                         {t('notifications.open')}
                       </Button>
