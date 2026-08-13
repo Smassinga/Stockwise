@@ -4,6 +4,8 @@ import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
+import { useI18n } from "@/lib/i18n"
+import { localizedUomName } from "@/lib/uom"
 import { cn } from "@/lib/utils"
 
 const Select = SelectPrimitive.Root
@@ -11,6 +13,21 @@ const Select = SelectPrimitive.Root
 const SelectGroup = SelectPrimitive.Group
 
 const SelectValue = SelectPrimitive.Value
+
+function localizeSelectItemChildren(children: React.ReactNode, lang: 'en' | 'pt') {
+  const parts = React.Children.toArray(children)
+  if (!parts.length || !parts.every((part) => typeof part === "string" || typeof part === "number")) {
+    return children
+  }
+
+  const label = parts.join("")
+  const match = /^([A-Z0-9]+)\s+—\s+(.+)$/.exec(label)
+  if (!match) return children
+
+  const [, code, fallbackName] = match
+  const localizedName = localizedUomName(code, fallbackName, lang)
+  return localizedName === fallbackName ? children : `${code} — ${localizedName}`
+}
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -114,23 +131,28 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Item
-    ref={ref}
-    className={cn(
-      "relative flex w-full min-w-0 cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_[data-radix-select-item-text]]:min-w-0 [&_[data-radix-select-item-text]]:truncate",
-      className
-    )}
-    {...props}
-  >
-    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
-      <SelectPrimitive.ItemIndicator>
-        <Check className="h-4 w-4" />
-      </SelectPrimitive.ItemIndicator>
-    </span>
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-  </SelectPrimitive.Item>
-))
+>(({ className, children, ...props }, ref) => {
+  const { lang } = useI18n()
+  const displayChildren = localizeSelectItemChildren(children, lang)
+
+  return (
+    <SelectPrimitive.Item
+      ref={ref}
+      className={cn(
+        "relative flex w-full min-w-0 cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_[data-radix-select-item-text]]:min-w-0 [&_[data-radix-select-item-text]]:truncate",
+        className
+      )}
+      {...props}
+    >
+      <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+        <SelectPrimitive.ItemIndicator>
+          <Check className="h-4 w-4" />
+        </SelectPrimitive.ItemIndicator>
+      </span>
+      <SelectPrimitive.ItemText>{displayChildren}</SelectPrimitive.ItemText>
+    </SelectPrimitive.Item>
+  )
+})
 SelectItem.displayName = SelectPrimitive.Item.displayName
 
 const SelectSeparator = React.forwardRef<
