@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download, FileWarning, ReceiptText } from 'lucide-react'
+import { Download, FileWarning, ReceiptText, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/db'
 import { useOrg } from '../hooks/useOrg'
@@ -56,6 +56,14 @@ import {
   stablePostingFingerprint,
   type PostingRequestKeyRef,
 } from '../lib/postingRequestKeys'
+import {
+  allocateCustomerReceiptOldestFirst,
+  buildCustomerReceiptPostingPayload,
+  classifyCustomerReceiptError,
+  normalizeReceiptMoney,
+  summarizeCustomerReceipt,
+  type CustomerReceiptAllocationInput,
+} from '../lib/customerReceipts'
 import {
   salesInvoiceWorkflowLabelKey,
   vendorBillWorkflowLabelKey,
@@ -154,8 +162,77 @@ type SettlementRow = {
   sourceLabel: string
 }
 
-type FinanceWorkspaceView = 'exposure' | 'activity' | 'reconciliation'
+type FinanceWorkspaceView = 'exposure' | 'receipts' | 'activity' | 'reconciliation'
 type FinanceWorkspaceSide = 'ar' | 'ap'
+
+type CustomerReceiptCustomer = {
+  id: string
+  code: string | null
+  name: string
+  email: string | null
+  phone: string | null
+}
+
+type CustomerReceivableExposure = {
+  company_id: string
+  customer_id: string
+  anchor_id: string
+  anchor_kind: 'sales_invoice' | 'sales_order'
+  document_reference: string
+  document_date: string | null
+  due_date: string | null
+  customer_name: string | null
+  document_currency_code: string
+  base_currency_code: string
+  original_amount_base: number
+  outstanding_amount_base: number
+  collection_status: string
+  collection_next_action_at: string | null
+  collection_pause_until: string | null
+  dispute_category: string | null
+  current_promise_id: string | null
+  collections_suppressed: boolean
+  collection_suppression_reason: string | null
+  due_position: string
+  days_past_due: number
+}
+
+type CustomerUnappliedCredit = {
+  company_id: string
+  customer_id: string
+  currency_code: string
+  unapplied_credit_base: number
+  receipt_count: number
+}
+
+type CustomerReceiptState = {
+  id: string
+  company_id: string
+  customer_id: string
+  receipt_reference: string
+  received_on: string
+  amount_received_base: number
+  currency_code: string
+  payment_channel: 'cash' | 'bank'
+  bank_account_id: string | null
+  financial_transaction_id: string
+  external_reference: string | null
+  note: string | null
+  created_at: string
+  allocated_base: number
+  unallocated_base: number
+}
+
+type CustomerReceiptAllocationState = {
+  id: string
+  customer_receipt_id: string
+  sales_invoice_id: string
+  amount_base: number
+  active_amount_base: number
+  is_reversed: boolean
+  reversal_id: string | null
+  created_at: string
+}
 
 type FinanceExportRequest =
   | { kind: 'exposure' }
@@ -163,7 +240,7 @@ type FinanceExportRequest =
   | { kind: 'reconciliation' }
   | { kind: 'advice'; activity: FinanceActivityRow }
 
-const validWorkspaceViews = new Set<FinanceWorkspaceView>(['exposure', 'activity', 'reconciliation'])
+const validWorkspaceViews = new Set<FinanceWorkspaceView>(['exposure', 'receipts', 'activity', 'reconciliation'])
 const validWorkspaceSides = new Set<FinanceWorkspaceSide>(['ar', 'ap'])
 
 function isMissingStateViewError(error: unknown, viewName: string) {
@@ -350,6 +427,34 @@ export default function SettlementsPage() {
   const [reviewExceptions, setReviewExceptions] = useState<FinanceReconciliationExceptionRow[]>([])
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [bankRefsSupported, setBankRefsSupported] = useState<boolean | null>(() => getBankTransactionRefSupport())
+  const [receiptCustomers, setReceiptCustomers] = useState<CustomerReceiptCustomer[]>([])
+  const [receiptExposures, setReceiptExposures] = useState<CustomerReceivableExposure[]>([])
+  const [customerUnappliedCredits, setCustomerUnappliedCredits] = useState<CustomerUnappliedCredit[]>([])
+  const [customerReceipts, setCustomerReceipts] = useState<CustomerReceiptState[]>([])
+  const [receiptAllocations, setReceiptAllocations] = useState<CustomerReceiptAllocationState[]>([])
+  const [receiptsLoading, setReceiptsLoading] = useState(false)
+  const [receiptsError, setReceiptsError] = useState<string | null>(null)
+  const [receiptCustomerFilter, setReceiptCustomerFilter] = useState(searchParams.get('customerId') || 'ALL')
+  const [activeReceiptId, setActiveReceiptId] = useState<string | null>(null)
+
+  const customerReceiptPostingRequestRef = useRef<PostingRequestKeyRef>(null)
+  const allocationRequestRef = useRef<PostingRequestKeyRef>(null)
+  const reversalRequestRef = useRef<PostingRequestKeyRef>(null)
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
+  const [receiptStep, setReceiptStep] = useState<1 | 2 | 3>(1)
+  const [receiptCustomerId, setReceiptCustomerId] = useState(searchParams.get('customerId') || '')
+  const [receiptAmount, setReceiptAmount] = useState('')
+  const [receiptDate, setReceiptDate] = useState(todayISO())
+  const [receiptMethod, setReceiptMethod] = useState<'cash' | 'bank'>('cash')
+  const [receiptBankId, setReceiptBankId] = useState('')
+  const [receiptExternalReference, setReceiptExternalReference] = useState('')
+  const [receiptNote, setReceiptNote] = useState('')
+  const [receiptAllocationValues, setReceiptAllocationValues] = useState<Record<string, string>>({})
+  const [receiptSaving, setReceiptSaving] = useState(false)
+  const [laterAllocationInvoiceId, setLaterAllocationInvoiceId] = useState('')
+  const [laterAllocationAmount, setLaterAllocationAmount] = useState('')
+  const [reversalAllocation, setReversalAllocation] = useState<CustomerReceiptAllocationState | null>(null)
+  const [reversalReason, setReversalReason] = useState('')
 
   const [search, setSearch] = useState('')
   const [partyFilter, setPartyFilter] = useState('ALL')
@@ -388,6 +493,38 @@ export default function SettlementsPage() {
   const [settleBankId, setSettleBankId] = useState('')
 
   const money = (amount: number) => formatMoneyBase(amount, baseCode, lang === 'pt' ? 'pt-MZ' : 'en-MZ')
+  const customerReceiptErrorMessage = (error: unknown, fallback: 'post' | 'allocation' | 'reversal') => {
+    switch (classifyCustomerReceiptError(error)) {
+      case 'baseCurrencyOnly':
+        return tt('customerReceipts.baseCurrencyOnly', 'Multi-invoice receipts can only use company-base-currency invoices.')
+      case 'overAllocated':
+        return tt('customerReceipts.overAllocated', 'Allocated amount cannot exceed the amount received.')
+      case 'invoiceOverAllocated':
+        return tt('customerReceipts.invoiceOverAllocated', 'An allocation exceeds the invoice outstanding balance. Refresh and review the allocations.')
+      case 'customerMismatch':
+        return tt('customerReceipts.customerMismatch', 'Every selected invoice must belong to the selected customer.')
+      case 'creditChanged':
+        return tt('customerReceipts.creditChanged', 'The available receipt credit changed. Refresh and review the allocation.')
+      case 'stale':
+        return tt('customerReceipts.stale', 'This receipt or invoice is no longer available. Refresh and review the latest state.')
+      case 'alreadyReversed':
+        return tt('customerReceipts.alreadyReversed', 'This allocation has already been reversed. Refresh to see the latest state.')
+      case 'permissionDenied':
+        return tt('customerReceipts.permissionDenied', 'You do not have permission to manage customer receipts for this company.')
+      case 'bankRequired':
+        return tt('customerReceipts.bankRequired', 'Choose a bank account before posting a bank receipt.')
+      case 'reasonRequired':
+        return tt('customerReceipts.reasonRequired', 'Enter a reason for the allocation reversal.')
+      case 'requestConflict':
+        return tt('customerReceipts.requestConflict', 'This receipt request changed or is still being processed. Refresh and try again.')
+      default:
+        return fallback === 'post'
+          ? tt('customerReceipts.postFailed', 'The customer receipt could not be posted.')
+          : fallback === 'allocation'
+            ? tt('customerReceipts.allocationFailed', 'Receipt credit could not be allocated.')
+            : tt('customerReceipts.reversalFailed', 'The allocation could not be reversed.')
+    }
+  }
   const tab: 'receive' | 'pay' = workspaceSide === 'ar' ? 'receive' : 'pay'
   const reviewSide: FinanceReconciliationRow['ledger_side'] = workspaceSide === 'ar' ? 'AR' : 'AP'
 
@@ -429,6 +566,12 @@ export default function SettlementsPage() {
     setActiveRow(null)
     setExportRequest(null)
     setLastSettlementResult(null)
+    setReceiptCustomers([])
+    setReceiptExposures([])
+    setCustomerUnappliedCredits([])
+    setCustomerReceipts([])
+    setReceiptAllocations([])
+    setActiveReceiptId(null)
   }, [companyId])
 
   useEffect(() => {
@@ -459,6 +602,92 @@ export default function SettlementsPage() {
       cancelled = true
     }
   }, [activityFrom, activityTo, companyId, refreshKey])
+
+  useEffect(() => {
+    if (!companyId) {
+      setReceiptCustomers([])
+      setReceiptExposures([])
+      setCustomerUnappliedCredits([])
+      setCustomerReceipts([])
+      setReceiptAllocations([])
+      setReceiptsError(null)
+      setReceiptsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      setReceiptsLoading(true)
+      setReceiptsError(null)
+      try {
+        const [customersResult, exposuresResult, receiptsResult, allocationsResult, unappliedResult] = await Promise.all([
+          supabase.from('customers').select('id,code,name,email,phone').eq('company_id', companyId).order('name'),
+          supabase
+            .from('v_customer_receivable_exposures')
+            .select('company_id,customer_id,anchor_id,anchor_kind,document_reference,document_date,due_date,customer_name,document_currency_code,base_currency_code,original_amount_base,outstanding_amount_base,collection_status,collection_next_action_at,collection_pause_until,dispute_category,current_promise_id,collections_suppressed,collection_suppression_reason,due_position,days_past_due')
+            .eq('company_id', companyId)
+            .eq('anchor_kind', 'sales_invoice')
+            .order('due_date', { ascending: true, nullsFirst: false }),
+          supabase
+            .from('v_customer_receipt_state')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('received_on', { ascending: false })
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('v_customer_receipt_allocations')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('v_customer_unapplied_credit')
+            .select('company_id,customer_id,currency_code,unapplied_credit_base,receipt_count')
+            .eq('company_id', companyId),
+        ])
+        const error = customersResult.error || exposuresResult.error || receiptsResult.error || allocationsResult.error || unappliedResult.error
+        if (error) throw error
+        if (cancelled) return
+
+        const customers = (customersResult.data || []) as CustomerReceiptCustomer[]
+        const requestedCustomerId = searchParams.get('customerId')
+        const requestedCompanyId = searchParams.get('companyId')
+        const validRequestedCustomer = requestedCustomerId
+          ? (!requestedCompanyId || requestedCompanyId === companyId)
+            && customers.some((customer) => customer.id === requestedCustomerId)
+          : false
+        setReceiptCustomers(customers)
+        setReceiptExposures((exposuresResult.data || []) as CustomerReceivableExposure[])
+        setCustomerUnappliedCredits((unappliedResult.data || []) as CustomerUnappliedCredit[])
+        setCustomerReceipts((receiptsResult.data || []) as CustomerReceiptState[])
+        setReceiptAllocations((allocationsResult.data || []) as CustomerReceiptAllocationState[])
+        if (validRequestedCustomer && requestedCustomerId) {
+          setReceiptCustomerFilter(requestedCustomerId)
+          setReceiptCustomerId(requestedCustomerId)
+        } else if (requestedCustomerId) {
+          setReceiptCustomerFilter('ALL')
+          setReceiptCustomerId('')
+          const params = new URLSearchParams(searchParams)
+          params.delete('customerId')
+          setSearchParams(params, { replace: true })
+        }
+      } catch (error) {
+        console.error('[settlements] failed to load customer receipts', error)
+        if (!cancelled) {
+          setReceiptCustomers([])
+          setReceiptExposures([])
+          setCustomerUnappliedCredits([])
+          setCustomerReceipts([])
+          setReceiptAllocations([])
+          setReceiptsError(tt('customerReceipts.loadFailed', 'Customer receipts are unavailable. Try again.'))
+        }
+      } finally {
+        if (!cancelled) setReceiptsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId, refreshKey, searchParams, setSearchParams])
 
   useEffect(() => {
     if (!companyId) {
@@ -1042,6 +1271,224 @@ export default function SettlementsPage() {
       return tt(presentation.labelKey, presentation.fallback)
     }
     return settlementSummaryLabel(row.settlement_status as SettlementBalanceStatus)
+  }
+
+  const receiptCustomerById = useMemo(
+    () => new Map(receiptCustomers.map((customer) => [customer.id, customer])),
+    [receiptCustomers],
+  )
+  const receiptExposureById = useMemo(
+    () => new Map(receiptExposures.map((exposure) => [exposure.anchor_id, exposure])),
+    [receiptExposures],
+  )
+  const selectedCustomerExposures = useMemo(
+    () => receiptExposures.filter((exposure) => (
+      exposure.customer_id === receiptCustomerId
+      && exposure.anchor_kind === 'sales_invoice'
+      && exposure.document_currency_code === exposure.base_currency_code
+      && Number(exposure.outstanding_amount_base) > 0.005
+    )),
+    [receiptCustomerId, receiptExposures],
+  )
+  const receiptAllocationInputs = useMemo<CustomerReceiptAllocationInput[]>(
+    () => Object.entries(receiptAllocationValues).flatMap(([salesInvoiceId, rawAmount]) => {
+      const amountBase = normalizeReceiptMoney(Number(rawAmount))
+      return Number.isFinite(amountBase) && amountBase > 0 ? [{ salesInvoiceId, amountBase }] : []
+    }),
+    [receiptAllocationValues],
+  )
+  const currentReceiptSummary = useMemo(
+    () => summarizeCustomerReceipt(Number(receiptAmount), receiptAllocationInputs),
+    [receiptAllocationInputs, receiptAmount],
+  )
+  const visibleCustomerReceipts = useMemo(
+    () => customerReceipts.filter((receipt) => (
+      receiptCustomerFilter === 'ALL' || receipt.customer_id === receiptCustomerFilter
+    )),
+    [customerReceipts, receiptCustomerFilter],
+  )
+  const activeCustomerReceipt = useMemo(
+    () => customerReceipts.find((receipt) => receipt.id === activeReceiptId) || null,
+    [activeReceiptId, customerReceipts],
+  )
+  const activeCustomerReceiptAllocations = useMemo(
+    () => receiptAllocations.filter((allocation) => allocation.customer_receipt_id === activeReceiptId),
+    [activeReceiptId, receiptAllocations],
+  )
+  const laterAllocationExposures = useMemo(
+    () => receiptExposures.filter((exposure) => (
+      exposure.customer_id === activeCustomerReceipt?.customer_id
+      && exposure.anchor_kind === 'sales_invoice'
+      && exposure.document_currency_code === activeCustomerReceipt?.currency_code
+      && Number(exposure.outstanding_amount_base) > 0.005
+    )),
+    [activeCustomerReceipt, receiptExposures],
+  )
+  const receiptContextCustomer = receiptCustomerFilter === 'ALL'
+    ? null
+    : receiptCustomerById.get(receiptCustomerFilter) || null
+  const receiptContextExposures = useMemo(
+    () => receiptCustomerFilter === 'ALL' ? [] : receiptExposures.filter((exposure) => (
+      exposure.customer_id === receiptCustomerFilter
+      && Number(exposure.outstanding_amount_base) > 0.005
+    )),
+    [receiptCustomerFilter, receiptExposures],
+  )
+  const receiptContextOutstanding = useMemo(
+    () => receiptContextExposures.reduce((total, exposure) => total + Number(exposure.outstanding_amount_base), 0),
+    [receiptContextExposures],
+  )
+  const receiptContextUnapplied = receiptCustomerFilter === 'ALL'
+    ? null
+    : customerUnappliedCredits.find((credit) => (
+      credit.customer_id === receiptCustomerFilter && credit.currency_code === baseCode
+    )) || null
+
+  function updateReceiptCustomerQuery(customerId: string) {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', 'receipts')
+    params.set('side', 'ar')
+    if (companyId) params.set('companyId', companyId)
+    if (customerId === 'ALL') params.delete('customerId')
+    else params.set('customerId', customerId)
+    setReceiptCustomerFilter(customerId)
+    setSearchParams(params)
+  }
+
+  function openCustomerReceiptDialog(customerId = '') {
+    setReceiptCustomerId(customerId)
+    setReceiptAmount('')
+    setReceiptDate(todayISO())
+    setReceiptMethod('cash')
+    setReceiptBankId(banks[0]?.id || '')
+    setReceiptExternalReference('')
+    setReceiptNote('')
+    setReceiptAllocationValues({})
+    setReceiptStep(customerId ? 2 : 1)
+    clearPostingRequestKey(customerReceiptPostingRequestRef)
+    setReceiptDialogOpen(true)
+  }
+
+  function allocateOldestFirst() {
+    const suggested = allocateCustomerReceiptOldestFirst(
+      Number(receiptAmount),
+      selectedCustomerExposures.map((exposure) => ({
+        anchorId: exposure.anchor_id,
+        dueDate: exposure.due_date,
+        outstandingAmountBase: Number(exposure.outstanding_amount_base),
+      })),
+    )
+    setReceiptAllocationValues(Object.fromEntries(
+      suggested.map((allocation) => [allocation.salesInvoiceId, allocation.amountBase.toFixed(2)]),
+    ))
+  }
+
+  async function submitCustomerReceipt() {
+    if (!companyId || !canManageSettlement) return
+    try {
+      const fingerprint = stablePostingFingerprint({
+        companyId,
+        customerId: receiptCustomerId,
+        receivedOn: receiptDate,
+        amountReceived: normalizeReceiptMoney(Number(receiptAmount)),
+        currencyCode: baseCode,
+        paymentChannel: receiptMethod,
+        bankAccountId: receiptMethod === 'bank' ? receiptBankId : null,
+        externalReference: receiptExternalReference.trim() || null,
+        note: receiptNote.trim() || null,
+        allocations: receiptAllocationInputs,
+      })
+      const requestKey = getPostingRequestKeyForFingerprint(customerReceiptPostingRequestRef, fingerprint)
+      const payload = buildCustomerReceiptPostingPayload({
+        companyId,
+        customerId: receiptCustomerId,
+        receivedOn: receiptDate,
+        amountReceived: Number(receiptAmount),
+        currencyCode: baseCode,
+        paymentChannel: receiptMethod,
+        bankAccountId: receiptBankId,
+        externalReference: receiptExternalReference,
+        note: receiptNote,
+        allocations: receiptAllocationInputs,
+        requestKey,
+      })
+      setReceiptSaving(true)
+      const { data, error } = await supabase.rpc('post_customer_receipt', payload)
+      if (error) throw error
+      const result = (Array.isArray(data) ? data[0] : data) as { replayed?: boolean } | null
+      toast.success(result?.replayed
+        ? tt('customerReceipts.replayed', 'The original receipt result was restored.')
+        : tt('customerReceipts.posted', 'Customer receipt posted.'))
+      setReceiptDialogOpen(false)
+      clearPostingRequestKey(customerReceiptPostingRequestRef)
+      updateReceiptCustomerQuery(receiptCustomerId)
+      setRefreshKey((key) => key + 1)
+    } catch (error: any) {
+      console.error('[settlements] failed to post customer receipt', error)
+      toast.error(customerReceiptErrorMessage(error, 'post'))
+    } finally {
+      setReceiptSaving(false)
+    }
+  }
+
+  async function submitLaterAllocation() {
+    if (!activeCustomerReceipt || !laterAllocationInvoiceId) return
+    const amountBase = normalizeReceiptMoney(Number(laterAllocationAmount))
+    if (!Number.isFinite(amountBase) || amountBase <= 0) {
+      toast.error(tt('customerReceipts.allocationPositive', 'Enter an allocation greater than zero.'))
+      return
+    }
+    const fingerprint = stablePostingFingerprint({
+      receiptId: activeCustomerReceipt.id,
+      salesInvoiceId: laterAllocationInvoiceId,
+      amountBase,
+    })
+    const requestKey = getPostingRequestKeyForFingerprint(allocationRequestRef, fingerprint)
+    setReceiptSaving(true)
+    try {
+      const { error } = await supabase.rpc('allocate_customer_receipt', {
+        p_customer_receipt_id: activeCustomerReceipt.id,
+        p_sales_invoice_id: laterAllocationInvoiceId,
+        p_amount_base: amountBase,
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      toast.success(tt('customerReceipts.allocationPosted', 'Receipt credit allocated.'))
+      setLaterAllocationInvoiceId('')
+      setLaterAllocationAmount('')
+      clearPostingRequestKey(allocationRequestRef)
+      setRefreshKey((key) => key + 1)
+    } catch (error: any) {
+      console.error('[settlements] failed to allocate receipt credit', error)
+      toast.error(customerReceiptErrorMessage(error, 'allocation'))
+    } finally {
+      setReceiptSaving(false)
+    }
+  }
+
+  async function submitAllocationReversal() {
+    if (!reversalAllocation || !reversalReason.trim()) return
+    const fingerprint = stablePostingFingerprint({ allocationId: reversalAllocation.id, reason: reversalReason.trim() })
+    const requestKey = getPostingRequestKeyForFingerprint(reversalRequestRef, fingerprint)
+    setReceiptSaving(true)
+    try {
+      const { error } = await supabase.rpc('reverse_customer_receipt_allocation', {
+        p_allocation_id: reversalAllocation.id,
+        p_reason: reversalReason.trim(),
+        p_request_key: requestKey,
+      })
+      if (error) throw error
+      toast.success(tt('customerReceipts.reversalPosted', 'Allocation reversed. The receipt credit and invoice outstanding were restored.'))
+      setReversalAllocation(null)
+      setReversalReason('')
+      clearPostingRequestKey(reversalRequestRef)
+      setRefreshKey((key) => key + 1)
+    } catch (error: any) {
+      console.error('[settlements] failed to reverse receipt allocation', error)
+      toast.error(customerReceiptErrorMessage(error, 'reversal'))
+    } finally {
+      setReceiptSaving(false)
+    }
   }
 
   function openSettlement(row: SettlementRow, nextDialogTab: 'settle' | 'history' = 'settle') {
@@ -1771,9 +2218,17 @@ export default function SettlementsPage() {
             </p>
         </div>
 
-        <span className="w-fit text-sm text-muted-foreground">
-          {companyName || tt('company.selectCompany', 'Select company')}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="w-fit text-sm text-muted-foreground">
+            {companyName || tt('company.selectCompany', 'Select company')}
+          </span>
+          {canManageSettlement ? (
+            <Button onClick={() => openCustomerReceiptDialog(searchParams.get('customerId') || '')}>
+              <ReceiptText className="h-4 w-4" />
+              {tt('customerReceipts.receivePayment', 'Receive payment')}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
@@ -1876,9 +2331,12 @@ export default function SettlementsPage() {
                 </p>
               </div>
             </div>
-            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-2xl bg-muted/70 p-1 lg:w-auto">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl bg-muted/70 p-1 sm:grid-cols-4 lg:w-auto">
               <TabsTrigger value="exposure" className="min-w-0 rounded-xl lg:min-w-[150px]">
                 {tt('financeUx.exposure', 'Exposure')}
+              </TabsTrigger>
+              <TabsTrigger value="receipts" className="min-w-0 rounded-xl lg:min-w-[150px]">
+                {tt('customerReceipts.title', 'Customer receipts')}
               </TabsTrigger>
               <TabsTrigger value="activity" className="min-w-0 rounded-xl lg:min-w-[170px]">
                 {tt('financeUx.activity', 'Settlement activity')}
@@ -2204,6 +2662,332 @@ export default function SettlementsPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="receipts" className="mt-0 space-y-6">
+          <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                {tt('customerReceipts.title', 'Customer receipts')}
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                {tt('customerReceipts.scope', 'One real payment remains one receipt and one cash or bank transaction. Allocations connect that receipt to issued invoices.')}
+              </p>
+            </div>
+            {canManageSettlement ? (
+              <Button onClick={() => openCustomerReceiptDialog(receiptCustomerFilter === 'ALL' ? '' : receiptCustomerFilter)}>
+                <ReceiptText className="h-4 w-4" />
+                {tt('customerReceipts.receivePayment', 'Receive payment')}
+              </Button>
+            ) : null}
+          </div>
+
+          <FinanceSummaryBand
+            label={tt('customerReceipts.summary', 'Receipt summary')}
+            items={[
+              {
+                label: tt('customerReceipts.received', 'Received'),
+                value: receiptsLoading ? tt('common.loading', 'Loading...') : money(visibleCustomerReceipts.reduce((sum, receipt) => sum + Number(receipt.amount_received_base), 0)),
+                detail: tt('customerReceipts.receivedHelp', 'Actual cash and bank receipts in the current customer scope.'),
+              },
+              {
+                label: tt('customerReceipts.allocated', 'Allocated'),
+                value: receiptsLoading ? tt('common.loading', 'Loading...') : money(visibleCustomerReceipts.reduce((sum, receipt) => sum + Number(receipt.allocated_base), 0)),
+                detail: tt('customerReceipts.allocatedHelp', 'Only posted allocations reduce invoice outstanding.'),
+              },
+              {
+                label: tt('customerReceipts.unallocated', 'Unallocated'),
+                value: receiptsLoading ? tt('common.loading', 'Loading...') : money(visibleCustomerReceipts.reduce((sum, receipt) => sum + Number(receipt.unallocated_base), 0)),
+                detail: tt('customerReceipts.unallocatedHelp', 'Received customer credit that remains available for later allocation.'),
+                tone: visibleCustomerReceipts.some((receipt) => Number(receipt.unallocated_base) > 0.005) ? 'info' : 'neutral',
+              },
+            ]}
+          />
+
+          <div className="flex flex-col gap-3 border-y border-border py-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="w-full sm:max-w-sm">
+              <Label>{tt('customerReceipts.customer', 'Customer')}</Label>
+              <Select value={receiptCustomerFilter} onValueChange={updateReceiptCustomerQuery}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{tt('common.all', 'All')}</SelectItem>
+                  {receiptCustomers.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.code ? `${customer.code} — ` : ''}{customer.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <span className="text-sm text-muted-foreground">
+              {tt('customerReceipts.recordCount', '{count} receipts', { count: visibleCustomerReceipts.length })}
+            </span>
+          </div>
+
+          {!receiptsLoading && !receiptsError && receiptContextCustomer ? (
+            <section
+              className="space-y-5 border-b border-border pb-6"
+              aria-labelledby="customer-receivables-context-title"
+              data-testid="customer-receivables-context"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 id="customer-receivables-context-title" className="text-xl font-semibold tracking-tight">
+                    {receiptContextCustomer.name}
+                  </h3>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                    {receiptContextCustomer.code ? <span>{receiptContextCustomer.code}</span> : null}
+                    {receiptContextCustomer.email ? <span className="break-all">{receiptContextCustomer.email}</span> : null}
+                    {receiptContextCustomer.phone ? <span>{receiptContextCustomer.phone}</span> : null}
+                    {!receiptContextCustomer.code && !receiptContextCustomer.email && !receiptContextCustomer.phone
+                      ? <span>{tt('customerReceipts.noContact', 'No customer contact details are recorded.')}</span>
+                      : null}
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-8 gap-y-2 sm:text-right">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tt('customerReceipts.openOutstanding', 'Open outstanding')}</dt>
+                    <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(receiptContextOutstanding)}</dd>
+                  </div>
+                  <div data-testid="customer-unapplied-credit">
+                    <dt className="text-xs text-muted-foreground">{tt('customerReceipts.unappliedCreditContext', 'Unapplied credit (separate)')}</dt>
+                    <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">
+                      {money(Number(receiptContextUnapplied?.unapplied_credit_base || 0))}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                {tt('customerReceipts.creditNotNetted', 'Unapplied credit is shown as receipt context and is never netted against outstanding until an allocation is posted.')}
+              </p>
+
+              <div data-testid="customer-receivables-open-documents">
+                <h4 className="font-semibold">{tt('customerReceipts.openDocuments', 'Open receivables')}</h4>
+                {receiptContextExposures.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {tt('customerReceipts.noOpenDocuments', 'This customer has no open issued invoices in the current company scope.')}
+                  </p>
+                ) : (
+                  <div className="mt-3 divide-y divide-border border-y border-border">
+                    {receiptContextExposures.map((exposure) => (
+                      <article key={exposure.anchor_id} className="grid gap-3 py-4 lg:grid-cols-[minmax(0,1.2fr)_repeat(2,minmax(9rem,0.6fr))_minmax(12rem,0.8fr)_auto] lg:items-center">
+                        <div>
+                          <p className="font-medium">{exposure.document_reference}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {tt('table.date', 'Date')}: {exposure.document_date || tt('common.dash', '-')}
+                            {' · '}{tt('orders.dueDate', 'Due date')}: {exposure.due_date || tt('common.dash', '-')}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">{tt('settlements.originalAmount', 'Original')}</p>
+                          <p className="mt-1 font-mono tabular-nums">{money(Number(exposure.original_amount_base))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</p>
+                          <p className="mt-1 font-mono font-semibold tabular-nums">{money(Number(exposure.outstanding_amount_base))}</p>
+                        </div>
+                        <div className="text-sm">
+                          {Number(exposure.days_past_due) > 0 ? (
+                            <p className="font-medium text-status-danger-foreground">
+                              {tt('customerReceipts.daysPastDue', '{count} days past due', { count: Number(exposure.days_past_due) })}
+                            </p>
+                          ) : (
+                            <p className="text-muted-foreground">{tt('customerReceipts.notOverdue', 'Not overdue')}</p>
+                          )}
+                          {exposure.collections_suppressed ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {tt('customerReceipts.collectionsSuppressed', 'Collections suppressed')}: {exposure.collection_suppression_reason || exposure.collection_status}
+                            </p>
+                          ) : exposure.current_promise_id ? (
+                            <p className="mt-1 text-xs text-muted-foreground">{tt('customerReceipts.promiseOpen', 'Promise to pay recorded')}</p>
+                          ) : exposure.dispute_category ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {tt('customerReceipts.disputeOpen', 'Dispute')}: {exposure.dispute_category}
+                            </p>
+                          ) : null}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => navigate(`/sales-invoices/${exposure.anchor_id}`)}>
+                          {tt('financeDocs.viewDocument', 'View')}
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
+
+          {receiptsLoading ? (
+            <PremiumStatePanel kind="loading" title={tt('customerReceipts.loading', 'Loading customer receipts')} />
+          ) : receiptsError ? (
+            <PremiumStatePanel
+              kind="error"
+              title={tt('customerReceipts.unavailable', 'Customer receipts unavailable')}
+              description={receiptsError}
+              action={<Button variant="outline" onClick={() => setRefreshKey((key) => key + 1)}>{tt('common.retry', 'Retry')}</Button>}
+            />
+          ) : visibleCustomerReceipts.length === 0 ? (
+            <PremiumStatePanel
+              kind="empty"
+              title={tt('customerReceipts.empty', 'No customer receipts in this scope')}
+              description={tt('customerReceipts.emptyHelp', 'Record a payment when money has actually been received from a known customer.')}
+              action={canManageSettlement ? (
+                <Button onClick={() => openCustomerReceiptDialog(receiptCustomerFilter === 'ALL' ? '' : receiptCustomerFilter)}>
+                  {tt('customerReceipts.receivePayment', 'Receive payment')}
+                </Button>
+              ) : undefined}
+            />
+          ) : (
+            <div className="overflow-hidden border-y border-border">
+              <div className="divide-y divide-border md:hidden">
+                {visibleCustomerReceipts.map((receipt) => (
+                  <button
+                    key={receipt.id}
+                    type="button"
+                    className="block w-full px-1 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setActiveReceiptId(receipt.id)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold">{receipt.receipt_reference}</p>
+                        <p className="mt-1 break-words text-sm text-muted-foreground">{receiptCustomerById.get(receipt.customer_id)?.name || tt('common.none', 'None')}</p>
+                      </div>
+                      <span className="font-mono font-semibold tabular-nums">{money(Number(receipt.amount_received_base))}</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>{receipt.received_on}</span>
+                      <span>{receipt.payment_channel === 'bank' ? tt('customerReceipts.bank', 'Bank') : tt('customerReceipts.cash', 'Cash')}</span>
+                      <span>{tt('customerReceipts.unallocated', 'Unallocated')}: {money(Number(receipt.unallocated_base))}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-muted/35 text-left text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3">{tt('customerReceipts.reference', 'Receipt')}</th>
+                      <th className="px-4 py-3">{tt('customerReceipts.customer', 'Customer')}</th>
+                      <th className="px-4 py-3">{tt('table.date', 'Date')}</th>
+                      <th className="px-4 py-3">{tt('customerReceipts.method', 'Method')}</th>
+                      <th className="px-4 py-3 text-right">{tt('customerReceipts.received', 'Received')}</th>
+                      <th className="px-4 py-3 text-right">{tt('customerReceipts.allocated', 'Allocated')}</th>
+                      <th className="px-4 py-3 text-right">{tt('customerReceipts.unallocated', 'Unallocated')}</th>
+                      <th className="px-4 py-3 text-right"><span className="sr-only">{tt('common.actions', 'Actions')}</span></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {visibleCustomerReceipts.map((receipt) => (
+                      <tr key={receipt.id}>
+                        <td className="px-4 py-4 font-medium">{receipt.receipt_reference}</td>
+                        <td className="px-4 py-4">{receiptCustomerById.get(receipt.customer_id)?.name || tt('common.none', 'None')}</td>
+                        <td className="px-4 py-4">{receipt.received_on}</td>
+                        <td className="px-4 py-4">{receipt.payment_channel === 'bank' ? tt('customerReceipts.bank', 'Bank') : tt('customerReceipts.cash', 'Cash')}</td>
+                        <td className="px-4 py-4 text-right font-mono tabular-nums">{money(Number(receipt.amount_received_base))}</td>
+                        <td className="px-4 py-4 text-right font-mono tabular-nums">{money(Number(receipt.allocated_base))}</td>
+                        <td className="px-4 py-4 text-right font-mono font-semibold tabular-nums">{money(Number(receipt.unallocated_base))}</td>
+                        <td className="px-4 py-4 text-right">
+                          <Button size="sm" variant="outline" onClick={() => setActiveReceiptId(receipt.id)}>
+                            {tt('common.view', 'View')}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeCustomerReceipt ? (
+            <section className="border-t border-border pt-6" aria-labelledby="customer-receipt-detail-title">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 id="customer-receipt-detail-title" className="text-xl font-semibold tracking-tight">
+                    {activeCustomerReceipt.receipt_reference}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {receiptCustomerById.get(activeCustomerReceipt.customer_id)?.name || tt('common.none', 'None')}
+                  </p>
+                </div>
+                <Button variant="ghost" onClick={() => setActiveReceiptId(null)}>{tt('common.close', 'Close')}</Button>
+              </div>
+              <dl className="mt-5 grid gap-x-6 gap-y-4 border-y border-border py-5 sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.received', 'Received')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(Number(activeCustomerReceipt.amount_received_base))}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.allocated', 'Allocated')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(Number(activeCustomerReceipt.allocated_base))}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.unallocated', 'Unallocated')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(Number(activeCustomerReceipt.unallocated_base))}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.transaction', 'Financial transaction')}</dt><dd className="mt-1 break-all font-mono text-xs">{activeCustomerReceipt.financial_transaction_id}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('table.date', 'Date')}</dt><dd className="mt-1">{activeCustomerReceipt.received_on}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.method', 'Method')}</dt><dd className="mt-1">{activeCustomerReceipt.payment_channel === 'bank' ? tt('customerReceipts.bank', 'Bank') : tt('customerReceipts.cash', 'Cash')}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.externalReference', 'External reference')}</dt><dd className="mt-1 break-words">{activeCustomerReceipt.external_reference || tt('common.dash', '-')}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.note', 'Note')}</dt><dd className="mt-1 break-words">{activeCustomerReceipt.note || tt('common.dash', '-')}</dd></div>
+              </dl>
+
+              <div className="mt-6">
+                <h4 className="font-semibold">{tt('customerReceipts.allocations', 'Invoice allocations')}</h4>
+                {activeCustomerReceiptAllocations.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">{tt('customerReceipts.noAllocations', 'No invoice allocations have been posted.')}</p>
+                ) : (
+                  <div className="mt-3 divide-y divide-border border-y border-border">
+                    {activeCustomerReceiptAllocations.map((allocation) => {
+                      const exposure = receiptExposureById.get(allocation.sales_invoice_id)
+                      return (
+                        <div key={allocation.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="font-medium">{exposure?.document_reference || allocation.sales_invoice_id}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{allocation.created_at}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className={`font-mono font-semibold tabular-nums ${allocation.is_reversed ? 'text-muted-foreground line-through' : ''}`}>
+                              {money(Number(allocation.amount_base))}
+                            </span>
+                            {allocation.is_reversed ? (
+                              <span className="text-xs text-muted-foreground">{tt('customerReceipts.reversed', 'Reversed')}</span>
+                            ) : canManageSettlement ? (
+                              <Button size="sm" variant="outline" onClick={() => { setReversalAllocation(allocation); setReversalReason('') }}>
+                                <Undo2 className="h-4 w-4" />
+                                {tt('customerReceipts.reverseAllocation', 'Reverse allocation')}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {canManageSettlement && Number(activeCustomerReceipt.unallocated_base) > 0.005 ? (
+                <div className="mt-6 border-l-2 border-status-info-border bg-status-info-muted px-4 py-4">
+                  <h4 className="font-semibold">{tt('customerReceipts.allocateCredit', 'Allocate existing receipt credit')}</h4>
+                  <p className="mt-1 text-sm text-muted-foreground">{tt('customerReceipts.allocateCreditHelp', 'This allocation changes invoice outstanding without creating another cash or bank transaction.')}</p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,14rem)_auto] md:items-end">
+                    <div>
+                      <Label>{tt('customerReceipts.invoice', 'Invoice')}</Label>
+                      <Select value={laterAllocationInvoiceId} onValueChange={setLaterAllocationInvoiceId}>
+                        <SelectTrigger><SelectValue placeholder={tt('customerReceipts.selectInvoice', 'Select an invoice')} /></SelectTrigger>
+                        <SelectContent>
+                          {laterAllocationExposures.map((exposure) => (
+                            <SelectItem key={exposure.anchor_id} value={exposure.anchor_id}>
+                              {exposure.document_reference} — {money(Number(exposure.outstanding_amount_base))}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="later-allocation-amount">{tt('customerReceipts.allocationAmount', 'Allocation amount')}</Label>
+                      <Input id="later-allocation-amount" type="number" min="0.01" step="0.01" value={laterAllocationAmount} onChange={(event) => setLaterAllocationAmount(event.target.value)} />
+                    </div>
+                    <Button disabled={receiptSaving || !laterAllocationInvoiceId} onClick={submitLaterAllocation}>
+                      {receiptSaving ? tt('common.saving', 'Saving...') : tt('customerReceipts.allocate', 'Allocate')}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="activity" className="mt-0 space-y-6">
@@ -2833,6 +3617,241 @@ export default function SettlementsPage() {
           onGenerate={generateFinanceExport}
         />
       ) : null}
+
+      <Dialog open={receiptDialogOpen} onOpenChange={(open) => { if (!receiptSaving) setReceiptDialogOpen(open) }}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{tt('customerReceipts.receivePayment', 'Receive payment')}</DialogTitle>
+            <DialogDescription>
+              {receiptStep === 1
+                ? tt('customerReceipts.chooseCustomerHelp', 'Choose the customer that made the payment.')
+                : receiptStep === 2
+                  ? tt('customerReceipts.detailsHelp', 'Record the real payment, then allocate any portion that belongs to issued invoices.')
+                  : tt('customerReceipts.reviewHelp', 'Review the financial transaction and invoice allocations before posting.')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="pr-1">
+            <ol className="flex flex-wrap gap-x-5 gap-y-2 border-b border-border pb-4 text-sm" aria-label={tt('customerReceipts.steps', 'Receipt steps')}>
+              {[
+                [1, tt('customerReceipts.stepCustomer', 'Customer')],
+                [2, tt('customerReceipts.stepDetails', 'Receipt and allocation')],
+                [3, tt('customerReceipts.stepReview', 'Review')],
+              ].map(([step, label]) => (
+                <li key={String(step)} className={Number(step) === receiptStep ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                  {step}. {label}
+                </li>
+              ))}
+            </ol>
+
+            {receiptStep === 1 ? (
+              <div className="py-5">
+                <Label>{tt('customerReceipts.customer', 'Customer')}</Label>
+                <Select
+                  value={receiptCustomerId}
+                  onValueChange={(value) => {
+                    setReceiptCustomerId(value)
+                    setReceiptAllocationValues({})
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder={tt('customerReceipts.selectCustomer', 'Select a customer')} /></SelectTrigger>
+                  <SelectContent>
+                    {receiptCustomers.map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id}>
+                        {customer.code ? `${customer.code} — ` : ''}{customer.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
+            {receiptStep === 2 ? (
+              <div className="space-y-6 py-5">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <Label htmlFor="customer-receipt-amount">{tt('customerReceipts.amountReceived', 'Amount received')}</Label>
+                    <Input id="customer-receipt-amount" type="number" min="0.01" step="0.01" value={receiptAmount} onChange={(event) => setReceiptAmount(event.target.value)} />
+                  </div>
+                  <div>
+                    <Label htmlFor="customer-receipt-date">{tt('table.date', 'Date')}</Label>
+                    <Input id="customer-receipt-date" type="date" value={receiptDate} onChange={(event) => setReceiptDate(event.target.value)} />
+                  </div>
+                  <div>
+                    <Label>{tt('orders.currency', 'Currency')}</Label>
+                    <Input value={baseCode} readOnly aria-readonly="true" />
+                  </div>
+                  <div>
+                    <Label>{tt('customerReceipts.method', 'Method')}</Label>
+                    <Select value={receiptMethod} onValueChange={(value) => setReceiptMethod(value as 'cash' | 'bank')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">{tt('customerReceipts.cash', 'Cash')}</SelectItem>
+                        <SelectItem value="bank">{tt('customerReceipts.bank', 'Bank')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {receiptMethod === 'bank' ? (
+                    <div>
+                      <Label>{tt('customerReceipts.bankAccount', 'Bank account')}</Label>
+                      <Select value={receiptBankId} onValueChange={setReceiptBankId}>
+                        <SelectTrigger><SelectValue placeholder={tt('customerReceipts.selectBank', 'Select a bank account')} /></SelectTrigger>
+                        <SelectContent>
+                          {banks.filter((bank) => !bank.currency_code || String(bank.currency_code).toUpperCase() === baseCode.toUpperCase()).map((bank) => (
+                            <SelectItem key={bank.id} value={bank.id}>{bank.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                  <div>
+                    <Label htmlFor="customer-receipt-external-reference">{tt('customerReceipts.externalReference', 'External reference')}</Label>
+                    <Input id="customer-receipt-external-reference" value={receiptExternalReference} onChange={(event) => setReceiptExternalReference(event.target.value)} />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <Label htmlFor="customer-receipt-note">{tt('customerReceipts.note', 'Note')}</Label>
+                    <Input id="customer-receipt-note" value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <h3 className="font-semibold">{tt('customerReceipts.openInvoices', 'Open invoices')}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">{tt('customerReceipts.openInvoicesHelp', 'Only issued invoices in company base currency are eligible in this version.')}</p>
+                    </div>
+                    <Button variant="outline" onClick={allocateOldestFirst} disabled={!Number.isFinite(currentReceiptSummary.received) || currentReceiptSummary.received <= 0 || selectedCustomerExposures.length === 0}>
+                      {tt('customerReceipts.allocateOldestFirst', 'Allocate oldest first')}
+                    </Button>
+                  </div>
+                  {selectedCustomerExposures.length === 0 ? (
+                    <p className="mt-4 border-y border-border py-4 text-sm text-muted-foreground">
+                      {tt('customerReceipts.noEligibleInvoices', 'This customer has no eligible open base-currency invoices. The receipt may remain entirely unallocated.')}
+                    </p>
+                  ) : (
+                    <div className="mt-4 overflow-x-auto border-y border-border">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-muted/35 text-left text-xs text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-3">{tt('customerReceipts.invoice', 'Invoice')}</th>
+                            <th className="px-3 py-3">{tt('table.date', 'Date')}</th>
+                            <th className="px-3 py-3">{tt('orders.dueDate', 'Due Date')}</th>
+                            <th className="px-3 py-3 text-right">{tt('settlements.originalAmount', 'Original')}</th>
+                            <th className="px-3 py-3 text-right">{tt('settlements.outstandingAmount', 'Outstanding')}</th>
+                            <th className="min-w-[10rem] px-3 py-3 text-right">{tt('customerReceipts.allocationAmount', 'Allocation amount')}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {selectedCustomerExposures.map((exposure) => (
+                            <tr key={exposure.anchor_id}>
+                              <td className="px-3 py-3 font-medium">{exposure.document_reference}</td>
+                              <td className="px-3 py-3">{exposure.document_date || tt('common.dash', '-')}</td>
+                              <td className="px-3 py-3">{exposure.due_date || tt('common.dash', '-')}</td>
+                              <td className="px-3 py-3 text-right font-mono tabular-nums">{money(Number(exposure.original_amount_base))}</td>
+                              <td className="px-3 py-3 text-right font-mono tabular-nums">{money(Number(exposure.outstanding_amount_base))}</td>
+                              <td className="px-3 py-3">
+                                <Label htmlFor={`receipt-allocation-${exposure.anchor_id}`} className="sr-only">
+                                  {tt('customerReceipts.allocationFor', 'Allocation for {reference}', { reference: exposure.document_reference })}
+                                </Label>
+                                <Input
+                                  id={`receipt-allocation-${exposure.anchor_id}`}
+                                  className="text-right font-mono tabular-nums"
+                                  type="number"
+                                  min="0"
+                                  max={Number(exposure.outstanding_amount_base)}
+                                  step="0.01"
+                                  value={receiptAllocationValues[exposure.anchor_id] || ''}
+                                  onChange={(event) => setReceiptAllocationValues((current) => ({ ...current, [exposure.anchor_id]: event.target.value }))}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <dl className="grid gap-4 border-y border-border py-4 sm:grid-cols-3" aria-live="polite">
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.received', 'Received')}</dt><dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(currentReceiptSummary.received)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.allocated', 'Allocated')}</dt><dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(currentReceiptSummary.allocated)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.unallocated', 'Unallocated')}</dt><dd className={`mt-1 font-mono text-lg font-semibold tabular-nums ${currentReceiptSummary.unallocated < 0 ? 'text-status-danger-foreground' : ''}`}>{money(currentReceiptSummary.unallocated)}</dd></div>
+                </dl>
+                {currentReceiptSummary.unallocated >= 0 ? (
+                  <p className="text-sm text-muted-foreground">{tt('customerReceipts.creditTruth', 'Unallocated customer credit is valid and does not reduce any invoice until an allocation is posted.')}</p>
+                ) : (
+                  <p className="text-sm text-status-danger-foreground" role="alert">{tt('customerReceipts.overAllocated', 'Allocated amount cannot exceed the amount received.')}</p>
+                )}
+              </div>
+            ) : null}
+
+            {receiptStep === 3 ? (
+              <div className="space-y-5 py-5">
+                <dl className="grid gap-x-6 gap-y-4 border-y border-border py-5 sm:grid-cols-2 lg:grid-cols-4">
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.customer', 'Customer')}</dt><dd className="mt-1 font-medium">{receiptCustomerById.get(receiptCustomerId)?.name}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.received', 'Received')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(currentReceiptSummary.received)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.allocated', 'Allocated')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(currentReceiptSummary.allocated)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.unallocated', 'Unallocated')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(currentReceiptSummary.unallocated)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('table.date', 'Date')}</dt><dd className="mt-1">{receiptDate}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.method', 'Method')}</dt><dd className="mt-1">{receiptMethod === 'bank' ? tt('customerReceipts.bank', 'Bank') : tt('customerReceipts.cash', 'Cash')}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('orders.currency', 'Currency')}</dt><dd className="mt-1">{baseCode}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.financialEntries', 'Financial entries')}</dt><dd className="mt-1 font-semibold">1</dd></div>
+                </dl>
+                <div>
+                  <h3 className="font-semibold">{tt('customerReceipts.allocations', 'Invoice allocations')}</h3>
+                  {receiptAllocationInputs.length === 0 ? (
+                    <p className="mt-2 text-sm text-muted-foreground">{tt('customerReceipts.noAllocationsReview', 'No allocations. The full receipt will remain as unapplied customer credit.')}</p>
+                  ) : (
+                    <ul className="mt-3 divide-y divide-border border-y border-border">
+                      {receiptAllocationInputs.map((allocation) => (
+                        <li key={allocation.salesInvoiceId} className="flex items-center justify-between gap-4 py-3">
+                          <span>{receiptExposureById.get(allocation.salesInvoiceId)?.document_reference || allocation.salesInvoiceId}</span>
+                          <span className="font-mono font-semibold tabular-nums">{money(allocation.amountBase)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </DialogBody>
+          <DialogFooter>
+            {receiptStep > 1 ? <Button variant="outline" disabled={receiptSaving} onClick={() => setReceiptStep((receiptStep - 1) as 1 | 2)}>{tt('common.back', 'Back')}</Button> : null}
+            {receiptStep === 1 ? (
+              <Button disabled={!receiptCustomerId} onClick={() => setReceiptStep(2)}>{tt('common.continue', 'Continue')}</Button>
+            ) : receiptStep === 2 ? (
+              <Button
+                disabled={!Number.isFinite(currentReceiptSummary.received) || currentReceiptSummary.received <= 0 || currentReceiptSummary.unallocated < 0 || !receiptDate || (receiptMethod === 'bank' && !receiptBankId)}
+                onClick={() => setReceiptStep(3)}
+              >
+                {tt('customerReceipts.reviewReceipt', 'Review receipt')}
+              </Button>
+            ) : (
+              <Button disabled={receiptSaving} onClick={submitCustomerReceipt}>
+                {receiptSaving ? tt('customerReceipts.posting', 'Posting...') : tt('customerReceipts.postReceipt', 'Post receipt')}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(reversalAllocation)} onOpenChange={(open) => { if (!open && !receiptSaving) setReversalAllocation(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{tt('customerReceipts.reverseAllocation', 'Reverse allocation')}</DialogTitle>
+            <DialogDescription>{tt('customerReceipts.reverseHelp', 'The receipt remains unchanged. This restores receipt credit and invoice outstanding through append-only reversal evidence.')}</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Label htmlFor="receipt-allocation-reversal-reason">{tt('customerReceipts.reversalReason', 'Reason')}</Label>
+            <Input id="receipt-allocation-reversal-reason" value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} />
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" disabled={receiptSaving} onClick={() => setReversalAllocation(null)}>{tt('common.cancel', 'Cancel')}</Button>
+            <Button variant="destructive" disabled={receiptSaving || !reversalReason.trim()} onClick={submitAllocationReversal}>
+              {receiptSaving ? tt('common.saving', 'Saving...') : tt('customerReceipts.reverseAllocation', 'Reverse allocation')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!activeRow} onOpenChange={(open) => { if (!open) setActiveRow(null) }}>
         <DialogContent className="max-w-5xl">

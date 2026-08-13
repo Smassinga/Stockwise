@@ -797,7 +797,7 @@ test('commercial tax integrity and item profile trust', async (t) => {
     assert.doesNotMatch(SOURCE.financeStateMigration, /finance_total_amount_ccy\s*\+\s*so\.finance_tax_amount_ccy/)
   })
   await check(125, 'Sales Order active-anchor card uses authoritative outstanding fields', async () => {
-    assert.match(SOURCE.salesOrders, /linkedFiscalInvoice\?\.outstanding_base,\s*salesState\(selectedSO\)\?\.legacy_outstanding_base/)
+    assert.match(SOURCE.salesOrders, /n\(\s*linkedFiscalInvoice\?\.outstanding_base,\s*n\(\s*salesState\(selectedSO\)\?\.legacy_outstanding_base\s*\)\s*\)/)
     assert.doesNotMatch(SOURCE.salesOrders, /salesState\(selectedSO\)\?\.outstanding_base/)
   })
   await check(126, 'Purchase Order line controls use readable labels and icons', async () => {
