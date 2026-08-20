@@ -59,7 +59,7 @@ type Tx = {
   amount_base: number
   reconciled: boolean
   created_at: string
-  ref_type?: SettlementKind | null
+  ref_type?: SettlementKind | 'CR' | null
   ref_id?: string | null
 }
 
@@ -829,6 +829,9 @@ export default function BankDetail() {
     if (type === 'VB') return `/vendor-bills/${id}`
     if (type === 'SO') return `/orders?tab=sales&orderId=${encodeURIComponent(id)}`
     if (type === 'PO') return `/orders?tab=purchase&orderId=${encodeURIComponent(id)}`
+    if (type === 'CR' && companyId) {
+      return `/settlements?view=receipts&side=ar&receiptId=${encodeURIComponent(id)}&companyId=${encodeURIComponent(companyId)}`
+    }
     return null
   }
 

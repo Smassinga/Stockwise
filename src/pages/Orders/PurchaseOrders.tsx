@@ -55,6 +55,10 @@ import {
   loadCommercialTaxConfiguration,
   type CommercialTaxConfiguration,
 } from '../../lib/commercialTax'
+import {
+  validVendorBillDateSequence,
+  vendorBillDraftDateDefaults,
+} from '../../lib/vendorBillDraftDates'
 
 // NEW: company profile helper (DB companies + storage URL)
 import {
@@ -348,6 +352,7 @@ export default function PurchaseOrders() {
   // brand (company_settings preferred; app_settings fallback)
   const [brandName, setBrandName] = useState<string>('')
   const [brandLogoUrl, setBrandLogoUrl] = useState<string>('')
+  const [companyBusinessTimezone, setCompanyBusinessTimezone] = useState('Africa/Maputo')
 
   // NEW: full company profile (companies table)
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileUI>({})
@@ -389,7 +394,7 @@ export default function PurchaseOrders() {
   const [createVendorBillOpen, setCreateVendorBillOpen] = useState(false)
   const [creatingVendorBill, setCreatingVendorBill] = useState(false)
   const [vendorBillSupplierReference, setVendorBillSupplierReference] = useState('')
-  const [vendorBillSupplierInvoiceDate, setVendorBillSupplierInvoiceDate] = useState<string>(() => todayYmd())
+  const [vendorBillSupplierInvoiceDate, setVendorBillSupplierInvoiceDate] = useState('')
   const [vendorBillBillDate, setVendorBillBillDate] = useState<string>(() => todayYmd())
   const [vendorBillDueDate, setVendorBillDueDate] = useState<string>(() => todayYmd())
 
@@ -841,8 +846,10 @@ export default function PurchaseOrders() {
         const brand = doc?.documents?.brand || {}
         const csLogo = (brand?.logoUrl || '').trim()
         const csName = (brand?.name || '').trim()
+        const businessTimezone = String(doc?.dueReminders?.timezone || doc?.notifications?.timezone || '').trim()
         if (csName) setBrandName(prev => prev || csName)
         if (csLogo) setBrandLogoUrl(prev => prev || csLogo)
+        setCompanyBusinessTimezone(businessTimezone || 'Africa/Maputo')
       } catch (e) {
         console.warn('brand load (company_settings) failed:', e)
       }
@@ -1463,20 +1470,18 @@ export default function PurchaseOrders() {
     setSearchParams(next, { replace: true })
   }
 
-  useEffect(() => {
-    if (!selectedPO) return
-    const today = todayYmd()
-    const supplierInvoiceDate = selectedPO.order_date || today
-    const billDate = supplierInvoiceDate || today
-    const dueDateCandidate = selectedPO.due_date || billDate
-    setVendorBillSupplierReference('')
-    setVendorBillSupplierInvoiceDate(supplierInvoiceDate)
-    setVendorBillBillDate(billDate)
-    setVendorBillDueDate(dueDateCandidate >= billDate ? dueDateCandidate : billDate)
-  }, [selectedPO])
-
   function openVendorBillDraftDialog(po: PO) {
+    const defaults = vendorBillDraftDateDefaults({
+      timeZone: companyBusinessTimezone,
+      paymentTermsId: po.payment_terms_id,
+      paymentTermsText: po.payment_terms,
+      paymentTerms: paymentTermsList,
+    })
     setSelectedPO(po)
+    setVendorBillSupplierReference('')
+    setVendorBillSupplierInvoiceDate(defaults.supplierInvoiceDate)
+    setVendorBillBillDate(defaults.billDate)
+    setVendorBillDueDate(defaults.dueDate)
     setCreateVendorBillOpen(true)
   }
 
@@ -1503,6 +1508,14 @@ export default function PurchaseOrders() {
     }
 
     try {
+      if (!vendorBillBillDate) {
+        toast.error(tt('financeDocs.validation.billDateRequired', 'Bill date is required.'))
+        return
+      }
+      if (!validVendorBillDateSequence(vendorBillBillDate, vendorBillDueDate)) {
+        toast.error(tt('financeDocs.validation.dueBeforeBill', 'Due date cannot be before the bill date.'))
+        return
+      }
       setCreatingVendorBill(true)
       const result = await createDraftVendorBillFromPurchaseOrder(companyId, po.id, {
         supplierInvoiceReference: vendorBillSupplierReference,
@@ -3287,13 +3300,7 @@ export default function PurchaseOrders() {
                   id="po-vendor-bill-supplier-date"
                   type="date"
                   value={vendorBillSupplierInvoiceDate}
-                  onChange={(event) => {
-                    const nextValue = event.target.value
-                    setVendorBillSupplierInvoiceDate(nextValue)
-                    if (!vendorBillBillDate || vendorBillBillDate === vendorBillSupplierInvoiceDate) {
-                      setVendorBillBillDate(nextValue || todayYmd())
-                    }
-                  }}
+                  onChange={(event) => setVendorBillSupplierInvoiceDate(event.target.value)}
                 />
               </div>
               <div>
@@ -3311,6 +3318,7 @@ export default function PurchaseOrders() {
                   id="po-vendor-bill-due-date"
                   type="date"
                   value={vendorBillDueDate}
+                  min={vendorBillBillDate || undefined}
                   onChange={(event) => setVendorBillDueDate(event.target.value)}
                 />
               </div>
@@ -3322,7 +3330,11 @@ export default function PurchaseOrders() {
             </Button>
             <Button
               onClick={() => selectedPO && void openOrCreateVendorBill(selectedPO)}
-              disabled={creatingVendorBill || !selectedPO}
+              disabled={
+                creatingVendorBill
+                || !selectedPO
+                || !validVendorBillDateSequence(vendorBillBillDate, vendorBillDueDate)
+              }
             >
               {creatingVendorBill ? tt('financeDocs.vendorBills.creatingDraft', 'Creating...') : tt('orders.createVendorBill', 'Raise vendor bill')}
             </Button>

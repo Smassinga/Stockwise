@@ -1,4 +1,4 @@
-import uomPt from '../locales/uom.pt.json'
+import uomPt from '../locales/uom.pt.json' with { type: 'json' }
 
 export type ConvRow = { from_uom_id: string; to_uom_id: string; factor: number }
 export type ConvEdge = { to: string; factor: number }

@@ -68,6 +68,13 @@ insert into public.sales_orders(
   '2026-08-01','MZN','draft',100,0,100,1,100,'c2000000-0000-4000-8000-000000000001'
 );
 
+insert into public.sales_orders(
+  id,customer_id,order_date,currency_code,status,subtotal,tax_total,total,
+  fx_to_base,total_amount,company_id
+) values
+  ('c4000000-0000-4000-8000-000000000010','c3000000-0000-4000-8000-000000000001','2026-08-11','MZN','draft',75,0,75,1,75,'c2000000-0000-4000-8000-000000000001'),
+  ('c4000000-0000-4000-8000-000000000011','c3000000-0000-4000-8000-000000000001','2026-08-11','MZN','draft',80,0,80,1,80,'c2000000-0000-4000-8000-000000000001');
+
 insert into public.purchase_orders(
   id,supplier_id,order_date,currency_code,status,subtotal,tax_total,total,
   fx_to_base,total_amount,company_id
@@ -120,6 +127,14 @@ begin
   if (select count(*) from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
       and event_type='receivables.overdue' and resolved_at is null)<>2 then
     raise exception 'owner and manager targeted alert count mismatch';
+  end if;
+  if exists(select 1 from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and event_type='receivables.overdue'
+      and (
+        action_url not like '/settlements?view=exposure&side=ar&customerId=%'
+        or payload->>'arContext' is distinct from 'customer-exposure'
+      )) then
+    raise exception 'receivables alert destination is not canonical AR exposure';
   end if;
   if exists(select 1 from public.notifications where user_id in (
     'c1000000-0000-4000-8000-000000000003','c1000000-0000-4000-8000-000000000004'
@@ -286,6 +301,7 @@ end $$;
 -- Leave only the approval notification triggers active for continuity checks.
 alter table public.purchase_orders disable trigger user;
 alter table public.purchase_orders enable trigger po_awaiting_notify_trg;
+alter table public.purchase_orders enable trigger tr_po_status_notify;
 alter table public.sales_orders disable trigger user;
 alter table public.sales_orders enable trigger so_awaiting_notify_trg;
 
@@ -308,11 +324,76 @@ begin
       and title='Awaiting approval: Purchase Order' and user_id is null) then
     raise exception 'purchase approval notification trigger broke';
   end if;
-  if not exists(select 1 from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
-      and title='Awaiting approval: Sales Order' and user_id is null) then
-    raise exception 'sales approval notification trigger broke';
+  if (select count(*) from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and event_type='orders.sales.awaiting_approval' and resolved_at is null)<>3 then
+    raise exception 'structured sales approval notification recipient count mismatch';
+  end if;
+  if (select count(*) from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and title='PO closed')<>1 then
+    raise exception 'purchase-order status transition produced duplicate notifications';
   end if;
   raise notice 'PASS PO and SO approval notification continuity';
+end $$;
+
+-- The same transaction-local contract covers governed POS cash and bank
+-- methods. Neither transient shipped order may emit an unpaid alert.
+select set_config('stockwise.commercial_tax_operator_sale','on',true);
+update public.sales_orders set status='shipped'
+where id in (
+  'c4000000-0000-4000-8000-000000000010',
+  'c4000000-0000-4000-8000-000000000011'
+);
+select set_config('stockwise.commercial_tax_operator_sale','off',true);
+do $$
+begin
+  if exists(select 1 from public.notifications
+      where event_type='orders.sales.awaiting_approval'
+        and payload->>'salesOrderId' in (
+          'c4000000-0000-4000-8000-000000000010',
+          'c4000000-0000-4000-8000-000000000011'
+        )) then
+    raise exception 'atomic POS sale produced a transient awaiting alert';
+  end if;
+  raise notice 'PASS atomic POS cash and bank notification suppression';
+end $$;
+
+-- Retry/same-state processing remains idempotent, then authoritative cash
+-- settlement resolves the structured SO alert without deleting history.
+select public.stockwise_sync_sales_order_awaiting_notification(
+  'c2000000-0000-4000-8000-000000000001',
+  'c4000000-0000-4000-8000-000000000001'
+);
+update public.purchase_orders set status='closed'
+where id='c4100000-0000-4000-8000-000000000001';
+do $$
+begin
+  if (select count(*) from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and event_type='orders.sales.awaiting_approval' and resolved_at is null)<>3 then
+    raise exception 'sales approval retry duplicated alerts';
+  end if;
+  if (select count(*) from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and title='PO closed')<>1 then
+    raise exception 'unchanged PO status duplicated notifications';
+  end if;
+end $$;
+
+insert into public.cash_transactions(
+  company_id,happened_at,type,ref_type,ref_id,memo,amount_base
+) values (
+  'c2000000-0000-4000-8000-000000000001','2026-08-11','sale_receipt','SO',
+  'c4000000-0000-4000-8000-000000000001','alert settlement',100
+);
+
+do $$
+begin
+  if exists(select 1 from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and event_type='orders.sales.awaiting_approval' and resolved_at is null) then
+    raise exception 'settled sales-order approval alert remained active';
+  end if;
+  if (select count(*) from public.notifications where company_id='c2000000-0000-4000-8000-000000000001'
+      and event_type='orders.sales.awaiting_approval' and resolved_at is not null)<>3 then
+    raise exception 'sales-order alert history was not preserved';
+  end if;
 end $$;
 
 -- Authoritative settlement evidence clears the alert without deleting history.

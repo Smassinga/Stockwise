@@ -10,6 +10,7 @@ const ts = require('typescript')
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
 
 const migration = await read('supabase/migrations/20260813065928_internal_receivables_alerts.sql')
+const repairMigration = await read('supabase/migrations/20260820175131_repair_finance_notification_truth.sql')
 const presentation = await read('src/lib/notificationPresentation.ts')
 const navigation = await read('src/lib/notificationNavigation.ts')
 const notificationCenter = await read('src/components/notifications/NotificationCenter.tsx')
@@ -117,9 +118,13 @@ test('notification action URLs cannot escape the StockWise origin', () => {
 })
 
 test('the receivables deep link opens canonical customer AR context without netting credit', () => {
+  assert.match(repairMigration, /view=exposure&side=ar&customerId=/)
+  assert.match(repairMigration, /'arContext','customer-exposure'/)
   assert.match(settlements, /from\('v_customer_receivable_exposures'\)/)
+  assert.doesNotMatch(settlements, /\.eq\('anchor_kind', 'sales_invoice'\)\s*\.order\('due_date'/)
   assert.match(settlements, /from\('v_customer_unapplied_credit'\)/)
   assert.match(settlements, /data-testid="customer-receivables-context"/)
+  assert.match(settlements, /data-testid="alert-receivables-context"/)
   assert.match(settlements, /data-testid="customer-receivables-open-documents"/)
   assert.match(settlements, /data-testid="customer-unapplied-credit"/)
   assert.match(settlements, /searchParams\.get\('customerId'\)/)
@@ -154,4 +159,5 @@ test('rollback-only local SQL matrix passes when the reset local stack is availa
   assert.match(output, /PASS aggregate, currency, preference, dedupe and resolution/)
   assert.match(output, /PASS notification forgery and emitter calls denied/)
   assert.match(output, /PASS PO and SO approval notification continuity/)
+  assert.match(output, /PASS atomic POS cash and bank notification suppression/)
 })

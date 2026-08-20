@@ -39,7 +39,7 @@ type CashTx = {
   id: string
   happened_at: string
   type: 'sale_receipt' | 'purchase_payment' | 'adjustment'
-  ref_type: SettlementKind | 'ADJ' | null
+  ref_type: SettlementKind | 'CR' | 'ADJ' | null
   ref_id: string | null
   memo: string | null
   amount_base: number
@@ -357,6 +357,9 @@ export default function CashPage() {
     if (type === 'VB') return `/vendor-bills/${id}`
     if (type === 'SO') return `/orders?tab=sales&orderId=${encodeURIComponent(id)}`
     if (type === 'PO') return `/orders?tab=purchase&orderId=${encodeURIComponent(id)}`
+    if (type === 'CR' && companyId) {
+      return `/settlements?view=receipts&side=ar&receiptId=${encodeURIComponent(id)}&companyId=${encodeURIComponent(companyId)}`
+    }
     return null
   }
 

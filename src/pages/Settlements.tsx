@@ -626,7 +626,6 @@ export default function SettlementsPage() {
             .from('v_customer_receivable_exposures')
             .select('company_id,customer_id,anchor_id,anchor_kind,document_reference,document_date,due_date,customer_name,document_currency_code,base_currency_code,original_amount_base,outstanding_amount_base,collection_status,collection_next_action_at,collection_pause_until,dispute_category,current_promise_id,collections_suppressed,collection_suppression_reason,due_position,days_past_due')
             .eq('company_id', companyId)
-            .eq('anchor_kind', 'sales_invoice')
             .order('due_date', { ascending: true, nullsFirst: false }),
           supabase
             .from('v_customer_receipt_state')
@@ -649,7 +648,9 @@ export default function SettlementsPage() {
         if (cancelled) return
 
         const customers = (customersResult.data || []) as CustomerReceiptCustomer[]
+        const receipts = (receiptsResult.data || []) as CustomerReceiptState[]
         const requestedCustomerId = searchParams.get('customerId')
+        const requestedReceiptId = searchParams.get('receiptId')
         const requestedCompanyId = searchParams.get('companyId')
         const validRequestedCustomer = requestedCustomerId
           ? (!requestedCompanyId || requestedCompanyId === companyId)
@@ -658,7 +659,7 @@ export default function SettlementsPage() {
         setReceiptCustomers(customers)
         setReceiptExposures((exposuresResult.data || []) as CustomerReceivableExposure[])
         setCustomerUnappliedCredits((unappliedResult.data || []) as CustomerUnappliedCredit[])
-        setCustomerReceipts((receiptsResult.data || []) as CustomerReceiptState[])
+        setCustomerReceipts(receipts)
         setReceiptAllocations((allocationsResult.data || []) as CustomerReceiptAllocationState[])
         if (validRequestedCustomer && requestedCustomerId) {
           setReceiptCustomerFilter(requestedCustomerId)
@@ -668,6 +669,20 @@ export default function SettlementsPage() {
           setReceiptCustomerId('')
           const params = new URLSearchParams(searchParams)
           params.delete('customerId')
+          setSearchParams(params, { replace: true })
+        }
+        const requestedReceipt = requestedReceiptId
+          && (!requestedCompanyId || requestedCompanyId === companyId)
+          ? receipts.find((receipt) => receipt.id === requestedReceiptId) || null
+          : null
+        if (requestedReceipt) {
+          setActiveReceiptId(requestedReceipt.id)
+          setReceiptCustomerFilter(requestedReceipt.customer_id)
+          setReceiptCustomerId(requestedReceipt.customer_id)
+        } else if (requestedReceiptId) {
+          setActiveReceiptId(null)
+          const params = new URLSearchParams(searchParams)
+          params.delete('receiptId')
           setSearchParams(params, { replace: true })
         }
       } catch (error) {
@@ -1038,10 +1053,51 @@ export default function SettlementsPage() {
   const currentRows = tab === 'receive' ? rows.receive : rows.pay
   const partyOptions = useMemo(() => Array.from(new Set(currentRows.map(row => row.counterparty))).sort((a, b) => a.localeCompare(b)), [currentRows])
   const currencyOptions = useMemo(() => Array.from(new Set(currentRows.map(row => row.currency))).sort((a, b) => a.localeCompare(b)), [currentRows])
+  const requestedExposureCustomerId = workspaceView === 'exposure' && workspaceSide === 'ar'
+    && (!searchParams.get('companyId') || searchParams.get('companyId') === companyId)
+    && receiptCustomers.some((customer) => customer.id === searchParams.get('customerId'))
+    ? searchParams.get('customerId')
+    : null
+  const requestedExposureCustomer = requestedExposureCustomerId
+    ? receiptCustomers.find((customer) => customer.id === requestedExposureCustomerId) || null
+    : null
+  const requestedExposureAnchorKeys = useMemo(
+    () => new Set(
+      requestedExposureCustomerId
+        ? receiptExposures
+            .filter((exposure) => exposure.customer_id === requestedExposureCustomerId)
+            .map((exposure) => `${exposure.anchor_kind === 'sales_invoice' ? 'SI' : 'SO'}:${exposure.anchor_id}`)
+        : [],
+    ),
+    [receiptExposures, requestedExposureCustomerId],
+  )
+  const requestedExposureRows = useMemo(
+    () => requestedExposureCustomerId
+      ? receiptExposures.filter((exposure) => (
+          exposure.customer_id === requestedExposureCustomerId
+          && Number(exposure.outstanding_amount_base) > 0.005
+        ))
+      : [],
+    [receiptExposures, requestedExposureCustomerId],
+  )
+  const requestedExposureOutstanding = requestedExposureRows.reduce(
+    (total, exposure) => total + Number(exposure.outstanding_amount_base),
+    0,
+  )
+  const requestedExposureInvoiceOutstanding = requestedExposureRows
+    .filter((exposure) => exposure.anchor_kind === 'sales_invoice')
+    .reduce((total, exposure) => total + Number(exposure.outstanding_amount_base), 0)
+  const requestedExposureUnapplied = requestedExposureCustomerId
+    ? customerUnappliedCredits.find((credit) => (
+        credit.customer_id === requestedExposureCustomerId
+        && credit.currency_code === baseCode
+      )) || null
+    : null
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase()
     return currentRows.filter(row => {
+      if (requestedExposureCustomerId && !requestedExposureAnchorKeys.has(`${row.kind}:${row.id}`)) return false
       if (query) {
         const haystack = `${row.reference} ${row.counterparty} ${row.workflowStatus} ${row.workflowLabel} ${row.balanceStatus} ${row.balanceLabel} ${row.sourceLabel}`.toLowerCase()
         if (!haystack.includes(query)) return false
@@ -1060,7 +1116,7 @@ export default function SettlementsPage() {
       }
       return true
     })
-  }, [currentRows, currencyFilter, dueFilter, fromDate, partyFilter, search, statusFilter, toDate])
+  }, [currentRows, currencyFilter, dueFilter, fromDate, partyFilter, requestedExposureAnchorKeys, requestedExposureCustomerId, search, statusFilter, toDate])
   const filteredBridgeTotals = useMemo(() => ({
     originalBase: filteredRows.reduce((sum, row) => sum + row.originalBase, 0),
     creditedBase: filteredRows.reduce((sum, row) => sum + row.creditedBase, 0),
@@ -1338,6 +1394,20 @@ export default function SettlementsPage() {
     () => receiptContextExposures.reduce((total, exposure) => total + Number(exposure.outstanding_amount_base), 0),
     [receiptContextExposures],
   )
+  const receiptContextAllocatableExposures = useMemo(
+    () => receiptContextExposures.filter((exposure) => (
+      exposure.anchor_kind === 'sales_invoice'
+      && exposure.document_currency_code === exposure.base_currency_code
+    )),
+    [receiptContextExposures],
+  )
+  const receiptContextAllocatableOutstanding = useMemo(
+    () => receiptContextAllocatableExposures.reduce(
+      (total, exposure) => total + Number(exposure.outstanding_amount_base),
+      0,
+    ),
+    [receiptContextAllocatableExposures],
+  )
   const receiptContextUnapplied = receiptCustomerFilter === 'ALL'
     ? null
     : customerUnappliedCredits.find((credit) => (
@@ -1353,6 +1423,26 @@ export default function SettlementsPage() {
     else params.set('customerId', customerId)
     setReceiptCustomerFilter(customerId)
     setSearchParams(params)
+  }
+
+  function openCustomerReceiptDetail(receipt: CustomerReceiptState) {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', 'receipts')
+    params.set('side', 'ar')
+    if (companyId) params.set('companyId', companyId)
+    params.set('customerId', receipt.customer_id)
+    params.set('receiptId', receipt.id)
+    setReceiptCustomerFilter(receipt.customer_id)
+    setReceiptCustomerId(receipt.customer_id)
+    setActiveReceiptId(receipt.id)
+    setSearchParams(params)
+  }
+
+  function closeCustomerReceiptDetail() {
+    const params = new URLSearchParams(searchParams)
+    params.delete('receiptId')
+    setActiveReceiptId(null)
+    setSearchParams(params, { replace: true })
   }
 
   function openCustomerReceiptDialog(customerId = '') {
@@ -2371,6 +2461,35 @@ export default function SettlementsPage() {
         ]}
       />
 
+      {requestedExposureCustomer ? (
+        <section
+          className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-4"
+          aria-labelledby="alert-receivables-context-title"
+          data-testid="alert-receivables-context"
+        >
+          <h3 id="alert-receivables-context-title" className="font-semibold">
+            {tt('customerReceipts.exposureForCustomer', 'Receivables for {customer}', { customer: requestedExposureCustomer.name })}
+          </h3>
+          <dl className="mt-3 grid gap-4 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs text-muted-foreground">{tt('customerReceipts.totalOpenReceivables', 'Total open receivables')}</dt>
+              <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(requestedExposureOutstanding)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">{tt('customerReceipts.allocatableInvoiceOutstanding', 'Allocatable issued-invoice outstanding')}</dt>
+              <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(requestedExposureInvoiceOutstanding)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">{tt('customerReceipts.unappliedCreditContext', 'Unapplied credit (separate)')}</dt>
+              <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(Number(requestedExposureUnapplied?.unapplied_credit_base || 0))}</dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {tt('customerReceipts.exposureAnchorHelp', 'The table below includes Sales Order and Sales Invoice anchors. Only issued Sales Invoices can receive allocations; unapplied credit is not silently netted.')}
+          </p>
+        </section>
+      ) : null}
+
       <Card className="border-border/80 shadow-none">
         <CardHeader className="pb-3">
           <CardTitle>{tt('settlements.filters', 'Filters')}</CardTitle>
@@ -2744,10 +2863,14 @@ export default function SettlementsPage() {
                       : null}
                   </div>
                 </div>
-                <dl className="grid grid-cols-2 gap-x-8 gap-y-2 sm:text-right">
+                <dl className="grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-3 sm:text-right">
                   <div>
-                    <dt className="text-xs text-muted-foreground">{tt('customerReceipts.openOutstanding', 'Open outstanding')}</dt>
+                    <dt className="text-xs text-muted-foreground">{tt('customerReceipts.totalOpenReceivables', 'Total open receivables')}</dt>
                     <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(receiptContextOutstanding)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tt('customerReceipts.allocatableInvoiceOutstanding', 'Allocatable issued-invoice outstanding')}</dt>
+                    <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{money(receiptContextAllocatableOutstanding)}</dd>
                   </div>
                   <div data-testid="customer-unapplied-credit">
                     <dt className="text-xs text-muted-foreground">{tt('customerReceipts.unappliedCreditContext', 'Unapplied credit (separate)')}</dt>
@@ -2766,7 +2889,7 @@ export default function SettlementsPage() {
                 <h4 className="font-semibold">{tt('customerReceipts.openDocuments', 'Open receivables')}</h4>
                 {receiptContextExposures.length === 0 ? (
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {tt('customerReceipts.noOpenDocuments', 'This customer has no open issued invoices in the current company scope.')}
+                    {tt('customerReceipts.noOpenDocuments', 'This customer has no open receivable anchors in the current company scope.')}
                   </p>
                 ) : (
                   <div className="mt-3 divide-y divide-border border-y border-border">
@@ -2807,7 +2930,11 @@ export default function SettlementsPage() {
                             </p>
                           ) : null}
                         </div>
-                        <Button size="sm" variant="outline" onClick={() => navigate(`/sales-invoices/${exposure.anchor_id}`)}>
+                        <Button size="sm" variant="outline" onClick={() => navigate(
+                          exposure.anchor_kind === 'sales_invoice'
+                            ? `/sales-invoices/${exposure.anchor_id}`
+                            : `/orders?tab=sales&orderId=${encodeURIComponent(exposure.anchor_id)}`,
+                        )}>
                           {tt('financeDocs.viewDocument', 'View')}
                         </Button>
                       </article>
@@ -2846,7 +2973,7 @@ export default function SettlementsPage() {
                     key={receipt.id}
                     type="button"
                     className="block w-full px-1 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => setActiveReceiptId(receipt.id)}
+                    onClick={() => openCustomerReceiptDetail(receipt)}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -2888,7 +3015,7 @@ export default function SettlementsPage() {
                         <td className="px-4 py-4 text-right font-mono tabular-nums">{money(Number(receipt.allocated_base))}</td>
                         <td className="px-4 py-4 text-right font-mono font-semibold tabular-nums">{money(Number(receipt.unallocated_base))}</td>
                         <td className="px-4 py-4 text-right">
-                          <Button size="sm" variant="outline" onClick={() => setActiveReceiptId(receipt.id)}>
+                          <Button size="sm" variant="outline" onClick={() => openCustomerReceiptDetail(receipt)}>
                             {tt('common.view', 'View')}
                           </Button>
                         </td>
@@ -2911,7 +3038,7 @@ export default function SettlementsPage() {
                     {receiptCustomerById.get(activeCustomerReceipt.customer_id)?.name || tt('common.none', 'None')}
                   </p>
                 </div>
-                <Button variant="ghost" onClick={() => setActiveReceiptId(null)}>{tt('common.close', 'Close')}</Button>
+                <Button variant="ghost" onClick={closeCustomerReceiptDetail}>{tt('common.close', 'Close')}</Button>
               </div>
               <dl className="mt-5 grid gap-x-6 gap-y-4 border-y border-border py-5 sm:grid-cols-2 lg:grid-cols-4">
                 <div><dt className="text-xs text-muted-foreground">{tt('customerReceipts.received', 'Received')}</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{money(Number(activeCustomerReceipt.amount_received_base))}</dd></div>

@@ -1937,9 +1937,11 @@ export async function createDraftVendorBillFromPurchaseOrder(
   }
 
   const supplierInvoiceDate = normalizeText(input.supplierInvoiceDate) || null
-  const billDate = normalizeText(input.billDate) || supplierInvoiceDate || isoToday()
-  const dueDateCandidate = normalizeText(input.dueDate) || normalizeText(order.due_date) || billDate
-  const dueDate = dueDateCandidate >= billDate ? dueDateCandidate : billDate
+  const billDate = normalizeText(input.billDate) || isoToday()
+  const dueDate = normalizeText(input.dueDate) || billDate
+  if (dueDate < billDate) {
+    throw new Error('Due date cannot be before the bill date.')
+  }
 
   const canonicalLineTax = order.tax_calculation_mode === 'line'
   const rpcName = canonicalLineTax
