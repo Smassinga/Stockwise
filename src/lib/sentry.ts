@@ -275,7 +275,7 @@ if (sentryEnabled) {
     sampleRate: 1.0,
     attachStacktrace: true,
     beforeSend(event) {
-      return sanitizeSentryEvent(event)
+      return sanitizeSentryEvent(event) as typeof event
     },
     beforeBreadcrumb(breadcrumb) {
       return sanitizeBreadcrumb(breadcrumb)

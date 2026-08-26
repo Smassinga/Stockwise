@@ -2,7 +2,6 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
-import toIco from 'to-ico'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -166,6 +165,30 @@ function svgTextOverlay({ width, height, headline, body, dark = false }) {
   `)
 }
 
+function encodeIco(entries) {
+  const directorySize = 6 + entries.length * 16
+  const directory = Buffer.alloc(directorySize)
+  directory.writeUInt16LE(0, 0)
+  directory.writeUInt16LE(1, 2)
+  directory.writeUInt16LE(entries.length, 4)
+
+  let dataOffset = directorySize
+  entries.forEach(({ size, png }, index) => {
+    const entryOffset = 6 + index * 16
+    directory[entryOffset] = size >= 256 ? 0 : size
+    directory[entryOffset + 1] = size >= 256 ? 0 : size
+    directory[entryOffset + 2] = 0
+    directory[entryOffset + 3] = 0
+    directory.writeUInt16LE(1, entryOffset + 4)
+    directory.writeUInt16LE(32, entryOffset + 6)
+    directory.writeUInt32LE(png.length, entryOffset + 8)
+    directory.writeUInt32LE(dataOffset, entryOffset + 12)
+    dataOffset += png.length
+  })
+
+  return Buffer.concat([directory, ...entries.map(({ png }) => png)])
+}
+
 async function writePng(buffer, info, outputPath) {
   await sharp(buffer, { raw: info }).png().toFile(outputPath)
 }
@@ -236,12 +259,13 @@ async function generatePublicAssets(lightIcon, darkIcon) {
     await sharp(darkIcon).resize(size, size).png().toFile(path.join(brandPaths.publicDir, `icon-${size}-dark.png`))
   }
 
-  const faviconIco = await toIco([
-    await sharp(lightIcon).resize(16, 16).png().toBuffer(),
-    await sharp(lightIcon).resize(32, 32).png().toBuffer(),
-    await sharp(lightIcon).resize(48, 48).png().toBuffer(),
-  ])
-  await fs.writeFile(path.join(brandPaths.publicDir, 'favicon.ico'), faviconIco)
+  const faviconEntries = await Promise.all(
+    [16, 32, 48].map(async (size) => ({
+      size,
+      png: await sharp(lightIcon).resize(size, size).png().toBuffer(),
+    })),
+  )
+  await fs.writeFile(path.join(brandPaths.publicDir, 'favicon.ico'), encodeIco(faviconEntries))
 
   for (const size of appleSizes) {
     const name = size === 180 ? 'apple-touch-icon.png' : `apple-touch-icon-${size}.png`

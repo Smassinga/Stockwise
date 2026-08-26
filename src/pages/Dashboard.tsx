@@ -385,11 +385,11 @@ export default function Dashboard() {
                 navigate={navigate}
               />
             ) : attentionItems.length ? (
-              <div className="divide-y divide-border border-y border-border">
+              <div className="divide-y divide-border rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card px-4 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)] sm:px-5">
                 {attentionItems.map((item) => <AttentionRow key={item.title} {...item} />)}
               </div>
             ) : (
-              <div className="flex items-start gap-3 border-y border-border py-5" role="status">
+              <div className="flex items-start gap-3 rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card p-5 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)]" role="status">
                 <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-status-success-foreground" weight="duotone" aria-hidden="true" />
                 <div>
                   <p className="font-medium">{tt('dashboard.noOpenActions', 'No urgent actions')}</p>
@@ -405,7 +405,7 @@ export default function Dashboard() {
               action={<Button variant="ghost" size="sm" onClick={() => navigate('/movements')}>{tt('dashboard.viewAllMovements', 'View all movements')}<ArrowRight className="h-4 w-4" aria-hidden="true" /></Button>}
             >
               {supporting.movements.length ? (
-                <div className="divide-y divide-border border-y border-border">
+                <div className="divide-y divide-border rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card px-4 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)] sm:px-5">
                   {supporting.movements.map((movement) => {
                     const item = itemById.get(movement.item_id)
                     const movementValue = resolveMovementCost(movement)
@@ -434,7 +434,7 @@ export default function Dashboard() {
 
           {!isFirstUse && !isSetupWithoutActivity ? (
             <PremiumSection title={tt('dashboard.performanceSnapshot', 'Current position')}>
-              <dl className="grid border-y border-border sm:grid-cols-2 xl:grid-cols-4">
+              <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricRow
                   label={tt('dashboard.operationalRevenue', 'Operational revenue')}
                   value={hasPeriodActivity ? money(summary.sales) : tt('dashboard.noActivity', 'No activity')}
@@ -477,7 +477,7 @@ export default function Dashboard() {
 
           {currentData.trend.length >= 2 ? (
             <PremiumSection title={tt('dashboard.dailyPerformance', 'Daily performance')}>
-              <div className="border-y border-border py-5 sm:py-6">
+              <div className="rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card p-4 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)] sm:p-6">
                 <div className="h-72" role="img" aria-label={`${tt('dashboard.dailyPerformance', 'Daily performance')}: ${money(summary.sales)}`}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={currentData.trend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
@@ -506,7 +506,7 @@ export default function Dashboard() {
 
           {rankedProducts.length ? (
             <PremiumSection title={tt('dashboard.performanceDrivers', 'Performance drivers')}>
-              <div className="grid gap-6 border-y border-border py-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(15rem,0.7fr)]">
+              <div className="grid gap-6 rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card p-5 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)] lg:grid-cols-[minmax(0,1.5fr)_minmax(15rem,0.7fr)]">
                 <div>
                   <h3 className="font-medium">{tt('dashboard.productPerformance', 'Leading products')}</h3>
                   <ol className="mt-3 divide-y divide-border">
@@ -614,7 +614,7 @@ function FirstUseState({
   }
 
   return (
-    <ol className="divide-y divide-border border-y border-border">
+    <ol className="divide-y divide-border rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card px-4 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)] sm:px-5">
       {actions.slice(0, 3).map((action, index) => (
         <li key={action.title} className="grid gap-3 py-5 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:items-center">
           <span className="flex h-7 w-7 items-center justify-center rounded-full border border-status-neutral-border bg-status-neutral-muted text-sm font-semibold text-status-neutral-foreground" aria-hidden="true">{index + 1}</span>
@@ -640,7 +640,7 @@ function AttentionRow({ title, detail, tone, actionLabel, onClick }: AttentionIt
 
 function MetricRow({ label, value, detail, tone }: { label: string; value: ReactNode; detail?: ReactNode; tone?: 'danger' }) {
   return (
-    <div className="min-w-0 px-0 py-5 sm:px-5 sm:first:pl-0 sm:[&:nth-child(2n+1)]:pl-0 xl:[&:nth-child(3)]:pl-5 xl:last:pr-0">
+    <div className="min-w-0 rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card p-5 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)]">
       <dt className="premium-label">{label}</dt>
       <dd className={tone === 'danger' ? 'mt-2 text-2xl font-semibold tabular-nums text-status-danger-foreground' : 'mt-2 text-2xl font-semibold tabular-nums text-foreground'}>{value}</dd>
       {detail ? <dd className="mt-2 text-sm leading-5 text-muted-foreground">{detail}</dd> : null}

@@ -1,5 +1,5 @@
 // Sends one daily digest email through the shared Brevo SMTP mailer.
-// Auth gate: X-Webhook-Secret header, Authorization: Bearer <secret>, or ?key= when DEBUG_ACCEPT_QUERY_KEY=true.
+// Auth gate: X-Webhook-Secret header or Authorization: Bearer <secret>.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -71,7 +71,6 @@ const DIGEST_HOOK_SECRET =
   Deno.env.get("DIGEST_HOOK_SECRET")
   ?? Deno.env.get("DIGEST_FN_KEY")
   ?? "";
-const DEBUG_ACCEPT_QUERY_KEY = (Deno.env.get("DEBUG_ACCEPT_QUERY_KEY") ?? "false").toLowerCase() === "true";
 const DEBUG_LOG = (Deno.env.get("DEBUG_LOG") ?? "false").toLowerCase() === "true";
 const MAX_ATTEMPTS = Number(Deno.env.get("DIGEST_MAX_ATTEMPTS") ?? "5");
 
@@ -82,6 +81,15 @@ function supa() {
 
 function log(...args: unknown[]) {
   if (DEBUG_LOG) console.log(...args);
+}
+
+function safeErr(error: unknown) {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 function escapeHtml(value: unknown) {
@@ -288,12 +296,8 @@ function authorized(req: Request) {
   const headerSecret = req.headers.get("x-webhook-secret") ?? "";
   const auth = req.headers.get("authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  const querySecret = new URL(req.url).searchParams.get("key") ?? "";
-  const ok =
-    headerSecret === DIGEST_HOOK_SECRET ||
-    bearer === DIGEST_HOOK_SECRET ||
-    (DEBUG_ACCEPT_QUERY_KEY && querySecret === DIGEST_HOOK_SECRET);
-  log("[auth]", { header: !!headerSecret, bearer: !!bearer, query: !!querySecret, ok });
+  const ok = headerSecret === DIGEST_HOOK_SECRET || bearer === DIGEST_HOOK_SECRET;
+  log("[auth]", { header: !!headerSecret, bearer: !!bearer, ok });
   return ok;
 }
 

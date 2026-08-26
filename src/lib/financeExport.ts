@@ -251,13 +251,7 @@ function excelAlignment(type?: FinanceExportColumn['type']) {
   } as const
 }
 
-function applyExcelHeaderCell(cell: {
-  value: FinanceExportCell
-  font: object
-  fill: object
-  border: object
-  alignment: object
-}, value: FinanceExportCell) {
+function applyExcelHeaderCell(cell: import('exceljs').Cell, value: FinanceExportCell) {
   cell.value = value
   cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
   cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WISECORE_DARK_TEAL } }
@@ -656,7 +650,7 @@ async function buildFinancePdf(model: FinanceExportModel) {
       headStyles: { fillColor: [1, 69, 88], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [249, 250, 251] },
       columnStyles: Object.fromEntries([...moneyColumns].map((index) => [index, { halign: 'right' }])),
-      didParseCell: (data) => {
+      didParseCell: (data: { section: string; row: { index: number }; cell: { styles: { fontStyle: string; fillColor: [number, number, number] } } }) => {
         if (data.section === 'body' && data.row.index >= totalStart) {
           data.cell.styles.fontStyle = 'bold'
           data.cell.styles.fillColor = [243, 244, 246]

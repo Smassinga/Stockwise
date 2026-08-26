@@ -2,13 +2,18 @@ name: Finance Regression (Isolated)
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'tests/finance-regression/**'
+      - '.github/workflows/finance-regression-isolated.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: finance-regression-isolated
-  cancel-in-progress: false
+  group: finance-regression-isolated-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   finance-regression:
@@ -49,7 +54,7 @@ jobs:
             printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SERVICE_ROLE_KEY"
             printf 'SERVICE_ROLE_KEY=%s\n' "$SERVICE_ROLE_KEY"
           } >> "$GITHUB_ENV"
-      - name: Verify isolated target and services
+      - name: Verify isolated target, migration truth and security boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -63,16 +68,46 @@ jobs:
           done
           test -z "${ALLOW_REMOTE_FINANCE_REGRESSION:-}"
           test -z "${FINANCE_REGRESSION_TARGET:-}"
+
           status_json="$(supabase status --output json)"
           jq -e '.API_URL == "http://127.0.0.1:54321"' <<<"$status_json" >/dev/null
           jq -e '.DB_URL | startswith("postgresql://postgres:postgres@127.0.0.1:54322/")' <<<"$status_json" >/dev/null
+
+          mapfile -t migration_files < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' ! -name '*remote_schema*' -printf '%f\n' | sort)
+          expected_count="${#migration_files[@]}"
+          if [ "$expected_count" -eq 0 ]; then
+            echo 'No local migrations were found.' >&2
+            exit 1
+          fi
+          latest_file="${migration_files[$((expected_count - 1))]}"
+          expected_latest="${latest_file%%_*}"
+
           migration_json="$(supabase db query --local --output-format json "select count(*) as migration_count, max(version) as latest_version from supabase_migrations.schema_migrations;")"
-          jq -e '(if type == "array" then .[0] else .rows[0] end) | .migration_count == 56 and .latest_version == "20260801171022"' <<<"$migration_json" >/dev/null
+          jq -e --argjson expected_count "$expected_count" --arg expected_latest "$expected_latest" \
+            '(if type == "array" then .[0] else .rows[0] end) | ((.migration_count | tonumber) == $expected_count and .latest_version == $expected_latest)' \
+            <<<"$migration_json" >/dev/null
+
+          security_json="$(supabase db query --local --output-format json "
+            select
+              (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('public', p.oid, 'EXECUTE')) as public_security_definer_exec,
+              (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('anon', p.oid, 'EXECUTE')) as anon_security_definer_exec,
+              to_regprocedure('public.reset_company_data(uuid,boolean)') is null as legacy_reset_removed,
+              not has_table_privilege('anon','public.stock_levels','SELECT') as anon_stock_levels_closed;
+          ")"
+          jq -e '
+            (if type == "array" then .[0] else .rows[0] end)
+            | ((.public_security_definer_exec | tonumber) == 0)
+              and ((.anon_security_definer_exec | tonumber) == 0)
+              and (.legacy_reset_removed == true)
+              and (.anon_stock_levels_closed == true)
+          ' <<<"$security_json" >/dev/null
+
           edge_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$SUPABASE_URL/functions/v1/mailer-company-access")"
           test "$edge_status" = '401' || test "$edge_status" = '405' || test "$edge_status" = '200'
           echo 'Target: ephemeral local Supabase (127.0.0.1)'
           echo 'Services: database, Auth, PostgREST, Storage, Realtime, Mailpit, and Edge Runtime healthy'
-          echo 'Migrations: 56 through 20260801171022'
+          echo "Migrations: $expected_count through $expected_latest"
+          echo 'Security boundary: no PUBLIC/anon SECURITY DEFINER execution and no anonymous stock-level read'
       - name: Run complete finance regression
         shell: bash
         run: |

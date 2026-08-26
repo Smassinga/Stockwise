@@ -3,10 +3,11 @@ node_modules/
 pnpm-lock.yaml
 yarn.lock
 
-# Builds
+# Builds and generated QA evidence
 dist/
 .vite/
 coverage/
+/output/
 src-tauri/target/
 src-tauri/gen/android/keystore.properties
 src-tauri/keystore.properties
@@ -25,6 +26,25 @@ supabase/migrations/*_remote_schema.sql
 # Supabase CLI internal runtime state
 /supabase/.temp/*
 !/supabase/.temp/cli-latest
+
+# Machine-specific Codex environment state
+/.codex/environments/
+
+# Local shell, package-manager, browser and scratch state
+/.bash_logout
+/.bashrc
+/.profile
+/.sudo_as_admin_successful
+/.npm-cache/
+/.pip-cache/
+/.playwright-cli/
+/.tmp*
+/tmp_*.js
+/auth_config.json
+/npm install.txt
+/missing_translations.txt
+/restored_translations.txt
+/runbook*.json
 
 # Logs & misc
 npm-debug.log*

@@ -3,8 +3,3 @@ url = "https://mcp.supabase.com/mcp?project_ref=ogzhwoqqumkuqhbvuzzp&features=do
 
 [features]
 rmcp_client = true
-
-[projects.stockwise]
-repo_dir = "C:\\Dev\\Stockwise"
-project_ref = "ogzhwoqqumkuqhbvuzzp"
-supabase_url = "https://ogzhwoqqumkuqhbvuzzp.supabase.co"

@@ -31,11 +31,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+
       - name: Check migration filenames
         run: npm run check:migrations
 
       - name: Lint TypeScript, React, and static accessibility
         run: npm run lint:js
+
+      - name: Type-check application
+        run: npm run typecheck
 
       - name: Check CSS variables
         run: npm run check:css-vars
@@ -45,6 +51,9 @@ jobs:
 
       - name: Prevent new direct semantic colour utilities
         run: npm run check:ui-foundations
+
+      - name: Guard runtime hardening boundaries
+        run: node --test tests/runtime-hardening/**/*.test.mjs
 
       - name: Run dashboard regression
         run: npm run test:dashboard
