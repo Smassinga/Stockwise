@@ -1,0 +1,103 @@
+name: UI containment phase 2B helper
+
+on:
+  push:
+    branches:
+      - ui/purposeful-containment-reports-stock-20260826
+    paths:
+      - .github/workflows/ui-containment-phase2b-helper.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.ref == 'refs/heads/ui/purposeful-containment-reports-stock-20260826'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/purposeful-containment-reports-stock-20260826
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply purposeful containment patches
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          reports = Path('src/pages/Reports.tsx')
+          text = reports.read_text(encoding='utf-8')
+          import_anchor = "import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'\n"
+          if "PremiumMetricCard" not in text:
+              if text.count(import_anchor) != 1:
+                  raise SystemExit('Reports import anchor mismatch')
+              text = text.replace(import_anchor, import_anchor + "import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'\n")
+          reports.write_text(text, encoding='utf-8')
+
+          replace_once(
+              'src/pages/Reports.tsx',
+              '''                  {summaryEntries.length > 0 ? (\n                    <section aria-label={copy.summary} className="border-y border-border">\n                      <dl className="grid sm:grid-cols-2 xl:grid-cols-3">\n                        {summaryEntries.map(([key, value]) => (\n                          <div key={key} className="min-w-0 border-b border-border py-4 sm:border-l sm:px-5 sm:first:border-l-0 sm:first:pl-0 xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(3n+1)]:pl-0">\n                            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey(key)}</dt>\n                            <dd className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums">{formatValue(key, value)}</dd>\n                          </div>\n                        ))}\n                      </dl>\n                    </section>\n                  ) : null}\n''',
+              '''                  {summaryEntries.length > 0 ? (\n                    summaryEntries.length <= 6 ? (\n                      <section aria-label={copy.summary} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">\n                        {summaryEntries.map(([key, value]) => (\n                          <PremiumMetricCard\n                            key={key}\n                            label={displayKey(key)}\n                            value={formatValue(key, value)}\n                          />\n                        ))}\n                      </section>\n                    ) : (\n                      <section aria-label={copy.summary} className="border-y border-border">\n                        <dl className="grid sm:grid-cols-2 xl:grid-cols-3">\n                          {summaryEntries.map(([key, value]) => (\n                            <div key={key} className="min-w-0 border-b border-border py-4 sm:border-l sm:px-5 sm:first:border-l-0 sm:first:pl-0 xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(3n+1)]:pl-0">\n                              <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey(key)}</dt>\n                              <dd className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums">{formatValue(key, value)}</dd>\n                            </div>\n                          ))}\n                        </dl>\n                      </section>\n                    )\n                  ) : null}\n'''
+          )
+
+          stock = Path('src/pages/StockLevels.tsx')
+          text = stock.read_text(encoding='utf-8')
+          stock_import_anchor = "import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'\n"
+          if "PremiumMetricCard" not in text:
+              if text.count(stock_import_anchor) != 1:
+                  raise SystemExit('StockLevels import anchor mismatch')
+              text = text.replace(stock_import_anchor, stock_import_anchor + "import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'\n")
+          stock.write_text(text, encoding='utf-8')
+
+          replace_once(
+              'src/pages/StockLevels.tsx',
+              '''      <section aria-label={tt('stock.summary.label', 'Current stock scope')} className="border-y border-border">\n        <dl className="grid sm:grid-cols-3">\n          <div className="border-b border-border py-4 sm:border-b-0 sm:pr-5">\n            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</dt>\n            <dd className="mt-2 text-xl font-semibold tabular-nums">{formatCurrency(totals.totalValue)}</dd>\n            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}</dd>\n          </div>\n          <div className="border-b border-border py-4 sm:border-b-0 sm:border-l sm:px-5">\n            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.attention', 'Positions needing attention')}</dt>\n            <dd className={cn('mt-2 text-xl font-semibold tabular-nums', totals.attention > 0 && 'text-status-warning-foreground')}>{totals.attention}</dd>\n            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}</dd>\n          </div>\n          <div className="py-4 sm:border-l sm:pl-5">\n            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.scope', 'Scope')}</dt>\n            <dd className="mt-2 text-base font-semibold">{activeWarehouse ? activeWarehouse.name : tt('filters.warehouse.all', 'All warehouses')}</dd>\n            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.summary.positionsCount', '{count} item and warehouse positions', { count: totals.positions })}</dd>\n          </div>\n        </dl>\n      </section>\n''',
+              '''      <section aria-label={tt('stock.summary.label', 'Current stock scope')} className="grid gap-3 sm:grid-cols-3">\n        <PremiumMetricCard\n          label={tt('stock.summary.value', 'Inventory value')}\n          value={formatCurrency(totals.totalValue)}\n          description={`${tt('stock.export.baseCurrency', 'Base currency')}: ${baseCode}`}\n        />\n        <PremiumMetricCard\n          label={tt('stock.summary.attention', 'Positions needing attention')}\n          value={totals.attention}\n          description={tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}\n          tone={totals.attention > 0 ? 'warning' : 'neutral'}\n        />\n        <PremiumMetricCard\n          label={tt('stock.summary.scope', 'Scope')}\n          value={activeWarehouse ? activeWarehouse.name : tt('filters.warehouse.all', 'All warehouses')}\n          description={tt('stock.summary.positionsCount', '{count} item and warehouse positions', { count: totals.positions })}\n        />\n      </section>\n'''
+          )
+
+          replace_once(
+              'tests/ux11b/reports-ux.test.mjs',
+              "  assert.match(source, /<PremiumRegisterHeader title=\\{copy\\.title\\}/)\n",
+              "  assert.match(source, /<PremiumRegisterHeader title=\\{copy\\.title\\}/)\n  assert.match(source, /<PremiumMetricCard/)\n  assert.match(source, /summaryEntries\\.length <= 6/)\n"
+          )
+
+          replace_once(
+              'tests/ux11c/inventory-orders-pos-ux.test.mjs',
+              "  assert.match(stock, /aria-label=\\{tt\\('stock\\.summary\\.label'/)\n",
+              "  assert.match(stock, /aria-label=\\{tt\\('stock\\.summary\\.label'/)\n  assert.match(stock, /<PremiumMetricCard/)\n  assert.match(stock, /tone=\\{totals\\.attention > 0 \\? 'warning' : 'neutral'\\}/)\n"
+          )
+
+          replace_once(
+              'docs/ui-purposeful-containment.md',
+              "Reports and Stock Levels remain valid candidates for selective metric-card containment because their authoritative summaries support comparison and operational decisions. Any later change must preserve their existing evidence, empty/unavailable distinctions, filters, exports, calculations, and mobile table contracts.\n",
+              "Reports now use restrained metric cards only when an authoritative summary contains six or fewer decision-bearing values; larger workflow summaries remain flat to avoid card walls. Stock Levels uses three restrained metric cards for inventory value, positions needing attention, and current scope. Their evidence, empty/unavailable distinctions, filters, exports, calculations, and dense table/mobile contracts remain unchanged.\n"
+          )
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify focused UI contracts
+        run: |
+          npm run typecheck
+          node --test tests/ux11b/reports-ux.test.mjs tests/ux11c/inventory-orders-pos-ux.test.mjs
+      - name: Commit verified patch and remove helper
+        shell: bash
+        run: |
+          git config user.name "stockwise-ui-helper"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/ui-containment-phase2b-helper.yml
+          git add src/pages/Reports.tsx src/pages/StockLevels.tsx tests/ux11b/reports-ux.test.mjs tests/ux11c/inventory-orders-pos-ux.test.mjs docs/ui-purposeful-containment.md
+          git commit -m "ui: add purposeful report and stock metric cards"
+          git push origin HEAD:ui/purposeful-containment-reports-stock-20260826
