@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   refresh-lock:
-    if: github.actor != 'github-actions[bot]' && github.event.head_commit.message == 'deps: refresh vulnerable packages'
+    if: ${{ github.actor != 'github-actions[bot]' && github.event.head_commit.message == 'deps: refresh vulnerable packages' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
