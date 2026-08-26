@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 45
     env:
       SUPABASE_TELEMETRY_DISABLED: '1'
-      E2E_FIXTURE_PATH: ${{ runner.temp }}/stockwise-e2e-fixture.json
+      E2E_FIXTURE_PATH: /tmp/stockwise-e2e-fixture.json
       VITE_SITE_URL: http://127.0.0.1:3000
 
     steps:
