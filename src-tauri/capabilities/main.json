@@ -1,30 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "Capability for the StockWise main window to use the native dialogs, shell open, and local filesystem helpers exposed by the desktop shell.",
+  "description": "Capability for the StockWise main window to use native dialogs, open approved external targets, and access only app-scoped or user-selected files.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:default",
     "shell:allow-open",
     "fs:default",
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [
-        { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$HOME/**" },
-        { "path": "$TEMP/**" }
-      ]
-    },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [
-        { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$HOME/**" },
-        { "path": "$TEMP/**" }
-      ]
-    }
+    "fs:allow-write-text-file"
   ]
 }
