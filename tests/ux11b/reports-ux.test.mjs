@@ -57,6 +57,8 @@ test('Reports discovery is restrained and uses canonical semantic classes', asyn
 
   assert.match(source, /<nav aria-label=\{copy\.report\}/)
   assert.match(source, /<PremiumRegisterHeader title=\{copy\.title\}/)
+  assert.match(source, /<PremiumMetricCard/)
+  assert.match(source, /summaryEntries\.length <= 6/)
   assert.match(source, /'Cash Customer': 'Cliente a dinheiro'/)
   assert.match(source, /issue: 'Saída', receive: 'Entrada'/)
   assert.doesNotMatch(source, /from '\.\.\/components\/ui\/card'/)

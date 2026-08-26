@@ -62,7 +62,7 @@ This does not make finance registers card-first. Dense invoice, bill, settlement
 
 The current Items, Customers, Suppliers, Stock Movements, Warehouses, Orders, and Point of Sale compositions already had redundant summary or nested card walls removed during the maintained UX-11C pass. They should not be re-carded simply for visual consistency. Their existing tables, open summaries, operational panels, and mobile representations remain the reference unless a later page-specific review identifies a concrete decision or business object that benefits from containment.
 
-Reports and Stock Levels remain valid candidates for selective metric-card containment because their authoritative summaries support comparison and operational decisions. Any later change must preserve their existing evidence, empty/unavailable distinctions, filters, exports, calculations, and mobile table contracts.
+Reports now use restrained metric cards only when an authoritative summary contains six or fewer decision-bearing values; larger workflow summaries remain flat to avoid card walls. Stock Levels uses three restrained metric cards for inventory value, positions needing attention, and current scope. Their evidence, empty/unavailable distinctions, filters, exports, calculations, and dense table/mobile contracts remain unchanged.
 
 ## Responsive rule
 

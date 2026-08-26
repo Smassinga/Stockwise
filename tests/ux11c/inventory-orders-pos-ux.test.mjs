@@ -16,6 +16,8 @@ test('inventory registers use restrained headers and open operational summaries'
   assert.doesNotMatch(movements, /<PremiumMetricCard/)
   assert.doesNotMatch(warehouses, /<PremiumMetricCard/)
   assert.match(stock, /aria-label=\{tt\('stock\.summary\.label'/)
+  assert.match(stock, /<PremiumMetricCard/)
+  assert.match(stock, /tone=\{totals\.attention > 0 \? 'warning' : 'neutral'\}/)
   assert.match(warehouses, /<dl className="grid grid-cols-2 sm:grid-cols-4">/)
   assert.doesNotMatch(items, /Master data clarity|items\.subtitle/)
   assert.doesNotMatch(movements, /Warehouse control|movements\.subtitle/)

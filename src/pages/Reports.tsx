@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Download, FileText, Printer, RefreshCw } from 'lucide-react'
 import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -474,16 +475,28 @@ export default function Reports() {
               ) : (
                 <>
                   {summaryEntries.length > 0 ? (
-                    <section aria-label={copy.summary} className="border-y border-border">
-                      <dl className="grid sm:grid-cols-2 xl:grid-cols-3">
+                    summaryEntries.length <= 6 ? (
+                      <section aria-label={copy.summary} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {summaryEntries.map(([key, value]) => (
-                          <div key={key} className="min-w-0 border-b border-border py-4 sm:border-l sm:px-5 sm:first:border-l-0 sm:first:pl-0 xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(3n+1)]:pl-0">
-                            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey(key)}</dt>
-                            <dd className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums">{formatValue(key, value)}</dd>
-                          </div>
+                          <PremiumMetricCard
+                            key={key}
+                            label={displayKey(key)}
+                            value={formatValue(key, value)}
+                          />
                         ))}
-                      </dl>
-                    </section>
+                      </section>
+                    ) : (
+                      <section aria-label={copy.summary} className="border-y border-border">
+                        <dl className="grid sm:grid-cols-2 xl:grid-cols-3">
+                          {summaryEntries.map(([key, value]) => (
+                            <div key={key} className="min-w-0 border-b border-border py-4 sm:border-l sm:px-5 sm:first:border-l-0 sm:first:pl-0 xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(3n+1)]:pl-0">
+                              <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey(key)}</dt>
+                              <dd className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums">{formatValue(key, value)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
+                    )
                   ) : null}
 
                   {exportFailed ? <PremiumStatePanel kind="error" compact title={copy.exportFailed} description={copy.exportFailedHelp} /> : null}

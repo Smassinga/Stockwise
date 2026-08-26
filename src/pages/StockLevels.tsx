@@ -9,7 +9,6 @@ import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useIsMobile } from '../hooks/use-mobile'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
-import { cn } from '../lib/utils'
 import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
 import { PremiumColumnVisibilityMenu } from '../components/premium/PremiumColumnVisibilityMenu'
 import {
@@ -24,6 +23,7 @@ import { PremiumImportExportActions } from '../components/premium/PremiumImportE
 import { PremiumMobileCardList } from '../components/premium/PremiumMobileCardList'
 import { getPremiumPageRows } from '../components/premium/PremiumPagination'
 import { PremiumRegisterHeader } from '../components/premium/PremiumRegisterHeader'
+import { PremiumMetricCard } from '../components/premium/PremiumMetricCard'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import { PremiumTableFilter } from '../components/premium/PremiumTableFilter'
@@ -585,24 +585,23 @@ export function StockLevels() {
         }
       />
 
-      <section aria-label={tt('stock.summary.label', 'Current stock scope')} className="border-y border-border">
-        <dl className="grid sm:grid-cols-3">
-          <div className="border-b border-border py-4 sm:border-b-0 sm:pr-5">
-            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.value', 'Inventory value')}</dt>
-            <dd className="mt-2 text-xl font-semibold tabular-nums">{formatCurrency(totals.totalValue)}</dd>
-            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.export.baseCurrency', 'Base currency')}: {baseCode}</dd>
-          </div>
-          <div className="border-b border-border py-4 sm:border-b-0 sm:border-l sm:px-5">
-            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.attention', 'Positions needing attention')}</dt>
-            <dd className={cn('mt-2 text-xl font-semibold tabular-nums', totals.attention > 0 && 'text-status-warning-foreground')}>{totals.attention}</dd>
-            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}</dd>
-          </div>
-          <div className="py-4 sm:border-l sm:pl-5">
-            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{tt('stock.summary.scope', 'Scope')}</dt>
-            <dd className="mt-2 text-base font-semibold">{activeWarehouse ? activeWarehouse.name : tt('filters.warehouse.all', 'All warehouses')}</dd>
-            <dd className="mt-1 text-xs text-muted-foreground">{tt('stock.summary.positionsCount', '{count} item and warehouse positions', { count: totals.positions })}</dd>
-          </div>
-        </dl>
+      <section aria-label={tt('stock.summary.label', 'Current stock scope')} className="grid gap-3 sm:grid-cols-3">
+        <PremiumMetricCard
+          label={tt('stock.summary.value', 'Inventory value')}
+          value={formatCurrency(totals.totalValue)}
+          description={`${tt('stock.export.baseCurrency', 'Base currency')}: ${baseCode}`}
+        />
+        <PremiumMetricCard
+          label={tt('stock.summary.attention', 'Positions needing attention')}
+          value={totals.attention}
+          description={tt('stock.summary.lowHelp', 'Includes {count} zero or negative positions.', { count: totals.critical })}
+          tone={totals.attention > 0 ? 'warning' : 'neutral'}
+        />
+        <PremiumMetricCard
+          label={tt('stock.summary.scope', 'Scope')}
+          value={activeWarehouse ? activeWarehouse.name : tt('filters.warehouse.all', 'All warehouses')}
+          description={tt('stock.summary.positionsCount', '{count} item and warehouse positions', { count: totals.positions })}
+        />
       </section>
 
       <PremiumTableToolbar
