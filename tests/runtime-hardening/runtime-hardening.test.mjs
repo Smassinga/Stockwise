@@ -42,6 +42,7 @@ test('Digest worker never accepts secrets from the URL query string', () => {
   assert.doesNotMatch(digest, /searchParams\.get\(["']key["']\)/)
   assert.match(digest, /x-webhook-secret/)
   assert.match(digest, /Bearer /)
+  assert.match(digest, /function safeErr\(error: unknown\)/)
 })
 
 test('Legacy direct-sale source path stays removed', () => {

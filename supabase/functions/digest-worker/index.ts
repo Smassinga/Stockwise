@@ -83,6 +83,15 @@ function log(...args: unknown[]) {
   if (DEBUG_LOG) console.log(...args);
 }
 
+function safeErr(error: unknown) {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 function escapeHtml(value: unknown) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
