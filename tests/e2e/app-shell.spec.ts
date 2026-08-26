@@ -25,8 +25,8 @@ test('authenticated owner reaches responsive Dashboard and Items', async ({ page
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/, { timeout: 20_000 })
   await expect(page.getByRole('heading', { level: 1, name: /dashboard/i })).toBeVisible()
   await expect(page.getByText(qa.companyName, { exact: false }).first()).toBeVisible()
-  await expect(page.getByRole('region', { name: /dashboard scope|âmbito do painel|escopo do painel/i })).toBeVisible()
-  await expect(page.getByText(/start with operating records|needs attention|comece pelos registos operacionais|atenção necessária/i).first()).toBeVisible()
+  await expect(page.getByRole('region', { name: /scope|âmbito/i })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: /setup in progress|needs attention|configuração em curso|requer atenção/i }).first()).toBeVisible()
 
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('heading', { level: 1, name: /dashboard/i })).toBeVisible()
