@@ -1,5 +1,5 @@
 {
-  "name": "user",
+  "name": "stockwise",
   "private": true,
   "version": "1.3.2",
   "type": "module",
@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "generate-icons": "node generate-icons.js",
     "generate-tauri-icons": "node generate-tauri-icons.js",
-    "lint:css": "stylelint \"src/**/*.css\" --fix --quiet",
+    "lint:css": "stylelint \"src/**/*.css\" --quiet",
     "lint:js": "eslint src --ext ts,tsx --quiet",
     "check:css-vars": "node scripts/check-css-variables.js",
     "check:css-classes": "node scripts/check-css-classes.js",
@@ -39,7 +39,9 @@
     "tauri:android:init": "node scripts/run-tauri-android.mjs init --ci true",
     "tauri:android:dev": "npm run tauri:prepare && node scripts/run-tauri-android.mjs dev",
     "tauri:android:apk": "npm run tauri:prepare && npm run build && node scripts/run-tauri-android.mjs release-apk",
-    "tauri:android:apk:split": "npm run tauri:prepare && npm run build && node scripts/run-tauri-android.mjs release-apk --split-per-abi"
+    "tauri:android:apk:split": "npm run tauri:prepare && npm run build && node scripts/run-tauri-android.mjs release-apk --split-per-abi",
+    "dev:lan": "vite --host 0.0.0.0",
+    "lint:css:fix": "stylelint \"src/**/*.css\" --fix --quiet"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

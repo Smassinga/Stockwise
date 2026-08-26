@@ -8,7 +8,7 @@ This guide records the current repository workflow after the canonical Supabase 
 
 ## Current migration baseline
 
-UX-9C advances the maintained schema baseline to 46 migrations through `20260729143000_add_owner_dashboard_read_model.sql`. `npm run check:migrations` must report 46 active migrations, and the isolated finance workflow guard must use the same count and latest version.
+As of 2026-08-26, the maintained schema chain has 72 migrations through `20260826085721_ensure_companies_owner_user_id_index.sql`. `npm run check:migrations` derives migration truth from `supabase/migrations`; CI and isolated replay must not hard-code a historical count or latest version. Later phase sections in this guide retain release-era counts only as historical evidence and must not override this current baseline.
 
 ## Authenticated Page Rhythm
 
@@ -20,7 +20,10 @@ Use `app-main-content` in the authenticated shell for first-content clearance an
 npm install
 npm run dev
 npm run lint:js
+npm run typecheck
 npm run check:ui-foundations
+npm run test:dashboard
+npm run test:service-jobs
 npm run build
 npm run test:finance-regression
 ```
@@ -35,7 +38,7 @@ npm run test:finance-regression
 
 The active migration history is the canonical baseline plus forward migrations from this point onward.
 
-Current release state: hosted production and local replay have 45 active migrations through `20260716130533_add_pos_tax_applicability_mode.sql`. The live settlement boundary normalizes exact two-decimal money values without epsilon, and the live commercial-tax boundary derives canonical headers and finance-state totals from line snapshots. Growth Batches G5.1 depleting harvest/event-specific harvest reversal and G5.2 completion/event-specific completion reversal remain live and production-smoke validated.
+Current release state: hosted production and the maintained repository are aligned through 72 migrations ending at `20260826085721_ensure_companies_owner_user_id_index.sql`. The 2026-08-26 maintenance closeout also hardens SECURITY DEFINER execution privileges and records the company-owner foreign-key index in forward migration history. The release-era migration counts in the phase notes below are historical validation snapshots, not current schema truth.
 
 The latest Growth Batches G4.1 rollout applied:
 
@@ -97,7 +100,7 @@ npm run build
 
 `lint:js` includes high-confidence JSX accessibility checks. `check:ui-foundations` rejects increases in legacy direct Tailwind status-colour utilities by path. The baseline is a debt ceiling, not an approved colour catalogue: reduce it when a surface is migrated to the canonical `status-*` tokens. The canonical UI, loading, content, accessibility, mobile, and Definition of Done contract is [Premium UI Direction](premium-ui-direction.md).
 
-The full repository TypeScript diagnostic currently exposes pre-existing debt and is not yet a safe merge gate. Do not hide or expand that debt. New or changed code must remain type-safe, and a dedicated full typecheck gate should be enabled only after the existing baseline is remediated rather than suppressing errors globally.
+`npm run typecheck` is now an always-on Validation gate. The previous nine-diagnostic baseline has been remediated without blanket exclusions or suppressions. New or changed code must keep the full application typecheck green.
 
 After finance, control-plane, or workflow changes:
 

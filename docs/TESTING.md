@@ -2,7 +2,7 @@
 
 ## OPS-1 gates
 
-OPS-1 adds `npm run test:ops-1` for receipt authority, report recognition, export identity, MZN formatting, email registry/security, and notification targeting. A zero migration replay must apply 52 migrations. Preserved gates are finance 393, dashboard 25, and Service Jobs 34 (the database integration case requires the isolated loopback environment). Build output is removed before commit.
+OPS-1 adds `npm run test:ops-1` for receipt authority, report recognition, export identity, MZN formatting, email registry/security, and notification targeting. The 52-migration statement was an OPS-1 release-era snapshot; current migration truth is derived dynamically from the repository and is 72 migrations through `20260826085721_ensure_companies_owner_user_id_index.sql` as of 2026-08-26. Historical regression counts remain evidence for their release, while current CI must use the commands and workflow definitions below. Build and browser-output artifacts are not committed.
 
 `npm run test:receivables-alerts` covers the canonical Package A view binding, customer/currency/bucket aggregation, separate unapplied-credit context, role and preference targeting, timezone/malformed-settings isolation, partial-allocation refresh, deduplication, settlement resolution, notification-forgery denial, legacy PO/SO emitter continuity, Realtime publication, and company-safe deep-link navigation. Its SQL matrix is rollback-only and requires the reset local Supabase stack.
 
@@ -14,9 +14,10 @@ This document records the current testing baseline that actually exists in the r
 
 Implemented today:
 
-- lint and build checks for every material code change
+- lint, full TypeScript, UI-foundation, dashboard, Service Job, and production-build checks in normal Validation
 - a non-mutating GitHub Actions validation gate for pull requests and pushes to `main`
-- a real finance regression suite driven by the Node test runner and live Supabase clients
+- a protected finance regression suite driven by the Node test runner and Supabase clients
+- an isolated finance GitHub Actions workflow that starts an ephemeral loopback Supabase stack and derives expected migration truth from the checked-out repository
 
 Not yet implemented as first-class repo tooling:
 
@@ -35,25 +36,22 @@ The workflow runs only non-mutating checks:
 npm ci
 npm run check:migrations
 npm run lint:js
+npm run typecheck
 npm run check:css-vars
 npm run check:css-classes
 npm run check:ui-foundations
+npm run test:dashboard
+npm run test:service-jobs
 npm run build
 ```
 
 `npm run lint:js` includes static accessibility rules for high-confidence JSX, ARIA, heading, focusability, and native-interaction defects. This is not browser accessibility testing and does not prove WCAG 2.2 AA conformance. UI validation uses three layers: automated checks, manual keyboard QA, and human UX/accessibility review. Where a surface warrants browser automation, axe or an equivalent maintained engine should fail on critical and serious findings only after the route, authentication, fixtures, and false-positive policy are reliable.
 
-Lighthouse is not a merge gate in the current repository. If introduced later, it should report regressions and diagnostic evidence; a score is not a compliance claim. Full TypeScript validation is also not an always-on gate yet because the existing repository diagnostic has pre-existing errors outside UX-10A/10B. Enabling it remains follow-up work after that debt is corrected without blanket exclusions.
+Lighthouse is not a merge gate in the current repository. If introduced later, it should report regressions and diagnostic evidence; a score is not a compliance claim. Full TypeScript validation is now an always-on gate through `npm run typecheck`; the previous repository diagnostics were repaired without blanket exclusions.
 
 Normal CI does not receive Supabase service-role credentials and does not run `npx supabase db push`. The workflow uses non-secret Vite placeholder values for Supabase compile-time variables so the production bundle check does not require real Supabase keys.
 
-`npm run test:finance-regression` is intentionally not part of always-on public CI because it uses live Supabase clients, requires service-role access, creates temporary Auth/company/finance data, and then cleans it up. It remains a protected manual release gate until a dedicated isolated Supabase test project and guarded GitHub Actions secrets are configured.
-
-If finance regression is later enabled in CI, use a non-production Supabase project only and provide these secrets through protected GitHub Actions environments:
-
-- `VITE_SUPABASE_URL` or `SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY` or `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` or `SERVICE_ROLE_KEY`
+`npm run test:finance-regression` remains the protected developer command and production targets remain hard-blocked by the test helper. CI now also runs `.github/workflows/finance-regression-isolated.yml` for finance or migration-sensitive pull-request changes. That workflow starts an ephemeral loopback Supabase stack, replays the checked-out migration chain, derives the expected migration count/latest version from the repository, and runs `npm run test:finance-regression:ci` without production credentials.
 
 ## Primary Regression Command
 
@@ -136,7 +134,7 @@ The suite currently protects:
 - Growth Batches G5.2 local completion coverage, including preview/no-mutation behavior, MANAGER+ lifecycle completion, event-specific completion reversal, completed-state blocking for measurement/direct-cost/harvest/reversal dependencies, stale fingerprint rejection, direct mutation rejection, helper privilege denial, same-key replay, changed-payload rejection, same-key contention, lifecycle-only status/audit/latest-sequence updates, and stock/finance/cost/quantity/weight/selling-price isolation
 - trial and entitlement enforcement
 
-Hosted production and local replay now have 39 migrations through `20260709222842_governed_settlement_posting.sql`.
+Historical settlement-release snapshot: hosted production and local replay had 39 migrations through `20260709222842_governed_settlement_posting.sql` at that release. This is not the current migration baseline; use the current status section above.
 
 The governed settlement release passed the maintained local finance regression `36/36`, including 113 uniquely named settlement/import state checks. Controlled production smoke covered one cash settlement, one manual bank row, one two-row atomic CSV import, identical logical replay after reload, EN/PT package feedback, responsive widths `1440/1200/820/390`, and stock/price/anchor invariants. Production did not run repeated-`0.005`, payload-mismatch, over-settlement, stale-anchor, failed-import rollback, cross-company, authority-negative, or concurrency mutation tests; those remain local-regression evidence only.
 
