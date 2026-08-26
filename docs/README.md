@@ -22,7 +22,8 @@ This folder is the maintained current-truth layer for StockWise. Documents that 
 ## Release and Operating Docs
 
 - [Deployment and Release Position](DEPLOYMENT.md)
-- [Testing](TESTING.md)
+- [Current Testing Contract](testing-current.md)
+- [Historical Testing and Release Evidence](TESTING.md)
 - [Monitoring and Operational Signals](MONITORING.md)
 - [Security and Scale Baseline](SECURITY_AND_SCALE_BASELINE.md)
 - [Availability and Recovery](AVAILABILITY_AND_RECOVERY.md)
