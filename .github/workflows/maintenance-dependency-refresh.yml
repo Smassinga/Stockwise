@@ -51,10 +51,11 @@ jobs:
           git commit -m 'deps: refresh package lock'
           git push origin HEAD:maintenance/security-ui-closeout-20260826
 
+      - name: Verify reproducible install
+        run: npm ci
+
       - name: Diagnose residual dependency path
         run: npm explain brace-expansion || true
 
-      - name: Verify reproducible install and security threshold
-        run: |
-          npm ci
-          npm audit --audit-level=high
+      - name: Verify security threshold
+        run: npm audit --audit-level=high
