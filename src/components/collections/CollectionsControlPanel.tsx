@@ -190,7 +190,7 @@ export function CollectionsControlPanel({
   }
 
   async function submit() {
-    if (!action) return
+    if (!action || !workspace) return
     if (action === 'pause') await callRpc('pause_collection_reminders', { reason_code: reason, note, owner_user_id: owner, pause_until: new Date(pauseUntil).toISOString(), next_action_at: new Date(nextAction).toISOString() })
     if (action === 'dispute') await callRpc('open_collection_dispute', { reason_code: 'customer_dispute', note, owner_user_id: owner, dispute_category: disputeCategory, dispute_summary: note, disputed_amount: disputedAmount || undefined, follow_up_at: new Date(nextAction).toISOString() })
     if (action === 'promise') await callRpc('record_payment_promise', { promised_amount: Number(promiseAmount), promised_date: promiseDate, source: promiseSource, note, owner_user_id: owner, next_follow_up_at: new Date(nextAction).toISOString(), timezone: 'Africa/Maputo' })
