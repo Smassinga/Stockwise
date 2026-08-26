@@ -1,0 +1,58 @@
+name: Maintenance Dependency Refresh
+
+on:
+  push:
+    branches:
+      - maintenance/security-ui-closeout-20260826
+    paths:
+      - 'package.json'
+      - '.github/workflows/maintenance-dependency-refresh.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    if: github.actor != 'github-actions[bot]' && github.event.head_commit.message == 'deps: refresh vulnerable packages'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out maintenance branch
+        uses: actions/checkout@v5
+        with:
+          ref: maintenance/security-ui-closeout-20260826
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Refresh lockfile within declared ranges
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only
+          npm audit fix --package-lock-only
+          git diff --exit-code -- package.json
+
+      - name: Verify reproducible install and security threshold
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+      - name: Commit refreshed lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo 'package-lock.json already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'deps: refresh package lock'
+          git push origin HEAD:maintenance/security-ui-closeout-20260826
