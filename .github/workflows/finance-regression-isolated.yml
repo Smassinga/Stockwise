@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: finance-regression-isolated-${{ github.event.pull_request.number || github.ref }}
@@ -109,6 +110,8 @@ jobs:
           echo "Migrations: $expected_count through $expected_latest"
           echo 'Security boundary: no PUBLIC/anon SECURITY DEFINER execution and no anonymous stock-level read'
       - name: Run complete finance regression
+        id: finance
+        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -134,6 +137,29 @@ jobs:
         run: |
           npm run test:dashboard
           npm run test:service-jobs
+      - name: Publish finance failure diagnostic
+        if: steps.finance.outcome == 'failure' && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tail -n 140 finance-regression.log \
+            | sed -E -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[EMAIL]/g' \
+              -e 's/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[UUID]/g' \
+              -e 's/(Bearer )[A-Za-z0-9._-]+/\1[TOKEN]/g' \
+            > /tmp/finance-tail.txt
+          {
+            echo '### Finance Regression diagnostic'
+            echo
+            echo 'Local-only sanitized failure excerpt:'
+            echo '```text'
+            cat /tmp/finance-tail.txt
+            echo '```'
+          } > /tmp/finance-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/finance-comment.md
+      - name: Enforce finance regression result
+        if: steps.finance.outcome == 'failure'
+        run: exit 1
       - name: Prepare safe failure evidence
         if: failure()
         shell: bash
