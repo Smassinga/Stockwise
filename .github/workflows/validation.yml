@@ -37,6 +37,9 @@ jobs:
       - name: Lint TypeScript, React, and static accessibility
         run: npm run lint:js
 
+      - name: Type-check application
+        run: npm run typecheck
+
       - name: Check CSS variables
         run: npm run check:css-vars
 
