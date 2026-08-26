@@ -1,0 +1,93 @@
+name: Maintenance Source Repair
+
+on:
+  push:
+    branches:
+      - maintenance/security-ui-closeout-20260826
+    paths:
+      - '.github/workflows/maintenance-source-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: maintenance/security-ui-closeout-20260826
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Apply exact source repairs
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one exact match, found {count}')
+              file.write_text(text.replace(old, new), encoding='utf-8')
+
+          replace_once(
+              'src/lib/companySetupReadiness.ts',
+              """  const memberResources = [snapshot.counts.activeMembers, snapshot.counts.pendingInvitations, snapshot.counts.disabledMembers]\n  if (memberResources.some((resource) => resource.status === 'unavailable')) {\n    areas.push(unavailableArea('team', 'extension', 'setup.areas.team.consequence', hasMinRole(role, 'MANAGER') ? '/users' : null, hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager'))\n  } else {\n    const active = snapshot.counts.activeMembers.data\n    const pending = snapshot.counts.pendingInvitations.data\n    areas.push({ key: 'team', group: 'extension', readiness: pending > 0 ? 'in_progress' : active > 1 ? 'ready' : 'optional', authority: hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager', summaryKey: pending > 0 ? 'setup.areas.team.pending' : active > 1 ? 'setup.areas.team.ready' : 'setup.areas.team.optional', consequenceKey: 'setup.areas.team.consequence', route: hasMinRole(role, 'MANAGER') ? '/users' : null, evidence: { active, pending, disabled: snapshot.counts.disabledMembers.data }, blockingCapabilities: [] })\n  }""",
+              """  const memberResources = [snapshot.counts.activeMembers, snapshot.counts.pendingInvitations, snapshot.counts.disabledMembers]\n  if (memberResources.some((resource) => resource.status === 'unavailable')) {\n    areas.push(unavailableArea('team', 'extension', 'setup.areas.team.consequence', hasMinRole(role, 'MANAGER') ? '/users' : null, hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager'))\n  } else {\n    const active = countValue(snapshot.counts.activeMembers) ?? 0\n    const pending = countValue(snapshot.counts.pendingInvitations) ?? 0\n    const disabled = countValue(snapshot.counts.disabledMembers) ?? 0\n    areas.push({ key: 'team', group: 'extension', readiness: pending > 0 ? 'in_progress' : active > 1 ? 'ready' : 'optional', authority: hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager', summaryKey: pending > 0 ? 'setup.areas.team.pending' : active > 1 ? 'setup.areas.team.ready' : 'setup.areas.team.optional', consequenceKey: 'setup.areas.team.consequence', route: hasMinRole(role, 'MANAGER') ? '/users' : null, evidence: { active, pending, disabled }, blockingCapabilities: [] })\n  }""",
+          )
+
+          replace_once(
+              'src/lib/financeExport.ts',
+              """function applyExcelHeaderCell(cell: {\n  value: FinanceExportCell\n  font: object\n  fill: object\n  border: object\n  alignment: object\n}, value: FinanceExportCell) {""",
+              """function applyExcelHeaderCell(cell: import('exceljs').Cell, value: FinanceExportCell) {""",
+          )
+
+          replace_once(
+              'src/lib/financeExport.ts',
+              "didParseCell: (data) => {",
+              "didParseCell: (data: { section: string; row: { index: number }; cell: { styles: { fontStyle: string; fillColor: [number, number, number] } } }) => {",
+          )
+
+          replace_once(
+              'src/lib/sentry.ts',
+              "return sanitizeSentryEvent(event)\n    },",
+              "return sanitizeSentryEvent(event) as typeof event\n    },",
+          )
+
+          replace_once(
+              'src/pages/OpeningImport.tsx',
+              'accept=".csv,.xlsx,.xls"',
+              'accept=".csv,.xlsx"',
+          )
+
+      - name: Remove SheetJS dependency and regenerate lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pkg delete dependencies.xlsx
+          npm install --package-lock-only --ignore-scripts
+          if grep -q 'node_modules/xlsx' package-lock.json; then
+            echo 'SheetJS remains in package-lock.json' >&2
+            exit 1
+          fi
+      - name: Verify repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm run lint:js
+      - name: Commit repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/lib/companySetupReadiness.ts src/lib/financeExport.ts src/lib/sentry.ts src/pages/OpeningImport.tsx package.json package-lock.json
+          git diff --cached --check
+          git commit -m 'fix: close type and workbook maintenance debt'
+          git push origin HEAD:maintenance/security-ui-closeout-20260826
