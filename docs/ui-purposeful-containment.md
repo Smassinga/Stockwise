@@ -52,6 +52,18 @@ The Dashboard is the first reference implementation of this clarification.
 
 The Dashboard data source, finance logic, COGS handling, inventory valuation, posting logic, RLS, role capability, and `get_owner_dashboard` RPC are unchanged by this presentation decision.
 
+## Shared finance summary application
+
+Finance position summaries use the same rule when the values are independent decision-bearing signals that users need to compare quickly. `FinanceSummaryBand` therefore renders restrained `PremiumMetricCard` surfaces for the maintained summary groups used by Sales Invoices, Vendor Bills, Settlements, Cash, and Bank Accounts.
+
+This does not make finance registers card-first. Dense invoice, bill, settlement, cash, bank, and transaction rows remain tables, lists, or mobile register cards according to their existing contracts. The summary cards do not change document lifecycle, settlement anchors, balances, accounting calculations, posting authority, RPCs, RLS, or data sources.
+
+## Deliberately flat surfaces
+
+The current Items, Customers, Suppliers, Stock Movements, Warehouses, Orders, and Point of Sale compositions already had redundant summary or nested card walls removed during the maintained UX-11C pass. They should not be re-carded simply for visual consistency. Their existing tables, open summaries, operational panels, and mobile representations remain the reference unless a later page-specific review identifies a concrete decision or business object that benefits from containment.
+
+Reports and Stock Levels remain valid candidates for selective metric-card containment because their authoritative summaries support comparison and operational decisions. Any later change must preserve their existing evidence, empty/unavailable distinctions, filters, exports, calculations, and mobile table contracts.
+
 ## Responsive rule
 
 Desktop should favor comparison density where useful. Mobile may convert dense tables/registers to compact cards when this materially improves readability and touch interaction. Mobile does not require a card version of every desktop section.
