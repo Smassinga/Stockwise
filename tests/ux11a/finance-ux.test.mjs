@@ -30,7 +30,7 @@ test('finance details gate settlement presentation until issue or posting', asyn
   assert.match(bill, /This ends the draft workflow without posting it/)
 })
 
-test('finance summaries use the restrained shared summary band', async () => {
+test('finance summaries use restrained purposeful metric cards', async () => {
   const [component, sales, bills, settlements, cash, banks] = await Promise.all([
     read('src/components/finance/FinanceSummaryBand.tsx'),
     read('src/pages/SalesInvoices.tsx'),
@@ -40,8 +40,9 @@ test('finance summaries use the restrained shared summary band', async () => {
     read('src/pages/Banks.tsx'),
   ])
 
-  assert.match(component, /<dl/)
-  assert.match(component, /border-y border-border/)
+  assert.match(component, /<PremiumMetricCard/)
+  assert.match(component, /className=\{cn\(\s*'grid gap-3'/)
+  assert.doesNotMatch(component, /border-y border-border/)
   for (const source of [sales, bills, settlements, cash, banks]) {
     assert.match(source, /<FinanceSummaryBand/)
   }
