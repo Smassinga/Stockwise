@@ -319,9 +319,10 @@ export function deriveCompanySetupAreas(
   if (memberResources.some((resource) => resource.status === 'unavailable')) {
     areas.push(unavailableArea('team', 'extension', 'setup.areas.team.consequence', hasMinRole(role, 'MANAGER') ? '/users' : null, hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager'))
   } else {
-    const active = snapshot.counts.activeMembers.data
-    const pending = snapshot.counts.pendingInvitations.data
-    areas.push({ key: 'team', group: 'extension', readiness: pending > 0 ? 'in_progress' : active > 1 ? 'ready' : 'optional', authority: hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager', summaryKey: pending > 0 ? 'setup.areas.team.pending' : active > 1 ? 'setup.areas.team.ready' : 'setup.areas.team.optional', consequenceKey: 'setup.areas.team.consequence', route: hasMinRole(role, 'MANAGER') ? '/users' : null, evidence: { active, pending, disabled: snapshot.counts.disabledMembers.data }, blockingCapabilities: [] })
+    const active = countValue(snapshot.counts.activeMembers) ?? 0
+    const pending = countValue(snapshot.counts.pendingInvitations) ?? 0
+    const disabled = countValue(snapshot.counts.disabledMembers) ?? 0
+    areas.push({ key: 'team', group: 'extension', readiness: pending > 0 ? 'in_progress' : active > 1 ? 'ready' : 'optional', authority: hasMinRole(role, 'MANAGER') ? 'can_manage' : 'ask_manager', summaryKey: pending > 0 ? 'setup.areas.team.pending' : active > 1 ? 'setup.areas.team.ready' : 'setup.areas.team.optional', consequenceKey: 'setup.areas.team.consequence', route: hasMinRole(role, 'MANAGER') ? '/users' : null, evidence: { active, pending, disabled }, blockingCapabilities: [] })
   }
 
   if (snapshot.settings.status === 'unavailable') {

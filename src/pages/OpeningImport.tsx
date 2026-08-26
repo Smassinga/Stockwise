@@ -873,7 +873,7 @@ export default function OpeningImport() {
                     <Input
                       id={`opening-import-file-${dataset.key}`}
                       type="file"
-                      accept=".csv,.xlsx,.xls"
+                      accept=".csv,.xlsx"
                       onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
                       className="max-w-sm"
                       disabled={!canImport || loading || importing}
