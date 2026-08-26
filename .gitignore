@@ -3,10 +3,11 @@ node_modules/
 pnpm-lock.yaml
 yarn.lock
 
-# Builds
+# Builds and generated QA evidence
 dist/
 .vite/
 coverage/
+/output/
 src-tauri/target/
 src-tauri/gen/android/keystore.properties
 src-tauri/keystore.properties
@@ -38,6 +39,12 @@ supabase/migrations/*_remote_schema.sql
 /.pip-cache/
 /.playwright-cli/
 /.tmp*
+/tmp_*.js
+/auth_config.json
+/npm install.txt
+/missing_translations.txt
+/restored_translations.txt
+/runbook*.json
 
 # Logs & misc
 npm-debug.log*
