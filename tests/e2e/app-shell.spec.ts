@@ -19,7 +19,7 @@ test('authenticated owner reaches responsive Dashboard and Items', async ({ page
 
   await page.goto('/login')
   await page.getByLabel(/email/i).fill(qa.email)
-  await page.getByLabel(/password|palavra-passe/i).fill(qa.password)
+  await page.getByRole('textbox', { name: /password|palavra-passe/i }).fill(qa.password)
   await page.getByRole('button', { name: /sign in|iniciar sessão/i }).click()
 
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/, { timeout: 20_000 })
