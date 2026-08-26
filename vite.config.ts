@@ -38,6 +38,7 @@ export default defineConfig(() => {
   const sentryProject = process.env.SENTRY_PROJECT?.trim()
   const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN?.trim()
   const sentryBuildEnabled = Boolean(sentryOrg && sentryProject && sentryAuthToken)
+  const explicitLanDev = process.argv.some((arg) => arg === '--host' || arg.startsWith('--host='))
 
   return {
     plugins: [
@@ -65,8 +66,8 @@ export default defineConfig(() => {
     server: {
       port: 3000,
       strictPort: true,
-      host: true,
-      allowedHosts: true,
+      host: explicitLanDev ? true : '127.0.0.1',
+      allowedHosts: explicitLanDev ? true : ['localhost', '127.0.0.1'],
     },
     optimizeDeps: {
       // keep Radix Switch pre-bundled to avoid outdated dep errors
