@@ -109,8 +109,6 @@ jobs:
           echo "Migrations: $expected_count through $expected_latest"
           echo 'Security boundary: no PUBLIC/anon SECURITY DEFINER execution and no anonymous stock-level read'
       - name: Run complete finance regression
-        id: finance
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -136,9 +134,6 @@ jobs:
         run: |
           npm run test:dashboard
           npm run test:service-jobs
-      - name: Enforce finance regression result
-        if: steps.finance.outcome == 'failure'
-        run: exit 1
       - name: Prepare safe failure evidence
         if: failure()
         shell: bash
