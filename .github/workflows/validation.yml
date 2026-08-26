@@ -49,6 +49,9 @@ jobs:
       - name: Prevent new direct semantic colour utilities
         run: npm run check:ui-foundations
 
+      - name: Guard runtime hardening boundaries
+        run: node --test tests/runtime-hardening/**/*.test.mjs
+
       - name: Run dashboard regression
         run: npm run test:dashboard
 
