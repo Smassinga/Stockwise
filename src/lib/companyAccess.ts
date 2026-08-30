@@ -311,10 +311,65 @@ export async function getMyCompanyAccessState(companyId?: string | null) {
   return unwrapSingle<CompanyAccessState>(data)
 }
 
-export async function getPlatformAdminStatus() {
-  const { data, error } = await supabase.rpc('get_platform_admin_status')
-  if (error) throw new Error(toFriendlyAccessError(error, 'Failed to load platform admin status.'))
-  return unwrapSingle<PlatformAdminStatus>(data) || { is_admin: false }
+const PLATFORM_ADMIN_STATUS_CACHE_MS = 5000
+
+type PlatformAdminStatusCacheEntry = {
+  key: string
+  value: PlatformAdminStatus
+  expiresAt: number
+}
+
+type PlatformAdminStatusInFlight = {
+  key: string
+  promise: Promise<PlatformAdminStatus>
+}
+
+let platformAdminStatusCache: PlatformAdminStatusCacheEntry | null = null
+let platformAdminStatusInFlight: PlatformAdminStatusInFlight | null = null
+
+export async function getPlatformAdminStatus(options?: { force?: boolean }) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const cacheKey = session?.user?.id || 'anonymous'
+  const now = Date.now()
+
+  if (!options?.force) {
+    if (
+      platformAdminStatusCache?.key === cacheKey
+      && platformAdminStatusCache.expiresAt > now
+    ) {
+      return platformAdminStatusCache.value
+    }
+
+    if (platformAdminStatusInFlight?.key === cacheKey) {
+      return platformAdminStatusInFlight.promise
+    }
+  }
+
+  const promise = (async () => {
+    const { data, error } = await supabase.rpc('get_platform_admin_status')
+    if (error) {
+      throw new Error(toFriendlyAccessError(error, 'Failed to load platform admin status.'))
+    }
+
+    const value = unwrapSingle<PlatformAdminStatus>(data) || { is_admin: false }
+    platformAdminStatusCache = {
+      key: cacheKey,
+      value,
+      expiresAt: Date.now() + PLATFORM_ADMIN_STATUS_CACHE_MS,
+    }
+    return value
+  })()
+
+  platformAdminStatusInFlight = { key: cacheKey, promise }
+  try {
+    return await promise
+  } finally {
+    if (platformAdminStatusInFlight?.promise === promise) {
+      platformAdminStatusInFlight = null
+    }
+  }
 }
 
 export async function provisionAssistedCustomerCompany(input: {
