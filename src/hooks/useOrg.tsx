@@ -10,8 +10,14 @@ import {
 import { supabase } from "../lib/supabase";
 import { setActiveCompanyRpc } from "../lib/setActiveCompanyRpc";
 import type { CompanyRole } from "../lib/roles";
-import type { MemberRole, MemberStatus } from "../lib/enums";
+import type { MemberStatus } from "../lib/enums";
 import { withTimeout } from "../lib/withTimeout";
+import {
+  listActiveOrgMemberships,
+  listOrgCompanies,
+  pickBestOrgMemberships,
+  type OrgMembershipRow,
+} from "../lib/orgMemberships";
 import {
   closeAssistedCustomerWorkspace,
   openAssistedCustomerWorkspace,
@@ -52,23 +58,6 @@ const LAST_COMPANY_KEY = (userId: string | undefined) =>
 const ORG_QUERY_TIMEOUT_MS = 8000;
 const ACTIVE_COMPANY_SYNC_TIMEOUT_MS = 6000;
 const ORG_REFRESH_RETRY_MS = 700;
-
-function statusRank(s: MemberStatus) {
-  return { active: 0, invited: 1, disabled: 2 }[s] ?? 3;
-}
-
-function roleRank(r: MemberRole) {
-  // Prefer higher privileges when we must pick a default
-  return (
-    {
-      OWNER: 0,
-      ADMIN: 1,
-      MANAGER: 2,
-      OPERATOR: 3,
-      VIEWER: 4,
-    } as Record<string, number>
-  )[r] ?? 9
-}
 
 function normalizeErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message.trim()
@@ -153,36 +142,6 @@ export function OrgProvider({
     };
   }, [companies, companyId, companyName, memberStatus, myRole]);
 
-  function pickBest(
-    rows: Array<{ company_id: string; role: MemberRole; status: MemberStatus; created_at?: string; user_id?: string | null }>
-  ) {
-    // Normalize to prefer user_id over email rows for same company_id
-    const norm = (rows ?? []).reduce((acc, m) => {
-      const k = m.company_id;
-      const better =
-        !acc[k] ||
-        // Prefer user_id rows over email-only rows
-        (!!m.user_id && !acc[k].user_id) ||
-        // Prefer active over invited
-        (m.status === 'active' && acc[k].status !== 'active') ||
-        // If both have same user_id status, use existing logic
-        (
-          (!!m.user_id === !!acc[k].user_id) &&
-          (statusRank(m.status) < statusRank(acc[k].status) ||
-          (statusRank(m.status) === statusRank(acc[k].status) &&
-            roleRank(m.role) < roleRank(acc[k].role)) ||
-          (statusRank(m.status) === statusRank(acc[k].status) &&
-            roleRank(m.role) === roleRank(acc[k].role) &&
-            (new Date(m.created_at || 0).getTime() <
-              new Date(acc[k].created_at || 0).getTime())))
-        );
-      if (better) acc[k] = m;
-      return acc;
-    }, {} as Record<string, { company_id: string; role: MemberRole; status: MemberStatus; created_at?: string; user_id?: string | null }>);
-
-    return new Map(Object.entries(norm).map(([k, v]) => [k, v]));
-  }
-
   const maybeSyncCompanyContext = async (
     userId: string,
     id: string,
@@ -262,39 +221,14 @@ export function OrgProvider({
       syncInFlightRef.current = null;
     }
 
-    let memsByUser: any[] | null = null;
-    let memsByEmail: any[] | null = null;
+    let mergedMemberships: OrgMembershipRow[] = [];
     let memErr: unknown = null;
     try {
-      const byUser = await withTimeout(
-        supabase
-          .from("company_members")
-          .select("company_id, role, status, created_at, user_id")
-          .eq("user_id", user.id)
-          .eq("status", "active" as MemberStatus)
-          .order("created_at", { ascending: true }),
-        ORG_QUERY_TIMEOUT_MS,
-        "company membership lookup by user"
+      mergedMemberships = await listActiveOrgMemberships(
+        user.id,
+        user.email,
+        ORG_QUERY_TIMEOUT_MS
       );
-      memsByUser = byUser.data ?? null;
-      memErr = byUser.error ?? null;
-      if (memErr) throw memErr;
-
-      if (user.email) {
-        const byEmail = await withTimeout(
-          supabase
-            .from("company_members")
-            .select("company_id, role, status, created_at, user_id")
-            .is("user_id", null)
-            .eq("email", user.email)
-            .eq("status", "active" as MemberStatus)
-            .order("created_at", { ascending: true }),
-          ORG_QUERY_TIMEOUT_MS,
-          "company membership lookup by email"
-        );
-        memsByEmail = byEmail.data ?? null;
-        memErr = byEmail.error ?? null;
-      }
     } catch (e) {
       memErr = e;
     }
@@ -328,8 +262,7 @@ export function OrgProvider({
       return;
     }
 
-    const mergedMemberships = [...(memsByUser ?? []), ...(memsByEmail ?? [])];
-    const meta = pickBest(mergedMemberships as any);
+    const meta = pickBestOrgMemberships(mergedMemberships);
     const ids = Array.from(meta.keys());
     if (ids.length === 0) {
       setCompanies([]);
@@ -341,19 +274,10 @@ export function OrgProvider({
     }
 
     // company names
-    let rows: Array<{ id: string; name: string | null }> | null = null;
+    let rows: OrgCompany[] | null = null;
     let compErr: unknown = null;
     try {
-      const result = await withTimeout(
-        supabase
-          .from("companies")
-          .select("id,name")
-          .in("id", ids),
-        ORG_QUERY_TIMEOUT_MS,
-        "company lookup"
-      );
-      rows = (result.data as Array<{ id: string; name: string | null }> | null) ?? null;
-      compErr = result.error ?? null;
+      rows = await listOrgCompanies(ids, ORG_QUERY_TIMEOUT_MS);
     } catch (e) {
       compErr = e;
     }
