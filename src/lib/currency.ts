@@ -1,5 +1,4 @@
 // src/lib/currency.ts
-import { db } from './db'
 import { supabase } from './supabase'
 
 const LS_KEY = 'base_currency_code'
@@ -55,7 +54,7 @@ export async function getBaseCurrencyCode(companyId?: string | null): Promise<st
       return code
     }
   } catch {
-    // Fall back to legacy settings lookup.
+    // Fall back to the retained legacy settings row below.
   }
 
   const cached = localStorage.getItem(LS_KEY)
@@ -65,8 +64,16 @@ export async function getBaseCurrencyCode(companyId?: string | null): Promise<st
   }
 
   try {
-    const settings = await db.settings.get('app')
-    const code = settings?.baseCurrencyCode || 'MZN'
+    const { data, error } = await supabase
+      .from('settings')
+      .select('baseCurrencyCode')
+      .eq('id', 'app')
+      .maybeSingle()
+
+    if (error) throw error
+    if (!data) return 'MZN'
+
+    const code = String(data.baseCurrencyCode || 'MZN')
     writeCurrencyCache(code, resolvedCompanyId)
     return code
   } catch {
