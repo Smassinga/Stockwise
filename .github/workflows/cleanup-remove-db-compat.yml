@@ -1,0 +1,67 @@
+name: CLEANUP-4D remove db compatibility path
+
+on:
+  push:
+    branches:
+      - cleanup/remove-db-compat-20260830
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      VITE_SITE_URL: https://stockwiseapp.com
+      VITE_SUPABASE_URL: https://stockwise-ci.invalid
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: cleanup/remove-db-compat-20260830
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Replace final compatibility import and remove db facade file
+        shell: python
+        run: |
+          from pathlib import Path
+
+          vendor_bill = Path('src/pages/VendorBillDetail.tsx')
+          text = vendor_bill.read_text(encoding='utf-8')
+          old = "import { supabase } from '../lib/db'"
+          new = "import { supabase } from '../lib/supabase'"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected one VendorBillDetail db import, found {count}')
+          vendor_bill.write_text(text.replace(old, new), encoding='utf-8')
+
+          db_file = Path('src/lib/db.ts')
+          if not db_file.exists():
+              raise SystemExit('src/lib/db.ts is already absent; expected compatibility file')
+          db_file.unlink()
+      - name: Prove no source imports the removed db compatibility path
+        run: |
+          if grep -R -n -E "from ['\"][^'\"]*/db['\"]" src --include='*.ts' --include='*.tsx'; then
+            echo "A source file still imports the removed db compatibility module."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint:js
+      - name: Type-check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Commit validated compatibility removal and remove temporary workflow
+        run: |
+          rm .github/workflows/cleanup-remove-db-compat.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/VendorBillDetail.tsx src/lib/db.ts .github/workflows/cleanup-remove-db-compat.yml
+          git commit -m "refactor: remove frontend db compatibility module"
+          git push origin HEAD:cleanup/remove-db-compat-20260830
