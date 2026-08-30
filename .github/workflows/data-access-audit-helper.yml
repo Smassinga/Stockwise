@@ -1,0 +1,66 @@
+name: Data Access Audit Helper
+
+on:
+  push:
+    branches:
+      - cleanup/data-access-20260830
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out cleanup branch
+        uses: actions/checkout@v5
+        with:
+          ref: cleanup/data-access-20260830
+
+      - name: Scan db facade consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+
+          const roots = ['src', 'scripts', 'tests']
+          const extensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
+          const files = []
+
+          function walk(target) {
+            if (!fs.existsSync(target)) return
+            const stat = fs.statSync(target)
+            if (stat.isFile()) {
+              if (extensions.has(path.extname(target))) files.push(target)
+              return
+            }
+            for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+              if (entry.name === 'node_modules' || entry.name === 'dist') continue
+              walk(path.join(target, entry.name))
+            }
+          }
+
+          roots.forEach(walk)
+
+          let importCount = 0
+          let dbMemberCount = 0
+
+          for (const file of files) {
+            const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+            lines.forEach((line, index) => {
+              const normalized = line.replace(/\\/g, '/')
+              if (normalized.includes('/lib/db') || normalized.includes('@/lib/db') || /from\s+["'][.]{1,2}\/.*lib\/db["']/.test(normalized)) {
+                importCount += 1
+                console.log(`DB_IMPORT ${file}:${index + 1}: ${line.trim()}`)
+              }
+              if (/\bdb\s*\./.test(line)) {
+                dbMemberCount += 1
+                console.log(`DB_MEMBER ${file}:${index + 1}: ${line.trim()}`)
+              }
+            })
+          }
+
+          console.log(`SUMMARY import_lines=${importCount} db_member_lines=${dbMemberCount}`)
+          NODE
