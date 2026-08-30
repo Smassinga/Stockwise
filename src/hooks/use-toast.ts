@@ -11,11 +11,7 @@ type ToastInput = {
   duration?: number
 }
 
-function renderToastContent({ title, description, action }: ToastInput) {
-  if (!description && !action) {
-    return title ?? "Notification"
-  }
-
+function renderToastContent({ title, description, action }: ToastInput): React.ReactElement {
   return React.createElement(
     "div",
     { className: "space-y-1" },
