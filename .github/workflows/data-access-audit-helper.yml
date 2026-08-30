@@ -1,4 +1,4 @@
-name: Data Access Audit Helper
+name: Data Access Cleanup Helper
 
 on:
   push:
@@ -6,18 +6,33 @@ on:
       - cleanup/data-access-20260830
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  cleanup:
+    if: ${{ !contains(github.event.head_commit.message, '[data-access-cleanup-generated]') }}
     runs-on: ubuntu-24.04
+    env:
+      VITE_SITE_URL: https://stockwiseapp.com
+      VITE_SUPABASE_URL: https://stockwise-ci.invalid
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - name: Check out cleanup branch
         uses: actions/checkout@v5
         with:
           ref: cleanup/data-access-20260830
+          fetch-depth: 0
 
-      - name: Scan db facade consumers
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Replace db facade consumers
         shell: bash
         run: |
           set -euo pipefail
@@ -25,42 +40,108 @@ jobs:
           const fs = require('node:fs')
           const path = require('node:path')
 
-          const roots = ['src', 'scripts', 'tests']
-          const extensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
+          const roots = ['src']
+          const extensions = new Set(['.ts', '.tsx'])
           const files = []
 
           function walk(target) {
-            if (!fs.existsSync(target)) return
             const stat = fs.statSync(target)
             if (stat.isFile()) {
               if (extensions.has(path.extname(target))) files.push(target)
               return
             }
             for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
-              if (entry.name === 'node_modules' || entry.name === 'dist') continue
               walk(path.join(target, entry.name))
             }
           }
 
           roots.forEach(walk)
 
-          let importCount = 0
-          let dbMemberCount = 0
-
+          let rewrittenImports = 0
           for (const file of files) {
-            const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+            if (file === 'src/lib/db.ts') continue
+            let text = fs.readFileSync(file, 'utf8')
+            const before = text
+            text = text
+              .replaceAll("from '../lib/db'", "from '../lib/supabase'")
+              .replaceAll('from "../lib/db"', 'from "../lib/supabase"')
+              .replaceAll("from '../../lib/db'", "from '../../lib/supabase'")
+              .replaceAll('from "../../lib/db"', 'from "../../lib/supabase"')
+            if (text !== before) {
+              rewrittenImports += 1
+              fs.writeFileSync(file, text)
+            }
+          }
+
+          if (rewrittenImports !== 15) {
+            throw new Error(`Expected to rewrite 15 Supabase re-export consumers, rewrote ${rewrittenImports}`)
+          }
+
+          const currencyPath = 'src/lib/currency.ts'
+          let currency = fs.readFileSync(currencyPath, 'utf8')
+          const importLine = "import { db } from './db'\n"
+          if (!currency.includes(importLine)) throw new Error('Legacy db import not found in currency.ts')
+          currency = currency.replace(importLine, '')
+
+          const legacyBlock = `  try {\n    const settings = await db.settings.get('app')\n    const code = settings?.baseCurrencyCode || 'MZN'\n    writeCurrencyCache(code, resolvedCompanyId)\n    return code\n  } catch {\n    return 'MZN'\n  }`
+          const explicitBlock = `  try {\n    const { data, error } = await supabase\n      .from('settings')\n      .select('baseCurrencyCode')\n      .eq('id', 'app')\n      .limit(1)\n\n    if (error) throw error\n    const settings = Array.isArray(data) && data.length > 0 ? data[0] : null\n    const code = settings?.baseCurrencyCode || 'MZN'\n    writeCurrencyCache(code, resolvedCompanyId)\n    return code\n  } catch {\n    return 'MZN'\n  }`
+          if (!currency.includes(legacyBlock)) throw new Error('Legacy settings fallback block not found in currency.ts')
+          currency = currency.replace(legacyBlock, explicitBlock)
+          fs.writeFileSync(currencyPath, currency)
+
+          fs.unlinkSync('src/lib/db.ts')
+
+          const scanFiles = []
+          function scanWalk(target) {
+            if (!fs.existsSync(target)) return
+            const stat = fs.statSync(target)
+            if (stat.isFile()) {
+              if (['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(path.extname(target))) scanFiles.push(target)
+              return
+            }
+            for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+              if (entry.name === 'node_modules' || entry.name === 'dist') continue
+              scanWalk(path.join(target, entry.name))
+            }
+          }
+          ;['src', 'scripts', 'tests'].forEach(scanWalk)
+
+          const stale = []
+          for (const file of scanFiles) {
+            const text = fs.readFileSync(file, 'utf8')
+            const lines = text.split(/\r?\n/)
             lines.forEach((line, index) => {
               const normalized = line.replace(/\\/g, '/')
-              if (normalized.includes('/lib/db') || normalized.includes('@/lib/db') || /from\s+["'][.]{1,2}\/.*lib\/db["']/.test(normalized)) {
-                importCount += 1
-                console.log(`DB_IMPORT ${file}:${index + 1}: ${line.trim()}`)
+              if (normalized.includes('/lib/db') || normalized.includes('@/lib/db')) {
+                stale.push(`${file}:${index + 1}: ${line.trim()}`)
               }
               if (/\bdb\s*\./.test(line)) {
-                dbMemberCount += 1
-                console.log(`DB_MEMBER ${file}:${index + 1}: ${line.trim()}`)
+                stale.push(`${file}:${index + 1}: ${line.trim()}`)
               }
             })
           }
-
-          console.log(`SUMMARY import_lines=${importCount} db_member_lines=${dbMemberCount}`)
+          if (stale.length) throw new Error(`Stale db facade references remain:\n${stale.join('\n')}`)
           NODE
+
+      - name: Validate data access cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check:migrations
+          npm run lint:js
+          npm run typecheck
+          npm run check:css-vars
+          npm run check:css-classes
+          npm run test:dashboard
+          npm run test:service-jobs
+          npm run build
+
+      - name: Commit validated source cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'stockwise-maintenance-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src
+          git commit -m 'refactor: retire generic db facade [data-access-cleanup-generated]'
+          git push origin HEAD:cleanup/data-access-20260830
