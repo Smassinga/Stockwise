@@ -33,59 +33,77 @@ jobs:
         run: npm ci
 
       - name: Identify zero-reference direct dependencies
-        id: audit
         shell: bash
         run: |
           set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
 
-          candidates=(
-            '@dnd-kit/core'
-            '@hookform/resolvers'
-            '@radix-ui/react-accordion'
-            '@radix-ui/react-aspect-ratio'
-            '@radix-ui/react-avatar'
-            '@radix-ui/react-context-menu'
-            '@radix-ui/react-hover-card'
-            '@radix-ui/react-menubar'
-            '@radix-ui/react-navigation-menu'
-            '@radix-ui/react-progress'
-            '@radix-ui/react-slider'
-            '@radix-ui/react-toast'
-            '@radix-ui/react-toggle-group'
-            '@react-three/drei'
-            '@react-three/fiber'
-            '@vercel/speed-insights'
-            'cmdk'
-            'embla-carousel-react'
-            'framer-motion'
-            'input-otp'
-            'next-themes'
-            'react-day-picker'
-            'react-hook-form'
-            'react-resizable-panels'
-            'sonner'
-          )
+          const candidates = [
+            '@dnd-kit/core',
+            '@hookform/resolvers',
+            '@radix-ui/react-accordion',
+            '@radix-ui/react-aspect-ratio',
+            '@radix-ui/react-avatar',
+            '@radix-ui/react-context-menu',
+            '@radix-ui/react-hover-card',
+            '@radix-ui/react-menubar',
+            '@radix-ui/react-navigation-menu',
+            '@radix-ui/react-progress',
+            '@radix-ui/react-slider',
+            '@radix-ui/react-toast',
+            '@radix-ui/react-toggle-group',
+            '@react-three/drei',
+            '@react-three/fiber',
+            '@vercel/speed-insights',
+            'cmdk',
+            'embla-carousel-react',
+            'framer-motion',
+            'input-otp',
+            'next-themes',
+            'react-day-picker',
+            'react-hook-form',
+            'react-resizable-panels',
+            'sonner',
+          ]
 
-          search_paths=(src scripts tests supabase/functions)
-          root_files=(vite.config.ts generate-icons.js generate-tauri-icons.js)
-          removable=()
+          const roots = ['src', 'scripts', 'tests', 'supabase/functions']
+          const rootFiles = ['vite.config.ts', 'generate-icons.js', 'generate-tauri-icons.js']
+          const extensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
+          const files = []
 
-          for package in "${candidates[@]}"; do
-            if rg --fixed-strings --quiet "$package" "${search_paths[@]}" "${root_files[@]}" 2>/dev/null; then
-              echo "KEEP: $package has an executable-code reference"
-            else
-              echo "REMOVE: $package has no executable-code reference"
-              removable+=("$package")
-            fi
-          done
+          function walk(target) {
+            if (!fs.existsSync(target)) return
+            const stat = fs.statSync(target)
+            if (stat.isFile()) {
+              if (extensions.has(path.extname(target))) files.push(target)
+              return
+            }
+            for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+              if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') continue
+              walk(path.join(target, entry.name))
+            }
+          }
 
-          if [ "${#removable[@]}" -gt 0 ]; then
-            printf '%s\n' "${removable[@]}" > /tmp/removable-dependencies.txt
-            printf 'removable=%s\n' "${removable[*]}" >> "$GITHUB_OUTPUT"
-          else
-            : > /tmp/removable-dependencies.txt
-            printf 'removable=\n' >> "$GITHUB_OUTPUT"
-          fi
+          roots.forEach(walk)
+          rootFiles.forEach(walk)
+
+          const contents = files.map((file) => [file, fs.readFileSync(file, 'utf8')])
+          const removable = []
+
+          for (const pkg of candidates) {
+            const hits = contents.filter(([, text]) => text.includes(pkg)).map(([file]) => file)
+            if (hits.length > 0) {
+              console.log(`KEEP: ${pkg} referenced by ${hits.join(', ')}`)
+            } else {
+              console.log(`REMOVE: ${pkg} has no executable-code reference`)
+              removable.push(pkg)
+            }
+          }
+
+          fs.writeFileSync('/tmp/removable-dependencies.txt', removable.join('\n') + (removable.length ? '\n' : ''))
+          NODE
 
       - name: Remove verified-unused dependencies
         shell: bash
