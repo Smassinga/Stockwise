@@ -14,7 +14,7 @@ import {
 } from '../lib/bankTransactionRefs'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
 import { useOrg } from '../hooks/useOrg'
-import { hasRole, CanManageUsers } from '../lib/roles'
+import { hasRole, CanManageUsers } from '../lib/permissions'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import type { SettlementKind } from '../lib/orderFinance'
 import { fetchOrderReferenceMap, formatOrderReference } from '../lib/orderRefs'

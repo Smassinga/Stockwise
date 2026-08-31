@@ -9,7 +9,7 @@ import {
 } from "react";
 import { supabase } from "../lib/supabase";
 import { setActiveCompanyRpc } from "../lib/setActiveCompanyRpc";
-import type { CompanyRole } from "../lib/roles";
+import type { CompanyRole } from "../lib/permissions";
 import type { MemberStatus } from "../lib/enums";
 import { withTimeout } from "../lib/withTimeout";
 import {

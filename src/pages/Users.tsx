@@ -25,7 +25,7 @@ import { IconBadge } from '../components/premium/IconBadge'
 import { PremiumStatusBadge } from '../components/premium/PremiumStatusBadge'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { OperationalSummaryBand } from '../components/premium/OperationalSummaryBand'
-import { hasMinRole, canAssignRole, canInviteRole } from '../lib/roles'
+import { hasMinRole, canAssignRole, canInviteRole } from '../lib/permissions'
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR' | 'VIEWER'
 type Status = 'invited' | 'active' | 'disabled'
@@ -367,7 +367,7 @@ export default function Users() {
     if (!canManageUsers) return toast.error(t('users.noPermissionToInvite'))
     const email = inviteEmail.trim().toLowerCase()
     if (!email) return toast.error(t('users.emailRequired'))
-    if (!canInviteRole(myRole as import('../lib/roles').CompanyRole, inviteRole)) {
+    if (!canInviteRole(myRole as import('../lib/permissions').CompanyRole, inviteRole)) {
       return toast.error(t('users.cannotInviteRole'))
     }
 
@@ -482,7 +482,7 @@ export default function Users() {
     if (higherThanMe(currentRowRole)) {
       return toast.error(t('users.cannotModifyHigherRole'))
     }
-    if (next.role && !canAssignRole(myRole as import('../lib/roles').CompanyRole, next.role)) {
+    if (next.role && !canAssignRole(myRole as import('../lib/permissions').CompanyRole, next.role)) {
       return toast.error(t('users.cannotAssignRole'))
     }
     if (!canInviteAdmins && (next.role === 'OWNER' || next.role === 'ADMIN')) {
@@ -536,7 +536,7 @@ export default function Users() {
   }
 
   const roleOptions: Role[] = allRoles.filter((role) =>
-    canInviteRole(myRole as import('../lib/roles').CompanyRole, role)
+    canInviteRole(myRole as import('../lib/permissions').CompanyRole, role)
   )
 
   const sortedMembers = useMemo(
@@ -1026,7 +1026,7 @@ export default function Users() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {roleOptions.map((role) => (
-                        <SelectItem key={role} value={role} disabled={!canAssignRole(myRole as import('../lib/roles').CompanyRole, role)}>
+                        <SelectItem key={role} value={role} disabled={!canAssignRole(myRole as import('../lib/permissions').CompanyRole, role)}>
                           {roleLabel(role)}
                         </SelectItem>
                       ))}

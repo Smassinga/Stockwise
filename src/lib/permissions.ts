@@ -55,6 +55,25 @@ export const financeCan = {
   reminderSettings: (r: CompanyRole | null | undefined) => hasMinRole(r, 'ADMIN'),
 }
 
+// User-management role bounds. Keep these aligned with the canonical CompanyRole ranking above.
+export function canAssignRole(actor: CompanyRole | null | undefined, target: CompanyRole): boolean {
+  const a = actor ?? 'VIEWER'
+  if (a === 'OWNER') return true
+  if (a === 'ADMIN') return ['VIEWER', 'OPERATOR', 'MANAGER', 'ADMIN'].includes(target)
+  if (a === 'MANAGER') return ['VIEWER', 'OPERATOR', 'MANAGER'].includes(target)
+  return false
+}
+
+export function canInviteRole(actor: CompanyRole | null | undefined, target: CompanyRole): boolean {
+  return canAssignRole(actor, target)
+}
+
+export const CanManageUsers: readonly ('MANAGER' | 'ADMIN' | 'OWNER')[] = [
+  'MANAGER',
+  'ADMIN',
+  'OWNER',
+]
+
 export function isFinanceDraftEditable(
   role: CompanyRole | null | undefined,
   approvalStatus: FinanceApprovalStatus | null | undefined,

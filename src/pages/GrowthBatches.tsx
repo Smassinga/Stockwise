@@ -28,7 +28,7 @@ import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useIsMobile } from '../hooks/use-mobile'
 import { useI18n, withI18nFallback } from '../lib/i18n'
-import { hasRole } from '../lib/roles'
+import { hasRole } from '../lib/permissions'
 import {
   clearPostingRequestKey,
   getPostingRequestKeyForFingerprint,
