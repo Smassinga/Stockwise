@@ -16,6 +16,7 @@ import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'
+import SalesInvoiceLinesCard from '../components/finance/SalesInvoiceLinesCard'
 import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
@@ -2139,54 +2140,24 @@ export default function SalesInvoiceDetailPage() {
             items={chainItems}
           />
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('financeDocs.mz.documentLines', 'Document lines')}</CardTitle>
-              <CardDescription className="hidden sm:block">
-                {tt('financeDocs.mz.linesHelp', 'The detail table mirrors the formal invoice structure with fixed bilingual headers. Taxable line values stay separate from VAT so the totals block remains explicit and audit-friendly.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {lines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tt('financeDocs.linesEmpty', 'No document lines have been stored for this finance document yet.')}</p>
-              ) : (
-                <Table className="min-w-[760px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{documentCopy.table.description}</TableHead>
-                      <TableHead className="text-right">{documentCopy.table.qty}</TableHead>
-                      <TableHead className="text-right">{documentCopy.table.unit}</TableHead>
-                      <TableHead className="text-right">{documentCopy.table.unitPrice}</TableHead>
-                      <TableHead className="text-right">{documentCopy.table.total}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((line) => (
-                      <TableRow key={line.id}>
-                        <TableCell>
-                          <div className="font-medium">{line.display_description || line.description || tt('common.dash', '-')}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {[
-                              line.product_code_snapshot ? line.product_code_snapshot : null,
-                              line.tax_label_snapshot
-                                ? `${line.tax_label_snapshot} (${Number(line.tax_rate || 0).toLocaleString()}%)`
-                                : null,
-                              `${documentCopy.totals.subtotal}: ${money(line.line_total, invoice.currency_code)}`,
-                              `${documentCopy.table.vat}: ${money(line.tax_amount, invoice.currency_code)}`,
-                            ].filter(Boolean).join(' · ')}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">{line.display_unit_of_measure || line.unit_of_measure_snapshot || '-'}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{money(line.unit_price, invoice.currency_code)}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{money(line.line_total, invoice.currency_code)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <SalesInvoiceLinesCard
+            lines={lines}
+            title={tt('financeDocs.mz.documentLines', 'Document lines')}
+            description={tt('financeDocs.mz.linesHelp', 'The detail table mirrors the formal invoice structure with fixed bilingual headers. Taxable line values stay separate from VAT so the totals block remains explicit and audit-friendly.')}
+            emptyLabel={tt('financeDocs.linesEmpty', 'No document lines have been stored for this finance document yet.')}
+            descriptionDashLabel={tt('common.dash', '-')}
+            unitDashLabel="-"
+            headers={{
+              description: documentCopy.table.description,
+              qty: documentCopy.table.qty,
+              unit: documentCopy.table.unit,
+              unitPrice: documentCopy.table.unitPrice,
+              total: documentCopy.table.total,
+              subtotal: documentCopy.totals.subtotal,
+              vat: documentCopy.table.vat,
+            }}
+            formatMoney={(amount) => money(amount, invoice.currency_code)}
+          />
 
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
