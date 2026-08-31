@@ -182,6 +182,7 @@ import {
 
 import { DetailSection, Field, SummaryItem } from './growthBatches/GrowthBatchDetailPrimitives'
 import GrowthBatchCompletionSection from './growthBatches/GrowthBatchCompletionSection'
+import GrowthBatchTransferSection from './growthBatches/GrowthBatchTransferSection'
 
 export default function GrowthBatches() {
   const { lang, t } = useI18n()
@@ -2783,79 +2784,22 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="materials">
-                    <DetailSection
-                      title={transferCopy.history.title}
-                      description={transferCopy.history.description}
-                      action={detailBatch.status === 'active' && canOperate ? (
-                        <Button size="sm" className="w-full sm:w-auto" onClick={openTransferDialog} disabled={saving || Boolean(transferUnavailableReason())} title={transferUnavailableReason() || undefined}>
-                          <ArrowRightLeft className="mr-2 h-4 w-4" />
-                          {transferCopy.actions.transferBatch}
-                        </Button>
-                      ) : null}
-                    >
-                      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                        <SummaryItem label={transferCopy.labels.currentLocation} value={transferSourceLocationLabel()} />
-                        <SummaryItem label={transferCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
-                        <SummaryItem label={transferCopy.labels.latestWeight} value={detailBatch.latest_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
-                      </div>
-                      {detailErrors.transfers ? (
-                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
-                      ) : transfers.length === 0 ? (
-                        <PremiumEmptyState icon={<ArrowRightLeft />} title={transferCopy.history.emptyTitle} description={transferCopy.history.emptyDescription} compact />
-                      ) : (
-                        <div className="space-y-3">
-                          {transfers.map((transfer) => {
-                            const canReverseTransfer = canManage && transfer.reversal_eligible
-                            return (
-                              <div key={transfer.id} className="rounded-xl border border-card-border bg-card p-4">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <PremiumStatusBadge tone="info">{transferCopy.history.transferBadge}</PremiumStatusBadge>
-                                      {transfer.reversed ? <Badge variant="outline">{transferCopy.history.reversedBadge}</Badge> : null}
-                                      {!transfer.reversed && !transfer.reversal_eligible ? <Badge variant="secondary">{transferCopy.history.lockedBadge}</Badge> : null}
-                                    </div>
-                                    <div className="mt-2 font-medium break-words">
-                                      {transferHistoryLocationLabel(transfer, 'source')} {' -> '} {transferHistoryLocationLabel(transfer, 'destination')}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">{transfer.event_reference} {transferCopy.history.by} {transfer.actor_display_name || transferCopy.fallback.teamMember}</div>
-                                  </div>
-                                  <div className="text-right text-sm font-semibold">
-                                    <div>{qtyWithUom(transfer.current_primary_qty, transfer.primary_uom_code)}</div>
-                                    <div className="text-xs font-normal text-muted-foreground">{transferCopy.history.sequencePrefix} {transfer.event_sequence} / {compactDate(transfer.event_effective_date)}</div>
-                                  </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                                  <SummaryItem label={transferCopy.labels.fullQuantityMoved} value={qtyWithUom(transfer.current_primary_qty, transfer.primary_uom_code)} />
-                                  <SummaryItem label={transferCopy.labels.weightSnapshot} value={transfer.current_total_weight == null ? transferCopy.fallback.notRecorded : qtyWithUom(transfer.current_total_weight, transfer.weight_uom_code)} />
-                                  <SummaryItem label={transferCopy.labels.purpose} value={transferReasonLabel(transfer.transfer_reason)} />
-                                  <SummaryItem label={transferCopy.labels.costEffect} value={transferCopy.fallback.unchanged} />
-                                </div>
-                                {transfer.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{transfer.notes}</p> : null}
-                                {transfer.reversed ? (
-                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    {transferCopy.history.reversedBy} {transfer.reversal_event_reference || transferCopy.fallback.reversalEvent} {transferCopy.history.onDate} {compactDate(transfer.reversal_effective_date)}. {transfer.reversal_reason || transferCopy.fallback.reasonRecorded}
-                                  </p>
-                                ) : canReverseTransfer ? (
-                                  <div className="mt-3">
-                                    <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => openTransferReversalDialog(transfer)} disabled={saving}>
-                                      <RotateCcw className="mr-2 h-4 w-4" />
-                                      {transferCopy.actions.reverseTransfer}
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    {transferCopy.history.lockedReason}
-                                  </p>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </DetailSection>
-                  </TabsContent>
+                  <GrowthBatchTransferSection
+                    batch={detailBatch}
+                    transfers={transfers}
+                    hasHistoryError={Boolean(detailErrors.transfers)}
+                    canOperate={canOperate}
+                    canManage={canManage}
+                    saving={saving}
+                    transferCopy={transferCopy}
+                    translate={tt}
+                    getTransferUnavailableReason={transferUnavailableReason}
+                    getSourceLocationLabel={transferSourceLocationLabel}
+                    getHistoryLocationLabel={transferHistoryLocationLabel}
+                    getTransferReasonLabel={transferReasonLabel}
+                    onOpenTransfer={openTransferDialog}
+                    onOpenTransferReversal={openTransferReversalDialog}
+                  />
 
                   <TabsContent value="lifecycle">
                     <DetailSection
