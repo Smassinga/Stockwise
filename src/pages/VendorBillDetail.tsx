@@ -52,12 +52,14 @@ import {
   financeExceptionGroupLabelKey,
   financeExceptionLabelKey,
   financeReviewStateLabelKey,
-  FINANCE_RECONCILIATION_EXCEPTIONS_VIEW,
-  FINANCE_RECONCILIATION_VIEW,
   type FinanceReconciliationExceptionRow,
   type FinanceReconciliationRow,
   type FinanceReviewState,
 } from '../lib/financeReconciliation'
+import {
+  financeReviewToneClass,
+  loadFinanceReconciliationContext,
+} from '../lib/financeReconciliationContext'
 import {
   buildVendorBillOutputModel,
   buildVendorCreditNoteOutputModel,
@@ -137,21 +139,6 @@ function approvalTone(status: VendorBillStateRow['approval_status']) {
       return 'secondary'
     default:
       return 'outline'
-  }
-}
-
-function reviewTone(status?: FinanceReviewState | null) {
-  switch (status) {
-    case 'exception':
-      return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
-    case 'overdue':
-      return 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
-    case 'attention':
-      return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
-    case 'resolved':
-      return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
-    default:
-      return 'border-border/70 bg-muted/30 text-muted-foreground'
   }
 }
 
@@ -379,32 +366,14 @@ export default function VendorBillDetailPage() {
       }
 
       try {
-        const [reviewRes, exceptionRes] = await Promise.all([
-          supabase
-            .from(FINANCE_RECONCILIATION_VIEW)
-            .select('*')
-            .eq('company_id', companyId)
-            .eq('anchor_id', billId)
-            .maybeSingle(),
-          supabase
-            .from(FINANCE_RECONCILIATION_EXCEPTIONS_VIEW)
-            .select('*')
-            .eq('company_id', companyId)
-            .eq('anchor_id', billId)
-            .order('severity', { ascending: false })
-            .order('document_date', { ascending: true }),
-        ])
-
-        if (!reviewRes.error) {
-          nextReconciliationRow = (reviewRes.data || null) as FinanceReconciliationRow | null
-        } else {
-          console.warn('[finance-reconciliation] VendorBillDetail review fallback', reviewRes.error)
+        const reconciliationContext = await loadFinanceReconciliationContext(companyId, billId)
+        nextReconciliationRow = reconciliationContext.row
+        nextReconciliationExceptions = reconciliationContext.exceptions
+        if (reconciliationContext.rowError) {
+          console.warn('[finance-reconciliation] VendorBillDetail review fallback', reconciliationContext.rowError)
         }
-
-        if (!exceptionRes.error) {
-          nextReconciliationExceptions = (exceptionRes.data || []) as FinanceReconciliationExceptionRow[]
-        } else {
-          console.warn('[finance-reconciliation] VendorBillDetail exceptions fallback', exceptionRes.error)
+        if (reconciliationContext.exceptionsError) {
+          console.warn('[finance-reconciliation] VendorBillDetail exceptions fallback', reconciliationContext.exceptionsError)
         }
       } catch (reconciliationError) {
         console.warn('[finance-reconciliation] VendorBillDetail context fallback', reconciliationError)
@@ -1943,7 +1912,7 @@ export default function VendorBillDetailPage() {
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="outline">{reconciliationDuePositionLabel(reconciliationRow.due_position)}</Badge>
                         <Badge variant="outline">{reconciliationAgingLabel(reconciliationRow.aging_bucket)}</Badge>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone(reconciliationRow.review_state)}`}>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${financeReviewToneClass(reconciliationRow.review_state)}`}>
                           {reconciliationReviewLabel(reconciliationRow.review_state)}
                         </span>
                         {reconciliationRow.exception_count > 0 ? (

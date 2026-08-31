@@ -50,12 +50,14 @@ import {
   financeExceptionGroupLabelKey,
   financeExceptionLabelKey,
   financeReviewStateLabelKey,
-  FINANCE_RECONCILIATION_EXCEPTIONS_VIEW,
-  FINANCE_RECONCILIATION_VIEW,
   type FinanceReconciliationExceptionRow,
   type FinanceReconciliationRow,
   type FinanceReviewState,
 } from '../lib/financeReconciliation'
+import {
+  financeReviewToneClass,
+  loadFinanceReconciliationContext,
+} from '../lib/financeReconciliationContext'
 import { settlementLabelKey } from '../lib/orderState'
 import {
   approvalPresentation,
@@ -107,21 +109,6 @@ import {
   type OutputBankAccountInput,
 } from '../lib/financeDocumentOutput'
 import { formatOutputDate, getOutputCopy } from '../lib/financeDocumentOutputLanguage'
-
-function reviewTone(status?: FinanceReviewState | null) {
-  switch (status) {
-    case 'exception':
-      return 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground'
-    case 'overdue':
-      return 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'
-    case 'attention':
-      return 'border-status-info-border bg-status-info-muted text-status-info-foreground'
-    case 'resolved':
-      return 'border-status-success-border bg-status-success-muted text-status-success-foreground'
-    default:
-      return 'border-border/70 bg-muted/30 text-muted-foreground'
-  }
-}
 
 function shortDate(value?: string | null) {
   const text = String(value || '').trim()
@@ -381,32 +368,14 @@ export default function SalesInvoiceDetailPage() {
       }
 
       try {
-        const [reviewRes, exceptionRes] = await Promise.all([
-          supabase
-            .from(FINANCE_RECONCILIATION_VIEW)
-            .select('*')
-            .eq('company_id', companyId)
-            .eq('anchor_id', invoiceId)
-            .maybeSingle(),
-          supabase
-            .from(FINANCE_RECONCILIATION_EXCEPTIONS_VIEW)
-            .select('*')
-            .eq('company_id', companyId)
-            .eq('anchor_id', invoiceId)
-            .order('severity', { ascending: false })
-            .order('document_date', { ascending: true }),
-        ])
-
-        if (!reviewRes.error) {
-          nextReconciliationRow = (reviewRes.data || null) as FinanceReconciliationRow | null
-        } else {
-          reportRuntimeError('loadReconciliationRow', reviewRes.error)
+        const reconciliationContext = await loadFinanceReconciliationContext(companyId, invoiceId)
+        nextReconciliationRow = reconciliationContext.row
+        nextReconciliationExceptions = reconciliationContext.exceptions
+        if (reconciliationContext.rowError) {
+          reportRuntimeError('loadReconciliationRow', reconciliationContext.rowError)
         }
-
-        if (!exceptionRes.error) {
-          nextReconciliationExceptions = (exceptionRes.data || []) as FinanceReconciliationExceptionRow[]
-        } else {
-          reportRuntimeError('loadReconciliationExceptions', exceptionRes.error)
+        if (reconciliationContext.exceptionsError) {
+          reportRuntimeError('loadReconciliationExceptions', reconciliationContext.exceptionsError)
         }
       } catch (error) {
         reportRuntimeError('loadReconciliationContext', error, {
@@ -2249,7 +2218,7 @@ export default function SalesInvoiceDetailPage() {
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="outline">{reconciliationDuePositionLabel(reconciliationRow.due_position)}</Badge>
                         <Badge variant="outline">{reconciliationAgingLabel(reconciliationRow.aging_bucket)}</Badge>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${reviewTone(reconciliationRow.review_state)}`}>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${financeReviewToneClass(reconciliationRow.review_state)}`}>
                           {reconciliationReviewLabel(reconciliationRow.review_state)}
                         </span>
                         {reconciliationRow.exception_count > 0 ? (
