@@ -190,3 +190,26 @@ Platform Control is query-backed: `view=portfolio`, `view=activation`, or `view=
 The portfolio keeps stored subscription status, effective access, owner evidence, member count, sign-in evidence, and catalogue indicators distinct. Activation review keeps private proof in detail and approval behind explicit confirmation. Company communications require a canonical recipient and saved access state; successful sends remain audited and manual. Operational reset is isolated in Danger with its exact deleted and preserved scope.
 
 UX-8 production verification used an independently authorised platform-admin session. The first protected-route harness could not navigate the authenticated surface and was replaced with the supported authenticated Chrome/Playwright path. Platform Portuguese localization was corrected by `5c7cd6cb3a953c9df1177658046e7ea417fcc85b`. No activation decision, access change, notice send, or reset was performed during closeout.
+
+## QA Email Template Lab Isolation
+
+The Email Template Lab is a QA-only diagnostic surface. It is fail-closed by default and is not part of normal production Platform Control.
+
+Two independent controls are required to expose it:
+
+- Edge Function: `EMAIL_TEMPLATE_LAB_ENABLED=true`
+- frontend build: `VITE_ENABLE_EMAIL_TEMPLATE_LAB=true`
+
+If either value is absent or anything other than the literal string `true`, the lab is unavailable. The Edge Function is the authoritative boundary: when disabled it returns `qa_lab_disabled` before authentication, request parsing, template listing, preview generation, recent-dispatch reads, or sending logic.
+
+Enabling the lab does not bypass its existing controls. A caller must still be an authenticated platform admin, and test sends remain restricted to `EMAIL_QA_ALLOWED_RECIPIENTS`.
+
+Operating rule:
+
+- keep both enable flags unset for normal production
+- prefer local or isolated QA environments when using the lab
+- if a controlled hosted QA window is explicitly required, enable both flags only for that window and disable them again immediately after validation
+- never treat the frontend flag as a security control; backend enforcement remains mandatory
+
+Supabase Edge Function environment variables are managed through the hosted function secrets/environment configuration. The frontend flag is a Vite build-time variable and must therefore be set only on the intended QA build/environment.
+

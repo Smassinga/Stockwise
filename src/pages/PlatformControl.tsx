@@ -72,6 +72,7 @@ type PlatformCompanySection = 'overview' | 'access' | 'communications' | 'audit'
 
 const platformViews: PlatformView[] = ['portfolio', 'activation', 'company']
 const companySections: PlatformCompanySection[] = ['overview', 'access', 'communications', 'audit', 'danger']
+const emailTemplateLabEnabled = import.meta.env.VITE_ENABLE_EMAIL_TEMPLATE_LAB === 'true'
 
 function asDateInput(value: string | null | undefined) {
   return value ? value.slice(0, 10) : ''
@@ -868,7 +869,7 @@ export default function PlatformControlPage() {
             tt={tt}
           /> : null}
 
-          {platformView === 'portfolio' && !portfolioError ? <EmailTemplateLab language={lang} /> : null}
+          {platformView === 'portfolio' && !portfolioError && emailTemplateLabEnabled ? <EmailTemplateLab language={lang} /> : null}
 
           {platformView === 'portfolio' && portfolioError ? (
             <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-5">
