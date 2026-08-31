@@ -75,20 +75,36 @@ export const CanManageUsers: readonly ('MANAGER' | 'ADMIN' | 'OWNER')[] = [
 permissions = permissions.replace(marker, role_helpers + marker, 1)
 permissions_path.write_text(permissions, encoding='utf-8')
 
+legacy_import_literals = (
+    "'./lib/roles'",
+    '"./lib/roles"',
+    "'../lib/roles'",
+    '"../lib/roles"',
+    "'../../lib/roles'",
+    '"../../lib/roles"',
+)
+canonical_by_legacy = {
+    "'./lib/roles'": "'./lib/permissions'",
+    '"./lib/roles"': '"./lib/permissions"',
+    "'../lib/roles'": "'../lib/permissions'",
+    '"../lib/roles"': '"../lib/permissions"',
+    "'../../lib/roles'": "'../../lib/permissions'",
+    '"../../lib/roles"': '"../../lib/permissions"',
+}
+
 replacements = 0
 for source_path in Path('src').rglob('*'):
     if not source_path.is_file() or source_path.suffix not in {'.ts', '.tsx'} or source_path == roles_path:
         continue
     source = source_path.read_text(encoding='utf-8')
-    updated = source.replace("'./lib/roles'", "'./lib/permissions'")
-    updated = updated.replace('"./lib/roles"', '"./lib/permissions"')
-    updated = updated.replace("'../lib/roles'", "'../lib/permissions'")
-    updated = updated.replace('"../lib/roles"', '"../lib/permissions"')
-    updated = updated.replace("'../../lib/roles'", "'../../lib/permissions'")
-    updated = updated.replace('"../../lib/roles"', '"../../lib/permissions"')
-    if updated != source:
-        replacements += source.count('/roles')
-        source_path.write_text(updated, encoding='utf-8')
+    import_count = sum(source.count(literal) for literal in legacy_import_literals)
+    if import_count == 0:
+        continue
+    updated = source
+    for legacy, canonical in canonical_by_legacy.items():
+        updated = updated.replace(legacy, canonical)
+    replacements += import_count
+    source_path.write_text(updated, encoding='utf-8')
 
 if replacements != 8:
     raise SystemExit(f'expected 8 live role-import replacements, found {replacements}')
@@ -98,7 +114,7 @@ for source_path in Path('src').rglob('*'):
     if not source_path.is_file() or source_path.suffix not in {'.ts', '.tsx'} or source_path == roles_path:
         continue
     source = source_path.read_text(encoding='utf-8')
-    if '/roles' in source:
+    if any(literal in source for literal in legacy_import_literals):
         remaining.append(str(source_path))
 if remaining:
     raise SystemExit(f'legacy role imports remain: {remaining}')
