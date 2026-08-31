@@ -39,14 +39,16 @@ component = '''import { AlertTriangle, ArrowRightLeft, RotateCcw } from 'lucide-
 
 component_path.write_text(component, encoding='utf-8')
 
+replacement = '''                  <GrowthBatchTransferSection\n                    batch={detailBatch}\n                    transfers={transfers}\n                    hasHistoryError={Boolean(detailErrors.transfers)}\n                    canOperate={canOperate}\n                    canManage={canManage}\n                    saving={saving}\n                    transferCopy={transferCopy}\n                    translate={tt}\n                    getTransferUnavailableReason={transferUnavailableReason}\n                    getSourceLocationLabel={transferSourceLocationLabel}\n                    getHistoryLocationLabel={transferHistoryLocationLabel}\n                    getTransferReasonLabel={transferReasonLabel}\n                    onOpenTransfer={openTransferDialog}\n                    onOpenTransferReversal={openTransferReversalDialog}\n                  />\n\n'''
+
+# Replace the bounded JSX before adding imports so the original character offsets remain valid.
+page = page[:start] + replacement + page[end:]
+
 import_marker = "import GrowthBatchCompletionSection from './growthBatches/GrowthBatchCompletionSection'\n"
 if page.count(import_marker) != 1:
     raise SystemExit('Expected one GrowthBatchCompletionSection import marker')
 page = page.replace(import_marker, import_marker + "import GrowthBatchTransferSection from './growthBatches/GrowthBatchTransferSection'\n", 1)
 
-replacement = '''                  <GrowthBatchTransferSection\n                    batch={detailBatch}\n                    transfers={transfers}\n                    hasHistoryError={Boolean(detailErrors.transfers)}\n                    canOperate={canOperate}\n                    canManage={canManage}\n                    saving={saving}\n                    transferCopy={transferCopy}\n                    translate={tt}\n                    getTransferUnavailableReason={transferUnavailableReason}\n                    getSourceLocationLabel={transferSourceLocationLabel}\n                    getHistoryLocationLabel={transferHistoryLocationLabel}\n                    getTransferReasonLabel={transferReasonLabel}\n                    onOpenTransfer={openTransferDialog}\n                    onOpenTransferReversal={openTransferReversalDialog}\n                  />\n\n'''
-
-page = page[:start] + replacement + page[end:]
 page_path.write_text(page, encoding='utf-8')
 
 final_page = page_path.read_text(encoding='utf-8')
