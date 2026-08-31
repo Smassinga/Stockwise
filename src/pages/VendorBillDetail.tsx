@@ -35,13 +35,12 @@ import {
   financeEventTransition,
   getAdjustmentReasonLabel,
   getAdjustmentReasonOptions,
-  listFinanceActorDirectory,
-  listFinanceSettlementAuditEvents,
   type FinanceActorDirectory,
   type FinanceSettlementAuditEvent,
   type FinanceTimelineEntry,
   type VendorBillRowLike,
 } from '../lib/financeAudit'
+import { loadFinanceAuditContext } from '../lib/financeAuditContext'
 import {
   VENDOR_BILL_STATE_VIEW,
   financeDocumentApprovalLabelKey,
@@ -340,15 +339,16 @@ export default function VendorBillDetailPage() {
           ...nextDebitNotes.flatMap((note) => [note.created_by, note.posted_by, note.voided_by]),
         ].filter(Boolean) as string[]))
 
-        const [actorRes, settlementRes] = await Promise.all([
-          listFinanceActorDirectory(companyId, actorIds),
-          nextRow.document_workflow_status === 'posted'
-            ? listFinanceSettlementAuditEvents(companyId, 'vendor_bill', billId)
-            : Promise.resolve([] as FinanceSettlementAuditEvent[]),
-        ])
+        const auditContext = await loadFinanceAuditContext({
+          companyId,
+          actorIds,
+          documentKind: 'vendor_bill',
+          documentId: billId,
+          includeSettlementEvents: nextRow.document_workflow_status === 'posted',
+        })
 
-        nextActorDirectory = actorRes
-        nextSettlementEvents = settlementRes
+        nextActorDirectory = auditContext.actorDirectory
+        nextSettlementEvents = auditContext.settlementEvents
       } catch (auditError) {
         console.warn('[finance-audit] VendorBillDetail audit context fallback', auditError)
       }
