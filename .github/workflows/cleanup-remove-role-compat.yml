@@ -77,8 +77,8 @@ jobs:
             exit 1
           fi
 
-          if git grep -nE "(?:from|import\()[[:space:]]*['\"][^'\"]*/roles['\"]" -- src; then
-            echo "Legacy role import remains"
+          if git grep -nE "^[[:space:]]*import[^[:cntrl:]]*from[[:space:]]+['\"][^'\"]*/roles['\"][[:space:]]*;?[[:space:]]*$" -- 'src/*.ts' 'src/*.tsx' 'src/**/*.ts' 'src/**/*.tsx'; then
+            echo "Legacy executable role import remains"
             exit 1
           fi
 
