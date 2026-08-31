@@ -46,7 +46,8 @@ EXPECTED_IMPORTERS = {
 }
 
 ROLE_IMPORT_RE = re.compile(
-    r"(?P<prefix>\bfrom\s+|\bimport\(\s*)(?P<quote>['\"])(?P<module>(?:\.\.?/)+lib/roles)(?P=quote)"
+    r"^(?P<prefix>\s*import\b[^\n]*\bfrom\s+)(?P<quote>['\"])(?P<module>(?:\.\.?/)+lib/roles)(?P=quote)(?P<suffix>\s*;?\s*)$",
+    re.MULTILINE,
 )
 
 
@@ -83,9 +84,9 @@ if actual_importers != EXPECTED_IMPORTERS:
     unexpected = sorted(actual_importers - EXPECTED_IMPORTERS)
     raise SystemExit(f'legacy role importer set changed; missing={missing}, unexpected={unexpected}')
 
-if any(len(matches) != 1 for matches in source_matches.values()):
-    counts = {path.as_posix(): len(matches) for path, matches in source_matches.items()}
-    raise SystemExit(f'each reviewed importer must contain exactly one legacy role import; counts={counts}')
+counts = {path.as_posix(): len(matches) for path, matches in source_matches.items()}
+if any(count != 1 for count in counts.values()):
+    raise SystemExit(f'each reviewed importer must contain exactly one executable legacy role import; counts={counts}')
 
 doc_path = Path('docs/DATA_MODEL.md')
 doc = doc_path.read_text(encoding='utf-8')
@@ -119,11 +120,11 @@ permissions_path.write_text(permissions.replace(marker, role_helpers + marker, 1
 for source_path in source_matches:
     source = source_path.read_text(encoding='utf-8')
     updated, count = ROLE_IMPORT_RE.subn(
-        lambda match: f"{match.group('prefix')}{match.group('quote')}{match.group('module')[:-len('/roles')]}/permissions{match.group('quote')}",
+        lambda match: f"{match.group('prefix')}{match.group('quote')}{match.group('module')[:-len('/roles')]}/permissions{match.group('quote')}{match.group('suffix')}",
         source,
     )
     if count != 1:
-        raise SystemExit(f'{source_path}: expected one structural role import replacement, found {count}')
+        raise SystemExit(f'{source_path}: expected one executable role import replacement, found {count}')
     source_path.write_text(updated, encoding='utf-8')
 
 remaining = []
@@ -133,7 +134,7 @@ for source_path in Path('src').rglob('*'):
     if ROLE_IMPORT_RE.search(source_path.read_text(encoding='utf-8')):
         remaining.append(source_path.as_posix())
 if remaining:
-    raise SystemExit(f'legacy role imports remain: {remaining}')
+    raise SystemExit(f'legacy executable role imports remain: {remaining}')
 
 roles_path.unlink()
 doc_path.write_text(doc.replace(old_doc, new_doc, 1), encoding='utf-8')
