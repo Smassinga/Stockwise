@@ -38,12 +38,11 @@ import {
   financeEventTransition,
   getAdjustmentReasonLabel,
   getAdjustmentReasonOptions,
-  listFinanceActorDirectory,
-  listFinanceSettlementAuditEvents,
   type FinanceActorDirectory,
   type FinanceSettlementAuditEvent,
   type FinanceTimelineEntry,
 } from '../lib/financeAudit'
+import { loadFinanceAuditContext } from '../lib/financeAuditContext'
 import {
   salesInvoiceAdjustmentLabelKey,
   salesInvoiceResolutionLabelKey,
@@ -338,15 +337,16 @@ export default function SalesInvoiceDetailPage() {
           ...nextDebitNotes.flatMap((note) => [note.created_by, note.issued_by, note.voided_by]),
         ].filter(Boolean) as string[]))
 
-        const [actorRes, settlementRes] = await Promise.all([
-          listFinanceActorDirectory(companyId, actorIds),
-          nextInvoice?.document_workflow_status === 'issued'
-            ? listFinanceSettlementAuditEvents(companyId, 'sales_invoice', invoiceId)
-            : Promise.resolve([] as FinanceSettlementAuditEvent[]),
-        ])
+        const auditContext = await loadFinanceAuditContext({
+          companyId,
+          actorIds,
+          documentKind: 'sales_invoice',
+          documentId: invoiceId,
+          includeSettlementEvents: nextInvoice?.document_workflow_status === 'issued',
+        })
 
-        nextActorDirectory = actorRes
-        nextSettlementEvents = settlementRes
+        nextActorDirectory = auditContext.actorDirectory
+        nextSettlementEvents = auditContext.settlementEvents
       } catch (error) {
         reportRuntimeError('loadAuditContext', error, {
           eventCount: nextEvents.length,
