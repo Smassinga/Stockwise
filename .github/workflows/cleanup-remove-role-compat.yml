@@ -78,7 +78,11 @@ jobs:
           fi
 
           if git grep -nE "^[[:space:]]*import[^[:cntrl:]]*from[[:space:]]+['\"][^'\"]*/roles['\"][[:space:]]*;?[[:space:]]*$" -- 'src/*.ts' 'src/*.tsx' 'src/**/*.ts' 'src/**/*.tsx'; then
-            echo "Legacy executable role import remains"
+            echo "Legacy top-level role import remains"
+            exit 1
+          fi
+          if git grep -nE "import\([[:space:]]*['\"][^'\"]*/roles['\"][[:space:]]*\)" -- 'src/*.ts' 'src/*.tsx' 'src/**/*.ts' 'src/**/*.tsx'; then
+            echo "Legacy dynamic role import remains"
             exit 1
           fi
 
