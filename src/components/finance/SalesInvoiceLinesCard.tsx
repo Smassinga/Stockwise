@@ -7,7 +7,8 @@ type SalesInvoiceLinesCardProps = {
   title: string
   description: string
   emptyLabel: string
-  dashLabel: string
+  descriptionDashLabel: string
+  unitDashLabel: string
   headers: {
     description: string
     qty: string
@@ -25,7 +26,8 @@ export default function SalesInvoiceLinesCard({
   title,
   description,
   emptyLabel,
-  dashLabel,
+  descriptionDashLabel,
+  unitDashLabel,
   headers,
   formatMoney,
 }: SalesInvoiceLinesCardProps) {
@@ -53,7 +55,7 @@ export default function SalesInvoiceLinesCard({
               {lines.map((line) => (
                 <TableRow key={line.id}>
                   <TableCell>
-                    <div className="font-medium">{line.display_description || line.description || dashLabel}</div>
+                    <div className="font-medium">{line.display_description || line.description || descriptionDashLabel}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       {[
                         line.product_code_snapshot || null,
@@ -67,7 +69,7 @@ export default function SalesInvoiceLinesCard({
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
                   <TableCell className="text-right text-sm text-muted-foreground">
-                    {line.display_unit_of_measure || line.unit_of_measure_snapshot || dashLabel}
+                    {line.display_unit_of_measure || line.unit_of_measure_snapshot || unitDashLabel}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatMoney(line.unit_price)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatMoney(line.line_total)}</TableCell>
