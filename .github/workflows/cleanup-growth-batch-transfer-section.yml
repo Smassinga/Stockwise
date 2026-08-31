@@ -1,4 +1,4 @@
-name: CLEANUP-6H Growth Batch transfer section
+name: CLEANUP-6H Growth Batch transfer section retry
 
 on:
   push:
