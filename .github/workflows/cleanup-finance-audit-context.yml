@@ -1,0 +1,50 @@
+name: CLEANUP-5C finance audit context
+
+on:
+  push:
+    branches:
+      - cleanup/finance-audit-context-20260831
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: cleanup/finance-audit-context-20260831
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Extract duplicated finance audit context loading
+        run: python .github/scripts/cleanup_finance_audit_context.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint:js
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated extraction and remove temporary staging files
+        shell: bash
+        run: |
+          rm .github/workflows/cleanup-finance-audit-context.yml
+          rm .github/scripts/cleanup_finance_audit_context.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A src .github/workflows/cleanup-finance-audit-context.yml .github/scripts/cleanup_finance_audit_context.py
+          git diff --cached --check
+          git commit -m 'refactor: share finance audit context loading'
+          git push origin HEAD:cleanup/finance-audit-context-20260831
