@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -49,7 +49,6 @@ import {
   DialogTitle,
 } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Textarea } from '../components/ui/textarea'
@@ -181,59 +180,8 @@ import {
   friendlyError,
 } from './growthBatches/growthBatchPageSupport'
 
-function Field({
-  label,
-  htmlFor,
-  children,
-  hint,
-}: {
-  label: string
-  htmlFor?: string
-  children: ReactNode
-  hint?: ReactNode
-}) {
-  return (
-    <div className="min-w-0 space-y-2">
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
-      {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-    </div>
-  )
-}
-
-function SummaryItem({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <div className="premium-label">{label}</div>
-      <div className="mt-1 min-w-0 break-words text-sm font-medium">{value}</div>
-    </div>
-  )
-}
-
-function DetailSection({
-  title,
-  description,
-  children,
-  action,
-}: {
-  title: ReactNode
-  description?: ReactNode
-  children: ReactNode
-  action?: ReactNode
-}) {
-  return (
-    <Card className="border-card-border bg-card">
-      <CardHeader className="gap-3 md:flex-row md:items-start md:justify-between md:space-y-0">
-        <div className="min-w-0">
-          <CardTitle>{title}</CardTitle>
-          {description ? <CardDescription>{description}</CardDescription> : null}
-        </div>
-        {action ? <div className="flex w-full min-w-0 flex-wrap gap-2 md:w-auto md:justify-end">{action}</div> : null}
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  )
-}
+import { DetailSection, Field, SummaryItem } from './growthBatches/GrowthBatchDetailPrimitives'
+import GrowthBatchCompletionSection from './growthBatches/GrowthBatchCompletionSection'
 
 export default function GrowthBatches() {
   const { lang, t } = useI18n()
@@ -3001,107 +2949,21 @@ export default function GrowthBatches() {
                     </DetailSection>
                   </TabsContent>
 
-                  <TabsContent value="lifecycle">
-                    <DetailSection
-                      title={completionCopy.history.title}
-                      description={completionCopy.history.description}
-                      action={detailBatch.status === 'active' && canManage ? (
-                        <Button size="sm" className="w-full sm:w-auto" onClick={openCompletionDialog} disabled={saving || Boolean(completionUnavailableReason())} title={completionUnavailableReason() || undefined}>
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          {completionCopy.actions.completeBatch}
-                        </Button>
-                      ) : null}
-                    >
-                      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <SummaryItem label={completionCopy.labels.currentStatus} value={completionStatusLabel(detailBatch.status)} />
-                        <SummaryItem label={completionCopy.labels.currentQuantity} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
-                        <SummaryItem label={completionCopy.labels.currentWeight} value={detailBatch.latest_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
-                        <SummaryItem label={completionCopy.labels.remainingCost} value={money(detailBatch.remaining_cost, selectedCurrency)} />
-                        <SummaryItem label={completionCopy.labels.accumulatedCost} value={money(detailBatch.accumulated_total_cost, selectedCurrency)} />
-                        <SummaryItem label={completionCopy.labels.harvestedCost} value={money(detailBatch.harvested_cost, selectedCurrency)} />
-                        <SummaryItem label={completionCopy.labels.stockLedger} value={completionCopy.fallback.notAffected} />
-                        <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
-                      </div>
-                      {detailBatch.fully_harvested_awaiting_completion ? (
-                        <div className="mb-4 rounded-xl border border-status-success-border bg-status-success-muted p-4 text-sm">
-                          <div className="font-medium text-status-success-foreground">{harvestCopy.labels.fullyHarvested}</div>
-                          <div className="mt-1 text-muted-foreground">{completionCopy.dialog.lifecycleNote}</div>
-                        </div>
-                      ) : null}
-                      {detailBatch.status === 'completed' ? (
-                        <div className="mb-4 rounded-xl border border-card-border bg-muted/20 p-4 text-sm">
-                          <div className="font-medium">{completionCopy.history.completionBadge}</div>
-                          <div className="mt-1 text-muted-foreground">
-                            {completionCopy.labels.completedAt}: {detailBatch.completed_at ? compactDateTime(detailBatch.completed_at) : completionCopy.fallback.notRecorded}
-                          </div>
-                        </div>
-                      ) : null}
-                      {detailErrors.completion ? (
-                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
-                      ) : completions.length === 0 ? (
-                        <PremiumEmptyState icon={<CheckCircle2 />} title={completionCopy.history.emptyTitle} description={completionCopy.history.emptyDescription} compact />
-                      ) : (
-                        <div className="space-y-3">
-                          {completions.map((completion) => {
-                            const canReverseCompletion = canManage && completion.reversal_eligible
-                            return (
-                              <div key={completion.id} className="rounded-xl border border-card-border bg-card p-4">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <PremiumStatusBadge tone="neutral">{completionCopy.history.completionBadge}</PremiumStatusBadge>
-                                      {completion.reversed ? <Badge variant="outline">{completionCopy.history.reversedBadge}</Badge> : null}
-                                      {!completion.reversed && !completion.reversal_eligible ? <Badge variant="secondary">{completionCopy.history.lockedBadge}</Badge> : null}
-                                    </div>
-                                    <div className="mt-2 font-medium break-words">
-                                      {completion.event_reference} {completionCopy.history.by} {completion.actor_display_name || completionCopy.fallback.teamMember}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {completionCopy.history.sequencePrefix} {completion.event_sequence} / {compactDate(completion.event_effective_date)}
-                                    </div>
-                                  </div>
-                                  <div className="min-w-0 text-left text-sm font-semibold sm:text-right">
-                                    <div>{completionStatusLabel(completion.status_before)} {' -> '} {completionStatusLabel(completion.status_after)}</div>
-                                    <div className="text-xs font-normal text-muted-foreground">{completion.completed_at ? compactDateTime(completion.completed_at) : completionCopy.fallback.notRecorded}</div>
-                                  </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-                                  <SummaryItem label={completionCopy.labels.currentQuantity} value={qtyWithUom(completion.current_primary_qty, completion.primary_uom_code)} />
-                                  <SummaryItem label={completionCopy.labels.currentWeight} value={completion.current_total_weight == null ? completionCopy.fallback.notRecorded : qtyWithUom(completion.current_total_weight, completion.weight_uom_code)} />
-                                  <SummaryItem label={completionCopy.labels.accumulatedCost} value={money(completion.accumulated_total_cost, selectedCurrency)} />
-                                  <SummaryItem label={completionCopy.labels.harvestedCost} value={money(completion.harvested_cost, selectedCurrency)} />
-                                  <SummaryItem label={completionCopy.labels.remainingCost} value={money(completion.remaining_cost, selectedCurrency)} />
-                                  <SummaryItem label={completionCopy.labels.stockLedger} value={completionCopy.fallback.notAffected} />
-                                  <SummaryItem label={completionCopy.labels.finance} value={completionCopy.fallback.notAffected} />
-                                  <SummaryItem label={completionCopy.labels.sellingPrice} value={completionCopy.fallback.unchanged} />
-                                </div>
-                                <div className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm">
-                                  <SummaryItem label={completionCopy.labels.reason} value={completion.completion_reason || completionCopy.fallback.notRecorded} />
-                                  {completion.notes ? <p className="mt-2 leading-6 text-muted-foreground">{completion.notes}</p> : null}
-                                </div>
-                                {completion.reversed ? (
-                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    {completionCopy.history.reversedBy} {completion.reversal_event_reference || completionCopy.history.reversalBadge} {completionCopy.history.onDate} {compactDate(completion.reversal_effective_date)}. {completion.reversal_reason || completionCopy.fallback.notRecorded}
-                                  </p>
-                                ) : canReverseCompletion ? (
-                                  <div className="mt-3">
-                                    <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => openCompletionReversalDialog(completion)} disabled={saving}>
-                                      <RotateCcw className="mr-2 h-4 w-4" />
-                                      {completionCopy.actions.reverseCompletion}
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    {completionCopy.history.lockedReason}
-                                  </p>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </DetailSection>
-                  </TabsContent>
+                  <GrowthBatchCompletionSection
+                    batch={detailBatch}
+                    completions={completions}
+                    hasHistoryError={Boolean(detailErrors.completion)}
+                    canManage={canManage}
+                    saving={saving}
+                    selectedCurrency={selectedCurrency}
+                    completionCopy={completionCopy}
+                    fullyHarvestedLabel={harvestCopy.labels.fullyHarvested}
+                    translate={tt}
+                    completionStatusLabel={completionStatusLabel}
+                    getCompletionUnavailableReason={completionUnavailableReason}
+                    onOpenCompletion={openCompletionDialog}
+                    onOpenCompletionReversal={openCompletionReversalDialog}
+                  />
 
                   <TabsContent value="lifecycle">
                     <DetailSection
