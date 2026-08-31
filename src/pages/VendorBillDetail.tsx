@@ -11,12 +11,12 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'
 import VendorBillLinesCard from '../components/finance/VendorBillLinesCard'
+import VendorBillAdjustmentHistoryCards from '../components/finance/VendorBillAdjustmentHistoryCards'
 import VendorBillResolutionCard from '../components/finance/VendorBillResolutionCard'
 import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
@@ -1812,193 +1812,33 @@ export default function VendorBillDetailPage() {
             formatMoney={(amount) => formatDocumentMoney(amount, row.currency_code)}
           />
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('financeDocs.vendorBills.creditNotesTitle', 'Supplier credit notes')}</CardTitle>
-              <CardDescription className="hidden sm:block">
-                {tt('financeDocs.vendorBills.creditNotesHelp', 'Use supplier credit notes for reductions, returns, allowances, and other downward AP corrections linked back to the posted vendor bill.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {row.document_workflow_status === 'posted' ? (
-                canCreateCreditNote ? (
-                  <Button className="w-full sm:w-auto" onClick={() => setCreditDialogOpen(true)}>
-                    {tt('financeDocs.vendorBills.issueCreditNote', 'Issue supplier credit note')}
-                  </Button>
-                ) : (
-                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
-                    {!canPostVendorAdjustments
-                      ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
-                      : tt('financeDocs.vendorBills.creditNotesResolved', 'This vendor bill is already fully credited. No further supplier credit note can be posted against it.')}
-                  </div>
-                )
-              ) : (
-                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
-                  {tt('financeDocs.vendorBills.creditNotesPostedOnly', 'Supplier credit notes can only be created from posted vendor bills.')}
-                </div>
-              )}
-
-              {creditNotes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tt('financeDocs.vendorBills.creditNotesEmpty', 'No supplier credit notes have been posted against this vendor bill yet.')}</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tt('financeDocs.fields.reference', 'Reference')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.date', 'Date')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.status', 'Status')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {creditNotes.map((note) => {
-                      const noteModel = buildCreditNoteModel(note)
-                      return (
-                        <TableRow key={note.id}>
-                          <TableCell>
-                            <div className="font-medium">{note.supplier_document_reference || note.internal_reference}</div>
-                            <div className="text-xs text-muted-foreground">
-                  {tt('financeDocs.vendorBills.internalKeyValue', 'StockWise key {reference}', { reference: note.internal_reference })}
-                            </div>
-                            {note.adjustment_reason_code ? (
-                              <div className="mt-2">
-                                <Badge variant="outline">
-                                  {getAdjustmentReasonLabel('vendor_credit', note.adjustment_reason_code, lang)}
-                                </Badge>
-                              </div>
-                            ) : null}
-                            {note.adjustment_reason_text ? (
-                              <div className="mt-1 text-xs text-muted-foreground">{note.adjustment_reason_text}</div>
-                            ) : null}
-                          </TableCell>
-                          <TableCell>{note.note_date}</TableCell>
-                          <TableCell>
-                            <Badge variant={workflowTone(note.document_workflow_status)}>
-                              {note.document_workflow_status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="font-mono tabular-nums">{formatDocumentMoney(note.total_amount, note.currency_code)}</div>
-                            <div className="text-xs text-muted-foreground">{formatBaseMoney(note.total_amount_base)}</div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button size="sm" variant="outline" onClick={() => void handlePrintDocument(noteModel)}>
-                                <Printer className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.printInvoice', 'Print')}
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => void handleDownloadPdf(noteModel)}>
-                                <Download className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => void handleShareDocument(noteModel)}>
-                                <Share2 className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.shareInvoice', 'Share')}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('financeDocs.vendorBills.debitNotesTitle', 'Supplier debit notes')}</CardTitle>
-              <CardDescription className="hidden sm:block">
-                {tt('financeDocs.vendorBills.debitNotesHelp', 'Use supplier debit notes for additional charges, omitted supplier value, and other upward AP corrections linked back to the posted vendor bill.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {row.document_workflow_status === 'posted' ? (
-                canCreateDebitNote ? (
-                  <Button className="w-full sm:w-auto" onClick={() => setDebitDialogOpen(true)}>
-                    {tt('financeDocs.vendorBills.issueDebitNote', 'Issue supplier debit note')}
-                  </Button>
-                ) : (
-                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
-                    {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
-                  </div>
-                )
-              ) : (
-                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
-                  {tt('financeDocs.vendorBills.debitNotesPostedOnly', 'Supplier debit notes can only be created from posted vendor bills.')}
-                </div>
-              )}
-
-              {debitNotes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tt('financeDocs.vendorBills.debitNotesEmpty', 'No supplier debit notes have been posted against this vendor bill yet.')}</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tt('financeDocs.fields.reference', 'Reference')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.date', 'Date')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.status', 'Status')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {debitNotes.map((note) => {
-                      const noteModel = buildDebitNoteModel(note)
-                      return (
-                        <TableRow key={note.id}>
-                          <TableCell>
-                            <div className="font-medium">{note.supplier_document_reference || note.internal_reference}</div>
-                            <div className="text-xs text-muted-foreground">
-                  {tt('financeDocs.vendorBills.internalKeyValue', 'StockWise key {reference}', { reference: note.internal_reference })}
-                            </div>
-                            {note.adjustment_reason_code ? (
-                              <div className="mt-2">
-                                <Badge variant="outline">
-                                  {getAdjustmentReasonLabel('vendor_debit', note.adjustment_reason_code, lang)}
-                                </Badge>
-                              </div>
-                            ) : null}
-                            {note.adjustment_reason_text ? (
-                              <div className="mt-1 text-xs text-muted-foreground">{note.adjustment_reason_text}</div>
-                            ) : null}
-                          </TableCell>
-                          <TableCell>{note.note_date}</TableCell>
-                          <TableCell>
-                            <Badge variant={workflowTone(note.document_workflow_status)}>
-                              {note.document_workflow_status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="font-mono tabular-nums">{formatDocumentMoney(note.total_amount, note.currency_code)}</div>
-                            <div className="text-xs text-muted-foreground">{formatBaseMoney(note.total_amount_base)}</div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button size="sm" variant="outline" onClick={() => void handlePrintDocument(noteModel)}>
-                                <Printer className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.printInvoice', 'Print')}
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => void handleDownloadPdf(noteModel)}>
-                                <Download className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => void handleShareDocument(noteModel)}>
-                                <Share2 className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.shareInvoice', 'Share')}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <VendorBillAdjustmentHistoryCards
+            creditNotes={creditNotes}
+            debitNotes={debitNotes}
+            isActive={row.document_workflow_status === 'posted'}
+            canCreateCredit={canCreateCreditNote}
+            canCreateDebit={canCreateDebitNote}
+            creditBlockedMessage={
+              !canPostVendorAdjustments
+                ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
+                : tt('financeDocs.vendorBills.creditNotesResolved', 'This vendor bill is already fully credited. No further supplier credit note can be posted against it.')
+            }
+            debitBlockedMessage={tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
+            translate={(key, fallback, params) => tt(key, fallback, params)}
+            formatDocumentMoney={formatDocumentMoney}
+            formatBaseMoney={formatBaseMoney}
+            workflowVariant={(status) => workflowTone(status)}
+            creditReasonLabel={(note) => note.adjustment_reason_code ? getAdjustmentReasonLabel('vendor_credit', note.adjustment_reason_code, lang) : ''}
+            debitReasonLabel={(note) => note.adjustment_reason_code ? getAdjustmentReasonLabel('vendor_debit', note.adjustment_reason_code, lang) : ''}
+            onOpenCredit={() => setCreditDialogOpen(true)}
+            onOpenDebit={() => setDebitDialogOpen(true)}
+            onPrintCredit={(note) => void handlePrintDocument(buildCreditNoteModel(note))}
+            onDownloadCredit={(note) => void handleDownloadPdf(buildCreditNoteModel(note))}
+            onShareCredit={(note) => void handleShareDocument(buildCreditNoteModel(note))}
+            onPrintDebit={(note) => void handlePrintDocument(buildDebitNoteModel(note))}
+            onDownloadDebit={(note) => void handleDownloadPdf(buildDebitNoteModel(note))}
+            onShareDebit={(note) => void handleShareDocument(buildDebitNoteModel(note))}
+          />
 
           <FinanceTimelineCard
             title={tt('financeDocs.audit.timelineTitle', 'Activity journal')}

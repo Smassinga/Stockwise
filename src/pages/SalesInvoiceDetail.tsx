@@ -11,12 +11,12 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'
 import SalesInvoiceLinesCard from '../components/finance/SalesInvoiceLinesCard'
+import SalesInvoiceAdjustmentHistoryCards from '../components/finance/SalesInvoiceAdjustmentHistoryCards'
 import SalesInvoiceResolutionCard from '../components/finance/SalesInvoiceResolutionCard'
 import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
@@ -1575,6 +1575,34 @@ export default function SalesInvoiceDetailPage() {
     })
   }
 
+  function buildCreditNoteModel(note: SalesCreditNoteRow) {
+    return buildSalesCreditNoteOutputModel(
+      note,
+      creditNoteLinesByNoteId.get(note.id) || [],
+      {
+        brandName: brand.name,
+        logoUrl: brand.logoUrl,
+        lang,
+        originalInvoiceReference: invoice?.internal_reference || '',
+        bankAccounts,
+      },
+    )
+  }
+
+  function buildDebitNoteModel(note: SalesDebitNoteRow) {
+    return buildSalesDebitNoteOutputModel(
+      note,
+      debitNoteLinesByNoteId.get(note.id) || [],
+      {
+        brandName: brand.name,
+        logoUrl: brand.logoUrl,
+        lang,
+        originalInvoiceReference: invoice?.internal_reference || '',
+        bankAccounts,
+      },
+    )
+  }
+
   async function handlePrintAdjustment(model: ReturnType<typeof buildSalesCreditNoteOutputModel> | ReturnType<typeof buildSalesDebitNoteOutputModel>) {
     try {
       await printFinanceDocument(model)
@@ -2111,243 +2139,32 @@ export default function SalesInvoiceDetailPage() {
             formatMoney={(amount) => money(amount, invoice.currency_code)}
           />
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('financeDocs.mz.creditNotes', 'Credit notes')}</CardTitle>
-              <CardDescription className="hidden sm:block">
-                {tt('financeDocs.mz.creditNotesHelp', 'Use credit notes for downward adjustments. Choose a full remaining reversal or a partial line-by-line credit without editing the issued invoice itself.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isIssued ? (
-                canCreateCreditNote ? (
-                  <Button className="w-full sm:w-auto" onClick={() => setCreditDialogOpen(true)}>
-                    {tt('financeDocs.mz.issueCreditNote', 'Issue credit note')}
-                  </Button>
-                ) : (
-                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
-                    {!canIssueSalesAdjustments
-                      ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
-                      : invoiceState?.credit_status === 'fully_credited'
-                      ? tt('financeDocs.mz.creditNotesFullyResolved', 'This invoice is already fully credited. No further credit note can be issued against it.')
-                      : tt('financeDocs.mz.creditNotesPartialResolved', 'This invoice already has credit-note adjustments. Open the credit-note workflow again if more remaining value still needs to be credited.')}
-                  </div>
-                )
-              ) : (
-                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
-                  {tt('financeDocs.mz.creditNotesIssueOnly', 'Credit notes can only be created from issued invoices.')}
-                </div>
-              )}
-
-              {creditNotes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.creditNotesEmpty', 'No credit notes have been issued against this invoice yet.')}</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tt('financeDocs.fields.internalReference', 'Internal reference')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.invoiceDate', 'Date')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.workflow', 'Workflow')}</TableHead>
-                      <TableHead>{tt('orders.notes', 'Notes')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {creditNotes.map((note) => (
-                      <TableRow key={note.id}>
-                        <TableCell className="font-medium">{note.internal_reference}</TableCell>
-                        <TableCell>{shortDate(note.credit_note_date)}</TableCell>
-                        <TableCell>
-                          <Badge variant={note.document_workflow_status === 'issued' ? 'default' : 'secondary'}>
-                            {note.document_workflow_status.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {note.correction_reason_code ? (
-                              <Badge variant="outline">
-                                {getAdjustmentReasonLabel('sales_credit', note.correction_reason_code, lang)}
-                              </Badge>
-                            ) : null}
-                            {note.correction_reason_text ? (
-                              <div className="text-sm text-muted-foreground">{note.correction_reason_text}</div>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{money(note.total_amount, note.currency_code)}</TableCell>
-                        <TableCell className="text-right">
-                          {note.document_workflow_status === 'issued' ? (
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const model = buildSalesCreditNoteOutputModel(
-                                    note,
-                                    creditNoteLinesByNoteId.get(note.id) || [],
-                                    {
-                                      brandName: brand.name,
-                                      logoUrl: brand.logoUrl,
-                                      lang,
-                                      originalInvoiceReference: invoice.internal_reference,
-                                      bankAccounts,
-                                    },
-                                  )
-                                  void handlePrintAdjustment(model)
-                                }}
-                              >
-                                <Printer className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.printInvoice', 'Print')}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const model = buildSalesCreditNoteOutputModel(
-                                    note,
-                                    creditNoteLinesByNoteId.get(note.id) || [],
-                                    {
-                                      brandName: brand.name,
-                                      logoUrl: brand.logoUrl,
-                                      lang,
-                                      originalInvoiceReference: invoice.internal_reference,
-                                      bankAccounts,
-                                    },
-                                  )
-                                  void handleDownloadAdjustmentPdf(model)
-                                }}
-                              >
-                                <Download className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
-                              </Button>
-                            </div>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('financeDocs.mz.debitNotes', 'Debit notes')}</CardTitle>
-              <CardDescription className="hidden sm:block">
-                {tt('financeDocs.mz.debitNotesHelp', 'Use debit notes for upward adjustments, underbilling corrections, and additional value that must remain linked to the issued invoice chain.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isIssued ? (
-                canCreateDebitNote ? (
-                  <Button className="w-full sm:w-auto" onClick={() => setDebitDialogOpen(true)}>
-                    {tt('financeDocs.mz.issueDebitNote', 'Issue debit note')}
-                  </Button>
-                ) : (
-                  <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
-                    {tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
-                  </div>
-                )
-              ) : (
-                <div className="rounded-xl border border-status-warning-border bg-status-warning-muted p-3 text-sm text-status-warning-foreground">
-                  {tt('financeDocs.mz.debitNotesIssueOnly', 'Debit notes can only be created from issued invoices.')}
-                </div>
-              )}
-
-              {debitNotes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tt('financeDocs.mz.debitNotesEmpty', 'No debit notes have been issued against this invoice yet.')}</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tt('financeDocs.fields.internalReference', 'Internal reference')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.invoiceDate', 'Date')}</TableHead>
-                      <TableHead>{tt('financeDocs.fields.workflow', 'Workflow')}</TableHead>
-                      <TableHead>{tt('orders.notes', 'Notes')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.actions', 'Actions')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {debitNotes.map((note) => (
-                      <TableRow key={note.id}>
-                        <TableCell className="font-medium">{note.internal_reference}</TableCell>
-                        <TableCell>{shortDate(note.debit_note_date)}</TableCell>
-                        <TableCell>
-                          <Badge variant={note.document_workflow_status === 'issued' ? 'default' : 'secondary'}>
-                            {note.document_workflow_status.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {note.correction_reason_code ? (
-                              <Badge variant="outline">
-                                {getAdjustmentReasonLabel('sales_debit', note.correction_reason_code, lang)}
-                              </Badge>
-                            ) : null}
-                            {note.correction_reason_text ? (
-                              <div className="text-sm text-muted-foreground">{note.correction_reason_text}</div>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{money(note.total_amount, note.currency_code)}</TableCell>
-                        <TableCell className="text-right">
-                          {note.document_workflow_status === 'issued' ? (
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const model = buildSalesDebitNoteOutputModel(
-                                    note,
-                                    debitNoteLinesByNoteId.get(note.id) || [],
-                                    {
-                                      brandName: brand.name,
-                                      logoUrl: brand.logoUrl,
-                                      lang,
-                                      originalInvoiceReference: invoice.internal_reference,
-                                      bankAccounts,
-                                    },
-                                  )
-                                  void handlePrintAdjustment(model)
-                                }}
-                              >
-                                <Printer className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.printInvoice', 'Print')}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const model = buildSalesDebitNoteOutputModel(
-                                    note,
-                                    debitNoteLinesByNoteId.get(note.id) || [],
-                                    {
-                                      brandName: brand.name,
-                                      logoUrl: brand.logoUrl,
-                                      lang,
-                                      originalInvoiceReference: invoice.internal_reference,
-                                      bankAccounts,
-                                    },
-                                  )
-                                  void handleDownloadAdjustmentPdf(model)
-                                }}
-                              >
-                                <Download className="mr-2 h-4 w-4" />
-                                {tt('financeDocs.mz.downloadPdf', 'Download PDF')}
-                              </Button>
-                            </div>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <SalesInvoiceAdjustmentHistoryCards
+            creditNotes={creditNotes}
+            debitNotes={debitNotes}
+            isActive={isIssued}
+            canCreateCredit={canCreateCreditNote}
+            canCreateDebit={canCreateDebitNote}
+            creditBlockedMessage={
+              !canIssueSalesAdjustments
+                ? tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')
+                : invoiceState?.credit_status === 'fully_credited'
+                  ? tt('financeDocs.mz.creditNotesFullyResolved', 'This invoice is already fully credited. No further credit note can be issued against it.')
+                  : tt('financeDocs.mz.creditNotesPartialResolved', 'This invoice already has credit-note adjustments. Open the credit-note workflow again if more remaining value still needs to be credited.')
+            }
+            debitBlockedMessage={tt('financeDocs.approval.financeAuthorityRequired', 'Finance authority is required for legal-document issue, post, void, adjustment, and settlement actions.')}
+            translate={(key, fallback, params) => tt(key, fallback, params)}
+            formatDate={shortDate}
+            formatMoney={money}
+            creditReasonLabel={(note) => note.correction_reason_code ? getAdjustmentReasonLabel('sales_credit', note.correction_reason_code, lang) : ''}
+            debitReasonLabel={(note) => note.correction_reason_code ? getAdjustmentReasonLabel('sales_debit', note.correction_reason_code, lang) : ''}
+            onOpenCredit={() => setCreditDialogOpen(true)}
+            onOpenDebit={() => setDebitDialogOpen(true)}
+            onPrintCredit={(note) => void handlePrintAdjustment(buildCreditNoteModel(note))}
+            onDownloadCredit={(note) => void handleDownloadAdjustmentPdf(buildCreditNoteModel(note))}
+            onPrintDebit={(note) => void handlePrintAdjustment(buildDebitNoteModel(note))}
+            onDownloadDebit={(note) => void handleDownloadAdjustmentPdf(buildDebitNoteModel(note))}
+          />
 
           <FinanceTimelineCard
             title={tt('financeDocs.audit.timelineTitle', 'Activity journal')}
