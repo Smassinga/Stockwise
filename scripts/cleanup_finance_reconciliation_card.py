@@ -1,0 +1,94 @@
+from pathlib import Path
+
+files = {
+    'sales': Path('src/pages/SalesInvoiceDetail.tsx'),
+    'vendor': Path('src/pages/VendorBillDetail.tsx'),
+}
+
+shared_import = "import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'\n"
+shared_import_replacement = shared_import + "import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'\n"
+
+old_reconciliation_import = """import {
+  financeAgingBucketLabelKey,
+  financeDuePositionLabelKey,
+  financeExceptionGroupLabelKey,
+  financeExceptionLabelKey,
+  financeReviewStateLabelKey,
+  type FinanceReconciliationExceptionRow,
+  type FinanceReconciliationRow,
+  type FinanceReviewState,
+} from '../lib/financeReconciliation'
+import {
+  financeReviewToneClass,
+  loadFinanceReconciliationContext,
+} from '../lib/financeReconciliationContext'
+"""
+new_reconciliation_import = """import {
+  type FinanceReconciliationExceptionRow,
+  type FinanceReconciliationRow,
+} from '../lib/financeReconciliation'
+import { loadFinanceReconciliationContext } from '../lib/financeReconciliationContext'
+"""
+
+replacements = {
+    'sales': {
+        'helper_end': '  const canEditDraft =',
+        'component': """            <FinanceReconciliationReviewCard
+              className="lg:col-span-2"
+              row={reconciliationRow}
+              exceptions={reconciliationExceptions}
+              translate={(key, fallback, params) => tt(key, fallback, params)}
+              formatBaseMoney={(amount) => money(amount, 'MZN')}
+              description={tt('financeDocs.reconciliation.detailHelp', 'Month-close review follows the active finance anchor. Due position, aging, controller state, and any bridge exceptions all use the legal outstanding balance after adjustments and settlement.')}
+              agingHelp={tt('financeDocs.reconciliation.currentAgingHelp', 'Aging is calculated from the current legal outstanding amount, not the gross original invoice.')}
+              needsReviewHelp={tt('financeDocs.reconciliation.needsReviewHelp', 'This invoice remains in the controller review queue.')}
+              resolvedReviewHelp={tt('financeDocs.reconciliation.resolvedReviewHelp', 'This invoice does not currently require controller intervention.')}
+              emptyHelp={tt('financeDocs.reconciliation.draftOnlyHelp', 'This draft is not part of the live reconciliation register yet. Issue-time blockers still appear below if the legal anchor is not ready to be issued.')}
+            />
+""",
+    },
+    'vendor': {
+        'helper_end': '  const canSubmitDraftForApproval =',
+        'component': """            <FinanceReconciliationReviewCard
+              row={reconciliationRow}
+              exceptions={reconciliationExceptions}
+              translate={(key, fallback, params) => tt(key, fallback, params)}
+              formatBaseMoney={formatBaseMoney}
+              description={tt('financeDocs.reconciliation.apDetailHelp', 'Month-close review follows the posted vendor bill as the AP anchor. Due position, aging, controller state, and bridge exceptions all use the legal liability after supplier adjustments and payments.')}
+              agingHelp={tt('financeDocs.reconciliation.currentAgingHelp', 'Aging is calculated from the current legal outstanding amount, not the gross original document value.')}
+              needsReviewHelp={tt('financeDocs.reconciliation.needsReviewHelp', 'This document remains in the controller review queue.')}
+              resolvedReviewHelp={tt('financeDocs.reconciliation.resolvedReviewHelp', 'This document does not currently require controller intervention.')}
+              emptyHelp={tt('financeDocs.reconciliation.apDraftHelp', 'This vendor bill is not yet part of the live reconciliation register. Posted AP anchors and any bridge exceptions appear here once the legal document exists.')}
+            />
+""",
+    },
+}
+
+for key, path in files.items():
+    text = path.read_text()
+
+    if text.count(shared_import) != 1:
+        raise SystemExit(f'{path}: expected one FinanceTimelineCard import, found {text.count(shared_import)}')
+    text = text.replace(shared_import, shared_import_replacement, 1)
+
+    if text.count(old_reconciliation_import) != 1:
+        raise SystemExit(f'{path}: reconciliation import block mismatch')
+    text = text.replace(old_reconciliation_import, new_reconciliation_import, 1)
+
+    helper_start = text.find('  const reconciliationDuePositionLabel =')
+    helper_end = text.find(replacements[key]['helper_end'], helper_start)
+    if helper_start < 0 or helper_end < 0:
+        raise SystemExit(f'{path}: reconciliation label helper region not found')
+    text = text[:helper_start] + text[helper_end:]
+
+    jsx_start_marker = '            {reconciliationRow || reconciliationExceptions.length > 0 ? (\n'
+    jsx_tail_marker = '          </div>\n\n          <FinanceChainCard'
+    jsx_start = text.find(jsx_start_marker)
+    jsx_tail = text.find(jsx_tail_marker, jsx_start)
+    if jsx_start < 0 or jsx_tail < 0:
+        raise SystemExit(f'{path}: reconciliation JSX boundaries not found')
+    if text.find(jsx_start_marker, jsx_start + 1) >= 0:
+        raise SystemExit(f'{path}: multiple reconciliation JSX starts found')
+
+    text = text[:jsx_start] + replacements[key]['component'] + text[jsx_tail:]
+    path.write_text(text)
