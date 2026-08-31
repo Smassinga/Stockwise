@@ -33,10 +33,15 @@ export const CanManageUsers: readonly ('MANAGER' | 'ADMIN' | 'OWNER')[] = [
 ];
 '''
 
+
+def normalize_text(value: str) -> str:
+    return value.replace('\r\n', '\n').rstrip('\n')
+
+
 roles_path = Path('src/lib/roles.ts')
 if not roles_path.exists():
     raise SystemExit('legacy roles.ts is already absent')
-if roles_path.read_text(encoding='utf-8') != BASE_ROLES:
+if normalize_text(roles_path.read_text(encoding='utf-8')) != normalize_text(BASE_ROLES):
     raise SystemExit('roles.ts changed from the reviewed compatibility shim; refusing mechanical migration')
 
 permissions_path = Path('src/lib/permissions.ts')
