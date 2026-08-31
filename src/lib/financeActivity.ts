@@ -1,4 +1,4 @@
-import { supabase } from './db'
+import { supabase } from './supabase'
 import { maskFinanceAccountNumber } from './financeExport'
 import {
   FINANCE_RECONCILIATION_VIEW,

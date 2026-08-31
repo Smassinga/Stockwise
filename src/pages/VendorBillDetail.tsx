@@ -21,7 +21,7 @@ import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { useOrg } from '../hooks/useOrg'
 import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
-import { supabase } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import {
   financeActorLabel,
   financeEventSummary,

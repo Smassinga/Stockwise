@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { supabase } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { buildConvGraph, familySortIndex, isReusableUomCode, normalizeUomCodeInput, tryConvertQty, uomCodeLooksGenerated, type ConvRow } from '../lib/uom'

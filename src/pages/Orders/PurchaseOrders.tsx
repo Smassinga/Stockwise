@@ -1,6 +1,6 @@
 // src/pages/Orders/PurchaseOrders.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '../../lib/db'
+import { supabase } from '../../lib/supabase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
