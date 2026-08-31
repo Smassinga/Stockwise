@@ -24,6 +24,11 @@ import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { financeCan, isFinanceDraftEditable } from '../lib/permissions'
 import { supabase } from '../lib/supabase'
 import { formatMoneyBase } from '../lib/currency'
+import {
+  formatFinanceDraftNumber as formatDraftNumber,
+  parseFinanceDraftNumber as parseDraftNumber,
+  roundFinanceAmount as roundMoney,
+} from '../lib/financeDraftNumbers'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import {
   financeActorLabel,
@@ -139,23 +144,6 @@ type CreditAvailabilityRow = {
   availableNet: number
   availableTax: number
   availableGross: number
-}
-
-function roundMoney(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
-
-function parseDraftNumber(value: string) {
-  const normalized = String(value || '').replace(',', '.').trim()
-  if (!normalized) return 0
-  const numeric = Number(normalized)
-  return Number.isFinite(numeric) ? numeric : 0
-}
-
-function formatDraftNumber(value: number, digits = 2) {
-  if (value <= 0) return ''
-  const fixed = value.toFixed(digits)
-  return fixed.replace(/\.00$/, '').replace(/(\.\d*?)0+$/, '$1')
 }
 
 function parseIsoDateOnly(value?: string | null) {

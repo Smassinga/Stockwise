@@ -21,6 +21,11 @@ import { useBrandForDocs } from '../hooks/useBrandForDocs'
 import { useOrg } from '../hooks/useOrg'
 import { getCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
+import {
+  formatFinanceDraftNumber as formatDraftNumber,
+  parseFinanceDraftNumber as parseDraftNumber,
+  roundFinanceAmount as roundMoney,
+} from '../lib/financeDraftNumbers'
 import { supabase } from '../lib/supabase'
 import {
   financeActorLabel,
@@ -140,23 +145,6 @@ function approvalTone(status: VendorBillStateRow['approval_status']) {
     default:
       return 'outline'
   }
-}
-
-function roundMoney(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
-
-function parseDraftNumber(value: string) {
-  const normalized = String(value || '').replace(',', '.').trim()
-  if (!normalized) return 0
-  const numeric = Number(normalized)
-  return Number.isFinite(numeric) ? numeric : 0
-}
-
-function formatDraftNumber(value: number, digits = 2) {
-  if (value <= 0) return ''
-  const fixed = value.toFixed(digits)
-  return fixed.replace(/\.00$/, '').replace(/(\.\d*?)0+$/, '$1')
 }
 
 function isoToday() {
