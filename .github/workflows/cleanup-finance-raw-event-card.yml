@@ -1,0 +1,41 @@
+name: CLEANUP-6B finance raw event card
+
+on:
+  push:
+    branches:
+      - cleanup/finance-raw-event-card-20260831
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Extract raw event registry presentation
+        run: python scripts/cleanup_finance_raw_event_card.py
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint:js
+      - name: Type-check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Commit validated extraction and remove temporary staging files
+        run: |
+          rm .github/workflows/cleanup-finance-raw-event-card.yml
+          rm scripts/cleanup_finance_raw_event_card.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/SalesInvoiceDetail.tsx src/pages/VendorBillDetail.tsx src/components/finance/FinanceRawEventRegistryCard.tsx .github/workflows/cleanup-finance-raw-event-card.yml scripts/cleanup_finance_raw_event_card.py
+          git commit -m 'refactor: extract finance raw event registry card'
+          git push origin HEAD:cleanup/finance-raw-event-card-20260831
