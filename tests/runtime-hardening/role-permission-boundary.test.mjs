@@ -6,6 +6,7 @@ import test from 'node:test'
 const root = new URL('../../', import.meta.url)
 const read = async file => readFile(new URL(file, root), 'utf8')
 const legacyRoleImport = /^\s*import\b[^\n]*\bfrom\s+['"][^'"]*\/roles['"]\s*;?\s*$/m
+const legacyRoleDynamicImport = /\bimport\(\s*['"][^'"]*\/roles['"]\s*\)/
 
 async function sourceFiles(dir) {
   const entries = await readdir(new URL(dir, root), { withFileTypes: true })
@@ -33,6 +34,7 @@ test('legacy role compatibility module and executable imports are removed', asyn
   const files = await sourceFiles('src')
   for (const file of files) {
     const source = await read(file)
-    assert.doesNotMatch(source, legacyRoleImport, `${file} still imports the legacy roles module`)
+    assert.doesNotMatch(source, legacyRoleImport, `${file} still has a top-level legacy roles import`)
+    assert.doesNotMatch(source, legacyRoleDynamicImport, `${file} still has a dynamic legacy roles import`)
   }
 })
