@@ -8,7 +8,10 @@ files = {
 import_anchor = "import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'\n"
 import_replacement = import_anchor + "import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'\n"
 
-start_marker = "            <Card className=\"border-border/80 shadow-sm\">\n              <CardHeader>\n                <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>"
+start_markers = {
+    'sales': "            <Card className=\"border-border/80 shadow-sm\">\n              <CardHeader>\n                <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>",
+    'vendor': "          <Card className=\"border-border/80 shadow-sm\">\n            <CardHeader>\n              <CardTitle>{tt('financeDocs.audit.rawTitle', 'Raw event registry')}</CardTitle>",
+}
 
 replacements = {
     'sales': """            <FinanceRawEventRegistryCard
@@ -33,7 +36,7 @@ for key, path in files.items():
     if text.count("financeDocs.audit.rawTitle") != 1:
         raise SystemExit(f'{path}: expected one raw event registry title, found {text.count("financeDocs.audit.rawTitle")}')
 
-    start = text.find(start_marker)
+    start = text.find(start_markers[key])
     if start < 0:
         raise SystemExit(f'{path}: raw event registry start not found')
 
