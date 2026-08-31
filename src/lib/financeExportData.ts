@@ -1,4 +1,4 @@
-import { supabase } from './db'
+import { supabase } from './supabase'
 import { loadCompanyExportHeader } from './excelExport'
 import type {
   FinanceExportCompany,

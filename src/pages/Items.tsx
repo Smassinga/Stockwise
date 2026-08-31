@@ -2,7 +2,7 @@
 import toast from 'react-hot-toast'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, Download, ExternalLink, Package, Pencil, Plus, Settings2, Trash2, Upload } from 'lucide-react'
-import { supabase } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { useI18n, withI18nFallback } from '../lib/i18n'

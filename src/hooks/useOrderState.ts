@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import {
   PURCHASE_ORDER_STATE_VIEW,
   SALES_ORDER_STATE_VIEW,

@@ -1,6 +1,6 @@
 // src/pages/Currency.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'

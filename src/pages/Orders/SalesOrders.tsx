@@ -1,6 +1,6 @@
 // src/pages/Orders/SalesOrders.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '../../lib/db'
+import { supabase } from '../../lib/supabase'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 

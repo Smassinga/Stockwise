@@ -10,7 +10,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react'
-import { supabase } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
