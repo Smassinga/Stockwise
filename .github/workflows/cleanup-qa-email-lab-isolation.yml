@@ -1,0 +1,68 @@
+name: CLEANUP-7A QA email lab isolation
+
+on:
+  push:
+    branches:
+      - cleanup/qa-email-lab-isolation-20260831
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    env:
+      VITE_SITE_URL: https://stockwiseapp.com
+      VITE_SUPABASE_URL: https://stockwise-ci.invalid
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: cleanup/qa-email-lab-isolation-20260831
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Apply guarded QA lab isolation
+        run: python scripts/cleanup_qa_email_lab_isolation.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run QA lab hardening regression
+        run: node --test tests/runtime-hardening/email-template-lab-boundary.test.mjs
+
+      - name: Lint
+        run: npm run lint:js
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build production bundle with lab disabled by default
+        run: npm run build
+
+      - name: Commit validated isolation and remove temporary staging files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/cleanup_qa_email_lab_isolation.py .github/workflows/cleanup-qa-email-lab-isolation.yml
+          git add supabase/functions/email-template-lab/index.ts src/pages/PlatformControl.tsx docs/platform-admin-runbook.md tests/runtime-hardening/email-template-lab-boundary.test.mjs
+          mapfile -t changed < <(git diff --cached --name-only | sort)
+          expected=(
+            "docs/platform-admin-runbook.md"
+            "src/pages/PlatformControl.tsx"
+            "supabase/functions/email-template-lab/index.ts"
+            "tests/runtime-hardening/email-template-lab-boundary.test.mjs"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          if [[ "${changed[*]}" != "${expected_sorted[*]}" ]]; then
+            printf 'Unexpected staged files:\n%s\n' "${changed[*]}"
+            exit 1
+          fi
+          git commit -m "security: isolate QA email template lab"
+          git push origin HEAD:cleanup/qa-email-lab-isolation-20260831
