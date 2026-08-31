@@ -182,6 +182,7 @@ import {
 
 import { DetailSection, Field, SummaryItem } from './growthBatches/GrowthBatchDetailPrimitives'
 import GrowthBatchCompletionSection from './growthBatches/GrowthBatchCompletionSection'
+import GrowthBatchLossSection from './growthBatches/GrowthBatchLossSection'
 
 export default function GrowthBatches() {
   const { lang, t } = useI18n()
@@ -2965,74 +2966,19 @@ export default function GrowthBatches() {
                     onOpenCompletionReversal={openCompletionReversalDialog}
                   />
 
-                  <TabsContent value="lifecycle">
-                    <DetailSection
-                      title={tt('productionUx.growth.lossHistory', 'Mortality and shrinkage')}
-                      description={tt('productionUx.growth.lossHistoryHelp', 'Loss events reduce the current batch quantity and/or latest total weight. They do not create stock movements, finance rows, or cost write-offs.')}
-                      action={detailBatch.status === 'active' && canOperate && num(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty) > 0 ? (
-                        <Button size="sm" onClick={openLossDialog} disabled={saving}>
-                          <AlertTriangle className="mr-2 h-4 w-4" />
-                          {tt('productionUx.growth.actions.loss', 'Record loss')}
-                        </Button>
-                      ) : null}
-                    >
-                      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                        <SummaryItem label={tt('productionUx.growth.currentQuantity', 'Current quantity')} value={`${qty(detailBatch.current_primary_qty ?? detailBatch.opening_primary_qty)} ${detailBatch.primary_uom_code || ''}`.trim()} />
-                        <SummaryItem label={tt('productionUx.growth.latestWeight', 'Latest total weight')} value={detailBatch.latest_total_weight == null ? tt('productionUx.common.notRecorded', 'Not recorded') : qtyWithUom(detailBatch.latest_total_weight, detailBatch.weight_uom_code)} />
-                        <SummaryItem label={tt('productionUx.growth.unreversedLosses', 'Unreversed losses')} value={detailBatch.unreversed_loss_event_count ?? 0} />
-                      </div>
-                      {detailErrors.losses ? (
-                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.evidenceUnavailable', 'Evidence unavailable')} description={tt('productionUx.growth.historyNotEmpty', 'This read failed and has not been treated as an empty history.')} compact />
-                      ) : losses.length === 0 ? (
-                        <PremiumEmptyState icon={<AlertTriangle />} title={tt('productionUx.growth.noLosses', 'No mortality or shrinkage yet')} description={tt('productionUx.growth.noLossesHelp', 'Record loss only for active batches when quantity or weight has actually reduced.')} compact />
-                      ) : (
-                        <div className="space-y-3">
-                          {losses.map((loss) => {
-                            const canReverseLoss = canManage && loss.reversal_status !== 'reversed'
-                            return (
-                              <div key={loss.id} className="rounded-xl border border-card-border bg-card p-4">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <PremiumStatusBadge tone="warning">{domainLabel(loss.loss_type)}</PremiumStatusBadge>
-                                      {loss.reversal_status === 'reversed' ? <Badge variant="outline">{tt('productionUx.status.reversed', 'Reversed')}</Badge> : null}
-                                    </div>
-                                    <div className="mt-2 font-medium">{domainLabel(loss.reason_code)}</div>
-                                    <div className="text-sm text-muted-foreground">{loss.event_reference} {tt('productionUx.common.by', 'by')} {loss.actor_display_name || tt('productionUx.common.teamMember', 'Team member')}</div>
-                                  </div>
-                                  <div className="text-right text-sm font-semibold">
-                                    {loss.quantity_lost != null ? <div>-{qtyWithUom(loss.quantity_lost, loss.quantity_uom_code || uomById.get(loss.quantity_uom_id || '')?.code)}</div> : null}
-                                    {loss.weight_lost != null ? <div>-{qtyWithUom(loss.weight_lost, loss.weight_uom_code || uomById.get(loss.weight_uom_id || '')?.code)}</div> : null}
-                                    <div className="text-xs font-normal text-muted-foreground">{tt('productionUx.growth.sequenceShort', 'Seq')} {loss.event_sequence} / {compactDate(loss.event_effective_date)}</div>
-                                  </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm sm:grid-cols-2">
-                                  <SummaryItem label={tt('productionUx.growth.quantity', 'Quantity')} value={`${qty(loss.quantity_before)} -> ${qty(loss.quantity_after)} ${loss.quantity_uom_code || detailBatch.primary_uom_code || ''}`.trim()} />
-                                  <SummaryItem label={tt('productionUx.growth.weight', 'Weight')} value={loss.total_weight_before == null && loss.total_weight_after == null ? tt('productionUx.common.notAffected', 'Not affected') : `${qty(loss.total_weight_before)} -> ${qty(loss.total_weight_after)} ${loss.weight_uom_code || detailBatch.weight_uom_code || ''}`.trim()} />
-                                </div>
-                                {loss.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{loss.notes}</p> : null}
-                                {loss.reversal_status === 'reversed' ? (
-                                  <p className="mt-3 rounded-lg border border-card-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                                    {tt('productionUx.growth.lossReversalEvidence', 'Reversed by {reference} on {date}. {reason}')
-                                      .replace('{reference}', loss.reversal_event_reference || tt('productionUx.growth.reversalEvent', 'reversal event'))
-                                      .replace('{date}', compactDate(loss.reversal_effective_date))
-                                      .replace('{reason}', loss.reversal_reason || tt('productionUx.growth.reasonRecorded', 'Reason recorded.'))}
-                                  </p>
-                                ) : canReverseLoss ? (
-                                  <div className="mt-3">
-                                    <Button type="button" size="sm" variant="outline" onClick={() => openLossReversalDialog(loss)} disabled={saving}>
-                                      <RotateCcw className="mr-2 h-4 w-4" />
-                                      {tt('productionUx.growth.reverseLoss', 'Reverse loss event')}
-                                    </Button>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </DetailSection>
-                  </TabsContent>
+                  <GrowthBatchLossSection
+                    batch={detailBatch}
+                    losses={losses}
+                    hasHistoryError={Boolean(detailErrors.losses)}
+                    canOperate={canOperate}
+                    canManage={canManage}
+                    saving={saving}
+                    translate={tt}
+                    domainLabel={domainLabel}
+                    resolveUomCode={(uomId) => (uomId ? uomById.get(uomId)?.code : undefined)}
+                    onOpenLoss={openLossDialog}
+                    onOpenLossReversal={openLossReversalDialog}
+                  />
 
                   <TabsContent value="measurements">
                     <DetailSection
