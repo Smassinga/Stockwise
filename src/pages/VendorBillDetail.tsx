@@ -17,6 +17,7 @@ import FinanceChainCard, { type FinanceChainItem } from '../components/finance/F
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'
 import VendorBillLinesCard from '../components/finance/VendorBillLinesCard'
+import VendorBillResolutionCard from '../components/finance/VendorBillResolutionCard'
 import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
@@ -1720,97 +1721,59 @@ export default function VendorBillDetailPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/80 shadow-sm">
-              <CardHeader>
-                <CardTitle>{tt('financeDocs.vendorBills.settlementTitle', 'Settlement and resolution')}</CardTitle>
-                <CardDescription className="hidden sm:block">
-                  {tt('financeDocs.vendorBills.settlementHelp', 'Posted vendor bills remain the AP settlement anchor. Supplier credits reduce the legal liability, supplier debits increase it, and payments reduce the same live document chain.')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {row.document_workflow_status !== 'posted' ? (
-                  <div className="border-l-2 border-status-neutral-border bg-status-neutral-muted px-4 py-3 text-sm text-status-neutral-foreground">
-                    {tt('financeDocs.vendorBills.settlementAfterPosting', 'Settlement begins after this draft is posted. Until then, the linked purchase order remains the active operational anchor.')}
-                  </div>
-                ) : (
-                  <>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.vendorBills.originalTotal', 'Original total')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{formatBaseMoney(row.total_amount_base)}</div>
-                      <div className="text-xs text-muted-foreground">{formatDocumentMoney(row.total_amount, row.currency_code)}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.vendorBills.creditedTotal', 'Credited total')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{formatBaseMoney(row.credited_total_base)}</div>
-                      <div className="text-xs text-muted-foreground">{tt('financeDocs.vendorBills.creditNotesCount', '{count} supplier credit notes posted', { count: row.credit_note_count })}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.vendorBills.debitedTotal', 'Debited total')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{formatBaseMoney(row.debited_total_base)}</div>
-                      <div className="text-xs text-muted-foreground">{tt('financeDocs.vendorBills.debitNotesCount', '{count} supplier debit notes posted', { count: row.debit_note_count })}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{formatBaseMoney(row.current_legal_total_base)}</div>
-                      <div className="text-xs text-muted-foreground">{formatDocumentMoney(currentLegalDocumentTotal, row.currency_code)}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{formatBaseMoney(row.settled_base)}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.vendorBills.paymentsBreakdown', 'Cash {cash} · Bank {bank}', {
-                          cash: formatBaseMoney(row.cash_paid_base),
-                          bank: formatBaseMoney(row.bank_paid_base),
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums font-semibold">{formatBaseMoney(row.outstanding_base)}</div>
-                      <div className="text-xs text-muted-foreground">{tt('financeDocs.vendorBills.anchorReference', 'Settlement anchor: vendor bill')}</div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
-                  {row.adjustment_status === 'credited_and_debited'
-                    ? tt('financeDocs.vendorBills.adjustmentSummaryMixed', 'This vendor bill already has both supplier credit and supplier debit adjustments. The current AP total reflects the full net document chain before payments are deducted.')
-                    : row.adjustment_status === 'debited'
-                      ? tt('financeDocs.vendorBills.adjustmentSummaryDebited', 'Supplier debit notes have increased the legal AP amount on this bill. Outstanding liability reflects those posted upward adjustments.')
-                      : row.credit_status === 'partially_credited'
-                        ? tt('financeDocs.vendorBills.adjustmentSummaryCredited', 'Supplier credit notes have reduced part of this AP document. Outstanding liability reflects the remaining legal amount after credits and payments.')
-                        : row.credit_status === 'fully_credited'
-                          ? tt('financeDocs.vendorBills.adjustmentSummaryFullyCredited', 'This vendor bill has been fully credited. It no longer carries an open supplier liability.')
-                          : tt('financeDocs.vendorBills.adjustmentSummaryOpen', 'No AP adjustment documents have changed this vendor bill yet.')}
-                </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            <VendorBillResolutionCard
+              title={tt('financeDocs.vendorBills.settlementTitle', 'Settlement and resolution')}
+              description={tt('financeDocs.vendorBills.settlementHelp', 'Posted vendor bills remain the AP settlement anchor. Supplier credits reduce the legal liability, supplier debits increase it, and payments reduce the same live document chain.')}
+              isActive={row.document_workflow_status === 'posted'}
+              inactiveMessage={tt('financeDocs.vendorBills.settlementAfterPosting', 'Settlement begins after this draft is posted. Until then, the linked purchase order remains the active operational anchor.')}
+              metrics={[
+                {
+                  label: tt('financeDocs.vendorBills.originalTotal', 'Original total'),
+                  value: formatBaseMoney(row.total_amount_base),
+                  help: formatDocumentMoney(row.total_amount, row.currency_code),
+                },
+                {
+                  label: tt('financeDocs.vendorBills.creditedTotal', 'Credited total'),
+                  value: formatBaseMoney(row.credited_total_base),
+                  help: tt('financeDocs.vendorBills.creditNotesCount', '{count} supplier credit notes posted', { count: row.credit_note_count }),
+                },
+                {
+                  label: tt('financeDocs.vendorBills.debitedTotal', 'Debited total'),
+                  value: formatBaseMoney(row.debited_total_base),
+                  help: tt('financeDocs.vendorBills.debitNotesCount', '{count} supplier debit notes posted', { count: row.debit_note_count }),
+                },
+                {
+                  label: tt('financeDocs.vendorBills.currentLegalAmount', 'Current AP total'),
+                  value: formatBaseMoney(row.current_legal_total_base),
+                  help: formatDocumentMoney(currentLegalDocumentTotal, row.currency_code),
+                },
+                {
+                  label: tt('settlements.settledAmount', 'Settled'),
+                  value: formatBaseMoney(row.settled_base),
+                  help: tt('financeDocs.vendorBills.paymentsBreakdown', 'Cash {cash} · Bank {bank}', {
+                    cash: formatBaseMoney(row.cash_paid_base),
+                    bank: formatBaseMoney(row.bank_paid_base),
+                  }),
+                },
+                {
+                  label: tt('settlements.outstandingAmount', 'Outstanding'),
+                  value: formatBaseMoney(row.outstanding_base),
+                  help: tt('financeDocs.vendorBills.anchorReference', 'Settlement anchor: vendor bill'),
+                  emphasize: true,
+                },
+              ]}
+              summary={
+                row.adjustment_status === 'credited_and_debited'
+                  ? tt('financeDocs.vendorBills.adjustmentSummaryMixed', 'This vendor bill already has both supplier credit and supplier debit adjustments. The current AP total reflects the full net document chain before payments are deducted.')
+                  : row.adjustment_status === 'debited'
+                    ? tt('financeDocs.vendorBills.adjustmentSummaryDebited', 'Supplier debit notes have increased the legal AP amount on this bill. Outstanding liability reflects those posted upward adjustments.')
+                    : row.credit_status === 'partially_credited'
+                      ? tt('financeDocs.vendorBills.adjustmentSummaryCredited', 'Supplier credit notes have reduced part of this AP document. Outstanding liability reflects the remaining legal amount after credits and payments.')
+                      : row.credit_status === 'fully_credited'
+                        ? tt('financeDocs.vendorBills.adjustmentSummaryFullyCredited', 'This vendor bill has been fully credited. It no longer carries an open supplier liability.')
+                        : tt('financeDocs.vendorBills.adjustmentSummaryOpen', 'No AP adjustment documents have changed this vendor bill yet.')
+              }
+            />
 
             <FinanceReconciliationReviewCard
               row={reconciliationRow}

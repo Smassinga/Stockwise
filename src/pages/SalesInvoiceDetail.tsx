@@ -17,6 +17,7 @@ import FinanceChainCard, { type FinanceChainItem } from '../components/finance/F
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'
 import SalesInvoiceLinesCard from '../components/finance/SalesInvoiceLinesCard'
+import SalesInvoiceResolutionCard from '../components/finance/SalesInvoiceResolutionCard'
 import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
@@ -1997,114 +1998,65 @@ export default function SalesInvoiceDetailPage() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card className="border-border/80 shadow-sm lg:col-span-2">
-              <CardHeader>
-                <CardTitle>{tt('financeDocs.mz.resolutionTitle', 'Settlement and resolution')}</CardTitle>
-                <CardDescription className="hidden sm:block">
-                  {tt('financeDocs.mz.resolutionHelp', 'Once issued, the invoice becomes the receivable anchor. Receipts, credit notes, and debit notes all recalculate the same legal balance instead of leaving the original order as a duplicate settlement target.')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {!isIssued ? (
-                  <div className="border-l-2 border-status-neutral-border bg-status-neutral-muted px-4 py-3 text-sm text-status-neutral-foreground">
-                    {tt('financeDocs.mz.settlementAfterIssue', 'Settlement begins after this draft is issued. Until then, the linked sales order remains the active operational anchor.')}
-                  </div>
-                ) : (
-                  <>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant={resolutionTone(invoiceState?.resolution_status)}>{resolutionStatusLabel}</Badge>
-                  <Badge variant={invoiceState?.credit_status === 'fully_credited' ? 'default' : 'outline'}>{creditStatusLabel}</Badge>
-                  <Badge variant={invoiceState?.adjustment_status === 'debited' || invoiceState?.adjustment_status === 'credited_and_debited' ? 'outline' : 'secondary'}>{adjustmentStatusLabel}</Badge>
-                  <Badge variant={invoiceState?.settlement_status === 'overdue' ? 'destructive' : 'secondary'}>{settlementStatusLabel}</Badge>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.originalAmount', 'Original total')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{money(invoiceState?.total_amount_base || invoice.total_amount_mzn, 'MZN')}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.mz.originalAmountHelp', 'Issued invoice total before receipts and credit notes')}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.settledAmount', 'Settled')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{money(invoiceState?.settled_base || 0, 'MZN')}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.mz.receiptsBreakdown', 'Cash {cash} · Bank {bank}', {
-                          cash: money(invoiceState?.cash_received_base || 0, 'MZN'),
-                          bank: money(invoiceState?.bank_received_base || 0, 'MZN'),
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.creditedAmount', 'Credited')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{money(invoiceState?.credited_total_base || 0, 'MZN')}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.mz.creditNotesCount', '{count} credit notes issued', { count: invoiceState?.credit_note_count || 0 })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.debitedAmount', 'Debited')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{money(invoiceState?.debited_total_base || 0, 'MZN')}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.mz.debitNotesCount', '{count} debit notes issued', { count: invoiceState?.debit_note_count || 0 })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.mz.currentLegalAmount', 'Current legal amount')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums">{money(invoiceState?.current_legal_total_base || invoice.total_amount_mzn, 'MZN')}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.mz.currentLegalAmountHelp', 'Original invoice minus credits plus debits')}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-border/70 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      <div className="font-mono tabular-nums font-semibold">{money(invoiceState?.outstanding_base || 0, 'MZN')}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tt('financeDocs.mz.anchorReference', 'Settlement anchor: issued sales invoice')}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
-                  {invoiceState?.credit_status === 'fully_credited'
-                    ? tt('financeDocs.mz.invoiceResolvedFullyCredited', 'This invoice has been fully credited. It no longer carries an open receivable balance and should be treated as operationally resolved.')
-                    : invoiceState?.adjustment_status === 'credited_and_debited'
-                      ? tt('financeDocs.mz.invoiceResolvedCreditedAndDebited', 'This invoice has both credit and debit note adjustments. The current legal amount reflects the net chain before receipts are deducted.')
-                      : invoiceState?.adjustment_status === 'debited'
-                        ? tt('financeDocs.mz.invoiceResolvedDebited', 'This invoice has debit-note adjustments that increased the legal value of the receivable. Outstanding exposure reflects the adjusted amount.')
-                    : invoiceState?.credit_status === 'partially_credited'
-                      ? tt('financeDocs.mz.invoiceResolvedPartiallyCredited', 'This invoice has already been partially credited. The remaining balance reflects receipts and issued credit notes together.')
-                      : tt('financeDocs.mz.invoiceResolvedOpen', 'Outstanding exposure now belongs to this invoice, not to the linked sales order.')}
-                </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            <SalesInvoiceResolutionCard
+              title={tt('financeDocs.mz.resolutionTitle', 'Settlement and resolution')}
+              description={tt('financeDocs.mz.resolutionHelp', 'Once issued, the invoice becomes the receivable anchor. Receipts, credit notes, and debit notes all recalculate the same legal balance instead of leaving the original order as a duplicate settlement target.')}
+              isActive={isIssued}
+              inactiveMessage={tt('financeDocs.mz.settlementAfterIssue', 'Settlement begins after this draft is issued. Until then, the linked sales order remains the active operational anchor.')}
+              badges={[
+                { label: resolutionStatusLabel, variant: resolutionTone(invoiceState?.resolution_status) },
+                { label: creditStatusLabel, variant: invoiceState?.credit_status === 'fully_credited' ? 'default' : 'outline' },
+                { label: adjustmentStatusLabel, variant: invoiceState?.adjustment_status === 'debited' || invoiceState?.adjustment_status === 'credited_and_debited' ? 'outline' : 'secondary' },
+                { label: settlementStatusLabel, variant: invoiceState?.settlement_status === 'overdue' ? 'destructive' : 'secondary' },
+              ]}
+              metrics={[
+                {
+                  label: tt('financeDocs.mz.originalAmount', 'Original total'),
+                  value: money(invoiceState?.total_amount_base || invoice.total_amount_mzn, 'MZN'),
+                  help: tt('financeDocs.mz.originalAmountHelp', 'Issued invoice total before receipts and credit notes'),
+                },
+                {
+                  label: tt('settlements.settledAmount', 'Settled'),
+                  value: money(invoiceState?.settled_base || 0, 'MZN'),
+                  help: tt('financeDocs.mz.receiptsBreakdown', 'Cash {cash} · Bank {bank}', {
+                    cash: money(invoiceState?.cash_received_base || 0, 'MZN'),
+                    bank: money(invoiceState?.bank_received_base || 0, 'MZN'),
+                  }),
+                },
+                {
+                  label: tt('financeDocs.mz.creditedAmount', 'Credited'),
+                  value: money(invoiceState?.credited_total_base || 0, 'MZN'),
+                  help: tt('financeDocs.mz.creditNotesCount', '{count} credit notes issued', { count: invoiceState?.credit_note_count || 0 }),
+                },
+                {
+                  label: tt('financeDocs.mz.debitedAmount', 'Debited'),
+                  value: money(invoiceState?.debited_total_base || 0, 'MZN'),
+                  help: tt('financeDocs.mz.debitNotesCount', '{count} debit notes issued', { count: invoiceState?.debit_note_count || 0 }),
+                },
+                {
+                  label: tt('financeDocs.mz.currentLegalAmount', 'Current legal amount'),
+                  value: money(invoiceState?.current_legal_total_base || invoice.total_amount_mzn, 'MZN'),
+                  help: tt('financeDocs.mz.currentLegalAmountHelp', 'Original invoice minus credits plus debits'),
+                },
+                {
+                  label: tt('settlements.outstandingAmount', 'Outstanding'),
+                  value: money(invoiceState?.outstanding_base || 0, 'MZN'),
+                  help: tt('financeDocs.mz.anchorReference', 'Settlement anchor: issued sales invoice'),
+                  emphasize: true,
+                },
+              ]}
+              summary={
+                invoiceState?.credit_status === 'fully_credited'
+                  ? tt('financeDocs.mz.invoiceResolvedFullyCredited', 'This invoice has been fully credited. It no longer carries an open receivable balance and should be treated as operationally resolved.')
+                  : invoiceState?.adjustment_status === 'credited_and_debited'
+                    ? tt('financeDocs.mz.invoiceResolvedCreditedAndDebited', 'This invoice has both credit and debit note adjustments. The current legal amount reflects the net chain before receipts are deducted.')
+                    : invoiceState?.adjustment_status === 'debited'
+                      ? tt('financeDocs.mz.invoiceResolvedDebited', 'This invoice has debit-note adjustments that increased the legal value of the receivable. Outstanding exposure reflects the adjusted amount.')
+                      : invoiceState?.credit_status === 'partially_credited'
+                        ? tt('financeDocs.mz.invoiceResolvedPartiallyCredited', 'This invoice has already been partially credited. The remaining balance reflects receipts and issued credit notes together.')
+                        : tt('financeDocs.mz.invoiceResolvedOpen', 'Outstanding exposure now belongs to this invoice, not to the linked sales order.')
+              }
+            />
 
             {!isDraft ? <div className="lg:col-span-2"><ReceiptActions salesInvoiceId={invoice.id} /></div> : null}
             {invoice.document_workflow_status === 'issued' && companyId ? (
