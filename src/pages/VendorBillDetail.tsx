@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
+import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { useBrandForDocs } from '../hooks/useBrandForDocs'
@@ -51,19 +52,10 @@ import {
   type VendorBillStateRow,
 } from '../lib/financeDocuments'
 import {
-  financeAgingBucketLabelKey,
-  financeDuePositionLabelKey,
-  financeExceptionGroupLabelKey,
-  financeExceptionLabelKey,
-  financeReviewStateLabelKey,
   type FinanceReconciliationExceptionRow,
   type FinanceReconciliationRow,
-  type FinanceReviewState,
 } from '../lib/financeReconciliation'
-import {
-  financeReviewToneClass,
-  loadFinanceReconciliationContext,
-} from '../lib/financeReconciliationContext'
+import { loadFinanceReconciliationContext } from '../lib/financeReconciliationContext'
 import {
   buildVendorBillOutputModel,
   buildVendorCreditNoteOutputModel,
@@ -809,74 +801,6 @@ export default function VendorBillDetailPage() {
   const resolutionStatusLabel = row?.resolution_status
     ? tt(vendorBillResolutionLabelKey(row.resolution_status), row.resolution_status)
     : tt('common.dash', '-')
-  const reconciliationDuePositionLabel = (position?: FinanceReconciliationRow['due_position'] | null) => {
-    switch (position) {
-      case 'resolved':
-        return tt(financeDuePositionLabelKey(position), 'Resolved')
-      case 'undated':
-        return tt(financeDuePositionLabelKey(position), 'No due date')
-      case 'current':
-        return tt(financeDuePositionLabelKey(position), 'Current')
-      case 'due_soon':
-        return tt(financeDuePositionLabelKey(position), 'Due soon')
-      case 'due_today':
-        return tt(financeDuePositionLabelKey(position), 'Due today')
-      case 'overdue':
-        return tt(financeDuePositionLabelKey(position), 'Overdue')
-      default:
-        return tt('common.dash', '-')
-    }
-  }
-  const reconciliationAgingLabel = (bucket?: FinanceReconciliationRow['aging_bucket'] | null) => {
-    switch (bucket) {
-      case 'resolved':
-        return tt(financeAgingBucketLabelKey(bucket), 'Resolved')
-      case 'undated':
-        return tt(financeAgingBucketLabelKey(bucket), 'No due date')
-      case 'current':
-        return tt(financeAgingBucketLabelKey(bucket), 'Current')
-      case '1_30':
-        return tt(financeAgingBucketLabelKey(bucket), '1-30 days overdue')
-      case '31_60':
-        return tt(financeAgingBucketLabelKey(bucket), '31-60 days overdue')
-      case '61_90':
-        return tt(financeAgingBucketLabelKey(bucket), '61-90 days overdue')
-      case '91_plus':
-        return tt(financeAgingBucketLabelKey(bucket), '91+ days overdue')
-      default:
-        return tt('common.dash', '-')
-    }
-  }
-  const reconciliationReviewLabel = (state?: FinanceReviewState | null) => {
-    switch (state) {
-      case 'exception':
-        return tt(financeReviewStateLabelKey(state), 'Exception')
-      case 'overdue':
-        return tt(financeReviewStateLabelKey(state), 'Overdue')
-      case 'attention':
-        return tt(financeReviewStateLabelKey(state), 'Attention')
-      case 'open':
-        return tt(financeReviewStateLabelKey(state), 'Open')
-      case 'resolved':
-        return tt(financeReviewStateLabelKey(state), 'Resolved')
-      default:
-        return tt('common.dash', '-')
-    }
-  }
-  const reconciliationExceptionLabel = (code?: string | null) =>
-    tt(financeExceptionLabelKey(code), 'Finance review exception')
-  const reconciliationExceptionGroupLabel = (group?: FinanceReconciliationExceptionRow['exception_group'] | null) => {
-    switch (group) {
-      case 'bridge':
-        return tt(financeExceptionGroupLabelKey(group), 'Bridge')
-      case 'chain':
-        return tt(financeExceptionGroupLabelKey(group), 'Chain')
-      case 'issue_readiness':
-        return tt(financeExceptionGroupLabelKey(group), 'Issue readiness')
-      default:
-        return tt('common.dash', '-')
-    }
-  }
   const canSubmitDraftForApproval = Boolean(
     row
     && row.document_workflow_status === 'draft'
@@ -1886,114 +1810,17 @@ export default function VendorBillDetailPage() {
               </CardContent>
             </Card>
 
-            {reconciliationRow || reconciliationExceptions.length > 0 ? (
-              <Card className="border-border/80 shadow-sm">
-                <CardHeader>
-                  <CardTitle>{tt('financeDocs.reconciliation.detailTitle', 'Reconciliation review')}</CardTitle>
-                  <CardDescription className="hidden sm:block">
-                    {tt('financeDocs.reconciliation.apDetailHelp', 'Month-close review follows the posted vendor bill as the AP anchor. Due position, aging, controller state, and bridge exceptions all use the legal liability after supplier adjustments and payments.')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {reconciliationRow ? (
-                    <>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="outline">{reconciliationDuePositionLabel(reconciliationRow.due_position)}</Badge>
-                        <Badge variant="outline">{reconciliationAgingLabel(reconciliationRow.aging_bucket)}</Badge>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${financeReviewToneClass(reconciliationRow.review_state)}`}>
-                          {reconciliationReviewLabel(reconciliationRow.review_state)}
-                        </span>
-                        {reconciliationRow.exception_count > 0 ? (
-                          <Badge variant="outline">
-                            {tt('financeDocs.reconciliation.exceptionCount', '{count} exceptions', { count: reconciliationRow.exception_count })}
-                          </Badge>
-                        ) : null}
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                        <Card className="border-border/70 shadow-none">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.dueState', 'Due state')}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1">
-                            <div className="font-medium">{reconciliationDuePositionLabel(reconciliationRow.due_position)}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {reconciliationRow.days_past_due > 0
-                                ? tt('financeDocs.reconciliation.daysPastDue', '{count} days past due', { count: reconciliationRow.days_past_due })
-                                : reconciliationRow.days_until_due != null
-                                  ? tt('financeDocs.reconciliation.daysUntilDue', '{count} days until due', { count: reconciliationRow.days_until_due })
-                                  : tt('common.dash', '-')}
-                            </div>
-                          </CardContent>
-                        </Card>
-                        <Card className="border-border/70 shadow-none">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.aging', 'Aging')}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1">
-                            <div className="font-medium">{reconciliationAgingLabel(reconciliationRow.aging_bucket)}</div>
-                            <div className="text-xs text-muted-foreground">{tt('financeDocs.reconciliation.currentAgingHelp', 'Aging is calculated from the current legal outstanding amount, not the gross original document value.')}</div>
-                          </CardContent>
-                        </Card>
-                        <Card className="border-border/70 shadow-none">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.reconciliation.reviewState', 'Review state')}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1">
-                            <div className="font-medium">{reconciliationReviewLabel(reconciliationRow.review_state)}</div>
-                            <div className="text-xs text-muted-foreground">{reconciliationRow.needs_review ? tt('financeDocs.reconciliation.needsReviewHelp', 'This document remains in the controller review queue.') : tt('financeDocs.reconciliation.resolvedReviewHelp', 'This document does not currently require controller intervention.')}</div>
-                          </CardContent>
-                        </Card>
-                        <Card className="border-border/70 shadow-none">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('financeDocs.reconciliation.currentLegal', 'Current legal')}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1">
-                            <div className="font-mono tabular-nums">{formatBaseMoney(reconciliationRow.current_legal_total_base || 0)}</div>
-                            <div className="text-xs text-muted-foreground">{tt('financeDocs.reconciliation.currentLegalHelp', 'Original minus credits plus debits')}</div>
-                          </CardContent>
-                        </Card>
-                        <Card className="border-border/70 shadow-none">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{tt('settlements.outstandingAmount', 'Outstanding')}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1">
-                            <div className="font-mono tabular-nums font-semibold">{formatBaseMoney(reconciliationRow.outstanding_base || 0)}</div>
-                            <div className="text-xs text-muted-foreground">{tt('settlements.outstandingHelp', 'Current legal minus settled')}</div>
-                          </CardContent>
-                        </Card>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
-                      {tt('financeDocs.reconciliation.apDraftHelp', 'This vendor bill is not yet part of the live reconciliation register. Posted AP anchors and any bridge exceptions appear here once the legal document exists.')}
-                    </div>
-                  )}
-
-                  {reconciliationExceptions.length > 0 ? (
-                    <div className="space-y-3">
-                      {reconciliationExceptions.map((exception) => (
-                        <div key={`${exception.anchor_id}:${exception.exception_code}`} className="rounded-xl border border-border/70 bg-muted/20 p-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${exception.severity === 'critical' ? 'border-status-danger-border bg-status-danger-muted text-status-danger-foreground' : 'border-status-warning-border bg-status-warning-muted text-status-warning-foreground'}`}>
-                              {exception.severity === 'critical' ? tt('financeDocs.reconciliation.severityCritical', 'Critical') : tt('financeDocs.reconciliation.severityWarning', 'Warning')}
-                            </span>
-                            <Badge variant="outline">{reconciliationExceptionGroupLabel(exception.exception_group)}</Badge>
-                          </div>
-                          <div className="mt-2 font-medium">{reconciliationExceptionLabel(exception.exception_code)}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {tt('financeDocs.reconciliation.exceptionAmounts', 'Current legal {currentLegal} / Outstanding {outstanding}', {
-                              currentLegal: formatBaseMoney(Number(exception.current_legal_total_base || 0)),
-                              outstanding: formatBaseMoney(Number(exception.outstanding_base || 0)),
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ) : null}
+            <FinanceReconciliationReviewCard
+              row={reconciliationRow}
+              exceptions={reconciliationExceptions}
+              translate={(key, fallback, params) => tt(key, fallback, params)}
+              formatBaseMoney={formatBaseMoney}
+              description={tt('financeDocs.reconciliation.apDetailHelp', 'Month-close review follows the posted vendor bill as the AP anchor. Due position, aging, controller state, and bridge exceptions all use the legal liability after supplier adjustments and payments.')}
+              agingHelp={tt('financeDocs.reconciliation.currentAgingHelp', 'Aging is calculated from the current legal outstanding amount, not the gross original document value.')}
+              needsReviewHelp={tt('financeDocs.reconciliation.needsReviewHelp', 'This document remains in the controller review queue.')}
+              resolvedReviewHelp={tt('financeDocs.reconciliation.resolvedReviewHelp', 'This document does not currently require controller intervention.')}
+              emptyHelp={tt('financeDocs.reconciliation.apDraftHelp', 'This vendor bill is not yet part of the live reconciliation register. Posted AP anchors and any bridge exceptions appear here once the legal document exists.')}
+            />
           </div>
 
           <FinanceChainCard
