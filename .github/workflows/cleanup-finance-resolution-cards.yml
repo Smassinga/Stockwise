@@ -1,0 +1,42 @@
+name: CLEANUP-6D finance resolution cards
+
+on:
+  push:
+    branches:
+      - cleanup/finance-resolution-cards-20260831
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Extract finance resolution cards
+        run: python scripts/cleanup_finance_resolution_cards.py
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint:js
+      - name: Type-check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Commit validated extraction and remove temporary staging files
+        shell: bash
+        run: |
+          rm scripts/cleanup_finance_resolution_cards.py
+          rm .github/workflows/cleanup-finance-resolution-cards.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/finance/SalesInvoiceResolutionCard.tsx src/components/finance/VendorBillResolutionCard.tsx src/pages/SalesInvoiceDetail.tsx src/pages/VendorBillDetail.tsx scripts/cleanup_finance_resolution_cards.py .github/workflows/cleanup-finance-resolution-cards.yml
+          git commit -m 'refactor: extract finance resolution cards'
+          git push origin HEAD:cleanup/finance-resolution-cards-20260831
