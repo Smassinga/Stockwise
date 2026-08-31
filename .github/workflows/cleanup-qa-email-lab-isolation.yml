@@ -48,21 +48,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          BASE_SHA="026b7918647b571cfbfb2d12ff3e859bf3955207"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm scripts/cleanup_qa_email_lab_isolation.py .github/workflows/cleanup-qa-email-lab-isolation.yml
-          git add supabase/functions/email-template-lab/index.ts src/pages/PlatformControl.tsx docs/platform-admin-runbook.md tests/runtime-hardening/email-template-lab-boundary.test.mjs
-          mapfile -t changed < <(git diff --cached --name-only | sort)
-          expected=(
+          git add supabase/functions/email-template-lab/index.ts src/pages/PlatformControl.tsx docs/platform-admin-runbook.md
+
+          mapfile -t staged < <(git diff --cached --name-only | sort)
+          staged_expected=(
+            ".github/workflows/cleanup-qa-email-lab-isolation.yml"
+            "docs/platform-admin-runbook.md"
+            "scripts/cleanup_qa_email_lab_isolation.py"
+            "src/pages/PlatformControl.tsx"
+            "supabase/functions/email-template-lab/index.ts"
+          )
+          mapfile -t staged_expected_sorted < <(printf '%s\n' "${staged_expected[@]}" | sort)
+          if [[ "${staged[*]}" != "${staged_expected_sorted[*]}" ]]; then
+            printf 'Unexpected staged files:\n%s\n' "${staged[*]}"
+            exit 1
+          fi
+
+          git commit -m "security: isolate QA email template lab"
+
+          mapfile -t durable < <(git diff --name-only "$BASE_SHA"...HEAD | sort)
+          durable_expected=(
             "docs/platform-admin-runbook.md"
             "src/pages/PlatformControl.tsx"
             "supabase/functions/email-template-lab/index.ts"
             "tests/runtime-hardening/email-template-lab-boundary.test.mjs"
           )
-          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
-          if [[ "${changed[*]}" != "${expected_sorted[*]}" ]]; then
-            printf 'Unexpected staged files:\n%s\n' "${changed[*]}"
+          mapfile -t durable_expected_sorted < <(printf '%s\n' "${durable_expected[@]}" | sort)
+          if [[ "${durable[*]}" != "${durable_expected_sorted[*]}" ]]; then
+            printf 'Unexpected durable branch diff:\n%s\n' "${durable[*]}"
             exit 1
           fi
-          git commit -m "security: isolate QA email template lab"
+
           git push origin HEAD:cleanup/qa-email-lab-isolation-20260831
