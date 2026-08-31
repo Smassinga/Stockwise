@@ -16,6 +16,7 @@ import { Textarea } from '../components/ui/textarea'
 import FinanceChainCard, { type FinanceChainItem } from '../components/finance/FinanceChainCard'
 import FinanceTimelineCard from '../components/finance/FinanceTimelineCard'
 import FinanceRawEventRegistryCard from '../components/finance/FinanceRawEventRegistryCard'
+import VendorBillLinesCard from '../components/finance/VendorBillLinesCard'
 import FinanceReconciliationReviewCard from '../components/finance/FinanceReconciliationReviewCard'
 import { CommercialLifecycleStrip } from '../components/commercial/CommercialLifecycleStrip'
 import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
@@ -1832,45 +1833,21 @@ export default function VendorBillDetailPage() {
             items={chainItems}
           />
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>{tt('financeDocs.fields.lines', 'Lines')}</CardTitle>
-              <CardDescription className="hidden sm:block">
-                {tt('financeDocs.vendorBills.linesHelp', 'Posted vendor bills keep their line values immutable. Supplier credit and debit notes adjust this AP chain without editing the posted document itself.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {lines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tt('financeDocs.linesEmpty', 'No document lines have been stored for this finance document yet.')}</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tt('orders.description', 'Description')}</TableHead>
-                      <TableHead className="text-right">{tt('orders.qty', 'Qty')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.unitCost', 'Unit cost')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.taxTotal', 'Tax')}</TableHead>
-                      <TableHead className="text-right">{tt('financeDocs.fields.total', 'Total')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((line) => (
-                      <TableRow key={line.id}>
-                        <TableCell>
-                          <div>{line.description || tt('common.dash', '-')}</div>
-                          {line.tax_label_snapshot && <div className="mt-1 text-xs text-muted-foreground">{line.tax_label_snapshot} ({Number(line.tax_rate || 0).toLocaleString()}%)</div>}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{line.qty}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.unit_cost, row.currency_code)}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.tax_amount, row.currency_code)}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">{formatDocumentMoney(line.line_total + line.tax_amount, row.currency_code)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <VendorBillLinesCard
+            lines={lines}
+            title={tt('financeDocs.fields.lines', 'Lines')}
+            description={tt('financeDocs.vendorBills.linesHelp', 'Posted vendor bills keep their line values immutable. Supplier credit and debit notes adjust this AP chain without editing the posted document itself.')}
+            emptyLabel={tt('financeDocs.linesEmpty', 'No document lines have been stored for this finance document yet.')}
+            dashLabel={tt('common.dash', '-')}
+            headers={{
+              description: tt('orders.description', 'Description'),
+              qty: tt('orders.qty', 'Qty'),
+              unitCost: tt('financeDocs.fields.unitCost', 'Unit cost'),
+              tax: tt('financeDocs.fields.taxTotal', 'Tax'),
+              total: tt('financeDocs.fields.total', 'Total'),
+            }}
+            formatMoney={(amount) => formatDocumentMoney(amount, row.currency_code)}
+          />
 
           <Card className="border-border/80 shadow-sm">
             <CardHeader>
