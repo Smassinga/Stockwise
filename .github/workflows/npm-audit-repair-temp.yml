@@ -1,0 +1,92 @@
+name: Temporary npm audit repair
+
+on:
+  push:
+    branches:
+      - maintenance/npm-audit-browserslist-20260901
+    paths:
+      - .cleanup/trigger-npm-audit-repair
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v5
+        with:
+          ref: maintenance/npm-audit-browserslist-20260901
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Repair audited transitive versions in lockfile only
+        run: npm audit fix --package-lock-only
+
+      - name: Remove temporary repair tooling
+        run: |
+          rm -f .cleanup/trigger-npm-audit-repair
+          rm -f .github/workflows/npm-audit-repair-temp.yml
+
+      - name: Guard repair scope
+        shell: bash
+        run: |
+          if ! git diff --exit-code -- package.json; then
+            echo 'package.json changed unexpectedly' >&2
+            exit 1
+          fi
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' '.cleanup/trigger-npm-audit-repair' '.github/workflows/npm-audit-repair-temp.yml' 'package-lock.json' | sort)"
+          if [ "$actual" != "$expected" ]; then
+            echo 'Unexpected repair scope:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          fi
+
+      - name: Install repaired dependency graph
+        run: npm ci
+
+      - name: Verify high-severity audit gate
+        run: npm audit --audit-level=high
+
+      - name: Check migration filenames
+        run: npm run check:migrations
+
+      - name: Lint application
+        run: npm run lint:js
+
+      - name: Type-check application
+        run: npm run typecheck
+
+      - name: Check UI foundations
+        run: |
+          npm run check:css-vars
+          npm run check:css-classes
+          npm run check:ui-foundations
+
+      - name: Guard runtime hardening boundaries
+        run: node --test tests/runtime-hardening/**/*.test.mjs
+
+      - name: Run maintained regressions
+        run: |
+          npm run test:dashboard
+          npm run test:service-jobs
+          npm run test:ui-regression
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Commit repaired lockfile
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: repair audited transitive dependencies'
+          git push origin HEAD:maintenance/npm-audit-browserslist-20260901
