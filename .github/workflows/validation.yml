@@ -61,6 +61,12 @@ jobs:
       - name: Run Service Job contract regression
         run: npm run test:service-jobs
 
+      - name: Run communications contract regression
+        run: npm run test:communications
+
+      - name: Run operational governance regression
+        run: npm run test:operational-governance
+
       - name: Run UI regression suites
         run: npm run test:ui-regression
 
