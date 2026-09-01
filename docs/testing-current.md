@@ -31,6 +31,8 @@ The npm audit gate blocks high and critical dependency vulnerabilities. A passin
 
 Primary Validation is non-mutating. It receives no production Supabase service-role credential and does not push migrations.
 
+Permanent finance/UI continuity assertions that originated in the August 2026 post-QA repair package now live at `tests/runtime-hardening/finance-ui-continuity.test.mjs`. They therefore execute on every Primary Validation run instead of remaining behind the historical opt-in `test:post-qa-repairs` script. The assertions themselves remain unchanged; only their test-governance classification and execution path changed.
+
 ## Isolated Finance Regression
 
 `.github/workflows/finance-regression-isolated.yml` runs on finance- or migration-sensitive pull requests and can also be dispatched manually.
