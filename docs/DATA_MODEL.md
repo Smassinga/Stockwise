@@ -25,7 +25,7 @@ Current rules:
 
 - company membership and authority live in `company_members`
 - company role semantics use `member_role`
-- company role definitions are exposed in the app under Users > Role definitions and must stay aligned with the checks in `src/lib/roles.ts` and `src/lib/permissions.ts`
+- company role definitions are exposed in the app under Users > Role definitions and must stay aligned with the canonical checks in `src/lib/permissions.ts`
 - company roles are `OWNER`, `ADMIN`, `MANAGER`, `OPERATOR`, and `VIEWER`; the UI explains practical can/cannot-do boundaries without inventing permissions that are not enforced
 - user profile and sign-in metadata live in `profiles`
 - `profiles.phone_number` is an optional user contact field captured from signup/profile edits; it is not used for authentication, invitation matching, membership, tenant selection, or entitlement

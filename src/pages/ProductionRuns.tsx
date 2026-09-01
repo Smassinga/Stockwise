@@ -18,7 +18,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useOrg } from '../hooks/useOrg'
 import { useIsMobile } from '../hooks/use-mobile'
-import { hasRole } from '../lib/roles'
+import { hasRole } from '../lib/permissions'
 import {
   clearPostingRequestKey,
   getPostingRequestKeyForFingerprint,
