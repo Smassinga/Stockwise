@@ -23,6 +23,7 @@
     "test:service-jobs": "node --test --test-concurrency=1 tests/service-jobs/**/*.test.mjs",
     "test:ops-1": "node --test --test-concurrency=1 tests/ops-1/**/*.test.mjs",
     "test:administration-ux": "node --test --test-concurrency=1 tests/administration-ux/**/*.test.mjs",
+    "test:ui-regression": "node --test --test-concurrency=1 tests/administration-ux/**/*.test.mjs tests/authenticated-ux/**/*.test.mjs tests/finance-ux/**/*.test.mjs tests/reports-ux/**/*.test.mjs tests/inventory-orders-pos-ux/**/*.test.mjs tests/production-growth-services-ux/**/*.test.mjs",
     "test:opening-quantity": "node --test --test-concurrency=1 tests/opening-quantity/**/*.test.mjs",
     "test:uom-integrity": "node --test --test-concurrency=1 tests/uom-integrity/**/*.test.mjs",
     "test:multi-settlement": "node --test --test-concurrency=1 tests/multi-settlement/**/*.test.mjs",
