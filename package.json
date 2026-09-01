@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "knip": "npx --yes knip@6.33.0",
+    "knip:report": "npx --yes knip@6.33.0 --no-exit-code",
     "lint": "npm run lint:js && npm run lint:css && npm run check:css-vars && npm run check:css-classes && npm run check:ui-foundations",
     "preview": "vite preview",
     "generate-icons": "node generate-icons.js",
