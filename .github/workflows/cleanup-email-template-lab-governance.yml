@@ -1,0 +1,58 @@
+name: CLEANUP-7A Email Template Lab Governance
+
+on:
+  push:
+    branches:
+      - cleanup/email-template-lab-governance-20260901
+
+permissions:
+  contents: write
+
+jobs:
+  govern-email-template-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/email-template-lab-governance-20260901
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Apply guarded cleanup
+        run: python3 scripts/cleanup_email_template_lab_governance.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint JavaScript and TypeScript
+        run: npm run lint:js
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run OPS-1 regression suite
+        run: npm run test:ops-1
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate patch
+        run: |
+          git diff --check
+          git status --short
+          git diff -- src/components/platform/EmailTemplateLab.tsx supabase/functions/email-template-lab/index.ts tests/ops-1/comms-3.test.mjs docs/platform-admin-runbook.md
+
+      - name: Commit validated cleanup and remove staging files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/platform/EmailTemplateLab.tsx supabase/functions/email-template-lab/index.ts tests/ops-1/comms-3.test.mjs docs/platform-admin-runbook.md
+          git rm scripts/cleanup_email_template_lab_governance.py .github/workflows/cleanup-email-template-lab-governance.yml
+          git commit -m "Cleanup: isolate email template lab behind QA flags"
+          git push origin HEAD:cleanup/email-template-lab-governance-20260901
