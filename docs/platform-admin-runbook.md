@@ -190,3 +190,26 @@ Platform Control is query-backed: `view=portfolio`, `view=activation`, or `view=
 The portfolio keeps stored subscription status, effective access, owner evidence, member count, sign-in evidence, and catalogue indicators distinct. Activation review keeps private proof in detail and approval behind explicit confirmation. Company communications require a canonical recipient and saved access state; successful sends remain audited and manual. Operational reset is isolated in Danger with its exact deleted and preserved scope.
 
 UX-8 production verification used an independently authorised platform-admin session. The first protected-route harness could not navigate the authenticated surface and was replaced with the supported authenticated Chrome/Playwright path. Platform Portuguese localization was corrected by `5c7cd6cb3a953c9df1177658046e7ea417fcc85b`. No activation decision, access change, notice send, or reset was performed during closeout.
+
+## Email Template Lab QA Isolation
+
+The Email Template Lab is a QA-only operator surface. It must fail closed in normal production operation.
+
+Two independent flags are required before the lab is usable:
+
+- frontend build: `VITE_ENABLE_EMAIL_TEMPLATE_LAB=true`
+- Edge Function environment: `EMAIL_TEMPLATE_LAB_ENABLED=true`
+
+If either flag is absent or any value other than the literal string `true`, the lab is unavailable. The frontend renders nothing and makes no lab function calls when its flag is disabled. The `email-template-lab` Edge Function returns `qa_lab_disabled` before authentication or template work when its flag is disabled.
+
+These flags are additional controls, not replacements for the existing security boundary. When explicitly enabled for an authorised QA window, the function still requires an authenticated platform admin and send mode still accepts only recipients listed in `EMAIL_QA_ALLOWED_RECIPIENTS`.
+
+Production posture:
+
+- leave both enable flags unset or false by default
+- never commit QA recipient addresses or secrets to the repository
+- enable the lab only for a controlled QA window
+- keep `verify_jwt = true` for the Edge Function
+- after QA, disable the enable flags again
+
+Supabase Edge Function variables are read from the hosted function environment through `Deno.env.get(...)`; changing a hosted secret does not require committing it to source control.

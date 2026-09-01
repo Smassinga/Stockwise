@@ -8,6 +8,7 @@ import { resolveEmailIdentity } from "../_shared/emailIdentity.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "";
+const EMAIL_TEMPLATE_LAB_ENABLED = Deno.env.get("EMAIL_TEMPLATE_LAB_ENABLED") === "true";
 const allowedRecipients = new Set((Deno.env.get("EMAIL_QA_ALLOWED_RECIPIENTS") || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean));
 const configuredSiteUrl = (Deno.env.get("PUBLIC_SITE_URL") || "").replace(/\/+$/, "");
 const allowedOrigins = new Set([
@@ -32,6 +33,7 @@ serve(async (req) => {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "content-type": "application/json" } });
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  if (!EMAIL_TEMPLATE_LAB_ENABLED) return json({ error: "qa_lab_disabled" }, 404);
   try {
     const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
     if (!token) return json({ error: "not_authenticated" }, 401);

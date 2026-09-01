@@ -86,6 +86,14 @@ test('Template Lab exposes identity and all seven lifecycle scenarios', () => {
   for (const offset of [7,3,1,0,-3,-15,-30]) assert.match(labUi, new RegExp(`['\"]?${offset}['\"]?`))
 })
 
+test('Template Lab is fail-closed unless QA flags are explicitly enabled', () => {
+  assert.match(lab, /EMAIL_TEMPLATE_LAB_ENABLED = Deno\.env\.get\("EMAIL_TEMPLATE_LAB_ENABLED"\) === "true"/)
+  assert.match(lab, /qa_lab_disabled/)
+  assert.match(labUi, /VITE_ENABLE_EMAIL_TEMPLATE_LAB/)
+  assert.match(labUi, /if \(!emailTemplateLabEnabled\) return/)
+  assert.match(labUi, /if \(!emailTemplateLabEnabled\) return null/)
+})
+
 test('security controls cover company communication settings and private stages', () => {
   assert.match(identityMigration, /enable row level security/); assert.match(identityMigration, /force row level security/)
   assert.match(identityMigration, /has_company_role\(company_id, array\['OWNER'::public\.member_role,'ADMIN'::public\.member_role\]\)/)

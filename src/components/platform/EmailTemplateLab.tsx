@@ -8,6 +8,8 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
+const emailTemplateLabEnabled = import.meta.env.VITE_ENABLE_EMAIL_TEMPLATE_LAB === 'true'
+
 type Template = { key: string; version: number; languages: string[]; semanticVariant: string; requiredFields: string[]; scenarioLabel: string }
 type Preview = { subject: string; html: string; text: string; semanticVariant?: string }
 type PreviewMetadata = {
@@ -45,7 +47,10 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
     setTemplates(list.templates || [])
     setDispatches(recent.dispatches || [])
   }
-  useEffect(() => { void load().catch(() => undefined) }, [])
+  useEffect(() => {
+    if (!emailTemplateLabEnabled) return
+    void load().catch(() => undefined)
+  }, [])
   async function render() {
     setBusy(true)
     try {
@@ -62,6 +67,8 @@ export function EmailTemplateLab({ language }: { language: 'en' | 'pt' }) {
       await load()
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) } finally { setBusy(false) }
   }
+
+  if (!emailTemplateLabEnabled) return null
 
   const isReminder = templateKey.startsWith('due_reminder_')
   return <Card>
