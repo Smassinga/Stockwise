@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Clock3, Plus, RefreshCw } from 'lucide-react'
-import { toast } from 'sonner'
+import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { useOrg } from '../hooks/useOrg'
