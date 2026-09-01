@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "public/js/theme.js",
+    "supabase/functions/*/index.ts",
+    "tests/types/email-template-contracts.ts"
+  ],
+  "ignoreDependencies": [
+    "jsr",
+    "npm"
+  ],
+  "ignoreBinaries": [
+    "rustup"
+  ]
+}
