@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           changed="$(git diff --name-only | sort)"
-          expected=$'src/pages/Customers.tsx\nsrc/pages/Suppliers.tsx'
+          expected=$'.cleanup/trigger-hook-deps-master-data\n.github/workflows/hook-deps-master-data-cleanup-codemod.yml\nscripts/refactor-hook-deps-master-data.mjs\nsrc/pages/Customers.tsx\nsrc/pages/Suppliers.tsx'
           if [ "$changed" != "$expected" ]; then
             echo "Unexpected changed paths:"
             printf '%s\n' "$changed"
