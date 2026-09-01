@@ -309,7 +309,7 @@ export default function App() {
                 <Route path="/suppliers" element={<Suspense fallback={<LoadingSplash />}><SuppliersPage /></Suspense>} />
                 <Route path="/settings" element={<Suspense fallback={<LoadingSplash />}><Settings /></Suspense>} />
                 <Route path="/settings/uoms" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
-                <Route path="/uom" element={<Suspense fallback={<LoadingSplash />}><UomSettings /></Suspense>} />
+                <Route path="/uom" element={<Navigate to="/settings/uoms" replace />} />
                 <Route path="/setup/import" element={<Suspense fallback={<LoadingSplash />}><OpeningImport /></Suspense>} />
                 <Route path="/bom" element={<Suspense fallback={<LoadingSplash />}><BOMPage /></Suspense>} />
                 <Route path="/production-runs" element={<Suspense fallback={<LoadingSplash />}><ProductionRunsPage /></Suspense>} />

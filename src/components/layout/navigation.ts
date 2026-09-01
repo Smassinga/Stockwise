@@ -199,7 +199,7 @@ export const navigationDefinitions: NavigationDefinition[] = [
   { id: 'users', group: 'administration', labelKey: 'nav.users', fallbackLabel: 'Users', to: '/users', icon: Users, requiresUserManagement: true },
   { id: 'roles', group: 'administration', labelKey: 'nav.roles', fallbackLabel: 'Roles', to: '/users/roles', icon: KeyRound, requiresUserManagement: true },
   { id: 'currency', group: 'administration', labelKey: 'nav.currency', fallbackLabel: 'Currency', to: '/currency', icon: Coins },
-  { id: 'uom', group: 'administration', labelKey: 'nav.uom', fallbackLabel: 'Units of Measure', to: '/uom', icon: Ruler },
+  { id: 'uom', group: 'administration', labelKey: 'nav.uom', fallbackLabel: 'Units of Measure', to: '/settings/uoms', icon: Ruler },
   { id: 'settings', group: 'administration', labelKey: 'nav.settings', fallbackLabel: 'Settings', to: '/settings', icon: SlidersHorizontal },
 
   {
