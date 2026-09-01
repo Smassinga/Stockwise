@@ -1,0 +1,61 @@
+name: C9 Knip Bootstrap
+
+on:
+  push:
+    branches:
+      - cleanup/final-cleanup-c9-knip-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    name: Generate npm Knip metadata and baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out cleanup branch
+        uses: actions/checkout@v5
+        with:
+          ref: cleanup/final-cleanup-c9-knip-baseline
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install current locked dependencies
+        run: npm ci
+
+      - name: Add Knip with npm
+        run: npm install --save-dev knip@latest
+
+      - name: Add report-only maintenance scripts
+        run: npm pkg set "scripts.knip=knip" "scripts.knip:report=knip --no-exit-code"
+
+      - name: Record Knip version
+        run: npm exec -- knip --version
+
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+
+      - name: Capture initial Knip baseline
+        run: npm run knip:report | tee c9-knip-initial.txt
+
+      - name: Upload initial Knip baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: c9-knip-initial
+          path: c9-knip-initial.txt
+          if-no-files-found: error
+
+      - name: Remove temporary bootstrap workflow and commit generated metadata
+        shell: bash
+        run: |
+          rm .github/workflows/c9-knip-bootstrap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json .github/workflows/c9-knip-bootstrap.yml
+          git commit -m "Final cleanup C9: generate Knip npm metadata"
+          git push origin HEAD:cleanup/final-cleanup-c9-knip-baseline
