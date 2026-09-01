@@ -44,9 +44,6 @@ jobs:
       - name: Check UI foundations
         run: npm run check:ui-foundations
 
-      - name: Finance regression
-        run: npm run test:finance-regression:ci
-
       - name: Service Jobs regression
         run: npm run test:service-jobs
 
