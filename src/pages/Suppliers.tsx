@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Mail, Pencil, Phone, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
@@ -316,8 +316,11 @@ export default function Suppliers() {
   const { companyId, myRole } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const { t } = useI18n()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
-    withI18nFallback(t, key, fallback, vars)
+  const tt = useCallback(
+    (key: string, fallback: string, vars?: Record<string, string | number>) =>
+      withI18nFallback(t, key, fallback, vars),
+    [t]
+  )
 
   const [searchParams] = useSearchParams()
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -336,6 +339,30 @@ export default function Suppliers() {
     () => new Map(paymentTermsList.map((paymentTerm) => [paymentTerm.id, paymentTerm])),
     [paymentTermsList]
   )
+
+  const reloadSuppliers = useCallback(async () => {
+    if (!companyId) {
+      setSuppliers([])
+      return
+    }
+
+    const result = await supabase
+      .from('suppliers')
+      .select(
+        'id,code,name,contact_name,email,phone,tax_id,currency_code,payment_terms_id,payment_terms,is_active,notes,created_at,updated_at'
+      )
+      .eq('company_id', companyId)
+      .order('name', { ascending: true })
+
+    if (result.error) {
+      console.error(result.error)
+      toast.error(tt('suppliers.toast.loadFailed', 'Failed to load suppliers'))
+      setSuppliers([])
+      return
+    }
+
+    setSuppliers((result.data || []).map(mapSupplierRow))
+  }, [companyId, tt])
 
   useEffect(() => {
     ;(async () => {
@@ -365,32 +392,7 @@ export default function Suppliers() {
         setLoading(false)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, companyId])
-
-  async function reloadSuppliers() {
-    if (!companyId) {
-      setSuppliers([])
-      return
-    }
-
-    const result = await supabase
-      .from('suppliers')
-      .select(
-        'id,code,name,contact_name,email,phone,tax_id,currency_code,payment_terms_id,payment_terms,is_active,notes,created_at,updated_at'
-      )
-      .eq('company_id', companyId)
-      .order('name', { ascending: true })
-
-    if (result.error) {
-      console.error(result.error)
-      toast.error(tt('suppliers.toast.loadFailed', 'Failed to load suppliers'))
-      setSuppliers([])
-      return
-    }
-
-    setSuppliers((result.data || []).map(mapSupplierRow))
-  }
+  }, [user, companyId, reloadSuppliers, tt])
 
   async function ensureUniqueCode(code: string, excludeId?: string) {
     if (!companyId) return false
