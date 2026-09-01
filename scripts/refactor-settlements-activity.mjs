@@ -14,6 +14,7 @@ source = source.replace(
   "import { Download, FileWarning, ReceiptText, Undo2 } from 'lucide-react'",
   "import { Download, ReceiptText, Undo2 } from 'lucide-react'",
 )
+source = source.replace("import { Badge } from '../components/ui/badge'\n", '')
 
 const start = '        <TabsContent value="activity" className="mt-0 space-y-6">'
 const end = '        <TabsContent value="reconciliation" className="mt-0 space-y-6">'
