@@ -61,8 +61,8 @@ jobs:
       - name: Run Service Job contract regression
         run: npm run test:service-jobs
 
-      - name: Run administration UX regression
-        run: npm run test:administration-ux
+      - name: Run UI regression suites
+        run: npm run test:ui-regression
 
       - name: Build production bundle
         run: npm run build
