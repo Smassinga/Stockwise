@@ -12,7 +12,7 @@
     "generate-icons": "node generate-icons.js",
     "generate-tauri-icons": "node generate-tauri-icons.js",
     "lint:css": "stylelint \"src/**/*.css\" --quiet",
-    "lint:js": "eslint src --ext ts,tsx --quiet",
+    "lint:js": "eslint src --ext ts,tsx",
     "check:css-vars": "node scripts/check-css-variables.js",
     "check:css-classes": "node scripts/check-css-classes.js",
     "check:ui-foundations": "node scripts/check-ui-foundations.mjs",
