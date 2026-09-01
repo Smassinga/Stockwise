@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "functions": {
+    "schema-snapshot": {
+      "status": "active_internal",
+      "verifyJwt": false,
+      "callerClass": "internal_hmac",
+      "secondaryAuth": {
+        "type": "hmac",
+        "sourceMarkers": ["verifySignedRequest", "AI_OPS_SECRET"]
+      },
+      "removalGate": "Remove only after AI/schema tooling and signed internal callers are retired with replacement evidence."
+    },
+    "ai-ops": {
+      "status": "active_internal",
+      "verifyJwt": false,
+      "callerClass": "internal_hmac",
+      "secondaryAuth": {
+        "type": "hmac",
+        "sourceMarkers": ["verifySignedRequest", "AI_OPS_SECRET", "ai_exec_one"]
+      },
+      "removalGate": "Remove only after the signed AI operations command path and its audit/idempotency contract are explicitly retired."
+    },
+    "ai-chat-exec": {
+      "status": "active_internal",
+      "verifyJwt": false,
+      "callerClass": "internal_hmac_adapter",
+      "secondaryAuth": {
+        "type": "hmac",
+        "sourceMarkers": ["verifySignedRequest", "AI_OPS_SECRET", "/functions/v1/ai-ops"]
+      },
+      "removalGate": "Remove only after all signed chat-to-ai-ops adapter callers have replacement evidence."
+    },
+    "schema-snapshot-cron": {
+      "status": "active_internal",
+      "verifyJwt": true,
+      "callerClass": "scheduled_hmac_adapter",
+      "secondaryAuth": {
+        "type": "hmac",
+        "sourceMarkers": ["verifySignedRequest", "AI_OPS_SECRET", "/functions/v1/schema-snapshot"]
+      },
+      "removalGate": "Do not infer dead code from the lack of a frontend caller. Retire only after scheduler/integration evidence proves the signed snapshot adapter is unused."
+    },
+    "mailer-invite": {
+      "status": "active_user_flow",
+      "verifyJwt": true,
+      "callerClass": "frontend_authenticated",
+      "secondaryAuth": null,
+      "removalGate": "Retain while Users or Platform Control can issue member invitations."
+    },
+    "admin-users": {
+      "status": "active_user_flow",
+      "verifyJwt": true,
+      "callerClass": "frontend_authenticated",
+      "secondaryAuth": null,
+      "removalGate": "Retain while authenticated admin user synchronization remains in the application."
+    },
+    "mailer-report": {
+      "status": "dormant_retained",
+      "verifyJwt": true,
+      "callerClass": "none_currently_proven",
+      "secondaryAuth": null,
+      "removalGate": "The maintained email worker matrix classifies this endpoint as dormant but retained. Delete only under an explicit report-email retirement package with template and audit evidence."
+    },
+    "due-reminder-worker": {
+      "status": "active_worker",
+      "verifyJwt": false,
+      "callerClass": "service_queue_worker",
+      "secondaryAuth": {
+        "type": "shared_secret",
+        "sourceMarkers": ["REMINDER_HOOK_SECRET", "function authorized(req: Request)"]
+      },
+      "removalGate": "Retain while due-reminder queue processing or scheduler invocation exists. verify_jwt=false is paired with the worker secret gate and must not be treated as anonymous business access."
+    },
+    "digest-worker": {
+      "status": "active_worker",
+      "verifyJwt": false,
+      "callerClass": "service_queue_worker",
+      "secondaryAuth": {
+        "type": "shared_secret",
+        "sourceMarkers": ["DIGEST_HOOK_SECRET", "function authorized(req: Request)"]
+      },
+      "removalGate": "Retain while daily digest queue processing or scheduler invocation exists. verify_jwt=false is paired with the worker secret gate and must not be treated as anonymous business access."
+    },
+    "mailer-company-access": {
+      "status": "active_platform_flow",
+      "verifyJwt": true,
+      "callerClass": "platform_control_authenticated",
+      "secondaryAuth": null,
+      "removalGate": "Retain while Platform Control can send governed company-access communications."
+    },
+    "email-template-lab": {
+      "status": "qa_only",
+      "verifyJwt": true,
+      "callerClass": "platform_admin_qa",
+      "secondaryAuth": null,
+      "killSwitch": {
+        "sourceMarkers": ["EMAIL_TEMPLATE_LAB_ENABLED", "qa_lab_disabled"]
+      },
+      "removalGate": "QA-only and fail-closed by default. Remove only after its regression/template evidence is replaced and no authorised QA workflow depends on it."
+    }
+  }
+}
