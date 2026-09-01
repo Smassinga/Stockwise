@@ -28,9 +28,10 @@ fs.writeFileSync(componentPath, component)
 
 const replacement = `        <SettlementExposureWorkspace\n          tt={tt}\n          lang={lang}\n          loading={loading}\n          stateViewsUnavailable={stateViewsUnavailable}\n          workspaceSide={workspaceSide}\n          rows={rows}\n          receiveTotal={receiveTotal}\n          payTotal={payTotal}\n          overdueCount={overdueCount}\n          requestedExposureCustomer={requestedExposureCustomer}\n          requestedExposureOutstanding={requestedExposureOutstanding}\n          requestedExposureInvoiceOutstanding={requestedExposureInvoiceOutstanding}\n          requestedExposureUnapplied={requestedExposureUnapplied}\n          tab={tab}\n          search={search}\n          partyFilter={partyFilter}\n          statusFilter={statusFilter}\n          currencyFilter={currencyFilter}\n          dueFilter={dueFilter}\n          fromDate={fromDate}\n          toDate={toDate}\n          partyOptions={partyOptions}\n          currencyOptions={currencyOptions}\n          currentRows={currentRows}\n          filteredRows={filteredRows}\n          filteredBridgeTotals={filteredBridgeTotals}\n          canManageSettlement={canManageSettlement}\n          money={money}\n          settlementActionLabel={settlementActionLabel}\n          viewAnchorLabel={viewAnchorLabel}\n          setSearch={setSearch}\n          setPartyFilter={setPartyFilter}\n          setStatusFilter={setStatusFilter}\n          setCurrencyFilter={setCurrencyFilter}\n          setDueFilter={setDueFilter}\n          setFromDate={setFromDate}\n          setToDate={setToDate}\n          onWorkspaceSideChange={(side) => updateWorkspaceQuery({ side })}\n          onExportExposure={() => setExportRequest({ kind: 'exposure' })}\n          onOpenSettlement={openSettlement}\n          onViewOrder={viewOrder}\n        />\n\n`
 source = `${source.slice(0, startIndex)}${replacement}${source.slice(nextIndex)}`
-source = source.replace('  dueTone,\n', '')
-source = source.replace('  isFinanceDocumentRow,\n', '')
-source = source.replace('  statusTone,\n', '')
+source = source.replace(
+  "import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'",
+  "import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'",
+)
 
 fs.writeFileSync(pagePath, source)
 console.log('Extracted Settlements exposure workspace component')
