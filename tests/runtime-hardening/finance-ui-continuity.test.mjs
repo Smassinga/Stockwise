@@ -19,6 +19,7 @@ const mzFinance = await read('src/lib/mzFinance.ts')
 const cash = await read('src/pages/Cash.tsx')
 const bank = await read('src/pages/BankDetail.tsx')
 const settlements = await read('src/pages/Settlements.tsx')
+const settlementExposure = await read('src/features/settlements/SettlementExposureWorkspace.tsx')
 const migration = await read('supabase/migrations/20260820175131_repair_finance_notification_truth.sql')
 
 test('an old PO opens a documentary date form based on the company-local business day', () => {
@@ -110,10 +111,10 @@ test('Cash and Bank share CR navigation and receipt detail survives refresh', ()
 test('receivables links expose the same SO/SI anchors and keep credit separate', () => {
   assert.match(migration, /view=exposure&side=ar&customerId=/)
   assert.match(settlements, /anchor_kind === 'sales_invoice' \? 'SI' : 'SO'/)
-  assert.match(settlements, /Total open receivables/)
-  assert.match(settlements, /Allocatable issued-invoice outstanding/)
-  assert.match(settlements, /Unapplied credit \(separate\)/)
-  assert.match(settlements, /Only issued Sales Invoices can receive allocations/)
+  assert.match(settlementExposure, /Total open receivables/)
+  assert.match(settlementExposure, /Allocatable issued-invoice outstanding/)
+  assert.match(settlementExposure, /Unapplied credit \(separate\)/)
+  assert.match(settlementExposure, /Only issued Sales Invoices can receive allocations/)
 })
 
 test('notification migration is forward-only, deduplicated and least privilege', () => {
