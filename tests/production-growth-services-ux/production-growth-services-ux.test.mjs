@@ -51,7 +51,7 @@ test('Landed Cost does not present calculated zeros before a source is selected'
   assert.doesNotMatch(landed, /landedCost\.eyebrow/)
 })
 
-test('substantially modified UX-11D pages use semantic tokens instead of direct status colours', async () => {
+test('production, growth, service, and landed-cost pages use semantic tokens instead of direct status colours', async () => {
   const sources = await Promise.all([
     'src/pages/BOM.tsx',
     'src/pages/ProductionRuns.tsx',
