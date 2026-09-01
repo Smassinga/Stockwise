@@ -249,10 +249,10 @@ export function deriveCompanySetupAreas(
   }
 
   if (snapshot.counts.uoms.status === 'unavailable') {
-    areas.push(unavailableArea('uom', 'core', 'setup.areas.uom.consequence', '/uom', 'can_review'))
+    areas.push(unavailableArea('uom', 'core', 'setup.areas.uom.consequence', '/settings/uoms', 'can_review'))
   } else {
     const count = snapshot.counts.uoms.data
-    areas.push({ key: 'uom', group: 'core', readiness: count > 0 ? 'ready' : 'needs_action', authority: count > 0 ? 'can_review' : 'platform_managed', summaryKey: count > 0 ? 'setup.areas.uom.ready' : 'setup.areas.uom.missing', consequenceKey: 'setup.areas.uom.consequence', route: '/uom', evidence: { count }, blockingCapabilities: count > 0 ? [] : ['item_catalog'] })
+    areas.push({ key: 'uom', group: 'core', readiness: count > 0 ? 'ready' : 'needs_action', authority: count > 0 ? 'can_review' : 'platform_managed', summaryKey: count > 0 ? 'setup.areas.uom.ready' : 'setup.areas.uom.missing', consequenceKey: 'setup.areas.uom.consequence', route: '/settings/uoms', evidence: { count }, blockingCapabilities: count > 0 ? [] : ['item_catalog'] })
   }
 
   const itemCount = countValue(snapshot.counts.items)
