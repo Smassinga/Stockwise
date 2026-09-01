@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Mail, MapPin, Pencil, Phone, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
@@ -324,8 +324,11 @@ export default function Customers() {
   const { myRole, companyId } = useOrg()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const { t } = useI18n()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
-    withI18nFallback(t, key, fallback, vars)
+  const tt = useCallback(
+    (key: string, fallback: string, vars?: Record<string, string | number>) =>
+      withI18nFallback(t, key, fallback, vars),
+    [t]
+  )
 
   const [searchParams] = useSearchParams()
   const [loading, setLoading] = useState(true)
@@ -344,6 +347,29 @@ export default function Customers() {
     () => new Map(paymentTermsList.map((paymentTerm) => [paymentTerm.id, paymentTerm])),
     [paymentTermsList]
   )
+
+  const reloadCustomers = useCallback(async () => {
+    if (!companyId) {
+      setCustomers([])
+      return
+    }
+
+    const res = await supabase
+      .from('customers')
+      .select(
+        'id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms_id,payment_terms,notes,created_at,updated_at'
+      )
+      .eq('company_id', companyId)
+      .order('name', { ascending: true })
+
+    if (res.error) {
+      console.error(res.error)
+      toast.error(tt('customers.toast.loadFailed', 'Failed to load customers'))
+      return
+    }
+
+    setCustomers((res.data || []).map(mapRow))
+  }, [companyId, tt])
 
   useEffect(() => {
     ;(async () => {
@@ -372,31 +398,7 @@ export default function Customers() {
         setLoading(false)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId])
-
-  async function reloadCustomers() {
-    if (!companyId) {
-      setCustomers([])
-      return
-    }
-
-    const res = await supabase
-      .from('customers')
-      .select(
-        'id,code,name,email,phone,tax_id,billing_address,shipping_address,currency_code,payment_terms_id,payment_terms,notes,created_at,updated_at'
-      )
-      .eq('company_id', companyId)
-      .order('name', { ascending: true })
-
-    if (res.error) {
-      console.error(res.error)
-      toast.error(tt('customers.toast.loadFailed', 'Failed to load customers'))
-      return
-    }
-
-    setCustomers((res.data || []).map(mapRow))
-  }
+  }, [companyId, reloadCustomers, tt])
 
   async function ensureUniqueCode(code: string, excludeId?: string) {
     if (!companyId) return false
