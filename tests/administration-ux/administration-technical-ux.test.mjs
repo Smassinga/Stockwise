@@ -90,7 +90,7 @@ test('superseded Reports implementation is absent and the maintained route remai
   assert.deepEqual(entries.filter((entry) => /\.[cm]?[jt]sx?$/.test(entry)), [])
 })
 
-test('substantially modified UX-11E surfaces do not use direct status colours', async () => {
+test('administration surfaces do not use direct status colours', async () => {
   const sources = await Promise.all([
     'src/pages/Settings.tsx',
     'src/pages/Users.tsx',
