@@ -30,12 +30,14 @@ test('finance details gate settlement presentation until issue or posting', asyn
   assert.match(bill, /This ends the draft workflow without posting it/)
 })
 
-test('finance summaries use restrained purposeful metric cards', async () => {
-  const [component, sales, bills, settlements, cash, banks] = await Promise.all([
+test('finance summaries use restrained purposeful metric cards across maintained workspace boundaries', async () => {
+  const [component, sales, bills, settlements, exposureWorkspace, receiptsWorkspace, cash, banks] = await Promise.all([
     read('src/components/finance/FinanceSummaryBand.tsx'),
     read('src/pages/SalesInvoices.tsx'),
     read('src/pages/VendorBills.tsx'),
     read('src/pages/Settlements.tsx'),
+    read('src/features/settlements/SettlementExposureWorkspace.tsx'),
+    read('src/features/settlements/SettlementReceiptsWorkspace.tsx'),
     read('src/pages/Cash.tsx'),
     read('src/pages/Banks.tsx'),
   ])
@@ -43,9 +45,15 @@ test('finance summaries use restrained purposeful metric cards', async () => {
   assert.match(component, /<PremiumMetricCard/)
   assert.match(component, /className=\{cn\(\s*'grid gap-3'/)
   assert.doesNotMatch(component, /border-y border-border/)
-  for (const source of [sales, bills, settlements, cash, banks]) {
+
+  for (const source of [sales, bills, cash, banks]) {
     assert.match(source, /<FinanceSummaryBand/)
   }
+
+  assert.match(settlements, /<SettlementExposureWorkspace/)
+  assert.match(settlements, /<SettlementReceiptsWorkspace/)
+  assert.match(exposureWorkspace, /<FinanceSummaryBand/)
+  assert.match(receiptsWorkspace, /<FinanceSummaryBand/)
 })
 
 test('transactions has explicit product states and a dedicated mobile register', async () => {
