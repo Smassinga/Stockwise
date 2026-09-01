@@ -22,7 +22,7 @@
     "test:dashboard": "node --test --test-concurrency=1 tests/dashboard/**/*.test.mjs",
     "test:service-jobs": "node --test --test-concurrency=1 tests/service-jobs/**/*.test.mjs",
     "test:ops-1": "node --test --test-concurrency=1 tests/ops-1/**/*.test.mjs",
-    "test:ux11e": "node --test --test-concurrency=1 tests/ux11e/**/*.test.mjs",
+    "test:administration-ux": "node --test --test-concurrency=1 tests/administration-ux/**/*.test.mjs",
     "test:opening-quantity": "node --test --test-concurrency=1 tests/opening-quantity/**/*.test.mjs",
     "test:uom-integrity": "node --test --test-concurrency=1 tests/uom-integrity/**/*.test.mjs",
     "test:multi-settlement": "node --test --test-concurrency=1 tests/multi-settlement/**/*.test.mjs",
