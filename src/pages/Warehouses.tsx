@@ -1,5 +1,5 @@
 // src/pages/Warehouses.tsx
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
@@ -53,8 +53,16 @@ type Bin = {
 export function Warehouses() {
   const { companyId, myRole } = useOrg()
   const { t } = useI18n()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
-    withI18nFallback(t, key, fallback, vars)
+  const tt = useCallback(
+    (key: string, fallback: string, vars?: Record<string, string | number>) =>
+      withI18nFallback(t, key, fallback, vars),
+    [t]
+  )
+  const translationRef = useRef({ t, tt })
+
+  useEffect(() => {
+    translationRef.current = { t, tt }
+  }, [t, tt])
   const isMobile = useIsMobile()
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canManage = can.manageWarehouses(role)
@@ -76,37 +84,7 @@ export function Warehouses() {
   const warehouseStatusLabel = (status: string) =>
     status === 'active' ? tt('warehouses.active', 'Active') : tt('warehouses.inactive', 'Inactive')
 
-  useEffect(() => {
-    if (!companyId) {
-      setWarehouses([])
-      setBins([])
-      setError(null)
-      setLoading(false)
-      resetForm()
-      resetBinForm()
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        setBinLoadFailed(false)
-        await loadAll(companyId, () => cancelled)
-      } catch (e: any) {
-        console.error(e)
-        if (!cancelled) setError(e?.message || t('errors.title'))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId])
-
-  async function loadAll(activeCompanyId = companyId, isCancelled: () => boolean = () => false) {
+  const loadAll = useCallback(async (activeCompanyId = companyId, isCancelled: () => boolean = () => false) => {
     if (!activeCompanyId) return
 
     // Warehouses are snake_case in DB
@@ -147,7 +125,7 @@ export function Warehouses() {
     if (isCancelled()) return
     if (bnErr) {
       console.error(bnErr)
-      toast.error(bnErr.message || tt('warehouses.toast.binLoadFailed', 'Failed to load bins'))
+      toast.error(bnErr.message || translationRef.current.tt('warehouses.toast.binLoadFailed', 'Failed to load bins'))
       setBins([])
       setBinLoadFailed(true)
       return
@@ -164,7 +142,37 @@ export function Warehouses() {
 
     setBinLoadFailed(false)
     setBins(bns)
-  }
+  }, [companyId])
+
+  useEffect(() => {
+    if (!companyId) {
+      setWarehouses([])
+      setBins([])
+      setError(null)
+      setLoading(false)
+      setForm({ code: '', name: '', address: '', status: 'active' })
+      setEditing(null)
+      setBinForm({ code: '', name: '', warehouseId: '', status: 'active' })
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        setBinLoadFailed(false)
+        await loadAll(companyId, () => cancelled)
+      } catch (e: any) {
+        console.error(e)
+        if (!cancelled) setError(e?.message || translationRef.current.t('errors.title'))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId, loadAll])
 
   function resetForm() {
     setForm({ code: '', name: '', address: '', status: 'active' })
