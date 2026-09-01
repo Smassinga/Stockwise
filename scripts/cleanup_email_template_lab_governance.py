@@ -76,7 +76,7 @@ Supabase Edge Function variables are read from the hosted function environment t
 """
 if "## Email Template Lab QA Isolation" in doc:
     raise SystemExit("guard failed: governance section already exists")
-doc_path.write_text(doc.rstrip() + section + "\n", encoding="utf-8")
+doc_path.write_text(doc.rstrip() + section.rstrip() + "\n", encoding="utf-8")
 
 # Final static guards: these fail the branch workflow if a future/current baseline does not
 # produce the intended fail-closed boundary.
