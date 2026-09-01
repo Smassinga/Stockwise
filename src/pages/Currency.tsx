@@ -1,5 +1,5 @@
 // src/pages/Currency.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../hooks/useOrg'
 import { can, type CompanyRole } from '../lib/permissions'
@@ -42,8 +42,16 @@ const DEFAULT_CURRENCIES: Currency[] = [
 export default function CurrencyPage() {
   const { companyId, companyName, myRole, authorityMode } = useOrg()
   const { t } = useI18n()
-  const tt = (key: string, fallback: string, vars?: Record<string, string | number>) =>
-    withI18nFallback(t, key, fallback, vars)
+  const tt = useCallback(
+    (key: string, fallback: string, vars?: Record<string, string | number>) =>
+      withI18nFallback(t, key, fallback, vars),
+    [t]
+  )
+  const translationRef = useRef({ t, tt })
+
+  useEffect(() => {
+    translationRef.current = { t, tt }
+  }, [t, tt])
   const role: CompanyRole = (myRole as CompanyRole) ?? 'VIEWER'
   const canEdit = can.updateMaster(role)
 
@@ -179,17 +187,16 @@ export default function CurrencyPage() {
         // keep selectors valid after company switch
         const allowedArr = Array.from(new Set(allowedList.map(c => c.code)))
         const fallback = allowedArr.includes('MZN') ? 'MZN' : (allowedArr[0] || 'MZN')
-        if (!allowedArr.includes(from)) setFrom(fallback)
-        if (!allowedArr.includes(to)) setTo(fallback)
+        setFrom((current) => (allowedArr.includes(current) ? current : fallback))
+        setTo((current) => (allowedArr.includes(current) ? current : fallback))
       } catch (e: any) {
         console.error(e)
-        toast.error(e?.message || tt('currency.toast.loadFailed', 'Failed to load currency data'))
+        toast.error(e?.message || translationRef.current.tt('currency.toast.loadFailed', 'Failed to load currency data'))
       } finally {
         setLoading(false)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId])
+  }, [authorityMode, companyId])
 
   // -------- Actions (all scoped by RLS/trigger to current company) --------
   async function saveBase() {
