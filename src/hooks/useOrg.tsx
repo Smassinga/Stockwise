@@ -393,8 +393,26 @@ export function OrgProvider({
       if (mounted) await refresh();
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (!["SIGNED_IN", "SIGNED_OUT"].includes(event)) return;
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        void refresh();
+        return;
+      }
+      if (event !== "SIGNED_IN") return;
+
+      const incomingUserId = session?.user?.id ?? null;
+      const sameResolvedUser = Boolean(
+        incomingUserId && lastResolvedUserRef.current === incomingUserId
+      );
+      const hasResolvedOrg = Boolean(
+        orgSnapshotRef.current.companyId || orgSnapshotRef.current.companies.length > 0
+      );
+
+      // Supabase may emit SIGNED_IN when an existing session is re-established,
+      // including after browser-tab focus. Do not turn that into a blocking org
+      // refresh that unmounts the active route and discards in-memory form state.
+      if (sameResolvedUser && hasResolvedOrg) return;
+
       void refresh();
     });
 
