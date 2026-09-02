@@ -9,6 +9,14 @@ type Bundle = Record<Locale, Dict>
 
 const dict: Bundle = { en, pt }
 
+// Product terminology that must stay consistent while older locale files still
+// contain bank-only wording. Keep the override narrow and remove entries once
+// the locale catalogue is regenerated from the maintained product vocabulary.
+const productCopyOverrides: Bundle = {
+  en: { 'banks.title': 'Banks & wallets' },
+  pt: { 'banks.title': 'Bancos e carteiras móveis' },
+}
+
 type Ctx = {
   lang: Locale
   t: (key: string, vars?: Record<string, string | number>) => string
@@ -52,7 +60,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
   const t = useMemo(
     () => (key: string, vars?: Record<string, string | number>) => {
-      let s = (dict as any)[lang]?.[key] ?? (dict as any).en?.[key] ?? key
+      const s = productCopyOverrides[lang]?.[key] ?? (dict as any)[lang]?.[key] ?? (dict as any).en?.[key] ?? key
       return interpolateMessage(s, vars)
     },
     [lang]
