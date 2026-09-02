@@ -1,0 +1,1 @@
+Any foreign-currency transaction retained in the Leny scenario must carry the dated Standard Bank Mozambique reference rate used for that transaction date. The final scenario report will identify the exact rate and source date.
