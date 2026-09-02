@@ -1,0 +1,1 @@
+The scenario should create enough retained history to make dashboard, registers, filters, aging, inventory, service, production, and finance presentation visibly non-trivial across six months. Exact retained counts are recorded only after verification.
