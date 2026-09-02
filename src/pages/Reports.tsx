@@ -10,7 +10,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { useOrg } from '../hooks/useOrg'
 import { formatMoneyBase } from '../lib/currency'
-import { exportExcelReport, loadCompanyExportHeader } from '../lib/excelExport'
+import { exportExcelReport, loadCompanyExportHeader, loadCompanyLogoImage } from '../lib/excelExport'
 import { useI18n } from '../lib/i18n'
 import { formatOperationalQuantity } from '../lib/operationalQuantity'
 import { supabase } from '../lib/supabase'
@@ -22,13 +22,13 @@ type ReportPayload = { rows?: Array<Record<string, unknown>>; summary?: Record<s
 type UomRow = { id: string; code: string; name: string }
 type ExportFormat = 'xlsx' | 'csv' | 'pdf' | 'print'
 
+const REPORT_PAGE_SIZE = 50
 const catalogue: Array<{ group: ReportGroup; reports: ReportCode[] }> = [
   { group: 'performance', reports: ['performance', 'product-profitability'] },
   { group: 'inventory', reports: ['inventory-valuation', 'stock-movement-ledger', 'inventory-ageing'] },
   { group: 'partners', reports: ['customer-location', 'supplier-payables'] },
   { group: 'operations', reports: ['service-job-profitability', 'order-fulfilment'] },
 ]
-
 const periodReports = new Set<ReportCode>([
   'performance', 'product-profitability', 'stock-movement-ledger', 'customer-location',
   'supplier-payables', 'service-job-profitability', 'order-fulfilment',
@@ -42,12 +42,16 @@ const labels = {
     unavailable: 'Unavailable', currentSnapshot: 'Current snapshot', period: 'Period', currency: 'Currency', results: 'Results', row: 'row', rows: 'rows', metrics: 'metrics',
     noPeriodActivity: 'No activity was recorded in this period.', noSnapshotData: 'No current records are available for this report.',
     noFilterResults: 'No records match the selected collection status.', emptyHelp: 'Change the filters or choose another report.',
-    exportScope: 'Exports use the report and filters shown here.', exportFailed: 'The export could not be prepared.', exportFailedHelp: 'Try the export again.',
+    exportScope: 'Exports use the full report and filters shown here, not only the current page.', exportFailed: 'The export could not be prepared.', exportFailedHelp: 'Try the export again.',
     print: 'Print', preparing: 'Preparing', tableRegion: 'Scrollable report results', mobileTableHelp: 'Scroll the table horizontally to review every column.',
     scope: 'Report scope', summary: 'Report summary', collectionStatus: 'Collection status', all: 'All',
     snapshotNote: 'This is a current stock snapshot, not activity for a date range.',
     ageingNote: 'Slow-moving status uses the report threshold shown below and the current stock position.',
     costNote: 'Missing cost remains unavailable; it is not treated as zero.',
+    serviceCostingTitle: 'Finalised costing does not mean sales are linked',
+    serviceCostingNote: 'Finalised means the Service Job actual costs are locked. Operational sales and gross profit remain unavailable until the completed job is linked to a Sales Order line; the job itself is not unfinished.',
+    linkedSale: 'Linked Sales Order', noLinkedSale: 'No linked Sales Order',
+    pageOf: 'Page {page} of {pages}', previous: 'Previous', next: 'Next',
     groups: { performance: 'Performance', inventory: 'Inventory', partners: 'Customers and suppliers', operations: 'Operations' },
     reports: { performance: 'Operational performance', 'product-profitability': 'Product profitability', 'inventory-valuation': 'Inventory valuation', 'stock-movement-ledger': 'Stock movement ledger', 'inventory-ageing': 'Inventory ageing and slow-moving stock', 'customer-location': 'Customer performance and receivables', 'supplier-payables': 'Supplier spend and payables', 'service-job-profitability': 'Service Job profitability', 'order-fulfilment': 'Order fulfilment' },
   },
@@ -58,12 +62,16 @@ const labels = {
     unavailable: 'Indisponível', currentSnapshot: 'Situação actual', period: 'Período', currency: 'Moeda', results: 'Resultados', row: 'linha', rows: 'linhas', metrics: 'métricas',
     noPeriodActivity: 'Não foi registada actividade neste período.', noSnapshotData: 'Não existem registos actuais para este relatório.',
     noFilterResults: 'Nenhum registo corresponde ao estado de cobrança seleccionado.', emptyHelp: 'Altere os filtros ou escolha outro relatório.',
-    exportScope: 'As exportações usam o relatório e os filtros apresentados aqui.', exportFailed: 'Não foi possível preparar a exportação.', exportFailedHelp: 'Tente exportar novamente.',
+    exportScope: 'As exportações usam o relatório completo e os filtros apresentados, não apenas a página actual.', exportFailed: 'Não foi possível preparar a exportação.', exportFailedHelp: 'Tente exportar novamente.',
     print: 'Imprimir', preparing: 'A preparar', tableRegion: 'Resultados do relatório com deslocamento horizontal', mobileTableHelp: 'Deslize a tabela na horizontal para consultar todas as colunas.',
     scope: 'Âmbito do relatório', summary: 'Resumo do relatório', collectionStatus: 'Estado da cobrança', all: 'Todos',
     snapshotNote: 'Esta é a situação actual do stock, não a actividade de um intervalo de datas.',
     ageingNote: 'O estado de baixa rotação usa o limite indicado abaixo e a situação actual do stock.',
     costNote: 'O custo em falta permanece indisponível; não é tratado como zero.',
+    serviceCostingTitle: 'Custeio finalizado não significa que a venda esteja ligada',
+    serviceCostingNote: 'Finalizado significa que os custos reais do Trabalho de Serviço estão fechados. As vendas operacionais e o lucro bruto permanecem indisponíveis até o trabalho concluído estar ligado a uma linha de Ordem de Venda; o trabalho em si não está inacabado.',
+    linkedSale: 'Ordem de Venda ligada', noLinkedSale: 'Sem Ordem de Venda ligada',
+    pageOf: 'Página {page} de {pages}', previous: 'Anterior', next: 'Seguinte',
     groups: { performance: 'Desempenho', inventory: 'Inventário', partners: 'Clientes e fornecedores', operations: 'Operações' },
     reports: { performance: 'Desempenho operacional', 'product-profitability': 'Rentabilidade por produto', 'inventory-valuation': 'Valorização do inventário', 'stock-movement-ledger': 'Razão de movimentos de stock', 'inventory-ageing': 'Antiguidade e stock de baixa rotação', 'customer-location': 'Desempenho de clientes e contas a receber', 'supplier-payables': 'Compras a fornecedores e contas a pagar', 'service-job-profitability': 'Rentabilidade dos Trabalhos de Serviço', 'order-fulfilment': 'Cumprimento de ordens' },
   },
@@ -79,7 +87,7 @@ const fieldLabels: Record<'en' | 'pt', Record<string, string>> = {
     customer: 'Customer', customerLocation: 'Customer location', operationalLocation: 'Operational location', cashActivity: 'Cash/walk-in activity', operationalSales: 'Operational sales', outstandingBalance: 'Outstanding balance', overdueBalance: 'Overdue balance', lastCompletedPurchase: 'Last completed purchase',
     collectionStatus: 'Collection status', collectionOwner: 'Collection owner', nextActionAt: 'Next action', promiseDate: 'Promise date', promisedAmount: 'Promised amount', promiseStatus: 'Promise status', disputeCategory: 'Dispute category', daysOverdue: 'Days overdue', lastReminderStage: 'Last reminder stage', lastReminderAcceptedAt: 'Last reminder accepted',
     supplier: 'Supplier', supplierLocation: 'Supplier location', vendorBillValue: 'Vendor Bill value', paidAmount: 'Paid amount', outstandingAmount: 'Outstanding amount', overdueAmount: 'Overdue amount', lastBillDate: 'Last bill date', purchaseOrderValue: 'Purchase Order value',
-    serviceJob: 'Service Job', service: 'Service', completionDate: 'Completion date', materials: 'Materials', labour: 'Labour', subcontractors: 'Subcontractors', supplierAllocations: 'Supplier allocations', otherDirectCost: 'Other direct cost', totalActualCost: 'Total actual cost', costingState: 'Costing state',
+    serviceJob: 'Service Job', service: 'Service', completionDate: 'Completion date', materials: 'Materials', labour: 'Labour', subcontractors: 'Subcontractors', supplierAllocations: 'Supplier allocations', otherDirectCost: 'Other direct cost', totalActualCost: 'Total actual cost', salesEvidence: 'Sales evidence', costingState: 'Costing state',
     submitted: 'Submitted', confirmed: 'Confirmed', allocated: 'Allocated', shippedCompleted: 'Shipped/completed', closed: 'Closed', cancelled: 'Cancelled', openBacklog: 'Open backlog', completionRate: 'Completion rate', averageFulfilmentDays: 'Average fulfilment duration (days)', overdueOrders: 'Overdue orders', thresholdDays: 'Slow-moving threshold',
   },
   pt: {
@@ -91,7 +99,7 @@ const fieldLabels: Record<'en' | 'pt', Record<string, string>> = {
     customer: 'Cliente', customerLocation: 'Localização do cliente', operationalLocation: 'Localização operacional', cashActivity: 'Actividade a dinheiro/cliente ocasional', operationalSales: 'Vendas operacionais', outstandingBalance: 'Saldo em aberto', overdueBalance: 'Saldo vencido', lastCompletedPurchase: 'Última compra concluída',
     collectionStatus: 'Estado da cobrança', collectionOwner: 'Responsável pela cobrança', nextActionAt: 'Próxima acção', promiseDate: 'Data da promessa', promisedAmount: 'Valor prometido', promiseStatus: 'Estado da promessa', disputeCategory: 'Categoria da reclamação', daysOverdue: 'Dias em atraso', lastReminderStage: 'Última etapa do lembrete', lastReminderAcceptedAt: 'Último lembrete aceite',
     supplier: 'Fornecedor', supplierLocation: 'Localização do fornecedor', vendorBillValue: 'Valor das faturas de fornecedor', paidAmount: 'Valor pago', outstandingAmount: 'Valor em aberto', overdueAmount: 'Valor vencido', lastBillDate: 'Data da última fatura', purchaseOrderValue: 'Valor das ordens de compra',
-    serviceJob: 'Trabalho de Serviço', service: 'Serviço', completionDate: 'Data de conclusão', materials: 'Materiais', labour: 'Mão de obra', subcontractors: 'Subcontratados', supplierAllocations: 'Alocações de fornecedores', otherDirectCost: 'Outros custos directos', totalActualCost: 'Custo real total', costingState: 'Estado do custeio',
+    serviceJob: 'Trabalho de Serviço', service: 'Serviço', completionDate: 'Data de conclusão', materials: 'Materiais', labour: 'Mão de obra', subcontractors: 'Subcontratados', supplierAllocations: 'Alocações de fornecedores', otherDirectCost: 'Outros custos directos', totalActualCost: 'Custo real total', salesEvidence: 'Evidência de venda', costingState: 'Estado do custeio',
     submitted: 'Submetidas', confirmed: 'Confirmadas', allocated: 'Alocadas', shippedCompleted: 'Expedidas/concluídas', closed: 'Encerradas', cancelled: 'Canceladas', openBacklog: 'Pendentes em aberto', completionRate: 'Taxa de conclusão', averageFulfilmentDays: 'Duração média de cumprimento (dias)', overdueOrders: 'Ordens vencidas', thresholdDays: 'Limite de baixa rotação',
   },
 }
@@ -116,7 +124,7 @@ const reportColumnOrder: Record<ReportCode, string[]> = {
   'inventory-ageing': ['item', 'sku', 'warehouse', 'quantity', 'inventoryValue', 'lastSaleOrIssueAt', 'daysWithoutMovement', 'slowMoving', 'stockStatus'],
   'customer-location': ['customer', 'customerLocation', 'operationalLocation', 'cashActivity', 'transactions', 'operationalSales', 'knownCogs', 'grossProfit', 'grossMargin', 'missingCostCount', 'outstandingBalance', 'overdueBalance', 'lastCompletedPurchase', 'collectionStatus', 'collectionOwner', 'nextActionAt', 'promiseDate', 'promisedAmount', 'promiseStatus', 'disputeCategory', 'daysOverdue', 'lastReminderStage', 'lastReminderAcceptedAt'],
   'supplier-payables': ['supplier', 'supplierLocation', 'vendorBillValue', 'paidAmount', 'outstandingAmount', 'overdueAmount', 'lastBillDate', 'purchaseOrderValue'],
-  'service-job-profitability': ['serviceJob', 'customer', 'service', 'completionDate', 'materials', 'labour', 'subcontractors', 'supplierAllocations', 'otherDirectCost', 'totalActualCost', 'operationalSales', 'grossProfit', 'costingState'],
+  'service-job-profitability': ['serviceJob', 'customer', 'service', 'completionDate', 'materials', 'labour', 'subcontractors', 'supplierAllocations', 'otherDirectCost', 'totalActualCost', 'salesEvidence', 'operationalSales', 'grossProfit', 'costingState'],
   'order-fulfilment': ['submitted', 'confirmed', 'allocated', 'shippedCompleted', 'closed', 'cancelled', 'openBacklog', 'completionRate', 'averageFulfilmentDays', 'overdueOrders'],
 }
 const enumLabels: Record<'en' | 'pt', Record<string, string>> = {
@@ -151,40 +159,29 @@ export default function Reports() {
   const [uoms, setUoms] = useState<UomRow[]>([])
   const [collectionFilter, setCollectionFilter] = useState('all')
   const [loadedAt, setLoadedAt] = useState<Date | null>(null)
+  const [page, setPage] = useState(1)
   const isPeriodReport = periodReports.has(report)
   const periodInvalid = isPeriodReport && (!startDate || !endDate || startDate > endDate)
 
   useEffect(() => {
     let cancelled = false
-    supabase.from('uoms').select('id,code,name').order('code').then(({ data }) => {
-      if (!cancelled) setUoms((data || []) as UomRow[])
-    })
+    supabase.from('uoms').select('id,code,name').order('code').then(({ data }) => { if (!cancelled) setUoms((data || []) as UomRow[]) })
     return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
     if (!companyId || periodInvalid) {
-      setPayload(null)
-      setLoading(false)
-      setLoadFailed(false)
-      return
+      setPayload(null); setLoading(false); setLoadFailed(false); return
     }
     let cancelled = false
-    setLoading(true)
-    setLoadFailed(false)
-    setPayload(null)
-    setExportFailed(false)
+    setLoading(true); setLoadFailed(false); setPayload(null); setExportFailed(false)
     supabase.rpc('get_operational_report', {
       p_company_id: companyId, p_report_code: report, p_start_date: startDate, p_end_date: endDate,
       p_warehouse_id: null, p_customer_id: null, p_include_cash: true, p_slow_days: 90,
     }).then(({ data, error: rpcError }) => {
       if (cancelled) return
       setLoading(false)
-      if (rpcError) {
-        console.error('[Reports] Report request failed', { report, rpcError })
-        setLoadFailed(true)
-        return
-      }
+      if (rpcError) { console.error('[Reports] Report request failed', { report, rpcError }); setLoadFailed(true); return }
       setPayload((data || {}) as ReportPayload)
       setLoadedAt(new Date())
     })
@@ -193,14 +190,19 @@ export default function Reports() {
 
   const sourceRows = useMemo(() => {
     if (!payload) return []
-    if (payload.rows) return payload.rows
-    if (report === 'performance') return payload.trend || []
-    if (report === 'order-fulfilment') {
+    let result: Array<Record<string, unknown>> = []
+    if (payload.rows) result = payload.rows
+    else if (report === 'performance') result = payload.trend || []
+    else if (report === 'order-fulfilment') {
       const activityKeys = ['submitted', 'confirmed', 'allocated', 'shippedCompleted', 'closed', 'cancelled']
-      return activityKeys.some((key) => Number(payload[key] || 0) > 0) ? [payload] : []
+      result = activityKeys.some((key) => Number(payload[key] || 0) > 0) ? [payload] : []
     }
-    return []
+    if (report === 'service-job-profitability') {
+      return result.map((row) => ({ ...row, salesEvidence: row.operationalSales == null ? 'no_linked_sale' : 'linked_sale' }))
+    }
+    return result
   }, [payload, report])
+
   const rows = useMemo(() => {
     if (report !== 'customer-location' || collectionFilter === 'all') return sourceRows
     const currentDay = today()
@@ -211,6 +213,12 @@ export default function Reports() {
       return row.collectionStatus === collectionFilter
     })
   }, [collectionFilter, report, sourceRows])
+
+  useEffect(() => { setPage(1) }, [companyId, report, startDate, endDate, collectionFilter, payload])
+  const pageCount = Math.max(1, Math.ceil(rows.length / REPORT_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pageRows = rows.slice((safePage - 1) * REPORT_PAGE_SIZE, safePage * REPORT_PAGE_SIZE)
+
   const columns = useMemo(() => {
     const keys = new Set<string>()
     rows.slice(0, 30).forEach((row) => Object.keys(row).forEach((key) => { if (!key.toLowerCase().endsWith('id') && key !== 'asOf' && key !== 'thresholdDays') keys.add(key) }))
@@ -218,6 +226,7 @@ export default function Reports() {
     const remaining = [...keys].filter((key) => !preferred.includes(key)).sort()
     return [...preferred, ...remaining]
   }, [report, rows])
+
   const locale = lang === 'pt' ? 'pt-MZ' : 'en-MZ'
   const uomById = useMemo(() => new Map(uoms.map((uom) => [uom.id, uom.code])), [uoms])
   const displayKey = (key: string) => fieldLabels[lang][key] || fallbackDisplayKey(key)
@@ -230,6 +239,7 @@ export default function Reports() {
   const activeCollectionLabel = collectionOptions.find(([value]) => value === collectionFilter)?.[1] || copy.all
 
   const resolvedValue = (key: string, value: unknown) => {
+    if (key === 'salesEvidence') return value === 'linked_sale' ? copy.linkedSale : copy.noLinkedSale
     if (typeof value !== 'string') return value
     if (uomFields.has(key)) return uomById.get(value) || (uuidPattern.test(value) ? null : value)
     if (backendTextLabels[lang][value]) return backendTextLabels[lang][value]
@@ -273,30 +283,16 @@ export default function Reports() {
       : []
   const resultCountLabel = report === 'order-fulfilment'
     ? `${summaryEntries.length} ${copy.metrics}`
-    : `${rows.length} ${rows.length === 1 ? copy.row : copy.rows}`
+    : `${rows.length} ${rows.length === 1 ? copy.row : copy.rows}${pageCount > 1 ? ` · ${copy.pageOf.replace('{page}', String(safePage)).replace('{pages}', String(pageCount))}` : ''}`
   const isNumericColumn = (column: string) => moneyFields.has(column) || percentageFields.has(column) || numericFields.has(column) || typeof rows[0]?.[column] === 'number'
-  const rowKey = (row: Record<string, unknown>, index: number) => [
-    row.id, row.itemId, row.serviceJobId, row.customerId, row.supplierId,
-    row.warehouseId, row.binId, row.date, row.occurredAt, index,
-  ].filter((value) => value != null && value !== '').map(String).join(':')
+  const rowKey = (row: Record<string, unknown>, index: number) => [row.id, row.itemId, row.serviceJobId, row.customerId, row.supplierId, row.warehouseId, row.binId, row.date, row.occurredAt, index].filter((value) => value != null && value !== '').map(String).join(':')
 
   function handleReportChange(nextReport: ReportCode) {
-    const next = new URLSearchParams(params)
-    next.set('report', nextReport)
-    setParams(next)
+    const next = new URLSearchParams(params); next.set('report', nextReport); setParams(next)
   }
-
   async function runExport(format: ExportFormat, action: () => Promise<void>) {
-    setExporting(format)
-    setExportFailed(false)
-    try {
-      await action()
-    } catch (error) {
-      console.error(`[Reports] ${format} export failed`, error)
-      setExportFailed(true)
-    } finally {
-      setExporting(null)
-    }
+    setExporting(format); setExportFailed(false)
+    try { await action() } catch (error) { console.error(`[Reports] ${format} export failed`, error); setExportFailed(true) } finally { setExporting(null) }
   }
 
   async function exportXlsx() {
@@ -321,18 +317,9 @@ export default function Reports() {
     await runExport('csv', async () => {
       const company = await loadCompanyExportHeader(companyId)
       const escape = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`
-      const lines = [
-        [lang === 'pt' ? 'Empresa' : 'Company', company.companyName],
-        ...filterLines.map((line) => [line]),
-        [], columns.map(displayKey),
-        ...rows.map((row) => columns.map((column) => resolvedValue(column, row[column]) ?? copy.unavailable)),
-      ].map((line) => line.map(escape).join(','))
+      const lines = [[lang === 'pt' ? 'Empresa' : 'Company', company.companyName], ...filterLines.map((line) => [line]), [], columns.map(displayKey), ...rows.map((row) => columns.map((column) => resolvedValue(column, row[column]) ?? copy.unavailable))].map((line) => line.map(escape).join(','))
       const href = URL.createObjectURL(new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }))
-      const link = document.createElement('a')
-      link.href = href
-      link.download = `StockWise_${report}_${startDate}_${endDate}.csv`
-      link.click()
-      URL.revokeObjectURL(href)
+      const link = document.createElement('a'); link.href = href; link.download = `StockWise_${report}_${startDate}_${endDate}.csv`; link.click(); URL.revokeObjectURL(href)
     })
   }
 
@@ -340,12 +327,19 @@ export default function Reports() {
     if (!companyId || !rows.length) return
     await runExport('pdf', async () => {
       const [{ default: jsPDF }, { default: autoTable }, company] = await Promise.all([import('jspdf'), import('jspdf-autotable'), loadCompanyExportHeader(companyId)])
+      const logo = await loadCompanyLogoImage(company.logoUrl)
       const doc = new jsPDF({ orientation: columns.length > 7 ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' })
       const pageWidth = doc.internal.pageSize.getWidth()
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text(company.companyName, 12, 14)
-      doc.setFontSize(13); doc.text(reportTitle, 12, 23)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(`${scopeLabel} · MZN`, 12, 30)
-      autoTable(doc, { startY: 36, head: [columns.map(displayKey)], body: rows.map((row) => columns.map((column) => formatValue(column, row[column]))), styles: { fontSize: 7, cellPadding: 1.7, overflow: 'linebreak' }, headStyles: { fillColor: [1, 69, 88] }, alternateRowStyles: { fillColor: [248, 250, 252] }, margin: { left: 8, right: 8, bottom: 16 }, didDrawPage: ({ pageNumber }: { pageNumber: number }) => { doc.setFontSize(8); doc.text(company.footerNote || 'Generated by StockWise', 8, doc.internal.pageSize.getHeight() - 7); doc.text(`${pageNumber}`, pageWidth - 12, doc.internal.pageSize.getHeight() - 7, { align: 'right' }) } })
+      const textX = logo ? 34 : 12
+      if (logo) doc.addImage(logo.base64, logo.extension === 'jpeg' ? 'JPEG' : logo.extension.toUpperCase(), 12, 8, 17, 17)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text(company.companyName, textX, 14)
+      doc.setFontSize(13); doc.text(reportTitle, textX, 23)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(`${scopeLabel} · MZN`, 12, 31)
+      autoTable(doc, {
+        startY: 37, head: [columns.map(displayKey)], body: rows.map((row) => columns.map((column) => formatValue(column, row[column]))),
+        styles: { fontSize: 7, cellPadding: 1.7, overflow: 'linebreak' }, headStyles: { fillColor: [1, 69, 88] }, alternateRowStyles: { fillColor: [248, 250, 252] }, margin: { left: 8, right: 8, bottom: 16 },
+        didDrawPage: ({ pageNumber }: { pageNumber: number }) => { doc.setFontSize(8); doc.text(company.footerNote || 'Generated by StockWise', 8, doc.internal.pageSize.getHeight() - 7); doc.text(`${pageNumber}`, pageWidth - 12, doc.internal.pageSize.getHeight() - 7, { align: 'right' }) },
+      })
       doc.save(`StockWise_${report}_${startDate}_${endDate}.pdf`)
     })
   }
@@ -353,177 +347,56 @@ export default function Reports() {
   async function printReport() {
     if (!companyId || !rows.length) return
     const popup = window.open('', '_blank', 'noopener,noreferrer')
-    if (!popup) {
-      setExportFailed(true)
-      return
-    }
+    if (!popup) { setExportFailed(true); return }
     await runExport('print', async () => {
       const company = await loadCompanyExportHeader(companyId)
-      popup.document.write(`<html><head><title>${escapeHtml(reportTitle)}</title><style>body{font:12px Arial;padding:24px;color:#111}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d1d5db;padding:6px;text-align:left}th{background:#014558;color:#fff}h1{margin-bottom:4px}.meta{color:#4b5563;margin-bottom:18px}@page{margin:12mm}</style></head><body><h1>${escapeHtml(company.companyName)}</h1><h2>${escapeHtml(reportTitle)}</h2><div class="meta">${escapeHtml(scopeLabel)} · MZN · StockWise</div><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(displayKey(column))}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(formatValue(column, row[column]))}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`)
-      popup.document.close()
-      popup.addEventListener('load', () => popup.print(), { once: true })
+      const logo = company.logoUrl ? `<img src="${escapeHtml(company.logoUrl)}" alt="" class="logo"/>` : ''
+      popup.document.write(`<html><head><title>${escapeHtml(reportTitle)}</title><style>body{font:12px Arial;padding:24px;color:#111}.brand{display:flex;align-items:center;gap:12px}.logo{width:54px;height:54px;object-fit:contain}table{border-collapse:collapse;width:100%;margin-top:18px}th,td{border:1px solid #d1d5db;padding:6px;text-align:left}th{background:#014558;color:#fff}h1,h2{margin:0}.meta{color:#4b5563;margin-top:7px}.footer{margin-top:16px;color:#6b7280;font-size:10px}@page{margin:12mm}</style></head><body><div class="brand">${logo}<div><h1>${escapeHtml(company.companyName)}</h1><h2>${escapeHtml(reportTitle)}</h2><div class="meta">${escapeHtml(scopeLabel)} · MZN</div></div></div><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(displayKey(column))}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(formatValue(column, row[column]))}</td>`).join('')}</tr>`).join('')}</tbody></table><div class="footer">${escapeHtml(company.footerNote || 'Generated by StockWise')}</div></body></html>`)
+      popup.document.close(); popup.addEventListener('load', () => popup.print(), { once: true })
     })
   }
 
-  const emptyTitle = report === 'customer-location' && collectionFilter !== 'all' && sourceRows.length > 0
-    ? copy.noFilterResults
-    : isPeriodReport ? copy.noPeriodActivity : copy.noSnapshotData
+  const emptyTitle = report === 'customer-location' && collectionFilter !== 'all' && sourceRows.length > 0 ? copy.noFilterResults : isPeriodReport ? copy.noPeriodActivity : copy.noSnapshotData
 
   return (
     <div className="app-page app-page--analytics">
       <PremiumRegisterHeader title={copy.title} />
-
       <div className="grid min-w-0 gap-6 lg:grid-cols-[16rem_minmax(0,1fr)] xl:gap-8">
         <aside className="hidden lg:block">
           <nav aria-label={copy.report} className="border-y border-border py-2">
-            {catalogue.map((group, groupIndex) => (
-              <section key={group.group} aria-labelledby={`report-group-${group.group}`} className={cn('py-4', groupIndex > 0 && 'border-t border-border')}>
-                <h2 id={`report-group-${group.group}`} className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.groups[group.group]}</h2>
-                <div className="mt-2 grid gap-1">
-                  {group.reports.map((code) => (
-                    <Button
-                      key={code}
-                      type="button"
-                      variant="ghost"
-                      aria-current={report === code ? 'page' : undefined}
-                      className={cn('h-auto min-h-10 justify-start whitespace-normal rounded-none border-l-2 border-transparent px-3 py-2 text-left leading-5', report === code && 'border-primary bg-surface-muted text-foreground')}
-                      onClick={() => handleReportChange(code)}
-                    >
-                      {copy.reports[code]}
-                    </Button>
-                  ))}
-                </div>
-              </section>
-            ))}
+            {catalogue.map((group, groupIndex) => <section key={group.group} aria-labelledby={`report-group-${group.group}`} className={cn('py-4', groupIndex > 0 && 'border-t border-border')}><h2 id={`report-group-${group.group}`} className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.groups[group.group]}</h2><div className="mt-2 grid gap-1">{group.reports.map((code) => <Button key={code} type="button" variant="ghost" aria-current={report === code ? 'page' : undefined} className={cn('h-auto min-h-10 justify-start whitespace-normal rounded-none border-l-2 border-transparent px-3 py-2 text-left leading-5', report === code && 'border-primary bg-surface-muted text-foreground')} onClick={() => handleReportChange(code)}>{copy.reports[code]}</Button>)}</div></section>)}
           </nav>
         </aside>
-
         <main className="min-w-0 space-y-6">
-          <div className="lg:hidden">
-            <Label htmlFor="mobile-report-selector">{copy.report}</Label>
-            <Select value={report} onValueChange={(value) => handleReportChange(value as ReportCode)}>
-              <SelectTrigger id="mobile-report-selector" className="mt-2 min-h-11 w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {catalogue.flatMap((group) => group.reports.map((code) => <SelectItem key={code} value={code}>{copy.reports[code]}</SelectItem>))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="lg:hidden"><Label htmlFor="mobile-report-selector">{copy.report}</Label><Select value={report} onValueChange={(value) => handleReportChange(value as ReportCode)}><SelectTrigger id="mobile-report-selector" className="mt-2 min-h-11 w-full"><SelectValue /></SelectTrigger><SelectContent>{catalogue.flatMap((group) => group.reports.map((code) => <SelectItem key={code} value={code}>{copy.reports[code]}</SelectItem>))}</SelectContent></Select></div>
 
           <section aria-labelledby="current-report-heading" className="space-y-5">
-            <div>
-              <h2 id="current-report-heading" className="text-xl font-semibold tracking-tight sm:text-2xl">{reportTitle}</h2>
-              {report === 'inventory-valuation' ? <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.snapshotNote}</p> : null}
-              {report === 'inventory-ageing' ? <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.ageingNote}</p> : null}
-              {(report === 'performance' || report === 'product-profitability') ? <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.costNote}</p> : null}
-            </div>
-
+            <div><h2 id="current-report-heading" className="text-xl font-semibold tracking-tight sm:text-2xl">{reportTitle}</h2>{report === 'inventory-valuation' ? <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.snapshotNote}</p> : null}{report === 'inventory-ageing' ? <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.ageingNote}</p> : null}{(report === 'performance' || report === 'product-profitability') ? <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{copy.costNote}</p> : null}</div>
+            {report === 'service-job-profitability' ? <PremiumStatePanel kind="info" compact title={copy.serviceCostingTitle} description={copy.serviceCostingNote} /> : null}
             <div className="border-y border-border py-4">
               <div className={cn('grid gap-4', isPeriodReport && 'sm:grid-cols-2 sm:items-end xl:grid-cols-[minmax(10rem,1fr)_minmax(10rem,1fr)_auto]')}>
-                {isPeriodReport ? (
-                  <>
-                    <div>
-                      <Label htmlFor="report-start-date">{copy.start}</Label>
-                      <Input id="report-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-invalid={periodInvalid} className="mt-2 min-h-11" />
-                    </div>
-                    <div>
-                      <Label htmlFor="report-end-date">{copy.end}</Label>
-                      <Input id="report-end-date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} aria-invalid={periodInvalid} className="mt-2 min-h-11" />
-                    </div>
-                  </>
-                ) : null}
-                <Button type="button" variant="outline" className={cn('min-h-11', isPeriodReport && 'sm:col-span-2 sm:w-fit xl:col-span-1', !isPeriodReport && 'w-fit')} disabled={loading || periodInvalid} onClick={() => setReload((value) => value + 1)}>
-                  <RefreshCw className={cn(loading && 'motion-safe:animate-spin')} />{copy.refresh}
-                </Button>
+                {isPeriodReport ? <><div><Label htmlFor="report-start-date">{copy.start}</Label><Input id="report-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-invalid={periodInvalid} className="mt-2 min-h-11" /></div><div><Label htmlFor="report-end-date">{copy.end}</Label><Input id="report-end-date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} aria-invalid={periodInvalid} className="mt-2 min-h-11" /></div></> : null}
+                <Button type="button" variant="outline" className={cn('min-h-11', isPeriodReport && 'sm:col-span-2 sm:w-fit xl:col-span-1', !isPeriodReport && 'w-fit')} disabled={loading || periodInvalid} onClick={() => setReload((value) => value + 1)}><RefreshCw className={cn(loading && 'motion-safe:animate-spin')} />{copy.refresh}</Button>
               </div>
-
-              {report === 'customer-location' ? (
-                <div className="mt-4 max-w-sm">
-                  <Label htmlFor="collection-status-filter">{copy.collectionStatus}</Label>
-                  <Select value={collectionFilter} onValueChange={setCollectionFilter}>
-                    <SelectTrigger id="collection-status-filter" className="mt-2 min-h-11"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {collectionOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
+              {report === 'customer-location' ? <div className="mt-4 max-w-sm"><Label htmlFor="collection-status-filter">{copy.collectionStatus}</Label><Select value={collectionFilter} onValueChange={setCollectionFilter}><SelectTrigger id="collection-status-filter" className="mt-2 min-h-11"><SelectValue /></SelectTrigger><SelectContent>{collectionOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div> : null}
             </div>
           </section>
 
-          {periodInvalid ? (
-            <PremiumStatePanel kind="warning" title={copy.invalidPeriod} description={copy.invalidPeriodHelp} />
-          ) : (
-            <>
-              <section aria-label={copy.scope} className="border-b border-border pb-5">
-                <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{isPeriodReport ? copy.period : copy.currentSnapshot}</dt><dd className="mt-1 break-words text-sm font-medium">{isPeriodReport ? period : snapshotAt}</dd></div>
-                  <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.currency}</dt><dd className="mt-1 text-sm font-medium">MZN</dd></div>
-                  <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.results}</dt><dd className="mt-1 text-sm font-medium tabular-nums">{loading ? '—' : resultCountLabel}</dd></div>
-                  {report === 'customer-location' ? <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.collectionStatus}</dt><dd className="mt-1 break-words text-sm font-medium">{activeCollectionLabel}</dd></div> : null}
-                  {report === 'inventory-ageing' ? <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey('thresholdDays')}</dt><dd className="mt-1 text-sm font-medium tabular-nums">{payload?.thresholdDays ?? 90} {lang === 'pt' ? 'dias' : 'days'}</dd></div> : null}
-                </dl>
-              </section>
+          {periodInvalid ? <PremiumStatePanel kind="warning" title={copy.invalidPeriod} description={copy.invalidPeriodHelp} /> : <>
+            <section aria-label={copy.scope} className="border-b border-border pb-5"><dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4"><div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{isPeriodReport ? copy.period : copy.currentSnapshot}</dt><dd className="mt-1 break-words text-sm font-medium">{isPeriodReport ? period : snapshotAt}</dd></div><div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.currency}</dt><dd className="mt-1 text-sm font-medium">MZN</dd></div><div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.results}</dt><dd className="mt-1 text-sm font-medium tabular-nums">{loading ? '—' : resultCountLabel}</dd></div>{report === 'customer-location' ? <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy.collectionStatus}</dt><dd className="mt-1 break-words text-sm font-medium">{activeCollectionLabel}</dd></div> : null}{report === 'inventory-ageing' ? <div><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey('thresholdDays')}</dt><dd className="mt-1 text-sm font-medium tabular-nums">{payload?.thresholdDays ?? 90} {lang === 'pt' ? 'dias' : 'days'}</dd></div> : null}</dl></section>
 
-              {loading ? (
-                <div className="space-y-4" aria-label={copy.loading}>
-                  {(report === 'performance' || report === 'product-profitability' || report === 'order-fulfilment') ? <PremiumSkeleton variant="summary" lines={2} label={copy.loading} /> : null}
-                  <PremiumSkeleton variant="table" rows={6} label={copy.loading} />
-                </div>
-              ) : loadFailed ? (
-                <PremiumStatePanel kind="error" title={copy.loadFailed} description={copy.loadFailedHelp} action={<Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>{copy.retry}</Button>} />
-              ) : (
-                <>
-                  {summaryEntries.length > 0 ? (
-                    <section aria-label={copy.summary} className="border-y border-border">
-                      <dl className="grid sm:grid-cols-2 xl:grid-cols-3">
-                        {summaryEntries.map(([key, value]) => (
-                          <div key={key} className="min-w-0 border-b border-border py-4 sm:border-l sm:px-5 sm:first:border-l-0 sm:first:pl-0 xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(3n+1)]:pl-0">
-                            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey(key)}</dt>
-                            <dd className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums">{formatValue(key, value)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </section>
-                  ) : null}
-
-                  {exportFailed ? <PremiumStatePanel kind="error" compact title={copy.exportFailed} description={copy.exportFailedHelp} /> : null}
-
-                  {rows.length > 0 ? (
-                    <section aria-label={lang === 'pt' ? 'Exportar relatório' : 'Export report'} className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-xs leading-5 text-muted-foreground">{copy.exportScope}</p>
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-                        <Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void exportXlsx()}><Download />{exporting === 'xlsx' ? `${copy.preparing} XLSX…` : 'XLSX'}</Button>
-                        <Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void exportCsv()}><FileText />{exporting === 'csv' ? `${copy.preparing} CSV…` : 'CSV'}</Button>
-                        <Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void exportPdf()}><Download />{exporting === 'pdf' ? `${copy.preparing} PDF…` : 'PDF'}</Button>
-                        <Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void printReport()}><Printer />{exporting === 'print' ? `${copy.preparing}…` : copy.print}</Button>
-                      </div>
-                    </section>
-                  ) : null}
-
-                  {!rows.length ? (
-                    <PremiumStatePanel kind="empty" title={emptyTitle} description={copy.emptyHelp} />
-                  ) : report === 'order-fulfilment' ? null : (
-                    <section>
-                      <p className="mb-2 text-xs text-muted-foreground sm:hidden">{copy.mobileTableHelp}</p>
-                      <div className="max-w-full overflow-x-auto border-y border-border" role="region" aria-label={copy.tableRegion} tabIndex={0}>
-                        <table className="w-full min-w-[760px] text-sm">
-                          <caption className="sr-only">{reportTitle}. {scopeLabel}.</caption>
-                          <thead><tr>{columns.map((column) => <th key={column} scope="col" className={cn(isNumericColumn(column) && 'text-right')}>{displayKey(column)}</th>)}</tr></thead>
-                          <tbody>
-                            {rows.map((row, index) => (
-                              <tr key={rowKey(row, index)}>
-                                {columns.map((column) => <td key={column} className={cn('align-top', isNumericColumn(column) && 'text-right font-mono tabular-nums')}>{formatValue(column, row[column])}</td>)}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </section>
-                  )}
-                </>
-              )}
-            </>
-          )}
+            {loading ? <div className="space-y-4" aria-label={copy.loading}>{(report === 'performance' || report === 'product-profitability' || report === 'order-fulfilment') ? <PremiumSkeleton variant="summary" lines={2} label={copy.loading} /> : null}<PremiumSkeleton variant="table" rows={6} label={copy.loading} /></div>
+              : loadFailed ? <PremiumStatePanel kind="error" title={copy.loadFailed} description={copy.loadFailedHelp} action={<Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>{copy.retry}</Button>} />
+              : <>
+                {summaryEntries.length > 0 ? <section aria-label={copy.summary} className="border-y border-border"><dl className="grid sm:grid-cols-2 xl:grid-cols-3">{summaryEntries.map(([key, value]) => <div key={key} className="min-w-0 border-b border-border py-4 sm:border-l sm:px-5 sm:first:border-l-0 sm:first:pl-0 xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(3n+1)]:pl-0"><dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{displayKey(key)}</dt><dd className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums">{formatValue(key, value)}</dd></div>)}</dl></section> : null}
+                {exportFailed ? <PremiumStatePanel kind="error" compact title={copy.exportFailed} description={copy.exportFailedHelp} /> : null}
+                {rows.length > 0 ? <section aria-label={lang === 'pt' ? 'Exportar relatório' : 'Export report'} className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-muted-foreground">{copy.exportScope}</p><div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end"><Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void exportXlsx()}><Download />{exporting === 'xlsx' ? `${copy.preparing} XLSX…` : 'XLSX'}</Button><Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void exportCsv()}><FileText />{exporting === 'csv' ? `${copy.preparing} CSV…` : 'CSV'}</Button><Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void exportPdf()}><Download />{exporting === 'pdf' ? `${copy.preparing} PDF…` : 'PDF'}</Button><Button type="button" size="sm" variant="outline" disabled={Boolean(exporting)} onClick={() => void printReport()}><Printer />{exporting === 'print' ? `${copy.preparing}…` : copy.print}</Button></div></section> : null}
+                {!rows.length ? <PremiumStatePanel kind="empty" title={emptyTitle} description={copy.emptyHelp} /> : report === 'order-fulfilment' ? null : <section className="space-y-3">
+                  {pageCount > 1 ? <div className="flex items-center justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{copy.previous}</Button><span className="text-xs text-muted-foreground">{copy.pageOf.replace('{page}', String(safePage)).replace('{pages}', String(pageCount))}</span><Button type="button" variant="outline" size="sm" disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>{copy.next}</Button></div> : null}
+                  <p className="text-xs text-muted-foreground sm:hidden">{copy.mobileTableHelp}</p><div className="max-w-full overflow-x-auto border-y border-border" role="region" aria-label={copy.tableRegion} tabIndex={0}><table className="w-full min-w-[760px] text-sm"><caption className="sr-only">{reportTitle}. {scopeLabel}.</caption><thead><tr>{columns.map((column) => <th key={column} scope="col" className={cn(isNumericColumn(column) && 'text-right')}>{displayKey(column)}</th>)}</tr></thead><tbody>{pageRows.map((row, index) => <tr key={rowKey(row, (safePage - 1) * REPORT_PAGE_SIZE + index)}>{columns.map((column) => <td key={column} className={cn('align-top', isNumericColumn(column) && 'text-right font-mono tabular-nums')}>{formatValue(column, row[column])}</td>)}</tr>)}</tbody></table></div>
+                </section>}
+              </>}
+          </>}
         </main>
       </div>
     </div>
