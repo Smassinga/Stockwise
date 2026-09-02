@@ -1,0 +1,1 @@
+The six-month Leny scenario uses only the explicitly authorised controlled recipient addresses for outbound reminder evidence. Other seeded counterparties are created without deliverable email addresses to prevent accidental messages.
