@@ -182,7 +182,7 @@ Operational registers now have a shared premium pattern under `src/components/pr
 - `PremiumTableToolbar` and `PremiumTableFilter` for search and filter controls
 - `PremiumDataTable` for desktop sorting, column visibility, pagination, loading skeletons, and empty/error states
 - `PremiumMobileCardList` for Android-first card review with the same pagination model
-- `PremiumColumnVisibilityMenu`, `PremiumPagination`, `PremiumBulkActionBar`, and `PremiumImportExportActions` for reusable register controls
+- `PremiumColumnVisibilityMenu`, `PremiumPagination`, and `PremiumImportExportActions` for reusable register controls
 
 Desktop registers may use wide tables when comparison matters. Android registers should show searchable cards first, with location, status, and next action visible without horizontal scrolling.
 
