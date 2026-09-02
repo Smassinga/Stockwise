@@ -1,1 +1,0 @@
-Mobile wallet settlement-account package documentation lives in docs/mobile-wallets.md. This temporary pointer is intentionally not part of the maintained index and can be removed once the package is validated.
