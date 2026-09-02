@@ -31,8 +31,11 @@ export async function getCompanyProfile(companyId: string) {
 }
 
 export function companyLogoUrl(logo_path?: string | null) {
-  if (!logo_path) return null
-  const { data } = supabase.storage.from('brand-logos').getPublicUrl(logo_path)
-  // cache-bust so a fresh upload shows immediately
+  const value = String(logo_path || '').trim()
+  if (!value) return null
+  if (/^https?:\/\//i.test(value) || value.startsWith('data:image/')) return value
+
+  const { data } = supabase.storage.from('brand-logos').getPublicUrl(value)
+  // cache-bust so a fresh storage upload shows immediately
   return data?.publicUrl ? `${data.publicUrl}?v=${Date.now()}` : null
 }
