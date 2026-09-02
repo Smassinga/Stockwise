@@ -1,0 +1,40 @@
+name: Cleanup lockfile bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - tsconfig.app.json
+      - .github/workflows/cleanup-lockfile-bootstrap.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lockfile:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Generate npm lockfile
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Verify generated lockfile
+        run: npm ci --ignore-scripts
+
+      - name: Upload generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleanup-c13-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
