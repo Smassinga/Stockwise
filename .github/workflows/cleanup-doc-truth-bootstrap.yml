@@ -1,0 +1,56 @@
+name: Cleanup documentation truth bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - docs/premium-ui-direction.md
+      - docs/mozambique-runtime-issuance.md
+      - .github/workflows/cleanup-doc-truth-bootstrap.yml
+
+permissions:
+  contents: write
+
+jobs:
+  align-docs:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Align current-truth documentation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          premium = Path('docs/premium-ui-direction.md')
+          premium_text = premium.read_text(encoding='utf-8')
+          old_controls = '`PremiumColumnVisibilityMenu`, `PremiumPagination`, `PremiumBulkActionBar`, and `PremiumImportExportActions`'
+          new_controls = '`PremiumColumnVisibilityMenu`, `PremiumPagination`, and `PremiumImportExportActions`'
+          if premium_text.count(old_controls) != 1:
+              raise SystemExit('Expected exactly one maintained PremiumBulkActionBar control-list reference')
+          premium.write_text(premium_text.replace(old_controls, new_controls), encoding='utf-8')
+
+          moz = Path('docs/mozambique-runtime-issuance.md')
+          moz_text = moz.read_text(encoding='utf-8')
+          count = moz_text.count('mzInvoiceOutput.ts')
+          if count < 1:
+              raise SystemExit('Expected at least one stale mzInvoiceOutput.ts documentation reference')
+          moz.write_text(moz_text.replace('mzInvoiceOutput.ts', 'financeDocumentOutput.ts'), encoding='utf-8')
+          print(f'Updated {count} Mozambique output-module references')
+          PY
+
+      - name: Commit documentation alignment and remove bootstrap
+        shell: bash
+        run: |
+          rm .github/workflows/cleanup-doc-truth-bootstrap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/premium-ui-direction.md docs/mozambique-runtime-issuance.md .github/workflows/cleanup-doc-truth-bootstrap.yml
+          git diff --cached --check
+          git commit -m "Final cleanup D2: align maintained documentation"
+          git push origin HEAD:${{ github.head_ref }}
