@@ -188,7 +188,7 @@ export default function Reports() {
     return () => { cancelled = true }
   }, [companyId, endDate, periodInvalid, reload, report, startDate])
 
-  const sourceRows = useMemo(() => {
+  const sourceRows = useMemo<Array<Record<string, unknown>>>(() => {
     if (!payload) return []
     let result: Array<Record<string, unknown>> = []
     if (payload.rows) result = payload.rows
@@ -198,12 +198,12 @@ export default function Reports() {
       result = activityKeys.some((key) => Number(payload[key] || 0) > 0) ? [payload] : []
     }
     if (report === 'service-job-profitability') {
-      return result.map((row) => ({ ...row, salesEvidence: row.operationalSales == null ? 'no_linked_sale' : 'linked_sale' }))
+      return result.map((row): Record<string, unknown> => ({ ...row, salesEvidence: row.operationalSales == null ? 'no_linked_sale' : 'linked_sale' }))
     }
     return result
   }, [payload, report])
 
-  const rows = useMemo(() => {
+  const rows = useMemo<Array<Record<string, unknown>>>(() => {
     if (report !== 'customer-location' || collectionFilter === 'all') return sourceRows
     const currentDay = today()
     return sourceRows.filter((row) => {
