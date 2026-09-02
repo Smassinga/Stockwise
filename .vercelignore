@@ -12,7 +12,6 @@ output/
 
 # Offline pitch/demo assets are not part of the live website payload
 demos/
-stockwise_concept_c_brandkit/
 
 # Local one-off artifacts
 *.log
