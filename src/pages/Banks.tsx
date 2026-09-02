@@ -23,6 +23,8 @@ import {
 import { PremiumStatePanel } from '../components/premium/PremiumEmptyState'
 import { FinanceSummaryBand } from '../components/finance/FinanceSummaryBand'
 
+type AccountKind = 'bank' | 'mobile_wallet'
+
 type BankAccount = {
   id: string
   company_id: string
@@ -30,6 +32,7 @@ type BankAccount = {
   bank_name: string | null
   account_number: string | null
   currency_code: string | null
+  account_kind: AccountKind
   tax_number?: string | null
   swift?: string | null
   nib?: string | null
@@ -43,6 +46,7 @@ type BankForm = {
   bank_name: string
   account_number: string
   currency_code: string
+  account_kind: AccountKind
   tax_number: string
   swift: string
   nib: string
@@ -53,6 +57,7 @@ const emptyForm = (currencyCode: string): BankForm => ({
   bank_name: '',
   account_number: '',
   currency_code: currencyCode,
+  account_kind: 'bank',
   tax_number: '',
   swift: '',
   nib: '',
@@ -123,7 +128,7 @@ export default function Banks() {
     setAccountsError(false)
     const { data, error } = await supabase
       .from('bank_accounts')
-      .select('id, company_id, name, bank_name, account_number, currency_code, tax_number, swift, nib, created_at')
+      .select('id, company_id, name, bank_name, account_number, currency_code, account_kind, tax_number, swift, nib, created_at')
       .eq('company_id', companyId)
       .order('created_at', { ascending: true })
     if (error) {
@@ -160,7 +165,7 @@ export default function Banks() {
 
   async function addBank() {
     if (!canManageBanks) {
-      toast.error(tf('banks.toast.noPermission', 'You do not have permission to manage bank accounts'))
+      toast.error(tf('banks.toast.noPermission', 'You do not have permission to manage settlement accounts'))
       return
     }
     if (!companyId) {
@@ -168,27 +173,29 @@ export default function Banks() {
       return
     }
     if (!form.name.trim()) {
-      toast.error(tf('banks.required.nickname', 'Enter an internal nickname for this bank account'))
+      toast.error(tf('banks.required.nickname', 'Enter an internal nickname for this settlement account'))
       return
     }
 
     setSaving(true)
     try {
+      const isWallet = form.account_kind === 'mobile_wallet'
       const payload: Record<string, unknown> = {
         name: form.name.trim(),
         bank_name: form.bank_name.trim() || null,
         account_number: form.account_number.trim() || null,
         currency_code: (form.currency_code || baseCurrency || 'MZN').trim().toUpperCase(),
-        tax_number: form.tax_number.trim() || null,
-        swift: form.swift.trim() || null,
-        nib: form.nib.trim() || null,
+        account_kind: form.account_kind,
+        tax_number: isWallet ? null : form.tax_number.trim() || null,
+        swift: isWallet ? null : form.swift.trim() || null,
+        nib: isWallet ? null : form.nib.trim() || null,
       }
       payload.company_id = companyId
 
       const { error } = await supabase.from('bank_accounts').insert(payload)
       if (error) throw error
 
-      toast.success(tf('banks.toast.added', 'Bank account added'))
+      toast.success(tf('banks.toast.added', isWallet ? 'Mobile wallet added' : 'Bank account added'))
       setOpenAdd(false)
       setForm(emptyForm(baseCurrency || 'MZN'))
       if (companyId) {
@@ -197,7 +204,7 @@ export default function Banks() {
       }
     } catch (error) {
       console.error(error)
-      toast.error(tf('banks.toast.addFailed', 'Could not add bank account'))
+      toast.error(tf('banks.toast.addFailed', 'Could not add settlement account'))
     } finally {
       setSaving(false)
     }
@@ -217,6 +224,11 @@ export default function Banks() {
     [baseCurrency, rows],
   )
 
+  const walletCount = useMemo(
+    () => rows.filter((row) => row.account_kind === 'mobile_wallet').length,
+    [rows],
+  )
+
   return (
     <div className="app-page app-page--workspace space-y-6 overflow-x-hidden">
       <header className="border-b border-border/70 pb-5">
@@ -224,12 +236,12 @@ export default function Banks() {
           <div>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight">
-                {tf('banks.title', 'Bank accounts')}
+                {tf('banks.title', 'Banks & wallets')}
               </h1>
               <p className="mt-2 hidden max-w-3xl text-sm text-muted-foreground sm:block">
                 {tf(
                   'banks.subtitle',
-                  'Configure the real bank accounts used for settlements, statement imports, and reconciliation. Each row represents a usable company bank account, not just a bank name.',
+                  'Track conventional bank accounts and mobile wallets such as M-Pesa, e-Mola, and mKesh in the same governed settlement ledger. Each account keeps its own balance, transactions, and reconciliation evidence.',
                 )}
               </p>
             </div>
@@ -241,15 +253,15 @@ export default function Banks() {
             </span>
             <Sheet open={openAdd} onOpenChange={setOpenAdd}>
               <SheetTrigger asChild>
-                <Button className="w-full sm:w-auto" disabled={!canManageBanks}>+ {tf('banks.new', 'New bank account')}</Button>
+                <Button className="w-full sm:w-auto" disabled={!canManageBanks}>+ {tf('banks.new', 'New settlement account')}</Button>
               </SheetTrigger>
               <SheetContent className="sm:max-w-xl">
                 <SheetHeader>
-                  <SheetTitle>{tf('banks.addTitle', 'Add bank account')}</SheetTitle>
+                  <SheetTitle>{tf('banks.addTitle', 'Add settlement account')}</SheetTitle>
                   <SheetDescription className="hidden sm:block">
                     {tf(
                       'banks.addDescription',
-                      'Save the account identity, currency, and optional compliance references that finance will need when posting bank settlements and reconciling statements.',
+                      'Choose a bank account or mobile wallet. Both use the same governed transaction, settlement, and reconciliation engine.',
                     )}
                   </SheetDescription>
                 </SheetHeader>
@@ -257,9 +269,34 @@ export default function Banks() {
                   <div className="space-y-6">
                     <Card className="border-border/70 shadow-none">
                       <CardHeader className="pb-3">
+                        <CardTitle className="text-base">{tf('banks.form.typeTitle', 'Account type')}</CardTitle>
+                        <CardDescription className="hidden sm:block">
+                          {tf('banks.form.typeHelp', 'Mobile wallets reuse the same finance controls as bank accounts, while showing provider and wallet-number language.')}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="grid gap-3 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          variant={form.account_kind === 'bank' ? 'default' : 'outline'}
+                          onClick={() => setForm((current) => ({ ...current, account_kind: 'bank' }))}
+                        >
+                          {tf('banks.accountKind.bank', 'Bank account')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={form.account_kind === 'mobile_wallet' ? 'default' : 'outline'}
+                          onClick={() => setForm((current) => ({ ...current, account_kind: 'mobile_wallet' }))}
+                        >
+                          {tf('banks.accountKind.wallet', 'Mobile wallet')}
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-border/70 shadow-none">
+                      <CardHeader className="pb-3">
                         <CardTitle className="text-base">{tf('banks.form.identityTitle', 'Account identity')}</CardTitle>
                         <CardDescription className="hidden sm:block">
-                          {tf('banks.form.identityHelp', 'Use a clear internal nickname so finance can choose the right account quickly in settlements and statement workspaces.')}
+                          {tf('banks.form.identityHelp', 'Use a clear internal nickname so finance can choose the right account quickly in settlements and reconciliation workspaces.')}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="grid gap-4 md:grid-cols-2">
@@ -268,8 +305,16 @@ export default function Banks() {
                           <Input value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} />
                         </div>
                         <div className="space-y-2">
-                          <Label>{tf('banks.bankName', 'Bank name')}</Label>
-                          <Input value={form.bank_name} onChange={(e) => setForm((current) => ({ ...current, bank_name: e.target.value }))} />
+                          <Label>
+                            {form.account_kind === 'mobile_wallet'
+                              ? tf('banks.providerName', 'Provider')
+                              : tf('banks.bankName', 'Bank name')}
+                          </Label>
+                          <Input
+                            value={form.bank_name}
+                            onChange={(e) => setForm((current) => ({ ...current, bank_name: e.target.value }))}
+                            placeholder={form.account_kind === 'mobile_wallet' ? 'M-Pesa, e-Mola, mKesh' : undefined}
+                          />
                         </div>
                       </CardContent>
                     </Card>
@@ -278,12 +323,16 @@ export default function Banks() {
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">{tf('banks.form.accountTitle', 'Account details')}</CardTitle>
                         <CardDescription className="hidden sm:block">
-                          {tf('banks.form.accountHelp', 'Capture the account number and operating currency used for bank receipts, payments, and statement matching.')}
+                          {tf('banks.form.accountHelp', form.account_kind === 'mobile_wallet' ? 'Capture the wallet number and operating currency used for receipts and payments.' : 'Capture the account number and operating currency used for bank receipts, payments, and statement matching.')}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>{tf('banks.accountNumber', 'Account number')}</Label>
+                          <Label>
+                            {form.account_kind === 'mobile_wallet'
+                              ? tf('banks.walletNumber', 'Wallet number')
+                              : tf('banks.accountNumber', 'Account number')}
+                          </Label>
                           <Input
                             value={form.account_number}
                             onChange={(e) => setForm((current) => ({ ...current, account_number: e.target.value }))}
@@ -300,32 +349,38 @@ export default function Banks() {
                       </CardContent>
                     </Card>
 
-                    <Card className="border-border/70 shadow-none">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">{tf('banks.form.referenceTitle', 'Compliance and reference fields')}</CardTitle>
-                        <CardDescription className="hidden sm:block">
-                          {tf('banks.form.referenceHelp', 'Optional fields such as NIB, SWIFT, and tax number help keep printed bank details and statement reconciliation consistent without forcing them when not used.')}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="grid gap-4 md:grid-cols-3">
-                        <div className="space-y-2">
-                          <Label>{tf('banks.swift', 'SWIFT')}</Label>
-                          <Input value={form.swift} onChange={(e) => setForm((current) => ({ ...current, swift: e.target.value }))} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>{tf('banks.nib', 'NIB')}</Label>
-                          <Input value={form.nib} onChange={(e) => setForm((current) => ({ ...current, nib: e.target.value }))} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>{tf('banks.taxNumberShort', 'Tax number')}</Label>
-                          <Input value={form.tax_number} onChange={(e) => setForm((current) => ({ ...current, tax_number: e.target.value }))} />
-                        </div>
-                      </CardContent>
-                    </Card>
+                    {form.account_kind === 'bank' ? (
+                      <Card className="border-border/70 shadow-none">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base">{tf('banks.form.referenceTitle', 'Compliance and reference fields')}</CardTitle>
+                          <CardDescription className="hidden sm:block">
+                            {tf('banks.form.referenceHelp', 'Optional fields such as NIB, SWIFT, and tax number help keep printed bank details and statement reconciliation consistent without forcing them when not used.')}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 md:grid-cols-3">
+                          <div className="space-y-2">
+                            <Label>{tf('banks.swift', 'SWIFT')}</Label>
+                            <Input value={form.swift} onChange={(e) => setForm((current) => ({ ...current, swift: e.target.value }))} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{tf('banks.nib', 'NIB')}</Label>
+                            <Input value={form.nib} onChange={(e) => setForm((current) => ({ ...current, nib: e.target.value }))} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{tf('banks.taxNumberShort', 'Tax number')}</Label>
+                            <Input value={form.tax_number} onChange={(e) => setForm((current) => ({ ...current, tax_number: e.target.value }))} />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="rounded-xl border border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
+                        {tf('banks.walletReferenceHelp', 'Mobile wallets do not require SWIFT, NIB, or bank tax-reference fields. Their provider and wallet number identify the settlement account.')}
+                      </div>
+                    )}
 
                     <div className="flex justify-end">
                       <Button className="w-full sm:w-auto" onClick={addBank} disabled={saving || !canManageBanks}>
-                        {saving ? tf('actions.saving', 'Saving...') : tf('banks.save', 'Save bank account')}
+                        {saving ? tf('actions.saving', 'Saving...') : tf('banks.save', 'Save settlement account')}
                       </Button>
                     </div>
                   </div>
@@ -338,28 +393,33 @@ export default function Banks() {
 
       {!canManageBanks ? (
         <div className="border-l-2 border-status-info-border bg-status-info-muted px-4 py-3 text-sm text-status-info-foreground">
-          {tf('banks.readOnly', 'Read-only: only users with bank-account management authority can add or update company bank accounts.')}
+          {tf('banks.readOnly', 'Read-only: only users with settlement-account management authority can add or update company bank accounts and mobile wallets.')}
         </div>
       ) : null}
 
       <FinanceSummaryBand
-        label={tf('financeUx.bankPosition', 'Bank position')}
+        label={tf('financeUx.bankPosition', 'Settlement position')}
         items={[
           {
-            label: tf('banks.summary.accounts', 'Bank accounts'),
+            label: tf('banks.summary.accounts', 'Settlement accounts'),
             value: accountsLoading ? tf('common.loading', 'Loading...') : accountsError ? tf('common.unavailable', 'Unavailable') : rows.length,
-            detail: tf('banks.summary.accountsHelp', 'Live bank settlement and statement accounts configured for this company.'),
+            detail: tf('banks.summary.accountsHelp', 'Live bank and mobile-wallet settlement ledgers configured for this company.'),
           },
           {
-            label: tf('banks.summary.balance', 'Combined bank position'),
+            label: tf('banks.summary.wallets', 'Mobile wallets'),
+            value: accountsLoading ? tf('common.loading', 'Loading...') : accountsError ? tf('common.unavailable', 'Unavailable') : walletCount,
+            detail: tf('banks.summary.walletsHelp', 'M-Pesa, e-Mola, mKesh, and other wallet ledgers classified separately from bank accounts.'),
+          },
+          {
+            label: tf('banks.summary.balance', 'Combined settlement position'),
             value: balancesLoading ? tf('common.loading', 'Loading...') : balancesError || totalBalance === null ? tf('common.unavailable', 'Unavailable') : formatMoneyBase(totalBalance, baseCurrency),
-            detail: tf('banks.summary.balanceHelp', 'Current book balance across every configured bank account in base currency.'),
+            detail: tf('banks.summary.balanceHelp', 'Current book balance across every configured bank account and mobile wallet in base currency.'),
             tone: 'info',
           },
           {
             label: tf('banks.summary.currencies', 'Currencies covered'),
             value: currencies.length > 0 ? currencies.join(' · ') : baseCurrency,
-            detail: tf('banks.summary.currenciesHelp', 'Use separate accounts when settlement or statement reconciliation needs distinct bank currencies.'),
+            detail: tf('banks.summary.currenciesHelp', 'Use separate settlement accounts where reconciliation requires distinct operating currencies.'),
           },
         ]}
       />
@@ -367,107 +427,115 @@ export default function Banks() {
       {accountsError ? (
         <PremiumStatePanel
           variant="error"
-          title={tf('financeUx.bankRegisterUnavailable', 'Bank-account register unavailable')}
+          title={tf('financeUx.bankRegisterUnavailable', 'Settlement-account register unavailable')}
           description={tf('financeUx.bankRegisterUnavailableHelp', 'No empty account register has been inferred.')}
         />
       ) : null}
       {balancesError && !accountsError ? (
         <PremiumStatePanel
           variant="error"
-          title={tf('financeUx.bankBalancesUnavailable', 'Bank balance evidence unavailable')}
-          description={tf('financeUx.bankBalancesUnavailableHelp', 'Bank accounts remain available. No zero balance has been inferred.')}
+          title={tf('financeUx.bankBalancesUnavailable', 'Settlement balance evidence unavailable')}
+          description={tf('financeUx.bankBalancesUnavailableHelp', 'Settlement accounts remain available. No zero balance has been inferred.')}
         />
       ) : null}
 
       <Card className="border-border/70">
         <CardHeader className="pb-3">
-          <CardTitle>{tf('banks.workspaceTitle', 'Bank account register')}</CardTitle>
-            <CardDescription className="hidden sm:block">
-            {tf('banks.workspaceHelp', 'Use this register to open an account ledger, review book balance, upload statements, and maintain the account details that finance uses when posting bank receipts and payments.')}
+          <CardTitle>{tf('banks.workspaceTitle', 'Settlement account register')}</CardTitle>
+          <CardDescription className="hidden sm:block">
+            {tf('banks.workspaceHelp', 'Open any bank account or mobile wallet to review its ledger, book balance, reconciliation, statement evidence, and finance details.')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {accountsLoading ? (
-            <PremiumStatePanel variant="loading" title={tf('financeUx.loadingBankAccounts', 'Loading bank accounts')} />
+            <PremiumStatePanel variant="loading" title={tf('financeUx.loadingBankAccounts', 'Loading settlement accounts')} />
           ) : accountsError ? null : rows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
-              <div className="text-base font-medium">{tf('banks.emptyTitle', 'No bank accounts configured yet')}</div>
+              <div className="text-base font-medium">{tf('banks.emptyTitle', 'No settlement accounts configured yet')}</div>
               <p className="mx-auto mt-2 hidden max-w-2xl text-sm text-muted-foreground sm:block">
-              {tf('banks.emptyBody', 'Add the first bank account before posting bank settlements or importing statements. StockWise uses these accounts as the live bank ledgers for receipts, payments, and reconciliation.')}
+                {tf('banks.emptyBody', 'Add a bank account or mobile wallet before posting account-based settlements. StockWise uses both as governed finance ledgers for receipts, payments, and reconciliation.')}
               </p>
               {canManageBanks ? (
                 <Button className="mt-4 w-full sm:w-auto" onClick={() => setOpenAdd(true)}>
-                  {tf('banks.emptyAction', 'Add first bank account')}
+                  {tf('banks.emptyAction', 'Add first settlement account')}
                 </Button>
               ) : null}
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {rows.map((row) => (
-                <Card
-                  key={row.id}
-                  className="border-border/70 shadow-none"
-                >
-                  <CardHeader className="space-y-3 pb-3">
-                    <div className="flex items-start justify-between gap-3">
+              {rows.map((row) => {
+                const isWallet = row.account_kind === 'mobile_wallet'
+                return (
+                  <Card key={row.id} className="border-border/70 shadow-none">
+                    <CardHeader className="space-y-3 pb-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <CardTitle className="text-lg">{row.name}</CardTitle>
+                          <CardDescription>
+                            {row.bank_name || (isWallet ? tf('banks.noProviderName', 'Provider not recorded') : tf('banks.noBankName', 'Bank name not recorded'))}
+                          </CardDescription>
+                        </div>
+                        <Badge variant="outline">{row.currency_code || baseCurrency || 'MZN'}</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          {isWallet ? tf('banks.accountKind.wallet', 'Mobile wallet') : tf('banks.accountKind.bank', 'Bank account')}
+                        </Badge>
+                        <Badge variant="outline">{maskAccountNumber(row.account_number)}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
                       <div>
-                        <CardTitle className="text-lg">{row.name}</CardTitle>
-                        <CardDescription>{row.bank_name || tf('banks.noBankName', 'Bank name not recorded')}</CardDescription>
+                        <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          {tf('banks.balanceBase', 'Book balance')}
+                        </div>
+                        <div className="mt-1 text-3xl font-semibold tracking-tight">
+                          {balancesError
+                            || !balances
+                            || !Object.prototype.hasOwnProperty.call(balances, row.id)
+                            ? tf('common.unavailable', 'Unavailable')
+                            : formatMoneyBase(balances[row.id], baseCurrency)}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {tf('financeUx.balanceBaseCurrency', 'Balance shown in company base currency')}: {baseCurrency}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {tf('financeUx.accountOperatingCurrency', 'Account operating currency')}: {row.currency_code || baseCurrency}
+                        </div>
                       </div>
-                      <Badge variant="outline">{row.currency_code || baseCurrency || 'MZN'}</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">{tf('banks.accountLabel', 'Account')}</Badge>
-                      <Badge variant="outline">{maskAccountNumber(row.account_number)}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        {tf('banks.balanceBase', 'Book balance')}
-                      </div>
-                      <div className="mt-1 text-3xl font-semibold tracking-tight">
-                        {balancesError
-                          || !balances
-                          || !Object.prototype.hasOwnProperty.call(balances, row.id)
-                          ? tf('common.unavailable', 'Unavailable')
-                          : formatMoneyBase(balances[row.id], baseCurrency)}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {tf('financeUx.balanceBaseCurrency', 'Balance shown in company base currency')}: {baseCurrency}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {tf('financeUx.accountOperatingCurrency', 'Account operating currency')}: {row.currency_code || baseCurrency}
-                      </div>
-                    </div>
 
-                    {(row.swift || row.nib || row.tax_number) ? (
-                      <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-                        <div>
-                          <div className="text-[11px] uppercase tracking-[0.18em]">{tf('banks.swift', 'SWIFT')}</div>
-                          <div className="font-mono text-foreground">{row.swift || '—'}</div>
+                      {!isWallet && (row.swift || row.nib || row.tax_number) ? (
+                        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.18em]">{tf('banks.swift', 'SWIFT')}</div>
+                            <div className="font-mono text-foreground">{row.swift || '—'}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.18em]">{tf('banks.nib', 'NIB')}</div>
+                            <div className="font-mono text-foreground">{row.nib || '—'}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.18em]">{tf('banks.taxNumberShort', 'Tax number')}</div>
+                            <div className="font-mono text-foreground">{row.tax_number || '—'}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-[11px] uppercase tracking-[0.18em]">{tf('banks.nib', 'NIB')}</div>
-                          <div className="font-mono text-foreground">{row.nib || '—'}</div>
+                      ) : !isWallet ? (
+                        <div className="rounded-xl border border-dashed border-border/70 px-3 py-2 text-sm text-muted-foreground">
+                          {tf('banks.noReferenceFields', 'Optional bank reference fields are not configured on this account yet.')}
                         </div>
-                        <div>
-                          <div className="text-[11px] uppercase tracking-[0.18em]">{tf('banks.taxNumberShort', 'Tax number')}</div>
-                          <div className="font-mono text-foreground">{row.tax_number || '—'}</div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-border/70 px-3 py-2 text-sm text-muted-foreground">
+                          {tf('banks.walletLedgerHelp', 'This wallet uses the same governed ledger and settlement controls as the company bank accounts.')}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-border/70 px-3 py-2 text-sm text-muted-foreground">
-                        {tf('banks.noReferenceFields', 'Optional bank reference fields are not configured on this account yet.')}
-                      </div>
-                    )}
+                      )}
 
-                    <Button asChild className="w-full">
-                      <Link to={`/banks/${row.id}`}>{tf('banks.open', 'Open account')}</Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+                      <Button asChild className="w-full">
+                        <Link to={`/banks/${row.id}`}>{tf('banks.open', 'Open account')}</Link>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </CardContent>
