@@ -8,6 +8,7 @@ import { PackageIcon } from '@phosphor-icons/react/dist/csr/Package'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { WarningIcon } from '@phosphor-icons/react/dist/csr/Warning'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import { PremiumEmptyState, PremiumStatePanel } from '../components/premium/PremiumEmptyState'
@@ -16,7 +17,13 @@ import { PremiumSkeleton } from '../components/premium/PremiumSkeleton'
 import { PremiumStatusBadge, type PremiumTone } from '../components/premium/PremiumStatusBadge'
 import { useOrg } from '../hooks/useOrg'
 import { formatMoneyBase, getBaseCurrencyCode } from '../lib/currency'
-import { dashboardPeriodRange, resolveMovementCost, type DashboardPeriodPreset } from '../lib/dashboardMetrics'
+import {
+  aggregateDashboardTrend,
+  dashboardPeriodRange,
+  dashboardTrendGranularity,
+  resolveMovementCost,
+  type DashboardPeriodPreset,
+} from '../lib/dashboardMetrics'
 import { useI18n, withI18nFallback } from '../lib/i18n'
 import { formatOperationalQuantity } from '../lib/operationalQuantity'
 import { can } from '../lib/permissions'
@@ -82,7 +89,14 @@ type SupportingData = { warehouses: Warehouse[]; items: Item[]; movements: Movem
 type AttentionItem = { title: string; detail: string; tone: PremiumTone; actionLabel: string; onClick: () => void }
 
 const validPeriod = (value: string | null): DashboardPeriodPreset =>
-  value === 'week' || value === 'month' || value === 'custom' ? value : 'today'
+  value === 'week'
+  || value === 'month'
+  || value === 'last30'
+  || value === 'last90'
+  || value === 'ytd'
+  || value === 'custom'
+    ? value
+    : 'today'
 const number = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0
 
 export default function Dashboard() {
@@ -116,11 +130,13 @@ export default function Dashboard() {
   const count = useCallback((value: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value), [locale])
   const dateLabel = useCallback((value: string) =>
     new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`)), [locale])
+  const scopeDateLabel = useCallback((value: string) =>
+    new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)), [locale])
   const dateTimeLabel = useCallback((value: string) =>
     new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)), [locale])
 
   const comparisonLabel = range
-    ? `${dateLabel(range.start)}–${dateLabel(range.end)} · ${tt('dashboard.comparedWith', 'Compared with')} ${dateLabel(range.compareStart)}–${dateLabel(range.compareEnd)}`
+    ? `${scopeDateLabel(range.start)}–${scopeDateLabel(range.end)} · ${tt('dashboard.comparedWith', 'Compared with')} ${scopeDateLabel(range.compareStart)}–${scopeDateLabel(range.compareEnd)}`
     : ''
   const selectedWarehouse = supporting.warehouses.find((item) => item.id === warehouse)
   const warehouseLabel = warehouse === 'all' ? tt('common.all', 'All warehouses') : selectedWarehouse?.name || tt('dashboard.warehouse', 'Warehouse')
@@ -196,6 +212,22 @@ export default function Dashboard() {
   const currentData = loadedCompanyId === companyId ? data : null
   const summary = currentData?.summary
   const inventory = currentData?.inventory
+  const trendGranularity = range ? dashboardTrendGranularity(range.start, range.end) : 'day'
+  const chartTrend = useMemo(
+    () => aggregateDashboardTrend(currentData?.trend || [], trendGranularity),
+    [currentData?.trend, trendGranularity],
+  )
+  const trendLabel = useCallback((value: string) => {
+    const date = new Date(`${value}T12:00:00`)
+    if (trendGranularity === 'month') return new Intl.DateTimeFormat(locale, { month: 'short', year: '2-digit' }).format(date)
+    if (trendGranularity === 'week') return `${tt('dashboard.weekOf', 'Week of')} ${dateLabel(value)}`
+    return dateLabel(value)
+  }, [dateLabel, locale, trendGranularity, tt])
+  const trendTitle = trendGranularity === 'month'
+    ? tt('dashboard.monthlyPerformance', 'Monthly performance')
+    : trendGranularity === 'week'
+      ? tt('dashboard.weeklyPerformance', 'Weekly performance')
+      : tt('dashboard.dailyPerformance', 'Daily performance')
   const itemById = useMemo(() => new Map(supporting.items.map((item) => [item.id, item])), [supporting.items])
   const hasPeriodActivity = Boolean(summary && (summary.transactions > 0 || currentData?.trend.length))
   const hasOperatingEvidence = Boolean(
@@ -310,6 +342,9 @@ export default function Dashboard() {
                 <SelectItem value="today">{tt('dashboard.today', 'Today')}</SelectItem>
                 <SelectItem value="week">{tt('dashboard.thisWeek', 'This week')}</SelectItem>
                 <SelectItem value="month">{tt('dashboard.thisMonth', 'This month')}</SelectItem>
+                <SelectItem value="last30">{tt('dashboard.last30Days', 'Last 30 days')}</SelectItem>
+                <SelectItem value="last90">{tt('dashboard.last90Days', 'Last 90 days')}</SelectItem>
+                <SelectItem value="ytd">{tt('dashboard.yearToDate', 'Year to date')}</SelectItem>
                 <SelectItem value="custom">{tt('dashboard.customPeriod', 'Custom period')}</SelectItem>
               </SelectContent>
             </Select>
@@ -335,11 +370,11 @@ export default function Dashboard() {
           <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(9rem,13rem)_minmax(9rem,13rem)_auto] sm:items-end">
             <label className="space-y-1.5 text-sm font-medium">
               <span>{tt('dashboard.startDate', 'Start date')}</span>
-              <input className="input w-full" type="date" value={draftStart} onChange={(event) => setDraftStart(event.target.value)} />
+              <Input type="date" value={draftStart} onChange={(event) => setDraftStart(event.target.value)} />
             </label>
             <label className="space-y-1.5 text-sm font-medium">
               <span>{tt('dashboard.endDate', 'End date')}</span>
-              <input className="input w-full" type="date" min={draftStart} value={draftEnd} onChange={(event) => setDraftEnd(event.target.value)} />
+              <Input type="date" min={draftStart} value={draftEnd} onChange={(event) => setDraftEnd(event.target.value)} />
             </label>
             <Button disabled={!draftStart || !draftEnd || draftEnd < draftStart} onClick={applyCustom}>{tt('common.apply', 'Apply')}</Button>
           </div>
@@ -475,16 +510,16 @@ export default function Dashboard() {
             </PremiumSection>
           ) : null}
 
-          {currentData.trend.length >= 2 ? (
-            <PremiumSection title={tt('dashboard.dailyPerformance', 'Daily performance')}>
+          {chartTrend.length >= 2 ? (
+            <PremiumSection title={trendTitle}>
               <div className="rounded-[calc(var(--radius)+0.1rem)] border border-card-border bg-card p-4 text-card-foreground shadow-[0_18px_38px_-30px_hsl(var(--foreground)/0.26)] sm:p-6">
-                <div className="h-72" role="img" aria-label={`${tt('dashboard.dailyPerformance', 'Daily performance')}: ${money(summary.sales)}`}>
+                <div className="h-72" role="img" aria-label={`${trendTitle}: ${money(summary.sales)}`}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={currentData.trend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <LineChart data={chartTrend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                       <CartesianGrid stroke="hsl(var(--chart-grid-border))" strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="date" tickFormatter={dateLabel} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="date" tickFormatter={trendLabel} axisLine={false} tickLine={false} />
                       <YAxis tickFormatter={(value) => count(number(value))} axisLine={false} tickLine={false} width={70} />
-                      <Tooltip formatter={(value) => money(number(value))} labelFormatter={(value) => dateLabel(String(value))} />
+                      <Tooltip formatter={(value) => money(number(value))} labelFormatter={(value) => trendLabel(String(value))} />
                       <Legend />
                       <Line type="monotone" dataKey="sales" name={tt('dashboard.operationalSales', 'Operational sales')} stroke="hsl(var(--chart-revenue-line))" strokeWidth={2.5} dot={{ r: 4, stroke: 'hsl(var(--chart-grid-border))' }} activeDot={{ r: 5 }} />
                       <Line type="monotone" dataKey="knownCogs" name={tt('dashboard.cogs', 'COGS')} stroke="hsl(var(--chart-cogs-line))" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 4, stroke: 'hsl(var(--chart-grid-border))' }} activeDot={{ r: 5 }} />
@@ -494,11 +529,11 @@ export default function Dashboard() {
                 </div>
                 <p className="mt-3 text-xs leading-5 text-muted-foreground">{summary.missingCostCount
                   ? tt('dashboard.chartPartial', 'Known COGS is shown; gross profit is withheld where cost evidence is incomplete.')
-                  : tt('dashboard.chartSummary', 'The chart uses the same operating evidence as the period totals.')}</p>
+                  : tt('dashboard.chartAdaptive', 'The chart uses the active period and automatically groups longer ranges into weeks or months.')}</p>
                 <table className="sr-only">
-                  <caption>{tt('dashboard.dailyDetails', 'Daily details')}</caption>
-                  <thead><tr><th>{tt('dashboard.period', 'Date')}</th><th>{tt('dashboard.operationalSales', 'Operational sales')}</th><th>{tt('dashboard.cogs', 'COGS')}</th><th>{tt('dashboard.grossProfit', 'Gross profit')}</th></tr></thead>
-                  <tbody>{currentData.trend.map((day) => <tr key={day.date}><td>{dateLabel(day.date)}</td><td>{money(day.sales)}</td><td>{money(day.knownCogs)}</td><td>{day.grossProfit == null ? tt('dashboard.unavailableValue', 'Unavailable') : money(day.grossProfit)}</td></tr>)}</tbody>
+                  <caption>{trendTitle}</caption>
+                  <thead><tr><th>{tt('dashboard.period', 'Period')}</th><th>{tt('dashboard.operationalSales', 'Operational sales')}</th><th>{tt('dashboard.cogs', 'COGS')}</th><th>{tt('dashboard.grossProfit', 'Gross profit')}</th></tr></thead>
+                  <tbody>{chartTrend.map((point) => <tr key={point.date}><td>{trendLabel(point.date)}</td><td>{money(point.sales)}</td><td>{money(point.knownCogs)}</td><td>{point.grossProfit == null ? tt('dashboard.unavailableValue', 'Unavailable') : money(point.grossProfit)}</td></tr>)}</tbody>
                 </table>
               </div>
             </PremiumSection>
