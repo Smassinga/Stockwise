@@ -7,7 +7,9 @@ const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8
 test('settlement navigation names banks and mobile wallets together', async () => {
   const i18n = await read('src/lib/i18n.tsx')
   assert.match(i18n, /'banks\.title': 'Banks & wallets'/)
+  assert.match(i18n, /'nav\.banks': 'Banks & wallets'/)
   assert.match(i18n, /'banks\.title': 'Bancos e carteiras móveis'/)
+  assert.match(i18n, /'nav\.banks': 'Bancos e carteiras móveis'/)
 })
 
 test('shared date inputs keep native controls aligned with the active theme', async () => {
