@@ -36,7 +36,9 @@ test('Reports uses structural loading and accessible dense table containment', a
   assert.match(source, /scope="col"/)
   assert.match(source, /text-right font-mono tabular-nums/)
   assert.match(source, /reportColumnOrder/)
-  assert.match(source, /rowKey\(row, index\)/)
+  assert.match(source, /const REPORT_PAGE_SIZE = 50/)
+  assert.match(source, /pageRows\.map\(\(row, index\)/)
+  assert.match(source, /rowKey\(row, \(safePage - 1\) \* REPORT_PAGE_SIZE \+ index\)/)
   assert.match(source, /quantityFields\.has\(key\)\) return formatOperationalQuantity\(value, locale\)/)
 })
 
