@@ -13,8 +13,8 @@ const dict: Bundle = { en, pt }
 // contain bank-only wording. Keep the override narrow and remove entries once
 // the locale catalogue is regenerated from the maintained product vocabulary.
 const productCopyOverrides: Bundle = {
-  en: { 'banks.title': 'Banks & wallets' },
-  pt: { 'banks.title': 'Bancos e carteiras móveis' },
+  en: { 'banks.title': 'Banks & wallets', 'nav.banks': 'Banks & wallets' },
+  pt: { 'banks.title': 'Bancos e carteiras móveis', 'nav.banks': 'Bancos e carteiras móveis' },
 }
 
 type Ctx = {
