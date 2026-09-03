@@ -4,37 +4,53 @@ import test from 'node:test'
 
 const DAY = 86_400_000
 const dashboardPageUrl = new URL('../../src/pages/Dashboard.tsx', import.meta.url)
+const dashboardMetricsUrl = new URL('../../src/lib/dashboardMetrics.ts', import.meta.url)
 const landingPageUrl = new URL('../../src/pages/LandingPage.tsx', import.meta.url)
 const serviceDashboardUrl = new URL('../../supabase/migrations/20260729214142_integrate_service_actuals_into_owner_dashboard.sql', import.meta.url)
 const at = value => new Date(`${value}T12:00:00`)
 const iso = value => value.toISOString().slice(0, 10)
 const shift = (value, days) => new Date(value.getTime() + days * DAY)
+const inclusiveDays = (start, end) => Math.round((end - start) / DAY) + 1
+const shiftYearClamped = (value, years) => {
+  const year = value.getFullYear() + years
+  const month = value.getMonth()
+  const day = Math.min(value.getDate(), new Date(year, month + 1, 0, 12).getDate())
+  return new Date(year, month, day, 12)
+}
 function range(preset, today, customStart, customEnd) {
   const anchor = at(today)
   let start = anchor
   let end = anchor
   if (preset === 'week') start = shift(anchor, -((anchor.getDay() + 6) % 7))
   if (preset === 'month') start = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 12)
+  if (preset === 'last30') start = shift(anchor, -29)
+  if (preset === 'last90') start = shift(anchor, -89)
+  if (preset === 'ytd') start = new Date(anchor.getFullYear(), 0, 1, 12)
   if (preset === 'custom') {
     if (!customStart || !customEnd || customEnd < customStart) return null
     start = at(customStart); end = at(customEnd)
   }
-  const elapsed = Math.round((end - start) / DAY)
+  const days = inclusiveDays(start, end)
+  let compareStart = shift(start, -days)
   let compareEnd = shift(start, -1)
-  let compareStart = shift(compareEnd, -elapsed)
-  if (preset === 'week') {
+  if (preset === 'today') {
+    compareStart = shift(anchor, -1)
+    compareEnd = compareStart
+  } else if (preset === 'week') {
     compareStart = shift(start, -7)
     compareEnd = shift(end, -7)
-  }
-  if (preset === 'month') {
+  } else if (preset === 'month') {
     compareStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1, 12)
     const last = new Date(anchor.getFullYear(), anchor.getMonth(), 0, 12)
     compareEnd = new Date(anchor.getFullYear(), anchor.getMonth() - 1, Math.min(anchor.getDate(), last.getDate()), 12)
+  } else if (preset === 'ytd' || (preset === 'custom' && days > 62)) {
+    compareStart = shiftYearClamped(start, -1)
+    compareEnd = shiftYearClamped(end, -1)
   }
   return [iso(start), iso(end), iso(compareStart), iso(compareEnd)]
 }
 
-test('today compares with the previous business day', () =>
+test('today compares with the previous day', () =>
   assert.deepEqual(range('today', '2026-07-29'), ['2026-07-29', '2026-07-29', '2026-07-28', '2026-07-28']))
 test('week starts Monday and compares the same elapsed portion', () =>
   assert.deepEqual(range('week', '2026-07-29'), ['2026-07-27', '2026-07-29', '2026-07-20', '2026-07-22']))
@@ -42,8 +58,16 @@ test('month compares the same elapsed days', () =>
   assert.deepEqual(range('month', '2026-07-29'), ['2026-07-01', '2026-07-29', '2026-06-01', '2026-06-29']))
 test('month comparison caps at a shorter previous month', () =>
   assert.deepEqual(range('month', '2026-03-31'), ['2026-03-01', '2026-03-31', '2026-02-01', '2026-02-28']))
-test('custom comparison is immediately preceding and equal length', () =>
+test('short custom comparison is immediately preceding and equal length', () =>
   assert.deepEqual(range('custom', '2026-07-29', '2026-07-10', '2026-07-20'), ['2026-07-10', '2026-07-20', '2026-06-29', '2026-07-09']))
+test('long custom comparison uses the same prior-year calendar dates', () =>
+  assert.deepEqual(range('custom', '2026-09-02', '2026-01-01', '2026-09-02'), ['2026-01-01', '2026-09-02', '2025-01-01', '2025-09-02']))
+test('rolling 30 and 90 day periods compare with the preceding equal-length period', () => {
+  assert.deepEqual(range('last30', '2026-09-02'), ['2026-08-04', '2026-09-02', '2026-07-05', '2026-08-03'])
+  assert.deepEqual(range('last90', '2026-09-02'), ['2026-06-05', '2026-09-02', '2026-03-07', '2026-06-04'])
+})
+test('year to date compares against the same prior-year calendar dates', () =>
+  assert.deepEqual(range('ytd', '2026-09-02'), ['2026-01-01', '2026-09-02', '2025-01-01', '2025-09-02']))
 test('invalid custom dates do not create a query range', () =>
   assert.equal(range('custom', '2026-07-29', '2026-07-20', '2026-07-10'), null))
 test('completion denominator excludes draft and cancelled', () => {
@@ -99,14 +123,27 @@ test('dashboard chart uses maintained series tokens and preserves incomplete pro
   assert.match(page, /dataKey="knownCogs"[\s\S]+stroke="hsl\(var\(--chart-cogs-line\)\)"[\s\S]+strokeDasharray=/)
   assert.match(page, /connectNulls=\{false\} dataKey="grossProfit"[\s\S]+stroke="hsl\(var\(--chart-margin-line\)\)"/)
 })
+test('dashboard scope exposes useful operating presets and adaptive trend bucketing', async () => {
+  const [page, metrics] = await Promise.all([readFile(dashboardPageUrl, 'utf8'), readFile(dashboardMetricsUrl, 'utf8')])
+  assert.match(page, /value="last30"/)
+  assert.match(page, /value="last90"/)
+  assert.match(page, /value="ytd"/)
+  assert.match(page, /aggregateDashboardTrend/)
+  assert.match(page, /dashboardTrendGranularity/)
+  assert.match(page, /<Input type="date"/)
+  assert.match(metrics, /if \(days <= 14\) return 'day'/)
+  assert.match(metrics, /if \(days <= 62\) return 'week'/)
+  assert.match(metrics, /return 'month'/)
+  assert.match(metrics, /preset === 'custom' && days > 62/)
+})
 test('daily details shows supported profit and localises unavailable profit without coercing it to zero', async () => {
   const page = await readFile(dashboardPageUrl, 'utf8')
   assert.match(page, /dashboard\.grossProfit[\s\S]+day\.grossProfit == null[\s\S]+dashboard\.unavailableValue[\s\S]+money\(day\.grossProfit\)/)
   assert.doesNotMatch(page, /money\(number\(day\.grossProfit\)\)/)
 })
-test('chart is omitted until at least two truthful daily points exist', async () => {
+test('chart is omitted until at least two truthful points exist at the selected granularity', async () => {
   const page = await readFile(dashboardPageUrl, 'utf8')
-  assert.match(page, /currentData\.trend\.length >= 2/)
+  assert.match(page, /chartTrend\.length >= 2/)
   assert.doesNotMatch(page, /<PremiumChartCard/)
 })
 test('first use has named role-aware actions and no fabricated progress', async () => {

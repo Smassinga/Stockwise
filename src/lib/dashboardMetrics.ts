@@ -1,7 +1,15 @@
 export type DashboardCostState = 'supported' | 'explicit_zero' | 'partial' | 'unavailable' | 'not_applicable'
 
-export type DashboardPeriodPreset = 'today' | 'week' | 'month' | 'custom'
+export type DashboardPeriodPreset = 'today' | 'week' | 'month' | 'last30' | 'last90' | 'ytd' | 'custom'
 export type DashboardDateRange = { start: string; end: string; compareStart: string; compareEnd: string }
+export type DashboardTrendGranularity = 'day' | 'week' | 'month'
+export type DashboardTrendPoint = {
+  date: string
+  sales: number
+  knownCogs: number
+  grossProfit: number | null
+  missingCostCount: number
+}
 
 const DASHBOARD_DAY_MS = 86_400_000
 const localDate = (date: Date) =>
@@ -11,6 +19,15 @@ const dateAtNoon = (value: string) => {
   return new Date(year, month - 1, day, 12)
 }
 const shiftDays = (value: Date, days: number) => new Date(value.getTime() + days * DASHBOARD_DAY_MS)
+const inclusiveDays = (start: Date, end: Date) => Math.round((end.getTime() - start.getTime()) / DASHBOARD_DAY_MS) + 1
+
+function shiftYearsClamped(value: Date, years: number) {
+  const targetYear = value.getFullYear() + years
+  const month = value.getMonth()
+  const day = value.getDate()
+  const lastDay = new Date(targetYear, month + 1, 0, 12).getDate()
+  return new Date(targetYear, month, Math.min(day, lastDay), 12)
+}
 
 export function dashboardPeriodRange(
   preset: DashboardPeriodPreset,
@@ -21,31 +38,98 @@ export function dashboardPeriodRange(
   const anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12)
   let start = anchor
   let end = anchor
+
   if (preset === 'week') start = shiftDays(anchor, -((anchor.getDay() + 6) % 7))
   if (preset === 'month') start = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 12)
+  if (preset === 'last30') start = shiftDays(anchor, -29)
+  if (preset === 'last90') start = shiftDays(anchor, -89)
+  if (preset === 'ytd') start = new Date(anchor.getFullYear(), 0, 1, 12)
   if (preset === 'custom') {
     if (!customStart || !customEnd || customEnd < customStart) return null
     start = dateAtNoon(customStart)
     end = dateAtNoon(customEnd)
   }
-  const elapsedDays = Math.round((end.getTime() - start.getTime()) / DASHBOARD_DAY_MS)
+
+  const days = inclusiveDays(start, end)
+  let compareStart = shiftDays(start, -days)
   let compareEnd = shiftDays(start, -1)
-  let compareStart = shiftDays(compareEnd, -elapsedDays)
-  if (preset === 'week') {
+
+  if (preset === 'today') {
+    compareStart = shiftDays(anchor, -1)
+    compareEnd = compareStart
+  } else if (preset === 'week') {
     compareStart = shiftDays(start, -7)
     compareEnd = shiftDays(end, -7)
-  }
-  if (preset === 'month') {
+  } else if (preset === 'month') {
     compareStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1, 12)
     const previousMonthEnd = new Date(anchor.getFullYear(), anchor.getMonth(), 0, 12)
     compareEnd = new Date(anchor.getFullYear(), anchor.getMonth() - 1, Math.min(anchor.getDate(), previousMonthEnd.getDate()), 12)
+  } else if (preset === 'ytd') {
+    compareStart = shiftYearsClamped(start, -1)
+    compareEnd = shiftYearsClamped(end, -1)
+  } else if (preset === 'custom' && days > 62) {
+    // Long custom ranges are easier to interpret against the same calendar dates
+    // in the prior year than against an arbitrary immediately preceding block.
+    compareStart = shiftYearsClamped(start, -1)
+    compareEnd = shiftYearsClamped(end, -1)
   }
+
   return {
     start: localDate(start),
     end: localDate(end),
     compareStart: localDate(compareStart),
     compareEnd: localDate(compareEnd),
   }
+}
+
+export function dashboardTrendGranularity(start: string, end: string): DashboardTrendGranularity {
+  const days = inclusiveDays(dateAtNoon(start), dateAtNoon(end))
+  if (days <= 14) return 'day'
+  if (days <= 62) return 'week'
+  return 'month'
+}
+
+function trendBucketDate(value: string, granularity: DashboardTrendGranularity) {
+  const date = dateAtNoon(value)
+  if (granularity === 'day') return localDate(date)
+  if (granularity === 'week') {
+    const mondayOffset = (date.getDay() + 6) % 7
+    return localDate(shiftDays(date, -mondayOffset))
+  }
+  return localDate(new Date(date.getFullYear(), date.getMonth(), 1, 12))
+}
+
+export function aggregateDashboardTrend(
+  trend: DashboardTrendPoint[],
+  granularity: DashboardTrendGranularity,
+): DashboardTrendPoint[] {
+  if (granularity === 'day') return trend
+
+  const buckets = new Map<string, DashboardTrendPoint & { grossProfitUnavailable: boolean }>()
+  for (const point of trend) {
+    const key = trendBucketDate(point.date, granularity)
+    const current = buckets.get(key) || {
+      date: key,
+      sales: 0,
+      knownCogs: 0,
+      grossProfit: 0,
+      missingCostCount: 0,
+      grossProfitUnavailable: false,
+    }
+    current.sales += Number(point.sales || 0)
+    current.knownCogs += Number(point.knownCogs || 0)
+    current.missingCostCount += Number(point.missingCostCount || 0)
+    if (point.grossProfit == null) current.grossProfitUnavailable = true
+    else current.grossProfit = Number(current.grossProfit || 0) + Number(point.grossProfit)
+    buckets.set(key, current)
+  }
+
+  return Array.from(buckets.values())
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .map(({ grossProfitUnavailable, ...bucket }) => ({
+      ...bucket,
+      grossProfit: grossProfitUnavailable ? null : bucket.grossProfit,
+    }))
 }
 
 export const dashboardCompletionRate = (completed: number, eligible: number) =>
