@@ -610,8 +610,8 @@ function Settings() {
     [canEditAll, roleUpper],
   );
   const canEditDueReminders = useMemo(
-    () => financeCan.reminderSettings(myRole),
-    [myRole],
+    () => authorityMode !== "platform_workspace" && financeCan.reminderSettings(myRole),
+    [authorityMode, myRole],
   );
   const settingsSummary = useMemo(() => {
     const companyLabel =
