@@ -96,11 +96,12 @@ test('invitation discovery cannot activate or take over another identity', () =>
 })
 
 test('frontend exposes an explicit localized, route-keyed setup workspace only', async () => {
-  const [app, shell, org, openingImport] = await Promise.all([
+  const [app, shell, org, openingImport, settings] = await Promise.all([
     read('src/App.tsx'),
     read('src/components/platform/AssistedWorkspaceShell.tsx'),
     read('src/hooks/useOrg.tsx'),
     read('src/pages/OpeningImport.tsx'),
+    read('src/pages/Settings.tsx'),
   ])
   const workspaceRoutes = app.match(/<Route path="\/platform-workspace\/:companyId"[\s\S]*?<\/Route>/)?.[0] || ''
   for (const route of ['settings', 'warehouses', 'items', 'customers', 'suppliers', 'setup/import', 'users', 'currency']) {
@@ -117,6 +118,7 @@ test('frontend exposes an explicit localized, route-keyed setup workspace only',
   assert.match(org, /authorityMode:\s*platformWorkspaceCompanyId \? 'platform_workspace' : 'membership'/)
   assert.doesNotMatch(org, /supabase\.rpc\(['"]accept_my_invite/)
   assert.match(openingImport, /authorityMode === 'platform_workspace'[\s\S]*platform_admin_post_opening_stock_import/)
+  assert.match(settings, /authorityMode !== ["']platform_workspace["'] && financeCan\.reminderSettings\(myRole\)/)
 })
 
 test('assisted provisioning passes the rollback-only local SQL security matrix', (context) => {
