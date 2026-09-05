@@ -119,6 +119,8 @@ test('frontend exposes an explicit localized, route-keyed setup workspace only',
   assert.doesNotMatch(org, /supabase\.rpc\(['"]accept_my_invite/)
   assert.match(openingImport, /authorityMode === 'platform_workspace'[\s\S]*platform_admin_post_opening_stock_import/)
   assert.match(settings, /authorityMode !== ["']platform_workspace["'] && financeCan\.reminderSettings\(myRole\)/)
+  assert.match(settings, /authorityMode !== ["']platform_workspace["'] && canEditAll/)
+  assert.match(settings, /<CommercialTaxSettings companyId=\{companyId\} canEdit=\{canEditCommercialTax\}/)
 })
 
 test('assisted provisioning passes the rollback-only local SQL security matrix', (context) => {

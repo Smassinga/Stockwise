@@ -613,6 +613,10 @@ function Settings() {
     () => authorityMode !== "platform_workspace" && financeCan.reminderSettings(myRole),
     [authorityMode, myRole],
   );
+  const canEditCommercialTax = useMemo(
+    () => authorityMode !== "platform_workspace" && canEditAll,
+    [authorityMode, canEditAll],
+  );
   const settingsSummary = useMemo(() => {
     const companyLabel =
       profile?.trade_name ||
@@ -1386,7 +1390,7 @@ function Settings() {
       />
 
       <div id="settings-commercial-tax" tabIndex={-1} className={activeSection === "commercial-tax" ? "scroll-mt-24" : "hidden"}>
-        <CommercialTaxSettings companyId={companyId} canEdit={canEditAll} />
+        <CommercialTaxSettings companyId={companyId} canEdit={canEditCommercialTax} />
       </div>
 
       {/* Localization & UI */}
