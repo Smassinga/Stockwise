@@ -20,6 +20,7 @@ import {
   resolveDocumentOutputLanguage,
   type OutputLanguage,
 } from './financeDocumentOutputLanguage'
+import { fitDocumentLogo } from './documentBranding'
 
 type PdfSuite = { jsPDF: typeof import('jspdf').default; autoTable: (...args: any[]) => void }
 type PdfFontStyle = 'normal' | 'bold'
@@ -968,13 +969,20 @@ export async function generateFinanceDocumentPdfBlob(model: FinanceDocumentOutpu
 
   if (logoDataUrl) {
     try {
+      const properties = doc.getImageProperties(logoDataUrl)
+      const placement = fitDocumentLogo(properties.width, properties.height, {
+        x: logoX,
+        y: logoY,
+        width: logoSize,
+        height: logoSize,
+      })
       doc.addImage(
         logoDataUrl,
         logoDataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG',
-        logoX,
-        logoY,
-        logoSize,
-        logoSize,
+        placement.x,
+        placement.y,
+        placement.width,
+        placement.height,
         undefined,
         'FAST',
       )

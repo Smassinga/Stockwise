@@ -1,4 +1,5 @@
 import { saveAs } from 'file-saver'
+import { fitDocumentLogo } from './documentBranding'
 import { loadCompanyLogoImage, type ExportCompanyHeader } from './excelExport'
 
 export type FinanceExportLanguage = 'en' | 'pt' | 'bi'
@@ -499,7 +500,9 @@ async function buildFinancePdf(model: FinanceExportModel) {
     let y = 30
     let companyX = margin
     if (logo) {
-      doc.addImage(logo.base64, logo.extension.toUpperCase(), margin, 24, 78, 44)
+      const properties = doc.getImageProperties(logo.base64)
+      const placement = fitDocumentLogo(properties.width, properties.height, { x: margin, y: 24, width: 78, height: 44 })
+      doc.addImage(logo.base64, logo.extension.toUpperCase(), placement.x, placement.y, placement.width, placement.height)
       companyX = 126
     }
     doc.setFont('helvetica', 'bold')

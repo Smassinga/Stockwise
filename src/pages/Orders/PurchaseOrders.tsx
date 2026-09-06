@@ -16,6 +16,7 @@ import MobileAddLineButton from '../../components/MobileAddLineButton'
 import { CommercialLifecycleStrip } from '../../components/commercial/CommercialLifecycleStrip'
 import { ForeignCurrencyReadiness } from '../../components/commercial/ForeignCurrencyReadiness'
 import { formatMoneyBase as formatMoneyBaseRaw, getBaseCurrencyCode } from '../../lib/currency'
+import { DOCUMENT_LOGO_PRINT_SIZE_PX } from '../../lib/documentBranding'
 import {
   fxCanCreate,
   isValidFxRate,
@@ -1820,13 +1821,14 @@ export default function PurchaseOrders() {
         display: flex; align-items: center; justify-content: space-between; gap: 12px;
         padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb;
       }
-      .brand { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+      .brand { display: flex; align-items: center; gap: 10px; min-height: ${DOCUMENT_LOGO_PRINT_SIZE_PX}px; }
       .logo {
-        height: 46px; width: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+        height: ${DOCUMENT_LOGO_PRINT_SIZE_PX}px; width: ${DOCUMENT_LOGO_PRINT_SIZE_PX}px;
+        object-fit: contain; border: 1px solid #e5e7eb; border-radius: 8px;
         background: #f7f8f7; padding: 3px;
       }
       .logo-fallback {
-        height: 46px; width: 44px; border: 1px solid #e5e7eb; border-radius: 8px;
+        height: ${DOCUMENT_LOGO_PRINT_SIZE_PX}px; width: ${DOCUMENT_LOGO_PRINT_SIZE_PX}px; border: 1px solid #e5e7eb; border-radius: 8px;
         display: flex; align-items: center; justify-content: center; font-weight: 700; background: #eef2ff;
       }
       .company-name { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
