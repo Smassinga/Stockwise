@@ -68,6 +68,16 @@ test('legacy notifications are normalised without exposing invalid destinations'
   assert.match(navigation, /await setActiveCompany\(targetCompanyId\)/)
 })
 
+test('notification preferences visibly distinguish in-app delivery from email', async () => {
+  const preferences = await read('src/components/notifications/NotificationPreferences.tsx')
+
+  assert.match(preferences, /"Na aplicação" : "In-app"/)
+  assert.match(preferences, /<Mail className="size-3\.5" \/>Email/)
+  assert.match(preferences, /sm:hidden/)
+  assert.match(preferences, /Critical notices always remain active in the app\./)
+  assert.match(preferences, /aria-describedby=\{category === "system" \? systemNoteId : undefined\}/)
+})
+
 test('Opening Import labels the file control and avoids zero summaries before preview', async () => {
   const openingImport = await read('src/pages/OpeningImport.tsx')
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Bell, Mail } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../../hooks/useAuth";
 import { useOrg } from "../../hooks/useOrg";
@@ -44,12 +45,17 @@ export function NotificationPreferences() {
   }
 
   return <div className="md:col-span-2 space-y-3 border-t border-border/70 pt-4">
-    <div><Label>{lang === "pt" ? "Preferências por categoria" : "Category preferences"}</Label><p className="text-xs text-muted-foreground">{lang === "pt" ? "As notificações na aplicação e por email são controladas separadamente. Os avisos críticos do sistema permanecem activos." : "In-app and email notifications are controlled separately. Critical system notices remain enabled."}</p></div>
+    <div><Label>{lang === "pt" ? "Preferências por categoria" : "Category preferences"}</Label><p className="text-xs text-muted-foreground">{lang === "pt" ? "Escolha quando cada categoria aparece no StockWise e se também deve ser enviada por email." : "Choose when each category appears in StockWise and whether it should also be sent by email."}</p></div>
     <div className="grid gap-2">
-      {categories.map((category) => { const value = rows.find((row) => row.category === category) || { category, in_app_mode: "immediate" as Mode, email_mode: "off" as Mode }; return <div key={category} className="grid gap-2 rounded-xl border border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_10rem_10rem] sm:items-center">
-        <span className="text-sm font-medium">{labels[category][lang === "pt" ? "pt" : "en"]}</span>
-        <Select value={value.in_app_mode} onValueChange={(mode: Mode) => void update(category, "in_app_mode", mode)} disabled={category === "system"}><SelectTrigger aria-label={`${labels[category].en} in-app`}><SelectValue /></SelectTrigger><SelectContent>{(["immediate", "digest", "off"] as Mode[]).map((mode) => <SelectItem key={mode} value={mode}>{modeLabels[mode][lang === "pt" ? "pt" : "en"]}</SelectItem>)}</SelectContent></Select>
-        <Select value={value.email_mode} onValueChange={(mode: Mode) => void update(category, "email_mode", mode)}><SelectTrigger aria-label={`${labels[category].en} email`}><SelectValue /></SelectTrigger><SelectContent>{(["immediate", "digest", "off"] as Mode[]).map((mode) => <SelectItem key={mode} value={mode}>{modeLabels[mode][lang === "pt" ? "pt" : "en"]}</SelectItem>)}</SelectContent></Select>
+      <div className="hidden gap-2 px-3 sm:grid sm:grid-cols-[minmax(0,1fr)_10rem_10rem]" aria-hidden="true">
+        <span className="text-xs font-medium text-muted-foreground">{lang === "pt" ? "Categoria" : "Category"}</span>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-foreground"><Bell className="size-3.5" />{lang === "pt" ? "Na aplicação" : "In-app"}</span>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-foreground"><Mail className="size-3.5" />Email</span>
+      </div>
+      {categories.map((category) => { const value = rows.find((row) => row.category === category) || { category, in_app_mode: "immediate" as Mode, email_mode: "off" as Mode }; const systemNoteId = `notification-${category}-in-app-note`; return <div key={category} className="grid gap-2 rounded-xl border border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_10rem_10rem] sm:items-center">
+        <span className="text-sm font-medium">{labels[category][lang === "pt" ? "pt" : "en"]}{category === "system" ? <span id={systemNoteId} className="mt-0.5 block text-xs font-normal text-muted-foreground">{lang === "pt" ? "Os avisos críticos permanecem sempre activos na aplicação." : "Critical notices always remain active in the app."}</span> : null}</span>
+        <div className="grid gap-1.5"><span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground sm:hidden"><Bell className="size-3.5" />{lang === "pt" ? "Na aplicação" : "In-app"}</span><Select value={value.in_app_mode} onValueChange={(mode: Mode) => void update(category, "in_app_mode", mode)} disabled={category === "system"}><SelectTrigger aria-label={`${labels[category][lang === "pt" ? "pt" : "en"]} — ${lang === "pt" ? "na aplicação" : "in-app"}`} aria-describedby={category === "system" ? systemNoteId : undefined}><SelectValue /></SelectTrigger><SelectContent>{(["immediate", "digest", "off"] as Mode[]).map((mode) => <SelectItem key={mode} value={mode}>{modeLabels[mode][lang === "pt" ? "pt" : "en"]}</SelectItem>)}</SelectContent></Select></div>
+        <div className="grid gap-1.5"><span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground sm:hidden"><Mail className="size-3.5" />Email</span><Select value={value.email_mode} onValueChange={(mode: Mode) => void update(category, "email_mode", mode)}><SelectTrigger aria-label={`${labels[category][lang === "pt" ? "pt" : "en"]} — email`}><SelectValue /></SelectTrigger><SelectContent>{(["immediate", "digest", "off"] as Mode[]).map((mode) => <SelectItem key={mode} value={mode}>{modeLabels[mode][lang === "pt" ? "pt" : "en"]}</SelectItem>)}</SelectContent></Select></div>
       </div> })}
     </div>
   </div>;
