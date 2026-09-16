@@ -1030,7 +1030,7 @@ export default function SalesOrders() {
         setAllocationsByLine({})
         return
       }
-      const lines = solines.filter((line) => line.so_id === selectedSO.id && remaining(line) > 0)
+      const lines = solines.filter((line) => line.so_id === selectedSO.id && remaining(line) > 0 && itemById.get(line.item_id)?.primaryRole !== 'service')
       if (lines.length === 0) {
         setStockOptionsByLine({})
         setAllocationsByLine({})
@@ -1466,6 +1466,9 @@ export default function SalesOrders() {
 
   async function doShipLineSO(so: SO, line: SOL, options?: { silent?: boolean; refresh?: boolean }) {
     try {
+      if (itemById.get(line.item_id)?.primaryRole === 'service') {
+        throw new Error(tt('orders.serviceUsesServiceJobs', 'Service lines are fulfilled through Service Jobs, not warehouse issue.'))
+      }
       const lineKey = String(line.id)
       const plan = buildIssuePlan(line, allocationsByLine[lineKey] || [], stockOptionsByLine[lineKey] || [])
       if (plan.outstandingQty <= 0) {
@@ -1545,7 +1548,7 @@ export default function SalesOrders() {
   // Ship all lines that currently have a valid allocation plan.
   async function doShipSO(so: SO) {
     try {
-      const lines = solines.filter((line) => line.so_id === so.id && remaining(line) > 0)
+      const lines = solines.filter((line) => line.so_id === so.id && remaining(line) > 0 && itemById.get(line.item_id)?.primaryRole !== 'service')
       if (!lines.length) return toast.error(tt('orders.noLinesToShip', 'No lines to ship'))
 
       const plannedLines = lines.filter((line) => {
@@ -1643,9 +1646,13 @@ export default function SalesOrders() {
     () => selectedSOLines.filter((line) => remaining(line) > 0),
     [selectedSOLines]
   )
+  const selectedSOInventoryOpenLines = useMemo(
+    () => selectedSOOpenLines.filter((line) => itemById.get(line.item_id)?.primaryRole !== 'service'),
+    [itemById, selectedSOOpenLines]
+  )
   const selectedSORemainingQty = useMemo(
-    () => selectedSOOpenLines.reduce((sum, line) => sum + remaining(line), 0),
-    [selectedSOOpenLines]
+    () => selectedSOInventoryOpenLines.reduce((sum, line) => sum + remaining(line), 0),
+    [selectedSOInventoryOpenLines]
   )
   const linkedFiscalInvoice = useMemo(
     () => (selectedSO ? salesInvoicesByOrderId.get(selectedSO.id) : undefined),
@@ -2895,8 +2902,8 @@ export default function SalesOrders() {
                   },
                   {
                     id: 'stock',
-                    eyebrowKey: 'commercial.lifecycle.stock',
-                    eyebrowFallback: 'Stock',
+                    eyebrowKey: 'commercial.lifecycle.fulfilment',
+                    eyebrowFallback: 'Fulfilment',
                     labelKey: salesFulfilmentLabelKey(
                       salesState(selectedSO)?.fulfilment_status ?? legacySalesFulfilmentStatus(selectedSO.status),
                     ),
@@ -2906,8 +2913,8 @@ export default function SalesOrders() {
                       : salesState(selectedSO)?.fulfilment_status === 'partial'
                         ? 'warning'
                         : 'neutral',
-                    descriptionKey: 'commercial.lifecycle.salesStockHelp',
-                    descriptionFallback: 'Shipment remains an operational stock workflow.',
+                    descriptionKey: 'commercial.lifecycle.salesFulfilmentHelp',
+                    descriptionFallback: 'Stock items use warehouse issue; services use Service Jobs.',
                   },
                   {
                     id: 'finance',
@@ -2967,7 +2974,7 @@ export default function SalesOrders() {
                         {tt('orders.approve', 'Approve')}
                       </Button>
                     )}
-                    {canIssueFromStatus(selectedSO.status) && (
+                    {canIssueFromStatus(selectedSO.status) && selectedSOInventoryOpenLines.length > 0 && (
                       <Button onClick={() => doShipSO(selectedSO)}>
                         {tt('orders.shipAllocatedLines', 'Issue allocated lines')}
                       </Button>
@@ -3006,7 +3013,7 @@ export default function SalesOrders() {
                   {
                     label: tt('orders.remainingQty', 'Remaining quantity'),
                     value: fmtAcct(selectedSORemainingQty),
-                    hint: tt('orders.remainingQtyHelp', 'Use the allocation section below to split the remaining issue quantity across source bins.'),
+                    hint: tt('orders.remainingStockQtyHelp', 'Remaining stock quantity that still needs warehouse issue. Service lines are completed through Service Jobs.'),
                   },
                 ]}
               />
@@ -3248,6 +3255,7 @@ export default function SalesOrders() {
                 </div>
               </OrderDetailSection>
 
+              {selectedSOInventoryOpenLines.length > 0 && (
               <OrderDetailSection
                 title={tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}
                 description={tt('orders.fulfilmentPanelHelp', 'Fulfilment stays separate from commercial edits: choose a default warehouse for new allocation rows, then post issue quantities line by line or in one batch.')}
@@ -3279,7 +3287,9 @@ export default function SalesOrders() {
                 </div>
               </div>
               </OrderDetailSection>
+              )}
 
+              {selectedSOInventoryOpenLines.length > 0 && (
               <OrderDetailSection
                 title={tt('orders.issueAllocations', 'Issue allocations')}
                 description={tt('orders.issueAllocationHelp', 'Split each issue across the warehouse bins that actually hold stock. Quantities are validated against live on-hand balances before posting.')}
@@ -3294,7 +3304,7 @@ export default function SalesOrders() {
                 )}
 
                 <div className='space-y-4'>
-                  {selectedSOOpenLines.map(l => {
+                  {selectedSOInventoryOpenLines.map(l => {
                     const it = itemById.get(l.item_id)
                     const baseU = it?.baseUomId || ''
                     const outstanding = remaining(l)
@@ -3489,13 +3499,14 @@ export default function SalesOrders() {
                       </div>
                     )
                   })}
-                  {selectedSOOpenLines.length === 0 && (
+                  {selectedSOInventoryOpenLines.length === 0 && (
                     <div className='rounded-xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground'>
                       {tt('orders.allLinesShipped', 'All lines shipped.')}
                     </div>
                   )}
                 </div>
               </OrderDetailSection>
+              )}
 
               <OrderAuditGrid
                 title={tt('orders.auditAndSignoff', 'Audit and sign-off')}
