@@ -14,7 +14,7 @@ jobs:
   apply-fix:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -27,7 +27,7 @@ jobs:
           path = Path('src/pages/Orders/SalesOrders.tsx')
           text = path.read_text()
 
-          def replace_once(old: str, new: str, label: str):
+          def replace_once(old, new, label):
               global text
               count = text.count(old)
               if count != 1:
@@ -40,18 +40,9 @@ jobs:
               'stock source planning',
           )
 
-          replace_once(
-              """  async function doShipLineSO(so: SO, line: SOL, options?: { silent?: boolean; refresh?: boolean }) {
-    try {
-      const lineKey = String(line.id)""",
-              """  async function doShipLineSO(so: SO, line: SOL, options?: { silent?: boolean; refresh?: boolean }) {
-    try {
-      if (itemById.get(line.item_id)?.primaryRole === 'service') {
-        throw new Error(tt('orders.serviceUsesServiceJobs', 'Service lines are fulfilled through Service Jobs, not warehouse issue.'))
-      }
-      const lineKey = String(line.id)""",
-              'single-line shipment guard',
-          )
+          old = "  async function doShipLineSO(so: SO, line: SOL, options?: { silent?: boolean; refresh?: boolean }) {\n    try {\n      const lineKey = String(line.id)"
+          new = "  async function doShipLineSO(so: SO, line: SOL, options?: { silent?: boolean; refresh?: boolean }) {\n    try {\n      if (itemById.get(line.item_id)?.primaryRole === 'service') {\n        throw new Error(tt('orders.serviceUsesServiceJobs', 'Service lines are fulfilled through Service Jobs, not warehouse issue.'))\n      }\n      const lineKey = String(line.id)"
+          replace_once(old, new, 'single-line shipment guard')
 
           replace_once(
               "      const lines = solines.filter((line) => line.so_id === so.id && remaining(line) > 0)",
@@ -59,29 +50,9 @@ jobs:
               'batch shipment filtering',
           )
 
-          replace_once(
-              """  const selectedSOOpenLines = useMemo(
-    () => selectedSOLines.filter((line) => remaining(line) > 0),
-    [selectedSOLines]
-  )
-  const selectedSORemainingQty = useMemo(
-    () => selectedSOOpenLines.reduce((sum, line) => sum + remaining(line), 0),
-    [selectedSOOpenLines]
-  )""",
-              """  const selectedSOOpenLines = useMemo(
-    () => selectedSOLines.filter((line) => remaining(line) > 0),
-    [selectedSOLines]
-  )
-  const selectedSOInventoryOpenLines = useMemo(
-    () => selectedSOOpenLines.filter((line) => itemById.get(line.item_id)?.primaryRole !== 'service'),
-    [itemById, selectedSOOpenLines]
-  )
-  const selectedSORemainingQty = useMemo(
-    () => selectedSOInventoryOpenLines.reduce((sum, line) => sum + remaining(line), 0),
-    [selectedSOInventoryOpenLines]
-  )""",
-              'inventory open-line projection',
-          )
+          old = "  const selectedSOOpenLines = useMemo(\n    () => selectedSOLines.filter((line) => remaining(line) > 0),\n    [selectedSOLines]\n  )\n  const selectedSORemainingQty = useMemo(\n    () => selectedSOOpenLines.reduce((sum, line) => sum + remaining(line), 0),\n    [selectedSOOpenLines]\n  )"
+          new = "  const selectedSOOpenLines = useMemo(\n    () => selectedSOLines.filter((line) => remaining(line) > 0),\n    [selectedSOLines]\n  )\n  const selectedSOInventoryOpenLines = useMemo(\n    () => selectedSOOpenLines.filter((line) => itemById.get(line.item_id)?.primaryRole !== 'service'),\n    [itemById, selectedSOOpenLines]\n  )\n  const selectedSORemainingQty = useMemo(\n    () => selectedSOInventoryOpenLines.reduce((sum, line) => sum + remaining(line), 0),\n    [selectedSOInventoryOpenLines]\n  )"
+          replace_once(old, new, 'inventory open-line projection')
 
           replace_once(
               "                    {canIssueFromStatus(selectedSO.status) && (",
@@ -89,75 +60,40 @@ jobs:
               'batch issue action visibility',
           )
 
-          replace_once(
-              """                    value: fmtAcct(selectedSORemainingQty),
-                    hint: tt('orders.remainingQtyHelp', 'Use the allocation section below to split the remaining issue quantity across source bins.'),""",
-              """                    value: fmtAcct(selectedSORemainingQty),
-                    hint: tt('orders.remainingStockQtyHelp', 'Remaining stock quantity that still needs warehouse issue. Service lines are completed through Service Jobs.'),""",
-              'remaining quantity help',
-          )
+          old = "                    value: fmtAcct(selectedSORemainingQty),\n                    hint: tt('orders.remainingQtyHelp', 'Use the allocation section below to split the remaining issue quantity across source bins.'),"
+          new = "                    value: fmtAcct(selectedSORemainingQty),\n                    hint: tt('orders.remainingStockQtyHelp', 'Remaining stock quantity that still needs warehouse issue. Service lines are completed through Service Jobs.'),"
+          replace_once(old, new, 'remaining quantity help')
 
-          replace_once(
-              """                    eyebrowKey: 'commercial.lifecycle.stock',
-                    eyebrowFallback: 'Stock',""",
-              """                    eyebrowKey: 'commercial.lifecycle.fulfilment',
-                    eyebrowFallback: 'Fulfilment',""",
-              'lifecycle fulfilment label',
-          )
+          old = "                    eyebrowKey: 'commercial.lifecycle.stock',\n                    eyebrowFallback: 'Stock',"
+          new = "                    eyebrowKey: 'commercial.lifecycle.fulfilment',\n                    eyebrowFallback: 'Fulfilment',"
+          replace_once(old, new, 'lifecycle fulfilment label')
 
-          replace_once(
-              """                    descriptionKey: 'commercial.lifecycle.salesStockHelp',
-                    descriptionFallback: 'Shipment remains an operational stock workflow.',""",
-              """                    descriptionKey: 'commercial.lifecycle.salesFulfilmentHelp',
-                    descriptionFallback: 'Stock items use warehouse issue; services use Service Jobs.',""",
-              'lifecycle fulfilment help',
-          )
+          old = "                    descriptionKey: 'commercial.lifecycle.salesStockHelp',\n                    descriptionFallback: 'Shipment remains an operational stock workflow.',"
+          new = "                    descriptionKey: 'commercial.lifecycle.salesFulfilmentHelp',\n                    descriptionFallback: 'Stock items use warehouse issue; services use Service Jobs.',"
+          replace_once(old, new, 'lifecycle fulfilment help')
 
-          replace_once(
-              """              <OrderDetailSection
-                title={tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}""",
-              """              {selectedSOInventoryOpenLines.length > 0 && (
-              <OrderDetailSection
-                title={tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}""",
-              'default warehouse section guard',
-          )
+          old = "              <OrderDetailSection\n                title={tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}"
+          new = "              {selectedSOInventoryOpenLines.length > 0 && (\n              <OrderDetailSection\n                title={tt('orders.defaultIssueWarehouse', 'Default warehouse for new allocations')}"
+          replace_once(old, new, 'default warehouse section guard')
 
-          replace_once(
-              """              </OrderDetailSection>
-
-              <OrderDetailSection
-                title={tt('orders.issueAllocations', 'Issue allocations')}""",
-              """              </OrderDetailSection>
-              )}
-
-              {selectedSOInventoryOpenLines.length > 0 && (
-              <OrderDetailSection
-                title={tt('orders.issueAllocations', 'Issue allocations')}""",
-              'issue section guard',
-          )
+          old = "              </OrderDetailSection>\n\n              <OrderDetailSection\n                title={tt('orders.issueAllocations', 'Issue allocations')}"
+          new = "              </OrderDetailSection>\n              )}\n\n              {selectedSOInventoryOpenLines.length > 0 && (\n              <OrderDetailSection\n                title={tt('orders.issueAllocations', 'Issue allocations')}"
+          replace_once(old, new, 'issue section guard')
 
           replace_once(
               "                  {selectedSOOpenLines.map(l => {",
               "                  {selectedSOInventoryOpenLines.map(l => {",
               'inventory allocation line list',
           )
-
           replace_once(
               "                  {selectedSOOpenLines.length === 0 && (",
               "                  {selectedSOInventoryOpenLines.length === 0 && (",
               'inventory empty-state line list',
           )
 
-          replace_once(
-              """              </OrderDetailSection>
-
-              <OrderAuditGrid""",
-              """              </OrderDetailSection>
-              )}
-
-              <OrderAuditGrid""",
-              'issue section closing guard',
-          )
+          old = "              </OrderDetailSection>\n\n              <OrderAuditGrid"
+          new = "              </OrderDetailSection>\n              )}\n\n              <OrderAuditGrid"
+          replace_once(old, new, 'issue section closing guard')
 
           path.write_text(text)
           PY
