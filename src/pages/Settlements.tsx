@@ -674,7 +674,7 @@ export default function SettlementsPage() {
 
         const receiveRows = [
           ...((soRes.data || []) as SalesOrderStateRow[])
-          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status !== 'cancelled' && order.financial_anchor === 'legacy_order_link')
+          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status === 'approved' && order.financial_anchor === 'legacy_order_link')
           .map(order => {
             const settled = n(order.legacy_settled_base)
             const outstanding = n(order.legacy_outstanding_base)
@@ -750,7 +750,7 @@ export default function SettlementsPage() {
 
         const payRows = [
           ...((poRes.data || []) as PurchaseOrderStateRow[])
-          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status !== 'cancelled' && order.financial_anchor === 'legacy_order_link')
+          .filter(order => !isCancelled(order.legacy_status) && order.workflow_status === 'approved' && order.financial_anchor === 'legacy_order_link')
           .map(order => {
             const settled = n(order.legacy_paid_base)
             const outstanding = n(order.legacy_outstanding_base)
@@ -1563,7 +1563,10 @@ export default function SettlementsPage() {
       } else if (message.includes('finance_document_became_active_anchor')) {
         toast.error(tt('settlements.financeAnchorChanged', 'A finance document is now the active settlement anchor. Refresh and post against that document.'))
       } else if (message.includes('settlement_anchor_not_ready') || message.includes('settlement_anchor_not_found')) {
-        toast.error(tt('settlements.anchorStale', 'This settlement anchor is no longer ready. Refresh the settlement workspace.'))
+        setActiveRow(null)
+        clearPostingRequestKey(settlementPostingRequestRef)
+        setRefreshKey(key => key + 1)
+        toast.error(tt('settlements.anchorStale', 'This settlement anchor changed or is not approved. The settlement workspace was refreshed.'))
       } else if (message.includes('insufficient_company_role')) {
         toast.error(tt('settlements.permissionDenied', 'You do not have permission to post settlements for this company.'))
       } else if (message.includes('company_access_disabled')) {
