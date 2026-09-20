@@ -56,3 +56,17 @@ test('Generated QA and machine state remain ignored', () => {
     assert.ok(gitignore.includes(entry), `missing generated-state ignore rule: ${entry}`)
   }
 })
+
+
+test('Auth session hydration timeouts stay local without weakening Sentry coverage', () => {
+  const timeoutHelper = read('src/lib/withTimeout.ts')
+  const auth = read('src/hooks/useAuth.tsx')
+  const sentry = read('src/lib/sentry.ts')
+
+  assert.match(timeoutHelper, /export class TimeoutError extends Error/)
+  assert.match(timeoutHelper, /error instanceof TimeoutError/)
+  assert.match(auth, /isTimeoutError\(error, INITIAL_SESSION_LOOKUP_LABEL\)/)
+  assert.match(auth, /initial session lookup timed out; waiting for auth state change/)
+  assert.match(auth, /signInWithPassword/)
+  assert.doesNotMatch(sentry, /ignoreErrors\s*:/, 'Sentry must not globally suppress auth or timeout errors')
+})
