@@ -10,7 +10,7 @@ import {
 import type { Session, User } from '@supabase/supabase-js'
 import { buildAuthCallbackUrl } from '../lib/authRedirect'
 import { supabase } from '../lib/supabase'
-import { withTimeout } from '../lib/withTimeout'
+import { isTimeoutError, withTimeout } from '../lib/withTimeout'
 
 export type AppUser = {
   id: string
@@ -41,6 +41,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 const AUTH_REQUEST_TIMEOUT_MS = 15000
+const INITIAL_SESSION_LOOKUP_LABEL = 'auth session lookup'
 
 function mapUser(u: User): AppUser {
   const name =
@@ -77,12 +78,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data, error } = await withTimeout(
           supabase.auth.getSession(),
           AUTH_REQUEST_TIMEOUT_MS,
-          'auth session lookup'
+          INITIAL_SESSION_LOOKUP_LABEL
         )
         if (!cancelled) {
           if (error) setUser(null)
           else applySession(data.session)
         }
+      } catch (error) {
+        if (!isTimeoutError(error, INITIAL_SESSION_LOOKUP_LABEL)) {
+          throw error
+        }
+
+        // A persisted session may briefly contend with Supabase's automatic token
+        // refresh. The auth-state listener below remains the fallback source of
+        // truth, so this specific hydration timeout is not an application error.
+        console.warn('[Auth] initial session lookup timed out; waiting for auth state change')
       } finally {
         if (!cancelled) setLoading(false)
       }
