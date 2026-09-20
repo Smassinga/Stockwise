@@ -247,3 +247,18 @@ For local regression timeouts in Growth Batch CLI metadata checks, confirm local
 - `commercial_tax_non_fiscal_pos_invoice_forbidden`: the source is an operational non-fiscal POS sale and cannot be converted to or issued as a fiscal Sales Invoice.
 
 If the amount shown before confirmation differs from the posted amount, stop posting and verify that the frontend is using `preview_operator_sale(...)`, that cart/configuration changes invalidate the preview, and that the deployed migration and frontend commit match. Never repair the discrepancy by forcing `0%`, exemption, or a client-calculated settlement.
+
+
+### Sentry reports `auth session lookup timed out`
+
+This label belongs to initial persisted-session hydration through `supabase.auth.getSession()`; it is not the password sign-in label.
+
+Current handling:
+
+- a timeout created by StockWise's `withTimeout` helper is classified as `TimeoutError`
+- only the initial `auth session lookup` timeout is handled locally while the normal Supabase auth-state listener remains the fallback source of truth
+- unexpected auth/session errors still escape to the normal Sentry path
+- Sentry has no broad `ignoreErrors` rule for auth or timeout failures
+- password sign-in continues through the separate `sign in` / `signInWithPassword` path
+
+When investigating suspected login abuse, use Supabase Auth audit/log signals and rate-limit/CAPTCHA controls rather than treating a session-refresh timeout as evidence of a login attempt. Token refresh is normal persisted-session maintenance.
