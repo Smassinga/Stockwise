@@ -31,6 +31,11 @@ const copy = {
     readOnly: 'Only a company OWNER or ADMIN can create or change an activation request. Other members can track its status.',
     restricted: 'This company is suspended or disabled. Proof upload cannot reactivate it; contact StockWise support.', back: 'Back to workspace',
     timeline: 'Immutable event timeline', cancel: 'Cancel request', cancelConfirm: 'Cancel this activation request? The audit history will be retained.',
+    onlineTitle: 'Pay securely online', onlineDescription: 'Pay with M-Pesa, e-Mola, or card through PaySuite. Access is updated after StockWise verifies the payment.',
+    onlinePay: 'Continue to payment', onlineWorking: 'Preparing checkout...', onlineCheck: 'Check payment status',
+    onlinePending: 'Payment is still being confirmed.', onlinePaid: 'Payment verified. Your subscription is active.',
+    onlineFailed: 'Payment failed. You may try again.',
+    onlineReview: 'Payment requires review. Please contact support with your payment reference.',
   },
   pt: {
     eyebrow: 'Pedido de ativação verificado', title: 'Ativar ou renovar o StockWise',
@@ -44,8 +49,15 @@ const copy = {
     readOnly: 'Apenas um OWNER ou ADMIN da empresa pode criar ou alterar um pedido. Os outros membros podem acompanhar o estado.',
     restricted: 'Esta empresa está suspensa ou desativada. O comprovativo não pode reativá-la; contacte o suporte StockWise.', back: 'Voltar ao workspace',
     timeline: 'Linha temporal imutável', cancel: 'Cancelar pedido', cancelConfirm: 'Cancelar este pedido de ativação? O histórico de auditoria será preservado.',
+    onlineTitle: 'Pagar online com segurança', onlineDescription: 'Pague por M-Pesa, e-Mola ou cartão através do PaySuite. O acesso é atualizado após a verificação do pagamento.',
+    onlinePay: 'Continuar para pagamento', onlineWorking: 'A preparar pagamento...', onlineCheck: 'Verificar pagamento',
+    onlinePending: 'O pagamento ainda está a ser confirmado.', onlinePaid: 'Pagamento verificado. A subscrição está ativa.',
+    onlineFailed: 'O pagamento falhou. Pode tentar novamente.',
+    onlineReview: 'O pagamento necessita de análise. Contacte o suporte com a referência do pagamento.',
   },
 } as const
+
+const onlineCheckoutEnabled = import.meta.env.VITE_PAYSUITE_CHECKOUT_ENABLED === 'true'
 
 function money(value: number, locale: string) {
   return formatMoneyBase(value, 'MZN', locale)
@@ -81,6 +93,9 @@ export default function PaymentActivation() {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [onlineWorking, setOnlineWorking] = useState(false)
+  const [onlinePaymentId, setOnlinePaymentId] = useState<string | null>(new URLSearchParams(window.location.search).get('payment'))
+  const [onlineStatus, setOnlineStatus] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const selectedPlan = useMemo(() => plans.find((plan) => `${plan.plan_code}:${plan.billing_period}` === planKey), [planKey, plans])
@@ -125,6 +140,35 @@ export default function PaymentActivation() {
   }, [companyId])
 
   useEffect(() => { void load() }, [load])
+
+  const checkOnlinePayment = useCallback(async (paymentId: string) => {
+    setOnlineWorking(true)
+    try {
+      const result = await paymentActivationApi.checkOnlinePayment(paymentId)
+      setOnlineStatus(result.state)
+      if (result.state === 'paid') await load()
+      else if (result.state === 'requires_review') toast.error(c.onlineReview)
+    } catch (error) { toast.error((error as Error).message) }
+    finally { setOnlineWorking(false) }
+  }, [c.onlineReview, load])
+
+  useEffect(() => {
+    if (companyId && onlinePaymentId) void checkOnlinePayment(onlinePaymentId)
+    // The return from PaySuite is checked once; later checks use the visible button.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
+
+  async function startOnlineCheckout() {
+    if (!companyId || !selectedPlan || !canManage || restricted) return
+    setOnlineWorking(true)
+    try {
+      const checkout = await paymentActivationApi.startOnlineCheckout(
+        companyId, selectedPlan.plan_code, selectedPlan.billing_period, createPostingRequestKey(),
+      )
+      setOnlinePaymentId(checkout.id)
+      window.location.assign(checkout.checkoutUrl)
+    } catch (error) { toast.error((error as Error).message); setOnlineWorking(false) }
+  }
 
   async function submit() {
     if (!companyId || !selectedPlan || !selectedChannel || !file || !canManage || restricted) return
@@ -180,6 +224,16 @@ export default function PaymentActivation() {
           </CardContent>
         </Card>
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200"><ShieldCheck className="mr-2 inline h-4 w-4" />{restricted ? c.restricted : c.warning}</div>
+        {onlineCheckoutEnabled && <Card className="border-border/70">
+          <CardHeader><CardTitle>{c.onlineTitle}</CardTitle><CardDescription>{c.onlineDescription}</CardDescription></CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => void startOnlineCheckout()} disabled={onlineWorking || !canManage || restricted || !selectedPlan || !!openRequest}>
+              {onlineWorking ? c.onlineWorking : c.onlinePay}
+            </Button>
+            {onlinePaymentId ? <Button variant="outline" onClick={() => void checkOnlinePayment(onlinePaymentId)} disabled={onlineWorking}>{c.onlineCheck}</Button> : null}
+            {onlineStatus ? <span className="text-sm text-muted-foreground">{onlineStatus === 'paid' ? c.onlinePaid : onlineStatus === 'requires_review' ? c.onlineReview : onlineStatus === 'failed' ? c.onlineFailed : c.onlinePending}</span> : null}
+          </CardContent>
+        </Card>}
         <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.75fr)]">
           <Card className="min-w-0 border-border/70">
             <CardHeader><CardTitle>{c.save}</CardTitle><CardDescription>{!canManage ? c.readOnly : c.proofHelp}</CardDescription></CardHeader>
