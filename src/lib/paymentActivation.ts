@@ -77,6 +77,20 @@ async function rpc<T>(name: string, params: Record<string, unknown> = {}) {
 }
 
 export const paymentActivationApi = {
+  startOnlineCheckout: async (companyId: string, planCode: string, period: string, requestKey: string) => {
+    const { data, error } = await supabase.functions.invoke('paysuite-checkout', {
+      body: { action: 'create', companyId, planCode, period, requestKey },
+    })
+    if (error || !data?.checkoutUrl) throw new Error(data?.error ?? error?.message ?? 'Checkout unavailable')
+    return data as { id: string; checkoutUrl: string }
+  },
+  checkOnlinePayment: async (paymentId: string) => {
+    const { data, error } = await supabase.functions.invoke('paysuite-checkout', {
+      body: { action: 'status', paymentId },
+    })
+    if (error) throw new Error(data?.error ?? error.message)
+    return data as { state: string; paid_until?: string }
+  },
   listPlans: () => rpc<PaymentPlanOption[]>('list_available_payment_plans'),
   listChannels: () => rpc<PaymentChannel[]>('list_available_payment_channels'),
   listRequests: (companyId: string) =>

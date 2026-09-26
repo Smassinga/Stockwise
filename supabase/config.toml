@@ -68,4 +68,12 @@ entrypoint = "./functions/mailer-company-access/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/email-template-lab/index.ts"
+[functions.paysuite-checkout]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/paysuite-checkout/index.ts"
 
+[functions.paysuite-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/paysuite-webhook/index.ts"
